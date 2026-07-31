@@ -351,8 +351,14 @@ run_pyntara() {
   if exec 3<"${PYNTARA_CLI_STDIN_PATH}"; then
     log "Using CLI stdin source: ${PYNTARA_CLI_STDIN_PATH}"
     log "Running: timeout ${PYNTARA_RUN_TIMEOUT_SEC} uv run pyntara"
-    timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara <&3 |& tee -a "${LOG_FILE}"
-    local run_status="${PIPESTATUS[${PRIMARY_PIPESTATUS_INDEX}]}"
+    # Use process substitution instead of a shell pipeline.
+    # A pipeline can suspend interactive readers with SIGTTIN when stdin is /dev/tty.
+    set +e
+    timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara <&3 \
+      > >(tee -a "${LOG_FILE}") \
+      2> >(tee -a "${LOG_FILE}" >&2)
+    local run_status="$?"
+    set -e
     exec 3<&-
     return "${run_status}"
   fi
