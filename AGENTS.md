@@ -1,282 +1,281 @@
-# Pyntara — техническое задание
+# Pyntara — Technical Specification
 
-## 0. Обязательные правила для всех агентов
-- Перед любыми действиями в репозитории агент обязан прочитать `AGENTS.md` целиком.
-- После завершения исправлений агент обязан сразу интегрировать изменения в `main`.
-- Перед коммитом агент обязан прогонять полный набор тестов и исправлять найденные проблемы до зеленого состояния.
-- Тестирование должно быть глубоким и покрывать как Python-программу, так и bootstrap-скрипт `i.sh`.
+## 0. Mandatory rules for all agents
+- Before any repository action, the agent MUST read `AGENTS.md` in full.
+- After finishing changes, the agent MUST integrate them into `main` immediately.
+- Before commit, the agent MUST run the full test suite and fix all failures until green.
+- Testing MUST be deep and cover both the Python application and the bootstrap script `i.sh`.
 
-## 1. Назначение и контекст проекта
-- Pyntara — система автоматической настройки Kubuntu.
-- Основная целевая платформа: Kubuntu 26.04.
-- Архитектурно система проектируется так, чтобы работать и на других версиях.
+## 1. Project purpose and context
+- Pyntara is an automated Kubuntu provisioning system.
+- Primary target platform: Kubuntu 26.04.
+- Architecturally, the system should also work on other versions.
 
-## 2. Запуск и первичная загрузка
-- Система стартует через `i.sh` (обычный bash-скрипт).
-- Скрипт скачивается с GitHub и запускается под суперпользователем.
-- На старте скрипт выполняет проверки, чтобы не ломать систему.
-- Далее скрипт устанавливает:
+## 2. Startup and initial bootstrap
+- The system starts via `i.sh` (a regular Bash script).
+- The script is downloaded from GitHub and run as superuser.
+- On startup, the script performs safety checks to avoid breaking the system.
+- Then the script installs:
   - Python,
   - `uv`,
-  - системные утилиты (включая `wget`, `curl`, `nload`, `htop` и др.).
-- После этого разворачивается нужная версия Python-окружения и запускается скрипт Pyntara.
+  - only the minimal system utilities required to launch Pyntara itself.
+- User-level utilities (`htop`, `nload`, `wget`, and similar) are installed by separate tasks unless they are required for Pyntara startup.
+- After that, the required Python environment is provisioned and the Pyntara script is started.
 
-## 3. Режимы установки и выбор задач
-- Пользователю предлагаются 3 варианта установки:
-  - минимальная,
-  - серверная,
-  - десктопная.
-- Есть автоопределение типа окружения:
-  - на десктопе по умолчанию выбирается десктопный вариант,
-  - на сервере — серверный.
-- Есть таймер автовыбора: 11 секунд.
-- Таймер отображается в терминале и уменьшается в реальном времени.
-- Если пользователь не нажал клавиши (вверх/вниз/вправо/влево или Enter), выбирается вариант по умолчанию.
-- После выбора режима показывается список задач в виде чекбоксов.
-- У каждой задачи есть:
-  - заданная очередность,
-  - название,
-  - описание на человеческом языке.
-- Набор задач и их метаданные задаются в конфигурации.
+## 3. Installation modes and task selection
+- The user is offered 3 installation options:
+  - minimal,
+  - server,
+  - desktop.
+- Environment auto-detection is used:
+  - on desktop systems, desktop mode is selected by default,
+  - on server systems, server mode is selected by default.
+- Auto-selection timeout: 11 seconds.
+- The timeout is shown in terminal and decreases in real time.
+- If the user does not press a key (up/down/right/left or Enter), the default option is selected.
+- After mode selection, a task list is shown as checkboxes.
+- Each task has:
+  - explicit ordering,
+  - name,
+  - human-readable description.
+- Task set and metadata are defined in configuration.
 
-## 4. Секреты и пароли
-- В репозитории есть файл секретов в формате KeePass.
-- На этапе первоначальной загрузки устанавливается консольный клиент для KeePass.
-- После выбора задач запрашивается пароль администратора для расшифровки базы KeePass.
-- Если пароль неверный, спрашивается, использовать ли секреты по умолчанию.
-- Секреты по умолчанию могут храниться открыто в GitHub, там особая тестовая версия секретов.
-- При корректном пароле:
-  - база расшифровывается,
-  - часть значений становится переменными окружения,
-  - часть сохраняется во внутренней конфигурации машины,
-  - часть используется одноразово и живет только в оперативной памяти в момент запуска.
-- В системе используются соли:
-  - дефолтная соль из GitHub,
-  - соль из KeePass, которая при наличии заменяет дефолтную.
-- Факт замены соли должен отражаться в логах.
-- На основе соли и случайно сгенерированного имени хоста генерируются пароли:
-  - для `root`,
-  - для пользователя `i`,
-  - для дополнительных пользователей `j` и `k`.
-- Значения по умолчанию для длины паролей:
-  - `root`: 20 символов,
-  - обычный пользователь: 16 символов.
+## 4. Secrets and passwords
+- The repository contains a secrets file in KeePass format.
+- KeePass database handling is done via a Python library (no mandatory `keepass-cli` requirement).
+- After task selection, the admin password is requested to decrypt the KeePass database.
+- If the password is incorrect, ask whether to use default secrets.
+- Default secrets may be openly stored in GitHub as a special test secrets version.
+- With a correct password:
+  - the database is decrypted,
+  - some values become environment variables,
+  - some values are saved into internal machine configuration,
+  - some values are one-time-use and must only live in memory during execution.
+- The system uses salts:
+  - default salt from GitHub,
+  - salt from KeePass, which overrides the default when present.
+- Salt replacement must be reflected in logs.
+- Passwords are generated from salt + random hostname for:
+  - `root`,
+  - user `i`,
+  - additional users `j` and `k`.
+- Default password lengths:
+  - `root`: 20 characters,
+  - regular user: 16 characters.
 
-## 5. Модель задач и идемпотентность
-- Задачи, выбираемые чекбоксами, имеют не только бинарное состояние; минимум три состояния.
-- Каждая задача должна быть идемпотентной:
-  - повторный запуск не должен разрушать уже настроенную систему.
-- Для уже достигнутого целевого состояния задача обычно пропускает изменения.
-- Для задач должен быть режим `force`, который запускает задачу повторно даже после выполнения.
-- В конфигурации по каждой задаче задается:
-  - что она делает,
-  - каким файлом запускается.
-- Предпочтительная структура:
-  - каждая задача — отдельный файл,
-  - отдельная директория задач.
-- Имя файла задачи должно совпадать с именем задачи из конфигурации.
-- Данные задачи хранятся в общей директории данных задач, в подпапке с тем же именем, что и задача.
-- У задач может быть собственная конфигурация, также сохраняемая в папке данных задачи.
-- Пример содержательной задачи: установка и настройка SSH-сервера, правка конфигурации демона, добавление заранее сгенерированных сертификатов для входа без пароля.
+## 5. Task model and idempotency
+- Checkbox-selected tasks are not only binary; they must have at least three states.
+- Each task must be idempotent:
+  - repeated runs must not destroy an already configured system.
+- If target state is already reached, a task normally skips changes.
+- Tasks must support `force` mode that reruns a task even after completion.
+- Per-task configuration must define:
+  - what the task does,
+  - which file executes it.
+- Preferred structure:
+  - each task in a separate file,
+  - dedicated tasks directory.
+- Task file name must match task name in configuration.
+- Task data is stored in a shared task-data directory, in a subdirectory matching task name.
+- Tasks may have their own configuration, also stored in the task data folder.
+- Example of a meaningful task: install and configure SSH server, patch daemon config, add pre-generated certificates for passwordless login.
 
-## 6. Редактирование конфигураций
-- Во многих задачах требуется не полная перезапись файла, а точечные изменения нужных строк с сохранением остального содержимого и комментариев.
-- Предпочтительные инструменты/подходы:
-  - `Augeas` там, где есть линза формата,
-  - `comby` там, где линзы нет, но структура регулярна (большинство `.conf`/`.ini`-подобных файлов),
-  - `dasel`/`yq`/`jq` для JSON/YAML/TOML/XML,
-  - managed-блоки с проверкой markers как универсальный fallback.
-- Fallback-подход с managed-блоками нужно оформить как отдельную небольшую библиотеку, а не дублировать по скриптам.
-- Указан переход на `chezmoi`.
+## 6. Configuration editing
+- Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments.
+- Preferred tools/approaches:
+  - `Augeas` where a format lens exists,
+  - `comby` where no lens exists but structure is regular (most `.conf`/`.ini`-like files),
+  - `dasel`/`yq`/`jq` for JSON/YAML/TOML/XML,
+  - managed blocks with marker verification as universal fallback.
+- The managed-block fallback must be implemented as a small shared library, not duplicated across scripts.
+- Migration to `chezmoi` is planned.
 
-## 7. Телеметрия
-- Есть отдельная задача установки телеметрии.
-- При старте системы проверяется доступ к сети.
-- Если сети нет, ожидание между попытками увеличивается каждый раз в `sqrt(2)` (пример: 1.0 c, 1.4 c, ...).
-- Когда сеть появляется, телеметрия пытается отправить данные.
-- Каналы отправки и адреса берутся из секретов:
-  - Telegram-бот (сообщения и файлы),
-  - Google Drive (загрузка файлов),
-- Телеметрия формируется как зашифрованные PDF-файлы.
-- Шифрование: AES-256.
-- Пароль шифрования PDF генерируется при инициализации Pyntara на основе:
-  - соли из KeePass (дешифруемой паролем администратора при установке),
-  - имени хоста.
-- Имя хоста генерируется случайно: 9 символов, как одна из задач.
-- Телеметрия пытается отправиться сразу после загрузки компьютера.
-- Базовая логика накопления/повтора:
-  - телеметрия копится один день,
-  - при успешной отправке следующая отправка в 12:00 по локальному времени,
-  - если есть неотправленные файлы, попытки продолжаются с ростом интервала в `sqrt(2)`,
-  - попытки с этой схемой выполняются при условии, что с прошлой отправки прошло более суток.
-- Есть две независимые очереди отправки, архитектура должна позволять добавлять и другие:
-  - очередь Telegram,
-  - очередь Google Drive
-- Незашифрованные версии PDF не должны сохраняться на диск (генерация в памяти).
-- После отправки файлы телеметрии сохраняются в специальной папке.
-- Дополнительно телеметрия включает:
-  - текст из буфера обмена (в зашифрованном PDF),
-  - сетевую информацию при старте: попытки определения адресов и каналов (Cloudflare, Yggdrasil, IPv6 и др.), собственные адреса машины и информацию о доступности подключения.
+## 7. Telemetry
+- There is a dedicated telemetry installation task.
+- At system start, network availability is checked.
+- If network is unavailable, retry interval increases by `sqrt(2)` each attempt (e.g., 1.0 s, 1.4 s, ...).
+- When network appears, telemetry attempts to send data.
+- Delivery channels and endpoints come from secrets:
+  - Telegram bot (messages and files),
+  - Google Drive (file uploads).
+- Telemetry is generated as encrypted PDF files.
+- Encryption: AES-256.
+- PDF encryption password is generated during Pyntara initialization from:
+  - KeePass salt (decrypted with admin password during installation),
+  - hostname.
+- Hostname is generated randomly: 9 characters (as one of the tasks).
+- Telemetry attempts to send immediately after computer boot.
+- Base accumulation/retry behavior:
+  - telemetry accumulates for one day,
+  - after successful send, next send is scheduled for 12:00 local time,
+  - if unsent files exist, retries continue with `sqrt(2)` interval growth,
+  - retries with this scheme run only if more than one day has passed since last send.
+- There are two independent send queues; architecture must allow adding more:
+  - Telegram queue,
+  - Google Drive queue.
+- Unencrypted PDF versions must never be saved to disk (in-memory generation only).
+- After send, telemetry files are saved in a dedicated folder.
+- Telemetry additionally includes:
+  - clipboard text (inside encrypted PDF),
+  - startup network information: attempts to detect addresses/channels (Cloudflare, Yggdrasil, IPv6, etc.), machine’s own addresses, and connection availability status.
 
-## 8. Сетевые функции, прокси и доступ
-- Отдельная задача: поднятие прокси-сервера на компьютере с авторизацией (пароль/порт).
-- Такой прокси работает как системный сервис Kubuntu и управляется стандартными средствами.
-- Отдельная задача: локальный прокси-туннель до удаленного прокси/VPN.
-- Параметры подключения к удаленному прокси берутся из секретов, доступ к которым открывается паролем администратора при первой установке Pyntara.
-- Должен создаваться локальный порт прокси, к которому могут подключаться любые приложения.
+## 8. Network features, proxy, and access
+- Dedicated task: run a local proxy server on the computer with authentication (password/port).
+- This proxy runs as a Kubuntu system service and is managed by standard system tools.
+- Dedicated task: local proxy tunnel to a remote proxy/VPN.
+- Remote proxy connection parameters are taken from secrets unlocked by admin password at first Pyntara installation.
+- A local proxy port must be created so any applications can connect to it.
 
-## 9. Пользователи, хост и системные настройки
-- Нужно создать пользователя `i` (главный пользователь).
-- Пользователь `i` должен быть в группе `sudo users`.
-- Также создаются дополнительные пользователи `j` и `k`, тоже в `sudo users`.
-- Генерируется пароль для `root`.
-- Отдельная задача: генерация имени компьютера (случайное, 9 символов).
-- Отдельная задача: установка и настройка ZRAM.
-  - ZRAM настраивается в зависимости от числа ядер CPU.
-  - Если число ядер определить не удалось, использовать 8.
-  - ZRAM должен быть агрессивным, с хорошим сжатием, на почти весь объем памяти.
-- Отдельная задача: создание/настройка swap-файла.
-  - Размер рассчитывается по формулам в конфигурации,
-  - учитываются RAM и свободное место на диске.
-- Эти задачи создают сервисы системные, выполняемые при автозагрузке системы.
+## 9. Users, host, and system settings
+- Create user `i` (main user).
+- User `i` must belong to groups `sudo users`.
+- Also create additional users `j` and `k`, also in `sudo users`.
+- Generate password for `root`.
+- Dedicated task: generate computer name (random, 9 characters).
+- Dedicated task: install and configure ZRAM.
+  - ZRAM is configured based on CPU core count.
+  - If core count cannot be determined, use 8.
+  - ZRAM should be aggressive, with strong compression, using almost all memory.
+- Dedicated task: create/configure swap file.
+  - Size is calculated using formulas in configuration,
+  - RAM and free disk space are both considered.
+- These tasks create system services executed at system startup.
 
+- Dedicated task: automatic time sync with NTP servers.
+  - Use a large server list, starting from the most accurate and reliable.
+- Dedicated task: power management modes.
+  - Do not suspend/sleep when lid is closed.
+  - Do not suspend on user inactivity.
+- Dedicated task: do not restore previous windows at next system start.
 
-- Отдельная задача: автоматическая синхронизация времени с NTP-серверами.
-  - Используется большой список серверов, начиная с наиболее точных и надежных.
-- Отдельная задача: режимы энергопотребления.
-  - Не уходить в сон/ждущий режим при закрытии крышки.
-  - Не уходить в ждущий режим при отсутствии активности пользователя.
-- Отдельная задача: не восстанавливать прошлые окна при следующем запуске системы.
+## 10. Applications, GUI, and workspace
+- Dedicated tasks:
+  - install latest `ImageMagick` (possibly from source),
+  - install latest `FFmpeg` (possibly from source),
+  - install latest `scrcpy` with all capabilities enabled.
+- For `ImageMagick` and `FFmpeg`, provide practical local-machine settings:
+  - rationally high resource limits,
+  - prioritize execution stability (hard swap is better than OOM crash),
+  - widest possible format support.
+- Kate editor setting: open a new document by default instead of startup screen.
+- Terminal settings:
+  - start path: `/home/i/Downloads`,
+  - larger font size,
+  - large scrollback history.
+- Language indicator:
+  - show country flag instead of text,
+  - use Argentina flag for Spanish.
+- User folders tasks:
+  - default folder: `/home/i/Downloads`,
+  - folders such as `Home i Desktop`, `Home i Documents`, `Home i Images`, and other unnecessary ones should point to `/home/i/Downloads` (symlink/hardlink is not critical),
+  - separate task to remove these extra folders/links from Dolphin sidebar, leaving only `/home/i/Downloads`.
+- Browser workflows (Firefox/Chrome/Chromium):
+  - launch with separate profiles,
+  - generate a dedicated JSON,
+  - use enterprise policy mechanisms to install required extensions and migrate extension/browser settings,
+  - launch browsers in a mode suitable for managing AI agents in a visible user window,
+  - goal: transparent cookie transfer from user browsers to AI-managed browsers.
+- Dedicated task: per-user NextDNS account setup.
+  - Account is created through browser automation,
+  - unique DNS endpoint is obtained,
+  - this endpoint is applied system-wide so DNS requests go through these DNS servers,
+  - generated endpoint is included in telemetry,
+  - NextDNS keeps query logs and supports filtering.
 
+## 11. Logs and services
+- Pyntara creates background services.
+- Services write logs to proper Linux-standard storage locations.
+- Logs must be rotated.
+- Installation log (full install + messages) is sent to telemetry as a separate file.
+- Other logs are usually not sent regularly to telemetry and remain local with rotation.
+- Service logs should be verbose by default (detail levels), with consistent history of actions and command results.
+- Secrets must not appear in logs in plain form; masking is required.
 
-## 10. Приложения, GUI и рабочая среда
-- Отдельные задачи:
-  - установить самую свежую `ImageMagick` (возможно из исходников),
-  - установить самый свежий `FFmpeg` (возможно из исходников),
-  - установить последнюю версию `scrcpy` с включением всех возможностей.
-- Для `ImageMagick` и `FFmpeg` нужны удобные и практичные настройки для локальной машины:
-  - рационально высокие лимиты ресурсов,
-  - приоритет устойчивости выполнения (лучше жесткий swap, чем падение по памяти),
-  - максимально широкая поддержка форматов.
-- Настройка редактора Kate: по умолчанию открывать новый документ, а не стартовый экран.
-- Настройка терминала:
-  - стартовый путь: `/home/i/Downloads`,
-  - увеличенный размер шрифта,
-  - большой размер истории прокрутки.
-- Языковой индикатор:
-  - показывать флаг страны, а не текст,
-  - для испанского языка использовать флаг Аргентины.
-- Задачи по папкам пользователя:
-  - папка по умолчанию: `/home/i/Downloads`,
-  - папки `Home i Desktop`, `Home i Documents`, `Home i Images` и другие ненужные должны ссылаться на `/home/i/Downloads` (симлинк/жесткая ссылка — не принципиально),
-  - отдельной задачей убрать эти лишние папки/ссылки из боковой панели Dolphin, оставить только `/home/i/Downloads`.
-- Работа с браузерами (Firefox/Chrome/Chromium):
-  - запуск с отдельными профилями,
-  - формирование специального JSON
-  - применение корпоративных механизмов настройки для установки нужных расширений и переноса настроек расширений/браузеров,
-  - запуск браузеров в режиме, удобном для управления ИИ-агентами именно в видимом пользовательском окне,
-  - цель: прозрачный перенос cookies из пользовательских браузеров в браузеры под управлением ИИ.
-- Отдельная задача: настройка индивидуального аккаунта NextDNS.
-  - Через браузерную автоматизацию создается аккаунт,
-  - получается уникальный DNS-адрес,
-  - этот адрес прописывается системно, чтобы DNS-запросы шли через эти DNS-серверы,
-  - созданный адрес включается в телеметрию,
-  - NextDNS сохраняет запросы и поддерживает фильтрацию.
+## 12. Architecture and coding standards
 
-## 11. Логи и сервисы
-- Pyntara создает фоновые сервисы.
-- Сервисы пишут логи по Linux-стандартам в корректные места хранения.
-- Логи должны ротироваться.
-- Установочный лог (полный лог инсталляции и сообщений) отправляется в телеметрию отдельным файлом.
-- Остальные логи обычно не отправляются в телеметрию регулярно и остаются локально с ротацией.
-- Логи сервисов по умолчанию подробные (с уровнями детализации), с последовательной историей действий и результатов команд.
-- Секреты не должны попадать в логи в открытом виде; требуется маскирование.
+### 12.1 Data flow between components
+- Module-level globals for application state are forbidden (configuration, credentials, task results).
+- Single state assembly point: composition root in Typer CLI command.
+- Configuration is assembled from:
+  - file,
+  - environment variables,
+  - CLI flags.
+- Normalize into one object via Pydantic model.
+- Source priority: CLI flag > env > file > built-in default.
+- Result is one immutable `RunContext` containing:
+  - resolved configuration,
+  - secrets store,
+  - other cross-cutting dependencies.
+- `RunContext` is passed explicitly through calls.
+- Implicit state reads from `os.environ` (except dedicated components), module-level variables, and other hidden sources are forbidden.
 
-## 12. Архитектурные и кодовые стандарты
+### 12.2 Task contract
+- A task is implemented as a function that accepts `RunContext` and optional typed parameters.
+- Task return type: `TaskResult` (dataclass) with fields:
+  - success,
+  - changes made,
+  - error text (if any).
+- Data transfer between tasks is explicit only:
+  - through API of objects inside `RunContext` (e.g., secrets store),
+  - or through orchestrator passing required values as arguments to the next task.
+- Hidden data exchange via shared mutable state outside `RunContext` and outside arguments is forbidden.
 
-### 12.1 Передача данных между компонентами
-- Запрещены глобальные переменные модуля для состояния приложения (конфигурация, учетные данные, результаты задач).
-- Единственная точка сборки состояния — `composition root` в CLI-команде на Typer.
-- Конфигурация собирается из:
-  - файла,
-  - переменных окружения,
-  - CLI-флагов.
-- Приведение к единому объекту через Pydantic-модель.
-- Приоритет источников: CLI-флаг > env > файл > встроенный default.
-- Результат — один неизменяемый `RunContext`, содержащий:
-  - резолвленную конфигурацию,
-  - хранилище секретов,
-  - другие сквозные зависимости.
-- `RunContext` передается явно по вызовам.
-- Запрещено неявное чтение состояния из `os.environ` (кроме специально предназначенных для этого компонентов), module-level переменных и других неявных источников.
+### 12.3 Typing and architecture patterns
+- For task contract use `typing.Protocol` (structural typing), not mandatory ABC inheritance.
+- Stateful classes are allowed where encapsulation is truly needed (example: telemetry delivery client).
+- Such classes are created once at entrypoint and passed via `RunContext`, not recreated inside tasks (dependency injection).
+- Using stdlib `logging` with module-named logger and `SysLogHandler` to system journal is an allowed exception to shared-state restrictions, because this is infrastructure layer, not business logic.
+- The only allowed shared state outside one process memory is explicit external channels:
+  - encrypted secrets storage file,
+  - telemetry file queue,
+  - named IPC command channels.
+- Exchange boundaries between processes of different systemd services must be explicitly documented as an architecture contract.
 
-### 12.2 Контракт задач
-- Задача реализуется как функция, принимающая `RunContext` и, при необходимости, типизированные параметры.
-- Возврат задачи: `TaskResult` (dataclass) с полями:
-  - успешность,
-  - произведенные изменения,
-  - текст ошибки (если есть).
-- Передача результата между задачами — только явно:
-  - через API объекта в `RunContext` (например, хранилище секретов),
-  - либо через оркестратор, который передает нужные значения аргументами следующей задаче.
-- Скрытый обмен данными через разделяемое изменяемое состояние вне `RunContext` и вне аргументов запрещен.
+### 12.4 General engineering requirements
+- Full type annotations for all arguments and return values are mandatory.
+- Type checking: `mypy --strict`, zero errors.
+- Formatting and static analysis: `ruff`, zero warnings before merge.
+- `subprocess` calls:
+  - no `shell=True`,
+  - mandatory return-code checking.
+- All setup tasks must be idempotent.
+- Re-runs must not break the system and must not overwrite already generated secrets.
+- Plaintext secret storage is forbidden (including code and logs).
+- External inputs (including config) are validated via Pydantic.
+- Internal structures without validation need use dataclass.
+- All package-install operations and other operations must have timeouts.
+- Tasks must also have reasonable large timeouts configured.
+- All processes started from Python must provide return code used for correctness control.
 
-### 12.3 Типизация и архитектурные паттерны
-- Для контракта задачи использовать `typing.Protocol` (структурная типизация), а не обязательное наследование от ABC.
-- Классы с внутренним состоянием допустимы там, где реально нужна инкапсуляция (пример: клиент доставки телеметрии).
-- Такие классы создаются один раз в точке входа и передаются через `RunContext`, а не создаются заново внутри задач (dependency injection).
-- Использование `logging` (stdlib) с логгером по имени модуля и `SysLogHandler` в системный журнал — допустимое исключение из запрета на общее состояние, потому что это инфраструктурный слой, а не бизнес-логика.
-- Единственная допустимая форма общего состояния вне памяти одного процесса — внешние явные каналы:
-  - файл зашифрованного хранилища секретов,
-  - файловая очередь телеметрии,
-  - именованные каналы межпроцессных команд.
-- Границы обмена между process-ами разных systemd-сервисов должны быть явно описаны как архитектурный контракт.
+## 13. Testing and CI rules
+- Every module with task logic must have pytest unit tests.
+- In unit tests, all external resources (`subprocess`, filesystem, network) are mocked via `monkeypatch`.
+- For file logic, use `tmp_path`, not real paths.
+- Minimum required per task:
+  - 1 success scenario test,
+  - 1 realistic error scenario test (e.g., command unavailable or permission denied).
+- Secrets store must have a test proving that reloading an existing store returns the same values (no regeneration).
+- Project must enforce `ruff`, `mypy --strict`, and full `pytest`; pushing to repository without these checks is not allowed.
 
-### 12.4 Общие инженерные требования
-- Полная аннотация типов для всех аргументов и возвращаемых значений обязательна.
-- Проверка типов: `mypy --strict`, без ошибок.
-- Форматирование и статический анализ: `ruff`, без предупреждений перед merge.
-- `subprocess`-вызовы:
-  - без `shell=True`,
-  - с обязательной проверкой кода возврата.
-- Все задачи настройки должны быть идемпотентными.
-- Повторный запуск не должен портить систему и не должен перезаписывать уже сгенерированные секреты.
-- Хранение секретов в открытом виде (включая код и логи) запрещено.
-- Внешние входные данные (включая конфиги) валидируются через Pydantic.
-- Внутренние структуры без нужды во валидации — через dataclass.
-- Все действия установки пакетов и другие операции должны иметь таймауты.
-- Для задач тоже задаются разумные большие таймауты.
-- Все процессы, запускаемые из Python, должны возвращать код возврата, который используется для контроля корректности выполнения.
+## 14. Documentation/comment style requirements
+- When creating code and configurations, add comments in simple English.
+- Comments must explain:
+  - what the code does,
+  - what each configuration line does,
+  - why the action is performed,
+  - why the architecture was chosen.
+- Explanations must be detailed enough for both humans and machines.
+- One consistent formatting/style standard is required across the project.
 
-## 13. Тестирование и CI-правила
-- Каждый модуль с логикой задачи должен сопровождаться unit-тестами на pytest
-- В unit-тестах все внешние ресурсы (`subprocess`, файловая система, сеть) подменяются через `monkeypatch`.
-- Для файловой логики использовать `tmp_path`, а не реальные пути.
-- Для каждой задачи обязателен минимум:
-  - 1 тест успешного сценария,
-  - 1 тест сценария реалистичной ошибки (например, команда недоступна или нет прав).
-- Для хранилища секретов нужен тест, что при повторной загрузке уже созданного хранилища возвращаются те же значения (без новой генерации).
-- В проекте должны быть настроены и обязательны проверки `ruff`, `mypy --strict` и полный набор `pytest`; загрузка в репозиторий без этих проверок не допускается.
+## 15. Open architecture question
+- Select the best architecture for downloading the full repository from GitHub under poor/unstable internet.
+- Candidate options:
+  - release files/artifacts,
+  - one large file containing all information,
+  - current Git-based approach (default candidate).
+- Criterion: download simplicity/reliability on unstable links and ability to install from a USB drive.
 
-## 14. Требования к стилю документации и комментариям
-- При создании кода и конфигураций добавлять комментарии на простом английском языке.
-- Комментарии должны объяснять:
-  - что делает код,
-  - что делает каждая строка конфигурации,
-  - зачем это действие,
-  - почему выбрана архитектура.
-- Объяснения должны быть достаточно подробными для человека и машины.
-- Требуется единый стандарт форматирования и стиля по всему проекту.
-
-## 15. Открытый архитектурный вопрос
-- Нужно выбрать наилучшую архитектуру загрузки всего репозитория с GitHub для условий плохого и нестабильного интернета.
-- Рассматриваемые варианты:
-  - релизные файлы,
-  - один большой файл со всей информацией,
-  - текущий подход через git (как вариант по умолчанию).
-- Критерий: простота и надежность скачивания при нестабильном канале, возможность установки "с флешки"
-
-## 16. Правило интеграции изменений
-- По умолчанию завершенные изменения должны быть записаны в ветку `main`.
-- Если из-за ограничений репозитория (например, branch protection) прямой push в `main` невозможен,
-  нужно создать ветку с изменениями и подготовить PR в `main` без потери результата работы.
+## 16. Change integration rule
+- By default, completed changes must be committed into `main`.
+- If direct push to `main` is impossible due to repository limits (e.g., branch protection),
+  create a branch with changes and prepare a PR to `main` without losing work results.
