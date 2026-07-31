@@ -169,3 +169,56 @@ def test_open_existing_database_retries_credentials_error(
         keepass_script._open_existing_database(Path("/tmp/does-not-matter.kdbx"))
 
     assert attempts["count"] == 3
+
+
+def test_quarantine_non_keepass_file_moves_source(tmp_path: Path) -> None:
+    original = tmp_path / "default.vault"
+    original.write_text("not-keepass", encoding="utf-8")
+
+    moved = keepass_script._quarantine_non_keepass_file(original)
+
+    assert moved.name == "default.vault.notkeepass"
+    assert moved.read_text(encoding="utf-8") == "not-keepass"
+    assert original.exists() is False
+
+
+def test_main_recreates_database_when_existing_file_is_not_keepass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "default.vault"
+    target.write_text("not-keepass", encoding="utf-8")
+    monkeypatch.setattr(
+        keepass_script,
+        "parse_args",
+        lambda _argv: keepass_script.argparse.Namespace(database_file=str(target)),
+    )
+    monkeypatch.setattr(
+        keepass_script,
+        "_open_existing_database",
+        lambda _path: (_ for _ in ()).throw(
+            SystemExit(f"File is not a KeePass database: {target}")
+        ),
+    )
+    def fake_create_new_database(path: Path) -> tuple[object, str]:
+        path.write_text("new-keepass-db", encoding="utf-8")
+        return object(), "pw"
+
+    monkeypatch.setattr(keepass_script, "_create_new_database", fake_create_new_database)
+    monkeypatch.setattr(
+        keepass_script,
+        "reconcile_schema",
+        lambda _kp: keepass_script.ReconcileStats(
+            groups_created=1,
+            entries_created=2,
+            entries_touched=3,
+        ),
+    )
+
+    exit_code = keepass_script.main([])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Moved non-KeePass file to:" in output
+    assert "Database created:" in output
+    assert target.exists() is True
+    assert (tmp_path / "default.vault.notkeepass").exists() is True

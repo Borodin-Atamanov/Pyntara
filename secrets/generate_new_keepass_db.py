@@ -210,6 +210,14 @@ class ReconcileStats:
     entries_touched: int
 
 
+class NonKeePassDatabaseError(RuntimeError):
+    """Raised when an existing file is not a valid KeePass database."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(f"File is not a KeePass database: {path}")
+        self.path = path
+
+
 def _prompt_password(*, confirm: bool) -> str:
     """Ask for database password without echoing text in terminal."""
 
@@ -326,6 +334,18 @@ def reconcile_schema(kp: PyKeePass) -> ReconcileStats:
     )
 
 
+def _quarantine_non_keepass_file(path: Path) -> Path:
+    """Move a non-KeePass file aside and preserve it near the original path."""
+
+    candidate = path.with_name(f"{path.name}.notkeepass")
+    suffix_index = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.notkeepass.{suffix_index}")
+        suffix_index += 1
+    path.replace(candidate)
+    return candidate
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command line arguments."""
 
@@ -350,8 +370,16 @@ def main(argv: list[str] | None = None) -> int:
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     if database_path.exists():
-        kp, _password = _open_existing_database(database_path)
-        mode = "updated"
+        try:
+            kp, _password = _open_existing_database(database_path)
+            mode = "updated"
+        except SystemExit as open_error:
+            if "not a KeePass database" not in str(open_error):
+                raise
+            quarantined_path = _quarantine_non_keepass_file(database_path)
+            print(f"Moved non-KeePass file to: {quarantined_path}")
+            kp, _password = _create_new_database(database_path)
+            mode = "created"
     else:
         kp, _password = _create_new_database(database_path)
         mode = "created"
