@@ -10,6 +10,7 @@ import typer
 from .config_loader import load_runtime_configuration
 from .context import create_run_context
 from .logging_setup import configure_logging
+from .mode_selector import select_install_mode
 from .models import InstallModesConfig
 from .secrets_store import VaultSecretsStore
 from .task_registry import TaskRegistry
@@ -77,7 +78,12 @@ def run(
         logger=logger,
     )
 
-    selected_tasks = task or _select_mode_tasks(mode=mode, install_modes_path=loaded.install_modes)
+    selected_mode = mode or select_install_mode(
+        install_modes=loaded.install_modes, env=dict(os.environ)
+    )
+    selected_tasks = task or _select_mode_tasks(
+        mode=selected_mode, install_modes_path=loaded.install_modes
+    )
     registry = TaskRegistry(task_catalog=run_context.task_catalog)
     runner = TaskRunner(registry=registry)
     report = runner.run(ctx=run_context, task_names=selected_tasks, force=force)
@@ -88,22 +94,14 @@ def run(
         raise typer.Exit(code=1)
 
 
-def _select_mode_tasks(*, mode: str | None, install_modes_path: InstallModesConfig) -> list[str]:
-    chosen_mode = mode or _detect_default_mode(install_modes_path)
-    if chosen_mode == "minimal":
+def _select_mode_tasks(*, mode: str, install_modes_path: InstallModesConfig) -> list[str]:
+    if mode == "minimal":
         return list(install_modes_path.minimal)
-    if chosen_mode == "server":
+    if mode == "server":
         return list(install_modes_path.server)
-    if chosen_mode == "desktop":
+    if mode == "desktop":
         return list(install_modes_path.desktop)
-    raise ValueError(f"Unknown mode '{chosen_mode}'.")
-
-
-def _detect_default_mode(install_modes_path: InstallModesConfig) -> str:
-    is_desktop = "DISPLAY" in os.environ or "WAYLAND_DISPLAY" in os.environ
-    if is_desktop:
-        return str(install_modes_path.default_desktop_mode)
-    return str(install_modes_path.default_server_mode)
+    raise ValueError(f"Unknown mode '{mode}'.")
 
 
 def main() -> None:
