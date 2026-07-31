@@ -21,6 +21,22 @@ DEFAULT_PIP_CACHE = Path.home() / ".cache" / "pyntara" / "pip"
 PIP_INSTALL_TIMEOUT_SEC = 1200
 
 
+def _venv_has_pykeepass(python_bin: Path) -> bool:
+    """Return True when the target runtime can import pykeepass."""
+
+    try:
+        check_result = subprocess.run(
+            [str(python_bin), "-c", "import pykeepass"],
+            check=False,
+            timeout=PIP_INSTALL_TIMEOUT_SEC,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return check_result.returncode == 0
+
+
 def _ensure_pykeepass_venv() -> Path:
     """Install pykeepass into a user-level virtualenv and return its Python binary."""
 
@@ -38,6 +54,9 @@ def _ensure_pykeepass_venv() -> Path:
             timeout=PIP_INSTALL_TIMEOUT_SEC,
         )
 
+    if _venv_has_pykeepass(python_bin):
+        return python_bin
+
     pip_cache_dir = Path(
         os.environ.get("PIP_CACHE_DIR", str(DEFAULT_PIP_CACHE))
     ).expanduser()
@@ -45,7 +64,13 @@ def _ensure_pykeepass_venv() -> Path:
     install_env = dict(os.environ)
     install_env["PIP_CACHE_DIR"] = str(pip_cache_dir)
     subprocess.run(
-        [str(pip_bin), "install", "pykeepass>=4.1.1"],
+        [
+            str(pip_bin),
+            "install",
+            "--disable-pip-version-check",
+            "--quiet",
+            "pykeepass>=4.1.1",
+        ],
         check=True,
         timeout=PIP_INSTALL_TIMEOUT_SEC,
         env=install_env,
@@ -73,7 +98,7 @@ def _bootstrap_and_reexec() -> None:
 
 try:
     from pykeepass import PyKeePass, create_database
-    from pykeepass.exceptions import CredentialsError
+    from pykeepass.exceptions import CredentialsError, HeaderChecksumError
 except ModuleNotFoundError as import_error:
     if shutil.which("uv"):
         raise SystemExit(
@@ -212,6 +237,8 @@ def _open_existing_database(path: Path) -> tuple[PyKeePass, str]:
         except CredentialsError:
             attempts_left -= 1
             print(f"Wrong password. Attempts left: {attempts_left}", file=sys.stderr)
+        except HeaderChecksumError as checksum_error:
+            raise SystemExit(f"File is not a KeePass database: {path}") from checksum_error
         except ValueError as value_error:
             attempts_left -= 1
             print(str(value_error), file=sys.stderr)
