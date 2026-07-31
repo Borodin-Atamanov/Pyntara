@@ -7,6 +7,7 @@ Pyntara is a Kubuntu automation system with an idempotent task model and strict 
 - Runtime architecture contract: `docs/architecture.md`
 - Repository layout contract: `docs/project-structure.md`
 - Project-wide defaults: `docs/project-rules.md`
+- Main agent specification: `AGENTS.md`
 
 ## Run
 
