@@ -297,7 +297,7 @@ bootstrap_python_env() {
 run_pyntara() {
   cd "${SCRIPT_DIR}"
   log "Starting Pyntara CLI"
-  run_logged timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara run
+  run_logged timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara
 }
 
 # Main bootstrap flow:

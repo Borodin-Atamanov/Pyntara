@@ -123,7 +123,8 @@ def test_bootstrap_uses_persistent_git_cache_when_piped(tmp_path: Path) -> None:
     assert "git --git-dir" in trace and "fetch --depth 1 --prune origin main" in trace
     assert "git --git-dir" in trace and "archive --format=tar --output" in trace
     assert "uv sync --locked" in trace
-    assert "uv run pyntara run" in trace
+    assert "uv run pyntara" in trace
+    assert "uv run pyntara run" not in trace
 
 
 def test_bootstrap_falls_back_to_local_branch_ref_when_origin_ref_is_missing(
@@ -371,4 +372,5 @@ def test_bootstrap_uses_local_source_without_git(tmp_path: Path) -> None:
     trace = trace_path.read_text(encoding="utf-8")
     assert "git " not in trace
     assert "uv sync --locked" in trace
-    assert "uv run pyntara run" in trace
+    assert "uv run pyntara" in trace
+    assert "uv run pyntara run" not in trace
