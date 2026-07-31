@@ -1,0 +1,21 @@
+tasks:
+  - name: hostname
+    order: 10
+    description: Generate and persist random 9-character hostname.
+    module: pyntara.tasks.hostname:run
+    idempotent: true
+    default_enabled: true
+    timeout_sec: 30
+    depends_on: []
+    data_subdir: hostname
+  - name: users
+    order: 20
+    description: Ensure i, j, and k users are prepared for provisioning.
+    module: pyntara.tasks.users:run
+    idempotent: true
+    default_enabled: true
+    timeout_sec: 30
+    depends_on:
+      - hostname
+    data_subdir: users
+

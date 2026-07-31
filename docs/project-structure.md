@@ -19,6 +19,13 @@ This document defines the target repository layout for Pyntara and explains what
 | `install_modes.yaml` | Mode presets (`minimal`, `server`, `desktop`) and default mode selection. |
 | `ntp_servers.txt` | Prioritized NTP server list for time synchronization tasks. |
 
+### `docs/`
+
+| Path | Purpose |
+|---|---|
+| `docs/project-structure.md` | Canonical overview of repository layout and file responsibilities. |
+| `docs/project-rules.md` | Project-wide defaults for command output and datetime format. |
+
 ## Directories
 
 ### `secrets/`
@@ -103,3 +110,4 @@ This document defines the target repository layout for Pyntara and explains what
 - This file describes the **target** structure for the project as implementation work progresses.
 - Runtime-generated sensitive data must not be committed.
 - Task implementations must stay idempotent and use explicit dependency passing via `RunContext`.
+- Default datetime format is `YYYY-MM-DD-HH-MM-SS` unless a compatibility exception is required.
