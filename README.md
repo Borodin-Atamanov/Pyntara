@@ -8,6 +8,13 @@ Pyntara is a Kubuntu automation system with an idempotent task model and strict 
 curl -fsSL https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/i.sh | sudo bash
 ```
 
+## Development checks
+
+```bash
+make test
+make check
+```
+
 ## Project-wide defaults
 
 - By default, every command must stream output to the screen and be written to a log file.

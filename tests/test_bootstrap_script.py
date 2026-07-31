@@ -16,7 +16,10 @@ def _build_source_tar(archive_path: Path) -> None:
     source_root = archive_path.parent / "repo-tree"
     project_dir = source_root / "Pyntara-main"
     project_dir.mkdir(parents=True)
-    (project_dir / "pyproject.toml").write_text("[project]\nname='pyntara'\nversion='0.1.0'\n", encoding="utf-8")
+    (project_dir / "pyproject.toml").write_text(
+        "[project]\nname='pyntara'\nversion='0.1.0'\n",
+        encoding="utf-8",
+    )
     with tarfile.open(archive_path, "w") as archive:
         archive.add(project_dir / "pyproject.toml", arcname="pyproject.toml")
 
@@ -104,7 +107,10 @@ def test_bootstrap_uses_persistent_git_cache_when_piped(tmp_path: Path) -> None:
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
     trace = trace_path.read_text(encoding="utf-8")
-    assert "git clone --bare --depth 1 --branch main https://github.com/Borodin-Atamanov/Pyntara.git" in trace
+    assert (
+        "git clone --bare --depth 1 --branch main "
+        "https://github.com/Borodin-Atamanov/Pyntara.git"
+    ) in trace
     assert "git --git-dir" in trace and "fetch --depth 1 --prune origin main" in trace
     assert "git --git-dir" in trace and "archive --format=tar --output" in trace
     assert "uv sync --locked" in trace
@@ -117,7 +123,10 @@ def test_bootstrap_uses_local_source_without_git(tmp_path: Path) -> None:
     local_source.mkdir()
     script_path = local_source / "i.sh"
     script_path.write_text(script_src.read_text(encoding="utf-8"), encoding="utf-8")
-    (local_source / "pyproject.toml").write_text("[project]\nname='pyntara'\nversion='0.1.0'\n", encoding="utf-8")
+    (local_source / "pyproject.toml").write_text(
+        "[project]\nname='pyntara'\nversion='0.1.0'\n",
+        encoding="utf-8",
+    )
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
