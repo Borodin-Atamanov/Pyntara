@@ -111,7 +111,7 @@ sync_cached_repository() {
   mkdir -p "$(dirname "${REPO_CACHE_DIR}")"
 
   if [[ -d "${REPO_CACHE_DIR}" ]]; then
-    if ! run_logged timeout "${GIT_FETCH_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" fetch --depth 1 --prune origin "${PYNTARA_SOURCE_REF}"; then
+    if ! run_logged timeout "${GIT_FETCH_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" fetch --depth 1 --prune origin "+refs/heads/${PYNTARA_SOURCE_REF}:refs/heads/${PYNTARA_SOURCE_REF}"; then
       return "${EXIT_ERROR}"
     fi
     return "${EXIT_OK}"
@@ -130,9 +130,10 @@ populate_workspace_from_cache() {
   local candidate_ref=""
 
   # Bare repositories may not have origin/<branch> as a valid revision.
-  # Prefer origin/<branch>, then local <branch>, then FETCH_HEAD from recent fetch.
+  # Prefer the just-fetched FETCH_HEAD to avoid stale local refs in long-lived bare caches.
+  # Then fallback to local/remote refs for clone-first or offline-style scenarios.
   # Some caches keep a ref that resolves but points to an object that archive cannot read.
-  for candidate_ref in "origin/${PYNTARA_SOURCE_REF}" "${PYNTARA_SOURCE_REF}" "FETCH_HEAD"; do
+  for candidate_ref in "FETCH_HEAD" "origin/${PYNTARA_SOURCE_REF}" "${PYNTARA_SOURCE_REF}"; do
     if ! timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" rev-parse --verify --quiet "${candidate_ref}" &>/dev/null; then
       continue
     fi
@@ -143,7 +144,7 @@ populate_workspace_from_cache() {
   done
 
   if [[ -z "${archive_ref}" ]]; then
-    log "Cannot export workspace tar from refs: origin/${PYNTARA_SOURCE_REF}, ${PYNTARA_SOURCE_REF}, FETCH_HEAD"
+    log "Cannot export workspace tar from refs: FETCH_HEAD, origin/${PYNTARA_SOURCE_REF}, ${PYNTARA_SOURCE_REF}"
     return "${EXIT_ERROR}"
   fi
   if ! run_logged timeout "${GIT_EXPORT_TIMEOUT_SEC}" tar -xf "${source_tar}" -C "${workspace_dir}"; then
