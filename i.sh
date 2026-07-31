@@ -288,8 +288,12 @@ bootstrap_python_env() {
   fi
 
   log "Synchronizing Python environment with uv"
-  # Prefer locked dependencies for reproducibility, then fallback for first-time lock creation.
-  if ! run_logged timeout "${UV_SYNC_TIMEOUT_SEC}" uv sync --locked; then
+  # Prefer locked sync only when lockfile is current. This avoids expected error noise.
+  # Fallback keeps first-run bootstrap working when lockfile is missing/outdated.
+  if timeout "${UV_SYNC_TIMEOUT_SEC}" uv lock --check &>/dev/null; then
+    run_logged timeout "${UV_SYNC_TIMEOUT_SEC}" uv sync --locked
+  else
+    log "uv.lock is missing or outdated; running uv sync without --locked"
     run_logged timeout "${UV_SYNC_TIMEOUT_SEC}" uv sync
   fi
 }

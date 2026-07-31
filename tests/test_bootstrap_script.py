@@ -466,3 +466,92 @@ def test_bootstrap_uses_local_source_without_git(tmp_path: Path) -> None:
     assert "uv sync --locked" in trace
     assert "uv run pyntara" in trace
     assert "uv run pyntara run" not in trace
+
+
+def test_bootstrap_uses_unlocked_sync_when_lock_is_outdated(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script_text = (repo_root / "i.sh").read_text(encoding="utf-8")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    source_tar = tmp_path / "source.tar"
+    _build_source_tar(source_tar)
+
+    _write_executable(
+        fake_bin / "apt-get",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'apt-get %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "uv",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'uv %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == lock && \"$2\" == --check ]]; then\n"
+            "  exit 1\n"
+            "fi\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "git",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'git %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == clone ]]; then\n"
+            "  cache_dir=\"${@: -1}\"\n"
+            "  mkdir -p \"$cache_dir\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"$3\" == rev-parse ]]; then\n"
+            "  ref=\"${@: -1}\"\n"
+            "  if [[ \"$ref\" == FETCH_HEAD ]] || [[ \"$ref\" == main ]] || \\\n"
+            "     [[ \"$ref\" == origin/main ]]; then\n"
+            "    exit 0\n"
+            "  fi\n"
+            "  exit 1\n"
+            "fi\n"
+            "if [[ \"$3\" == archive ]]; then\n"
+            "  output=''\n"
+            "  while (($#)); do\n"
+            "    if [[ \"$1\" == --output ]]; then\n"
+            "      output=\"$2\"\n"
+            "      break\n"
+            "    fi\n"
+            "    shift\n"
+            "  done\n"
+            "  cp \"$PYNTARA_TEST_SOURCE_TAR\" \"$output\"\n"
+            "  exit 0\n"
+            "fi\n"
+        ),
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["PYNTARA_ROOT_EUID"] = str(os.geteuid())
+    env["PYNTARA_STATE_DIR"] = str(tmp_path / "state")
+    env["PYNTARA_LOG_DIR"] = str(tmp_path / "logs")
+    env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
+    env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
+    env["PYNTARA_TEST_TRACE"] = str(trace_path)
+    env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
+
+    completed = subprocess.run(
+        ["bash"],
+        input=script_text,
+        text=True,
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    trace = trace_path.read_text(encoding="utf-8")
+    assert "uv lock --check" in trace
+    assert "uv sync --locked" not in trace
+    assert "uv sync" in trace
