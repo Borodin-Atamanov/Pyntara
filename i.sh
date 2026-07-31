@@ -33,6 +33,7 @@ PYNTARA_SOURCE_REPO="${PYNTARA_SOURCE_REPO:-Borodin-Atamanov/Pyntara}"
 PYNTARA_SOURCE_REF="${PYNTARA_SOURCE_REF:-main}"
 UV_TARGET_USER="${PYNTARA_UV_USER:-${SUDO_USER:-i}}"
 UV_TARGET_HOME="${PYNTARA_UV_USER_HOME:-}"
+PYNTARA_CLI_STDIN_PATH="${PYNTARA_CLI_STDIN_PATH:-/dev/tty}"
 SOURCE_REMOTE_URL="https://github.com/${PYNTARA_SOURCE_REPO}.git"
 SCRIPT_DIR=""
 BOOTSTRAP_SOURCE_DIR=""
@@ -347,6 +348,15 @@ bootstrap_python_env() {
 run_pyntara() {
   cd "${SCRIPT_DIR}"
   log "Starting Pyntara CLI"
+  if exec 3<"${PYNTARA_CLI_STDIN_PATH}"; then
+    log "Using CLI stdin source: ${PYNTARA_CLI_STDIN_PATH}"
+    log "Running: timeout ${PYNTARA_RUN_TIMEOUT_SEC} uv run pyntara"
+    timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara <&3 |& tee -a "${LOG_FILE}"
+    local run_status="${PIPESTATUS[${PRIMARY_PIPESTATUS_INDEX}]}"
+    exec 3<&-
+    return "${run_status}"
+  fi
+  log "CLI stdin source is unavailable: ${PYNTARA_CLI_STDIN_PATH}"
   run_logged timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara
 }
 
