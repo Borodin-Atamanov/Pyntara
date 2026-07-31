@@ -17,8 +17,8 @@ try:
     from pykeepass.exceptions import CredentialsError
 except ModuleNotFoundError as import_error:
     raise SystemExit(
-        "pykeepass is required. Install it first, for example:\n"
-        "  uv pip install pykeepass"
+        "pykeepass is required. Sync project dependencies first, for example:\n"
+        "  uv sync"
     ) from import_error
 
 

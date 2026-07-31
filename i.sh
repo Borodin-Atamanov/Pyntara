@@ -28,6 +28,7 @@ UV_ROOT_BIN="/root/.local/bin/uv"
 UV_GLOBAL_BIN="/usr/local/bin/uv"
 WORK_BASE_DIR="${PYNTARA_WORK_BASE_DIR:-/var/lib/pyntara/workspaces}"
 REPO_CACHE_DIR="${PYNTARA_REPO_CACHE_DIR:-/var/cache/pyntara/repos/Pyntara.git}"
+UV_CACHE_DIR="${PYNTARA_UV_CACHE_DIR:-/var/cache/pyntara/uv}"
 PYNTARA_SOURCE_REPO="${PYNTARA_SOURCE_REPO:-Borodin-Atamanov/Pyntara}"
 PYNTARA_SOURCE_REF="${PYNTARA_SOURCE_REF:-main}"
 SOURCE_REMOTE_URL="https://github.com/${PYNTARA_SOURCE_REPO}.git"
@@ -55,6 +56,8 @@ LOG_DIR="${PYNTARA_LOG_DIR:-/var/log/pyntara}"
 LOG_FILE="${LOG_DIR}/install.log"
 mkdir -p "${STATE_DIR}"
 mkdir -p "${LOG_DIR}"
+mkdir -p "${UV_CACHE_DIR}"
+export UV_CACHE_DIR
 
 # Unified logger: same message goes to terminal and install log.
 log() {
