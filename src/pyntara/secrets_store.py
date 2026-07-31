@@ -7,7 +7,13 @@ import yaml
 
 
 class VaultSecretsStore:
-    def __init__(self, *, default_vault: Path, production_vault: Path, use_production: bool) -> None:
+    def __init__(
+        self,
+        *,
+        default_vault: Path,
+        production_vault: Path,
+        use_production: bool,
+    ) -> None:
         self._default_vault = default_vault
         self._production_vault = production_vault
         self._use_production = use_production
@@ -27,4 +33,3 @@ class VaultSecretsStore:
         if not self._loaded:
             raise RuntimeError("Secrets store must be loaded before use.")
         return self._values.get(key, default)
-

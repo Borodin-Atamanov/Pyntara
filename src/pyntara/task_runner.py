@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from .context import RunContext
 from .models import TaskResult
@@ -30,7 +30,9 @@ class TaskRunner:
     def __init__(self, *, registry: TaskRegistry) -> None:
         self._registry = registry
 
-    def run(self, *, ctx: RunContext, task_names: Iterable[str], force: bool = False) -> TaskRunReport:
+    def run(
+        self, *, ctx: RunContext, task_names: Iterable[str], force: bool = False
+    ) -> TaskRunReport:
         ordered_tasks = self._order_tasks(ctx=ctx, selected_task_names=list(task_names))
         executions: list[TaskExecution] = []
         for task_name in ordered_tasks:
@@ -42,7 +44,9 @@ class TaskRunner:
 
             result = registered.runner(ctx, force=force)
             if not result.success:
-                executions.append(TaskExecution(task_name=task_name, status="failed", result=result))
+                executions.append(
+                    TaskExecution(task_name=task_name, status="failed", result=result)
+                )
                 return TaskRunReport(executions=executions)
 
             _mark_completed(state_path)
@@ -101,4 +105,3 @@ def _mark_completed(state_path: Path) -> None:
     payload = {"completed": True}
     with state_path.open("w", encoding="utf-8") as state_file:
         json.dump(payload, state_file)
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 
@@ -19,20 +19,30 @@ app = typer.Typer(help="Pyntara automation CLI.")
 
 @app.command()
 def run(
-    config: Path = typer.Option(Path("config.yaml"), exists=True, dir_okay=False),
-    tasks_config: Path = typer.Option(Path("tasks.yaml"), exists=True, dir_okay=False),
-    install_modes: Path = typer.Option(Path("install_modes.yaml"), exists=True, dir_okay=False),
-    mode: str | None = typer.Option(None, help="Installation mode: minimal/server/desktop."),
-    task: list[str] = typer.Option([], "--task", help="Explicit task names to execute."),
-    force: bool = typer.Option(False, help="Force execution even if task is already completed."),
-    use_production_secrets: bool = typer.Option(
-        False,
-        "--use-production-secrets",
-        help="Load secrets/production.vault instead of secrets/default.vault.",
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path("config.yaml"),
+    tasks_config: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path("tasks.yaml"),
+    install_modes: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
+        "install_modes.yaml"
     ),
-    command_timeout_sec: int | None = typer.Option(None),
-    task_timeout_sec: int | None = typer.Option(None),
-    log_level: str = typer.Option("INFO"),
+    mode: Annotated[
+        str | None, typer.Option(help="Installation mode: minimal/server/desktop.")
+    ] = None,
+    task: Annotated[
+        list[str] | None, typer.Option("--task", help="Explicit task names to execute.")
+    ] = None,
+    force: Annotated[
+        bool, typer.Option(help="Force execution even if task is already completed.")
+    ] = False,
+    use_production_secrets: Annotated[
+        bool,
+        typer.Option(
+            "--use-production-secrets",
+            help="Load secrets/production.vault instead of secrets/default.vault.",
+        ),
+    ] = False,
+    command_timeout_sec: Annotated[int | None, typer.Option()] = None,
+    task_timeout_sec: Annotated[int | None, typer.Option()] = None,
+    log_level: Annotated[str, typer.Option()] = "INFO",
 ) -> None:
     logger = configure_logging(level=log_level)
 

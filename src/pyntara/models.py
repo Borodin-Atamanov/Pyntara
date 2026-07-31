@@ -55,7 +55,7 @@ class TaskDefinition(BaseModel):
     data_subdir: str | None = None
 
     @model_validator(mode="after")
-    def validate_dependencies(self) -> "TaskDefinition":
+    def validate_dependencies(self) -> TaskDefinition:
         unique_deps = set(self.depends_on)
         if self.name in unique_deps:
             raise ValueError("Task cannot depend on itself.")

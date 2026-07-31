@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
 import os
 import subprocess
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
 
 
 def run_command(

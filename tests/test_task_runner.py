@@ -3,8 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pyntara.context import create_run_context
-from pyntara.context import RunContext
+from pyntara.context import RunContext, create_run_context
 from pyntara.models import AppConfig, InstallModesConfig, TaskDefinition
 from pyntara.task_registry import TaskRegistry
 from pyntara.task_runner import TaskRunner

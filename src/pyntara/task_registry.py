@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Mapping, cast
+from typing import cast
 
 from .models import TaskDefinition
 from .task_protocol import TaskCallable
@@ -41,4 +42,3 @@ def _import_task_runner(module_ref: str) -> TaskCallable:
         raise ValueError(f"Task callable '{module_ref}' must accept 'ctx'.")
 
     return cast(TaskCallable, candidate)
-
