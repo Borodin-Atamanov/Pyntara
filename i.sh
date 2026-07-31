@@ -126,8 +126,22 @@ sync_cached_repository() {
 populate_workspace_from_cache() {
   local workspace_dir="$1"
   local source_tar="${workspace_dir}/source.tar"
+  local archive_ref=""
 
-  if ! run_logged timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" archive --format=tar --output "${source_tar}" "origin/${PYNTARA_SOURCE_REF}"; then
+  # Bare repositories may not have origin/<branch> as a valid revision.
+  # Prefer origin/<branch>, then local <branch>, then FETCH_HEAD from recent fetch.
+  if timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" rev-parse --verify --quiet "origin/${PYNTARA_SOURCE_REF}" &>/dev/null; then
+    archive_ref="origin/${PYNTARA_SOURCE_REF}"
+  elif timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" rev-parse --verify --quiet "${PYNTARA_SOURCE_REF}" &>/dev/null; then
+    archive_ref="${PYNTARA_SOURCE_REF}"
+  elif timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" rev-parse --verify --quiet "FETCH_HEAD" &>/dev/null; then
+    archive_ref="FETCH_HEAD"
+  else
+    log "Cannot resolve git ref for archive: origin/${PYNTARA_SOURCE_REF}, ${PYNTARA_SOURCE_REF}, FETCH_HEAD"
+    return "${EXIT_ERROR}"
+  fi
+
+  if ! run_logged timeout "${GIT_EXPORT_TIMEOUT_SEC}" git --git-dir "${REPO_CACHE_DIR}" archive --format=tar --output "${source_tar}" "${archive_ref}"; then
     return "${EXIT_ERROR}"
   fi
   if ! run_logged timeout "${GIT_EXPORT_TIMEOUT_SEC}" tar -xf "${source_tar}" -C "${workspace_dir}"; then
