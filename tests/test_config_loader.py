@@ -96,3 +96,43 @@ def test_install_mode_must_reference_existing_tasks(tmp_path: Path) -> None:
             env={},
         )
 
+
+def test_task_conflict_must_reference_existing_task(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("target_platform: kubuntu-26.04\n", encoding="utf-8")
+
+    tasks_path = tmp_path / "tasks.yaml"
+    tasks_path.write_text(
+        "\n".join(
+            [
+                "tasks:",
+                "  - name: hostname",
+                "    order: 10",
+                "    description: host",
+                "    module: pyntara.tasks.hostname:run",
+                "    depends_on: []",
+                "    conflicts_with: [ghost_task]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    install_modes_path = tmp_path / "install_modes.yaml"
+    install_modes_path.write_text(
+        "\n".join(
+            [
+                "minimal: [hostname]",
+                "server: [hostname]",
+                "desktop: [hostname]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unknown conflict 'ghost_task'"):
+        load_runtime_configuration(
+            config_path=config_path,
+            tasks_path=tasks_path,
+            install_modes_path=install_modes_path,
+            env={},
+        )

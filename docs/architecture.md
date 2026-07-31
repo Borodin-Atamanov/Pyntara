@@ -64,12 +64,28 @@ Task entrypoints use structural typing (`typing.Protocol`) from `task_protocol.p
 
 Task-to-task data sharing is allowed only through explicit arguments or `RunContext` dependencies.
 
+Task definitions are declarative manifests loaded from `tasks.yaml`.
+Each task manifest includes runtime execution metadata such as:
+
+- dependencies (`depends_on`);
+- conflicts (`conflicts_with`);
+- capability requirements (`requires_root`, `requires_network`, `requires_secrets`);
+- timeout and state schema version (`timeout_sec`, `state_version`);
+- idempotency control flags.
+
 ## 6. State and side effects
 
 Allowed explicit shared state channels:
 
 - encrypted vault files (`secrets/*.vault`);
 - task state files under `task_data/<task-name>/`.
+
+Task state is persisted in JSON and must keep at least:
+
+- `status` (`pending`, `running`, `done`, `failed`, `skipped`);
+- run timestamps and attempt counter;
+- input fingerprint for idempotent skip decisions;
+- structured error and result fields.
 
 Forbidden patterns:
 

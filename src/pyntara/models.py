@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -52,7 +53,13 @@ class TaskDefinition(BaseModel):
     default_enabled: bool = True
     timeout_sec: int = Field(default=300, ge=1)
     depends_on: list[str] = Field(default_factory=list)
+    conflicts_with: list[str] = Field(default_factory=list)
     data_subdir: str | None = None
+    requires_root: bool = False
+    requires_network: bool = False
+    requires_secrets: bool = False
+    reboot_sensitive: bool = False
+    state_version: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> TaskDefinition:
@@ -61,6 +68,13 @@ class TaskDefinition(BaseModel):
             raise ValueError("Task cannot depend on itself.")
         if len(unique_deps) != len(self.depends_on):
             raise ValueError("Task dependencies must be unique.")
+        unique_conflicts = set(self.conflicts_with)
+        if self.name in unique_conflicts:
+            raise ValueError("Task cannot conflict with itself.")
+        if len(unique_conflicts) != len(self.conflicts_with):
+            raise ValueError("Task conflicts must be unique.")
+        if unique_deps.intersection(unique_conflicts):
+            raise ValueError("Task dependency cannot be listed as a conflict.")
         return self
 
 
@@ -81,3 +95,6 @@ class TaskResult:
     changed: bool
     message: str | None = None
     error: str | None = None
+
+
+TaskStateStatus = Literal["pending", "running", "done", "failed", "skipped"]

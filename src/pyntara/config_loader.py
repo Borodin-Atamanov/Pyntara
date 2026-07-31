@@ -94,6 +94,11 @@ def _validate_catalog(
                 raise ValueError(
                     f"Unknown dependency '{dependency}' declared by task '{task_name}'."
                 )
+        for conflict in task_def.conflicts_with:
+            if conflict not in task_catalog:
+                raise ValueError(
+                    f"Unknown conflict '{conflict}' declared by task '{task_name}'."
+                )
 
 
 def _parse_env_overrides(*, env: Mapping[str, str] | None) -> dict[str, Any]:
