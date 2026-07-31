@@ -31,6 +31,8 @@ REPO_CACHE_DIR="${PYNTARA_REPO_CACHE_DIR:-/var/cache/pyntara/repos/Pyntara.git}"
 UV_CACHE_DIR="${PYNTARA_UV_CACHE_DIR:-/var/cache/pyntara/uv}"
 PYNTARA_SOURCE_REPO="${PYNTARA_SOURCE_REPO:-Borodin-Atamanov/Pyntara}"
 PYNTARA_SOURCE_REF="${PYNTARA_SOURCE_REF:-main}"
+UV_TARGET_USER="${PYNTARA_UV_USER:-${SUDO_USER:-i}}"
+UV_TARGET_HOME="${PYNTARA_UV_USER_HOME:-}"
 SOURCE_REMOTE_URL="https://github.com/${PYNTARA_SOURCE_REPO}.git"
 SCRIPT_DIR=""
 BOOTSTRAP_SOURCE_DIR=""
@@ -274,6 +276,41 @@ install_uv() {
   fi
 }
 
+# Ensure uv is also reachable from a regular user account, not only from root PATH.
+expose_uv_for_regular_user() {
+  local target_user="${UV_TARGET_USER}"
+  local target_home="${UV_TARGET_HOME}"
+  local uv_bin
+
+  if [[ -z "${target_user}" ]]; then
+    log "Skipping user-level uv link: target user is empty."
+    return "${EXIT_OK}"
+  fi
+
+  if ! id "${target_user}" &>/dev/null; then
+    log "Skipping user-level uv link: user ${target_user} does not exist yet."
+    return "${EXIT_OK}"
+  fi
+
+  if [[ -z "${target_home}" ]]; then
+    target_home="$(getent passwd "${target_user}" | cut -d: -f6)"
+  fi
+  if [[ -z "${target_home}" ]]; then
+    log "Skipping user-level uv link: cannot resolve home for ${target_user}."
+    return "${EXIT_OK}"
+  fi
+
+  uv_bin="$(command -v uv || true)"
+  if [[ -z "${uv_bin}" ]]; then
+    log "Skipping user-level uv link: uv is not available in PATH."
+    return "${EXIT_OK}"
+  fi
+
+  mkdir -p "${target_home}/.local/bin"
+  ln -sf "${uv_bin}" "${target_home}/.local/bin/uv"
+  chown -h "${target_user}:${target_user}" "${target_home}/.local/bin/uv"
+}
+
 # Basic platform sanity check. Script is optimized for Ubuntu/Kubuntu behavior.
 verify_environment() {
   if [[ ! -f /etc/os-release ]]; then
@@ -327,6 +364,7 @@ main() {
     run_with_retry "${RETRY_MAX_ATTEMPTS}" install_apt_packages
   fi
   run_with_retry "${RETRY_MAX_ATTEMPTS}" install_uv
+  run_with_retry "${RETRY_MAX_ATTEMPTS}" expose_uv_for_regular_user
 
   require_command python3
   require_command uv

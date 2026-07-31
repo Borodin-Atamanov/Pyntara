@@ -96,6 +96,8 @@ def test_bootstrap_uses_persistent_git_cache_when_piped(tmp_path: Path) -> None:
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
@@ -132,6 +134,7 @@ def test_bootstrap_uses_persistent_git_cache_when_piped(tmp_path: Path) -> None:
     assert "git --git-dir" in trace and "archive --format=tar --output" in trace
     assert "uv sync --locked" in trace
     assert f"uv_cache {tmp_path / 'cache' / 'uv'}" in trace
+    assert (tmp_path / "home-user" / ".local" / "bin" / "uv").exists() is True
     assert "uv run pyntara" in trace
     assert "uv run pyntara run" not in trace
 
@@ -211,6 +214,8 @@ def test_bootstrap_falls_back_to_local_branch_ref_when_origin_ref_is_missing(
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
@@ -309,6 +314,8 @@ def test_bootstrap_falls_back_when_origin_ref_archive_fails(tmp_path: Path) -> N
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
@@ -402,6 +409,8 @@ def test_bootstrap_prefers_fetch_head_over_stale_main(tmp_path: Path) -> None:
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
@@ -459,6 +468,8 @@ def test_bootstrap_uses_local_source_without_git(tmp_path: Path) -> None:
     env["PYNTARA_LOG_DIR"] = str(tmp_path / "logs")
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
 
     completed = subprocess.run(
@@ -548,6 +559,8 @@ def test_bootstrap_uses_unlocked_sync_when_lock_is_outdated(tmp_path: Path) -> N
     env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
     env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
@@ -644,6 +657,8 @@ def test_bootstrap_creates_global_uv_link_when_uv_exists_only_in_root_path(
     env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
     env["PYNTARA_UV_ROOT_BIN"] = str(root_uv_bin)
     env["PYNTARA_UV_GLOBAL_BIN"] = str(global_uv_bin)
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
 
