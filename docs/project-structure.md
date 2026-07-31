@@ -23,6 +23,7 @@ This document defines the target repository layout for Pyntara and explains what
 
 | Path | Purpose |
 |---|---|
+| `docs/architecture.md` | Runtime architecture baseline and enforced component boundaries. |
 | `docs/project-structure.md` | Canonical overview of repository layout and file responsibilities. |
 | `docs/project-rules.md` | Project-wide defaults for command output and datetime format. |
 
@@ -85,6 +86,7 @@ This document defines the target repository layout for Pyntara and explains what
 |---|---|
 | `tests/test_context.py` | `RunContext` and dependency wiring tests. |
 | `tests/test_config_loader.py` | Config source priority and validation tests. |
+| `tests/test_task_registry.py` | Task contract and callable validation tests. |
 | `tests/test_secrets_store.py` | Secret loading and no-regeneration-on-rerun tests. |
 | `tests/test_task_runner.py` | Idempotency, force-mode, ordering, and failure-path tests. |
 | `tests/test_telemetry.py` | Retry strategy, schedule logic, and encrypted-payload behavior tests. |
