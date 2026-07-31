@@ -64,6 +64,7 @@ def test_load_reads_keepass_vault_without_utf8_decode_error(
             return FakeDatabase()
 
     monkeypatch.setattr("pyntara.secrets_store._import_pykeepass", lambda: FakePyKeePassModule())
+    monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: True)
     store = VaultSecretsStore(
         default_vault=default_vault,
         production_vault=production_vault,
@@ -94,6 +95,7 @@ def test_load_raises_after_keepass_password_attempts_exhausted(
             raise FakePyKeePassModule.CredentialsError("wrong")
 
     monkeypatch.setattr("pyntara.secrets_store._import_pykeepass", lambda: FakePyKeePassModule())
+    monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: True)
     store = VaultSecretsStore(
         default_vault=default_vault,
         production_vault=production_vault,
@@ -102,4 +104,34 @@ def test_load_raises_after_keepass_password_attempts_exhausted(
     )
 
     with pytest.raises(RuntimeError, match="password attempts exhausted"):
+        store.load()
+
+
+def test_load_fails_fast_when_noninteractive_keepass_has_no_env_password(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    default_vault = tmp_path / "default.vault"
+    production_vault = tmp_path / "production.vault"
+    default_vault.write_bytes(b"\x03\xd9\xa2\x9a\x00\x00\x00\x00")
+    production_vault.write_text("unused: true\n", encoding="utf-8")
+
+    class FakePyKeePassModule:
+        class CredentialsError(Exception):
+            pass
+
+        @staticmethod
+        def open(vault_path: Path, *, password: str) -> object:
+            del vault_path, password
+            raise AssertionError("KeePass open should not be called without available prompt.")
+
+    monkeypatch.setattr("pyntara.secrets_store._import_pykeepass", lambda: FakePyKeePassModule())
+    monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: False)
+    monkeypatch.delenv("PYNTARA_VAULT_PASSWORD", raising=False)
+    store = VaultSecretsStore(
+        default_vault=default_vault,
+        production_vault=production_vault,
+        use_production=False,
+    )
+
+    with pytest.raises(RuntimeError, match="interactive prompt is unavailable"):
         store.load()

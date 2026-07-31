@@ -3,6 +3,7 @@ from __future__ import annotations
 import getpass
 import importlib
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
@@ -106,13 +107,19 @@ def _open_keepass_database(
     vault_path: Path,
     password_provider: Callable[[Path], str],
 ) -> _KeepassDatabase:
-    for _ in range(_PASSWORD_ATTEMPTS):
+    for attempt in range(1, _PASSWORD_ATTEMPTS + 1):
         password = _password_from_env_or_prompt(
             vault_path=vault_path, password_provider=password_provider
         )
         try:
             return pykeepass.open(vault_path, password=password)
         except pykeepass.CredentialsError:
+            attempts_left = _PASSWORD_ATTEMPTS - attempt
+            if attempts_left > 0:
+                print(
+                    f"Wrong KeePass password for {vault_path.name}. Attempts left: {attempts_left}",
+                    file=sys.stderr,
+                )
             continue
     raise RuntimeError("Failed to open KeePass vault: password attempts exhausted.")
 
@@ -139,11 +146,30 @@ def _password_from_env_or_prompt(
     password_from_env = os.environ.get("PYNTARA_VAULT_PASSWORD")
     if password_from_env is not None:
         return password_from_env
+    if password_provider is _default_password_provider and not _interactive_prompt_available():
+        raise RuntimeError(
+            "KeePass password is required, but interactive prompt is unavailable. "
+            "Set PYNTARA_VAULT_PASSWORD for non-interactive bootstrap."
+        )
     return password_provider(vault_path)
 
 
 def _default_password_provider(vault_path: Path) -> str:
+    print(
+        f"KeePass password is required to open {vault_path.name}. Input is hidden.",
+        file=sys.stderr,
+    )
     return getpass.getpass(f"KeePass password for {vault_path.name}: ")
+
+
+def _interactive_prompt_available() -> bool:
+    if sys.stdin.isatty() or sys.stderr.isatty():
+        return True
+    try:
+        with Path("/dev/tty").open("r", encoding="utf-8"):
+            return True
+    except OSError:
+        return False
 
 
 def _import_pykeepass() -> _PyKeePassModule:
