@@ -24,8 +24,8 @@ APT_UPDATE_TTL_SEC=3600
 TIMESTAMP_FORMAT="+%Y-%m-%d-%H-%M-%S"
 STATE_DIR="${PYNTARA_STATE_DIR:-/var/lib/pyntara}"
 APT_UPDATE_STAMP="${STATE_DIR}/apt-update.stamp"
-UV_ROOT_BIN="/root/.local/bin/uv"
-UV_GLOBAL_BIN="/usr/local/bin/uv"
+UV_ROOT_BIN="${PYNTARA_UV_ROOT_BIN:-/root/.local/bin/uv}"
+UV_GLOBAL_BIN="${PYNTARA_UV_GLOBAL_BIN:-/usr/local/bin/uv}"
 WORK_BASE_DIR="${PYNTARA_WORK_BASE_DIR:-/var/lib/pyntara/workspaces}"
 REPO_CACHE_DIR="${PYNTARA_REPO_CACHE_DIR:-/var/cache/pyntara/repos/Pyntara.git}"
 UV_CACHE_DIR="${PYNTARA_UV_CACHE_DIR:-/var/cache/pyntara/uv}"
@@ -248,6 +248,11 @@ update_apt_stamp() {
 
 # Install uv only when missing to keep reruns fast and idempotent.
 install_uv() {
+  if [[ -x "${UV_ROOT_BIN}" ]]; then
+    # Keep uv accessible for non-root interactive shells as a stable global entrypoint.
+    ln -sf "${UV_ROOT_BIN}" "${UV_GLOBAL_BIN}"
+  fi
+
   if command -v uv &>/dev/null; then
     log "uv is already installed"
     return "${EXIT_OK}"
@@ -259,7 +264,7 @@ install_uv() {
   fi
 
   if [[ -x "${UV_ROOT_BIN}" ]]; then
-    # Expose uv in a global PATH location for root/system scripts.
+    # Expose uv in a global PATH location for root/system scripts and user shells.
     ln -sf "${UV_ROOT_BIN}" "${UV_GLOBAL_BIN}"
   fi
 
