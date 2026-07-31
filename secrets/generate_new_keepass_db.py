@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,9 +17,13 @@ try:
     from pykeepass import PyKeePass, create_database
     from pykeepass.exceptions import CredentialsError
 except ModuleNotFoundError as import_error:
+    if shutil.which("uv"):
+        install_hint = "  uv sync"
+    else:
+        install_hint = "  python3 -m pip install --user pykeepass"
     raise SystemExit(
-        "pykeepass is required. Sync project dependencies first, for example:\n"
-        "  uv sync"
+        "pykeepass is required. Install dependencies first, for example:\n"
+        f"{install_hint}"
     ) from import_error
 
 
