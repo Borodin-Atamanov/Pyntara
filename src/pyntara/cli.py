@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -105,5 +106,14 @@ def _detect_default_mode(install_modes_path: InstallModesConfig) -> str:
     return str(install_modes_path.default_server_mode)
 
 
+def main() -> None:
+    # Backward compatibility: old bootstrap scripts invoke `pyntara run`.
+    # The current CLI is a single-command app, so we normalize that legacy prefix.
+    argv = list(sys.argv[1:])
+    if argv[:1] == ["run"]:
+        argv = argv[1:]
+    app(args=argv)
+
+
 if __name__ == "__main__":
-    app()
+    main()

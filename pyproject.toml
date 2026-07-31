@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-pyntara = "pyntara.cli:app"
+pyntara = "pyntara.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
