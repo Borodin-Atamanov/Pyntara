@@ -8,23 +8,79 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+SELF_BOOTSTRAP_SENTINEL = "PYNTARA_KEEPASS_SELF_BOOTSTRAP"
+DEFAULT_KEEPASS_VENV = Path.home() / ".cache" / "pyntara" / "venvs" / "keepass-tools"
+DEFAULT_PIP_CACHE = Path.home() / ".cache" / "pyntara" / "pip"
+PIP_INSTALL_TIMEOUT_SEC = 1200
+
+
+def _ensure_pykeepass_venv() -> Path:
+    """Install pykeepass into a user-level virtualenv and return its Python binary."""
+
+    venv_dir = Path(
+        os.environ.get("PYNTARA_KEEPASS_VENV_DIR", str(DEFAULT_KEEPASS_VENV))
+    ).expanduser()
+    python_bin = venv_dir / "bin" / "python3"
+    pip_bin = venv_dir / "bin" / "pip"
+
+    if not python_bin.exists():
+        venv_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            check=True,
+            timeout=PIP_INSTALL_TIMEOUT_SEC,
+        )
+
+    pip_cache_dir = Path(
+        os.environ.get("PIP_CACHE_DIR", str(DEFAULT_PIP_CACHE))
+    ).expanduser()
+    pip_cache_dir.mkdir(parents=True, exist_ok=True)
+    install_env = dict(os.environ)
+    install_env["PIP_CACHE_DIR"] = str(pip_cache_dir)
+    subprocess.run(
+        [str(pip_bin), "install", "pykeepass>=4.1.1"],
+        check=True,
+        timeout=PIP_INSTALL_TIMEOUT_SEC,
+        env=install_env,
+    )
+    return python_bin
+
+
+def _bootstrap_and_reexec() -> None:
+    """Ensure pykeepass is available in a local runtime and restart this script."""
+
+    if os.environ.get(SELF_BOOTSTRAP_SENTINEL) == "1":
+        raise SystemExit(
+            "pykeepass is still unavailable after automatic setup."
+        )
+
+    python_bin = _ensure_pykeepass_venv()
+    next_env = dict(os.environ)
+    next_env[SELF_BOOTSTRAP_SENTINEL] = "1"
+    os.execve(
+        str(python_bin),
+        [str(python_bin), str(Path(__file__).resolve()), *sys.argv[1:]],
+        next_env,
+    )
+
 
 try:
     from pykeepass import PyKeePass, create_database
     from pykeepass.exceptions import CredentialsError
 except ModuleNotFoundError as import_error:
     if shutil.which("uv"):
-        install_hint = "  uv sync"
-    else:
-        install_hint = "  python3 -m pip install --user pykeepass"
-    raise SystemExit(
-        "pykeepass is required. Install dependencies first, for example:\n"
-        f"{install_hint}"
-    ) from import_error
+        raise SystemExit(
+            "pykeepass is required. Install dependencies first, for example:\n"
+            "  uv sync"
+        ) from import_error
+    _bootstrap_and_reexec()
 
 
 # Bump this when the baseline structure changes in this file.
