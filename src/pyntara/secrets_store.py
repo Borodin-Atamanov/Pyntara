@@ -217,16 +217,30 @@ def _interactive_prompt_available() -> bool:
 def _read_password_hidden(prompt: str) -> str | None:
     """Read a password from the terminal with echo disabled.
 
-    Tries /dev/tty first (primary path for hidden input), then falls
-    back to sys.stdin if it is a TTY. Uses termios to disable echo.
+    Tries fd 3 (/dev/tty opened by i.sh), then /dev/tty directly,
+    then sys.stdin if it is a TTY. Uses termios to disable echo.
 
-    Returns the password string, or None if no TTY is available.
+    fd 3 is preferred because it is the actual /dev/tty fd opened by
+    the parent process (i.sh's exec 3<"/dev/tty"), which is inherited
+    by the uv run subprocess. This bypasses any pipe that uv may have
+    inserted as stdin.
     """
-    # Try /dev/tty first — this is the most reliable path
+    fd = -1
+
+    # Try fd 3 first — opened by i.sh: exec 3<"${PYNTARA_CLI_STDIN_PATH}"
+    # This fd is inherited by the uv run subprocess and points to the
+    # real terminal, bypassing any pipe uv may have created for stdin.
     try:
-        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
-    except OSError:
-        fd = -1
+        if os.isatty(3):
+            fd = 3
+    except (OSError, ValueError):
+        pass
+
+    if fd < 0:
+        try:
+            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+        except OSError:
+            fd = -1
 
     if fd < 0 and sys.stdin.isatty():
         fd = sys.stdin.fileno()
@@ -237,7 +251,6 @@ def _read_password_hidden(prompt: str) -> str | None:
     try:
         old_settings = termios.tcgetattr(fd)
         new_settings = termios.tcgetattr(fd)
-        # Disable ECHO (bit 3) and ECHONL (bit 6) for hidden input
         new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ECHONL)
         try:
             termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
@@ -252,7 +265,7 @@ def _read_password_hidden(prompt: str) -> str | None:
     except (termios.error, OSError):
         return None
     finally:
-        if fd != sys.stdin.fileno():
+        if fd >= 3 and fd != sys.stdin.fileno():
             try:
                 os.close(fd)
             except OSError:
