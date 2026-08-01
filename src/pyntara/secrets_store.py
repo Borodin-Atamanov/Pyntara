@@ -5,6 +5,7 @@ import importlib
 import os
 import sys
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -12,6 +13,7 @@ import yaml
 
 _KDBX_SIGNATURE_PREFIX = b"\x03\xd9\xa2\x9a"
 _PASSWORD_ATTEMPTS = 3
+_KDF_TIMEOUT_SEC: float = 30.0
 
 
 class _KeepassEntry(Protocol):
@@ -38,6 +40,7 @@ class VaultSecretsStore:
         production_vault: Path,
         use_production: bool,
         password_provider: Callable[[Path], str] | None = None,
+        kdf_timeout_sec: float | None = None,
     ) -> None:
         self._default_vault = default_vault
         self._production_vault = production_vault
@@ -45,13 +48,18 @@ class VaultSecretsStore:
         self._password_provider = (
             _default_password_provider if password_provider is None else password_provider
         )
+        self._kdf_timeout_sec = _KDF_TIMEOUT_SEC if kdf_timeout_sec is None else kdf_timeout_sec
         self._values: dict[str, str] = {}
         self._loaded = False
 
     def load(self) -> None:
         vault_path = self._production_vault if self._use_production else self._default_vault
         self._values = (
-            _load_keepass_values(vault_path=vault_path, password_provider=self._password_provider)
+            _load_keepass_values(
+                vault_path=vault_path,
+                password_provider=self._password_provider,
+                kdf_timeout_sec=self._kdf_timeout_sec,
+            )
             if _is_keepass_file(vault_path)
             else _load_yaml_values(vault_path)
         )
@@ -86,10 +94,14 @@ def _load_keepass_values(
     *,
     vault_path: Path,
     password_provider: Callable[[Path], str],
+    kdf_timeout_sec: float = _KDF_TIMEOUT_SEC,
 ) -> dict[str, str]:
     pykeepass = _import_pykeepass()
     database = _open_keepass_database(
-        pykeepass=pykeepass, vault_path=vault_path, password_provider=password_provider
+        pykeepass=pykeepass,
+        vault_path=vault_path,
+        password_provider=password_provider,
+        kdf_timeout_sec=kdf_timeout_sec,
     )
     values: dict[str, str] = {}
     for entry in database.entries:
@@ -106,13 +118,24 @@ def _open_keepass_database(
     pykeepass: _PyKeePassModule,
     vault_path: Path,
     password_provider: Callable[[Path], str],
+    kdf_timeout_sec: float = _KDF_TIMEOUT_SEC,
 ) -> _KeepassDatabase:
     for attempt in range(1, _PASSWORD_ATTEMPTS + 1):
         password = _password_from_env_or_prompt(
             vault_path=vault_path, password_provider=password_provider
         )
+        pool = ThreadPoolExecutor(max_workers=1)
         try:
-            return pykeepass.open(vault_path, password=password)
+            future = pool.submit(pykeepass.open, vault_path, password=password)
+            try:
+                return future.result(timeout=kdf_timeout_sec)
+            except TimeoutError:
+                future.cancel()
+                raise RuntimeError(
+                    f"KeePass KDF timed out after {kdf_timeout_sec}s "
+                    f"for {vault_path.name}. Possible causes: wrong password, "
+                    f"corrupted vault, or excessive KDF parameters."
+                ) from None
         except pykeepass.CredentialsError:
             attempts_left = _PASSWORD_ATTEMPTS - attempt
             if attempts_left > 0:
@@ -121,6 +144,8 @@ def _open_keepass_database(
                     file=sys.stderr,
                 )
             continue
+        finally:
+            pool.shutdown(wait=False)
     raise RuntimeError("Failed to open KeePass vault: password attempts exhausted.")
 
 
