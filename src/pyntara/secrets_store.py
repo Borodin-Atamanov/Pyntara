@@ -188,13 +188,30 @@ def _default_password_provider(vault_path: Path) -> str:
 
 
 def _interactive_prompt_available() -> bool:
-    if sys.stdin.isatty() or sys.stderr.isatty():
-        return True
+    """Check if an interactive password prompt via getpass is possible.
+
+    getpass.getpass() internally opens /dev/tty directly for reading.
+    If /dev/tty is not available, it falls back to sys.stdin.
+
+    - If /dev/tty is available: getpass works correctly (hidden input).
+    - If /dev/tty is NOT available but sys.stdin IS a TTY: getpass
+      falls back to sys.stdin and still works correctly (hidden input).
+    - If NEITHER /dev/tty NOR sys.stdin.isatty(): getpass falls back to
+      sys.stdin.readline() with echo enabled, LEAKING the password.
+
+    This is the scenario in 'curl ... | sudo bash' where stdin is a pipe
+    and the process may not have a controlling terminal.
+
+    Returns True only when getpass can provide hidden input.
+    """
+    # /dev/tty is the primary path getpass uses
     try:
-        with Path("/dev/tty").open("r", encoding="utf-8"):
+        with Path("/dev/tty").open("rb"):
             return True
     except OSError:
-        return False
+        pass
+    # Fallback: sys.stdin as a real TTY also works (no echo)
+    return sys.stdin.isatty()
 
 
 def _import_pykeepass() -> _PyKeePassModule:
