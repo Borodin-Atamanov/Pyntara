@@ -6,8 +6,12 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_TIMEOUT = 300  # generous timeout for uv sync + bootstrap
+
+pytestmark = pytest.mark.bootstrap_slow
 
 
 # ---------------------------------------------------------------------------

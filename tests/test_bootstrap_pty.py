@@ -14,6 +14,8 @@ import pytest
 
 from tests.conftest import PtySession
 
+pytestmark = pytest.mark.bootstrap_deep
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
