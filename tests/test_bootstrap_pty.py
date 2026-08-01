@@ -281,6 +281,8 @@ def _run_bootstrap(
     wait_for: bytes | None = None,
     pipe_stdin: bool = False,
     include_password_file: bool = True,
+    extra_env: dict[str, str] | None = None,
+    pipe_input_bytes: bytes | None = None,
 ) -> tuple[int, bytes]:
     """Run the bootstrap script via PTY and return (returncode, output).
 
@@ -297,6 +299,13 @@ def _run_bootstrap(
 
     If *include_password_file* is False, the .password file is not added
     to the tar, forcing the CLI to use env var or interactive prompt.
+
+    If *extra_env* is provided, these variables are merged into the
+    bootstrap process environment.
+
+    If *pipe_input_bytes* is provided, this content is piped into bash
+    instead of the full i.sh script text. This is useful for testing
+    truncated/corrupted stream scenarios.
     """
     trace_path = tmp_path / "trace.log"
     source_tar = tmp_path / "source.tar"
@@ -309,6 +318,8 @@ def _run_bootstrap(
         source_tar=source_tar,
         vault_password=vault_password,
     )
+    if extra_env:
+        env.update(extra_env)
 
     script_path = tmp_path / "i.sh"
     script_path.write_text((_REPO_ROOT / "i.sh").read_text(encoding="utf-8"), encoding="utf-8")
@@ -334,7 +345,9 @@ def _run_bootstrap(
         os.close(slave_fd)
 
         # Write script content to the pipe and close it
-        script_content = (_REPO_ROOT / "i.sh").read_bytes()
+        script_content = pipe_input_bytes
+        if script_content is None:
+            script_content = (_REPO_ROOT / "i.sh").read_bytes()
         os.write(write_fd, script_content)
         os.close(write_fd)
 
@@ -634,3 +647,95 @@ def test_bootstrap_trace_shows_all_steps(tmp_path: Path) -> None:
     assert "git clone" in trace or "git fetch" in trace, f"git not in trace:\n{trace}"
     assert "uv sync" in trace, f"uv sync not in trace:\n{trace}"
     assert "uv run pyntara" in trace, f"uv run pyntara not in trace:\n{trace}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — Scenario 2.6: Piped stdin + explicit CLI stdin path succeeds
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_piped_stdin_uses_explicit_cli_stdin_path(tmp_path: Path) -> None:
+    """Bootstrap accepts explicit CLI stdin path and completes successfully.
+
+    This validates bootstrap-level stdin routing in a piped launch. Vault
+    decryption uses the companion .password file from the extracted source.
+    """
+    cli_stdin_file = tmp_path / "cli-stdin.txt"
+    cli_stdin_file.write_text(_VAULT_PASSWORD + "\n", encoding="utf-8")
+
+    returncode, output = _run_bootstrap(
+        tmp_path,
+        vault_password=None,
+        pipe_stdin=True,
+        extra_env={"PYNTARA_CLI_STDIN_PATH": str(cli_stdin_file)},
+    )
+
+    assert returncode == 0, (
+        "Bootstrap should succeed when CLI stdin is routed from a file. "
+        f"Output:\n{output.decode(errors='replace')}"
+    )
+    assert b"Using CLI stdin source:" in output
+    assert b"Bootstrap finished" in output
+    assert b"hostname: done" in output
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — Scenario 2.7: Truncated piped script fails fast and clearly
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_fails_fast_on_truncated_piped_script(tmp_path: Path) -> None:
+    """Bootstrap exits non-zero when piped script stream is truncated."""
+    truncated_script = (
+        b"#!/usr/bin/env bash\n"
+        b"set -euo pipefail\n"
+        b"echo bootstrap-start\n"
+        b"if [[ 1 -eq 1 ]]; then\n"
+    )
+
+    returncode, output = _run_bootstrap(
+        tmp_path,
+        pipe_stdin=True,
+        pipe_input_bytes=truncated_script,
+    )
+
+    assert returncode != 0, (
+        "Truncated piped script must fail fast with non-zero code. "
+        f"Output:\n{output.decode(errors='replace')}"
+    )
+    assert b"Bootstrap finished" not in output
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — Scenario 2.8: Install log must not leak supplied passwords
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_install_log_does_not_leak_password(tmp_path: Path) -> None:
+    """Password supplied to CLI stdin source must not appear in install log."""
+    secret_password = "leak-check-password-2026"
+    cli_stdin_file = tmp_path / "cli-stdin.txt"
+    cli_stdin_file.write_text(secret_password + "\n", encoding="utf-8")
+
+    returncode, output = _run_bootstrap(
+        tmp_path,
+        vault_password=None,
+        include_password_file=False,
+        pipe_stdin=True,
+        extra_env={"PYNTARA_CLI_STDIN_PATH": str(cli_stdin_file)},
+    )
+
+    assert returncode != 0, (
+        "Bootstrap should fail because stdin password is intentionally wrong. "
+        f"Output:\n{output.decode(errors='replace')}"
+    )
+
+    install_log = tmp_path / "logs" / "install.log"
+    assert install_log.exists() is True
+    install_log_text = install_log.read_text(encoding="utf-8")
+
+    assert secret_password not in install_log_text, (
+        "Password leaked into install.log. "
+        f"install.log:\n{install_log_text}"
+    )
+    assert secret_password not in output.decode(errors="replace")
