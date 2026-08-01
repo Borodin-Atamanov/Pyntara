@@ -6,6 +6,12 @@
 - Before commit, the agent MUST run the full test suite and fix all failures until green.
 - Testing MUST be deep and cover both the Python application and the bootstrap script `i.sh`.
 
+## Documentation index (link-only)
+- Runtime architecture contract: `docs/architecture.md`
+- Repository layout contract: `docs/project-structure.md`
+- Project-wide defaults: `docs/project-rules.md`
+- Interactive terminal UX contract: `docs/interactive-ui-contract.md`
+
 ## 1. Project purpose and context
 - Pyntara is an automated Kubuntu provisioning system.
 - Primary target platform: Kubuntu 26.04.

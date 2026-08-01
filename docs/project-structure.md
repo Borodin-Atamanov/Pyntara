@@ -26,6 +26,7 @@ This document defines the target repository layout for Pyntara and explains what
 | `docs/architecture.md` | Runtime architecture baseline and enforced component boundaries. |
 | `docs/project-structure.md` | Canonical overview of repository layout and file responsibilities. |
 | `docs/project-rules.md` | Project-wide defaults for command output and datetime format. |
+| `docs/interactive-ui-contract.md` | Source-of-truth for interactive terminal UX flow, timers, and checkbox semantics. |
 
 ## Directories
 
