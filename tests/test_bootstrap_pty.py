@@ -263,6 +263,7 @@ def _setup_bootstrap_env(
     env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
     env["PYNTARA_TEST_TRACE"] = str(trace_path)
     env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
+    env["PYNTARA_UI__TASK_PRE_INTERACTION_TIMEOUT_SEC"] = "2"
 
     if vault_password is not None:
         env["PYNTARA_VAULT_PASSWORD"] = vault_password

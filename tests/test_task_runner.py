@@ -100,6 +100,23 @@ def test_runner_force_executes_completed_tasks(tmp_path: Path) -> None:
     assert [entry.status for entry in forced.executions] == ["done", "done"]
 
 
+def test_runner_force_task_names_only_forces_selected_tasks(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    registry = TaskRegistry(task_catalog=context.task_catalog)
+    runner = TaskRunner(registry=registry)
+
+    runner.run(ctx=context, task_names=["hostname", "users"], force=False)
+    selective = runner.run(
+        ctx=context,
+        task_names=["hostname", "users"],
+        force=False,
+        force_task_names={"users"},
+    )
+
+    assert selective.success is True
+    assert [entry.status for entry in selective.executions] == ["skipped", "done"]
+
+
 def test_runner_fingerprint_change_executes_task_again(tmp_path: Path) -> None:
     context_a = _context(tmp_path, command_timeout_sec=300)
     context_b = _context(tmp_path, command_timeout_sec=301)

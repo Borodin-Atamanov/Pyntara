@@ -230,6 +230,8 @@ def test_workspace(tmp_path: Path, fast_kdbx: tuple[Path, str]) -> Path:
         f"  command_output_to_console: false\n"
         f"  command_output_to_log: false\n"
         f"  datetime_format: '%Y-%m-%d-%H-%M-%S'\n"
+        f"ui:\n"
+        f"  task_pre_interaction_timeout_sec: 2\n"
     )
 
     # tasks.yaml with real task modules

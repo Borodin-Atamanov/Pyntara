@@ -13,6 +13,7 @@ from .logging_setup import configure_logging
 from .mode_selector import select_install_mode
 from .models import InstallModesConfig
 from .secrets_store import VaultSecretsStore
+from .task_selector import select_force_mode, select_force_tasks, select_tasks
 from .task_registry import TaskRegistry
 from .task_runner import TaskRunner
 
@@ -81,12 +82,36 @@ def run(
     selected_mode = mode or select_install_mode(
         install_modes=loaded.install_modes, env=dict(os.environ)
     )
-    selected_tasks = task or _select_mode_tasks(
+    mode_tasks = task or _select_mode_tasks(
         mode=selected_mode, install_modes_path=loaded.install_modes
     )
+    selected_tasks = mode_tasks
+    force_task_names: set[str] = set()
+
+    if task is None:
+        selected_tasks = select_tasks(
+            task_catalog=run_context.task_catalog,
+            mode_task_names=mode_tasks,
+            pre_interaction_timeout_sec=run_context.config.ui.task_pre_interaction_timeout_sec,
+        )
+        use_force_mode = select_force_mode(
+            timeout_sec=loaded.install_modes.auto_select_timeout_sec,
+        )
+        if use_force_mode:
+            force_task_names = select_force_tasks(
+                selected_task_names=selected_tasks,
+                task_catalog=run_context.task_catalog,
+                pre_interaction_timeout_sec=run_context.config.ui.task_pre_interaction_timeout_sec,
+            )
+
     registry = TaskRegistry(task_catalog=run_context.task_catalog)
     runner = TaskRunner(registry=registry)
-    report = runner.run(ctx=run_context, task_names=selected_tasks, force=force)
+    report = runner.run(
+        ctx=run_context,
+        task_names=selected_tasks,
+        force=force,
+        force_task_names=force_task_names,
+    )
 
     for execution in report.executions:
         typer.echo(f"{execution.task_name}: {execution.status}")

@@ -50,16 +50,23 @@ class TaskRunner:
         self._registry = registry
 
     def run(
-        self, *, ctx: RunContext, task_names: Iterable[str], force: bool = False
+        self,
+        *,
+        ctx: RunContext,
+        task_names: Iterable[str],
+        force: bool = False,
+        force_task_names: Iterable[str] | None = None,
     ) -> TaskRunReport:
         ordered_tasks = self._order_tasks(ctx=ctx, selected_task_names=list(task_names))
         self._validate_selection_conflicts(
             ordered_tasks=ordered_tasks, task_catalog=ctx.task_catalog
         )
         executions: list[TaskExecution] = []
+        force_task_name_set = set(force_task_names or [])
 
         for task_name in ordered_tasks:
             registered = self._registry.get(task_name)
+            task_force = force or task_name in force_task_name_set
             state_path = _task_state_file(ctx=ctx, task_name=task_name)
             previous_state = _load_task_state(
                 state_path=state_path, definition=registered.definition
@@ -71,7 +78,7 @@ class TaskRunner:
 
             if (
                 registered.definition.idempotent
-                and not force
+                and not task_force
                 and previous_state.status == "done"
                 and previous_state.input_fingerprint == current_fingerprint
             ):
@@ -122,7 +129,7 @@ class TaskRunner:
             _save_task_state(state_path=state_path, state=running_state)
 
             try:
-                result = registered.runner(ctx, force=force)
+                result = registered.runner(ctx, force=task_force)
             except Exception as task_error:
                 failed_message = f"Task raised exception: {task_error}"
                 failed_state = TaskState(

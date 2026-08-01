@@ -33,6 +33,10 @@ class LoggingConfig(BaseModel):
     datetime_format: str = "%Y-%m-%d-%H-%M-%S"
 
 
+class UIConfig(BaseModel):
+    task_pre_interaction_timeout_sec: int = Field(default=30, ge=1)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -42,6 +46,7 @@ class AppConfig(BaseModel):
     paths: PathConfig = PathConfig()
     retry: RetryConfig = RetryConfig()
     logging: LoggingConfig = LoggingConfig()
+    ui: UIConfig = UIConfig()
 
 
 class TaskDefinition(BaseModel):
