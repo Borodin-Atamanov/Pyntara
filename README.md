@@ -1,5 +1,7 @@
 # Pyntara
 
+[![CI](https://github.com/Borodin-Atamanov/Pyntara/actions/workflows/ci.yml/badge.svg)](https://github.com/Borodin-Atamanov/Pyntara/actions/workflows/ci.yml)
+
 Pyntara is a Kubuntu automation system with an idempotent task model and strict typed runtime context.
 
 ## Architecture baseline
@@ -23,6 +25,8 @@ make check
 ```
 
 If `uv` is not installed, `make` will create `.venv` and install dev dependencies automatically.
+
+The CI workflow runs `make lint`, `make typecheck`, `make test-quick`, and `make test-bootstrap-contract` on every push and pull request. The deeper bootstrap lane runs on manual dispatch and a weekly schedule.
 
 For bootstrap-specific verification, use these lanes:
 
