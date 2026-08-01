@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tarfile
 import time
 from pathlib import Path
 
@@ -42,6 +43,99 @@ def _find_uv() -> str | None:
     except Exception:
         pass
     return None
+
+
+def _find_host_pyntara() -> str:
+    """Locate the host's real pyntara CLI executable."""
+    venv_pyntara = _REPO_ROOT / ".venv" / "bin" / "pyntara"
+    if venv_pyntara.is_file() and os.access(venv_pyntara, os.X_OK):
+        return str(venv_pyntara.resolve())
+
+    candidates = [str(Path.home() / ".local" / "bin" / "pyntara")]
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path.resolve())
+
+    try:
+        result = subprocess.run(
+            ["which", "pyntara"], capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    return "pyntara"
+
+
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | 0o100)
+
+
+def _install_mock_git(fake_bin: Path, trace_path: Path, source_tar: Path) -> None:
+    _write_executable(
+    fake_bin / "git",
+    f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'git %s\n' "$*" >> "$PYNTARA_TEST_TRACE"
+
+if [[ "$1" == clone ]]; then
+    cache_dir="${{@: -1}}"
+    mkdir -p "$cache_dir"
+    exit 0
+fi
+
+if [[ "$3" == rev-parse ]]; then
+    ref="${{@: -1}}"
+    if [[ "$ref" == FETCH_HEAD ]] || [[ "$ref" == origin/main ]] || [[ "$ref" == main ]]; then
+        exit 0
+    fi
+    exit 1
+fi
+
+if [[ "$3" == archive ]]; then
+    output=''
+    while (($#)); do
+        if [[ "$1" == --output ]]; then
+            output="$2"
+            break
+        fi
+        shift
+    done
+    cp "{source_tar}" "$output"
+    exit 0
+fi
+
+exit 0
+""",
+    )
+
+
+def _install_mock_uv(fake_bin: Path, trace_path: Path, host_pyntara: str) -> None:
+    _write_executable(
+    fake_bin / "uv",
+    f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'uv %s\n' "$*" >> "$PYNTARA_TEST_TRACE"
+
+if [[ "$1" == lock && "$2" == --check ]]; then
+    exit 0
+fi
+
+if [[ "$1" == sync ]]; then
+    exit 0
+fi
+
+if [[ "$1" == run && "$2" == pyntara ]]; then
+    shift 2
+    exec "{host_pyntara}" "$@"
+fi
+
+exit 0
+""",
+    )
 
 
 def _copy_project(tmp_path: Path, *, include_git: bool = False) -> Path:
@@ -90,7 +184,7 @@ def _copy_project(tmp_path: Path, *, include_git: bool = False) -> Path:
     return dest
 
 
-def _bootstrap_env(tmp_path: Path, project_dir: Path) -> dict[str, str]:
+def _bootstrap_env(tmp_path: Path, project_dir: Path, fake_bin: Path) -> dict[str, str]:
     """Return environment variables for local bootstrap testing.
 
     All paths are isolated under tmp_path so the test does not touch
@@ -101,7 +195,7 @@ def _bootstrap_env(tmp_path: Path, project_dir: Path) -> dict[str, str]:
     install step. The copied project has symlinks to real tools.
     """
     venv_bin = str(project_dir / ".venv" / "bin")
-    path = f"{venv_bin}:{os.environ.get('PATH', '')}"
+    path = f"{fake_bin}:{venv_bin}:{os.environ.get('PATH', '')}"
     return {
         "PATH": path,
         "UV_PROJECT_ENVIRONMENT": ".venv",
@@ -131,7 +225,16 @@ def test_bootstrap_local_source(tmp_path: Path) -> None:
     Expected: bootstrap completes, tasks run, exit 0.
     """
     project_dir = _copy_project(tmp_path)
-    env = {**os.environ, **_bootstrap_env(tmp_path, project_dir)}
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    source_tar = tmp_path / "source.tar"
+    _build_source_tar(source_tar, project_dir)
+    host_pyntara = _find_host_pyntara()
+    _install_mock_git(fake_bin, trace_path, source_tar)
+    _install_mock_uv(fake_bin, trace_path, host_pyntara)
+    env = {**os.environ, **_bootstrap_env(tmp_path, project_dir, fake_bin)}
+    env["PYNTARA_TEST_TRACE"] = str(trace_path)
 
     start = time.monotonic()
     result = subprocess.run(
@@ -156,6 +259,27 @@ def test_bootstrap_local_source(tmp_path: Path) -> None:
     )
 
 
+def _build_source_tar(archive_path: Path, project_dir: Path) -> None:
+    source_root = archive_path.parent / "repo-tree"
+    if source_root.exists():
+        shutil.rmtree(source_root)
+    shutil.copytree(
+        project_dir,
+        source_root,
+        ignore=shutil.ignore_patterns(
+            ".venv",
+            "__pycache__",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".pytest_cache",
+        ),
+    )
+
+    with tarfile.open(archive_path, "w") as archive:
+        for item in source_root.iterdir():
+            archive.add(item, arcname=item.name)
+
+
 # ---------------------------------------------------------------------------
 # Layer 1: Local source bootstrap with piped stdin
 # ---------------------------------------------------------------------------
@@ -171,7 +295,16 @@ def test_bootstrap_local_source_piped_stdin(tmp_path: Path) -> None:
     Expected: bootstrap completes, tasks run, exit 0.
     """
     project_dir = _copy_project(tmp_path)
-    env = {**os.environ, **_bootstrap_env(tmp_path, project_dir)}
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    source_tar = tmp_path / "source.tar"
+    _build_source_tar(source_tar, project_dir)
+    host_pyntara = _find_host_pyntara()
+    _install_mock_git(fake_bin, trace_path, source_tar)
+    _install_mock_uv(fake_bin, trace_path, host_pyntara)
+    env = {**os.environ, **_bootstrap_env(tmp_path, project_dir, fake_bin)}
+    env["PYNTARA_TEST_TRACE"] = str(trace_path)
     script_content = (project_dir / "i.sh").read_text(encoding="utf-8")
 
     start = time.monotonic()
@@ -233,12 +366,14 @@ def test_bootstrap_via_local_git(tmp_path: Path) -> None:
     tools_dir.mkdir(parents=True, exist_ok=True)
     import sys as _sys
     (tools_dir / "python3").symlink_to(_sys.executable)
-    real_uv = _find_uv()
-    if real_uv:
-        (tools_dir / "uv").symlink_to(real_uv)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    host_pyntara = _find_host_pyntara()
+    _install_mock_uv(fake_bin, trace_path, host_pyntara)
 
     env = {**os.environ, **{
-        "PATH": f"{tools_dir}:{os.environ.get('PATH', '')}",
+        "PATH": f"{fake_bin}:{tools_dir}:{os.environ.get('PATH', '')}",
         "PYNTARA_ROOT_EUID": str(os.geteuid()),
         "PYNTARA_STATE_DIR": str(tmp_path / "state"),
         "PYNTARA_LOG_DIR": str(tmp_path / "logs"),
@@ -246,6 +381,7 @@ def test_bootstrap_via_local_git(tmp_path: Path) -> None:
         "PYNTARA_UV_CACHE_DIR": str(tmp_path / "cache" / "uv"),
         "PYNTARA_VAULT_PASSWORD": "test-password-123",
         "HOME": str(tmp_path / "home"),
+        "PYNTARA_TEST_TRACE": str(trace_path),
     }}
     # Point the repo cache to our local bare repo
     env["PYNTARA_REPO_CACHE_DIR"] = str(bare_repo)
