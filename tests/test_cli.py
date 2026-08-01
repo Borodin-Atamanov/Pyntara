@@ -10,7 +10,6 @@ import pytest
 
 from pyntara.secrets_store import VaultSecretsStore, _open_keepass_database
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
