@@ -217,30 +217,23 @@ def _interactive_prompt_available() -> bool:
 def _read_password_hidden(prompt: str) -> str | None:
     """Read a password from the terminal with echo disabled.
 
-    Tries fd 3 (/dev/tty opened by i.sh), then /dev/tty directly,
-    then sys.stdin if it is a TTY. Uses termios to disable echo.
+    Tries /dev/tty first, then sys.stdin if it is a TTY.
+    Uses termios to disable echo.
 
-    fd 3 is preferred because it is the actual /dev/tty fd opened by
-    the parent process (i.sh's exec 3<"/dev/tty"), which is inherited
-    by the uv run subprocess. This bypasses any pipe that uv may have
-    inserted as stdin.
+    Before modifying terminal settings, ensures the process is in the
+    foreground process group via os.tcsetpgrp(). This is necessary
+    because 'uv run' may create a subprocess in a background process
+    group, where tcsetattr() would silently succeed WITHOUT actually
+    disabling echo (the kernel sends SIGTTOU, which is ignored, and
+    the changes are not applied to the terminal).
     """
+    import signal
+
     fd = -1
-
-    # Try fd 3 first — opened by i.sh: exec 3<"${PYNTARA_CLI_STDIN_PATH}"
-    # This fd is inherited by the uv run subprocess and points to the
-    # real terminal, bypassing any pipe uv may have created for stdin.
     try:
-        if os.isatty(3):
-            fd = 3
-    except (OSError, ValueError):
-        pass
-
-    if fd < 0:
-        try:
-            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
-        except OSError:
-            fd = -1
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        fd = -1
 
     if fd < 0 and sys.stdin.isatty():
         fd = sys.stdin.fileno()
@@ -252,20 +245,35 @@ def _read_password_hidden(prompt: str) -> str | None:
         old_settings = termios.tcgetattr(fd)
         new_settings = termios.tcgetattr(fd)
         new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ECHONL)
+
+        # Ignore SIGTTOU so we can set the foreground process group
+        # and modify terminal settings even from a background process.
+        # This is required because 'uv run' may put us in a background
+        # process group where tcsetattr() would silently succeed but
+        # NOT actually apply the changes.
+        old_sigttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
         try:
-            termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+            # Put our process group in the foreground so tcsetattr
+            # changes actually take effect on the terminal.
+            # This is needed when uv run puts us in a background process group.
+            # If tcsetpgrp fails (e.g. no controlling terminal in PTY tests),
+            # we fall back to tcsetattr directly which may still work.
             try:
-                os.write(fd, prompt.encode("utf-8"))
-                password_bytes = _read_line_from_fd(fd)
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        except termios.error:
+                os.tcsetpgrp(fd, os.getpgrp())
+            except OSError:
+                pass
+            termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+            os.write(fd, prompt.encode("utf-8"))
+            password_bytes = _read_line_from_fd(fd)
+        finally:
+            # Restore terminal settings
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            return None
-    except (termios.error, OSError):
+            # Restore original SIGTTOU handler
+            signal.signal(signal.SIGTTOU, old_sigttou)
+    except (termios.error, OSError, ValueError):
         return None
     finally:
-        if fd >= 3 and fd != sys.stdin.fileno():
+        if fd != sys.stdin.fileno():
             try:
                 os.close(fd)
             except OSError:
