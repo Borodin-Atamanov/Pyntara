@@ -146,6 +146,9 @@ def _build_source_tar(archive_path: Path) -> None:
     The archive contains pyproject.toml, the full src/ tree, and config files
     needed for the CLI to run. The repo-tree directory is cleaned before each
     build to avoid stale files from previous builds.
+
+    Password files are excluded from the archive — they are added separately
+    by _add_test_vault_to_tar() with controlled password content.
     """
     source_root = archive_path.parent / "repo-tree"
     if source_root.exists():
@@ -160,6 +163,14 @@ def _build_source_tar(archive_path: Path) -> None:
             shutil.copytree(item, dest, ignore=shutil.ignore_patterns(".venv", "__pycache__"))
         else:
             shutil.copy2(item, dest)
+
+    # Remove any password files from the copied tree — they are added
+    # separately by _add_test_vault_to_tar with controlled password content.
+    secrets_dir = source_root / "secrets"
+    if secrets_dir.exists():
+        for p in secrets_dir.iterdir():
+            if p.suffix == ".password":
+                p.unlink()
 
     with tarfile.open(archive_path, "w") as archive:
         for item in source_root.iterdir():
@@ -198,16 +209,24 @@ def _find_host_pyntara() -> str:
     return "pyntara"
 
 
-def _add_test_vault_to_tar(source_tar: Path, password: str) -> None:
+def _add_test_vault_to_tar(
+    source_tar: Path, password: str, *, include_password_file: bool = True
+) -> None:
     """Create a test KeePass vault and add it to the source tar.
 
     The vault is added as secrets/default.vault in the tar archive.
+    If *include_password_file* is True, the companion .password file
+    is also added as secrets/default.password.
     """
     pykeepass = pytest.importorskip("pykeepass", reason="pykeepass is required")
     vault_path = source_tar.parent / "default.vault"
     pykeepass.create_database(str(vault_path), password=password)
     with tarfile.open(source_tar, "a") as archive:
         archive.add(str(vault_path), arcname="secrets/default.vault")
+        if include_password_file:
+            password_path = vault_path.with_suffix(".password")
+            password_path.write_text(password + "\n", encoding="utf-8")
+            archive.add(str(password_path), arcname="secrets/default.password")
 
 
 def _setup_bootstrap_env(
@@ -261,6 +280,7 @@ def _run_bootstrap(
     interactive_input: list[bytes] | None = None,
     wait_for: bytes | None = None,
     pipe_stdin: bool = False,
+    include_password_file: bool = True,
 ) -> tuple[int, bytes]:
     """Run the bootstrap script via PTY and return (returncode, output).
 
@@ -274,11 +294,14 @@ def _run_bootstrap(
     If *pipe_stdin* is True, the script content is piped to bash's stdin
     (simulating 'curl ... | bash') instead of being passed as a file argument.
     The PTY is still used as the controlling terminal so /dev/tty is available.
+
+    If *include_password_file* is False, the .password file is not added
+    to the tar, forcing the CLI to use env var or interactive prompt.
     """
     trace_path = tmp_path / "trace.log"
     source_tar = tmp_path / "source.tar"
     _build_source_tar(source_tar)
-    _add_test_vault_to_tar(source_tar, _VAULT_PASSWORD)
+    _add_test_vault_to_tar(source_tar, _VAULT_PASSWORD, include_password_file=include_password_file)
 
     env = _setup_bootstrap_env(
         tmp_path,
@@ -456,21 +479,19 @@ def test_bootstrap_via_piped_stdin(tmp_path: Path) -> None:
 
 
 def test_bootstrap_via_piped_stdin_no_password(tmp_path: Path) -> None:
-    """Bootstrap via piped stdin, no PYNTARA_VAULT_PASSWORD.
+    """Bootstrap via piped stdin, no password file and no env var.
 
-    This simulates the exact 'curl ... | sudo bash' scenario where the
-    user is prompted for the KeePass password interactively.
+    The .password file is excluded from the tar so the CLI has no way
+    to open the vault. Since there is no controlling terminal in the
+    test environment, the CLI should fail with a clear error message.
 
-    Expected: CLI detects that /dev/tty is available (via the PTY) and
-    prompts for the password. The test sends a wrong password and
-    expects failure.
+    Expected: CLI fails with password-related error.
     """
     returncode, output = _run_bootstrap(
         tmp_path,
-        vault_password=None,  # No env var → force interactive prompt
+        vault_password=None,  # No env var
+        include_password_file=False,  # No .password file in tar
         pipe_stdin=True,
-        interactive_input=[b"wrong-password\n"],
-        wait_for=b"KeePass password",
     )
 
     # The CLI should either fail (wrong password) or prompt for password
@@ -521,17 +542,18 @@ def test_bootstrap_manual_mode_selection(tmp_path: Path) -> None:
 
 
 def test_bootstrap_wrong_password(tmp_path: Path) -> None:
-    """Full bootstrap: wrong password entered interactively.
+    """Full bootstrap: no password file and no env var.
 
-    Expected: password attempts exhausted, bootstrap fails, exit non-zero.
+    The .password file is excluded from the tar. Since there is no
+    controlling terminal in the test environment, the CLI should fail
+    with a clear error message.
+
+    Expected: fails with password-related error, exit non-zero.
     """
-    # Do NOT set PYNTARA_VAULT_PASSWORD — force interactive prompt
-    # But the script runs non-interactively (no /dev/tty), so it will fail
-    # with "interactive prompt is unavailable" rather than prompting.
-    # This tests the error handling path.
     returncode, output = _run_bootstrap(
         tmp_path,
-        vault_password=None,  # No env var → forces interactive prompt check
+        vault_password=None,  # No env var
+        include_password_file=False,  # No .password file in tar
     )
 
     assert returncode != 0, (

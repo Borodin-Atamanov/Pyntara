@@ -147,6 +147,10 @@ def test_wrong_password_via_getpass(test_workspace: Path) -> None:
     """
     cmd = _build_cli_cmd(test_workspace)
     # Do NOT set PYNTARA_VAULT_PASSWORD — force interactive prompt
+    # Delete the .password file so the CLI prompts for password
+    password_file = test_workspace / "secrets" / "default.password"
+    if password_file.exists():
+        password_file.unlink()
 
     with PtySession(cmd, cwd=test_workspace, timeout=_PTY_TIMEOUT) as session:
         # Wait for the password prompt (it appears before mode selector)

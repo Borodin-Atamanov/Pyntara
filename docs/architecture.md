@@ -102,3 +102,76 @@ The architecture is guarded by tests:
 - task runner idempotency/force behavior tests.
 
 Any change that breaks these guarantees must update this document and corresponding tests in the same pull request.
+
+## 8. Secrets management
+
+### 8.1 Vault files
+
+Two KeePass vault files live under `secrets/`:
+
+| File | Purpose | In git? |
+|------|---------|---------|
+| `secrets/default.vault` | Test/stub secrets for development and CI | Yes |
+| `secrets/production.vault` | Real secrets for production deployment | Yes |
+
+### 8.2 Password files
+
+Each vault has a companion password file with the same base name and `.password` extension:
+
+| File | Purpose | In git? |
+|------|---------|---------|
+| `secrets/default.password` | Password for `default.vault` | Yes |
+| `secrets/production.password` | Password for `production.vault` | **No** (`.gitignore`) |
+
+The password file contains a single line of text — the vault password, with no trailing whitespace.
+
+### 8.3 Resolution order
+
+`VaultSecretsStore.load()` resolves the vault and password in this order:
+
+1. **Determine target vault:** `--use-production-secrets` selects `production.vault`; otherwise `default.vault`.
+
+2. **Resolve password source:**
+   - `PYNTARA_VAULT_PASSWORD` env var — overrides everything, used for non-interactive bootstrap.
+   - `<vault-path>.password` file — e.g. `secrets/production.password` or `secrets/default.password`.
+   - Interactive prompt — only for `production.vault` when no password file exists (see 8.6).
+
+3. **Open the vault.**
+   - If `production.vault` opens successfully → use it.
+   - If `production.vault` fails (wrong password) → **fall back to `default.vault`** with its own password.
+   - If `default.vault` fails → error (password attempts exhausted).
+
+### 8.4 Interactive prompt with timeout
+
+When `production.vault` is selected but `secrets/production.password` does not exist:
+
+1. Print a prompt on the terminal: `"Enter production vault password (auto-fallback to default in 11s): "`
+2. Start an 11-second countdown displayed in real time on the same line (like the mode selector).
+3. The user can start typing the password at any time during the countdown.
+4. Once the user presses the first key, the countdown disappears and hidden input mode begins.
+5. If the user does not press any key within 11 seconds → automatically fall back to `default.vault`.
+6. If the user enters a password → try to open `production.vault`. If wrong → fall back to `default.vault`.
+
+### 8.4 Password file format
+
+```
+<password>\n
+```
+
+Single line, no trailing whitespace. The file is read with `Path.read_text(encoding="utf-8").strip()`.
+
+### 8.5 Environment variable override
+
+`PYNTARA_VAULT_PASSWORD` env var overrides the password file for both vaults.
+This is used for non-interactive bootstrap (`curl ... | sudo bash`).
+
+### 8.6 Interactive prompt
+
+If neither the password file nor the env var provides a password, and the terminal supports hidden input, the user is prompted interactively via `_read_password_hidden()` (direct `termios` access to `/dev/tty` with foreground process group management).
+
+### 8.7 Security notes
+
+- `production.password` must never be committed to git. It is listed in `.gitignore`.
+- `default.password` contains a well-known test password and is safe to commit.
+- The production vault may contain real credentials (API tokens, SSH keys, etc.).
+- Password files are read into memory and the password is never written to logs.

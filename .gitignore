@@ -6,4 +6,5 @@ __pycache__/
 *.pyc
 task_data/**
 !task_data/.gitkeep
+secrets/production.password
 

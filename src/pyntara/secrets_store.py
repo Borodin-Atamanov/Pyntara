@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib
 import os
+import select
+import signal
 import sys
 import termios
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
@@ -14,6 +17,7 @@ import yaml
 _KDBX_SIGNATURE_PREFIX = b"\x03\xd9\xa2\x9a"
 _PASSWORD_ATTEMPTS = 3
 _KDF_TIMEOUT_SEC: float = 30.0
+_PRODUCTION_PROMPT_TIMEOUT_SEC: float = 11.0
 
 
 class _KeepassEntry(Protocol):
@@ -33,6 +37,16 @@ class _PyKeePassModule(Protocol):
 
 
 class VaultSecretsStore:
+    """Secrets store backed by KeePass vault files.
+
+    Resolution order:
+      1. PYNTARA_VAULT_PASSWORD env var overrides everything.
+      2. <vault_path>.password file (e.g. secrets/production.password).
+      3. Interactive prompt with 11s timeout (production vault only).
+
+    If production vault fails to open, falls back to default vault.
+    """
+
     def __init__(
         self,
         *,
@@ -53,17 +67,79 @@ class VaultSecretsStore:
         self._loaded = False
 
     def load(self) -> None:
-        vault_path = self._production_vault if self._use_production else self._default_vault
-        self._values = (
-            _load_keepass_values(
+        """Load secrets from the appropriate vault.
+
+        Tries production vault first if selected, with fallback to default.
+        """
+        if self._use_production:
+            self._values = self._try_load_vault(self._production_vault)
+            if self._values is not None:
+                self._loaded = True
+                return
+            # Production failed — fall back to default
+            print(
+                "Falling back to default secrets vault.",
+                file=sys.stderr,
+            )
+
+        self._values = self._try_load_vault(self._default_vault)
+        if self._values is None:
+            raise RuntimeError(
+                "Failed to open default KeePass vault: password attempts exhausted."
+            )
+        self._loaded = True
+
+    def _try_load_vault(self, vault_path: Path) -> dict[str, str] | None:
+        """Try to load a vault. Returns None on failure (wrong password)."""
+        if not vault_path.exists():
+            return None
+        if not _is_keepass_file(vault_path):
+            return _load_yaml_values(vault_path)
+
+        password = self._resolve_password(vault_path)
+        if password is None:
+            return None
+
+        try:
+            return _load_keepass_values(
                 vault_path=vault_path,
-                password_provider=self._password_provider,
+                password=password,
                 kdf_timeout_sec=self._kdf_timeout_sec,
             )
-            if _is_keepass_file(vault_path)
-            else _load_yaml_values(vault_path)
-        )
-        self._loaded = True
+        except RuntimeError as exc:
+            if "password attempts exhausted" in str(exc):
+                return None
+            raise
+
+    def _resolve_password(self, vault_path: Path) -> str | None:
+        """Resolve the password for a vault.
+
+        Priority: env var > password file > password_provider callback > interactive prompt.
+        Returns None if no password can be resolved.
+        """
+        # 1. Env var override
+        env_password = os.environ.get("PYNTARA_VAULT_PASSWORD")
+        if env_password is not None:
+            return env_password
+
+        # 2. Password file
+        password_file = vault_path.with_suffix(".password")
+        if password_file.exists():
+            return password_file.read_text(encoding="utf-8").strip()
+
+        # 3. Custom password provider (used by tests)
+        if self._password_provider is not _default_password_provider:
+            return self._password_provider(vault_path)
+
+        # 4. Interactive prompt with timeout (production vault only)
+        is_production = vault_path == self._production_vault
+        if is_production and _interactive_prompt_available():
+            return _prompt_production_password_with_timeout(
+                vault_path=vault_path,
+                timeout_sec=_PRODUCTION_PROMPT_TIMEOUT_SEC,
+            )
+
+        return None
 
     def get(self, key: str, default: str | None = None) -> str | None:
         if not self._loaded:
@@ -93,14 +169,15 @@ def _load_yaml_values(vault_path: Path) -> dict[str, str]:
 def _load_keepass_values(
     *,
     vault_path: Path,
-    password_provider: Callable[[Path], str],
+    password: str,
     kdf_timeout_sec: float = _KDF_TIMEOUT_SEC,
 ) -> dict[str, str]:
+    """Open a KeePass vault with a known password and extract all entries."""
     pykeepass = _import_pykeepass()
     database = _open_keepass_database(
         pykeepass=pykeepass,
         vault_path=vault_path,
-        password_provider=password_provider,
+        password=password,
         kdf_timeout_sec=kdf_timeout_sec,
     )
     values: dict[str, str] = {}
@@ -117,13 +194,11 @@ def _open_keepass_database(
     *,
     pykeepass: _PyKeePassModule,
     vault_path: Path,
-    password_provider: Callable[[Path], str],
+    password: str,
     kdf_timeout_sec: float = _KDF_TIMEOUT_SEC,
 ) -> _KeepassDatabase:
+    """Open a KeePass database with retries on wrong password."""
     for attempt in range(1, _PASSWORD_ATTEMPTS + 1):
-        password = _password_from_env_or_prompt(
-            vault_path=vault_path, password_provider=password_provider
-        )
         pool = ThreadPoolExecutor(max_workers=1)
         try:
             future = pool.submit(pykeepass.open, vault_path, password=password)
@@ -163,49 +238,21 @@ def _group_path(group: object | None) -> list[str]:
     return names
 
 
-def _password_from_env_or_prompt(
-    *,
-    vault_path: Path,
-    password_provider: Callable[[Path], str],
-) -> str:
-    password_from_env = os.environ.get("PYNTARA_VAULT_PASSWORD")
-    if password_from_env is not None:
-        return password_from_env
-    if password_provider is _default_password_provider and not _interactive_prompt_available():
-        raise RuntimeError(
-            "KeePass password is required, but interactive prompt is unavailable. "
-            "Set PYNTARA_VAULT_PASSWORD for non-interactive bootstrap."
-        )
-    return password_provider(vault_path)
-
-
 def _default_password_provider(vault_path: Path) -> str:
-    """Read a password from the terminal with echo disabled.
+    """Default password provider (sentinel value for VaultSecretsStore).
 
-    Bypasses getpass.getpass() because process managers like 'uv run'
-    may create subprocesses where getpass cannot properly access /dev/tty.
-    Uses termios directly on /dev/tty for reliable hidden input.
+    This function is used as a sentinel to detect whether a custom
+    password_provider was passed to VaultSecretsStore. It is not
+    actually called — passwords are resolved via _resolve_password.
     """
-    print(
-        f"KeePass password is required to open {vault_path.name}. Input is hidden.",
-        file=sys.stderr,
+    raise RuntimeError(
+        "Default password provider should not be called directly. "
+        "Passwords are resolved via _resolve_password."
     )
-    prompt = f"KeePass password for {vault_path.name}: "
-    password = _read_password_hidden(prompt)
-    if password is None:
-        raise RuntimeError(
-            "KeePass password is required, but interactive prompt is unavailable. "
-            "Set PYNTARA_VAULT_PASSWORD for non-interactive bootstrap."
-        )
-    return password
 
 
 def _interactive_prompt_available() -> bool:
-    """Check if hidden password input is possible.
-
-    Attempts to open /dev/tty — this is what _read_password_hidden
-    uses for hidden input. Fall back to sys.stdin if it's a real TTY.
-    """
+    """Check if hidden password input is possible via /dev/tty."""
     try:
         with Path("/dev/tty").open("rb"):
             return True
@@ -214,21 +261,93 @@ def _interactive_prompt_available() -> bool:
     return sys.stdin.isatty()
 
 
+def _prompt_production_password_with_timeout(
+    *,
+    vault_path: Path,
+    timeout_sec: float = _PRODUCTION_PROMPT_TIMEOUT_SEC,
+) -> str | None:
+    """Prompt for production vault password with a countdown timeout.
+
+    Shows a countdown on the terminal. If the user presses a key before
+    the timeout, hidden input mode begins. If the timeout expires, returns
+    None (caller should fall back to default vault).
+
+    Returns the password string, or None on timeout.
+    """
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        fd = -1
+
+    if fd < 0 and sys.stdin.isatty():
+        fd = sys.stdin.fileno()
+
+    if fd < 0:
+        return None
+
+    try:
+        old_settings = termios.tcgetattr(fd)
+        new_settings = termios.tcgetattr(fd)
+        new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ECHONL)
+
+        old_sigttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+        try:
+            try:
+                os.tcsetpgrp(fd, os.getpgrp())
+            except OSError:
+                pass
+
+            deadline = time.monotonic() + timeout_sec
+            rendered_len = 0
+
+            # Countdown phase: wait for first keypress or timeout
+            while True:
+                remaining = max(0.0, deadline - time.monotonic())
+                remaining_sec = int(remaining + 0.999)
+                line = (
+                    f"Enter production vault password "
+                    f"(auto-fallback to default in {remaining_sec:02d}s): "
+                )
+                padding = " " * max(0, rendered_len - len(line))
+                os.write(fd, f"\r{line}{padding}".encode("utf-8"))
+                rendered_len = len(line)
+
+                if remaining <= 0:
+                    os.write(fd, b"\n")
+                    return None
+
+                ready, _, _ = select.select([fd], [], [], min(0.1, remaining))
+                if ready:
+                    # User pressed a key — switch to hidden input mode
+                    termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+                    # Clear the countdown line
+                    os.write(fd, b"\r" + b" " * rendered_len + b"\r")
+                    os.write(fd, b"Production vault password: ")
+                    password_bytes = _read_line_from_fd(fd)
+                    password = password_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+                    print(file=sys.stderr)
+                    return password
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            signal.signal(signal.SIGTTOU, old_sigttou)
+    except (termios.error, OSError, ValueError):
+        return None
+    finally:
+        if fd != sys.stdin.fileno():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    return None
+
+
 def _read_password_hidden(prompt: str) -> str | None:
     """Read a password from the terminal with echo disabled.
 
     Tries /dev/tty first, then sys.stdin if it is a TTY.
-    Uses termios to disable echo.
-
-    Before modifying terminal settings, ensures the process is in the
-    foreground process group via os.tcsetpgrp(). This is necessary
-    because 'uv run' may create a subprocess in a background process
-    group, where tcsetattr() would silently succeed WITHOUT actually
-    disabling echo (the kernel sends SIGTTOU, which is ignored, and
-    the changes are not applied to the terminal).
+    Uses termios to disable echo with foreground process group management.
     """
-    import signal
-
     fd = -1
     try:
         fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
@@ -246,18 +365,8 @@ def _read_password_hidden(prompt: str) -> str | None:
         new_settings = termios.tcgetattr(fd)
         new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ECHONL)
 
-        # Ignore SIGTTOU so we can set the foreground process group
-        # and modify terminal settings even from a background process.
-        # This is required because 'uv run' may put us in a background
-        # process group where tcsetattr() would silently succeed but
-        # NOT actually apply the changes.
         old_sigttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
         try:
-            # Put our process group in the foreground so tcsetattr
-            # changes actually take effect on the terminal.
-            # This is needed when uv run puts us in a background process group.
-            # If tcsetpgrp fails (e.g. no controlling terminal in PTY tests),
-            # we fall back to tcsetattr directly which may still work.
             try:
                 os.tcsetpgrp(fd, os.getpgrp())
             except OSError:
@@ -266,9 +375,7 @@ def _read_password_hidden(prompt: str) -> str | None:
             os.write(fd, prompt.encode("utf-8"))
             password_bytes = _read_line_from_fd(fd)
         finally:
-            # Restore terminal settings
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            # Restore original SIGTTOU handler
             signal.signal(signal.SIGTTOU, old_sigttou)
     except (termios.error, OSError, ValueError):
         return None

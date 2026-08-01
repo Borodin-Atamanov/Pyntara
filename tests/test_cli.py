@@ -16,9 +16,15 @@ from pyntara.secrets_store import VaultSecretsStore, _open_keepass_database
 
 
 def _create_test_kdbx(vault_path: Path, password: str) -> None:
-    """Create a real KeePass database for testing."""
+    """Create a real KeePass database for testing.
+
+    Also creates the companion .password file.
+    """
     pykeepass = pytest.importorskip("pykeepass", reason="pykeepass is required")
     pykeepass.create_database(str(vault_path), password=password)
+    # Create companion .password file
+    password_path = vault_path.with_suffix(".password")
+    password_path.write_text(password + "\n", encoding="utf-8")
 
 
 def _setup_minimal_workspace(tmp_path: Path, vault_path: Path) -> Path:
@@ -29,10 +35,13 @@ def _setup_minimal_workspace(tmp_path: Path, vault_path: Path) -> Path:
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy the test vault into the secrets directory
     import shutil
 
     shutil.copy2(str(vault_path), str(secrets_dir / "default.vault"))
+    # Also copy the companion .password file if it exists
+    password_src = vault_path.with_suffix(".password")
+    if password_src.exists():
+        shutil.copy2(str(password_src), str(secrets_dir / "default.password"))
 
     # Create config.yaml
     (tmp_path / "config.yaml").write_text(
@@ -97,7 +106,7 @@ def test_open_keepass_times_out_on_slow_kdf(tmp_path: Path, monkeypatch: pytest.
         _open_keepass_database(
             pykeepass=SlowModule,
             vault_path=vault_path,
-            password_provider=lambda _: "wrong",
+            password="wrong",
             kdf_timeout_sec=0.1,
         )
 
@@ -130,7 +139,7 @@ def test_open_keepass_succeeds_within_timeout(tmp_path: Path, monkeypatch: pytes
     result = _open_keepass_database(
         pykeepass=FastModule,
         vault_path=vault_path,
-        password_provider=lambda _: "pw",
+        password="pw",
         kdf_timeout_sec=5.0,
     )
     assert isinstance(result, FakeDatabase)
@@ -191,6 +200,10 @@ def test_cli_does_not_hang_with_wrong_password_via_mock(
     """Simulate interactive password entry with wrong password, verify no hang."""
     vault_path = tmp_path / "test.vault"
     _create_test_kdbx(vault_path, "correct-password")
+    # Delete the .password file so the mock _read_password_hidden is used
+    password_file = vault_path.with_suffix(".password")
+    if password_file.exists():
+        password_file.unlink()
 
     # Mock _read_password_hidden to return wrong password
     monkeypatch.setattr("pyntara.secrets_store._read_password_hidden", lambda prompt: "wrong-password")
@@ -200,6 +213,7 @@ def test_cli_does_not_hang_with_wrong_password_via_mock(
         default_vault=vault_path,
         production_vault=tmp_path / "production.vault",
         use_production=False,
+        password_provider=lambda _: "wrong-password",
     )
 
     with pytest.raises(RuntimeError, match="password attempts exhausted"):

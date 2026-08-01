@@ -20,14 +20,27 @@ import pytest
 def fast_kdbx(tmp_path: Path) -> tuple[Path, str]:
     """Create a KeePass database with AES-KDF (fast) for testing.
 
-    Returns (vault_path, password) tuple. AES-KDF is used instead of the
-    default Argon2 to avoid slow KDF computation during tests.
+    Also creates the companion .password file.
+    Returns (vault_path, password) tuple.
     """
     pykeepass = pytest.importorskip("pykeepass", reason="pykeepass is required")
     vault_path = tmp_path / "test.vault"
     password = "test-password-123"
     pykeepass.create_database(str(vault_path), password=password)
+    # Create companion .password file
+    password_path = vault_path.with_suffix(".password")
+    password_path.write_text(password + "\n", encoding="utf-8")
     return vault_path, password
+
+
+def create_password_file(vault_path: Path, password: str) -> Path:
+    """Create a .password file alongside a vault file.
+
+    Returns the path to the password file.
+    """
+    password_path = vault_path.with_suffix(".password")
+    password_path.write_text(password + "\n", encoding="utf-8")
+    return password_path
 
 
 # ---------------------------------------------------------------------------
@@ -192,13 +205,18 @@ def test_workspace(tmp_path: Path, fast_kdbx: tuple[Path, str]) -> Path:
       - tasks.yaml with hostname and users tasks
       - install_modes.yaml with all three modes
       - secrets/default.vault (KeePass, password from fast_kdbx)
+      - secrets/default.password (companion password file)
 
     Returns the workspace path.
     """
-    vault_path, _password = fast_kdbx
+    vault_path, vault_password = fast_kdbx
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(vault_path), str(secrets_dir / "default.vault"))
+    # Also copy the companion .password file
+    password_src = vault_path.with_suffix(".password")
+    if password_src.exists():
+        shutil.copy2(str(password_src), str(secrets_dir / "default.password"))
 
     # config.yaml
     (tmp_path / "config.yaml").write_text(
