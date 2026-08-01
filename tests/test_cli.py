@@ -88,7 +88,10 @@ def _setup_minimal_workspace(tmp_path: Path, vault_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_open_keepass_times_out_on_slow_kdf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_open_keepass_times_out_on_slow_kdf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When pykeepass.open() takes longer than kdf_timeout_sec, a RuntimeError is raised."""
     vault_path = tmp_path / "test.vault"
     vault_path.write_bytes(b"\x03\xd9\xa2\x9a" + b"\x00" * 60)
@@ -111,7 +114,10 @@ def test_open_keepass_times_out_on_slow_kdf(tmp_path: Path, monkeypatch: pytest.
         )
 
 
-def test_open_keepass_succeeds_within_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_open_keepass_succeeds_within_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When pykeepass.open() completes quickly, no timeout error is raised."""
     from dataclasses import dataclass
 
@@ -206,7 +212,10 @@ def test_cli_does_not_hang_with_wrong_password_via_mock(
         password_file.unlink()
 
     # Mock _read_password_hidden to return wrong password
-    monkeypatch.setattr("pyntara.secrets_store._read_password_hidden", lambda prompt: "wrong-password")
+    monkeypatch.setattr(
+        "pyntara.secrets_store._read_password_hidden",
+        lambda prompt: "wrong-password",
+    )
     monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: True)
 
     store = VaultSecretsStore(

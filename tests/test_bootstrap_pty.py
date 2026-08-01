@@ -349,7 +349,6 @@ def _run_bootstrap(
                 time.sleep(0.2)
 
         marker = wait_for or b"Bootstrap finished"
-        found = False
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 try:
@@ -375,7 +374,6 @@ def _run_bootstrap(
                 pass
 
             if marker in accumulated:
-                found = True
                 break
 
         # Drain any remaining output

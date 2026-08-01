@@ -72,8 +72,9 @@ class VaultSecretsStore:
         Tries production vault first if selected, with fallback to default.
         """
         if self._use_production:
-            self._values = self._try_load_vault(self._production_vault)
-            if self._values is not None:
+            production_values = self._try_load_vault(self._production_vault)
+            if production_values is not None:
+                self._values = production_values
                 self._loaded = True
                 return
             # Production failed — fall back to default
@@ -82,11 +83,12 @@ class VaultSecretsStore:
                 file=sys.stderr,
             )
 
-        self._values = self._try_load_vault(self._default_vault)
-        if self._values is None:
+        default_values = self._try_load_vault(self._default_vault)
+        if default_values is None:
             raise RuntimeError(
                 "Failed to open default KeePass vault: password attempts exhausted."
             )
+        self._values = default_values
         self._loaded = True
 
     def _try_load_vault(self, vault_path: Path) -> dict[str, str] | None:
@@ -309,7 +311,7 @@ def _prompt_production_password_with_timeout(
                     f"(auto-fallback to default in {remaining_sec:02d}s): "
                 )
                 padding = " " * max(0, rendered_len - len(line))
-                os.write(fd, f"\r{line}{padding}".encode("utf-8"))
+                os.write(fd, f"\r{line}{padding}".encode())
                 rendered_len = len(line)
 
                 if remaining <= 0:

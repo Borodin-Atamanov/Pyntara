@@ -163,7 +163,12 @@ def test_load_reads_real_keepass_database(tmp_path: Path) -> None:
     # Group: telemetry > telegram
     telemetry_group = kp.add_group(kp.root_group, "telemetry")
     telegram_group = kp.add_group(telemetry_group, "telegram")
-    kp.add_entry(telegram_group, title="bot_token", username="telegram_bot", password="test-bot-token")
+    kp.add_entry(
+        telegram_group,
+        title="bot_token",
+        username="telegram_bot",
+        password="test-bot-token",
+    )
     kp.add_entry(telegram_group, title="chat_id", username="telegram_chat", password="test-chat-id")
 
     # Group: telemetry > gdrive

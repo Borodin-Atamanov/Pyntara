@@ -6,8 +6,6 @@ import subprocess
 import time
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_TIMEOUT = 300  # generous timeout for uv sync + bootstrap
 
@@ -102,6 +100,7 @@ def _bootstrap_env(tmp_path: Path, project_dir: Path) -> dict[str, str]:
     path = f"{venv_bin}:{os.environ.get('PATH', '')}"
     return {
         "PATH": path,
+        "UV_PROJECT_ENVIRONMENT": ".venv",
         "PYNTARA_ROOT_EUID": str(os.geteuid()),
         "PYNTARA_STATE_DIR": str(tmp_path / "state"),
         "PYNTARA_LOG_DIR": str(tmp_path / "logs"),
