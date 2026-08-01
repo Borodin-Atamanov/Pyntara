@@ -192,8 +192,8 @@ def test_cli_does_not_hang_with_wrong_password_via_mock(
     vault_path = tmp_path / "test.vault"
     _create_test_kdbx(vault_path, "correct-password")
 
-    # Mock getpass to return wrong password
-    monkeypatch.setattr("pyntara.secrets_store.getpass.getpass", lambda prompt: "wrong-password")
+    # Mock _read_password_hidden to return wrong password
+    monkeypatch.setattr("pyntara.secrets_store._read_password_hidden", lambda prompt: "wrong-password")
     monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: True)
 
     store = VaultSecretsStore(
@@ -213,9 +213,9 @@ def test_cli_succeeds_with_correct_password_via_mock(
     vault_path = tmp_path / "test.vault"
     _create_test_kdbx(vault_path, "correct-password")
 
-    # Mock getpass to return correct password
+    # Mock _read_password_hidden to return correct password
     monkeypatch.setattr(
-        "pyntara.secrets_store.getpass.getpass", lambda prompt: "correct-password"
+        "pyntara.secrets_store._read_password_hidden", lambda prompt: "correct-password"
     )
     monkeypatch.setattr("pyntara.secrets_store._interactive_prompt_available", lambda: True)
 

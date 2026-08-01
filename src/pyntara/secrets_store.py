@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import getpass
 import importlib
 import os
 import sys
+import termios
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
@@ -180,38 +180,110 @@ def _password_from_env_or_prompt(
 
 
 def _default_password_provider(vault_path: Path) -> str:
+    """Read a password from the terminal with echo disabled.
+
+    Bypasses getpass.getpass() because process managers like 'uv run'
+    may create subprocesses where getpass cannot properly access /dev/tty.
+    Uses termios directly on /dev/tty for reliable hidden input.
+    """
     print(
         f"KeePass password is required to open {vault_path.name}. Input is hidden.",
         file=sys.stderr,
     )
-    return getpass.getpass(f"KeePass password for {vault_path.name}: ")
+    prompt = f"KeePass password for {vault_path.name}: "
+    password = _read_password_hidden(prompt)
+    if password is None:
+        raise RuntimeError(
+            "KeePass password is required, but interactive prompt is unavailable. "
+            "Set PYNTARA_VAULT_PASSWORD for non-interactive bootstrap."
+        )
+    return password
 
 
 def _interactive_prompt_available() -> bool:
-    """Check if an interactive password prompt via getpass is possible.
+    """Check if hidden password input is possible.
 
-    getpass.getpass() internally opens /dev/tty directly for reading.
-    If /dev/tty is not available, it falls back to sys.stdin.
-
-    - If /dev/tty is available: getpass works correctly (hidden input).
-    - If /dev/tty is NOT available but sys.stdin IS a TTY: getpass
-      falls back to sys.stdin and still works correctly (hidden input).
-    - If NEITHER /dev/tty NOR sys.stdin.isatty(): getpass falls back to
-      sys.stdin.readline() with echo enabled, LEAKING the password.
-
-    This is the scenario in 'curl ... | sudo bash' where stdin is a pipe
-    and the process may not have a controlling terminal.
-
-    Returns True only when getpass can provide hidden input.
+    Attempts to open /dev/tty — this is what _read_password_hidden
+    uses for hidden input. Fall back to sys.stdin if it's a real TTY.
     """
-    # /dev/tty is the primary path getpass uses
     try:
         with Path("/dev/tty").open("rb"):
             return True
     except OSError:
         pass
-    # Fallback: sys.stdin as a real TTY also works (no echo)
     return sys.stdin.isatty()
+
+
+def _read_password_hidden(prompt: str) -> str | None:
+    """Read a password from the terminal with echo disabled.
+
+    Tries /dev/tty first (primary path for hidden input), then falls
+    back to sys.stdin if it is a TTY. Uses termios to disable echo.
+
+    Returns the password string, or None if no TTY is available.
+    """
+    # Try /dev/tty first — this is the most reliable path
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        fd = -1
+
+    if fd < 0 and sys.stdin.isatty():
+        fd = sys.stdin.fileno()
+
+    if fd < 0:
+        return None
+
+    try:
+        old_settings = termios.tcgetattr(fd)
+        new_settings = termios.tcgetattr(fd)
+        # Disable ECHO (bit 3) and ECHONL (bit 6) for hidden input
+        new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ECHONL)
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+            try:
+                os.write(fd, prompt.encode("utf-8"))
+                password_bytes = _read_line_from_fd(fd)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except termios.error:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            return None
+    except (termios.error, OSError):
+        return None
+    finally:
+        if fd != sys.stdin.fileno():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    password = password_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+    print(file=sys.stderr)
+    return password
+
+
+def _read_line_from_fd(fd: int) -> bytes:
+    """Read one line from a file descriptor, byte by byte."""
+    result = bytearray()
+    while True:
+        try:
+            ch = os.read(fd, 1)
+        except OSError:
+            break
+        if not ch:
+            break
+        if ch in (b"\n", b"\r"):
+            if ch == b"\r":
+                try:
+                    next_ch = os.read(fd, 1)
+                    if next_ch and next_ch != b"\n":
+                        result.extend(next_ch)
+                except OSError:
+                    pass
+            break
+        result.extend(ch)
+    return bytes(result)
 
 
 def _import_pykeepass() -> _PyKeePassModule:
