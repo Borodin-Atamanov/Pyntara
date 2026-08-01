@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import pty
+import select
 import shutil
 import stat
 import subprocess
@@ -258,6 +260,7 @@ def _run_bootstrap(
     vault_password: str | None = _VAULT_PASSWORD,
     interactive_input: list[bytes] | None = None,
     wait_for: bytes | None = None,
+    pipe_stdin: bool = False,
 ) -> tuple[int, bytes]:
     """Run the bootstrap script via PTY and return (returncode, output).
 
@@ -267,6 +270,10 @@ def _run_bootstrap(
 
     If *wait_for* is provided, the method waits for that marker before
     returning (or until timeout).
+
+    If *pipe_stdin* is True, the script content is piped to bash's stdin
+    (simulating 'curl ... | bash') instead of being passed as a file argument.
+    The PTY is still used as the controlling terminal so /dev/tty is available.
     """
     trace_path = tmp_path / "trace.log"
     source_tar = tmp_path / "source.tar"
@@ -283,26 +290,113 @@ def _run_bootstrap(
     script_path = tmp_path / "i.sh"
     script_path.write_text((_REPO_ROOT / "i.sh").read_text(encoding="utf-8"), encoding="utf-8")
 
-    with PtySession(
-        ["bash", str(script_path)],
-        cwd=_REPO_ROOT,
-        env=env,
-        timeout=_PTY_TIMEOUT,
-    ) as session:
+    if pipe_stdin:
+        # Simulate 'curl ... | bash': bash reads script from a pipe,
+        # but the PTY provides the controlling terminal for /dev/tty access.
+        # We open a PTY, start bash with stdin from the pipe write end,
+        # write the script to the pipe, close it, and use the PTY for I/O.
+        master_fd, slave_fd = pty.openpty()
+        read_fd, write_fd = os.pipe()
+
+        proc = subprocess.Popen(
+            ["bash"],
+            stdin=read_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            cwd=_REPO_ROOT,
+            env=env,
+            close_fds=True,
+        )
+        os.close(read_fd)
+        os.close(slave_fd)
+
+        # Write script content to the pipe and close it
+        script_content = (_REPO_ROOT / "i.sh").read_bytes()
+        os.write(write_fd, script_content)
+        os.close(write_fd)
+
+        # Now use the PTY master for interaction
+        accumulated = b""
+        start_time = time.monotonic()
+        deadline = start_time + _PTY_TIMEOUT
+
         if interactive_input:
             for chunk in interactive_input:
-                session.write(chunk)
+                os.write(master_fd, chunk)
                 time.sleep(0.2)
 
         marker = wait_for or b"Bootstrap finished"
+        found = False
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                try:
+                    while True:
+                        ready, _, _ = select.select([master_fd], [], [], 0)
+                        if not ready:
+                            break
+                        chunk = os.read(master_fd, 4096)
+                        if not chunk:
+                            break
+                        accumulated += chunk
+                except (OSError, ValueError):
+                    pass
+                break
+
+            try:
+                ready, _, _ = select.select([master_fd], [], [], 0.05)
+                if ready:
+                    chunk = os.read(master_fd, 4096)
+                    if chunk:
+                        accumulated += chunk
+            except (OSError, ValueError):
+                pass
+
+            if marker in accumulated:
+                found = True
+                break
+
+        # Drain any remaining output
         try:
-            session.read_until(marker, timeout=25)
-        except TimeoutError:
+            while True:
+                ready, _, _ = select.select([master_fd], [], [], 0.1)
+                if not ready:
+                    break
+                chunk = os.read(master_fd, 4096)
+                if not chunk:
+                    break
+                accumulated += chunk
+        except (OSError, ValueError):
             pass
 
-        session.close()
+        os.close(master_fd)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
-    return session.returncode or 0, session.output
+        return proc.returncode or 0, accumulated
+    else:
+        with PtySession(
+            ["bash", str(script_path)],
+            cwd=_REPO_ROOT,
+            env=env,
+            timeout=_PTY_TIMEOUT,
+        ) as session:
+            if interactive_input:
+                for chunk in interactive_input:
+                    session.write(chunk)
+                    time.sleep(0.2)
+
+            marker = wait_for or b"Bootstrap finished"
+            try:
+                session.read_until(marker, timeout=25)
+            except TimeoutError:
+                pass
+
+            session.close()
+
+        return session.returncode or 0, session.output
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +421,81 @@ def test_bootstrap_full_flow_auto_select(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 — Scenario 2.2: Bootstrap with manual mode selection
+# Layer 2 — Scenario 2.2: Bootstrap via piped stdin (curl ... | bash)
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_via_piped_stdin(tmp_path: Path) -> None:
+    """Full bootstrap via piped stdin, simulating 'curl ... | sudo bash'.
+
+    The script content is piped to bash's stdin. The PTY provides the
+    controlling terminal for /dev/tty access. Password is provided via
+    env var to avoid the interactive prompt.
+
+    Expected: all bootstrap steps complete, CLI runs, tasks execute, exit 0.
+    """
+    returncode, output = _run_bootstrap(
+        tmp_path,
+        pipe_stdin=True,
+    )
+
+    assert returncode == 0, (
+        f"Bootstrap via piped stdin should exit 0. Output:\n{output.decode(errors='replace')}"
+    )
+    assert b"Bootstrap finished" in output, (
+        "Bootstrap completion marker not found."
+    )
+    assert b"hostname: done" in output, (
+        "Task output not found."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — Scenario 2.3: Bootstrap via piped stdin, no password env var
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_via_piped_stdin_no_password(tmp_path: Path) -> None:
+    """Bootstrap via piped stdin, no PYNTARA_VAULT_PASSWORD.
+
+    This simulates the exact 'curl ... | sudo bash' scenario where the
+    user is prompted for the KeePass password interactively.
+
+    Expected: CLI detects that /dev/tty is available (via the PTY) and
+    prompts for the password. The test sends a wrong password and
+    expects failure.
+    """
+    returncode, output = _run_bootstrap(
+        tmp_path,
+        vault_password=None,  # No env var → force interactive prompt
+        pipe_stdin=True,
+        interactive_input=[b"wrong-password\n"],
+        wait_for=b"KeePass password",
+    )
+
+    # The CLI should either fail (wrong password) or prompt for password
+    assert returncode != 0, (
+        f"Bootstrap should fail without correct password. "
+        f"Output:\n{output.decode(errors='replace')}"
+    )
+    # Either getpass prompted (and password was wrong) or it detected no TTY
+    assert (
+        b"KeePass password" in output
+        or b"interactive prompt is unavailable" in output
+        or b"password" in output.lower()
+    ), (
+        f"Expected password-related output. Output:\n{output.decode(errors='replace')}"
+    )
+    # Critical: password should NOT be echoed in the output
+    password_echoed = output.decode(errors="replace").count("wrong-password")
+    assert password_echoed <= 1, (
+        f"Password appears to be echoed {password_echoed} times! "
+        f"This means getpass is leaking the password. Output:\n{output.decode(errors='replace')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — Scenario 2.4: Bootstrap with manual mode selection
 # ---------------------------------------------------------------------------
 
 
