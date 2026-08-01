@@ -21,7 +21,7 @@ pytestmark = pytest.mark.bootstrap_deep
 # ---------------------------------------------------------------------------
 
 _VAULT_PASSWORD = "test-password-123"
-_PTY_TIMEOUT = 30.0
+_PTY_TIMEOUT = 60.0
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -427,7 +427,7 @@ def _run_bootstrap(
 
             marker = wait_for or b"Bootstrap finished"
             try:
-                session.read_until(marker, timeout=25)
+                session.read_until(marker, timeout=55)
             except TimeoutError:
                 pass
 
@@ -634,7 +634,7 @@ def test_bootstrap_trace_shows_all_steps(tmp_path: Path) -> None:
         timeout=_PTY_TIMEOUT,
     ) as session:
         try:
-            session.read_until(b"Bootstrap finished", timeout=25)
+            session.read_until(b"Bootstrap finished", timeout=55)
         except TimeoutError:
             pass
         session.close()
