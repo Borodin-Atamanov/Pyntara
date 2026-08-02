@@ -444,7 +444,8 @@ def _render_checkbox_list(
 
 
 def _is_interactive(*, stdin: TextIO, stdout: TextIO) -> bool:
-    return stdin.isatty() and stdout.isatty()
+    _ = stdout
+    return stdin.isatty()
 
 
 @contextmanager

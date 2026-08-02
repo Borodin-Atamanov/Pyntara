@@ -71,6 +71,7 @@ def select_install_mode(
     default_mode = _detect_default_mode(install_modes=install_modes, env=selected_env)
     if default_mode not in _MODE_OPTIONS:
         raise ValueError(f"Unsupported default mode '{default_mode}'.")
+
     if not _is_interactive(stdin=selected_stdin, stdout=selected_stdout):
         return default_mode
 
@@ -127,7 +128,8 @@ def _detect_default_mode(*, install_modes: InstallModesConfig, env: Mapping[str,
 
 
 def _is_interactive(*, stdin: TextIO, stdout: TextIO) -> bool:
-    return stdin.isatty() and stdout.isatty()
+    _ = stdout
+    return stdin.isatty()
 
 
 def _render_prompt(
