@@ -14,6 +14,13 @@ Pyntara is split into four explicit layers:
 
 Each layer depends only on lower-level layers. Tasks must not import from CLI.
 
+Bootstrap transport contract for `curl | sudo bash` style launches:
+
+- Before starting the interactive CLI, `i.sh` must reconnect stdin to the controlling terminal via `/dev/tty`.
+- The reconnect guard is: `if [ -t 0 ] || [ -e /dev/tty ]; then exec < /dev/tty; fi`.
+- If `/dev/tty` is unavailable (for example: cron, ssh without `-t`, some CI runners), bootstrap must log the reason and switch to an explicit non-interactive fallback.
+- This contract avoids silent hangs when interactive selectors cannot safely read terminal input.
+
 ## 2. Composition root
 
 The `run` command in `cli.py` is the only place that is allowed to assemble runtime state:

@@ -731,6 +731,208 @@ def test_bootstrap_falls_back_when_cli_stdin_path_is_unavailable(tmp_path: Path)
     assert "cli_stdin <empty>" in trace
 
 
+def test_bootstrap_devnull_stdin_does_not_hang_and_runs_cli(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script_path = tmp_path / "i.sh"
+    script_path.write_text((repo_root / "i.sh").read_text(encoding="utf-8"), encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    source_tar = tmp_path / "source.tar"
+    _build_source_tar(source_tar)
+
+    _write_executable(
+        fake_bin / "apt-get",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'apt-get %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "uv",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'uv %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == run && \"$2\" == pyntara ]]; then\n"
+            "  if [[ -t 0 ]]; then\n"
+            "    printf 'cli_stdin tty\\n' >> \"$PYNTARA_TEST_TRACE\"\n"
+            "  else\n"
+            "    printf 'cli_stdin notty\\n' >> \"$PYNTARA_TEST_TRACE\"\n"
+            "  fi\n"
+            "fi\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "git",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'git %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == clone ]]; then\n"
+            "  cache_dir=\"${@: -1}\"\n"
+            "  mkdir -p \"$cache_dir\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"$3\" == rev-parse ]]; then\n"
+            "  ref=\"${@: -1}\"\n"
+            "  if [[ \"$ref\" == origin/main ]] || \\\n"
+            "     [[ \"$ref\" == main ]] || \\\n"
+            "     [[ \"$ref\" == FETCH_HEAD ]]; then\n"
+            "    exit 0\n"
+            "  fi\n"
+            "  exit 1\n"
+            "fi\n"
+            "if [[ \"$3\" == archive ]]; then\n"
+            "  output=''\n"
+            "  while (($#)); do\n"
+            "    if [[ \"$1\" == --output ]]; then\n"
+            "      output=\"$2\"\n"
+            "      break\n"
+            "    fi\n"
+            "    shift\n"
+            "  done\n"
+            "  cp \"$PYNTARA_TEST_SOURCE_TAR\" \"$output\"\n"
+            "  exit 0\n"
+            "fi\n"
+        ),
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["PYNTARA_ROOT_EUID"] = str(os.geteuid())
+    env["PYNTARA_STATE_DIR"] = str(tmp_path / "state")
+    env["PYNTARA_LOG_DIR"] = str(tmp_path / "logs")
+    env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
+    env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
+    env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
+    env["PYNTARA_TEST_TRACE"] = str(trace_path)
+    env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
+
+    completed = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=repo_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+    trace = trace_path.read_text(encoding="utf-8")
+    assert "uv run pyntara" in trace
+    assert "cli_stdin tty" in trace or "cli_stdin notty" in trace
+
+
+def test_bootstrap_setsid_devnull_stdin_logs_tty_unavailable_fallback(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script_path = tmp_path / "i.sh"
+    script_path.write_text((repo_root / "i.sh").read_text(encoding="utf-8"), encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace_path = tmp_path / "trace.log"
+    source_tar = tmp_path / "source.tar"
+    _build_source_tar(source_tar)
+
+    _write_executable(
+        fake_bin / "apt-get",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'apt-get %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "uv",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'uv %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == run && \"$2\" == pyntara ]]; then\n"
+            "  if [[ -t 0 ]]; then\n"
+            "    printf 'cli_stdin tty\\n' >> \"$PYNTARA_TEST_TRACE\"\n"
+            "  else\n"
+            "    printf 'cli_stdin notty\\n' >> \"$PYNTARA_TEST_TRACE\"\n"
+            "  fi\n"
+            "fi\n"
+        ),
+    )
+    _write_executable(
+        fake_bin / "git",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'git %s\\n' \"$*\" >> \"$PYNTARA_TEST_TRACE\"\n"
+            "if [[ \"$1\" == clone ]]; then\n"
+            "  cache_dir=\"${@: -1}\"\n"
+            "  mkdir -p \"$cache_dir\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"$3\" == rev-parse ]]; then\n"
+            "  ref=\"${@: -1}\"\n"
+            "  if [[ \"$ref\" == origin/main ]] || \\\n"
+            "     [[ \"$ref\" == main ]] || \\\n"
+            "     [[ \"$ref\" == FETCH_HEAD ]]; then\n"
+            "    exit 0\n"
+            "  fi\n"
+            "  exit 1\n"
+            "fi\n"
+            "if [[ \"$3\" == archive ]]; then\n"
+            "  output=''\n"
+            "  while (($#)); do\n"
+            "    if [[ \"$1\" == --output ]]; then\n"
+            "      output=\"$2\"\n"
+            "      break\n"
+            "    fi\n"
+            "    shift\n"
+            "  done\n"
+            "  cp \"$PYNTARA_TEST_SOURCE_TAR\" \"$output\"\n"
+            "  exit 0\n"
+            "fi\n"
+        ),
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["PYNTARA_ROOT_EUID"] = str(os.geteuid())
+    env["PYNTARA_STATE_DIR"] = str(tmp_path / "state")
+    env["PYNTARA_LOG_DIR"] = str(tmp_path / "logs")
+    env["PYNTARA_WORK_BASE_DIR"] = str(tmp_path / "work")
+    env["PYNTARA_REPO_CACHE_DIR"] = str(tmp_path / "cache" / "Pyntara.git")
+    env["PYNTARA_UV_CACHE_DIR"] = str(tmp_path / "cache" / "uv")
+    env["PYNTARA_UV_USER"] = os.environ.get("USER", "")
+    env["PYNTARA_UV_USER_HOME"] = str(tmp_path / "home-user")
+    env["PYNTARA_TEST_TRACE"] = str(trace_path)
+    env["PYNTARA_TEST_SOURCE_TAR"] = str(source_tar)
+
+    completed = subprocess.run(
+        ["setsid", "bash", str(script_path)],
+        cwd=repo_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Controlling tty is unavailable" in completed.stdout
+    assert "switching to non-interactive fallback" in completed.stdout
+
+    trace = trace_path.read_text(encoding="utf-8")
+    assert "uv run pyntara" in trace
+    assert "cli_stdin notty" in trace
+
+
 def test_bootstrap_uses_local_source_without_git(tmp_path: Path) -> None:
     script_src = Path(__file__).resolve().parents[1] / "i.sh"
     local_source = tmp_path / "flash-source"

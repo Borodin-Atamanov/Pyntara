@@ -13,9 +13,9 @@ from .logging_setup import configure_logging
 from .mode_selector import select_install_mode
 from .models import InstallModesConfig
 from .secrets_store import VaultSecretsStore
-from .task_selector import select_force_mode, select_force_tasks, select_tasks
 from .task_registry import TaskRegistry
 from .task_runner import TaskRunner
+from .task_selector import select_force_mode, select_force_tasks, select_tasks
 
 app = typer.Typer(help="Pyntara automation CLI.")
 

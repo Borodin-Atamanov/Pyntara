@@ -8,6 +8,12 @@ This document is the source of truth for interactive terminal UX in Pyntara boot
 - Root password is requested by sudo or OS facilities before Pyntara flow starts.
 - Pyntara interactive flow begins with secrets and installation choices.
 
+Bootstrap terminal handoff requirement:
+
+- For pipe-based launch (`curl ... | sudo bash`), `i.sh` must reconnect stdin to controlling terminal via `/dev/tty` before interactive UI starts.
+- Required guard: `if [ -t 0 ] || [ -e /dev/tty ]; then exec < /dev/tty; fi`.
+- If `/dev/tty` is unavailable, bootstrap must not wait for interactive input and must switch to non-interactive fallback with a clear reason in logs.
+
 ## 2. Screen order (default flow)
 
 1. Production vault decryption password prompt.
@@ -65,3 +71,9 @@ This document is the source of truth for interactive terminal UX in Pyntara boot
 10. Force checkbox list appears only when `Yes` is chosen.
 11. Force checkboxes are independent.
 12. All prompts are clear English.
+13. Bootstrap reconnects stdin to controlling tty via `/dev/tty` before interactive screens.
+14. If `/dev/tty` is unavailable, bootstrap explicitly logs non-interactive fallback reason and does not hang waiting for input.
+
+## 9. Future note
+
+- If support is later required for environments where `/dev/tty` is universally unavailable, a PTY wrapper can be considered as a separate fallback design.

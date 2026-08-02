@@ -348,28 +348,62 @@ bootstrap_python_env() {
 run_pyntara() {
   cd "${SCRIPT_DIR}"
   log "Starting Pyntara CLI"
+  local run_status="${EXIT_OK}"
+  local restore_stdin="${EXIT_ERROR}"
+  if [[ "${PYNTARA_CLI_STDIN_PATH}" == "/dev/tty" ]]; then
+    if [[ -t 0 || -e /dev/tty ]]; then
+      exec 9<&0
+      restore_stdin="${EXIT_OK}"
+      if exec </dev/tty; then
+        log "Reconnected CLI stdin to controlling tty via /dev/tty"
+      else
+        log "Controlling tty is unavailable (cron, ssh without -t, or CI); switching to non-interactive fallback."
+        exec 0<&9
+        exec 9<&-
+        restore_stdin="${EXIT_ERROR}"
+      fi
+    else
+      log "Controlling tty is unavailable (cron, ssh without -t, or CI); switching to non-interactive fallback."
+    fi
+  fi
   if exec 3<"${PYNTARA_CLI_STDIN_PATH}"; then
     log "Using CLI stdin source: ${PYNTARA_CLI_STDIN_PATH}"
     if [[ "${PYNTARA_CLI_STDIN_PATH}" == "/dev/tty" ]]; then
       log "Running: uv run pyntara"
       set +e
       uv run pyntara <&3
-      local run_status="$?"
+      run_status="$?"
       set -e
       exec 3<&-
+      if [[ "${restore_stdin}" -eq "${EXIT_OK}" ]]; then
+        exec 0<&9
+        exec 9<&-
+      fi
       return "${run_status}"
     fi
 
     log "Running: timeout ${PYNTARA_RUN_TIMEOUT_SEC} uv run pyntara"
     set +e
     timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara <&3
-    local run_status="$?"
+    run_status="$?"
     set -e
     exec 3<&-
+    if [[ "${restore_stdin}" -eq "${EXIT_OK}" ]]; then
+      exec 0<&9
+      exec 9<&-
+    fi
     return "${run_status}"
   fi
   log "CLI stdin source is unavailable: ${PYNTARA_CLI_STDIN_PATH}"
+  set +e
   run_logged timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara
+  run_status="$?"
+  set -e
+  if [[ "${restore_stdin}" -eq "${EXIT_OK}" ]]; then
+    exec 0<&9
+    exec 9<&-
+  fi
+  return "${run_status}"
 }
 
 # Main bootstrap flow:

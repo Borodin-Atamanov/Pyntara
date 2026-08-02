@@ -137,7 +137,12 @@ def select_tasks(
                         selected.remove(current)
                     else:
                         selected.add(current)
-                        selected.update(_dependency_closure(task_catalog=task_catalog, root_task=current))
+                        selected.update(
+                            _dependency_closure(
+                                task_catalog=task_catalog,
+                                root_task=current,
+                            )
+                        )
                 elif key == "ENTER":
                     break
     except (OSError, ValueError, termios.error):
