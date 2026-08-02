@@ -61,10 +61,21 @@ ensure_dialog() {
     return "${EXIT_OK}"
   fi
 
-  echo "dialog is not installed. Installing dialog via apt..."
+  echo "dialog is not installed. Trying to install dialog via apt..."
+  if apt-get install -y dialog; then
+    echo "dialog installed successfully."
+    return "${EXIT_OK}"
+  fi
+
+  echo "First install attempt failed. Updating apt index and retrying..."
   apt-get update -y
-  apt-get install -y dialog
-  echo "dialog installed successfully."
+  if apt-get install -y dialog; then
+    echo "dialog installed successfully."
+    return "${EXIT_OK}"
+  fi
+
+  echo "ERROR: Failed to install dialog. Please install it manually: apt-get install dialog"
+  exit "${EXIT_ERROR}"
 }
 
 # ──────────────────────────────────────────────
