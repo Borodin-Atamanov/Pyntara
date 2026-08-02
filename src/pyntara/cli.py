@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -63,13 +64,52 @@ def run(
         env=dict(os.environ),
     )
 
+    _stage("before_mode_selector")
+    selected_mode = mode or select_install_mode(
+        install_modes=loaded.install_modes, env=dict(os.environ)
+    )
+    _stage(f"after_mode_selector mode={selected_mode}")
+
+    mode_tasks = task or _select_mode_tasks(
+        mode=selected_mode, install_modes_path=loaded.install_modes
+    )
+    selected_tasks = mode_tasks
+    force_task_names: set[str] = set()
+
+    if task is None:
+        _stage("before_task_selector")
+        selected_tasks = select_tasks(
+            task_catalog=loaded.task_catalog,
+            mode_task_names=mode_tasks,
+            pre_interaction_timeout_sec=loaded.app_config.ui.task_pre_interaction_timeout_sec,
+        )
+        _stage(f"after_task_selector selected={','.join(selected_tasks)}")
+
+        _stage("before_force_mode")
+        use_force_mode = select_force_mode(
+            timeout_sec=loaded.install_modes.auto_select_timeout_sec,
+        )
+        _stage(f"after_force_mode use_force={int(use_force_mode)}")
+
+        if use_force_mode:
+            _stage("before_force_tasks")
+            force_task_names = select_force_tasks(
+                selected_task_names=selected_tasks,
+                task_catalog=loaded.task_catalog,
+                pre_interaction_timeout_sec=loaded.app_config.ui.task_pre_interaction_timeout_sec,
+            )
+            _stage(f"after_force_tasks selected={','.join(sorted(force_task_names))}")
+
     secrets_dir = loaded.app_config.paths.secrets_dir
     secrets_store = VaultSecretsStore(
         default_vault=secrets_dir / "default.vault",
         production_vault=secrets_dir / "production.vault",
         use_production=use_production_secrets,
     )
+    _stage("before_secrets_load")
+    secrets_started_at = time.monotonic()
     secrets_store.load()
+    _stage(f"after_secrets_load elapsed={time.monotonic() - secrets_started_at:.3f}s")
 
     run_context = create_run_context(
         config=loaded.app_config,
@@ -78,31 +118,6 @@ def run(
         secrets_store=secrets_store,
         logger=logger,
     )
-
-    selected_mode = mode or select_install_mode(
-        install_modes=loaded.install_modes, env=dict(os.environ)
-    )
-    mode_tasks = task or _select_mode_tasks(
-        mode=selected_mode, install_modes_path=loaded.install_modes
-    )
-    selected_tasks = mode_tasks
-    force_task_names: set[str] = set()
-
-    if task is None:
-        selected_tasks = select_tasks(
-            task_catalog=run_context.task_catalog,
-            mode_task_names=mode_tasks,
-            pre_interaction_timeout_sec=run_context.config.ui.task_pre_interaction_timeout_sec,
-        )
-        use_force_mode = select_force_mode(
-            timeout_sec=loaded.install_modes.auto_select_timeout_sec,
-        )
-        if use_force_mode:
-            force_task_names = select_force_tasks(
-                selected_task_names=selected_tasks,
-                task_catalog=run_context.task_catalog,
-                pre_interaction_timeout_sec=run_context.config.ui.task_pre_interaction_timeout_sec,
-            )
 
     registry = TaskRegistry(task_catalog=run_context.task_catalog)
     runner = TaskRunner(registry=registry)
@@ -127,6 +142,10 @@ def _select_mode_tasks(*, mode: str, install_modes_path: InstallModesConfig) -> 
     if mode == "desktop":
         return list(install_modes_path.desktop)
     raise ValueError(f"Unknown mode '{mode}'.")
+
+
+def _stage(message: str) -> None:
+    print(f"CLI_STAGE {message}", file=sys.stderr, flush=True)
 
 
 def main() -> None:
