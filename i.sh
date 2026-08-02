@@ -13,13 +13,13 @@ RETRY_MAX_ATTEMPTS=3
 RETRY_INITIAL_DELAY_SEC=1
 RETRY_MULTIPLIER=2
 APT_UPDATE_TIMEOUT_SEC=600
-APT_INSTALL_TIMEOUT_SEC=1200
-UV_INSTALL_TIMEOUT_SEC=600
-UV_SYNC_TIMEOUT_SEC=1200
-PYNTARA_RUN_TIMEOUT_SEC=7200
-GIT_CLONE_TIMEOUT_SEC=1200
-GIT_FETCH_TIMEOUT_SEC=600
-GIT_EXPORT_TIMEOUT_SEC=300
+APT_INSTALL_TIMEOUT_SEC=900
+UV_INSTALL_TIMEOUT_SEC=300
+UV_SYNC_TIMEOUT_SEC=600
+PYNTARA_RUN_TIMEOUT_SEC=1800
+GIT_CLONE_TIMEOUT_SEC=600
+GIT_FETCH_TIMEOUT_SEC=300
+GIT_EXPORT_TIMEOUT_SEC=180
 APT_UPDATE_TTL_SEC=3600
 TIMESTAMP_FORMAT="+%Y-%m-%d-%H-%M-%S"
 STATE_DIR="${PYNTARA_STATE_DIR:-/var/lib/pyntara}"
@@ -350,7 +350,8 @@ run_pyntara() {
   log "Starting Pyntara CLI"
   local run_status="${EXIT_OK}"
   local restore_stdin="${EXIT_ERROR}"
-  if [[ "${PYNTARA_CLI_STDIN_PATH}" == "/dev/tty" ]]; then
+  local cli_stdin_path="${PYNTARA_CLI_STDIN_PATH}"
+  if [[ "${cli_stdin_path}" == "/dev/tty" ]]; then
     if [[ -t 0 || -e /dev/tty ]]; then
       exec 9<&0
       restore_stdin="${EXIT_OK}"
@@ -361,14 +362,16 @@ run_pyntara() {
         exec 0<&9
         exec 9<&-
         restore_stdin="${EXIT_ERROR}"
+        cli_stdin_path="/dev/stdin"
       fi
     else
       log "Controlling tty is unavailable (cron, ssh without -t, or CI); switching to non-interactive fallback."
+      cli_stdin_path="/dev/stdin"
     fi
   fi
-  if exec 3<"${PYNTARA_CLI_STDIN_PATH}"; then
-    log "Using CLI stdin source: ${PYNTARA_CLI_STDIN_PATH}"
-    if [[ "${PYNTARA_CLI_STDIN_PATH}" == "/dev/tty" ]]; then
+  if exec 3<"${cli_stdin_path}"; then
+    log "Using CLI stdin source: ${cli_stdin_path}"
+    if [[ "${cli_stdin_path}" == "/dev/tty" ]]; then
       log "Running: uv run pyntara"
       set +e
       uv run pyntara <&3
@@ -394,7 +397,7 @@ run_pyntara() {
     fi
     return "${run_status}"
   fi
-  log "CLI stdin source is unavailable: ${PYNTARA_CLI_STDIN_PATH}"
+  log "CLI stdin source is unavailable: ${cli_stdin_path}"
   set +e
   run_logged timeout "${PYNTARA_RUN_TIMEOUT_SEC}" uv run pyntara
   run_status="$?"

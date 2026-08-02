@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_BOOTSTRAP_TIMEOUT = 300  # generous timeout for uv sync + bootstrap
+_BOOTSTRAP_TIMEOUT = 35  # moderate bound after shrinking internal interactive waits
 
 pytestmark = pytest.mark.bootstrap_slow
 
@@ -181,6 +181,20 @@ def _copy_project(tmp_path: Path, *, include_git: bool = False) -> Path:
     if real_uv:
         (venv_bin / "uv").symlink_to(real_uv)
 
+    # Keep bootstrap tests quick by reducing install mode auto-select delay
+    # inside the copied project used for local test runs.
+    install_modes_path = dest / "install_modes.yaml"
+    if install_modes_path.exists():
+        install_modes_text = install_modes_path.read_text(encoding="utf-8")
+        if "auto_select_timeout_sec:" in install_modes_text:
+            install_modes_text = install_modes_text.replace(
+                "auto_select_timeout_sec: 11",
+                "auto_select_timeout_sec: 3",
+            )
+        else:
+            install_modes_text += "\nauto_select_timeout_sec: 3\n"
+        install_modes_path.write_text(install_modes_text, encoding="utf-8")
+
     return dest
 
 
@@ -206,6 +220,8 @@ def _bootstrap_env(tmp_path: Path, project_dir: Path, fake_bin: Path) -> dict[st
         "PYNTARA_REPO_CACHE_DIR": str(tmp_path / "cache" / "Pyntara.git"),
         "PYNTARA_UV_CACHE_DIR": str(tmp_path / "cache" / "uv"),
         "PYNTARA_VAULT_PASSWORD": "test-password-123",
+        "PYNTARA_UI__TASK_PRE_INTERACTION_TIMEOUT_SEC": "2",
+        "PYNTARA_CLI_STDIN_PATH": "/dev/null",
         "HOME": str(tmp_path / "home"),
     }
 
@@ -380,6 +396,8 @@ def test_bootstrap_via_local_git(tmp_path: Path) -> None:
         "PYNTARA_WORK_BASE_DIR": str(tmp_path / "work"),
         "PYNTARA_UV_CACHE_DIR": str(tmp_path / "cache" / "uv"),
         "PYNTARA_VAULT_PASSWORD": "test-password-123",
+        "PYNTARA_UI__TASK_PRE_INTERACTION_TIMEOUT_SEC": "2",
+        "PYNTARA_CLI_STDIN_PATH": "/dev/null",
         "HOME": str(tmp_path / "home"),
         "PYNTARA_TEST_TRACE": str(trace_path),
     }}
@@ -448,6 +466,8 @@ def test_bootstrap_via_local_git_piped_stdin(tmp_path: Path) -> None:
         "PYNTARA_REPO_CACHE_DIR": str(bare_repo),
         "PYNTARA_UV_CACHE_DIR": str(tmp_path / "cache" / "uv"),
         "PYNTARA_VAULT_PASSWORD": "test-password-123",
+        "PYNTARA_UI__TASK_PRE_INTERACTION_TIMEOUT_SEC": "2",
+        "PYNTARA_CLI_STDIN_PATH": "/dev/null",
         "HOME": str(tmp_path / "home"),
     }}
     script_content = (_REPO_ROOT / "i.sh").read_text(encoding="utf-8")

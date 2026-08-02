@@ -25,8 +25,8 @@ _PASSWORD_PROMPT_MARKER = b"KeePass password for"
 # Task completion marker
 _TASK_DONE_MARKER = b"hostname: done"
 
-# Timeout for PTY operations (generous, actual operations are fast)
-_PTY_TIMEOUT = 20.0
+# Timeout for PTY operations with a soft 10s budget.
+_PTY_TIMEOUT = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ def test_arrow_navigation_with_env_password(test_workspace: Path) -> None:
 
         # Press DOWN arrow (escape sequence: \\x1b[B)
         session.write(b"\x1b[B")
-        time.sleep(0.2)
+        time.sleep(0.05)
 
         # Press ENTER to confirm
         session.write(b"\r")
@@ -161,7 +161,7 @@ def test_wrong_password_via_getpass(test_workspace: Path) -> None:
 
         # Send wrong password
         session.writeline("wrong-password")
-        time.sleep(0.5)
+        time.sleep(0.15)
 
         # Wait for process to fail (it may exit after 1-3 attempts)
         # Don't wait for specific prompts — just check the exit code
@@ -270,7 +270,7 @@ def test_up_arrow_wraps_around(test_workspace: Path) -> None:
 
         # Press UP arrow (wraps from minimal to desktop)
         session.write(b"\x1b[A")
-        time.sleep(0.2)
+        time.sleep(0.05)
 
         # Press ENTER
         session.write(b"\r")
@@ -306,9 +306,9 @@ def test_multiple_arrow_presses(test_workspace: Path) -> None:
 
         # Press DOWN twice: minimal -> server -> desktop
         session.write(b"\x1b[B")
-        time.sleep(0.1)
+        time.sleep(0.05)
         session.write(b"\x1b[B")
-        time.sleep(0.1)
+        time.sleep(0.05)
 
         # Press ENTER
         session.write(b"\r")
@@ -347,7 +347,7 @@ def test_non_tty_uses_default_mode(test_workspace: Path, monkeypatch: pytest.Mon
         env=env,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=10,
     )
 
     assert result.returncode == 0, (

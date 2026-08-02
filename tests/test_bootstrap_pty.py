@@ -21,7 +21,7 @@ pytestmark = pytest.mark.bootstrap_deep
 # ---------------------------------------------------------------------------
 
 _VAULT_PASSWORD = "test-password-123"
-_PTY_TIMEOUT = 60.0
+_PTY_TIMEOUT = 12.0
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -165,6 +165,20 @@ def _build_source_tar(archive_path: Path) -> None:
             shutil.copytree(item, dest, ignore=shutil.ignore_patterns(".venv", "__pycache__"))
         else:
             shutil.copy2(item, dest)
+
+    # Keep deep bootstrap tests fast: reduce mode auto-select wait inside
+    # the generated source tree used by mocked bootstrap runs.
+    install_modes_path = source_root / "install_modes.yaml"
+    if install_modes_path.exists():
+        install_modes_text = install_modes_path.read_text(encoding="utf-8")
+        if "auto_select_timeout_sec:" in install_modes_text:
+            install_modes_text = install_modes_text.replace(
+                "auto_select_timeout_sec: 11",
+                "auto_select_timeout_sec: 3",
+            )
+        else:
+            install_modes_text += "\nauto_select_timeout_sec: 3\n"
+        install_modes_path.write_text(install_modes_text, encoding="utf-8")
 
     # Remove any password files from the copied tree — they are added
     # separately by _add_test_vault_to_tar with controlled password content.
@@ -362,7 +376,7 @@ def _run_bootstrap(
         if interactive_input:
             for chunk in interactive_input:
                 os.write(master_fd, chunk)
-                time.sleep(0.2)
+                time.sleep(0.05)
 
         marker = wait_for or b"Bootstrap finished"
         while time.monotonic() < deadline:
@@ -407,10 +421,10 @@ def _run_bootstrap(
 
         os.close(master_fd)
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=5)
+            proc.wait(timeout=2)
 
         return proc.returncode or 0, accumulated
     else:
@@ -423,11 +437,11 @@ def _run_bootstrap(
             if interactive_input:
                 for chunk in interactive_input:
                     session.write(chunk)
-                    time.sleep(0.2)
+                    time.sleep(0.05)
 
             marker = wait_for or b"Bootstrap finished"
             try:
-                session.read_until(marker, timeout=55)
+                session.read_until(marker, timeout=10)
             except TimeoutError:
                 pass
 
@@ -634,7 +648,7 @@ def test_bootstrap_trace_shows_all_steps(tmp_path: Path) -> None:
         timeout=_PTY_TIMEOUT,
     ) as session:
         try:
-            session.read_until(b"Bootstrap finished", timeout=55)
+            session.read_until(b"Bootstrap finished", timeout=10)
         except TimeoutError:
             pass
         session.close()
