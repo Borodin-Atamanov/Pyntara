@@ -13,13 +13,13 @@ curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-con
 
 AI-Agent rules: `AGENTS.md`
 
-Contracts — mandatory runtime specifications, must not be violated:
+Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions testable in code:
 `docs/contracts/architecture.md` — runtime layers, composition root, RunContext, dependency injection
 `docs/contracts/bootstrap.md` — bootstrap installer contract for inst.sh
 `docs/contracts/interactive-ui.md` — dialog-based interactive terminal UX flow
 `docs/contracts/task-model.md` — task protocol, TaskResult, idempotency contract
 
-Spec — functional specification, what the system does:
+Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
 `docs/spec/bootstrap-flow.md` — startup flow: package install, git clone, uv sync, Pyntara launch
 `docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, timers
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback

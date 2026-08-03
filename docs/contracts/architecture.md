@@ -124,56 +124,6 @@ Any change that breaks these guarantees must update this document and correspond
 
 ## 9. Secrets management
 
-Full secrets model specification: docs/spec/secrets-model.md.
-
-### 9.1 Vault files
-
-Two KeePass vault files live under secrets/:
-
-secrets/default.vault — Test/stub secrets for development and CI. In git.
-secrets/production.vault — Real secrets for production deployment. In git.
-
-### 9.2 Password files
-
-Each vault has a companion password file with the same base name and .password extension:
-
-secrets/default.password — Password for default.vault. In git.
-secrets/production.password — Password for production.vault. Not in git (.gitignore).
-
-The password file contains a single line of text — the vault password, with no trailing whitespace.
-
-### 9.3 Resolution order
-
-VaultSecretsStore.load() resolves the vault and password in this order:
-
-Determine target vault: --use-production-secrets selects production.vault; otherwise default.vault.
-Resolve password source:
-PYNTARA_VAULT_PASSWORD env var — overrides everything, used for non-interactive bootstrap.
-<vault-path>.password file — e.g. secrets/production.password or secrets/default.password.
-Interactive prompt — only for production.vault when no password file exists.
-Open the vault. If production.vault fails, 3 attempts. After 3 failures, fall back to default.vault. If both fail, exit with error.
-
-### 9.4 Password file format
-
-Single line, no trailing whitespace. Read with Path.read_text(encoding="utf-8").strip().
-
-PYNTARA_VAULT_PASSWORD env var overrides the password file for both vaults.
-
-### 9.5 Interactive prompt via dialog
-
-When production.vault is selected and no password file or env var provides the password:
-
-Show dialog --passwordbox with an 11-second countdown.
-If user presses any key, the countdown stops and the user types the password.
-If no key is pressed within 11 seconds, fall back to default.vault immediately.
-On wrong password, show error via dialog --msgbox and prompt again (up to 3 attempts).
-After 3 failures, fall back to default.vault with default.password.
-
-KeePass decryption is done by a Python library, not shell tools.
-
-### 9.6 Security notes
-
-production.password must never be committed to git. It is listed in .gitignore.
-default.password contains a well-known test password and is safe to commit.
-The production vault may contain real credentials (API tokens, SSH keys, etc.).
-Password files are read into memory and the password is never written to logs.
+Full secrets model specification: `docs/spec/secrets-model.md`.
+VaultStore API is part of RunContext contract (section 4).
+Bootstrap-time vault resolution is specified in `docs/contracts/bootstrap.md` (section 12).
