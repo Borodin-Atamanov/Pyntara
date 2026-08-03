@@ -6,7 +6,7 @@ This document defines the target repository layout for Pyntara and explains what
 
 | Path | Purpose |
 |---|---|
-| `i.sh` | Root bootstrap script: performs safety checks, installs base dependencies, and starts the Python CLI. |
+| `inst.sh` | Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See `docs/bootstrap-contract.md`. |
 | `pyproject.toml` | Python project metadata, dependencies, tool configuration, and CLI entry point. |
 | `uv.lock` | Locked dependency versions for reproducible environments. |
 | `README.md` | Quick start, installation modes, and links to detailed docs. |
@@ -27,6 +27,7 @@ This document defines the target repository layout for Pyntara and explains what
 | `docs/project-structure.md` | Canonical overview of repository layout and file responsibilities. |
 | `docs/project-rules.md` | Project-wide defaults for command output and datetime format. |
 | `docs/interactive-ui-contract.md` | Source-of-truth for interactive terminal UX flow, timers, and checkbox semantics. |
+| `docs/bootstrap-contract.md` | Source-of-truth for the bootstrap installer `inst.sh`. |
 
 ## Directories
 
@@ -34,8 +35,10 @@ This document defines the target repository layout for Pyntara and explains what
 
 | Path | Purpose |
 |---|---|
-| `secrets/default.vault` | Default/fallback secret set used for test or recovery scenarios. |
-| `secrets/production.vault` | Main encrypted secret store for production installation data. |
+| `secrets/default.vault` | Default/fallback KeePass database for test or recovery scenarios. In git. |
+| `secrets/production.vault` | Production KeePass database with real secrets. In git. |
+| `secrets/default.password` | Password for `default.vault` (well-known test value). In git. |
+| `secrets/production.password` | Password for `production.vault`. **Not in git** (`.gitignore`). |
 
 ### `src/pyntara/`
 

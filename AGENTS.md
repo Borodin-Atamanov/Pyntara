@@ -1,16 +1,18 @@
 # Pyntara — Technical Specification
 
 ## 0. Mandatory rules for all agents
+- You always refer to yourself in the feminine gender and to me in the masculine, addressing me obsequiously, using the formal "Вы"
 - Before any repository action, the agent MUST read `AGENTS.md` in full.
 - After finishing changes, the agent MUST integrate them into `main` immediately.
 - Before commit, the agent MUST run the full test suite and fix all failures until green.
-- Testing MUST be deep and cover both the Python application and the bootstrap script `i.sh`.
+- Testing MUST be deep and cover both the Python application and the bootstrap installer `inst.sh`.
 
 ## Documentation index (link-only)
 - Runtime architecture contract: `docs/architecture.md`
 - Repository layout contract: `docs/project-structure.md`
 - Project-wide defaults: `docs/project-rules.md`
 - Interactive terminal UX contract: `docs/interactive-ui-contract.md`
+- Bootstrap installer contract: `docs/bootstrap-contract.md`
 
 ## 1. Project purpose and context
 - Pyntara is an automated Kubuntu provisioning system.
@@ -18,15 +20,19 @@
 - Architecturally, the system should also work on other versions.
 
 ## 2. Startup and initial bootstrap
-- The system starts via `i.sh` (a regular Bash script).
+- The system starts via `inst.sh` (a regular Bash script).
 - The script is downloaded from GitHub and run as superuser.
-- On startup, the script performs safety checks to avoid breaking the system.
-- Then the script installs:
-  - Python,
-  - `uv`,
-  - only the minimal system utilities required to launch Pyntara itself.
-- User-level utilities (`htop`, `nload`, `wget`, and similar) are installed by separate tasks unless they are required for Pyntara startup.
-- After that, the required Python environment is provisioned and the Pyntara script is started.
+- The only startup check: the script must be running as root. No OS or distribution checks.
+- The script installs packages using optimistic apt strategy: try `apt-get install` first, run `apt-get update` only if packages are missing, then retry.
+- Install order: `dialog` first, then `python3`, `python3-venv`, `git`, `curl`, `ca-certificates`, then `uv`.
+- User-level utilities (`htop`, `nload`, `wget`, and similar) are installed by separate tasks, not by the bootstrap.
+- Source delivery: `git clone --depth 1` only. On repeated runs, `git fetch` + reset in the existing directory instead of re-cloning.
+- All commands run in maximum verbosity, non-interactive mode. Significant commands are wrapped in `time`.
+- After cloning, `uv sync` prepares the Python environment and `uv run pyntara` starts the CLI.
+- There is no timeout on the Pyntara process. It runs as long as needed.
+- All interactive screens use `dialog`. See `docs/interactive-ui-contract.md`.
+- Every function in `inst.sh` is declared with a guard (`if ! declare -f name ...`) so tests can substitute any function via `source`.
+- Full contract: `docs/bootstrap-contract.md`.
 
 ## 3. Installation modes and task selection
 - The user is offered 3 installation options:
@@ -47,11 +53,13 @@
 - Task set and metadata are defined in configuration.
 
 ## 4. Secrets and passwords
-- The repository contains a secrets file in KeePass format.
-- KeePass database handling is done via a Python library (no mandatory `keepass-cli` requirement).
-- After task selection, the admin password is requested to decrypt the KeePass database.
-- If the password is incorrect, ask whether to use default secrets.
-- Default secrets may be openly stored in GitHub as a special test secrets version.
+- The repository contains two KeePass vault files: `default.vault` and `production.vault`. Both are in git.
+- Two password files: `default.password` (in git, well-known test value) and `production.password` (in `.gitignore`, must never be committed).
+- KeePass database handling is done via a Python library.
+- Password prompt is the first interactive screen (before mode selector).
+- The user gets 3 attempts to enter the production vault password via `dialog --passwordbox` (11s timeout per attempt).
+- After 3 failed attempts, the system falls back to `default.vault` using `default.password`.
+- If user does not press any key within 11 seconds, fallback to `default.vault` immediately.
 - With a correct password:
   - the database is decrypted,
   - some values become environment variables,
@@ -273,13 +281,10 @@
 - Explanations must be detailed enough for both humans and machines.
 - One consistent formatting/style standard is required across the project.
 
-## 15. Open architecture question
-- Select the best architecture for downloading the full repository from GitHub under poor/unstable internet.
-- Candidate options:
-  - release files/artifacts,
-  - one large file containing all information,
-  - current Git-based approach (default candidate).
-- Criterion: download simplicity/reliability on unstable links and ability to install from a USB drive.
+## 15. Source delivery (resolved)
+- Decision: `git clone --depth 1` is the only supported delivery method.
+- On repeated runs, `git fetch` + reset in the existing directory instead of re-cloning.
+- No archive downloads, no USB fallback, no local source copy.
 
 ## 16. Change integration rule
 - By default, completed changes must be committed into `main`.

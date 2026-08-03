@@ -14,12 +14,9 @@ Pyntara is split into four explicit layers:
 
 Each layer depends only on lower-level layers. Tasks must not import from CLI.
 
-Bootstrap transport contract for `curl | sudo bash` style launches:
-
-- Before starting the interactive CLI, `i.sh` must reconnect stdin to the controlling terminal via `/dev/tty`.
-- The reconnect guard is: `if [ -t 0 ] || [ -e /dev/tty ]; then exec < /dev/tty; fi`.
-- If `/dev/tty` is unavailable (for example: cron, ssh without `-t`, some CI runners), bootstrap must log the reason and switch to an explicit non-interactive fallback.
-- This contract avoids silent hangs when interactive selectors cannot safely read terminal input.
+Bootstrap transport contract for `curl | sudo bash` style launches is defined in `docs/bootstrap-contract.md`.
+The installer `inst.sh` must reconnect stdin to `/dev/tty` before interactive screens.
+If `/dev/tty` is unavailable, the installer logs the reason and switches to non-interactive fallback.
 
 ## 2. Composition root
 
@@ -141,23 +138,13 @@ The password file contains a single line of text — the vault password, with no
 2. **Resolve password source:**
    - `PYNTARA_VAULT_PASSWORD` env var — overrides everything, used for non-interactive bootstrap.
    - `<vault-path>.password` file — e.g. `secrets/production.password` or `secrets/default.password`.
-   - Interactive prompt — only for `production.vault` when no password file exists (see 8.6).
+   - Interactive prompt — only for `production.vault` when no password file exists (see 8.5).
 
 3. **Open the vault.**
-   - If `production.vault` opens successfully → use it.
-   - If `production.vault` fails (wrong password) → **fall back to `default.vault`** with its own password.
-   - If `default.vault` fails → error (password attempts exhausted).
-
-### 8.4 Interactive prompt with timeout
-
-When `production.vault` is selected but `secrets/production.password` does not exist:
-
-1. Print a prompt on the terminal: `"Enter production vault password (auto-fallback to default in 11s): "`
-2. Start an 11-second countdown displayed in real time on the same line (like the mode selector).
-3. The user can start typing the password at any time during the countdown.
-4. Once the user presses the first key, the countdown disappears and hidden input mode begins.
-5. If the user does not press any key within 11 seconds → automatically fall back to `default.vault`.
-6. If the user enters a password → try to open `production.vault`. If wrong → fall back to `default.vault`.
+   - If `production.vault` opens successfully, use it.
+   - If `production.vault` fails (wrong password), the user gets up to 3 attempts total.
+   - After 3 failed attempts, fall back to `default.vault` with the password from `default.password`.
+   - If `default.vault` also fails, exit with error.
 
 ### 8.4 Password file format
 
@@ -167,16 +154,22 @@ When `production.vault` is selected but `secrets/production.password` does not e
 
 Single line, no trailing whitespace. The file is read with `Path.read_text(encoding="utf-8").strip()`.
 
-### 8.5 Environment variable override
-
 `PYNTARA_VAULT_PASSWORD` env var overrides the password file for both vaults.
 This is used for non-interactive bootstrap (`curl ... | sudo bash`).
 
-### 8.6 Interactive prompt
+### 8.5 Interactive prompt via dialog
 
-If neither the password file nor the env var provides a password, and the terminal supports hidden input, the user is prompted interactively via `_read_password_hidden()` (direct `termios` access to `/dev/tty` with foreground process group management).
+When `production.vault` is selected and no password file or env var provides the password:
 
-### 8.7 Security notes
+1. Show `dialog --passwordbox` with an 11-second countdown.
+2. If user presses any key, the countdown stops and the user types the password.
+3. If no key is pressed within 11 seconds, fall back to `default.vault` immediately.
+4. On wrong password, show error via `dialog --msgbox` and prompt again (up to 3 attempts).
+5. After 3 failures, fall back to `default.vault` with `default.password`.
+
+KeePass decryption is done by a Python library, not shell tools.
+
+### 8.6 Security notes
 
 - `production.password` must never be committed to git. It is listed in `.gitignore`.
 - `default.password` contains a well-known test password and is safe to commit.
