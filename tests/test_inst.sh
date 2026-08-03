@@ -308,6 +308,111 @@ inst_run_timed_preserves_failing_exit_code() {
     rm -rf "$tmp"
 }
 
+inst_apt_install_succeeds_without_index_refresh() {
+    # When the first install works, apt-get update must never be called.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local calls="$tmp/apt_calls"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    # Mock apt-get records its subcommand and arguments.
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+if [[ "$1" == "install" ]]; then
+    exit 0
+fi
+if [[ "$1" == "update" ]]; then
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$bin/apt-get"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; apt_install dialog python3' _ "$INSTALLER" 2>&1)"
+    local update_calls
+    update_calls="$(grep -c '^update$' "$calls" || true)"
+    if [[ "$update_calls" -ne 0 ]]; then
+        echo "apt-get update called on successful first install" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q '^install -y dialog python3$' "$calls"; then
+        echo "install arguments missing from mock calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    assert_contains "$output" "Packages installed without index refresh" "success message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_apt_install_refreshes_index_after_first_failure() {
+    # When the first install fails, update must run before the retry.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local calls="$tmp/apt_calls"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+if [[ "$1" == "install" && -f "$INSTALL_FAILED_MARKER" ]]; then
+    exit 1
+fi
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    : > "$tmp/failed"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        INSTALL_FAILED_MARKER="$tmp/failed" \
+        bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER"
+    local update_line
+    update_line="$(grep -c '^update$' "$calls" || true)"
+    local install_lines
+    install_lines="$(grep -c '^install -y dialog$' "$calls" || true)"
+    if [[ "$update_line" -ne 1 ]]; then
+        echo "apt-get update must be called exactly once" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$install_lines" -ne 2 ]]; then
+        echo "expected install twice (before and after update), got $install_lines" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_apt_install_passes_package_list() {
+    # All packages must be passed to apt-get install in order.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local calls="$tmp/apt_calls"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; apt_install dialog python3-venv git' _ "$INSTALLER"
+    if ! grep -q '^install -y dialog python3-venv git$' "$calls"; then
+        echo "package list not passed in order" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -318,6 +423,9 @@ run_test inst_log_file_defaults_inside_log_dir
 run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
 run_test inst_run_timed_logs_duration_and_exit_code
 run_test inst_run_timed_preserves_failing_exit_code
+run_test inst_apt_install_succeeds_without_index_refresh
+run_test inst_apt_install_refreshes_index_after_first_failure
+run_test inst_apt_install_passes_package_list
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"

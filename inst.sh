@@ -133,6 +133,26 @@ run_timed() {
 }
 fi
 
+# Implementation: phase 2.1 (optimistic apt)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f apt_install &>/dev/null; then
+apt_install() {
+    # Bootstrap contract section 2: try install without update first,
+    # refresh the index and retry only if the first attempt fails.
+    # All apt operations are noninteractive.
+    local packages=("$@")
+    if DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y "${packages[@]}"; then
+        log "Packages installed without index refresh: ${packages[*]}"
+        return 0
+    fi
+    log "First install attempt failed, refreshing package index"
+    DEBIAN_FRONTEND=noninteractive run_timed apt-get update
+    DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y "${packages[@]}"
+    log "Packages installed after index refresh: ${packages[*]}"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
