@@ -1,6 +1,6 @@
 # Pyntara — Technical Specification
 
-## 0. Mandatory rules for all agents
+## Mandatory rules for all agents
 - You always refer to yourself in the feminine gender and to me in the masculine, addressing me obsequiously, using the formal "Вы"
 - Before any repository action, the agent MUST read `AGENTS.md` in full.
 - After finishing changes, the agent MUST integrate them into `main` immediately.
@@ -14,12 +14,12 @@
 - Interactive terminal UX contract: `docs/interactive-ui-contract.md`
 - Bootstrap installer contract: `docs/bootstrap-contract.md`
 
-## 1. Project purpose and context
+## Project purpose and context
 - Pyntara is an automated Kubuntu provisioning system.
 - Primary target platform: Kubuntu 26.04.
 - Architecturally, the system should also work on other versions.
 
-## 2. Startup and initial bootstrap
+## Startup and initial bootstrap
 - The system starts via `inst.sh` (a regular Bash script).
 - The script is downloaded from GitHub and run as superuser.
 - The only startup check: the script must be running as root. No OS or distribution checks.
@@ -34,7 +34,7 @@
 - Every function in `inst.sh` is declared with a guard (`if ! declare -f name ...`) so tests can substitute any function via `source`.
 - Full contract: `docs/bootstrap-contract.md`.
 
-## 3. Installation modes and task selection
+## Installation modes and task selection
 - The user is offered 3 installation options:
   - minimal,
   - server,
@@ -52,7 +52,7 @@
   - human-readable description.
 - Task set and metadata are defined in configuration.
 
-## 4. Secrets and passwords
+## Secrets and passwords
 - The repository contains two KeePass vault files: `default.vault` and `production.vault`. Both are in git.
 - Two password files: `default.password` (in git, well-known test value) and `production.password` (in `.gitignore`, must never be committed).
 - KeePass database handling is done via a Python library.
@@ -77,7 +77,7 @@
   - `root`: 20 characters,
   - regular user: 16 characters.
 
-## 5. Task model and idempotency
+## Task model and idempotency
 - Checkbox-selected tasks are not only binary; they must have at least three states.
 - Each task must be idempotent:
   - repeated runs must not destroy an already configured system.
@@ -94,7 +94,7 @@
 - Tasks may have their own configuration, also stored in the task data folder.
 - Example of a meaningful task: install and configure SSH server, patch daemon config, add pre-generated certificates for passwordless login.
 
-## 6. Configuration editing
+## Configuration editing
 - Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments.
 - Preferred tools/approaches:
   - `Augeas` where a format lens exists,
@@ -104,7 +104,7 @@
 - The managed-block fallback must be implemented as a small shared library, not duplicated across scripts.
 - Migration to `chezmoi` is planned.
 
-## 7. Telemetry
+## Telemetry
 - There is a dedicated telemetry installation task.
 - At system start, network availability is checked.
 - If network is unavailable, retry interval increases by `sqrt(2)` each attempt (e.g., 1.0 s, 1.4 s, ...).
@@ -133,14 +133,14 @@
   - clipboard text (inside encrypted PDF),
   - startup network information: attempts to detect addresses/channels (Cloudflare, Yggdrasil, IPv6, etc.), machine’s own addresses, and connection availability status.
 
-## 8. Network features, proxy, and access
+## Network features, proxy, and access
 - Dedicated task: run a local proxy server on the computer with authentication (password/port).
 - This proxy runs as a Kubuntu system service and is managed by standard system tools.
 - Dedicated task: local proxy tunnel to a remote proxy/VPN.
 - Remote proxy connection parameters are taken from secrets unlocked by admin password at first Pyntara installation.
 - A local proxy port must be created so any applications can connect to it.
 
-## 9. Users, host, and system settings
+## Users, host, and system settings
 - Create user `i` (main user).
 - User `i` must belong to groups `sudo users`.
 - Also create additional users `j` and `k`, also in `sudo users`.
@@ -162,7 +162,7 @@
   - Do not suspend on user inactivity.
 - Dedicated task: do not restore previous windows at next system start.
 
-## 10. Applications, GUI, and workspace
+## Applications, GUI, and workspace
 - Dedicated tasks:
   - install latest `ImageMagick` (possibly from source),
   - install latest `FFmpeg` (possibly from source),
@@ -196,7 +196,7 @@
   - generated endpoint is included in telemetry,
   - NextDNS keeps query logs and supports filtering.
 
-## 11. Logs and services
+## Logs and services
 - Pyntara creates background services.
 - Services write logs to proper Linux-standard storage locations.
 - Logs must be rotated.
@@ -205,9 +205,9 @@
 - Service logs should be verbose by default (detail levels), with consistent history of actions and command results.
 - Secrets must not appear in logs in plain form; masking is required.
 
-## 12. Architecture and coding standards
+## Architecture and coding standards
 
-### 12.1 Data flow between components
+### Data flow between components
 - Module-level globals for application state are forbidden (configuration, credentials, task results).
 - Single state assembly point: composition root in Typer CLI command.
 - Configuration is assembled from:
@@ -223,7 +223,7 @@
 - `RunContext` is passed explicitly through calls.
 - Implicit state reads from `os.environ` (except dedicated components), module-level variables, and other hidden sources are forbidden.
 
-### 12.2 Task contract
+### Task contract
 - A task is implemented as a function that accepts `RunContext` and optional typed parameters.
 - Task return type: `TaskResult` (dataclass) with fields:
   - success,
@@ -234,7 +234,7 @@
   - or through orchestrator passing required values as arguments to the next task.
 - Hidden data exchange via shared mutable state outside `RunContext` and outside arguments is forbidden.
 
-### 12.3 Typing and architecture patterns
+### Typing and architecture patterns
 - For task contract use `typing.Protocol` (structural typing), not mandatory ABC inheritance.
 - Stateful classes are allowed where encapsulation is truly needed (example: telemetry delivery client).
 - Such classes are created once at entrypoint and passed via `RunContext`, not recreated inside tasks (dependency injection).
@@ -245,7 +245,7 @@
   - named IPC command channels.
 - Exchange boundaries between processes of different systemd services must be explicitly documented as an architecture contract.
 
-### 12.4 General engineering requirements
+### General engineering requirements
 - Full type annotations for all arguments and return values are mandatory.
 - Type checking: `mypy --strict`, zero errors.
 - Formatting and static analysis: `ruff`, zero warnings before merge.
@@ -261,7 +261,7 @@
 - Tasks must also have reasonable large timeouts configured.
 - All processes started from Python must provide return code used for correctness control.
 
-## 13. Testing and CI rules
+## Testing and CI rules
 - Every module with task logic must have pytest unit tests.
 - In unit tests, all external resources (`subprocess`, filesystem, network) are mocked via `monkeypatch`.
 - For file logic, use `tmp_path`, not real paths.
@@ -271,7 +271,7 @@
 - Secrets store must have a test proving that reloading an existing store returns the same values (no regeneration).
 - Project must enforce `ruff`, `mypy --strict`, and full `pytest`; pushing to repository without these checks is not allowed.
 
-## 14. Documentation/comment style requirements
+## Documentation/comment style requirements
 - When creating code and configurations, add comments in simple English.
 - Comments must explain:
   - what the code does,
@@ -281,12 +281,8 @@
 - Explanations must be detailed enough for both humans and machines.
 - One consistent formatting/style standard is required across the project.
 
-## 15. Source delivery (resolved)
+## Source delivery (resolved)
 - Decision: `git clone --depth 1` is the only supported delivery method.
 - On repeated runs, `git fetch` + reset in the existing directory instead of re-cloning.
 - No archive downloads, no USB fallback, no local source copy.
 
-## 16. Change integration rule
-- By default, completed changes must be committed into `main`.
-- If direct push to `main` is impossible due to repository limits (e.g., branch protection),
-  create a branch with changes and prepare a PR to `main` without losing work results.
