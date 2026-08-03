@@ -13,7 +13,20 @@ import typer
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
-app = typer.Typer()
+app = typer.Typer(invoke_without_command=True)
+
+
+@app.callback()
+def _main(ctx: typer.Context) -> None:
+    """Launch the provisioning engine when no subcommand is given.
+
+    Bootstrap contract section 6: inst.sh runs `uv run pyntara` with no
+    arguments, so a bare invocation must start the engine instead of failing
+    with "Missing command".
+    """
+
+    if ctx.invoked_subcommand is None:
+        run()
 
 
 def vault_password_is_correct(vault_path: str, password: str) -> bool:
