@@ -572,9 +572,13 @@ select_tasks() {
     # 0 = confirmed, 255 = ESC/cancel or timeout (with --timeout dialog exits
     # 255 and writes the current selection to the result file; on cancel the
     # file stays empty). Any other code or an empty file is a fallback.
+    # script renders the pseudo-tty stream to its own stdout; that stream is
+    # redirected to stderr, because under sudo stdout is not a terminal while
+    # stderr is. Sending it to stderr makes the dialog visible and keeps
+    # stdout clean for the result protocol.
     local rc
     # The if guard captures the exit code without triggering errexit.
-    if script -qec "$TASK_DIALOG_CMD" /dev/null >/dev/null 2>&1; then
+    if script -qec "$TASK_DIALOG_CMD" /dev/null 1>&2; then
         rc=0
     else
         rc=$?
