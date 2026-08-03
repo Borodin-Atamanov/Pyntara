@@ -31,9 +31,17 @@ cases the default is accepted automatically when no interaction happens
 before the timeout.
 
 Informational and error messages are printed as plain terminal text (not
-dialog widgets) and held for 11 s (MESSAGE_TIMEOUT) or until the user presses
-Enter. Important fallback messages are additionally held for
-SLEEP_AFTER_IMPORTANT_MESSAGE (default 7 s).
+dialog widgets). Two kinds exist:
+
+Status messages report what the installer decided (vault accepted, mode
+selected, tasks resolved) and do not pause: a blocking read after a status
+line would consume the user's next keystroke, making the following screen
+appear to need a second Enter.
+
+Confirmation and error messages that the user must read before continuing
+(no selection made, wrong password, no key pressed, errors) are held for
+11 s (MESSAGE_TIMEOUT) or until the user presses Enter. Important fallback
+messages are additionally held for SLEEP_AFTER_IMPORTANT_MESSAGE (default 7 s).
 
 ### 2.2. Prompt language
 

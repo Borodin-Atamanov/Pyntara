@@ -1124,6 +1124,31 @@ inst_show_message_prints_text_and_logs_it() {
     rm -rf "$tmp"
 }
 
+inst_log_status_prints_without_consuming_input() {
+    # log_status prints the text and the log line but must not block or read
+    # from stdin: a read after it must still see the next keystroke. This is
+    # the property that fixes the double-Enter bug after status messages.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local output
+    output="$(printf 'keystroke\n' | PYNTARA_LOG_FILE="$logfile" \
+        bash -c 'source "$1"; log_status "status line"; read -r -t 1 next; echo "NEXT=$next"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "status line" "status text on terminal" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$(cat "$logfile")" "status line" "status text in log" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "NEXT=keystroke" "following read sees the keystroke" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
 inst_password_prompt_captures_password() {
     # One password prompt: the entered text must land in VAULT_ATTEMPT_PASSWORD
     # and the prompt must return 0 on a submitted password.
@@ -1875,6 +1900,7 @@ run_test inst_run_pyntara_forwards_arguments
 run_test inst_run_pyntara_preserves_failing_exit_code
 run_test inst_run_pyntara_fails_when_source_missing
 run_test inst_show_message_prints_text_and_logs_it
+run_test inst_log_status_prints_without_consuming_input
 run_test inst_password_prompt_captures_password
 run_test inst_password_prompt_returns_cancel_on_eof
 run_test inst_prompt_vault_password_accepts_correct_password

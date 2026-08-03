@@ -327,6 +327,19 @@ show_message() {
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f log_status &>/dev/null; then
+log_status() {
+    # Print a status message as plain text without pausing for Enter.
+    # Status messages report what the installer decided; they must not consume
+    # the user's next keystroke, otherwise the following screen appears to
+    # need a second Enter. show_message is reserved for confirmations the
+    # user must read and acknowledge before continuing.
+    printf '\n' >&2
+    log "$1"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f prompt_password_input &>/dev/null; then
 prompt_password_input() {
     # One password attempt, read from the terminal without echo. read -s is
@@ -386,7 +399,9 @@ fallback_to_default_vault() {
     password="$(head -n 1 "$DEFAULT_VAULT_PASSWORD_FILE")"
     export PYNTARA_VAULT_PASSWORD="$password"
     export PYNTARA_VAULT_SOURCE="default"
-    show_message "Using default vault $DEFAULT_VAULT with password from $DEFAULT_VAULT_PASSWORD_FILE"
+    # A status line, not a confirmation: nothing follows that needs an
+    # explicit Enter, so log_status does not block on read.
+    log_status "Using default vault $DEFAULT_VAULT with password from $DEFAULT_VAULT_PASSWORD_FILE"
 }
 fi
 
@@ -434,7 +449,10 @@ prompt_vault_password() {
         if check_vault_password "$VAULT_ATTEMPT_PASSWORD"; then
             export PYNTARA_VAULT_PASSWORD="$VAULT_ATTEMPT_PASSWORD"
             export PYNTARA_VAULT_SOURCE="production"
-            show_message "Production vault password accepted, using $PRODUCTION_VAULT"
+            # A status line, not a confirmation: the install mode screen
+            # follows immediately, and a blocking read here would swallow the
+            # user's Enter meant for that screen (the double-Enter bug).
+            log_status "Production vault password accepted, using $PRODUCTION_VAULT"
             return 0
         fi
         show_message "Wrong password for $PRODUCTION_VAULT. Attempt $attempt of 3 failed."
@@ -530,14 +548,16 @@ prompt_install_mode() {
     # Decide the install mode and export it for the Python engine.
     # PYNTARA_INSTALL_MODE skips the screen entirely (unattended runs).
     if [[ -n "${PYNTARA_INSTALL_MODE:-}" ]]; then
-        log "Install mode from environment: $PYNTARA_INSTALL_MODE"
+        log_status "Install mode from environment: $PYNTARA_INSTALL_MODE"
         return 0
     fi
     local default_mode mode
     default_mode="$(detect_default_mode)"
     mode="$(select_install_mode "$default_mode")"
     export PYNTARA_INSTALL_MODE="$mode"
-    log "Install mode selected: $mode (default was $default_mode)"
+    # A status line, not a confirmation: the task dialog follows, and a
+    # blocking read here would swallow the user's Enter meant for that dialog.
+    log_status "Install mode selected: $mode (default was $default_mode)"
 }
 fi
 
@@ -641,7 +661,7 @@ prompt_tasks() {
             return 1
         fi
         export PYNTARA_TASKS="$TASKS_RESOLVED"
-        log "Tasks from environment resolved: $PYNTARA_TASKS"
+        log_status "Tasks from environment resolved: $PYNTARA_TASKS"
         return 0
     fi
     if ! load_task_catalog "$mode"; then
@@ -656,7 +676,7 @@ prompt_tasks() {
         show_message "No task selection was made. Using default tasks: $TASKS_DEFAULT"
         sleep "$SLEEP_AFTER_IMPORTANT_MESSAGE"
         export PYNTARA_TASKS="$TASKS_DEFAULT"
-        log "Using default tasks after no selection: $PYNTARA_TASKS"
+        log_status "Using default tasks after no selection: $PYNTARA_TASKS"
         return 0
     fi
     local selection
@@ -666,7 +686,7 @@ prompt_tasks() {
         return 1
     fi
     export PYNTARA_TASKS="$TASKS_RESOLVED"
-    log "Tasks selected: $PYNTARA_TASKS"
+    log_status "Tasks selected: $PYNTARA_TASKS"
 }
 fi
 
