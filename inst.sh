@@ -153,12 +153,39 @@ apt_install() {
 }
 fi
 
+# Implementation: phase 2.2 (package set)
+
+# Minimal runtime dependencies, bootstrap contract section 3, in required order.
+RUNTIME_PACKAGES=(dialog python3 python3-venv git curl ca-certificates)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f install_dependencies &>/dev/null; then
+install_dependencies() {
+    # Bootstrap contract section 3: install only the packages that are missing.
+    # dpkg -s reports installed state, so repeated runs install nothing new.
+    local missing=()
+    local pkg
+    for pkg in "${RUNTIME_PACKAGES[@]}"; do
+        if ! dpkg -s "$pkg" &>/dev/null; then
+            missing+=("$pkg")
+        fi
+    done
+    if [[ "${#missing[@]}" -eq 0 ]]; then
+        log "All runtime packages already installed: ${RUNTIME_PACKAGES[*]}"
+        return 0
+    fi
+    log "Installing runtime packages: ${missing[*]}"
+    apt_install "${missing[@]}"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
     check_root
     ensure_fhs_dirs
     log "Install log started: $LOG_FILE"
+    install_dependencies
 }
 fi
 

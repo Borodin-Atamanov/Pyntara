@@ -232,7 +232,7 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 }
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
-    # main must call check_root, then ensure_fhs_dirs, then log.
+    # main must call check_root, then ensure_fhs_dirs, then log, then install_dependencies.
     # Mocks are declared before source so the guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
@@ -243,11 +243,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         check_root() { echo check_root >> "$flags_file"; }
         ensure_fhs_dirs() { echo ensure_fhs_dirs >> "$flags_file"; }
         log() { echo log >> "$flags_file"; }
+        install_dependencies() { echo install_dependencies >> "$flags_file"; }
         source "$1"
         main
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -413,6 +414,107 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_install_dependencies_skips_when_all_present() {
+    # When every package is installed, apt_install must not be called.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/apt_calls"
+    mkdir -p "$bin"
+    cat > "$bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$bin/dpkg"
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; install_dependencies' _ "$INSTALLER" 2>&1)"
+    if [[ -s "$calls" ]]; then
+        echo "apt_install called when all packages present" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    assert_contains "$output" "already installed" "skip message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_install_dependencies_installs_missing_packages() {
+    # When dpkg reports a package missing, only that package is installed.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/apt_calls"
+    mkdir -p "$bin"
+    cat > "$bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+# Simulate a missing dialog package.
+if [[ "$1" == "-s" && "$2" == "dialog" ]]; then
+    exit 1
+fi
+exit 0
+EOF
+    chmod +x "$bin/dpkg"
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; install_dependencies' _ "$INSTALLER"
+    if ! grep -q '^install -y dialog$' "$calls"; then
+        echo "missing package dialog not installed" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q 'python3' "$calls"; then
+        echo "present package python3 installed unnecessarily" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_install_dependencies_reports_all_installed() {
+    # The success message must list the installed package set.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/apt_calls"
+    mkdir -p "$bin"
+    cat > "$bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$bin/dpkg"
+    cat > "$bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "$@" >> "$APT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; install_dependencies' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "All runtime packages already installed" "message text" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -426,6 +528,9 @@ run_test inst_run_timed_preserves_failing_exit_code
 run_test inst_apt_install_succeeds_without_index_refresh
 run_test inst_apt_install_refreshes_index_after_first_failure
 run_test inst_apt_install_passes_package_list
+run_test inst_install_dependencies_skips_when_all_present
+run_test inst_install_dependencies_installs_missing_packages
+run_test inst_install_dependencies_reports_all_installed
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
