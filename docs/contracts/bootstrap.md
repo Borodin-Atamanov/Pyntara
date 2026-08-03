@@ -4,7 +4,7 @@ This document is the source of truth for the bootstrap installer inst.sh.
 
 ## 1. Entry point
 
-User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
+User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
 Startup check: script must be running as root. If not, exit with an error.
 
 ## 2. Package installation: optimistic apt strategy
