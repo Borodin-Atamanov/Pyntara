@@ -38,7 +38,7 @@ set -euo pipefail
 # Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
 #
 # Фаза 4. Интерактив через dialog, отдельный этап
-# 4.1 Запрос пароля production.vault с таймаутом 11 с и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault.
+# 4.1 Запрос пароля production.vault с таймаутом 11 с и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault. Пароль вводится read -s, а не dialog --passwordbox: dialog рисует окно в stderr и ломается там, где stdout не терминал.
 # 4.2 Выбор режима minimal/server/desktop с автоопределением по системе и авто-выбором через 11 с.
 # 4.3 Выбор задач чекбоксами с авто-подтверждением через 30 с.
 # 4.4 Вопрос про force-режим (11 с, по умолчанию нет) и чекбоксы force-задач.
@@ -297,7 +297,8 @@ fi
 PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
 DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
 DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
-# dialog countdown for the password screen, per interactive-ui contract section 2.1.
+# Countdown for every interactive screen (password prompt and dialog screens),
+# per interactive-ui contract section 2.1.
 DIALOG_TIMEOUT="${PYNTARA_DIALOG_TIMEOUT:-11}"
 # Plain-text messages are held on screen for this many seconds. Set in one
 # place for all phase-4 messages; tests set it to 0 to avoid waiting.
@@ -318,25 +319,29 @@ show_message() {
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f dialog_password_prompt &>/dev/null; then
-dialog_password_prompt() {
-    # One password attempt. dialog renders the box on the terminal and writes
-    # the entered text to stdout via --output-fd 1, so the result lands in
-    # VAULT_ATTEMPT_PASSWORD and never in the install log.
-    # dialog exit codes: 0 OK, 1 Cancel, 5 timeout, 255 ESC or error.
-    # Modern dialog (Kubuntu 26.04) returns 5 for timeout and 255 for ESC;
-    # older dialog could return 255 for a timeout, but that version is not
-    # a supported target, so 5 is treated as timeout and 255 as ESC.
-    # The countdown stops on the first keypress, built into dialog itself.
+if ! declare -f prompt_password_input &>/dev/null; then
+prompt_password_input() {
+    # One password attempt, read from the terminal without echo. read -s is
+    # plain bash, not custom termios code, so the interactive-ui contract
+    # restriction still holds. dialog --passwordbox is deliberately not used:
+    # dialog renders its box on stderr and misbehaves where stdout is not a
+    # terminal (e.g. under sudo), which made the field unreadable and input
+    # impossible. The prompt goes to stderr, so it is visible while stdout
+    # stays clean. Exit codes mirror dialog: 0 OK, 5 timeout, 1 cancel/EOF.
+    # read -t fires SIGALRM on timeout and returns 142 (128+14); dialog
+    # reported a timeout as 5, so map 142 to 5 to keep prompt_vault_password
+    # semantics unchanged.
     VAULT_ATTEMPT_PASSWORD=""
-    local rc=0
-    # The if guard captures the dialog exit code without triggering errexit.
-    if VAULT_ATTEMPT_PASSWORD="$(dialog --passwordbox "$1" 0 0 --timeout "$DIALOG_TIMEOUT" --output-fd 1)"; then
-        rc=0
-    else
-        rc=$?
+    local rc
+    read -r -s -t "$DIALOG_TIMEOUT" -p "$1" VAULT_ATTEMPT_PASSWORD
+    rc=$?
+    if [[ "$rc" -eq 142 ]]; then
+        return 5
     fi
-    return "$rc"
+    if [[ "$rc" -ne 0 ]]; then
+        return 1
+    fi
+    return 0
 }
 fi
 
@@ -390,14 +395,14 @@ prompt_vault_password() {
 
     local attempt rc
     for attempt in 1 2 3; do
-        if dialog_password_prompt "Enter the password for the production vault ($PRODUCTION_VAULT). This vault stores the secrets used to configure this system. Attempt $attempt of 3."; then
+        if prompt_password_input "Enter the password for the production vault ($PRODUCTION_VAULT). This vault stores the secrets used to configure this system. Attempt $attempt of 3."; then
             rc=0
         else
             rc=$?
         fi
-        # dialog returns 5 when no key was pressed within the timeout. The
-        # contract demands an immediate fallback in this case, because nobody
-        # is interacting with the installer anymore.
+        # prompt_password_input returns 5 when no key was pressed within the
+        # timeout. The contract demands an immediate fallback in this case,
+        # because nobody is interacting with the installer anymore.
         if [[ "$rc" -eq 5 ]]; then
             show_message "No key pressed within $DIALOG_TIMEOUT seconds. Falling back to default vault."
             fallback_to_default_vault

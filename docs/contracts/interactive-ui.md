@@ -6,8 +6,11 @@ This document is the source of truth for interactive terminal UX in Pyntara.
 
 System/root authentication is outside Pyntara UI scope. Root password is requested
 by sudo before Pyntara starts. Pyntara interactive flow begins after package
-installation and environment setup. All interactive screens use the dialog utility.
-No custom termios code in the installer.
+installation and environment setup. Choice screens use the dialog utility. The
+vault password prompt is the one exception: it uses bash read -s instead of
+dialog, because dialog renders its box on stderr and misbehaves where stdout is
+not a terminal (e.g. under sudo), which made the field unreadable. No custom
+termios code in the installer.
 
 ## 2. Global rules
 
@@ -36,7 +39,7 @@ Prompts must explain both what to enter and why it is needed.
 
 ## 3. Screen flow overview
 
-1. Vault decryption password prompt (dialog --passwordbox)
+1. Vault decryption password prompt (bash read -s, hidden input, no dialog)
 2. Install mode selector: minimal / server / desktop (dialog --menu)
 3. Main task selection (dialog --checklist)
 4. Force-mode question: Yes / No, default No (dialog --yesno)
@@ -47,8 +50,9 @@ Prompts must explain both what to enter and why it is needed.
 Offers decryption of production.vault. User gets 3 attempts.
 
 On each attempt:
-  If the user presses no key within 11 s — immediate fallback to default.vault.
-  If the user starts typing — countdown stops, hidden input mode begins.
+  The password is read with bash read -s (hidden input, plain bash, no termios),
+  with a total timeout of 11 s. Pressing Enter submits the password; if no key
+  is pressed before the timeout, the attempt times out.
   A failed attempt prints a plain-text error message held for MESSAGE_TIMEOUT
   seconds (default 11 s) or until the user presses Enter.
 
