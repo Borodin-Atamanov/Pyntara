@@ -151,7 +151,9 @@ fi
 
 # Implementation: phase 2.2 (package set)
 # Minimal runtime dependencies, bootstrap contract section 3, in required order.
-RUNTIME_PACKAGES=(dialog python3 python3-venv git curl ca-certificates)
+# bsdutils provides script(1), which allocates a pseudo-tty for dialog screens
+# where stdin is not a terminal (bootstrap contract section 11).
+RUNTIME_PACKAGES=(dialog python3 python3-venv git curl ca-certificates bsdutils)
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f install_dependencies &>/dev/null; then

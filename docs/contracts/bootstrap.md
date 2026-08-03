@@ -18,6 +18,8 @@ All apt operations run with DEBIAN_FRONTEND=noninteractive.
 
 dialog — required for all interactive screens before anything else.
 python3, python3-venv, git, curl, ca-certificates — minimal runtime dependencies.
+bsdutils — provides script(1), which allocates a pseudo-tty for dialog screens
+where stdin is not a terminal (e.g. under sudo).
 uv — Python package manager, installed via official Astral script.
 
 ## 4. Source delivery: git only
