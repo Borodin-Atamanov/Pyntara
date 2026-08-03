@@ -38,7 +38,7 @@ set -euo pipefail
 # Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
 #
 # Фаза 4. Интерактив через dialog, отдельный этап
-# 4.1 Запрос пароля production.vault с таймаутом 11 с и тремя попытками, при неудаче переход на default.vault.
+# 4.1 Запрос пароля production.vault с таймаутом 11 с и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault.
 # 4.2 Выбор режима minimal/server/desktop с автоопределением по системе и авто-выбором через 11 с.
 # 4.3 Выбор задач чекбоксами с авто-подтверждением через 30 с.
 # 4.4 Вопрос про force-режим (11 с, по умолчанию нет) и чекбоксы force-задач.
@@ -290,6 +290,144 @@ run_pyntara() {
 }
 fi
 
+# Implementation: phase 4.1 (vault password prompt)
+# Interactive screens start here, after the Python environment is ready
+# (interactive-ui contract section 1). All paths are overridable via
+# environment so tests never touch real system files.
+PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
+DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
+DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
+# dialog countdown for the password screen, per interactive-ui contract section 2.1.
+DIALOG_TIMEOUT="${PYNTARA_DIALOG_TIMEOUT:-11}"
+# Plain-text messages are held on screen for this many seconds. Set in one
+# place for all phase-4 messages; tests set it to 0 to avoid waiting.
+MESSAGE_TIMEOUT="${PYNTARA_MESSAGE_TIMEOUT:-11}"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f show_message &>/dev/null; then
+show_message() {
+    # Print a message as plain text and hold it until Enter or the timeout.
+    # log() tees a timestamped line to the terminal and the install log, so
+    # the message is both visible and preserved. Plain text with a pause is
+    # used instead of dialog --msgbox so messages never take over the screen.
+    # read is plain bash, not custom termios code, so the interactive UI
+    # contract that forbids termios in the installer is respected.
+    log "$1"
+    read -r -t "$MESSAGE_TIMEOUT" || true
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f dialog_password_prompt &>/dev/null; then
+dialog_password_prompt() {
+    # One password attempt. dialog renders the box on the terminal and writes
+    # the entered text to stdout via --output-fd 1, so the result lands in
+    # VAULT_ATTEMPT_PASSWORD and never in the install log.
+    # dialog exit codes: 0 OK, 1 Cancel, 5 timeout, 255 ESC or error.
+    # Modern dialog (Kubuntu 26.04) returns 5 for timeout and 255 for ESC;
+    # older dialog could return 255 for a timeout, but that version is not
+    # a supported target, so 5 is treated as timeout and 255 as ESC.
+    # The countdown stops on the first keypress, built into dialog itself.
+    VAULT_ATTEMPT_PASSWORD=""
+    local rc=0
+    # The if guard captures the dialog exit code without triggering errexit.
+    if VAULT_ATTEMPT_PASSWORD="$(dialog --passwordbox "$1" 0 0 --timeout "$DIALOG_TIMEOUT" --output-fd 1)"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    return "$rc"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f check_vault_password &>/dev/null; then
+check_vault_password() {
+    # Verify a candidate password by asking the Python engine to open the
+    # KeePass database. The shell must not decrypt vaults itself (bootstrap
+    # contract section 12): decryption happens in pyntara check-vault via
+    # pykeepass. The password travels through stdin, never as an argument,
+    # so it cannot leak into the process list or the run_timed log line.
+    local password="$1"
+    ( cd "$SOURCE_DIR" && printf '%s' "$password" | run_timed uv run pyntara check-vault --vault "$PRODUCTION_VAULT" )
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f fallback_to_default_vault &>/dev/null; then
+fallback_to_default_vault() {
+    # Export the well-known fallback password so the Python engine can decrypt
+    # default.vault. A missing password file is fatal: without it no vault can
+    # be opened, so the installer must stop with an explicit error.
+    if [[ ! -f "$DEFAULT_VAULT_PASSWORD_FILE" ]]; then
+        show_message "ERROR: default vault password file not found at $DEFAULT_VAULT_PASSWORD_FILE. Cannot fall back to default vault."
+        return 1
+    fi
+    local password
+    # The file holds one password on the first line; read only that line.
+    password="$(head -n 1 "$DEFAULT_VAULT_PASSWORD_FILE")"
+    export PYNTARA_VAULT_PASSWORD="$password"
+    export PYNTARA_VAULT_SOURCE="default"
+    show_message "Using default vault $DEFAULT_VAULT with password from $DEFAULT_VAULT_PASSWORD_FILE"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f prompt_vault_password &>/dev/null; then
+prompt_vault_password() {
+    # Ask for the production vault password, 3 attempts with an 11-second
+    # dialog timeout each (interactive-ui contract section 4). The final
+    # choice is exported as PYNTARA_VAULT_PASSWORD together with
+    # PYNTARA_VAULT_SOURCE so the Python engine knows which vault to open.
+    # A missing production vault is reported loudly and falls back to the
+    # default vault immediately: asking for a password of a database that
+    # does not exist would waste the user's time for nothing.
+    if [[ ! -f "$PRODUCTION_VAULT" ]]; then
+        show_message "ERROR: production vault not found at $PRODUCTION_VAULT. Falling back to default vault."
+        fallback_to_default_vault
+        return $?
+    fi
+
+    local attempt rc
+    for attempt in 1 2 3; do
+        if dialog_password_prompt "Enter the password for the production vault ($PRODUCTION_VAULT). This vault stores the secrets used to configure this system. Attempt $attempt of 3."; then
+            rc=0
+        else
+            rc=$?
+        fi
+        # dialog returns 5 when no key was pressed within the timeout. The
+        # contract demands an immediate fallback in this case, because nobody
+        # is interacting with the installer anymore.
+        if [[ "$rc" -eq 5 ]]; then
+            show_message "No key pressed within $DIALOG_TIMEOUT seconds. Falling back to default vault."
+            fallback_to_default_vault
+            return $?
+        fi
+        # Cancel, ESC or an empty password means this attempt produced no
+        # password at all. Count it as a failed attempt and keep going.
+        if [[ "$rc" -ne 0 || -z "$VAULT_ATTEMPT_PASSWORD" ]]; then
+            show_message "No password entered. Attempt $attempt of 3 failed."
+            continue
+        fi
+        # A non-empty password is verified by the Python engine right away.
+        # A wrong password is the main reason the contract grants 3 attempts,
+        # so the check must happen here, not later inside the engine.
+        if check_vault_password "$VAULT_ATTEMPT_PASSWORD"; then
+            export PYNTARA_VAULT_PASSWORD="$VAULT_ATTEMPT_PASSWORD"
+            export PYNTARA_VAULT_SOURCE="production"
+            show_message "Production vault password accepted, using $PRODUCTION_VAULT"
+            return 0
+        fi
+        show_message "Wrong password for $PRODUCTION_VAULT. Attempt $attempt of 3 failed."
+    done
+
+    # All 3 attempts failed to produce a correct password: fall back.
+    show_message "All 3 attempts failed. Falling back to default vault."
+    fallback_to_default_vault
+    return $?
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -300,6 +438,13 @@ main() {
     install_uv
     fetch_source
     setup_python
+    # Interactive phase 4.1: the vault password screen runs after the Python
+    # environment is ready (interactive-ui contract section 1). A vault
+    # failure is fatal: the engine cannot provision without secrets.
+    if ! prompt_vault_password; then
+        log "Vault setup failed, aborting"
+        exit 1
+    fi
     run_pyntara "$@"
     log "Bootstrap finished"
 }

@@ -248,12 +248,13 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         install_uv() { echo install_uv >> "$flags_file"; }
         fetch_source() { echo fetch_source >> "$flags_file"; }
         setup_python() { echo setup_python >> "$flags_file"; }
+        prompt_vault_password() { echo prompt_vault_password >> "$flags_file"; }
         run_pyntara() { echo "run_pyntara $*" >> "$flags_file"; }
         source "$1"
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -540,7 +541,7 @@ exit 0
 EOF
     chmod +x "$bin/curl"
     local output
-    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    output="$(PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$calls" bash -c 'source "$1"; install_uv' _ "$INSTALLER" 2>&1)"
     if [[ -s "$calls" ]]; then
         echo "curl called although uv is installed" >&2
@@ -579,7 +580,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$out"
 exit 0
 EOF
     chmod +x "$bin/curl"
-    PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv' _ "$INSTALLER"
     if ! grep -q -- "-o $tmp/cache/uv-install.sh https://astral.sh/uv/install.sh" "$curl_calls"; then
@@ -621,7 +622,7 @@ exit 0
 EOF
     chmod +x "$bin/curl"
     local output
-    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    output="$(PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv' _ "$INSTALLER" 2>&1)"
     assert_contains "$output" "uv installed" "installer run confirmation" || {
@@ -659,7 +660,7 @@ exit 0
 EOF
     chmod +x "$bin/curl"
     local output
-    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    output="$(PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv; echo "PATH_MARKER:$PATH"' _ "$INSTALLER" 2>&1)"
     local path_line
@@ -1101,6 +1102,403 @@ inst_uv_cache_dir_is_subdirectory_of_cache() {
     rm -rf "$tmp"
 }
 
+inst_show_message_prints_text_and_logs_it() {
+    # show_message prints the text to the terminal and to the log, then waits
+    # for Enter or the message timeout (0 here so tests never block).
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local output
+    output="$(PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        bash -c 'source "$1"; show_message "hello message"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "hello message" "message text on terminal" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$(cat "$logfile")" "hello message" "message text in log" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_dialog_password_prompt_captures_password_and_exit_code() {
+    # One dialog run: the entered password must land in VAULT_ATTEMPT_PASSWORD
+    # and the dialog exit code must be returned unchanged.
+    local tmp
+    tmp="$(mktemp -d)"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    local output
+    output="$(PATH="$bin:$PATH" DIALOG_PASSWORD="pw" DIALOG_EXIT_CODE=0 \
+        bash -c 'source "$1"; dialog_password_prompt "text"; echo "RC=$?"; echo "PW=$VAULT_ATTEMPT_PASSWORD"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "RC=0" "dialog exit code returned" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "PW=pw" "password captured" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_dialog_password_prompt_returns_cancel_code() {
+    # dialog exit code 1 (Cancel) must be returned as-is.
+    local tmp
+    tmp="$(mktemp -d)"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    local output
+    # source runs inst.sh's set -euo pipefail in the child, so a non-zero
+    # dialog exit must be captured with || instead of a bare call, which
+    # would terminate the child before the echo runs.
+    output="$(PATH="$bin:$PATH" DIALOG_PASSWORD="" DIALOG_EXIT_CODE=1 \
+        bash -c 'source "$1"; rc=0; dialog_password_prompt "text" || rc=$?; echo "RC=$rc"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "RC=1" "cancel code returned" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_accepts_correct_password() {
+    # A correct password must be verified via uv (password on stdin, never in
+    # arguments) and exported as PYNTARA_VAULT_PASSWORD with source production.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" \
+        DIALOG_PASSWORD="correct-password" DIALOG_EXIT_CODE=0 UV_EXIT_CODE=0 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"; echo "VAULT_PASSWORD=$PYNTARA_VAULT_PASSWORD"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "Production vault password accepted" "accept message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=production" "vault source export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_PASSWORD=correct-password" "vault password export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    local stdin_content
+    stdin_content="$(cat "$uv_stdin")"
+    assert_equals "correct-password" "$stdin_content" "password delivered via stdin" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if grep -q "correct-password" "$uv_calls"; then
+        echo "password leaked into uv arguments" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_times_out_and_falls_back() {
+    # dialog exit code 5 means no key was pressed within the timeout: the
+    # installer must fall back to default.vault immediately, without retries.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" \
+        DIALOG_PASSWORD="" DIALOG_EXIT_CODE=5 UV_EXIT_CODE=0 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "No key pressed within" "timeout message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "fallback export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if [[ -s "$uv_calls" ]]; then
+        echo "uv must not run after a timeout" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_cancels_three_times_then_falls_back() {
+    # Three Cancel presses (dialog exit code 1) exhaust the attempts and fall
+    # back to default.vault.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" \
+        DIALOG_PASSWORD="" DIALOG_EXIT_CODE=1 UV_EXIT_CODE=0 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "No password entered. Attempt 1 of 3 failed." "cancel message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "All 3 attempts failed" "exhaustion message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "fallback export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_rejects_empty_password() {
+    # OK with an empty password counts as a failed attempt, not as success.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" \
+        DIALOG_PASSWORD="" DIALOG_EXIT_CODE=0 UV_EXIT_CODE=0 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "No password entered. Attempt 1 of 3 failed." "empty password message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "All 3 attempts failed" "exhaustion message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if [[ -s "$uv_calls" ]]; then
+        echo "uv must not run for an empty password" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_wrong_password_three_times_falls_back() {
+    # Three wrong passwords (uv check exits 1) exhaust the attempts and fall
+    # back to default.vault.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+printf '%s' "$DIALOG_PASSWORD"
+exit "$DIALOG_EXIT_CODE"
+EOF
+    chmod +x "$bin/dialog"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" \
+        DIALOG_PASSWORD="wrong" DIALOG_EXIT_CODE=0 UV_EXIT_CODE=1 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "Wrong password for" "wrong password message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "All 3 attempts failed" "exhaustion message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "fallback export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_missing_production_vault_falls_back() {
+    # A missing production vault must print a loud ERROR and fall back
+    # immediately, without ever showing a password prompt.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    cat > "$bin/dialog" <<'EOF'
+#!/bin/bash
+echo "dialog must not be called" >&2
+exit 99
+EOF
+    chmod +x "$bin/dialog"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "ERROR: production vault not found at $tmp/repo/secrets/production.vault" "loud error message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "fallback export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if grep -q "dialog must not be called" "$output"; then
+        echo "password prompt must be skipped when vault is missing" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_missing_default_password_aborts() {
+    # Without the default password file the fallback cannot work: the
+    # installer must print a loud error and fail with a non-zero exit code.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    # production.vault and default.password are both missing on purpose.
+    local rc
+    set +e
+    PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        bash -c 'source "$1"; prompt_vault_password' _ "$INSTALLER" > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    assert_equals "1" "$rc" "exit code on missing fallback password" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$(cat "$tmp/out")" "ERROR: default vault password file not found" "loud error message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -1134,6 +1532,16 @@ run_test inst_run_pyntara_launches_in_source_dir
 run_test inst_run_pyntara_forwards_arguments
 run_test inst_run_pyntara_preserves_failing_exit_code
 run_test inst_run_pyntara_fails_when_source_missing
+run_test inst_show_message_prints_text_and_logs_it
+run_test inst_dialog_password_prompt_captures_password_and_exit_code
+run_test inst_dialog_password_prompt_returns_cancel_code
+run_test inst_prompt_vault_password_accepts_correct_password
+run_test inst_prompt_vault_password_times_out_and_falls_back
+run_test inst_prompt_vault_password_cancels_three_times_then_falls_back
+run_test inst_prompt_vault_password_rejects_empty_password
+run_test inst_prompt_vault_password_wrong_password_three_times_falls_back
+run_test inst_prompt_vault_password_missing_production_vault_falls_back
+run_test inst_prompt_vault_password_missing_default_password_aborts
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"

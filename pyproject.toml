@@ -13,6 +13,11 @@ dependencies = [
     "pycryptodome>=3.20",
 ]
 
+[dependency-groups]
+# Developer tooling per docs/guides/developer-guide.md: pytest runs the test
+# suite, ruff and mypy --strict are mandatory before every merge.
+dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5"]
+
 [project.scripts]
 pyntara = "pyntara.pyntara:main"
 
@@ -22,3 +27,16 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyntara"]
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+# pykeepass ships no type stubs, so mypy cannot analyze it. Treating the
+# package as Any keeps mypy --strict green without losing checks on our code.
+module = ["pykeepass.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+# The secrets maintenance script is a standalone user-invoked utility, not
+# part of the application package, so its shebang state is not linted here.
+exclude = ["secrets"]

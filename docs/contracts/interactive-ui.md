@@ -25,6 +25,10 @@ Any countdown stops immediately on first keypress. After that, the user can
 interact without time pressure. If no interaction happens before timeout, the
 default option is accepted automatically.
 
+Informational and error messages are printed as plain terminal text (not
+dialog widgets) and held for 11 s (MESSAGE_TIMEOUT) or until the user presses
+Enter.
+
 ### 2.2. Prompt language
 
 All user-facing prompts and helper text must be in clear simple English.
@@ -45,7 +49,12 @@ Offers decryption of production.vault. User gets 3 attempts.
 On each attempt:
   If the user presses no key within 11 s — immediate fallback to default.vault.
   If the user starts typing — countdown stops, hidden input mode begins.
-  A failed attempt shows an error via dialog --msgbox.
+  A failed attempt prints a plain-text error message held for MESSAGE_TIMEOUT
+  seconds (default 11 s) or until the user presses Enter.
+
+If secrets/production.vault does not exist, the installer prints a loud error
+message and falls back to default.vault immediately, without asking for a
+password.
 
 After 3 failed attempts — fallback to default.vault, decrypted with the password
 from default.password.
