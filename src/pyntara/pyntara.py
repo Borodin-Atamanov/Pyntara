@@ -7,11 +7,14 @@ as specified by docs/contracts/architecture.md.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
+
+from pyntara.task_catalog import DEFAULT_CATALOG_PATH, TaskCatalog
 
 app = typer.Typer(invoke_without_command=True)
 
@@ -60,6 +63,38 @@ def check_vault(
     if vault_password_is_correct(vault, password):
         raise typer.Exit(0)
     raise typer.Exit(1)
+
+
+@app.command(hidden=True)
+def task_catalog(
+    mode: Annotated[str, typer.Option(help="Install mode to select tasks for.")],
+    timeout: Annotated[
+        int, typer.Option(help="Seconds before dialog auto-accepts.")
+    ] = 30,
+    result_file: Annotated[
+        str, typer.Option(help="File where dialog writes the checked tasks.")
+    ] = "/tmp/pyntara-tasks",
+    selected: Annotated[
+        str | None, typer.Option(help="Space-separated selected tasks.")
+    ] = None,
+    catalog_path: Annotated[
+        Path,
+        typer.Option(help="Path to tasks.yaml."),
+    ] = DEFAULT_CATALOG_PATH,
+) -> None:
+    """Print the task catalog for an install mode. Hidden helper for inst.sh.
+
+    Without --selected prints two lines: the defaults for the mode and a fully
+    quoted dialog --checklist command. With --selected prints the resolved
+    task list including transitive dependencies.
+    """
+
+    catalog = TaskCatalog.from_yaml(catalog_path)
+    if selected is None:
+        typer.echo(catalog.defaults_line(mode))
+        typer.echo(catalog.dialog_line(mode, timeout, result_file))
+    else:
+        typer.echo(catalog.tasks_line(selected.split()))
 
 
 @app.command()

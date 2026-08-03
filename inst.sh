@@ -40,7 +40,7 @@ set -euo pipefail
 # Фаза 4. Интерактив через dialog, отдельный этап
 # 4.1 Запрос пароля production.vault с таймаутом VAULT_PASSWORD_TIMEOUT (333 с) и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault. Пароль вводится read -s, а не dialog --passwordbox: dialog рисует окно в stderr и ломается там, где stdout не терминал.
 # 4.2 Выбор режима minimal/server/desktop с автоопределением по системе и авто-выбором через 11 с.
-# 4.3 Выбор задач чекбоксами с авто-подтверждением через 30 с.
+# 4.3 Выбор задач чекбоксами dialog --checklist через script (псевдотерминал) с авто-подтверждением через TASK_TIMEOUT. Каталог и команду dialog генерирует Python (task-catalog). При недоступности диалога — дефолтный набор режима с сообщением и паузой SLEEP_AFTER_IMPORTANT_MESSAGE.
 # 4.4 Вопрос про force-режим (11 с, по умолчанию нет) и чекбоксы force-задач.
 # 4.5 Требования: docs/contracts/interactive-ui.md.
 #
@@ -532,6 +532,129 @@ prompt_install_mode() {
 }
 fi
 
+# Implementation: phase 4.3 (task selection)
+# The task catalog and the dialog command are produced by the Python engine
+# (task-catalog command), because tasks.yaml is YAML and the shell must not
+# parse it. The catalog is the single source of truth; mode membership lives
+# inside each task entry.
+
+# Countdown for the task selection dialog (interactive-ui contract section 2.1).
+TASK_TIMEOUT="${PYNTARA_TASK_TIMEOUT:-30}"
+# Pause after an important message that must be read, e.g. the fallback notice
+# when the dialog screen could not be shown.
+SLEEP_AFTER_IMPORTANT_MESSAGE="${PYNTARA_SLEEP_AFTER_IMPORTANT_MESSAGE:-7}"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f load_task_catalog &>/dev/null; then
+load_task_catalog() {
+    # Ask the Python engine for the defaults line and the dialog command line
+    # for the selected mode. The output protocol is stable: two lines,
+    # 'defaults: ...' and 'dialog: ...'. The dialog command is fully quoted
+    # by Python, so bash can run it inside script(1) without re-quoting.
+    local mode="$1"
+    local output
+    output="$( cd "$SOURCE_DIR" && run_timed uv run pyntara task-catalog --mode "$mode" --timeout "$TASK_TIMEOUT" --result-file "$TASK_RESULT_FILE" )" || return 1
+    # Strip the 'defaults: ' and 'dialog: ' prefixes. The rest of the line is
+    # the value (space-separated task names, or the quoted dialog command).
+    TASKS_DEFAULT="${output#*defaults: }"
+    TASKS_DEFAULT="${TASKS_DEFAULT%%$'\n'*}"
+    TASK_DIALOG_CMD="${output#*dialog: }"
+    TASK_DIALOG_CMD="${TASK_DIALOG_CMD%%$'\n'*}"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f select_tasks &>/dev/null; then
+select_tasks() {
+    # Show the dialog --checklist inside a pseudo-tty (script -qec) so it
+    # works even where stdin is not a terminal. dialog writes the checked
+    # task names into TASK_RESULT_FILE through --output-fd 3. Exit codes:
+    # 0 = confirmed, 255 = ESC/cancel or timeout (with --timeout dialog exits
+    # 255 and writes the current selection to the result file; on cancel the
+    # file stays empty). Any other code or an empty file is a fallback.
+    local rc
+    # The if guard captures the exit code without triggering errexit.
+    if script -qec "$TASK_DIALOG_CMD" /dev/null >/dev/null 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
+    if [[ "$rc" -eq 0 ]]; then
+        return 0
+    fi
+    if [[ "$rc" -eq 255 && -s "$TASK_RESULT_FILE" ]]; then
+        # Timeout: dialog accepted the current (default) selection.
+        return 0
+    fi
+    # Cancel or failure: no usable selection.
+    return 1
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f resolve_tasks &>/dev/null; then
+resolve_tasks() {
+    # Ask the Python engine to expand the selected tasks with their transitive
+    # dependencies and print the final ordered set. The selection travels as a
+    # single space-separated argument, so it cannot break the command line.
+    local mode="$1"
+    local selection="$2"
+    local output
+    output="$( cd "$SOURCE_DIR" && run_timed uv run pyntara task-catalog --mode "$mode" --selected "$selection" )" || return 1
+    TASKS_RESOLVED="${output#*tasks: }"
+    TASKS_RESOLVED="${TASKS_RESOLVED%%$'\n'*}"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f prompt_tasks &>/dev/null; then
+prompt_tasks() {
+    # Decide the task set and export it for the Python engine.
+    # PYNTARA_TASKS skips the screen (unattended runs), but dependencies are
+    # still resolved so the exported set is always complete and ordered.
+    local mode="${PYNTARA_INSTALL_MODE:-}"
+    if [[ -z "$mode" ]]; then
+        show_message "ERROR: install mode not selected before task selection."
+        return 1
+    fi
+    # One result file per run, inside the state directory.
+    TASK_RESULT_FILE="$STATE_DIR/tasks-selection"
+    : > "$TASK_RESULT_FILE"
+    if [[ -n "${PYNTARA_TASKS:-}" ]]; then
+        if ! resolve_tasks "$mode" "$PYNTARA_TASKS"; then
+            show_message "ERROR: could not resolve tasks."
+            return 1
+        fi
+        export PYNTARA_TASKS="$TASKS_RESOLVED"
+        log "Tasks from environment resolved: $PYNTARA_TASKS"
+        return 0
+    fi
+    if ! load_task_catalog "$mode"; then
+        show_message "ERROR: could not load the task catalog."
+        return 1
+    fi
+    if ! select_tasks; then
+        # No usable selection: the dialog timed out, was cancelled, or could
+        # not be shown. All three mean the user made no explicit choice, so
+        # the default set for the mode is used and the user is told, with a
+        # pause so the message can be read.
+        show_message "No task selection was made. Using default tasks: $TASKS_DEFAULT"
+        sleep "$SLEEP_AFTER_IMPORTANT_MESSAGE"
+        export PYNTARA_TASKS="$TASKS_DEFAULT"
+        log "Using default tasks after no selection: $PYNTARA_TASKS"
+        return 0
+    fi
+    local selection
+    selection="$(cat "$TASK_RESULT_FILE")"
+    if ! resolve_tasks "$mode" "$selection"; then
+        show_message "ERROR: could not resolve the selected tasks."
+        return 1
+    fi
+    export PYNTARA_TASKS="$TASKS_RESOLVED"
+    log "Tasks selected: $PYNTARA_TASKS"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -552,6 +675,9 @@ main() {
     # Interactive phase 4.2: the install mode screen runs after the vault is
     # open, before the engine starts (interactive-ui contract section 3).
     prompt_install_mode
+    # Interactive phase 4.3: the task selection screen runs after the mode is
+    # known, so the dialog shows exactly the tasks of that mode.
+    prompt_tasks
     run_pyntara "$@"
     log "Bootstrap finished"
 }

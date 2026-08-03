@@ -45,7 +45,7 @@ tasks:
     depends: []
     modes: [server, desktop]
   - name: desktop
-    description: Desktop defaults: Kate, terminal, language indicator, folders.
+    description: "Desktop defaults: Kate, terminal, language indicator, folders."
     depends: [users]
     modes: [desktop]
   - name: apps

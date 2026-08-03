@@ -76,7 +76,7 @@ All user interaction goes through the dialog utility. See docs/contracts/interac
 
 Password prompt for production.vault (VAULT_PASSWORD_TIMEOUT 333s, 3 attempts, fallback to default.vault).
 Install mode selector: minimal / server / desktop (auto-select default after DIALOG_TIMEOUT).
-Task selection checkboxes (30s auto-accept).
+Task selection checkboxes (30s auto-accept via dialog --timeout, fallback to defaults with SLEEP_AFTER_IMPORTANT_MESSAGE).
 Force-mode question: Yes / No (11s, default No).
 Force-task checkboxes (only if Yes).
 

@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.27",
     "reportlab>=4.2",
     "pycryptodome>=3.20",
+    "PyYAML>=6.0",
 ]
 
 [dependency-groups]
@@ -33,7 +34,7 @@ packages = ["src/pyntara"]
 [[tool.mypy.overrides]]
 # pykeepass ships no type stubs, so mypy cannot analyze it. Treating the
 # package as Any keeps mypy --strict green without losing checks on our code.
-module = ["pykeepass.*"]
+module = ["pykeepass.*", "yaml"]
 ignore_missing_imports = true
 
 [tool.ruff]
