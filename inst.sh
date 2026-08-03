@@ -51,3 +51,28 @@ set -euo pipefail
 # 5.5 Проверка log: пишет в файл и в терминал с меткой времени.
 # 5.6 Прогон тестов: bash tests/test_inst.sh; для Python-части по docs/guides/developer-guide.md.
 
+# --- Implementation: phase 1.1 (root check) ---
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f check_root &>/dev/null; then
+check_root() {
+    # Bootstrap contract section 1: must run as root, otherwise exit with an error.
+    if [[ "$EUID" -ne 0 ]]; then
+        echo "Error: Pyntara installer must run as root. Restart with: sudo bash inst.sh" >&2
+        exit 1
+    fi
+}
+fi
+
+# Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
+if ! declare -f main &>/dev/null; then
+main() {
+    check_root
+}
+fi
+
+# Run only on direct execution so tests can source this file safely.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+
