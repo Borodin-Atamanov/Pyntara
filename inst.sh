@@ -234,6 +234,29 @@ fetch_source() {
 }
 fi
 
+# Implementation: phase 3.2 (python environment via uv)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f setup_python &>/dev/null; then
+setup_python() {
+    # Bootstrap contract section 6: uv sync in the repo directory.
+    # Use --locked when the lockfile is current, plain sync otherwise.
+    # cd runs in a subshell so the caller's working directory never changes.
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        log "Source directory missing: $SOURCE_DIR"
+        return 1
+    fi
+    if ( cd "$SOURCE_DIR" && run_timed uv lock --check ); then
+        log "Lockfile is current, syncing with --locked"
+        ( cd "$SOURCE_DIR" && run_timed uv sync --locked )
+    else
+        log "Lockfile outdated, syncing without --locked"
+        ( cd "$SOURCE_DIR" && run_timed uv sync )
+    fi
+    log "Python environment ready in $SOURCE_DIR"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -243,6 +266,7 @@ main() {
     install_dependencies
     install_uv
     fetch_source
+    setup_python
 }
 fi
 
