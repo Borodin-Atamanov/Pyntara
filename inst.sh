@@ -203,6 +203,37 @@ install_uv() {
 }
 fi
 
+# Implementation: phase 3.1 (source delivery via git)
+
+# Repository and branch are configurable so tests never touch the real remote.
+REPO_URL="${PYNTARA_REPO_URL:-https://github.com/Borodin-Atamanov/Pyntara.git}"
+REPO_BRANCH="${PYNTARA_REPO_BRANCH:-main}"
+SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f fetch_source &>/dev/null; then
+fetch_source() {
+    # Bootstrap contract section 4: clone the repo, or update an existing clone.
+    # A broken clone (no .git) is removed and recreated instead of failing.
+    if [[ ! -d "$SOURCE_DIR" || -z "$(ls -A "$SOURCE_DIR")" ]]; then
+        log "Cloning repository: $REPO_URL branch $REPO_BRANCH"
+        run_timed git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$SOURCE_DIR"
+        log "Repository cloned to $SOURCE_DIR"
+    elif [[ ! -d "$SOURCE_DIR/.git" ]]; then
+        log "Removing broken clone at $SOURCE_DIR"
+        rm -rf "$SOURCE_DIR"
+        log "Cloning repository: $REPO_URL branch $REPO_BRANCH"
+        run_timed git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$SOURCE_DIR"
+        log "Repository cloned to $SOURCE_DIR"
+    else
+        log "Updating existing repository at $SOURCE_DIR"
+        run_timed git -C "$SOURCE_DIR" fetch
+        run_timed git -C "$SOURCE_DIR" reset --hard "origin/$REPO_BRANCH"
+        log "Repository updated to origin/$REPO_BRANCH"
+    fi
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -211,6 +242,7 @@ main() {
     log "Install log started: $LOG_FILE"
     install_dependencies
     install_uv
+    fetch_source
 }
 fi
 

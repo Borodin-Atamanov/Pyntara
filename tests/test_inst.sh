@@ -232,8 +232,9 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 }
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
-    # main must call check_root, ensure_fhs_dirs, log, install_dependencies, install_uv.
-    # Mocks are declared before source so the guard keeps them.
+    # main must call check_root, ensure_fhs_dirs, log, install_dependencies,
+    # install_uv, then fetch_source. Mocks are declared before source so the
+    # guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
     local flags="$tmp/flags"
@@ -245,11 +246,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         log() { echo log >> "$flags_file"; }
         install_dependencies() { echo install_dependencies >> "$flags_file"; }
         install_uv() { echo install_uv >> "$flags_file"; }
+        fetch_source() { echo fetch_source >> "$flags_file"; }
         source "$1"
         main
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -668,6 +670,142 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_fetch_source_clones_when_dir_missing() {
+    # When the source directory does not exist, git clone must run, not fetch.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/git_calls"
+    mkdir -p "$bin"
+    cat > "$bin/git" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$GIT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/git"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" GIT_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; fetch_source' _ "$INSTALLER"
+    if ! grep -q "^clone --depth 1 -b main https://github.com/Borodin-Atamanov/Pyntara.git $tmp/repo$" "$calls"; then
+        echo "clone not called with expected arguments" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q '^fetch$' "$calls"; then
+        echo "fetch must not run when cloning fresh" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_fetch_source_clones_empty_dir() {
+    # An empty existing directory must be cloned, not fetched.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/git_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    cat > "$bin/git" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$GIT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/git"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" GIT_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; fetch_source' _ "$INSTALLER"
+    if ! grep -q "^clone --depth 1 -b main " "$calls"; then
+        echo "clone not called for empty directory" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q '^fetch$' "$calls"; then
+        echo "fetch must not run for empty directory" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_fetch_source_reclones_broken_dir() {
+    # A non-empty directory without .git is a broken clone and must be recreated.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/git_calls"
+    local rm_calls="$tmp/rm_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    echo "stale file" > "$tmp/repo/stale.txt"
+    cat > "$bin/git" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$GIT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/git"
+    cat > "$bin/rm" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$RM_CALLS_FILE"
+/bin/rm -f "$@"
+EOF
+    chmod +x "$bin/rm"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" GIT_CALLS_FILE="$calls" \
+        RM_CALLS_FILE="$rm_calls" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; fetch_source' _ "$INSTALLER"
+    if ! grep -q -- "-rf $tmp/repo" "$rm_calls"; then
+        echo "broken clone not removed" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "^clone --depth 1 -b main " "$calls"; then
+        echo "clone not called after removing broken clone" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_fetch_source_fetches_existing_repo() {
+    # An existing repo with .git must fetch and reset, not re-clone.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/git_calls"
+    mkdir -p "$bin" "$tmp/repo/.git"
+    cat > "$bin/git" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$GIT_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/git"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" GIT_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; fetch_source' _ "$INSTALLER"
+    if ! grep -q -- "-C $tmp/repo fetch" "$calls"; then
+        echo "fetch not called for existing repo" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q -- "-C $tmp/repo reset --hard origin/main" "$calls"; then
+        echo "reset --hard origin/main not called" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q '^clone ' "$calls"; then
+        echo "clone must not run for existing repo" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -688,6 +826,10 @@ run_test inst_install_uv_skips_when_already_installed
 run_test inst_install_uv_downloads_then_runs_installer
 run_test inst_install_uv_runs_installer_script
 run_test inst_install_uv_adds_local_bin_to_path
+run_test inst_fetch_source_clones_when_dir_missing
+run_test inst_fetch_source_clones_empty_dir
+run_test inst_fetch_source_reclones_broken_dir
+run_test inst_fetch_source_fetches_existing_repo
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
