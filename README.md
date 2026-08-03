@@ -1,7 +1,5 @@
 # Pyntara
 
-[![CI](https://github.com/Borodin-Atamanov/Pyntara/actions/workflows/ci.yml/badge.svg)](https://github.com/Borodin-Atamanov/Pyntara/actions/workflows/ci.yml)
-
 Pyntara is a Kubuntu automation system with an idempotent task model and strict typed runtime context.
 
 ## Architecture baseline
@@ -18,29 +16,4 @@ Pyntara is a Kubuntu automation system with an idempotent task model and strict 
 ```bash
 curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
 ```
-
-## Development checks
-
-```bash
-make test
-make check
-```
-
-If `uv` is not installed, `make` will create `.venv` and install dev dependencies automatically.
-
-The CI workflow runs `make lint`, `make typecheck`, `make test-quick`, and `make test-bootstrap-contract` on every push and pull request. The deeper bootstrap lane runs on manual dispatch and a weekly schedule.
-
-For bootstrap-specific verification, use these lanes:
-
-```bash
-make test-quick
-make test-bootstrap-contract
-make test-bootstrap-deep
-make test-bootstrap-rootlike
-```
-
-- `make test-quick` is the fast default lane for day-to-day work.
-- `make test-bootstrap-contract` runs the script-level bootstrap contract tests with mocked `apt`, `git`, and `uv`.
-- `make test-bootstrap-deep` runs the PTY-based `curl | bash` style scenarios.
-- `make test-bootstrap-rootlike` is an optional containerized root-like run when `podman` is available.
 

@@ -7,17 +7,8 @@ This document defines the target repository layout for Pyntara and explains what
 | Path | Purpose |
 |---|---|
 | `inst.sh` | Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See `docs/bootstrap-contract.md`. |
-| `pyproject.toml` | Python project metadata, dependencies, tool configuration, and CLI entry point. |
-| `uv.lock` | Locked dependency versions for reproducible environments. |
 | `README.md` | Quick start, installation modes, and links to detailed docs. |
 | `.gitignore` | Ignore rules for virtualenvs, caches, logs, and runtime task data. |
-| `ruff.toml` | Ruff linting/format rules used in CI. |
-| `mypy.ini` | Strict static type-checking configuration (`mypy --strict`). |
-| `pytest.ini` | Pytest defaults, discovery, markers, and test options. |
-| `config.yaml` | Global defaults (timeouts, password lengths, paths, retries). |
-| `tasks.yaml` | Task catalog: order, description, executor file, dependencies, idempotency flags. |
-| `install_modes.yaml` | Mode presets (`minimal`, `server`, `desktop`) and default mode selection. |
-| `ntp_servers.txt` | Prioritized NTP server list for time synchronization tasks. |
 
 ### `docs/`
 
@@ -83,33 +74,6 @@ This document defines the target repository layout for Pyntara and explains what
 | Path | Purpose |
 |---|---|
 | `task_data/.gitkeep` | Keeps empty directory in git; runtime task state is stored in per-task subdirectories. |
-
-### `tests/`
-
-| Path | Purpose |
-|---|---|
-| `tests/test_context.py` | `RunContext` and dependency wiring tests. |
-| `tests/test_config_loader.py` | Config source priority and validation tests. |
-| `tests/test_task_registry.py` | Task contract and callable validation tests. |
-| `tests/test_secrets_store.py` | Secret loading and no-regeneration-on-rerun tests. |
-| `tests/test_task_runner.py` | Idempotency, force-mode, ordering, and failure-path tests. |
-| `tests/test_telemetry.py` | Retry strategy, schedule logic, and encrypted-payload behavior tests. |
-
-### `tests/tasks/`
-
-| Path | Purpose |
-|---|---|
-| `tests/tasks/test_users.py` | Success and realistic failure tests for user provisioning task. |
-| `tests/tasks/test_hostname.py` | Success and failure tests for hostname task. |
-| `tests/tasks/test_zram.py` | Success and failure tests for ZRAM task. |
-| `tests/tasks/test_swapfile.py` | Success and failure tests for swapfile task. |
-| `tests/tasks/test_ssh.py` | Success and failure tests for SSH task. |
-
-### `.github/workflows/`
-
-| Path | Purpose |
-|---|---|
-| `.github/workflows/ci.yml` | CI pipeline running `ruff`, `mypy --strict`, and `pytest`. |
 
 ## Notes
 
