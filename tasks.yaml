@@ -1,0 +1,62 @@
+# Task catalog: source of truth for task metadata and install mode membership.
+# Task descriptions and dependencies come from docs/contracts/task-model.md.
+# The default task set for a mode is exactly the set of tasks whose modes
+# field lists that mode. Mode membership lives here, inside the task
+# definitions; there are no separate mode files.
+tasks:
+  - name: users
+    description: Create and configure i, j, k users and required groups.
+    depends: []
+    modes: [minimal, server, desktop]
+  - name: hostname
+    description: Generate and persist random 9-character hostname.
+    depends: []
+    modes: [minimal, server, desktop]
+  - name: passwords
+    description: Derive root and user passwords from salt and hostname.
+    depends: [users, hostname]
+    modes: [minimal, server, desktop]
+  - name: zram
+    description: Configure aggressive ZRAM by CPU and RAM.
+    depends: []
+    modes: [server, desktop]
+  - name: swapfile
+    description: Calculate and configure swapfile from RAM and free disk space.
+    depends: []
+    modes: [server, desktop]
+  - name: ssh
+    description: Install and configure SSH service with passwordless login keys.
+    depends: [users]
+    modes: [minimal, server, desktop]
+  - name: proxy_server
+    description: Local authenticated proxy service with password and port.
+    depends: []
+    modes: [server, desktop]
+  - name: proxy_tunnel
+    description: Local tunnel to remote proxy or VPN.
+    depends: [proxy_server]
+    modes: [server, desktop]
+  - name: ntp
+    description: Enable and tune NTP synchronization.
+    depends: []
+    modes: [minimal, server, desktop]
+  - name: power
+    description: Configure power behavior, no suspend on lid close or inactivity.
+    depends: []
+    modes: [server, desktop]
+  - name: desktop
+    description: Desktop defaults: Kate, terminal, language indicator, folders.
+    depends: [users]
+    modes: [desktop]
+  - name: apps
+    description: Install latest ImageMagick, FFmpeg and scrcpy.
+    depends: []
+    modes: [desktop]
+  - name: nextdns
+    description: Per-user NextDNS account and system-wide DNS endpoint.
+    depends: [users]
+    modes: [desktop]
+  - name: telemetry_setup
+    description: Initial telemetry service setup and first-run queue bootstrap.
+    depends: [users]
+    modes: [server, desktop]

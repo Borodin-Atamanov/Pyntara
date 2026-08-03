@@ -51,7 +51,7 @@ telemetry_setup — Initial telemetry service setup and first-run queue bootstra
 
 Enabling a task auto-enables all its required dependencies transitively.
 Disabling a task does not auto-disable dependent tasks.
-Task set and metadata are defined in configuration (install_modes.yaml).
+Task set and metadata are defined in configuration (tasks.yaml).
 
 ## Task contract (Python)
 

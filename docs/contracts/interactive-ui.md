@@ -78,7 +78,7 @@ Arrow keys are not needed; digits and letters are accepted.
 
 dialog --checklist with task name, short description, and on/off state.
 
-Default checked tasks depend on the selected mode as defined in install_modes.yaml.
+Default checked tasks depend on the selected mode as defined in tasks.yaml.
 Space toggles a checkbox, Enter confirms and submits the selection.
 
 Dependency rule on enable: enabling a task auto-enables all its required
