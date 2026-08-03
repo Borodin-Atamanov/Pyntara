@@ -438,6 +438,98 @@ prompt_vault_password() {
 }
 fi
 
+# Implementation: phase 4.2 (install mode selection)
+
+# Valid installation modes, install-modes spec. Used for validation and the
+# on-screen list.
+INSTALL_MODES=(minimal server desktop)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f detect_default_mode &>/dev/null; then
+detect_default_mode() {
+    # Choose the default install mode without asking the user, install-modes
+    # spec: desktop when a desktop session is present, otherwise server.
+    # PYNTARA_DEFAULT_INSTALL_MODE overrides detection for tests and for
+    # unattended runs where no session information is available.
+    if [[ -n "${PYNTARA_DEFAULT_INSTALL_MODE:-}" ]]; then
+        echo "$PYNTARA_DEFAULT_INSTALL_MODE"
+        return 0
+    fi
+    # A desktop session sets one of these variables; their absence means a
+    # server or a bare login shell.
+    if [[ -n "${XDG_CURRENT_DESKTOP:-}" || -n "${DESKTOP_SESSION:-}" ]]; then
+        echo "desktop"
+        return 0
+    fi
+    # No session variables: a running desktop process still means desktop.
+    # pgrep runs even when the caller has no tty, and exit code 1 means no
+    # process matched, so desktop is only chosen when a match exists.
+    if pgrep -x kwin_wayland &>/dev/null || pgrep -x kwin_x11 &>/dev/null || pgrep -x plasmashell &>/dev/null || pgrep -x gnome-shell &>/dev/null; then
+        echo "desktop"
+        return 0
+    fi
+    echo "server"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f select_install_mode &>/dev/null; then
+select_install_mode() {
+    # One interactive mode-selection screen with a visible real-time countdown
+    # (interactive-ui contract section 2.1, install-modes spec).
+    # The list is printed with numbers; the user answers with a number or the
+    # first letter of the mode name. Empty input, EOF or a timeout accepts the
+    # default. The countdown stops on the first keypress, then the rest of the
+    # line is read without time pressure.
+    local default_mode="$1"
+    local remaining answer mode
+    for ((remaining = DIALOG_TIMEOUT; remaining >= 1; remaining--)); do
+        printf '\rInstall mode (default %s): 1 minimal, 2 server, 3 desktop -- %ss left ' "$default_mode" "$remaining" >&2
+        # read -t 1 -n 1 returns 142 on timeout (SIGALRM), 0 on any key.
+        if read -r -t 1 -n 1 answer; then
+            printf '\n' >&2
+            # The first key stopped the countdown; read the rest without a
+            # timeout (interactive-ui contract section 2.1).
+            if [[ "$answer" != $'\n' && "$answer" != $'\r' ]]; then
+                local rest
+                read -r rest
+                answer="$answer$rest"
+            fi
+            break
+        fi
+    done
+    # No key was pressed: move to a fresh line so later output does not
+    # overwrite the countdown.
+    printf '\n' >&2
+    # One shared validation for every way the input can end: a recognized
+    # answer wins, everything else (timeout, EOF, empty, garbage) is default.
+    case "${answer,,}" in
+        1|m|minimal) mode="minimal" ;;
+        2|s|server) mode="server" ;;
+        3|d|desktop) mode="desktop" ;;
+        *) mode="$default_mode" ;;
+    esac
+    echo "$mode"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f prompt_install_mode &>/dev/null; then
+prompt_install_mode() {
+    # Decide the install mode and export it for the Python engine.
+    # PYNTARA_INSTALL_MODE skips the screen entirely (unattended runs).
+    if [[ -n "${PYNTARA_INSTALL_MODE:-}" ]]; then
+        log "Install mode from environment: $PYNTARA_INSTALL_MODE"
+        return 0
+    fi
+    local default_mode mode
+    default_mode="$(detect_default_mode)"
+    mode="$(select_install_mode "$default_mode")"
+    export PYNTARA_INSTALL_MODE="$mode"
+    log "Install mode selected: $mode (default was $default_mode)"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -455,6 +547,9 @@ main() {
         log "Vault setup failed, aborting"
         exit 1
     fi
+    # Interactive phase 4.2: the install mode screen runs after the vault is
+    # open, before the engine starts (interactive-ui contract section 3).
+    prompt_install_mode
     run_pyntara "$@"
     log "Bootstrap finished"
 }

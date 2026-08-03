@@ -11,9 +11,17 @@ Environment auto-detection is used:
 on desktop systems, desktop mode is selected by default
 on server systems, server mode is selected by default
 
-Auto-selection timeout: 11 seconds.
+Auto-selection timeout: DIALOG_TIMEOUT seconds (default 11).
 The timeout is shown in terminal and decreases in real time.
-If the user does not press a key (up/down/right/left or Enter), the default option is selected.
+If the user does not press a key before the timeout, the default option is selected.
+
+Selection screen: a plain text line listing numbered options (1 minimal, 2 server, 3 desktop)
+with a visible remaining-seconds counter. The user answers with the option number
+or the first letter of the mode name; empty input, EOF or a timeout selects the default.
+
+Environment overrides:
+PYNTARA_INSTALL_MODE skips the screen and fixes the mode.
+PYNTARA_DEFAULT_INSTALL_MODE fixes the default without skipping the screen.
 
 ## Task selection
 

@@ -249,12 +249,13 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         fetch_source() { echo fetch_source >> "$flags_file"; }
         setup_python() { echo setup_python >> "$flags_file"; }
         prompt_vault_password() { echo prompt_vault_password >> "$flags_file"; }
+        prompt_install_mode() { echo prompt_install_mode >> "$flags_file"; }
         run_pyntara() { echo "run_pyntara $*" >> "$flags_file"; }
         source "$1"
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -1464,6 +1465,137 @@ inst_prompt_vault_password_missing_default_password_aborts() {
     rm -rf "$tmp"
 }
 
+inst_detect_default_mode_uses_override() {
+    # PYNTARA_DEFAULT_INSTALL_MODE must win over every other signal.
+    local output
+    output="$(PYNTARA_DEFAULT_INSTALL_MODE=minimal bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
+    assert_equals "minimal" "$output" "override wins" || return 1
+}
+
+inst_detect_default_mode_desktop_when_session_vars() {
+    # A desktop session variable means desktop.
+    local output
+    output="$(XDG_CURRENT_DESKTOP=KDE bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
+    assert_equals "desktop" "$output" "XDG_CURRENT_DESKTOP wins" || return 1
+}
+
+inst_detect_default_mode_server_when_no_session() {
+    # No session variables and no desktop process: server. pgrep is mocked to
+    # report no match.
+    local tmp
+    tmp="$(mktemp -d)"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "$bin/pgrep"
+    local output
+    output="$(env -u XDG_CURRENT_DESKTOP -u DESKTOP_SESSION PATH="$bin:$PATH" bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
+    assert_equals "server" "$output" "headless means server" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_detect_default_mode_desktop_when_process() {
+    # A desktop process means desktop even without session variables.
+    local tmp
+    tmp="$(mktemp -d)"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+# Match plasmashell, reject everything else.
+case "$*" in
+    *plasmashell*) exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+    chmod +x "$bin/pgrep"
+    local output
+    output="$(env -u XDG_CURRENT_DESKTOP -u DESKTOP_SESSION PATH="$bin:$PATH" bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
+    assert_equals "desktop" "$output" "desktop process means desktop" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_select_install_mode_number_answer() {
+    # Entering the number 2 must select server. stderr is dropped: only the
+    # selected mode goes to stdout, the countdown is cosmetic.
+    local output
+    output="$(printf '2\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
+    assert_equals "server" "$output" "number selects mode" || return 1
+}
+
+inst_select_install_mode_letter_answer() {
+    # Entering the letter d must select desktop.
+    local output
+    output="$(printf 'd\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
+    assert_equals "desktop" "$output" "letter selects mode" || return 1
+}
+
+inst_select_install_mode_default_on_timeout() {
+    # No key within the timeout selects the default mode.
+    local output
+    output="$(printf '' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
+    assert_equals "server" "$output" "timeout means default" || return 1
+}
+
+inst_select_install_mode_default_on_eof() {
+    # EOF before any key also selects the default mode.
+    local output
+    output="$(printf '' | DIALOG_TIMEOUT=11 bash -c 'source "$1"; select_install_mode minimal' _ "$INSTALLER" 2>/dev/null)"
+    assert_equals "minimal" "$output" "EOF means default" || return 1
+}
+
+inst_select_install_mode_default_on_garbage() {
+    # Unrecognized input selects the default mode.
+    local output
+    output="$(printf 'x\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode desktop' _ "$INSTALLER" 2>/dev/null)"
+    assert_equals "desktop" "$output" "garbage means default" || return 1
+}
+
+inst_prompt_install_mode_uses_environment() {
+    # PYNTARA_INSTALL_MODE skips the screen and is logged.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local output
+    output="$(PYNTARA_INSTALL_MODE=minimal PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prompt_install_mode; echo "MODE=$PYNTARA_INSTALL_MODE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "MODE=minimal" "env mode kept" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "Install mode from environment: minimal" "env mode logged" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_prompt_install_mode_exports_selected_mode() {
+    # Without an env override the screen runs and the choice is exported.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local output
+    output="$(printf '3\n' | PYNTARA_DEFAULT_INSTALL_MODE=server PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prompt_install_mode; echo "MODE=$PYNTARA_INSTALL_MODE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "MODE=desktop" "selected mode exported" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "Install mode selected: desktop (default was server)" "selection logged" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -1507,6 +1639,17 @@ run_test inst_prompt_vault_password_rejects_empty_password
 run_test inst_prompt_vault_password_wrong_password_three_times_falls_back
 run_test inst_prompt_vault_password_missing_production_vault_falls_back
 run_test inst_prompt_vault_password_missing_default_password_aborts
+run_test inst_detect_default_mode_uses_override
+run_test inst_detect_default_mode_desktop_when_session_vars
+run_test inst_detect_default_mode_server_when_no_session
+run_test inst_detect_default_mode_desktop_when_process
+run_test inst_select_install_mode_number_answer
+run_test inst_select_install_mode_letter_answer
+run_test inst_select_install_mode_default_on_timeout
+run_test inst_select_install_mode_default_on_eof
+run_test inst_select_install_mode_default_on_garbage
+run_test inst_prompt_install_mode_uses_environment
+run_test inst_prompt_install_mode_exports_selected_mode
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"

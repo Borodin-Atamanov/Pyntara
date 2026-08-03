@@ -6,11 +6,11 @@ This document is the source of truth for interactive terminal UX in Pyntara.
 
 System/root authentication is outside Pyntara UI scope. Root password is requested
 by sudo before Pyntara starts. Pyntara interactive flow begins after package
-installation and environment setup. Choice screens use the dialog utility. The
-vault password prompt is the one exception: it uses bash read -s instead of
-dialog, because dialog renders its box on stderr and misbehaves where stdout is
-not a terminal (e.g. under sudo), which made the field unreadable. No custom
-termios code in the installer.
+installation and environment setup. Choice screens are plain bash text screens:
+interactive widgets from dialog are unusable where stdout is not a terminal
+(e.g. under sudo), so every screen uses bash read and visible real-time
+countdowns instead. The vault password prompt uses bash read -s (hidden input).
+No custom termios code in the installer.
 
 ## 2. Global rules
 
@@ -67,10 +67,12 @@ KeePass decryption is done by a Python library, not shell tools.
 
 ## 5. Install mode selector
 
-dialog --menu with three options: minimal, server, desktop.
+Plain text screen with three options: minimal, server, desktop.
+Options are numbered; the user answers with a number or the first letter
+of the mode name. Empty input, EOF or a timeout accepts the default.
 
 Default: auto-detected. Desktop when a desktop session is present, server otherwise.
-Arrow keys navigate, Enter confirms.
+Arrow keys are not needed; digits and letters are accepted.
 
 ## 6. Main task selection
 
