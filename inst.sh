@@ -66,7 +66,7 @@ check_root() {
 }
 fi
 
-# --- Implementation: phase 1.2 (FHS directories) ---
+# Implementation: phase 1.2 (FHS directories)
 
 # FHS base directories, bootstrap contract section 5.
 # Overridable via environment so tests never touch real system paths.
@@ -83,11 +83,39 @@ ensure_fhs_dirs() {
 }
 fi
 
+# Implementation: phase 1.3 (logging)
+
+# Single log file for the whole installer run, bootstrap contract section 9.
+# Overridable via environment so tests never touch real system paths.
+LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f log &>/dev/null; then
+log() {
+    # Bootstrap contract section 9: timestamped message written to log file and terminal.
+    local message="$1"
+    local timestamp
+    timestamp="$(date +%Y-%m-%d-%H-%M-%S)"
+    echo "[$timestamp] $message" | tee -a "$LOG_FILE"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f run_logged &>/dev/null; then
+run_logged() {
+    # Bootstrap contract section 9: run a command, stream output to terminal and log file.
+    # stderr is merged into stdout so errors are captured too.
+    "$@" 2>&1 | tee -a "$LOG_FILE"
+    return "${PIPESTATUS[0]}"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
     check_root
     ensure_fhs_dirs
+    log "Install log started: $LOG_FILE"
 }
 fi
 
