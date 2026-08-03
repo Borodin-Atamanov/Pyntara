@@ -105,8 +105,31 @@ if ! declare -f run_logged &>/dev/null; then
 run_logged() {
     # Bootstrap contract section 9: run a command, stream output to terminal and log file.
     # stderr is merged into stdout so errors are captured too.
-    "$@" 2>&1 | tee -a "$LOG_FILE"
+    # The if guard captures the command exit code without triggering errexit.
+    if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+        return 0
+    fi
     return "${PIPESTATUS[0]}"
+}
+fi
+
+# Implementation: phase 1.4 (timing)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f run_timed &>/dev/null; then
+run_timed() {
+    # Bootstrap contract section 7: run a command, time it, log duration and exit code.
+    local start rc elapsed
+    start="$(date +%s)"
+    # The if guard captures the command exit code without triggering errexit.
+    if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+        rc=0
+    else
+        rc="${PIPESTATUS[0]}"
+    fi
+    elapsed="$(($(date +%s) - start))"
+    log "Finished in ${elapsed}s with exit code ${rc}: $*"
+    return "$rc"
 }
 fi
 

@@ -258,6 +258,56 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
     rm -rf "$tmp"
 }
 
+inst_run_timed_logs_duration_and_exit_code() {
+    # run_timed runs the command, logs duration with exit code 0, preserves success.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local rc
+    set +e
+    PYNTARA_LOG_FILE="$logfile" \
+        bash -c 'source "$1"; run_timed true' _ "$INSTALLER" \
+        > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 0 ]]; then
+        echo "expected exit code 0, got $rc" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -qE 'Finished in [0-9]+s with exit code 0: true' "$logfile"; then
+        echo "duration line missing or malformed in log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_run_timed_preserves_failing_exit_code() {
+    # A failing command must return its own exit code and log it.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local rc
+    set +e
+    PYNTARA_LOG_FILE="$logfile" \
+        bash -c 'source "$1"; run_timed sh -c "exit 3"' _ "$INSTALLER" \
+        > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 3 ]]; then
+        echo "expected exit code 3, got $rc" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -qE 'Finished in [0-9]+s with exit code 3: sh -c exit 3' "$logfile"; then
+        echo "duration line missing or malformed in log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -266,6 +316,8 @@ run_test inst_log_writes_timestamped_line_to_terminal_and_file
 run_test inst_log_appends_lines_instead_of_overwriting
 run_test inst_log_file_defaults_inside_log_dir
 run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
+run_test inst_run_timed_logs_duration_and_exit_code
+run_test inst_run_timed_preserves_failing_exit_code
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
