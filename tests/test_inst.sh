@@ -59,7 +59,7 @@ assert_contains() {
     fi
 }
 
-test_check_root_rejects_non_root() {
+inst_check_root_rejects_non_root_with_error() {
     # Non-root must fail with exit code 1 and an error on stderr.
     local output
     local rc
@@ -85,7 +85,7 @@ test_check_root_rejects_non_root() {
     assert_contains "$output" "must run as root" "non-root check_root error message" || return 1
 }
 
-test_check_root_accepts_root() {
+inst_check_root_accepts_root_with_success_message() {
     # Root must print the success message and exit with code 0.
     local output
     if [[ "$EUID" -eq 0 ]]; then
@@ -101,7 +101,7 @@ test_check_root_accepts_root() {
     assert_contains "$output" "Running as root" "root check_root success message" || return 1
 }
 
-test_ensure_fhs_dirs() {
+inst_ensure_fhs_dirs_creates_all_three_directories() {
     # All three FHS directories must be created and listed in the message.
     local tmp
     tmp="$(mktemp -d)"
@@ -130,7 +130,7 @@ test_ensure_fhs_dirs() {
     rm -rf "$tmp"
 }
 
-test_ensure_fhs_dirs_idempotent() {
+inst_ensure_fhs_dirs_is_idempotent_on_second_run() {
     # A second run must succeed and leave the directories intact.
     local tmp
     tmp="$(mktemp -d)"
@@ -144,7 +144,7 @@ test_ensure_fhs_dirs_idempotent() {
     rm -rf "$tmp"
 }
 
-test_log() {
+inst_log_writes_timestamped_line_to_terminal_and_file() {
     # log writes a timestamped line to stdout and to the log file.
     local tmp
     tmp="$(mktemp -d)"
@@ -167,7 +167,7 @@ test_log() {
     rm -rf "$tmp"
 }
 
-test_log_appends() {
+inst_log_appends_lines_instead_of_overwriting() {
     # Repeated calls must append lines, not overwrite the file.
     local tmp
     tmp="$(mktemp -d)"
@@ -183,7 +183,7 @@ test_log_appends() {
     rm -rf "$tmp"
 }
 
-test_log_file_default() {
+inst_log_file_defaults_inside_log_dir() {
     # Without PYNTARA_LOG_FILE the log file must live inside LOG_DIR.
     local tmp
     tmp="$(mktemp -d)"
@@ -196,7 +196,7 @@ test_log_file_default() {
     rm -rf "$tmp"
 }
 
-test_run_logged() {
+inst_run_logged_streams_both_streams_and_preserves_exit_code() {
     # stdout and stderr go to terminal and log file, exit code is preserved.
     local tmp
     tmp="$(mktemp -d)"
@@ -231,7 +231,7 @@ test_run_logged() {
     rm -rf "$tmp"
 }
 
-test_main_composition() {
+inst_main_calls_root_then_dirs_then_log_in_order() {
     # main must call check_root, then ensure_fhs_dirs, then log.
     # Mocks are declared before source so the guard keeps them.
     local tmp
@@ -258,15 +258,15 @@ test_main_composition() {
     rm -rf "$tmp"
 }
 
-run_test test_check_root_rejects_non_root
-run_test test_check_root_accepts_root
-run_test test_ensure_fhs_dirs
-run_test test_ensure_fhs_dirs_idempotent
-run_test test_log
-run_test test_log_appends
-run_test test_log_file_default
-run_test test_run_logged
-run_test test_main_composition
+run_test inst_check_root_rejects_non_root_with_error
+run_test inst_check_root_accepts_root_with_success_message
+run_test inst_ensure_fhs_dirs_creates_all_three_directories
+run_test inst_ensure_fhs_dirs_is_idempotent_on_second_run
+run_test inst_log_writes_timestamped_line_to_terminal_and_file
+run_test inst_log_appends_lines_instead_of_overwriting
+run_test inst_log_file_defaults_inside_log_dir
+run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
+run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
 if [[ "$fail_count" -gt 0 ]]; then
