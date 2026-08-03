@@ -809,13 +809,14 @@ EOF
 }
 
 inst_setup_python_syncs_locked_when_lock_current() {
-    # When uv lock --check succeeds, sync must run with --locked.
+    # When uv.lock exists and uv lock --check succeeds, sync must run with --locked.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
     local bin="$tmp/bin"
     local calls="$tmp/uv_calls"
     mkdir -p "$bin" "$tmp/repo"
+    : > "$tmp/repo/uv.lock"
     cat > "$bin/uv" <<'EOF'
 #!/bin/bash
 echo "$@" >> "$UV_CALLS_FILE"
@@ -845,14 +846,52 @@ EOF
     rm -rf "$tmp"
 }
 
-inst_setup_python_syncs_without_locked_when_lock_stale() {
-    # When uv lock --check fails, sync must run without --locked.
+inst_setup_python_syncs_without_locked_when_lock_missing() {
+    # When uv.lock does not exist, sync must run immediately without --locked
+    # and without a confusing lock --check error.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
     local bin="$tmp/bin"
     local calls="$tmp/uv_calls"
     mkdir -p "$bin" "$tmp/repo"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; setup_python' _ "$INSTALLER"
+    if ! grep -q '^sync$' "$calls"; then
+        echo "plain sync not called when lockfile is missing" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q '^lock --check$' "$calls"; then
+        echo "lock --check must not run when lockfile is missing" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q '^sync --locked$' "$calls"; then
+        echo "sync --locked must not run when lockfile is missing" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_setup_python_syncs_without_locked_when_lock_stale() {
+    # When uv.lock exists but uv lock --check fails, sync must run without --locked.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/uv_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    : > "$tmp/repo/uv.lock"
     cat > "$bin/uv" <<'EOF'
 #!/bin/bash
 echo "$@" >> "$UV_CALLS_FILE"
@@ -1088,6 +1127,7 @@ run_test inst_fetch_source_clones_empty_dir
 run_test inst_fetch_source_reclones_broken_dir
 run_test inst_fetch_source_fetches_existing_repo
 run_test inst_setup_python_syncs_locked_when_lock_current
+run_test inst_setup_python_syncs_without_locked_when_lock_missing
 run_test inst_setup_python_syncs_without_locked_when_lock_stale
 run_test inst_setup_python_fails_when_source_missing
 run_test inst_run_pyntara_launches_in_source_dir

@@ -249,7 +249,12 @@ setup_python() {
         log "Source directory missing: $SOURCE_DIR"
         return 1
     fi
-    if ( cd "$SOURCE_DIR" && run_timed uv lock --check ); then
+    if [[ ! -f "$SOURCE_DIR/uv.lock" ]]; then
+        # No lockfile yet: sync generates it. Avoids a confusing uv error
+        # from `lock --check` on the very first run.
+        log "No uv.lock found, syncing without --locked"
+        ( cd "$SOURCE_DIR" && run_timed uv sync )
+    elif ( cd "$SOURCE_DIR" && run_timed uv lock --check ); then
         log "Lockfile is current, syncing with --locked"
         ( cd "$SOURCE_DIR" && run_timed uv sync --locked )
     else
