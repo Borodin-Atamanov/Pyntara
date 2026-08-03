@@ -1,6 +1,6 @@
 # Users, host, and system settings
 
-This document specifies system-level parameters for tasks defined in `docs/spec/tasks-catalog.md`.
+This document specifies system-level parameters for tasks defined in `docs/contracts/task-model.md`.
 Task descriptions and dependencies are in the catalog; this document covers only configuration details.
 
 ## ZRAM

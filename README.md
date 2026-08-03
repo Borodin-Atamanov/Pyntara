@@ -3,10 +3,12 @@
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
 
+Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, creates users, derives passwords from a KeePass vault, configures ZRAM and swap, sets up SSH, deploys a local proxy with a remote tunnel, tunes the desktop environment, and enables encrypted telemetry reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
+
 ## Start
 
 ```bash
-curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
+curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
 ```
 
 ## Documentation index
@@ -17,13 +19,11 @@ Contracts — mandatory runtime specifications, must not be violated. Only MUST 
 `docs/contracts/architecture.md` — runtime layers, composition root, RunContext, dependency injection
 `docs/contracts/bootstrap.md` — bootstrap installer contract for inst.sh
 `docs/contracts/interactive-ui.md` — dialog-based interactive terminal UX flow
-`docs/contracts/task-model.md` — task protocol, TaskResult, idempotency contract
+`docs/contracts/task-model.md` — task protocol, TaskResult, idempotency contract, full task catalog with dependencies
 
 Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
-`docs/spec/bootstrap-flow.md` — startup flow: package install, git clone, uv sync, Pyntara launch
 `docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, timers
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
-`docs/spec/tasks-catalog.md` — all tasks with descriptions, ordering, and dependencies
 `docs/spec/telemetry.md` — encrypted PDF telemetry, queues, retries, Telegram and Google Drive
 `docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
 `docs/spec/users-and-host.md` — users i/j/k, hostname, passwords, ZRAM, swap, NTP, power
