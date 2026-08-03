@@ -233,8 +233,8 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
     # main must call check_root, ensure_fhs_dirs, log, install_dependencies,
-    # install_uv, fetch_source, then setup_python. Mocks are declared before
-    # source so the guard keeps them.
+    # install_uv, fetch_source, setup_python, then run_pyntara. Mocks are
+    # declared before source so the guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
     local flags="$tmp/flags"
@@ -248,11 +248,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         install_uv() { echo install_uv >> "$flags_file"; }
         fetch_source() { echo fetch_source >> "$flags_file"; }
         setup_python() { echo setup_python >> "$flags_file"; }
+        run_pyntara() { echo "run_pyntara $*" >> "$flags_file"; }
         source "$1"
-        main
+        main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -912,6 +913,133 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_run_pyntara_launches_in_source_dir() {
+    # run_pyntara must run uv pyntara from the source directory.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/uv_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+pwd >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; run_pyntara' _ "$INSTALLER"
+    if ! grep -q '^run pyntara$' "$calls"; then
+        echo "uv run pyntara not called" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "^$tmp/repo$" "$calls"; then
+        echo "pyntara not launched from source directory" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_run_pyntara_forwards_arguments() {
+    # Arguments passed to run_pyntara must reach uv run pyntara.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/uv_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; run_pyntara --help' _ "$INSTALLER"
+    if ! grep -q '^run pyntara --help$' "$calls"; then
+        echo "arguments not forwarded to uv run pyntara" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_run_pyntara_preserves_failing_exit_code() {
+    # A failing pyntara must return its own exit code and log it.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/uv_calls"
+    mkdir -p "$bin" "$tmp/repo"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 3
+EOF
+    chmod +x "$bin/uv"
+    local rc
+    set +e
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; run_pyntara' _ "$INSTALLER" > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 3 ]]; then
+        echo "expected exit code 3, got $rc" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "Pyntara finished with exit code 3" "$logfile"; then
+        echo "failure not logged with exit code 3" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_run_pyntara_fails_when_source_missing() {
+    # When the source directory is missing, run_pyntara must fail without uv.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/uv_calls"
+    mkdir -p "$bin"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    local rc
+    set +e
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
+        PYNTARA_SOURCE_DIR="$tmp/missing" \
+        bash -c 'source "$1"; run_pyntara' _ "$INSTALLER" > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then
+        echo "run_pyntara must fail when source directory is missing" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ -s "$calls" ]]; then
+        echo "uv must not run when source directory is missing" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -939,6 +1067,10 @@ run_test inst_fetch_source_fetches_existing_repo
 run_test inst_setup_python_syncs_locked_when_lock_current
 run_test inst_setup_python_syncs_without_locked_when_lock_stale
 run_test inst_setup_python_fails_when_source_missing
+run_test inst_run_pyntara_launches_in_source_dir
+run_test inst_run_pyntara_forwards_arguments
+run_test inst_run_pyntara_preserves_failing_exit_code
+run_test inst_run_pyntara_fails_when_source_missing
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"

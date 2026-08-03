@@ -257,6 +257,31 @@ setup_python() {
 }
 fi
 
+# Implementation: phase 3.3 (launch pyntara)
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f run_pyntara &>/dev/null; then
+run_pyntara() {
+    # Bootstrap contract section 6: launch uv run pyntara.
+    # Bootstrap contract section 8: no time limit on the pyntara process.
+    # cd runs in a subshell so the caller's working directory never changes.
+    # The if guard captures the exit code without triggering errexit.
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        log "Source directory missing: $SOURCE_DIR"
+        return 1
+    fi
+    local rc=0
+    log "Starting Pyntara from $SOURCE_DIR"
+    if ( cd "$SOURCE_DIR" && run_timed uv run pyntara "$@" ); then
+        rc=0
+    else
+        rc=$?
+    fi
+    log "Pyntara finished with exit code $rc"
+    return "$rc"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -267,6 +292,8 @@ main() {
     install_uv
     fetch_source
     setup_python
+    run_pyntara "$@"
+    log "Bootstrap finished"
 }
 fi
 
