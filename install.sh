@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# this is DEPRECATED script, doesn't work at all. 
+# We don't need to support it anymore!
+
 # install.sh — Interactive Pyntara installer using dialog.
 # Usage: cat install.sh | sudo bash
 set -euo pipefail
@@ -15,11 +18,20 @@ APT_INSTALL_TIMEOUT_SEC=600
 
 export DEBIAN_FRONTEND=noninteractive
 
-# Section 1: Hardcoded data stubsbash /tmp/test_dialog.sh
+# Detect pipe mode: when stdin is not a TTY (cat install.sh | sudo bash),
+# dialog cannot access the controlling terminal because sudo doesn't
+# forward it.  We use 'script' (PTY allocator) in pipe mode to work around
+# this kernel-level limitation.
+PIPE_MODE=false
+if [[ ! -t 0 ]]; then
+    PIPE_MODE=true
+fi
+
+# Section 1: Hardcoded data stubs
 INSTALL_MODES=(minimal server desktop)
-bash /tmp/test_dialog.sh
+
 # Task format: tag|description|default_on
-TASKS=(bash /tmp/test_dialog.sh
+TASKS=(
   "hostname|Generate random 9-character hostname|on"
   "users|Create users i, j, k with sudo access|on"
   "zram|Configure aggressive ZRAM compression|off"
@@ -39,15 +51,13 @@ detect_default_mode() {
   fi
 }
 
-# Section 2: TTY reconnect and dialog check
+# Section 2: TTY check
 ensure_tty() {
-  if [[ -t 0 || -e /dev/tty ]]; then
-    exec </dev/tty
-  else
-    echo "No TTY available. This installer requires an interactive terminal."
-    echo "Run: cat install.sh | sudo bash"
-    exit "${EXIT_ERROR}"
+  if [[ -e /dev/tty && -r /dev/tty ]]; then
+    return "${EXIT_OK}"
   fi
+  echo "No TTY available. This installer requires an interactive terminal."
+  exit "${EXIT_ERROR}"
 }
 
 ensure_dialog() {
@@ -74,21 +84,56 @@ ensure_dialog() {
 
 # Section 3: Helper functions
 
-# Run dialog, capture output from stdout, return dialog's exit code.
-# --stdout sends the result to stdout (captured) while ncurses UI stays on stderr (visible).
-# Usage: dialog_result=$(capture_dialog <args>)
+# Run dialog with proper terminal access.
+# In pipe mode uses 'script' to allocate a PTY because sudo doesn't forward
+# the controlling terminal when stdin is a pipe.  In direct mode, runs dialog
+# as-is (stdin is already the real terminal).
+run_dialog() {
+  if [[ "${PIPE_MODE}" == "true" ]]; then
+    local cmd="${1}"
+    shift
+    for arg in "$@"; do
+      cmd+=" $(printf '%q' "${arg}")"
+    done
+    script -q -c "${cmd}" /dev/null
+  else
+    "$@"
+  fi
+}
+
+# Run dialog and capture its --stdout result via global CAPTURE_DIALOG_OUTPUT.
+# In pipe mode, uses 'script' to provide a PTY and parses the typescript file
+# to extract dialog's result (the last non-escape line).
+# Usage: capture_dialog dialog <args>; result="${CAPTURE_DIALOG_OUTPUT}"
 capture_dialog() {
-  local result
   local exit_code=0
-  result=$("${@:1:1}" --stdout "${@:2}") || exit_code=$?
-  printf '%s\n' "${result}"
+
+  if [[ "${PIPE_MODE}" == "true" ]]; then
+    local typescript
+    typescript=$(mktemp)
+    local cmd="${1} --stdout"
+    shift
+    for arg in "$@"; do
+      cmd+=" $(printf '%q' "${arg}")"
+    done
+    script -q -c "${cmd}" "${typescript}" || exit_code=$?
+    CAPTURE_DIALOG_OUTPUT=$(grep -v $'\e' "${typescript}" | grep -v '^$' | tail -1 || true)
+    rm -f "${typescript}"
+  else
+    local tmpfile
+    tmpfile=$(mktemp)
+    "${1}" --stdout "${@:2}" >"${tmpfile}" || exit_code=$?
+    CAPTURE_DIALOG_OUTPUT=$(cat "${tmpfile}")
+    rm -f "${tmpfile}"
+  fi
+
   return "${exit_code}"
 }
 
 # Confirm cancel and exit if user agrees.
 handle_cancel() {
   local screen_name="$1"
-  if dialog --backtitle "${BACKTITLE}" --title "Cancel" \
+  if run_dialog dialog --backtitle "${BACKTITLE}" --title "Cancel" \
     --defaultno --yesno "Are you sure you want to cancel?\n(Current screen: ${screen_name})" 8 50; then
     clear
     echo "Installation cancelled by user."
@@ -114,11 +159,12 @@ screen_vault_password() {
   local vault_mode="default"
 
   while [[ "${attempt}" -le "${MAX_PASSWORD_ATTEMPTS}" ]]; do
-    password=$(capture_dialog dialog --backtitle "${BACKTITLE}" --title "Vault Password" \
-      --insecure --passwordbox "Enter the administrator password\nto decrypt the secrets vault.\n\nAttempt ${attempt}/${MAX_PASSWORD_ATTEMPTS}" 12 50) || {
+    capture_dialog dialog --backtitle "${BACKTITLE}" --title "Vault Password" \
+      --insecure --passwordbox "Enter the administrator password\nto decrypt the secrets vault.\n\nAttempt ${attempt}/${MAX_PASSWORD_ATTEMPTS}" 12 50 || {
       handle_cancel "Vault Password"
       return "${EXIT_ERROR}"
     }
+    password="${CAPTURE_DIALOG_OUTPUT}"
 
     if [[ "${password}" == "${DEFAULT_VAULT_PASSWORD}" ]]; then
       vault_mode="production"
@@ -132,7 +178,7 @@ screen_vault_password() {
   done
 
   # All attempts exhausted — ask about default secrets.
-  if dialog --backtitle "${BACKTITLE}" --title "Vault" \
+  if run_dialog dialog --backtitle "${BACKTITLE}" --title "Vault" \
     --defaultno --yesno "Incorrect password after ${MAX_PASSWORD_ATTEMPTS} attempts.\n\nUse default (test) secrets instead?" 8 60; then
     vault_mode="default"
     VAULT_MODE="${vault_mode}"
@@ -155,11 +201,13 @@ screen_mode_selector() {
   done
 
   local result
-  result=$(capture_dialog dialog --backtitle "${BACKTITLE}" --title "Install Mode" \
+  if capture_dialog dialog --backtitle "${BACKTITLE}" --title "Install Mode" \
     --default-item "${default_mode}" \
     --timeout "${AUTO_TIMEOUT}" \
     --menu "Select installation mode.\nAuto-selecting ${default_mode} in ${AUTO_TIMEOUT}s" 14 50 3 \
-    "${menu_items[@]}") || {
+    "${menu_items[@]}"; then
+    result="${CAPTURE_DIALOG_OUTPUT}"
+  else
     local rc=$?
     if [[ "${rc}" -eq 1 ]]; then
       handle_cancel "Install Mode"
@@ -167,7 +215,7 @@ screen_mode_selector() {
     fi
     # Timeout (255) — use default
     result="${default_mode}"
-  }
+  fi
 
   SELECTED_MODE="${result}"
   echo "Selected mode: ${SELECTED_MODE}"
@@ -184,10 +232,12 @@ screen_task_selector() {
   done
 
   local result
-  result=$(capture_dialog dialog --backtitle "${BACKTITLE}" --title "Select Tasks" \
+  if capture_dialog dialog --backtitle "${BACKTITLE}" --title "Select Tasks" \
     --timeout "${TASK_TIMEOUT}" \
     --checklist "Choose tasks to execute.\nAuto-accepting defaults in ${TASK_TIMEOUT}s" 18 60 8 \
-    "${checklist_items[@]}") || {
+    "${checklist_items[@]}"; then
+    result="${CAPTURE_DIALOG_OUTPUT}"
+  else
     local rc=$?
     if [[ "${rc}" -eq 1 ]]; then
       handle_cancel "Task Selection"
@@ -195,7 +245,7 @@ screen_task_selector() {
     fi
     # Timeout — use defaults (empty result means all defaults)
     result=""
-  }
+  fi
 
   # Parse result: dialog returns space-separated quoted tags
   SELECTED_TASKS=()
@@ -218,7 +268,7 @@ screen_task_selector() {
 
 # Section 7: Screen 5 — Force mode
 screen_force_mode() {
-  if dialog --backtitle "${BACKTITLE}" --title "Force Mode" \
+  if run_dialog dialog --backtitle "${BACKTITLE}" --title "Force Mode" \
     --defaultno --timeout "${AUTO_TIMEOUT}" \
     --yesno "Run selected tasks in force mode?\n\nForce mode re-runs tasks even if they\nare already completed.\n\nAuto-selecting No in ${AUTO_TIMEOUT}s" 10 60; then
     FORCE_MODE=true
@@ -258,15 +308,19 @@ screen_force_tasks() {
   fi
 
   local result
-  result=$(capture_dialog dialog --backtitle "${BACKTITLE}" --title "Force Tasks" \
+  if capture_dialog dialog --backtitle "${BACKTITLE}" --title "Force Tasks" \
     --checklist "Select tasks to force-re-run:" 18 60 8 \
-    "${checklist_items[@]}") || {
+    "${checklist_items[@]}"; then
+    result="${CAPTURE_DIALOG_OUTPUT}"
+  else
     local rc=$?
     if [[ "${rc}" -eq 1 ]]; then
       handle_cancel "Force Tasks"
       return "${EXIT_ERROR}"
     fi
-  }
+    # Timeout or other error — empty result
+    result=""
+  fi
 
   if [[ -n "${result}" ]]; then
     # shellcheck disable=SC2207
@@ -304,7 +358,7 @@ screen_progress() {
     for ((i=0; i<filled; i++)); do printf "#"; done
     for ((i=0; i<empty; i++)); do printf "."; done
     printf "] %d%%" "${percent}"
-    sleep 0.3
+    sleep 0.1
     step=$((step + 1))
   done
   echo ""

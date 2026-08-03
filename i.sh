@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# this is DEPRECATED script, doesn't work at all. We don't need to support it anymore!
 # Fail fast on script errors, undefined variables, and pipeline errors.
 set -euo pipefail
 
