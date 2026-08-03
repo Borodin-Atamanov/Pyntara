@@ -13,3 +13,10 @@ These defaults are mandatory for all Pyntara modules and scripts unless a concre
 - Use `YYYY-MM-DD-HH-MM-SS` as the default datetime format across logs, filenames, task metadata, and generated artifacts.
 - Use a different format only when integration requirements make this format incompatible.
 
+## 3. Output and comment style — token economy
+
+- No pseudographics, ASCII art, or decorative separators (`────`, `▄▄`, `•••`, `▸▸`) in comments or output.
+- No decorative bullets (`•`, `·`, `▸`, `▹`) or box-drawing characters. Use plain `-` for lists.
+- Tables or box-drawn layouts are allowed only on explicit user request.
+- Comments must be concise and explain intent, not decorate. Every unnecessary character wastes tokens.
+

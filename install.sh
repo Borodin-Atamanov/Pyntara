@@ -3,9 +3,7 @@
 # Usage: cat install.sh | sudo bash
 set -euo pipefail
 
-# ──────────────────────────────────────────────
 # Section 0: Constants and configuration
-# ──────────────────────────────────────────────
 ROOT_EUID=0
 EXIT_OK=0
 EXIT_ERROR=1
@@ -13,17 +11,15 @@ AUTO_TIMEOUT=11          # seconds for mode/force auto-select
 TASK_TIMEOUT=30          # seconds for task checklist auto-accept
 MAX_PASSWORD_ATTEMPTS=3
 BACKTITLE="Pyntara Installer"
-APT_INSTALL_TIMEOUT_SEC=120
+APT_INSTALL_TIMEOUT_SEC=600
 
 export DEBIAN_FRONTEND=noninteractive
 
-# ──────────────────────────────────────────────
-# Section 1: Hardcoded data stubs
-# ──────────────────────────────────────────────
+# Section 1: Hardcoded data stubsbash /tmp/test_dialog.sh
 INSTALL_MODES=(minimal server desktop)
-
+bash /tmp/test_dialog.sh
 # Task format: tag|description|default_on
-TASKS=(
+TASKS=(bash /tmp/test_dialog.sh
   "hostname|Generate random 9-character hostname|on"
   "users|Create users i, j, k with sudo access|on"
   "zram|Configure aggressive ZRAM compression|off"
@@ -43,9 +39,7 @@ detect_default_mode() {
   fi
 }
 
-# ──────────────────────────────────────────────
 # Section 2: TTY reconnect and dialog check
-# ──────────────────────────────────────────────
 ensure_tty() {
   if [[ -t 0 || -e /dev/tty ]]; then
     exec </dev/tty
@@ -78,19 +72,16 @@ ensure_dialog() {
   exit "${EXIT_ERROR}"
 }
 
-# ──────────────────────────────────────────────
 # Section 3: Helper functions
-# ──────────────────────────────────────────────
 
-# Run dialog, capture output from stderr, return dialog's exit code.
+# Run dialog, capture output from stdout, return dialog's exit code.
+# --stdout sends the result to stdout (captured) while ncurses UI stays on stderr (visible).
 # Usage: dialog_result=$(capture_dialog <args>)
 capture_dialog() {
-  local result_file
-  result_file=$(mktemp)
+  local result
   local exit_code=0
-  "$@" 2>"${result_file}" || exit_code=$?
-  cat "${result_file}"
-  rm -f "${result_file}"
+  result=$("${@:1:1}" --stdout "${@:2}") || exit_code=$?
+  printf '%s\n' "${result}"
   return "${exit_code}"
 }
 
@@ -105,19 +96,18 @@ handle_cancel() {
   fi
 }
 
-# ──────────────────────────────────────────────
 # Section 3: Screen 1 — Welcome
-# ──────────────────────────────────────────────
 screen_welcome() {
-  dialog --backtitle "${BACKTITLE}" --title "Welcome" \
-    --msgbox "Pyntara Installer\n\nThis tool will configure your Kubuntu system.\n\nYou will be guided through:\n• Installation mode selection\n• Task selection\n• System configuration\n\nPress Enter to continue." 14 60 || {
-    handle_cancel "Welcome"
-  }
+  echo "=== Pyntara Installer ==="
+  echo "This tool will configure your Kubuntu system."
+  echo "You will be guided through:"
+  echo "  - Installation mode selection"
+  echo "  - Task selection"
+  echo "  - System configuration"
+  echo ""
 }
 
-# ──────────────────────────────────────────────
 # Section 4: Screen 2 — Vault password
-# ──────────────────────────────────────────────
 screen_vault_password() {
   local attempt=1
   local password=""
@@ -132,14 +122,12 @@ screen_vault_password() {
 
     if [[ "${password}" == "${DEFAULT_VAULT_PASSWORD}" ]]; then
       vault_mode="production"
-      dialog --backtitle "${BACKTITLE}" --title "Vault" \
-        --msgbox "Password accepted. Using production secrets." 7 50
+      echo "Password accepted. Using production secrets."
       VAULT_MODE="${vault_mode}"
       return "${EXIT_OK}"
     fi
 
-    dialog --backtitle "${BACKTITLE}" --title "Incorrect Password" \
-      --msgbox "Incorrect password. Please try again." 7 50
+    echo "Incorrect password. Please try again."
     attempt=$((attempt + 1))
   done
 
@@ -148,19 +136,15 @@ screen_vault_password() {
     --defaultno --yesno "Incorrect password after ${MAX_PASSWORD_ATTEMPTS} attempts.\n\nUse default (test) secrets instead?" 8 60; then
     vault_mode="default"
     VAULT_MODE="${vault_mode}"
-    dialog --backtitle "${BACKTITLE}" --title "Vault" \
-      --msgbox "Using default test secrets." 7 50
+    echo "Using default test secrets."
     return "${EXIT_OK}"
   fi
 
-  dialog --backtitle "${BACKTITLE}" --title "Vault" \
-    --msgbox "Cannot proceed without secrets. Exiting." 7 50
+  echo "Cannot proceed without secrets. Exiting."
   return "${EXIT_ERROR}"
 }
 
-# ──────────────────────────────────────────────
 # Section 5: Screen 3 — Install mode selector
-# ──────────────────────────────────────────────
 screen_mode_selector() {
   local default_mode
   default_mode=$(detect_default_mode)
@@ -186,13 +170,10 @@ screen_mode_selector() {
   }
 
   SELECTED_MODE="${result}"
-  dialog --backtitle "${BACKTITLE}" --title "Install Mode" \
-    --msgbox "Selected mode: ${SELECTED_MODE}" 6 50
+  echo "Selected mode: ${SELECTED_MODE}"
 }
 
-# ──────────────────────────────────────────────
 # Section 6: Screen 4 — Task checklist
-# ──────────────────────────────────────────────
 screen_task_selector() {
   local checklist_items=()
   local task tag desc default_on
@@ -232,13 +213,10 @@ screen_task_selector() {
     done
   fi
 
-  dialog --backtitle "${BACKTITLE}" --title "Tasks Selected" \
-    --msgbox "Selected ${#SELECTED_TASKS[@]} task(s):\n${SELECTED_TASKS[*]}" 10 60
+  echo "Selected ${#SELECTED_TASKS[@]} task(s): ${SELECTED_TASKS[*]}"
 }
 
-# ──────────────────────────────────────────────
 # Section 7: Screen 5 — Force mode
-# ──────────────────────────────────────────────
 screen_force_mode() {
   if dialog --backtitle "${BACKTITLE}" --title "Force Mode" \
     --defaultno --timeout "${AUTO_TIMEOUT}" \
@@ -249,9 +227,7 @@ screen_force_mode() {
   fi
 }
 
-# ──────────────────────────────────────────────
 # Section 8: Screen 6 — Force tasks (conditional)
-# ──────────────────────────────────────────────
 screen_force_tasks() {
   FORCE_TASKS=()
 
@@ -298,61 +274,53 @@ screen_force_tasks() {
   fi
 }
 
-# ──────────────────────────────────────────────
 # Section 9: Screen 7 — Summary
-# ──────────────────────────────────────────────
 screen_summary() {
-  local summary=""
-  summary+="Vault mode:     ${VAULT_MODE}\n"
-  summary+="Install mode:   ${SELECTED_MODE}\n"
-  summary+="Tasks selected: ${#SELECTED_TASKS[@]}\n"
-  summary+="  ${SELECTED_TASKS[*]}\n"
+  echo ""
+  echo "Installation Summary"
+  echo "Vault mode:     ${VAULT_MODE}"
+  echo "Install mode:   ${SELECTED_MODE}"
+  echo "Tasks selected: ${#SELECTED_TASKS[@]}"
+  echo "  ${SELECTED_TASKS[*]}"
   if [[ "${FORCE_MODE}" == "true" ]]; then
-    summary+="Force mode:     Yes\n"
-    summary+="Force tasks:    ${FORCE_TASKS[*]:-(none)}\n"
+    echo "Force mode:     Yes"
+    echo "Force tasks:    ${FORCE_TASKS[*]:-(none)}"
   else
-    summary+="Force mode:     No\n"
+    echo "Force mode:     No"
   fi
-  summary+="\nPress Enter to begin installation."
-
-  dialog --backtitle "${BACKTITLE}" --title "Summary" \
-    --msgbox "${summary}" 16 65
+  echo ""
 }
 
-# ──────────────────────────────────────────────
 # Section 10: Screen 8 — Progress gauge (stub)
-# ──────────────────────────────────────────────
 screen_progress() {
-  local gauge_text="Installing and configuring your system..."
+  echo "Installing and configuring your system..."
   local total_steps=20
   local step=0
-
-  (
-    while [[ "${step}" -le "${total_steps}" ]]; do
-      local percent=$(( step * 100 / total_steps ))
-      echo "${percent}"
-      echo "XXX"
-      echo "${gauge_text}"
-      echo "Step ${step}/${total_steps}"
-      echo "XXX"
-      sleep 0.3
-      step=$((step + 1))
-    done
-  ) | dialog --backtitle "${BACKTITLE}" --title "Installing..." \
-    --gauge "${gauge_text}" 10 60 0
+  while [[ "${step}" -le "${total_steps}" ]]; do
+    local percent=$(( step * 100 / total_steps ))
+    printf "\rProgress: ["
+    local filled=$(( percent / 5 ))
+    local empty=$(( 20 - filled ))
+    for ((i=0; i<filled; i++)); do printf "#"; done
+    for ((i=0; i<empty; i++)); do printf "."; done
+    printf "] %d%%" "${percent}"
+    sleep 0.3
+    step=$((step + 1))
+  done
+  echo ""
+  echo "Done."
 }
 
-# ──────────────────────────────────────────────
 # Section 11: Screen 9 — Complete
-# ──────────────────────────────────────────────
 screen_complete() {
-  dialog --backtitle "${BACKTITLE}" --title "Complete" \
-    --msgbox "Installation finished successfully!\n\nMode:  ${SELECTED_MODE}\nTasks: ${#SELECTED_TASKS[@]}\n\nPress Enter to exit." 12 60
+  echo ""
+  echo "=== Installation Complete ==="
+  echo "Mode:  ${SELECTED_MODE}"
+  echo "Tasks: ${#SELECTED_TASKS[@]}"
+  echo ""
 }
 
-# ──────────────────────────────────────────────
 # Main flow
-# ──────────────────────────────────────────────
 main() {
   ensure_tty
   ensure_dialog
