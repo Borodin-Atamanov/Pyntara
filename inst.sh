@@ -52,8 +52,8 @@ set -euo pipefail
 # 5.5 Проверка log: пишет в файл и в терминал с меткой времени.
 # 5.6 Прогон тестов: bash tests/test_inst.sh; для Python-части по docs/guides/developer-guide.md.
 
-# --- Implementation: phase 1.1 (root check) ---
 
+# --- Implementation: phase 1.1 (root check) ---
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f check_root &>/dev/null; then
 check_root() {
@@ -67,7 +67,6 @@ check_root() {
 fi
 
 # Implementation: phase 1.2 (FHS directories)
-
 # FHS base directories, bootstrap contract section 5.
 # Overridable via environment so tests never touch real system paths.
 CACHE_DIR="${PYNTARA_CACHE_DIR:-/var/cache/pyntara}"
@@ -84,7 +83,6 @@ ensure_fhs_dirs() {
 fi
 
 # Implementation: phase 1.3 (logging)
-
 # Single log file for the whole installer run, bootstrap contract section 9.
 # Overridable via environment so tests never touch real system paths.
 LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
@@ -114,7 +112,6 @@ run_logged() {
 fi
 
 # Implementation: phase 1.4 (timing)
-
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f run_timed &>/dev/null; then
 run_timed() {
@@ -134,7 +131,6 @@ run_timed() {
 fi
 
 # Implementation: phase 2.1 (optimistic apt)
-
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f apt_install &>/dev/null; then
 apt_install() {
@@ -154,7 +150,6 @@ apt_install() {
 fi
 
 # Implementation: phase 2.2 (package set)
-
 # Minimal runtime dependencies, bootstrap contract section 3, in required order.
 RUNTIME_PACKAGES=(dialog python3 python3-venv git curl ca-certificates)
 
@@ -179,6 +174,35 @@ install_dependencies() {
 }
 fi
 
+# Implementation: phase 2.3 (uv package manager)
+# Official Astral installer, bootstrap contract section 3.
+# uv cache stays under the FHS cache directory, bootstrap contract section 5.
+UV_INSTALL_URL="https://astral.sh/uv/install.sh"
+export UV_CACHE_DIR="$CACHE_DIR"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f install_uv &>/dev/null; then
+install_uv() {
+    # Install uv only when missing. The Astral installer runs in a subprocess
+    # so its own environment changes never leak into this shell.
+    if command -v uv &>/dev/null; then
+        log "uv already installed: $(command -v uv)"
+        return 0
+    fi
+    local installer="$CACHE_DIR/uv-install.sh"
+    log "Downloading uv installer to $installer"
+    run_timed curl -LsSf -o "$installer" "$UV_INSTALL_URL"
+    log "Running uv installer"
+    # The installer runs in a subprocess so its own environment changes never
+    # leak into this shell. UV_CACHE_DIR is set for the child explicitly.
+    env UV_CACHE_DIR="$CACHE_DIR" bash "$installer" 2>&1 | tee -a "$LOG_FILE"
+    # The Astral installer places uv into $HOME/.local/bin, which is not on
+    # root's PATH by default, so add it explicitly for later phases.
+    export PATH="$HOME/.local/bin:$PATH"
+    log "uv installed: $(command -v uv)"
+}
+fi
+
 # Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -186,6 +210,7 @@ main() {
     ensure_fhs_dirs
     log "Install log started: $LOG_FILE"
     install_dependencies
+    install_uv
 }
 fi
 

@@ -232,7 +232,7 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 }
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
-    # main must call check_root, then ensure_fhs_dirs, then log, then install_dependencies.
+    # main must call check_root, ensure_fhs_dirs, log, install_dependencies, install_uv.
     # Mocks are declared before source so the guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
@@ -244,11 +244,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         ensure_fhs_dirs() { echo ensure_fhs_dirs >> "$flags_file"; }
         log() { echo log >> "$flags_file"; }
         install_dependencies() { echo install_dependencies >> "$flags_file"; }
+        install_uv() { echo install_uv >> "$flags_file"; }
         source "$1"
         main
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -319,7 +320,7 @@ inst_apt_install_succeeds_without_index_refresh() {
     mkdir -p "$bin"
     # Mock apt-get records its subcommand and arguments.
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 if [[ "$1" == "install" ]]; then
     exit 0
@@ -361,7 +362,7 @@ inst_apt_install_refreshes_index_after_first_failure() {
     local bin="$tmp/bin"
     mkdir -p "$bin"
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 if [[ "$1" == "install" && -f "$INSTALL_FAILED_MARKER" ]]; then
     exit 1
@@ -399,7 +400,7 @@ inst_apt_install_passes_package_list() {
     local bin="$tmp/bin"
     mkdir -p "$bin"
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 exit 0
 EOF
@@ -423,12 +424,12 @@ inst_install_dependencies_skips_when_all_present() {
     local calls="$tmp/apt_calls"
     mkdir -p "$bin"
     cat > "$bin/dpkg" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 EOF
     chmod +x "$bin/dpkg"
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 exit 0
 EOF
@@ -457,7 +458,7 @@ inst_install_dependencies_installs_missing_packages() {
     local calls="$tmp/apt_calls"
     mkdir -p "$bin"
     cat > "$bin/dpkg" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 # Simulate a missing dialog package.
 if [[ "$1" == "-s" && "$2" == "dialog" ]]; then
     exit 1
@@ -466,7 +467,7 @@ exit 0
 EOF
     chmod +x "$bin/dpkg"
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 exit 0
 EOF
@@ -495,12 +496,12 @@ inst_install_dependencies_reports_all_installed() {
     local calls="$tmp/apt_calls"
     mkdir -p "$bin"
     cat > "$bin/dpkg" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 EOF
     chmod +x "$bin/dpkg"
     cat > "$bin/apt-get" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
 exit 0
 EOF
@@ -512,6 +513,158 @@ EOF
         rm -rf "$tmp"
         return 1
     }
+    rm -rf "$tmp"
+}
+
+inst_install_uv_skips_when_already_installed() {
+    # When uv is already on PATH, the installer must not be downloaded.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/curl_calls"
+    mkdir -p "$bin"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    cat > "$bin/curl" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$CURL_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/curl"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+        CURL_CALLS_FILE="$calls" bash -c 'source "$1"; install_uv' _ "$INSTALLER" 2>&1)"
+    if [[ -s "$calls" ]]; then
+        echo "curl called although uv is installed" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    assert_contains "$output" "uv already installed" "skip message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_install_uv_downloads_then_runs_installer() {
+    # The official URL is downloaded to a file, then that file is executed.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local curl_calls="$tmp/curl_calls"
+    local bash_calls="$tmp/bash_calls"
+    mkdir -p "$bin"
+    cat > "$bin/curl" <<'EOF'
+#!/bin/bash
+# Record arguments, then create the target file as the downloaded installer.
+echo "$@" >> "$CURL_CALLS_FILE"
+out=""
+prev=""
+for arg in "$@"; do
+    if [[ "$prev" == "-o" ]]; then
+        out="$arg"
+    fi
+    prev="$arg"
+done
+printf '#!/usr/bin/env bash\nexit 0\n' > "$out"
+exit 0
+EOF
+    chmod +x "$bin/curl"
+    PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+        CURL_CALLS_FILE="$curl_calls" \
+        bash -c 'source "$1"; install_uv' _ "$INSTALLER"
+    if ! grep -q -- "-o $tmp/cache/uv-install.sh https://astral.sh/uv/install.sh" "$curl_calls"; then
+        echo "curl not called with official URL and -o target" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_install_uv_runs_installer_script() {
+    # The downloaded installer must be executed: the curl mock creates a fake
+    # uv binary, and install_uv must report it as installed afterwards.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local curl_calls="$tmp/curl_calls"
+    mkdir -p "$bin"
+    cat > "$bin/curl" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$CURL_CALLS_FILE"
+out=""
+prev=""
+for arg in "$@"; do
+    if [[ "$prev" == "-o" ]]; then
+        out="$arg"
+    fi
+    prev="$arg"
+done
+# Create a fake uv binary that the installer would have placed on PATH.
+mkdir -p "$(dirname "$out")/bin"
+printf '#!/bin/bash\nexit 0\n' > "$(dirname "$out")/bin/uv"
+chmod +x "$(dirname "$out")/bin/uv"
+# The installer script itself does nothing when executed.
+printf '#!/bin/bash\nexit 0\n' > "$out"
+exit 0
+EOF
+    chmod +x "$bin/curl"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+        CURL_CALLS_FILE="$curl_calls" \
+        bash -c 'source "$1"; install_uv' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "uv installed" "installer run confirmation" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_install_uv_adds_local_bin_to_path() {
+    # After install, $HOME/.local/bin must be on PATH for later phases.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local curl_calls="$tmp/curl_calls"
+    mkdir -p "$bin"
+    cat > "$bin/curl" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$CURL_CALLS_FILE"
+out=""
+prev=""
+for arg in "$@"; do
+    if [[ "$prev" == "-o" ]]; then
+        out="$arg"
+    fi
+    prev="$arg"
+done
+# Create a fake uv binary so command -v finds it after install.
+mkdir -p "$(dirname "$out")/bin"
+printf '#!/bin/bash\nexit 0\n' > "$(dirname "$out")/bin/uv"
+chmod +x "$(dirname "$out")/bin/uv"
+printf '#!/bin/bash\nexit 0\n' > "$out"
+exit 0
+EOF
+    chmod +x "$bin/curl"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+        CURL_CALLS_FILE="$curl_calls" \
+        bash -c 'source "$1"; install_uv; echo "PATH_MARKER:$PATH"' _ "$INSTALLER" 2>&1)"
+    local path_line
+    path_line="$(echo "$output" | grep PATH_MARKER || true)"
+    if [[ "$path_line" != *"$HOME/.local/bin"* ]]; then
+        echo ".local/bin not added to PATH" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
     rm -rf "$tmp"
 }
 
@@ -531,6 +684,10 @@ run_test inst_apt_install_passes_package_list
 run_test inst_install_dependencies_skips_when_all_present
 run_test inst_install_dependencies_installs_missing_packages
 run_test inst_install_dependencies_reports_all_installed
+run_test inst_install_uv_skips_when_already_installed
+run_test inst_install_uv_downloads_then_runs_installer
+run_test inst_install_uv_runs_installer_script
+run_test inst_install_uv_adds_local_bin_to_path
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
