@@ -4,13 +4,14 @@
 # curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
 set -euo pipefail
 
+# Обязательно писать, о успешном выполнении каждой части скрипта
 # ПЛАН РЕАЛИЗАЦИИ БУТСТРАПА
 # Это намерение, а не описание текущего поведения. Код по этому плану ещё не написан.
 # Источник требований: docs/contracts/bootstrap.md, docs/contracts/interactive-ui.md, docs/spec/install-modes.md.
 #
 # Фаза 1. Каркас и служебные функции
 # 1.1 Проверка root
-# В начале main проверю EUID: если процесс не root, выведу сообщение об ошибке и завершусь с ненулевым кодом, как требует контракт (п.1).
+# В начале main проверю EUID: если процесс не root, выведу сообщение об ошибке и завершусь с ненулевым кодом; при успехе выведу краткое сообщение о выполнении этой части (контракт п.1).
 # 1.2 Каталоги FHS
 # Создам /var/cache/pyntara, /var/lib/pyntara, /var/log/pyntara командой install -d (контракт п.5).
 # 1.3 Логирование
@@ -61,6 +62,7 @@ check_root() {
         echo "Error: Pyntara installer must run as root. Restart with: sudo bash inst.sh" >&2
         exit 1
     fi
+    echo "OK: running as root"
 }
 fi
 
