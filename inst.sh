@@ -4,7 +4,7 @@
 # curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
 set -euo pipefail
 
-# Обязательно писать, о успешном выполнении каждой части скрипта
+# Обязательно кратко писать, о успешном выполнении каждой части скрипта: Просто обычное предложение на английском о том, что произошло. Использовать переменные в выводе, чтоыб пользователь получал максимум полезно информации о происходящем.
 # ПЛАН РЕАЛИЗАЦИИ БУТСТРАПА
 # Это намерение, а не описание текущего поведения. Код по этому плану ещё не написан.
 # Источник требований: docs/contracts/bootstrap.md, docs/contracts/interactive-ui.md, docs/spec/install-modes.md.
@@ -62,7 +62,24 @@ check_root() {
         echo "Error: Pyntara installer must run as root. Restart with: sudo bash inst.sh" >&2
         exit 1
     fi
-    echo "OK: running as root"
+    echo "Running as root"
+}
+fi
+
+# --- Implementation: phase 1.2 (FHS directories) ---
+
+# FHS base directories, bootstrap contract section 5.
+# Overridable via environment so tests never touch real system paths.
+CACHE_DIR="${PYNTARA_CACHE_DIR:-/var/cache/pyntara}"
+STATE_DIR="${PYNTARA_STATE_DIR:-/var/lib/pyntara}"
+LOG_DIR="${PYNTARA_LOG_DIR:-/var/log/pyntara}"
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f ensure_fhs_dirs &>/dev/null; then
+ensure_fhs_dirs() {
+    # Bootstrap contract section 5: create cache, state and log directories.
+    install -d "$CACHE_DIR" "$STATE_DIR" "$LOG_DIR"
+    echo "FHS directories ready: $CACHE_DIR, $STATE_DIR, $LOG_DIR"
 }
 fi
 
@@ -70,6 +87,7 @@ fi
 if ! declare -f main &>/dev/null; then
 main() {
     check_root
+    ensure_fhs_dirs
 }
 fi
 
