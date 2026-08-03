@@ -1128,7 +1128,7 @@ inst_password_prompt_captures_password() {
     # One password prompt: the entered text must land in VAULT_ATTEMPT_PASSWORD
     # and the prompt must return 0 on a submitted password.
     local output
-    output="$(printf 'pw\n' | bash -c 'source "$1"; prompt_password_input "text"; echo "RC=$?"; echo "PW=$VAULT_ATTEMPT_PASSWORD"' _ "$INSTALLER" 2>&1)"
+    output="$(printf 'pw\n' | bash -c 'source "$1"; prompt_password_input "Attempt 1 of 3." "Enter password of the production vault:"; echo "RC=$?"; echo "PW=$VAULT_ATTEMPT_PASSWORD"' _ "$INSTALLER" 2>&1)"
     assert_contains "$output" "RC=0" "prompt returns success" || return 1
     assert_contains "$output" "PW=pw" "password captured" || return 1
 }
@@ -1137,7 +1137,7 @@ inst_password_prompt_returns_cancel_on_eof() {
     # EOF on stdin (like Ctrl+D) means no password was submitted: the prompt
     # must return 1, matching the old dialog Cancel code.
     local output
-    output="$(printf '' | bash -c 'source "$1"; rc=0; prompt_password_input "text" || rc=$?; echo "RC=$rc"' _ "$INSTALLER" 2>&1)"
+    output="$(printf '' | bash -c 'source "$1"; rc=0; prompt_password_input "Attempt 1 of 3." "Enter password of the production vault:" || rc=$?; echo "RC=$rc"' _ "$INSTALLER" 2>&1)"
     assert_contains "$output" "RC=1" "cancel code returned" || return 1
 }
 

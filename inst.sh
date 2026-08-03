@@ -315,10 +315,12 @@ if ! declare -f show_message &>/dev/null; then
 show_message() {
     # Print a message as plain text and hold it until Enter or the timeout.
     # log() tees a timestamped line to the terminal and the install log, so
-    # the message is both visible and preserved. Plain text with a pause is
+    # the message is both visible and preserved. A blank line separates the
+    # message from the surrounding log output. Plain text with a pause is
     # used instead of dialog --msgbox so messages never take over the screen.
     # read is plain bash, not custom termios code, so the interactive UI
     # contract that forbids termios in the installer is respected.
+    printf '\n' >&2
     log "$1"
     read -r -t "$MESSAGE_TIMEOUT" || true
 }
@@ -332,14 +334,19 @@ prompt_password_input() {
     # restriction still holds. dialog --passwordbox is deliberately not used:
     # dialog renders its box on stderr and misbehaves where stdout is not a
     # terminal (e.g. under sudo), which made the field unreadable and input
-    # impossible. The prompt goes to stderr, so it is visible while stdout
-    # stays clean. Exit codes mirror dialog: 0 OK, 5 timeout, 1 cancel/EOF.
+    # impossible. The two arguments separate the attempt line from the prompt
+    # line, both on stderr, with a blank separator line first so the input is
+    # clearly set apart from the install log. stdout stays clean. Exit codes
+    # mirror dialog: 0 OK, 5 timeout, 1 cancel/EOF.
     # read -t fires SIGALRM on timeout and returns 142 (128+14); dialog
     # reported a timeout as 5, so map 142 to 5 to keep prompt_vault_password
     # semantics unchanged.
     VAULT_ATTEMPT_PASSWORD=""
     local rc
-    read -r -s -t "$VAULT_PASSWORD_TIMEOUT" -p "$1" VAULT_ATTEMPT_PASSWORD
+    printf '\n' >&2
+    printf '%s\n' "$1" >&2
+    printf '%s\n' "$2" >&2
+    read -r -s -t "$VAULT_PASSWORD_TIMEOUT" VAULT_ATTEMPT_PASSWORD
     rc=$?
     if [[ "$rc" -eq 142 ]]; then
         return 5
@@ -402,7 +409,7 @@ prompt_vault_password() {
 
     local attempt rc
     for attempt in 1 2 3; do
-        if prompt_password_input "Enter the password for the production vault ($PRODUCTION_VAULT). This vault stores the secrets used to configure this system. Attempt $attempt of 3."; then
+        if prompt_password_input "Attempt $attempt of 3." "Enter password of the production vault:"; then
             rc=0
         else
             rc=$?
@@ -485,6 +492,8 @@ select_install_mode() {
     # line is read without time pressure.
     local default_mode="$1"
     local remaining answer mode
+    # A blank line separates the selector from the install log above it.
+    printf '\n' >&2
     for ((remaining = DIALOG_TIMEOUT; remaining >= 1; remaining--)); do
         printf '\rInstall mode (default %s): 1 minimal, 2 server, 3 desktop -- %ss left ' "$default_mode" "$remaining" >&2
         # read -t 1 -n 1 returns 142 on timeout (SIGALRM), 0 on any key.
@@ -577,6 +586,8 @@ select_tasks() {
     # stderr is. Sending it to stderr makes the dialog visible and keeps
     # stdout clean for the result protocol.
     local rc
+    # A blank line separates the dialog from the install log above it.
+    printf '\n' >&2
     # The if guard captures the exit code without triggering errexit.
     if script -qec "$TASK_DIALOG_CMD" /dev/null 1>&2; then
         rc=0
