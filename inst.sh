@@ -38,7 +38,7 @@ set -euo pipefail
 # Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
 #
 # Фаза 4. Интерактив через dialog, отдельный этап
-# 4.1 Запрос пароля production.vault с таймаутом 11 с и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault. Пароль вводится read -s, а не dialog --passwordbox: dialog рисует окно в stderr и ломается там, где stdout не терминал.
+# 4.1 Запрос пароля production.vault с таймаутом VAULT_PASSWORD_TIMEOUT (333 с) и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault. Пароль вводится read -s, а не dialog --passwordbox: dialog рисует окно в stderr и ломается там, где stdout не терминал.
 # 4.2 Выбор режима minimal/server/desktop с автоопределением по системе и авто-выбором через 11 с.
 # 4.3 Выбор задач чекбоксами с авто-подтверждением через 30 с.
 # 4.4 Вопрос про force-режим (11 с, по умолчанию нет) и чекбоксы force-задач.
@@ -297,9 +297,13 @@ fi
 PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
 DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
 DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
-# Countdown for every interactive screen (password prompt and dialog screens),
-# per interactive-ui contract section 2.1.
+# Countdown for every dialog choice screen, per interactive-ui contract
+# section 2.1.
 DIALOG_TIMEOUT="${PYNTARA_DIALOG_TIMEOUT:-11}"
+# Password entry is not a choice screen: a passphrase must be typed or copied
+# from a password manager, so it gets its own generous timeout instead of the
+# fast choice-screen countdown.
+VAULT_PASSWORD_TIMEOUT="${PYNTARA_VAULT_PASSWORD_TIMEOUT:-333}"
 # Plain-text messages are held on screen for this many seconds. Set in one
 # place for all phase-4 messages; tests set it to 0 to avoid waiting.
 MESSAGE_TIMEOUT="${PYNTARA_MESSAGE_TIMEOUT:-11}"
@@ -333,7 +337,7 @@ prompt_password_input() {
     # semantics unchanged.
     VAULT_ATTEMPT_PASSWORD=""
     local rc
-    read -r -s -t "$DIALOG_TIMEOUT" -p "$1" VAULT_ATTEMPT_PASSWORD
+    read -r -s -t "$VAULT_PASSWORD_TIMEOUT" -p "$1" VAULT_ATTEMPT_PASSWORD
     rc=$?
     if [[ "$rc" -eq 142 ]]; then
         return 5
@@ -380,8 +384,9 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f prompt_vault_password &>/dev/null; then
 prompt_vault_password() {
-    # Ask for the production vault password, 3 attempts with an 11-second
-    # dialog timeout each (interactive-ui contract section 4). The final
+    # Ask for the production vault password, 3 attempts with a
+    # VAULT_PASSWORD_TIMEOUT-second timeout each (interactive-ui contract
+    # section 4). The final
     # choice is exported as PYNTARA_VAULT_PASSWORD together with
     # PYNTARA_VAULT_SOURCE so the Python engine knows which vault to open.
     # A missing production vault is reported loudly and falls back to the
@@ -404,7 +409,7 @@ prompt_vault_password() {
         # timeout. The contract demands an immediate fallback in this case,
         # because nobody is interacting with the installer anymore.
         if [[ "$rc" -eq 5 ]]; then
-            show_message "No key pressed within $DIALOG_TIMEOUT seconds. Falling back to default vault."
+            show_message "No key pressed within $VAULT_PASSWORD_TIMEOUT seconds. Falling back to default vault."
             fallback_to_default_vault
             return $?
         fi

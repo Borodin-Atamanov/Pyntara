@@ -19,7 +19,7 @@ termios code in the installer.
 Every choice screen displays a visible real-time countdown.
 
 Timeout values:
-  Password prompt — 11 s
+  Password prompt — 333 s (VAULT_PASSWORD_TIMEOUT)
   Install mode selector — 11 s
   Force-mode selector — 11 s
   Main task selection — 30 s
@@ -51,7 +51,7 @@ Offers decryption of production.vault. User gets 3 attempts.
 
 On each attempt:
   The password is read with bash read -s (hidden input, plain bash, no termios),
-  with a total timeout of 11 s. Pressing Enter submits the password; if no key
+  with a total timeout of 333 s (VAULT_PASSWORD_TIMEOUT). Pressing Enter submits the password; if no key
   is pressed before the timeout, the attempt times out.
   A failed attempt prints a plain-text error message held for MESSAGE_TIMEOUT
   seconds (default 11 s) or until the user presses Enter.

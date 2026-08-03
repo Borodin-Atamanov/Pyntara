@@ -12,11 +12,11 @@ KeePass database handling is done via a Python library.
 
 Password prompt is the first interactive screen (before mode selector).
 
-The user gets 3 attempts to enter the production vault password via dialog --passwordbox (11s timeout per attempt).
+The user gets 3 attempts to enter the production vault password via bash read -s (VAULT_PASSWORD_TIMEOUT 333s timeout per attempt).
 
 After 3 failed attempts, the system falls back to default.vault using default.password.
 
-If user does not press any key within 11 seconds, fallback to default.vault immediately.
+If user does not press any key within VAULT_PASSWORD_TIMEOUT seconds, fallback to default.vault immediately.
 
 ## Decrypted values
 

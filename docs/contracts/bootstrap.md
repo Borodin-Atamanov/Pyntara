@@ -72,7 +72,7 @@ If a function is already declared (test harness injected a mock via source), the
 
 All user interaction goes through the dialog utility. See docs/contracts/interactive-ui.md for the full UX flow. Summary:
 
-Password prompt for production.vault (11s timeout, 3 attempts, fallback to default.vault).
+Password prompt for production.vault (VAULT_PASSWORD_TIMEOUT 333s, 3 attempts, fallback to default.vault).
 Install mode selector: minimal / server / desktop (11s auto-select).
 Task selection checkboxes (30s auto-accept).
 Force-mode question: Yes / No (11s, default No).
