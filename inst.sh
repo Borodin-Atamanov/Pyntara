@@ -176,9 +176,12 @@ fi
 
 # Implementation: phase 2.3 (uv package manager)
 # Official Astral installer, bootstrap contract section 3.
-# uv cache stays under the FHS cache directory, bootstrap contract section 5.
+# uv cache lives in its own subdirectory of the FHS cache directory
+# (bootstrap contract section 5). It must not equal the cache root itself:
+# the git clone lives at $CACHE_DIR/repo, and uv refuses a project directory
+# that is inside its own cache directory.
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
-export UV_CACHE_DIR="$CACHE_DIR"
+export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f install_uv &>/dev/null; then

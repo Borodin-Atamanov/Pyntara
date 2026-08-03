@@ -1040,6 +1040,28 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_uv_cache_dir_is_subdirectory_of_cache() {
+    # The uv cache must be a subdirectory of the cache root, never the root
+    # itself: the git clone lives inside the cache root, and uv refuses a
+    # project directory that is inside its own cache directory.
+    local tmp
+    tmp="$(mktemp -d)"
+    local output
+    output="$(PYNTARA_CACHE_DIR="$tmp/cache" \
+        bash -c 'source "$1"; echo "$UV_CACHE_DIR"' _ "$INSTALLER" 2>&1)"
+    if [[ "$output" == "$tmp/cache" ]]; then
+        echo "UV_CACHE_DIR must not equal the cache root" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$output" != "$tmp/cache"/* ]]; then
+        echo "UV_CACHE_DIR must be inside the cache root" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -1060,6 +1082,7 @@ run_test inst_install_uv_skips_when_already_installed
 run_test inst_install_uv_downloads_then_runs_installer
 run_test inst_install_uv_runs_installer_script
 run_test inst_install_uv_adds_local_bin_to_path
+run_test inst_uv_cache_dir_is_subdirectory_of_cache
 run_test inst_fetch_source_clones_when_dir_missing
 run_test inst_fetch_source_clones_empty_dir
 run_test inst_fetch_source_reclones_broken_dir
