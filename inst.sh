@@ -375,9 +375,6 @@ fi
 
 # Implementation: phase 4.2 (install mode selection)
 
-# Valid installation modes, install-modes spec.
-INSTALL_MODES=(minimal server desktop)
-
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f detect_default_mode &>/dev/null; then
 detect_default_mode() {

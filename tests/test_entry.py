@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
 from pyntara.models import TaskResult
-from pyntara.pyntara import app
+from pyntara.pyntara import app, detect_default_mode
 
 runner = CliRunner()
 
@@ -23,19 +23,78 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def test_run_requires_install_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A missing install mode is not an error: the engine auto-detects it,
+    # reports the choice and runs with it (resilience rule).
     _clear_env(monkeypatch)
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
     result = runner.invoke(app, [])
-    assert result.exit_code == 1
-    assert "PYNTARA_INSTALL_MODE is not set" in result.output
+    assert result.exit_code == 1  # no task modules implemented yet
+    assert "Install mode not set, using detected default: server" in result.output
+    assert "Install mode: server" in result.output
 
 
-def test_run_rejects_unknown_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_falls_back_to_detected_mode_on_unknown_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An install mode not in the configuration shows the resilience notice
+    # and falls back to the auto-detected mode: the run continues.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
+    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
     result = runner.invoke(app, [])
-    assert result.exit_code == 1
-    assert "unknown install mode" in result.output
+    assert result.exit_code == 1  # no task modules implemented yet
+    assert (
+        "Install mode 'fancy' was set through environment variables but not "
+        "found in the configuration, applied mode 'server'"
+    ) in result.output
+    assert "Install mode: server" in result.output
+
+
+def test_detect_default_mode_uses_desktop_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A desktop session variable means desktop.
+    monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    monkeypatch.delenv("DESKTOP_SESSION", raising=False)
+    monkeypatch.setattr("pyntara.pyntara._process_running", lambda name: False)
+    assert detect_default_mode() == "server"
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
+    assert detect_default_mode() == "desktop"
+    monkeypatch.delenv("XDG_CURRENT_DESKTOP")
+    monkeypatch.setenv("DESKTOP_SESSION", "plasma")
+    assert detect_default_mode() == "desktop"
+
+
+def test_detect_default_mode_uses_desktop_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A running desktop process means desktop even without session variables.
+    monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    monkeypatch.delenv("DESKTOP_SESSION", raising=False)
+
+    def fake_running(name: str) -> bool:
+        return name == "plasmashell"
+
+    monkeypatch.setattr("pyntara.pyntara._process_running", fake_running)
+    assert detect_default_mode() == "desktop"
+
+
+def test_run_unknown_mode_countdown_has_no_unit_letter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The countdown counts seconds as plain numbers, without the letter s.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
+    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "2")
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    slept: list[float] = []
+    monkeypatch.setattr("pyntara.pyntara.time.sleep", lambda seconds: slept.append(seconds))
+    result = runner.invoke(app, [])
+    assert slept == [1.0, 1.0]
+    assert "Execution continues in" in result.output
+    assert "2s" not in result.output and "1s" not in result.output
 
 
 def test_run_warns_and_continues_on_unknown_tasks(

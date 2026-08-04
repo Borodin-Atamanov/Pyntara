@@ -9,6 +9,8 @@ themselves (docs/contracts/architecture.md).
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -83,19 +85,97 @@ def _env(name: str) -> str | None:
     return value
 
 
-def _warn_and_pause(message: str) -> None:
-    """Show an error notice on stderr and pause so the user can interrupt.
+def _notice_timeout() -> int:
+    """Seconds the error notice stays visible; PYNTARA_NOTICE_TIMEOUT, default 7.
 
-    The notice stays visible for PYNTARA_NOTICE_TIMEOUT seconds (default 7,
-    per the simplified architecture: an unknown task name is not fatal). The
-    user interrupts with Ctrl-C to fix the environment and rerun, or lets the
-    run continue.
+    An unparsable value falls back to the default: the notice must never
+    crash the run it is meant to protect.
     """
 
-    timeout = int(_env("PYNTARA_NOTICE_TIMEOUT") or "7")
-    typer.echo(f"ERROR: {message}", err=True)
-    if timeout > 0:
-        time.sleep(timeout)
+    raw = _env("PYNTARA_NOTICE_TIMEOUT")
+    if raw is None:
+        return 7
+    try:
+        return int(raw)
+    except ValueError:
+        return 7
+
+
+def _warn_and_continue(message: str) -> None:
+    """Show an error notice with a visible countdown, then continue.
+
+    General resilience rule: an invalid environment value must never stop the
+    run. The notice names the problem and the applied fallback, waits a
+    visible countdown (plain numbers, no unit letters) so the user can
+    interrupt with Ctrl-C and fix the environment, then returns and the run
+    continues.
+    """
+
+    timeout = _notice_timeout()
+    typer.echo(f"Error! {message}", err=True)
+    for remaining in range(timeout, 0, -1):
+        print(f"\r{remaining} ", end="", flush=True, file=sys.stderr)
+        time.sleep(1)
+    # The final carriage return ends the countdown line cleanly.
+    print("\r", end="", flush=True, file=sys.stderr)
+
+
+def _process_running(name: str) -> bool:
+    """True when a process with the exact name is running (pgrep -x)."""
+
+    pgrep = shutil.which("pgrep")
+    if pgrep is None:
+        return False
+    try:
+        result = subprocess.run(
+            [pgrep, "-x", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def detect_default_mode() -> str:
+    """Pick the default install mode without asking: desktop when a desktop
+    session is present, otherwise server. Mirrors inst.sh detection.
+    """
+
+    if os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION"):
+        return "desktop"
+    for process in ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"):
+        if _process_running(process):
+            return "desktop"
+    return "server"
+
+
+def _resolve_mode() -> str:
+    """Resolve the install mode from PYNTARA_INSTALL_MODE or auto-detection.
+
+    A missing variable is not an error: the mode is auto-detected and
+    reported. A value not in the configuration shows the resilience notice
+    and falls back to the auto-detected mode: the run continues whenever it
+    can (general resilience rule).
+    """
+
+    mode = _env("PYNTARA_INSTALL_MODE")
+    if mode is None:
+        detected = detect_default_mode()
+        typer.echo(f"Install mode not set, using detected default: {detected}")
+        return detected
+    if mode in task_catalog.MODES:
+        return mode
+    detected = detect_default_mode()
+    _warn_and_continue(
+        f"Install mode '{mode}' was set through environment variables but not "
+        f"found in the configuration, applied mode '{detected}'. If this does "
+        "not suit you, interrupt the program and redefine the mode through "
+        "environment variables. Execution continues in"
+    )
+    return detected
 
 
 def _resolve_task_names(mode: str) -> list[str]:
@@ -113,7 +193,7 @@ def _resolve_task_names(mode: str) -> list[str]:
     names = selection.split()
     unknown = task_catalog.unknown_tasks(names)
     if unknown:
-        _warn_and_pause(
+        _warn_and_continue(
             f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them"
         )
     return task_catalog.resolve(names)
@@ -137,7 +217,7 @@ def _resolve_force_tasks(names: list[str]) -> frozenset[str]:
         if task_catalog.by_name(name) is None or name not in names
     ]
     if invalid:
-        _warn_and_pause(
+        _warn_and_continue(
             "invalid task names in PYNTARA_FORCE_TASKS: "
             + ", ".join(invalid)
             + "; continuing without them"
@@ -153,15 +233,7 @@ def _resolve_force_tasks(names: list[str]) -> frozenset[str]:
 def run() -> None:
     """Run the Pyntara provisioning engine."""
 
-    mode = _env("PYNTARA_INSTALL_MODE")
-    if mode is None:
-        typer.echo("ERROR: PYNTARA_INSTALL_MODE is not set", err=True)
-        raise typer.Exit(1)
-    try:
-        task_catalog.validate_mode(mode)
-    except ValueError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(1) from exc
+    mode = _resolve_mode()
     names = _resolve_task_names(mode)
     force_tasks = _resolve_force_tasks(names)
     raw_task_data_root = _env("PYNTARA_TASK_DATA_DIR")

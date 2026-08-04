@@ -10,10 +10,10 @@ The contract architecture describes an enterprise-style runtime: a config preced
 ## 2. What changed
 
 1. Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in code in src/pyntara/task_catalog.py. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.
-2. Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and skips when the goal is already reached. Force mode is a list of tasks that must be rerun even when the target state is already reached: PYNTARA_FORCE_TASKS, space-separated task names. Each name must be a known task that is part of the run set.
+2. Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and skips when the goal is already reached. Force mode is a list of tasks that must be rerun even when the target state is already reached: PYNTARA_FORCE_TASKS, space-separated task names. Invalid names are reported with a notice and filtered out; the run continues (section 7).
 Уточнение: если передан список задач, а у нас нет нет задачи из этого списка, то показывает ошибка пользователю, 7 секунд она отображается, а дальше продолжается выполнение. Логика такая: если пользователю нужно - он прервёт выполнение и заново определит переменные окружения, а если нет - то продолжит выполнение. Это относится и к списку задач и к списку forced-задач.
 
-3. Config precedence chain removed. No file config, no CLI options, no Pydantic config models. The engine reads validated environment variables: PYNTARA_INSTALL_MODE, PYNTARA_TASKS, PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE, PYNTARA_FORCE_TASKS. An unknown install mode fails fast with a clear error; unknown task or force-task names show a 7-second error notice and the run continues with the valid subset (section 2).
+3. Config precedence chain removed. No file config, no CLI options, no Pydantic config models. The engine reads validated environment variables: PYNTARA_INSTALL_MODE, PYNTARA_TASKS, PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE, PYNTARA_FORCE_TASKS. Invalid values never stop the run: they follow the resilience rule (section 7).
 4. DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.
 5. Logging to stdout. The engine prints to stdout; inst.sh already tees all output into /var/log/pyntara/install.log (bootstrap contract section 9). No syslog handler, no masking filter. The rule is simpler than a filter: never log secret values.
 
@@ -48,3 +48,13 @@ The contract architecture describes an enterprise-style runtime: a config preced
 - docs/contracts/interactive-ui.md: delete or mark as fully historical.
 - docs/guides/project-structure.md: drop the removed modules.
 - docs/spec/install-modes.md and docs/contracts/bootstrap.md: drop task-catalog references.
+
+## 7. Resilience rule
+
+The program must keep working whenever it can and must not crash on recoverable input errors. If an environment-provided value is invalid, the engine shows an error notice that names the problem and the applied fallback, waits a visible countdown (default 7 seconds, displayed as plain numbers without a unit letter) so the user can interrupt with Ctrl-C and fix the environment, then continues with a safe fallback.
+
+1. Unknown install mode in PYNTARA_INSTALL_MODE: apply the auto-detected default (desktop when a desktop session is present, otherwise server). A missing PYNTARA_INSTALL_MODE is not an error either: the mode is auto-detected and reported.
+2. Unknown task name in PYNTARA_TASKS: continue without the unknown name.
+3. Invalid task name in PYNTARA_FORCE_TASKS (unknown or not part of the run set): continue without the invalid name.
+
+Only a condition with no possible fallback stops the program.
