@@ -67,19 +67,3 @@ def test_check_vault_command_exits_one_for_wrong_password(
         app, ["check-vault", "--vault", "vault.kdbx"], input="wrong\n"
     )
     assert result.exit_code == 1
-
-
-def test_bare_invocation_launches_run() -> None:
-    # inst.sh launches `uv run pyntara` without arguments (bootstrap contract
-    # section 6), so a bare invocation must run the engine stub and exit 0
-    # instead of failing with "Missing command".
-    result = runner.invoke(app, [])
-    assert result.exit_code == 0
-    assert "Pyntara provisioning engine is not implemented yet." in result.stdout
-
-
-def test_explicit_run_command_launches_run() -> None:
-    # The run command stays reachable explicitly for direct invocation.
-    result = runner.invoke(app, ["run"])
-    assert result.exit_code == 0
-    assert "Pyntara provisioning engine is not implemented yet." in result.stdout

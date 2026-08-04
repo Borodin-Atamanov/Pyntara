@@ -17,9 +17,7 @@ All apt operations run with DEBIAN_FRONTEND=noninteractive.
 
 ## 3. Installed packages (in order)
 
-dialog — kept for the deprecated reference functions select_tasks and select_install_mode; not used by the installer flow.
 python3, python3-venv, git, curl, ca-certificates — minimal runtime dependencies.
-bsdutils — provides script(1), kept for the deprecated reference function select_tasks.
 uv — Python package manager, installed via official Astral script.
 
 ## 4. Source delivery: git only
@@ -70,21 +68,16 @@ fi
 
 If a function is already declared (test harness injected a mock via source), the script skips its own declaration. This allows isolated testing of every function by substitution.
 
-## 11. Interactive screens (via dialog)
+## 11. Runtime configuration (environment only)
 
-Deprecated: the interactive screens do not work and their development is stopped. This section is kept for reference only. All user interaction is replaced by environment variables.
+The installer never shows interactive screens. All user interaction happens through environment variables:
 
 Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no vault, the default vault is used after a countdown notice).
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
 Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
-Task selection: PYNTARA_TASKS (optional, default task set when omitted).
+Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).
 
-Historical summary of the removed flow (for reference):
-Password prompt for production.vault (VAULT_PASSWORD_TIMEOUT 333s, 3 attempts, fallback to default.vault).
-Install mode selector: minimal / server / desktop (auto-select default after DIALOG_TIMEOUT).
-Task selection checkboxes (30s auto-accept via dialog --timeout, fallback to defaults with SLEEP_AFTER_IMPORTANT_MESSAGE).
-Force-mode question: Yes / No (11s, default No).
-Force-task checkboxes (only if Yes).
+The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. docs/contracts/interactive-ui.md is historical reference only.
 
 ## 12. Secrets files
 

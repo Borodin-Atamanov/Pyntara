@@ -250,13 +250,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         setup_python() { echo setup_python >> "$flags_file"; }
         prompt_vault_password() { echo prompt_vault_password >> "$flags_file"; }
         prompt_install_mode() { echo prompt_install_mode >> "$flags_file"; }
-        prompt_tasks() { echo prompt_tasks >> "$flags_file"; }
         run_pyntara() { echo "run_pyntara $*" >> "$flags_file"; }
         source "$1"
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nprompt_tasks\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -466,8 +465,8 @@ inst_install_dependencies_installs_missing_packages() {
     mkdir -p "$bin"
     cat > "$bin/dpkg" <<'EOF'
 #!/bin/bash
-# Simulate a missing dialog package.
-if [[ "$1" == "-s" && "$2" == "dialog" ]]; then
+# Simulate a missing python3 package.
+if [[ "$1" == "-s" && "$2" == "python3" ]]; then
     exit 1
 fi
 exit 0
@@ -481,13 +480,13 @@ EOF
     chmod +x "$bin/apt-get"
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
         bash -c 'source "$1"; install_dependencies' _ "$INSTALLER"
-    if ! grep -q '^install -y dialog$' "$calls"; then
-        echo "missing package dialog not installed" >&2
+    if ! grep -q '^install -y python3$' "$calls"; then
+        echo "missing package python3 not installed" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if grep -q 'python3' "$calls"; then
-        echo "present package python3 installed unnecessarily" >&2
+    if grep -q 'git' "$calls"; then
+        echo "present package git installed unnecessarily" >&2
         rm -rf "$tmp"
         return 1
     fi
@@ -1149,23 +1148,6 @@ inst_log_status_prints_without_consuming_input() {
     rm -rf "$tmp"
 }
 
-inst_password_prompt_captures_password() {
-    # One password prompt: the entered text must land in VAULT_ATTEMPT_PASSWORD
-    # and the prompt must return 0 on a submitted password.
-    local output
-    output="$(printf 'pw\n' | bash -c 'source "$1"; prompt_password_input "Attempt 1 of 3." "Enter password of the production vault:"; echo "RC=$?"; echo "PW=$VAULT_ATTEMPT_PASSWORD"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "RC=0" "prompt returns success" || return 1
-    assert_contains "$output" "PW=pw" "password captured" || return 1
-}
-
-inst_password_prompt_returns_cancel_on_eof() {
-    # EOF on stdin (like Ctrl+D) means no password was submitted: the prompt
-    # must return 1, matching the old dialog Cancel code.
-    local output
-    output="$(printf '' | bash -c 'source "$1"; rc=0; prompt_password_input "Attempt 1 of 3." "Enter password of the production vault:" || rc=$?; echo "RC=$rc"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "RC=1" "cancel code returned" || return 1
-}
-
 inst_show_countdown_prints_message_and_countdown() {
     # show_countdown prints the message and logs it once; seconds 0 returns
     # immediately without reading any input.
@@ -1320,42 +1302,6 @@ EOF
     rm -rf "$tmp"
 }
 
-inst_select_install_mode_number_answer() {
-    # Entering the number 2 must select server. stderr is dropped: only the
-    # selected mode goes to stdout, the countdown is cosmetic.
-    local output
-    output="$(printf '2\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
-    assert_equals "server" "$output" "number selects mode" || return 1
-}
-
-inst_select_install_mode_letter_answer() {
-    # Entering the letter d must select desktop.
-    local output
-    output="$(printf 'd\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
-    assert_equals "desktop" "$output" "letter selects mode" || return 1
-}
-
-inst_select_install_mode_default_on_timeout() {
-    # No key within the timeout selects the default mode.
-    local output
-    output="$(printf '' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode server' _ "$INSTALLER" 2>/dev/null)"
-    assert_equals "server" "$output" "timeout means default" || return 1
-}
-
-inst_select_install_mode_default_on_eof() {
-    # EOF before any key also selects the default mode.
-    local output
-    output="$(printf '' | DIALOG_TIMEOUT=11 bash -c 'source "$1"; select_install_mode minimal' _ "$INSTALLER" 2>/dev/null)"
-    assert_equals "minimal" "$output" "EOF means default" || return 1
-}
-
-inst_select_install_mode_default_on_garbage() {
-    # Unrecognized input selects the default mode.
-    local output
-    output="$(printf 'x\n' | DIALOG_TIMEOUT=1 bash -c 'source "$1"; select_install_mode desktop' _ "$INSTALLER" 2>/dev/null)"
-    assert_equals "desktop" "$output" "garbage means default" || return 1
-}
-
 inst_prompt_install_mode_uses_environment() {
     # PYNTARA_INSTALL_MODE skips the screen and is logged.
     local tmp
@@ -1387,212 +1333,6 @@ inst_prompt_install_mode_exports_selected_mode() {
         return 1
     }
     assert_contains "$output" "Install mode (default): server" "default mode logged" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_load_task_catalog_parses_defaults_and_dialog() {
-    # load_task_catalog must parse the two-line protocol from task-catalog:
-    # the defaults line and the fully quoted dialog command line.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin" "$tmp/repo"
-    cat > "$bin/uv" <<'EOF'
-#!/bin/bash
-echo "defaults: users ssh"
-echo "dialog: dialog --checklist 'pick' 0 0 0"
-exit 0
-EOF
-    chmod +x "$bin/uv"
-    local output
-    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" TASK_RESULT_FILE="$tmp/res" \
-        bash -c 'source "$1"; load_task_catalog server; echo "DEF=[$TASKS_DEFAULT]"; echo "CMD=[$TASK_DIALOG_CMD]"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "DEF=[users ssh]" "defaults parsed" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    assert_contains "$output" "CMD=[dialog --checklist 'pick' 0 0 0]" "dialog command parsed" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_load_task_catalog_fails_on_catalog_error() {
-    # A failing task-catalog must surface as a load error.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin" "$tmp/repo"
-    cat > "$bin/uv" <<'EOF'
-#!/bin/bash
-exit 1
-EOF
-    chmod +x "$bin/uv"
-    local rc
-    set +e
-    PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
-        bash -c 'source "$1"; load_task_catalog server' _ "$INSTALLER" >/dev/null 2>&1
-    rc=$?
-    set -e
-    assert_equals "1" "$rc" "load_task_catalog exit code" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_select_tasks_confirms() {
-    # A successful script + dialog run must return 0.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin"
-    cat > "$bin/script" <<'EOF'
-#!/bin/bash
-# Simulate dialog writing the selection to the result file and exiting 0.
-echo "users ssh" > "$TASK_RESULT_FILE"
-exit 0
-EOF
-    chmod +x "$bin/script"
-    TASK_DIALOG_CMD="ignored" TASK_RESULT_FILE="$tmp/res" PATH="$bin:$PATH" \
-        bash -c 'source "$1"; select_tasks; echo "RC=$?"' _ "$INSTALLER" 2>&1 | grep -q "RC=0" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_select_tasks_falls_back_on_cancel() {
-    # ESC (dialog exit 255) with no result file must fall back.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin"
-    : > "$tmp/res"
-    cat > "$bin/script" <<'EOF'
-#!/bin/bash
-exit 255
-EOF
-    chmod +x "$bin/script"
-    local rc
-    set +e
-    TASK_DIALOG_CMD="ignored" TASK_RESULT_FILE="$tmp/res" PATH="$bin:$PATH" \
-        bash -c 'source "$1"; select_tasks' _ "$INSTALLER" >/dev/null 2>&1
-    rc=$?
-    set -e
-    assert_equals "1" "$rc" "cancel must fall back" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_select_tasks_accepts_timeout_selection() {
-    # dialog exit 255 with a non-empty result file is a timeout, which must
-    # be accepted as a valid selection.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin"
-    echo "users" > "$tmp/res"
-    cat > "$bin/script" <<'EOF'
-#!/bin/bash
-exit 255
-EOF
-    chmod +x "$bin/script"
-    local rc
-    set +e
-    TASK_DIALOG_CMD="ignored" TASK_RESULT_FILE="$tmp/res" PATH="$bin:$PATH" \
-        bash -c 'source "$1"; select_tasks' _ "$INSTALLER" >/dev/null 2>&1
-    rc=$?
-    set -e
-    assert_equals "0" "$rc" "timeout selection accepted" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_resolve_tasks_parses_resolved_list() {
-    # resolve_tasks must pass the selection to task-catalog and parse the
-    # resolved tasks line.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    local uv_calls="$tmp/uv_calls"
-    mkdir -p "$bin" "$tmp/repo"
-    cat > "$bin/uv" <<'EOF'
-#!/bin/bash
-echo "$@" >> "$UV_CALLS_FILE"
-echo "tasks: proxy_server proxy_tunnel"
-exit 0
-EOF
-    chmod +x "$bin/uv"
-    local output
-    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" UV_CALLS_FILE="$uv_calls" \
-        bash -c 'source "$1"; resolve_tasks server "proxy_tunnel"; echo "RES=[$TASKS_RESOLVED]"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "RES=[proxy_server proxy_tunnel]" "resolved list parsed" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    if ! grep -q -- "--selected proxy_tunnel" "$uv_calls"; then
-        echo "--selected not forwarded" >&2
-        rm -rf "$tmp"
-        return 1
-    fi
-    rm -rf "$tmp"
-}
-
-inst_prompt_tasks_uses_environment() {
-    # PYNTARA_TASKS skips the dialog but resolves dependencies and exports.
-    local tmp
-    tmp="$(mktemp -d)"
-    local logfile="$tmp/install.log"
-    local bin="$tmp/bin"
-    mkdir -p "$bin" "$tmp/repo" "$tmp/lib"
-    cat > "$bin/uv" <<'EOF'
-#!/bin/bash
-echo "tasks: proxy_server proxy_tunnel"
-exit 0
-EOF
-    chmod +x "$bin/uv"
-    local output
-    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" PYNTARA_INSTALL_MODE=server PYNTARA_TASKS=proxy_tunnel PYNTARA_LOG_FILE="$logfile" PYNTARA_STATE_DIR="$tmp/lib" \
-        bash -c 'source "$1"; prompt_tasks; echo "TASKS=$PYNTARA_TASKS"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "TASKS=proxy_server proxy_tunnel" "resolved env tasks exported" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_prompt_tasks_exports_defaults() {
-    # Without PYNTARA_TASKS the catalog defaults for the mode are exported,
-    # without showing any dialog.
-    local tmp
-    tmp="$(mktemp -d)"
-    local logfile="$tmp/install.log"
-    local bin="$tmp/bin"
-    mkdir -p "$bin" "$tmp/repo" "$tmp/lib"
-    cat > "$bin/uv" <<'EOF'
-#!/bin/bash
-echo "defaults: users ssh"
-echo "dialog: dialog --checklist pick 0 0 0"
-exit 0
-EOF
-    chmod +x "$bin/uv"
-    local output
-    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" PYNTARA_INSTALL_MODE=minimal PYNTARA_LOG_FILE="$logfile" PYNTARA_STATE_DIR="$tmp/lib" \
-        bash -c 'source "$1"; prompt_tasks; echo "TASKS=$PYNTARA_TASKS"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "TASKS=users ssh" "defaults exported" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    assert_contains "$output" "Using default tasks for minimal: users ssh" "default notice" || {
         rm -rf "$tmp"
         return 1
     }
@@ -1832,29 +1572,14 @@ run_test inst_run_pyntara_fails_when_source_missing
 run_test inst_show_message_prints_text_and_logs_it
 run_test inst_show_countdown_prints_message_and_countdown
 run_test inst_log_status_prints_without_consuming_input
-run_test inst_password_prompt_captures_password
-run_test inst_password_prompt_returns_cancel_on_eof
 run_test inst_prompt_vault_password_no_env_falls_back_to_default
 run_test inst_prompt_vault_password_missing_default_password_aborts
 run_test inst_detect_default_mode_uses_override
 run_test inst_detect_default_mode_desktop_when_session_vars
 run_test inst_detect_default_mode_server_when_no_session
 run_test inst_detect_default_mode_desktop_when_process
-run_test inst_select_install_mode_number_answer
-run_test inst_select_install_mode_letter_answer
-run_test inst_select_install_mode_default_on_timeout
-run_test inst_select_install_mode_default_on_eof
-run_test inst_select_install_mode_default_on_garbage
 run_test inst_prompt_install_mode_uses_environment
 run_test inst_prompt_install_mode_exports_selected_mode
-run_test inst_load_task_catalog_parses_defaults_and_dialog
-run_test inst_load_task_catalog_fails_on_catalog_error
-run_test inst_select_tasks_confirms
-run_test inst_select_tasks_falls_back_on_cancel
-run_test inst_select_tasks_accepts_timeout_selection
-run_test inst_resolve_tasks_parses_resolved_list
-run_test inst_prompt_tasks_uses_environment
-run_test inst_prompt_tasks_exports_defaults
 run_test inst_prompt_vault_password_uses_environment_with_source
 run_test inst_prompt_vault_password_uses_environment_autodetect_production
 run_test inst_prompt_vault_password_uses_environment_autodetect_default

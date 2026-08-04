@@ -4,53 +4,11 @@
 # curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
 set -euo pipefail
 
-# Обязательно кратко писать, о успешном выполнении каждой части скрипта: Просто обычное предложение на английском о том, что произошло. Использовать переменные в выводе, чтоыб пользователь получал максимум полезно информации о происходящем.
-# ПЛАН РЕАЛИЗАЦИИ БУТСТРАПА
-# Это намерение, а не описание текущего поведения. Код по этому плану ещё не написан.
-# Источник требований: docs/contracts/bootstrap.md, docs/contracts/interactive-ui.md, docs/spec/install-modes.md.
-#
-# Фаза 1. Каркас и служебные функции
-# 1.1 Проверка root
-# В начале main проверю EUID: если процесс не root, выведу сообщение об ошибке и завершусь с ненулевым кодом; при успехе выведу краткое сообщение о выполнении этой части (контракт п.1).
-# 1.2 Каталоги FHS
-# Создам /var/cache/pyntara, /var/lib/pyntara, /var/log/pyntara командой install -d (контракт п.5).
-# 1.3 Логирование
-# Функция log: пишет строку с меткой времени YYYY-MM-DD-HH-MM-SS в /var/log/pyntara/install.log и дублирует вывод в терминал, чтобы лог и экран совпадали (контракт п.9).
-# 1.4 Замер времени
-# Функция run_timed: выполняет переданную команду под time и фиксирует длительность в логе (контракт п.7).
-# 1.5 Условное объявление функций
-# Каждую функцию объявлю под guard if ! declare -f имя &>/dev/null; then ... fi, чтобы тесты могли подменять её моком через source (контракт п.10).
-#
-# Фаза 2. Окружение
-# 2.1 Оптимистичный apt
-# Функция install_packages: первая попытка apt-get install -y без обновления индекса; если пакеты не нашлись, выполню apt-get update и повторю установку; все apt-команды с DEBIAN_FRONTEND=noninteractive (контракт п.2).
-# 2.2 Пакеты
-# Установлю по порядку: dialog, python3, python3-venv, git, curl, ca-certificates (контракт п.3).
-# 2.3 uv
-# Функция install_uv: официальный скрипт установки от Astral (контракт п.3).
-#
-# Фаза 3. Доставка исходников и запуск
-# 3.1 Получение репозитория
-# Функция fetch_source: git clone --depth 1 в /var/cache/pyntara; если каталог уже содержит файлы, выполню git fetch и reset к последней ревизии вместо повторного клонирования (контракт п.4).
-# 3.2 Окружение Python
-# Функция setup_python: uv sync в каталоге репозитория; если lockfile актуален, запущу с флагом --locked, иначе без него (контракт п.6).
-# 3.3 Запуск
-# Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
-#
-# Фаза 4. Конфигурация запуска, отдельный этап
-# 4.1 Пароль production.vault из PYNTARA_VAULT_PASSWORD: при наличии — проверка и автоопределение источника, при отсутствии или несовпадении ни с одним хранилищем — уведомление с обратным отсчётом и fallback на default.vault.
-# 4.2 Режим minimal/server/desktop из PYNTARA_INSTALL_MODE, при отсутствии — автоопределение по системе.
-# 4.3 Задачи из PYNTARA_TASKS с разрешением зависимостей, при отсутствии — дефолтный набор режима из каталога (task-catalog).
-# 4.4 Интерактивные экраны не используются, разработка остановлена; функции select_* и prompt_password_input сохранены как deprecated-справка.
-# 4.5 Исторические требования: docs/contracts/interactive-ui.md.
-#
-# Фаза 5. Тесты бутстрапа
-# 5.1 Создам tests/test_inst.sh: source inst.sh, подмена функций моками (guard из п.10).
-# 5.2 Проверка не-root: завершается с ошибкой.
-# 5.3 Проверка install_packages: обновляет индекс только при неудаче первой попытки.
-# 5.4 Проверка fetch_source: при повторном запуске делает fetch+reset, а не clone.
-# 5.5 Проверка log: пишет в файл и в терминал с меткой времени.
-# 5.6 Прогон тестов: bash tests/test_inst.sh; для Python-части по docs/guides/developer-guide.md.
+# Every step ends with a short English status message using variables, so
+# the user gets the maximum useful information about what happened.
+# Flow: root check, FHS directories, dependencies, uv, source fetch, uv sync,
+# vault password and install mode resolution, engine launch.
+# Requirements source: docs/contracts/bootstrap.md, docs/spec/install-modes.md.
 
 
 # --- Implementation: phase 1.1 (root check) ---
@@ -151,9 +109,7 @@ fi
 
 # Implementation: phase 2.2 (package set)
 # Minimal runtime dependencies, bootstrap contract section 3, in required order.
-# bsdutils provides script(1), which allocates a pseudo-tty for dialog screens
-# where stdin is not a terminal (bootstrap contract section 11).
-RUNTIME_PACKAGES=(dialog python3 python3-venv git curl ca-certificates bsdutils)
+RUNTIME_PACKAGES=(python3 python3-venv git curl ca-certificates)
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f install_dependencies &>/dev/null; then
@@ -298,11 +254,6 @@ fi
 PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
 DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
 DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
-# Deprecated: interactive choice screens are not used; the timeouts remain
-# for the kept reference functions select_install_mode, select_tasks and
-# prompt_password_input.
-DIALOG_TIMEOUT="${PYNTARA_DIALOG_TIMEOUT:-11}"
-VAULT_PASSWORD_TIMEOUT="${PYNTARA_VAULT_PASSWORD_TIMEOUT:-333}"
 # Countdown for the default vault fallback notice. The notice requires no
 # input; the user may interrupt with Ctrl-C.
 FALLBACK_NOTICE_TIMEOUT="${PYNTARA_FALLBACK_NOTICE_TIMEOUT:-7}"
@@ -342,37 +293,6 @@ show_countdown() {
     done
     # The trailing newline ends the carriage-return countdown line.
     printf '\n' >&2
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f prompt_password_input &>/dev/null; then
-prompt_password_input() {
-    # Deprecated: not called by the installer flow, kept for reference only.
-    # One password attempt, read from the terminal without echo. read -s is
-    # plain bash, not custom termios code, so the interactive-ui contract
-    # restriction still holds. dialog --passwordbox is deliberately not used:
-    # dialog renders its box on stderr and misbehaves where stdout is not a
-    # terminal (e.g. under sudo), which made the field unreadable and input
-    # impossible. The two arguments separate the attempt line from the prompt
-    # line, both on stderr. stdout stays clean. Exit codes mirror dialog:
-    # 0 OK, 5 timeout, 1 cancel/EOF.
-    # read -t fires SIGALRM on timeout and returns 142 (128+14); dialog
-    # reported a timeout as 5, so map 142 to 5 to keep prompt_vault_password
-    # semantics unchanged.
-    VAULT_ATTEMPT_PASSWORD=""
-    local rc
-    printf '%s\n' "$1" >&2
-    printf '%s\n' "$2" >&2
-    read -r -s -t "$VAULT_PASSWORD_TIMEOUT" VAULT_ATTEMPT_PASSWORD
-    rc=$?
-    if [[ "$rc" -eq 142 ]]; then
-        return 5
-    fi
-    if [[ "$rc" -ne 0 ]]; then
-        return 1
-    fi
-    return 0
 }
 fi
 
@@ -455,8 +375,7 @@ fi
 
 # Implementation: phase 4.2 (install mode selection)
 
-# Valid installation modes, install-modes spec. Used for validation and the
-# on-screen list.
+# Valid installation modes, install-modes spec.
 INSTALL_MODES=(minimal server desktop)
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
@@ -488,48 +407,6 @@ detect_default_mode() {
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f select_install_mode &>/dev/null; then
-select_install_mode() {
-    # Deprecated: not called by the installer flow, kept for reference only.
-    # One interactive mode-selection screen with a visible real-time countdown
-    # (interactive-ui contract section 2.1, install-modes spec).
-    # The list is printed with numbers; the user answers with a number or the
-    # first letter of the mode name. Empty input, EOF or a timeout accepts the
-    # default. The countdown stops on the first keypress, then the rest of the
-    # line is read without time pressure.
-    local default_mode="$1"
-    local remaining answer mode
-    for ((remaining = DIALOG_TIMEOUT; remaining >= 1; remaining--)); do
-        printf '\rInstall mode (default %s): 1 minimal, 2 server, 3 desktop -- %ss left ' "$default_mode" "$remaining" >&2
-        # read -t 1 -n 1 returns 142 on timeout (SIGALRM), 0 on any key.
-        if read -r -t 1 -n 1 answer; then
-            printf '\n' >&2
-            # The first key stopped the countdown; read the rest without a
-            # timeout (interactive-ui contract section 2.1).
-            if [[ "$answer" != $'\n' && "$answer" != $'\r' ]]; then
-                local rest
-                read -r rest
-                answer="$answer$rest"
-            fi
-            break
-        fi
-    done
-    # No key was pressed: move to a fresh line so later output does not
-    # overwrite the countdown.
-    printf '\n' >&2
-    # One shared validation for every way the input can end: a recognized
-    # answer wins, everything else (timeout, EOF, empty, garbage) is default.
-    case "${answer,,}" in
-        1|m|minimal) mode="minimal" ;;
-        2|s|server) mode="server" ;;
-        3|d|desktop) mode="desktop" ;;
-        *) mode="$default_mode" ;;
-    esac
-    echo "$mode"
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f prompt_install_mode &>/dev/null; then
 prompt_install_mode() {
     # Decide the install mode and export it for the Python engine.
@@ -543,113 +420,6 @@ prompt_install_mode() {
     mode="$(detect_default_mode)"
     export PYNTARA_INSTALL_MODE="$mode"
     log_status "Install mode (default): $mode"
-}
-fi
-
-# Implementation: phase 4.3 (task selection)
-# The task catalog is produced by the Python engine (task-catalog command),
-# because tasks.yaml is YAML and the shell must not parse it. The catalog is
-# the single source of truth; mode membership lives inside each task entry.
-
-# Timeout for the deprecated task selection dialog, still passed by
-# load_task_catalog to the Python command.
-TASK_TIMEOUT="${PYNTARA_TASK_TIMEOUT:-30}"
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f load_task_catalog &>/dev/null; then
-load_task_catalog() {
-    # Ask the Python engine for the defaults line and the dialog command line
-    # for the selected mode. The output protocol is stable: two lines,
-    # 'defaults: ...' and 'dialog: ...'. The dialog command is fully quoted
-    # by Python, so bash can run it inside script(1) without re-quoting.
-    local mode="$1"
-    local output
-    output="$( cd "$SOURCE_DIR" && run_timed uv run pyntara task-catalog --mode "$mode" --timeout "$TASK_TIMEOUT" --result-file "$TASK_RESULT_FILE" )" || return 1
-    # Strip the 'defaults: ' and 'dialog: ' prefixes. The rest of the line is
-    # the value (space-separated task names, or the quoted dialog command).
-    TASKS_DEFAULT="${output#*defaults: }"
-    TASKS_DEFAULT="${TASKS_DEFAULT%%$'\n'*}"
-    TASK_DIALOG_CMD="${output#*dialog: }"
-    TASK_DIALOG_CMD="${TASK_DIALOG_CMD%%$'\n'*}"
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f select_tasks &>/dev/null; then
-select_tasks() {
-    # Deprecated: not called by the installer flow, kept for reference only.
-    # Show the dialog --checklist inside a pseudo-tty (script -qec) so it
-    # works even where stdin is not a terminal. dialog writes the checked
-    # task names into TASK_RESULT_FILE through --output-fd 3. Exit codes:
-    # 0 = confirmed, 255 = ESC/cancel or timeout (with --timeout dialog exits
-    # 255 and writes the current selection to the result file; on cancel the
-    # file stays empty). Any other code or an empty file is a fallback.
-    # script renders the pseudo-tty stream to its own stdout; that stream is
-    # redirected to stderr, because under sudo stdout is not a terminal while
-    # stderr is. Sending it to stderr makes the dialog visible and keeps
-    # stdout clean for the result protocol.
-    local rc
-    # The if guard captures the exit code without triggering errexit.
-    if script -qec "$TASK_DIALOG_CMD" /dev/null 1>&2; then
-        rc=0
-    else
-        rc=$?
-    fi
-    if [[ "$rc" -eq 0 ]]; then
-        return 0
-    fi
-    if [[ "$rc" -eq 255 && -s "$TASK_RESULT_FILE" ]]; then
-        # Timeout: dialog accepted the current (default) selection.
-        return 0
-    fi
-    # Cancel or failure: no usable selection.
-    return 1
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f resolve_tasks &>/dev/null; then
-resolve_tasks() {
-    # Ask the Python engine to expand the selected tasks with their transitive
-    # dependencies and print the final ordered set. The selection travels as a
-    # single space-separated argument, so it cannot break the command line.
-    local mode="$1"
-    local selection="$2"
-    local output
-    output="$( cd "$SOURCE_DIR" && run_timed uv run pyntara task-catalog --mode "$mode" --selected "$selection" )" || return 1
-    TASKS_RESOLVED="${output#*tasks: }"
-    TASKS_RESOLVED="${TASKS_RESOLVED%%$'\n'*}"
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f prompt_tasks &>/dev/null; then
-prompt_tasks() {
-    # Decide the task set and export it for the Python engine.
-    # PYNTARA_TASKS fixes the selection; dependencies are still resolved so
-    # the exported set is always complete and ordered. Without the variable
-    # the mode defaults from the catalog are used. No screen is shown.
-    local mode="${PYNTARA_INSTALL_MODE:-}"
-    if [[ -z "$mode" ]]; then
-        show_message "ERROR: install mode not selected before task selection."
-        return 1
-    fi
-    if [[ -n "${PYNTARA_TASKS:-}" ]]; then
-        if ! resolve_tasks "$mode" "$PYNTARA_TASKS"; then
-            show_message "ERROR: could not resolve tasks."
-            return 1
-        fi
-        export PYNTARA_TASKS="$TASKS_RESOLVED"
-        log_status "Tasks from environment resolved: $PYNTARA_TASKS"
-        return 0
-    fi
-    TASK_RESULT_FILE="$STATE_DIR/tasks-selection"
-    if ! load_task_catalog "$mode"; then
-        show_message "ERROR: could not load the task catalog."
-        return 1
-    fi
-    export PYNTARA_TASKS="$TASKS_DEFAULT"
-    log_status "Using default tasks for $mode: $PYNTARA_TASKS"
 }
 fi
 
@@ -670,10 +440,10 @@ main() {
         log "Vault setup failed, aborting"
         exit 1
     fi
-    # Phase 4.2: the install mode is fixed after the vault is open.
+    # Phase 4.2: the install mode is fixed after the vault is open. The
+    # engine resolves the task set itself: the mode defaults or
+    # PYNTARA_TASKS with dependencies.
     prompt_install_mode
-    # Phase 4.3: the task set is fixed after the mode is known.
-    prompt_tasks
     run_pyntara "$@"
     log "Bootstrap finished"
 }
