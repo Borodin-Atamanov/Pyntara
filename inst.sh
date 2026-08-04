@@ -416,6 +416,33 @@ prompt_vault_password() {
     # A missing production vault is reported loudly and falls back to the
     # default vault immediately: asking for a password of a database that
     # does not exist would waste the user's time for nothing.
+    # Non-interactive: a password already present in the environment skips
+    # the prompt entirely. PYNTARA_VAULT_SOURCE is honoured when set;
+    # otherwise the source is auto-detected: production wins when the
+    # password opens production.vault, default when it matches the
+    # well-known default.password. An unmatched password is an error.
+    if [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
+        if [[ -n "${PYNTARA_VAULT_SOURCE:-}" ]]; then
+            log_status "Vault password from environment, source: $PYNTARA_VAULT_SOURCE"
+            return 0
+        fi
+        if [[ -f "$PRODUCTION_VAULT" ]] && check_vault_password "$PYNTARA_VAULT_PASSWORD"; then
+            export PYNTARA_VAULT_SOURCE="production"
+            log_status "Vault password from environment, auto-detected source: production"
+            return 0
+        fi
+        if [[ -f "$DEFAULT_VAULT_PASSWORD_FILE" ]]; then
+            local env_default_password
+            env_default_password="$(head -n 1 "$DEFAULT_VAULT_PASSWORD_FILE")"
+            if [[ "$PYNTARA_VAULT_PASSWORD" == "$env_default_password" ]]; then
+                export PYNTARA_VAULT_SOURCE="default"
+                log_status "Vault password from environment, auto-detected source: default"
+                return 0
+            fi
+        fi
+        show_message "ERROR: PYNTARA_VAULT_PASSWORD does not match any vault."
+        return 1
+    fi
     if [[ ! -f "$PRODUCTION_VAULT" ]]; then
         show_message "ERROR: production vault not found at $PRODUCTION_VAULT. Falling back to default vault."
         fallback_to_default_vault

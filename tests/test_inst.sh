@@ -1866,6 +1866,187 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_prompt_vault_password_uses_environment_with_source() {
+    # PYNTARA_VAULT_PASSWORD together with PYNTARA_VAULT_SOURCE skips the
+    # prompt and the vault check entirely: no uv call, no password prompt,
+    # the given source is kept.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    mkdir -p "$bin"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    cat > "$tmp/prompt_mock.sh" <<'EOF'
+prompt_password_input() {
+    echo "password prompt must not be called" >&2
+    return 99
+}
+EOF
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        PYNTARA_VAULT_PASSWORD="correct-password" PYNTARA_VAULT_SOURCE="production" \
+        UV_CALLS_FILE="$uv_calls" \
+        bash -c 'source "$2"; source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"; echo "VAULT_PASSWORD=$PYNTARA_VAULT_PASSWORD"' _ "$INSTALLER" "$tmp/prompt_mock.sh" 2>&1)"
+    assert_contains "$output" "Vault password from environment, source: production" "env source message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=production" "vault source kept" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_PASSWORD=correct-password" "vault password kept" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if [[ -s "$uv_calls" ]]; then
+        echo "uv must not run when password comes from environment" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q "password prompt must not be called" "$output"; then
+        echo "password prompt must be skipped in environment mode" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_uses_environment_autodetect_production() {
+    # PYNTARA_VAULT_PASSWORD without PYNTARA_VAULT_SOURCE auto-detects the
+    # source by checking the password against production.vault via uv.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" UV_EXIT_CODE=0 \
+        PYNTARA_VAULT_PASSWORD="correct-password" \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "auto-detected source: production" "autodetect message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=production" "autodetect production" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    local stdin_content
+    stdin_content="$(cat "$uv_stdin")"
+    assert_equals "correct-password" "$stdin_content" "password delivered via stdin" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_uses_environment_autodetect_default() {
+    # PYNTARA_VAULT_PASSWORD matching default.password auto-detects default
+    # as the source without any uv call: production.vault is absent.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/uv"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" \
+        PYNTARA_VAULT_PASSWORD="fallback-password" \
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "auto-detected source: default" "autodetect message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "autodetect default" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    if [[ -s "$uv_calls" ]]; then
+        echo "uv must not run when default password matches" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_prompt_vault_password_uses_environment_wrong_password() {
+    # A PYNTARA_VAULT_PASSWORD matching no vault is a fatal error with a
+    # loud message and a non-zero exit code.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local uv_calls="$tmp/uv_calls"
+    local uv_stdin="$tmp/uv_stdin"
+    mkdir -p "$bin" "$tmp/repo/secrets"
+    echo "fallback-password" > "$tmp/repo/secrets/default.password"
+    : > "$tmp/repo/secrets/production.vault"
+    cat > "$bin/uv" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$UV_CALLS_FILE"
+cat > "$UV_STDIN_FILE"
+exit "$UV_EXIT_CODE"
+EOF
+    chmod +x "$bin/uv"
+    local rc
+    set +e
+    PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
+        PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
+        PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
+        PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" UV_EXIT_CODE=1 \
+        PYNTARA_VAULT_PASSWORD="wrong" \
+        bash -c 'source "$1"; prompt_vault_password' _ "$INSTALLER" > "$tmp/out" 2>&1
+    rc=$?
+    set -e
+    assert_equals "1" "$rc" "exit code on unmatched env password" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$(cat "$tmp/out")" "PYNTARA_VAULT_PASSWORD does not match any vault" "loud error message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
 run_test inst_check_root_rejects_non_root_with_error
 run_test inst_check_root_accepts_root_with_success_message
 run_test inst_ensure_fhs_dirs_creates_all_three_directories
@@ -1930,6 +2111,10 @@ run_test inst_resolve_tasks_parses_resolved_list
 run_test inst_prompt_tasks_uses_environment
 run_test inst_prompt_tasks_exports_selection
 run_test inst_prompt_tasks_falls_back_to_defaults
+run_test inst_prompt_vault_password_uses_environment_with_source
+run_test inst_prompt_vault_password_uses_environment_autodetect_production
+run_test inst_prompt_vault_password_uses_environment_autodetect_default
+run_test inst_prompt_vault_password_uses_environment_wrong_password
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
