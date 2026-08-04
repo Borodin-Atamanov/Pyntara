@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Interactive Pyntara installer using dialog.
-# Typical usage: 
-# curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o insta.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
+# Non-interactive Pyntara installer.
+# Typical usage:
+# curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
 set -euo pipefail
 
 # Обязательно кратко писать, о успешном выполнении каждой части скрипта: Просто обычное предложение на английском о том, что произошло. Использовать переменные в выводе, чтоыб пользователь получал максимум полезно информации о происходящем.
@@ -37,12 +37,12 @@ set -euo pipefail
 # 3.3 Запуск
 # Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
 #
-# Фаза 4. Интерактив через dialog, отдельный этап
-# 4.1 Запрос пароля production.vault с таймаутом VAULT_PASSWORD_TIMEOUT (333 с) и тремя попытками, при неудаче переход на default.vault. Сообщения — обычный текст с таймаутом MESSAGE_TIMEOUT. Отсутствие production.vault — явная ошибка и немедленный fallback на default.vault. Пароль вводится read -s, а не dialog --passwordbox: dialog рисует окно в stderr и ломается там, где stdout не терминал.
-# 4.2 Выбор режима minimal/server/desktop с автоопределением по системе и авто-выбором через 11 с.
-# 4.3 Выбор задач чекбоксами dialog --checklist через script (псевдотерминал) с авто-подтверждением через TASK_TIMEOUT. Каталог и команду dialog генерирует Python (task-catalog). При недоступности диалога — дефолтный набор режима с сообщением и паузой SLEEP_AFTER_IMPORTANT_MESSAGE.
-# 4.4 Вопрос про force-режим (11 с, по умолчанию нет) и чекбоксы force-задач.
-# 4.5 Требования: docs/contracts/interactive-ui.md.
+# Фаза 4. Конфигурация запуска, отдельный этап
+# 4.1 Пароль production.vault из PYNTARA_VAULT_PASSWORD: при наличии — проверка и автоопределение источника, при отсутствии — уведомление с обратным отсчётом и fallback на default.vault.
+# 4.2 Режим minimal/server/desktop из PYNTARA_INSTALL_MODE, при отсутствии — автоопределение по системе.
+# 4.3 Задачи из PYNTARA_TASKS с разрешением зависимостей, при отсутствии — дефолтный набор режима из каталога (task-catalog).
+# 4.4 Интерактивные экраны не используются, разработка остановлена; функции select_* и prompt_password_input сохранены как deprecated-справка.
+# 4.5 Исторические требования: docs/contracts/interactive-ui.md.
 #
 # Фаза 5. Тесты бутстрапа
 # 5.1 Создам tests/test_inst.sh: source inst.sh, подмена функций моками (guard из п.10).
@@ -292,37 +292,28 @@ run_pyntara() {
 }
 fi
 
-# Implementation: phase 4.1 (vault password prompt)
-# Interactive screens start here, after the Python environment is ready
-# (interactive-ui contract section 1). All paths are overridable via
-# environment so tests never touch real system files.
+# Implementation: phase 4 (runtime configuration)
+# Vault and task paths are overridable via environment so tests never touch
+# real system files.
 PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
 DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
 DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
-# Countdown for every dialog choice screen, per interactive-ui contract
-# section 2.1.
+# Deprecated: interactive choice screens are not used; the timeouts remain
+# for the kept reference functions select_install_mode, select_tasks and
+# prompt_password_input.
 DIALOG_TIMEOUT="${PYNTARA_DIALOG_TIMEOUT:-11}"
-# Password entry is not a choice screen: a passphrase must be typed or copied
-# from a password manager, so it gets its own generous timeout instead of the
-# fast choice-screen countdown.
 VAULT_PASSWORD_TIMEOUT="${PYNTARA_VAULT_PASSWORD_TIMEOUT:-333}"
-# Plain-text messages are held on screen for this many seconds. Set in one
-# place for all phase-4 messages; tests set it to 0 to avoid waiting.
-MESSAGE_TIMEOUT="${PYNTARA_MESSAGE_TIMEOUT:-11}"
+# Countdown for the default vault fallback notice. The notice requires no
+# input; the user may interrupt with Ctrl-C.
+FALLBACK_NOTICE_TIMEOUT="${PYNTARA_FALLBACK_NOTICE_TIMEOUT:-7}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f show_message &>/dev/null; then
 show_message() {
-    # Print a message as plain text and hold it until Enter or the timeout.
-    # log() tees a timestamped line to the terminal and the install log, so
-    # the message is both visible and preserved. A blank line separates the
-    # message from the surrounding log output. Plain text with a pause is
-    # used instead of dialog --msgbox so messages never take over the screen.
-    # read is plain bash, not custom termios code, so the interactive UI
-    # contract that forbids termios in the installer is respected.
+    # Print a message as plain text without waiting for any input. The
+    # installer never blocks on the user: messages are informational.
     printf '\n' >&2
     log "$1"
-    read -r -t "$MESSAGE_TIMEOUT" || true
 }
 fi
 
@@ -330,18 +321,36 @@ fi
 if ! declare -f log_status &>/dev/null; then
 log_status() {
     # Print a status message as plain text without pausing for Enter.
-    # Status messages report what the installer decided; they must not consume
-    # the user's next keystroke, otherwise the following screen appears to
-    # need a second Enter. show_message is reserved for confirmations the
-    # user must read and acknowledge before continuing.
+    # Status messages report what the installer decided.
     printf '\n' >&2
     log "$1"
 }
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f show_countdown &>/dev/null; then
+show_countdown() {
+    # Print a message with a visible second-by-second countdown. No input is
+    # read: the notice is informational and the user may interrupt the
+    # installer with Ctrl-C. The message is logged once, the countdown is
+    # cosmetic.
+    local seconds="${1:-7}"
+    local message="$2"
+    printf '\n' >&2
+    log "$message"
+    local remaining
+    for ((remaining = seconds; remaining >= 1; remaining--)); do
+        printf '\r%s -- %ss left ' "$message" "$remaining" >&2
+        sleep 1
+    done
+    printf '\n' >&2
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f prompt_password_input &>/dev/null; then
 prompt_password_input() {
+    # Deprecated: not called by the installer flow, kept for reference only.
     # One password attempt, read from the terminal without echo. read -s is
     # plain bash, not custom termios code, so the interactive-ui contract
     # restriction still holds. dialog --passwordbox is deliberately not used:
@@ -408,19 +417,14 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f prompt_vault_password &>/dev/null; then
 prompt_vault_password() {
-    # Ask for the production vault password, 3 attempts with a
-    # VAULT_PASSWORD_TIMEOUT-second timeout each (interactive-ui contract
-    # section 4). The final
-    # choice is exported as PYNTARA_VAULT_PASSWORD together with
-    # PYNTARA_VAULT_SOURCE so the Python engine knows which vault to open.
-    # A missing production vault is reported loudly and falls back to the
-    # default vault immediately: asking for a password of a database that
-    # does not exist would waste the user's time for nothing.
-    # Non-interactive: a password already present in the environment skips
-    # the prompt entirely. PYNTARA_VAULT_SOURCE is honoured when set;
-    # otherwise the source is auto-detected: production wins when the
-    # password opens production.vault, default when it matches the
-    # well-known default.password. An unmatched password is an error.
+    # Resolve the vault password and source for the Python engine.
+    # Non-interactive: a password from the environment is used as-is when
+    # PYNTARA_VAULT_SOURCE is set, otherwise the source is auto-detected:
+    # production wins when the password opens production.vault, default
+    # when it matches the well-known default.password. An unmatched
+    # password is an error. Without a password the production vault cannot
+    # be opened and the installer falls back to the default vault after a
+    # countdown notice.
     if [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
         if [[ -n "${PYNTARA_VAULT_SOURCE:-}" ]]; then
             log_status "Vault password from environment, source: $PYNTARA_VAULT_SOURCE"
@@ -443,50 +447,11 @@ prompt_vault_password() {
         show_message "ERROR: PYNTARA_VAULT_PASSWORD does not match any vault."
         return 1
     fi
-    if [[ ! -f "$PRODUCTION_VAULT" ]]; then
-        show_message "ERROR: production vault not found at $PRODUCTION_VAULT. Falling back to default vault."
-        fallback_to_default_vault
-        return $?
-    fi
-
-    local attempt rc
-    for attempt in 1 2 3; do
-        if prompt_password_input "Attempt $attempt of 3." "Enter password of the production vault:"; then
-            rc=0
-        else
-            rc=$?
-        fi
-        # prompt_password_input returns 5 when no key was pressed within the
-        # timeout. The contract demands an immediate fallback in this case,
-        # because nobody is interacting with the installer anymore.
-        if [[ "$rc" -eq 5 ]]; then
-            show_message "No key pressed within $VAULT_PASSWORD_TIMEOUT seconds. Falling back to default vault."
-            fallback_to_default_vault
-            return $?
-        fi
-        # Cancel, ESC or an empty password means this attempt produced no
-        # password at all. Count it as a failed attempt and keep going.
-        if [[ "$rc" -ne 0 || -z "$VAULT_ATTEMPT_PASSWORD" ]]; then
-            show_message "No password entered. Attempt $attempt of 3 failed."
-            continue
-        fi
-        # A non-empty password is verified by the Python engine right away.
-        # A wrong password is the main reason the contract grants 3 attempts,
-        # so the check must happen here, not later inside the engine.
-        if check_vault_password "$VAULT_ATTEMPT_PASSWORD"; then
-            export PYNTARA_VAULT_PASSWORD="$VAULT_ATTEMPT_PASSWORD"
-            export PYNTARA_VAULT_SOURCE="production"
-            # A status line, not a confirmation: the install mode screen
-            # follows immediately, and a blocking read here would swallow the
-            # user's Enter meant for that screen (the double-Enter bug).
-            log_status "Production vault password accepted, using $PRODUCTION_VAULT"
-            return 0
-        fi
-        show_message "Wrong password for $PRODUCTION_VAULT. Attempt $attempt of 3 failed."
-    done
-
-    # All 3 attempts failed to produce a correct password: fall back.
-    show_message "All 3 attempts failed. Falling back to default vault."
+    # No password in the environment: the production vault cannot be opened,
+    # so the installer falls back to the default vault. A countdown notice
+    # informs the user; no input is required and the user may interrupt with
+    # Ctrl-C.
+    show_countdown "$FALLBACK_NOTICE_TIMEOUT" "ERROR: production vault password not provided. Falling back to default vault."
     fallback_to_default_vault
     return $?
 }
@@ -529,6 +494,7 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f select_install_mode &>/dev/null; then
 select_install_mode() {
+    # Deprecated: not called by the installer flow, kept for reference only.
     # One interactive mode-selection screen with a visible real-time countdown
     # (interactive-ui contract section 2.1, install-modes spec).
     # The list is printed with numbers; the user answers with a number or the
@@ -573,32 +539,27 @@ fi
 if ! declare -f prompt_install_mode &>/dev/null; then
 prompt_install_mode() {
     # Decide the install mode and export it for the Python engine.
-    # PYNTARA_INSTALL_MODE skips the screen entirely (unattended runs).
+    # PYNTARA_INSTALL_MODE fixes the mode; otherwise the system default is
+    # detected. No screen is shown.
     if [[ -n "${PYNTARA_INSTALL_MODE:-}" ]]; then
         log_status "Install mode from environment: $PYNTARA_INSTALL_MODE"
         return 0
     fi
-    local default_mode mode
-    default_mode="$(detect_default_mode)"
-    mode="$(select_install_mode "$default_mode")"
+    local mode
+    mode="$(detect_default_mode)"
     export PYNTARA_INSTALL_MODE="$mode"
-    # A status line, not a confirmation: the task dialog follows, and a
-    # blocking read here would swallow the user's Enter meant for that dialog.
-    log_status "Install mode selected: $mode (default was $default_mode)"
+    log_status "Install mode (default): $mode"
 }
 fi
 
 # Implementation: phase 4.3 (task selection)
-# The task catalog and the dialog command are produced by the Python engine
-# (task-catalog command), because tasks.yaml is YAML and the shell must not
-# parse it. The catalog is the single source of truth; mode membership lives
-# inside each task entry.
+# The task catalog is produced by the Python engine (task-catalog command),
+# because tasks.yaml is YAML and the shell must not parse it. The catalog is
+# the single source of truth; mode membership lives inside each task entry.
 
-# Countdown for the task selection dialog (interactive-ui contract section 2.1).
+# Timeout for the deprecated task selection dialog, still passed by
+# load_task_catalog to the Python command.
 TASK_TIMEOUT="${PYNTARA_TASK_TIMEOUT:-30}"
-# Pause after an important message that must be read, e.g. the fallback notice
-# when the dialog screen could not be shown.
-SLEEP_AFTER_IMPORTANT_MESSAGE="${PYNTARA_SLEEP_AFTER_IMPORTANT_MESSAGE:-7}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f load_task_catalog &>/dev/null; then
@@ -622,6 +583,7 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f select_tasks &>/dev/null; then
 select_tasks() {
+    # Deprecated: not called by the installer flow, kept for reference only.
     # Show the dialog --checklist inside a pseudo-tty (script -qec) so it
     # works even where stdin is not a terminal. dialog writes the checked
     # task names into TASK_RESULT_FILE through --output-fd 3. Exit codes:
@@ -672,16 +634,14 @@ fi
 if ! declare -f prompt_tasks &>/dev/null; then
 prompt_tasks() {
     # Decide the task set and export it for the Python engine.
-    # PYNTARA_TASKS skips the screen (unattended runs), but dependencies are
-    # still resolved so the exported set is always complete and ordered.
+    # PYNTARA_TASKS fixes the selection; dependencies are still resolved so
+    # the exported set is always complete and ordered. Without the variable
+    # the mode defaults from the catalog are used. No screen is shown.
     local mode="${PYNTARA_INSTALL_MODE:-}"
     if [[ -z "$mode" ]]; then
         show_message "ERROR: install mode not selected before task selection."
         return 1
     fi
-    # One result file per run, inside the state directory.
-    TASK_RESULT_FILE="$STATE_DIR/tasks-selection"
-    : > "$TASK_RESULT_FILE"
     if [[ -n "${PYNTARA_TASKS:-}" ]]; then
         if ! resolve_tasks "$mode" "$PYNTARA_TASKS"; then
             show_message "ERROR: could not resolve tasks."
@@ -691,29 +651,13 @@ prompt_tasks() {
         log_status "Tasks from environment resolved: $PYNTARA_TASKS"
         return 0
     fi
+    TASK_RESULT_FILE="$STATE_DIR/tasks-selection"
     if ! load_task_catalog "$mode"; then
         show_message "ERROR: could not load the task catalog."
         return 1
     fi
-    if ! select_tasks; then
-        # No usable selection: the dialog timed out, was cancelled, or could
-        # not be shown. All three mean the user made no explicit choice, so
-        # the default set for the mode is used and the user is told, with a
-        # pause so the message can be read.
-        show_message "No task selection was made. Using default tasks: $TASKS_DEFAULT"
-        sleep "$SLEEP_AFTER_IMPORTANT_MESSAGE"
-        export PYNTARA_TASKS="$TASKS_DEFAULT"
-        log_status "Using default tasks after no selection: $PYNTARA_TASKS"
-        return 0
-    fi
-    local selection
-    selection="$(cat "$TASK_RESULT_FILE")"
-    if ! resolve_tasks "$mode" "$selection"; then
-        show_message "ERROR: could not resolve the selected tasks."
-        return 1
-    fi
-    export PYNTARA_TASKS="$TASKS_RESOLVED"
-    log_status "Tasks selected: $PYNTARA_TASKS"
+    export PYNTARA_TASKS="$TASKS_DEFAULT"
+    log_status "Using default tasks for $mode: $PYNTARA_TASKS"
 }
 fi
 
@@ -727,18 +671,16 @@ main() {
     install_uv
     fetch_source
     setup_python
-    # Interactive phase 4.1: the vault password screen runs after the Python
-    # environment is ready (interactive-ui contract section 1). A vault
-    # failure is fatal: the engine cannot provision without secrets.
+    # Phase 4.1: the vault password is resolved after the Python environment
+    # is ready. A vault failure is fatal: the engine cannot provision
+    # without secrets.
     if ! prompt_vault_password; then
         log "Vault setup failed, aborting"
         exit 1
     fi
-    # Interactive phase 4.2: the install mode screen runs after the vault is
-    # open, before the engine starts (interactive-ui contract section 3).
+    # Phase 4.2: the install mode is fixed after the vault is open.
     prompt_install_mode
-    # Interactive phase 4.3: the task selection screen runs after the mode is
-    # known, so the dialog shows exactly the tasks of that mode.
+    # Phase 4.3: the task set is fixed after the mode is known.
     prompt_tasks
     run_pyntara "$@"
     log "Bootstrap finished"

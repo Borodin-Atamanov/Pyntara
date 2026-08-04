@@ -5,7 +5,7 @@ This document is the source of truth for the bootstrap installer inst.sh.
 ## 1. Entry point
 
 User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
-The installer runs non-interactively. The production vault password is entered once with read -s and passed via the PYNTARA_VAULT_PASSWORD environment variable. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
+The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
 
 ## 2. Package installation: optimistic apt strategy
@@ -17,10 +17,9 @@ All apt operations run with DEBIAN_FRONTEND=noninteractive.
 
 ## 3. Installed packages (in order)
 
-dialog — required for all interactive screens before anything else.
+dialog — kept for the deprecated reference functions select_tasks and select_install_mode; not used by the installer flow.
 python3, python3-venv, git, curl, ca-certificates — minimal runtime dependencies.
-bsdutils — provides script(1), which allocates a pseudo-tty for dialog screens
-where stdin is not a terminal (e.g. under sudo).
+bsdutils — provides script(1), kept for the deprecated reference function select_tasks.
 uv — Python package manager, installed via official Astral script.
 
 ## 4. Source delivery: git only
@@ -75,7 +74,7 @@ If a function is already declared (test harness injected a mock via source), the
 
 Deprecated: the interactive screens do not work and their development is stopped. This section is kept for reference only. All user interaction is replaced by environment variables.
 
-Password: PYNTARA_VAULT_PASSWORD (required, entered via read -s before sudo).
+Password: PYNTARA_VAULT_PASSWORD (optional; without it the default vault is used after a countdown notice).
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
 Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
 Task selection: PYNTARA_TASKS (optional, default task set when omitted).
