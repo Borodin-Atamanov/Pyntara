@@ -1,5 +1,7 @@
 # Interactive UI contract
 
+Deprecated. The interactive terminal UX described in this document does not work and its development is stopped. The document is kept for reference only. The installer runs non-interactively: all input is supplied through environment variables (PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS), see docs/contracts/bootstrap.md section 11.
+
 This document is the source of truth for interactive terminal UX in Pyntara.
 
 ## 1. Scope and boundaries

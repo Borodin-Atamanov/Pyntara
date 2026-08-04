@@ -4,7 +4,8 @@ This document is the source of truth for the bootstrap installer inst.sh.
 
 ## 1. Entry point
 
-User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
+User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
+The installer runs non-interactively. The production vault password is entered once with read -s and passed via the PYNTARA_VAULT_PASSWORD environment variable. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
 
 ## 2. Package installation: optimistic apt strategy
@@ -72,8 +73,14 @@ If a function is already declared (test harness injected a mock via source), the
 
 ## 11. Interactive screens (via dialog)
 
-All user interaction goes through the dialog utility. See docs/contracts/interactive-ui.md for the full UX flow. Summary:
+Deprecated: the interactive screens do not work and their development is stopped. This section is kept for reference only. All user interaction is replaced by environment variables.
 
+Password: PYNTARA_VAULT_PASSWORD (required, entered via read -s before sudo).
+Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
+Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
+Task selection: PYNTARA_TASKS (optional, default task set when omitted).
+
+Historical summary of the removed flow (for reference):
 Password prompt for production.vault (VAULT_PASSWORD_TIMEOUT 333s, 3 attempts, fallback to default.vault).
 Install mode selector: minimal / server / desktop (auto-select default after DIALOG_TIMEOUT).
 Task selection checkboxes (30s auto-accept via dialog --timeout, fallback to defaults with SLEEP_AFTER_IMPORTANT_MESSAGE).

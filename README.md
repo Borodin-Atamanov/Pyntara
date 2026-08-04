@@ -8,8 +8,20 @@ Pyntara turns a fresh Kubuntu installation into a fully configured workstation o
 ## Start
 
 ```bash
-curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash inst.sh
+curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
 ```
+
+The installer runs non-interactively. The only required input is the production vault password, entered once via read -s (hidden input) and passed to the installer through the PYNTARA_VAULT_PASSWORD environment variable.
+
+Optional environment variables can be added inside the sudo bash -c block, separated by spaces before bash inst.sh:
+
+PYNTARA_VAULT_SOURCE — production or default. When omitted, the source is auto-detected from the password.
+
+PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is auto-detected from the system (desktop or server).
+
+PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
+
+The interactive installer variant does not work and its development is stopped.
 
 ## Documentation index
 
