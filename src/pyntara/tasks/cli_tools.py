@@ -17,52 +17,86 @@ from pyntara.utils import parse_commented_lines, run_command
 
 # Console utilities installed in every install mode. The list mirrors the
 # classic apt package-list format: one package per line, # starts a comment.
-# Packages owned by dedicated parts of the system stay out of this list:
-# curl and git come from inst.sh, ssh tooling from the ssh task,
-# zram-tools from the zram task, ffmpeg and imagemagick from the apps task.
+# Each package is annotated with what it does. Packages owned by dedicated
+# parts of the system stay out of this list: curl and git come from inst.sh,
+# ssh tooling from the ssh task, zram-tools from the zram task, ffmpeg and
+# imagemagick from the apps task.
 PACKAGES = parse_commented_lines(
     """
     # file managers
+    # mc: Midnight Commander, two-panel console file manager
     mc
+    # nnn: lightweight terminal file browser
     nnn
 
-    # archives and compression
+    # archivers
+    # unrar: extractor for the proprietary RAR archive format
     unrar
+    # unrar-free: free replacement for unrar
     unrar-free
+    # unzip: ZIP archive extractor
     unzip
 
     # system information
+    # inxi: full system information report
     inxi
+    # lsscsi: list SCSI and other storage devices
     lsscsi
-    ncdu
+    # lshw: detailed hardware information
+    lshw
+
+    # resource monitoring
+    # htop: interactive process viewer
     htop
-    nload
+    # nmon: system performance monitor for CPU, memory, network, disk
     nmon
+    # ncdu: disk usage analyzer with interactive curses interface
+    ncdu
+    # nload: console network traffic monitor
+    nload
+
+    # network tools
+    # net-tools: classic networking tools, ifconfig, netstat, route, arp
     net-tools
+    # nmap: network scanner
+    nmap
+    # tcpdump: command-line packet analyzer
+    tcpdump
+    # traceroute: trace the network path to a remote host
     traceroute
+    # whois: client for the whois directory service
     whois
+    # wget: non-interactive network downloader
+    wget
 
     # arp is a command from net-tools, which is listed above
     # bind-utils is the RHEL package name; dnsutils covers dig on Ubuntu
+    # DNS utilities
+    # dnsutils: DNS utilities dig, nslookup and host
     dnsutils
-    bind9-utils
 
-    # file and disk tools
+    # disk and file tools
+    # exfat-fuse: read and write exFAT filesystems through FUSE
     exfat-fuse
+    # fdupes: find and remove duplicate files
     fdupes
-    lshw
 
-    # media information
+    # media tools
+    # mediainfo: technical details of media files, codecs and streams
     mediainfo
+    # exiftool: read and write EXIF and IPTC metadata in media files
     exiftool
 
-    # network and misc utilities
-    nmap
-    tcpdump
-    wget
+    # automation and configuration
+    # expect: automate interactive terminal programs
     expect
+    # augeas-tools: command-line tools for the Augeas configuration editor
     augeas-tools
+
+    # small utilities
+    # calc: arbitrary precision calculator
     calc
+    # hollywood: decorative fake Hollywood-style terminal activity
     hollywood
     """
 )
