@@ -77,7 +77,7 @@ Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
 Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
 Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).
 
-The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. docs/contracts/interactive-ui.md is historical reference only.
+The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. The interactive UI contract was deleted.
 
 ## 12. Secrets files
 

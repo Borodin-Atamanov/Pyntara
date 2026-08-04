@@ -41,13 +41,13 @@ The contract architecture describes an enterprise-style runtime: a config preced
 - utils.py: run_command with timeout and return-code checking, no shell=True.
 - systemd.py and telemetry.py with the telemetry_setup task.
 
-## 6. Documentation to update after approval
+## 6. Documentation updates (completed)
 
-- docs/contracts/architecture.md: rewrite to the simplified module map.
-- docs/contracts/task-model.md: remove the state machine, keep idempotency and the task catalog, now in code.
-- docs/contracts/interactive-ui.md: delete or mark as fully historical.
-- docs/guides/project-structure.md: drop the removed modules.
-- docs/spec/install-modes.md and docs/contracts/bootstrap.md: drop task-catalog references.
+- docs/contracts/architecture.md: rewritten to the simplified module map.
+- docs/contracts/task-model.md: state machine removed, idempotency and the in-code task catalog kept.
+- docs/contracts/interactive-ui.md: deleted.
+- docs/guides/project-structure.md: dropped the removed modules.
+- docs/spec/install-modes.md and docs/contracts/bootstrap.md: task-catalog references dropped.
 
 ## 7. Resilience rule
 

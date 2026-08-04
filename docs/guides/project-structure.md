@@ -36,19 +36,19 @@ secrets/production.password — Password for production.vault. Not in git (.giti
 ## src/pyntara/
 
 src/pyntara/__init__.py — Package version and public exports.
-src/pyntara/pyntara.py — Typer commands and composition root that builds immutable RunContext.
-src/pyntara/context.py — RunContext assembly and dependency injection wiring.
-src/pyntara/models.py — Pydantic configuration models and dataclasses such as TaskResult.
-src/pyntara/logging_setup.py — Logger initialization, syslog integration, and secret masking filters.
+src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
+src/pyntara/task_catalog.py — Task metadata in code: TASKS, MODES, validate_mode, default_tasks, resolve, unknown_tasks.
+src/pyntara/models.py — TaskResult dataclass.
+src/pyntara/context.py — Context frozen dataclass.
+src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
+src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
+
+Not implemented yet (target modules, see docs/simplified-architecture.md):
 src/pyntara/secrets_store.py — Vault loading/decryption and controlled secret access API.
-src/pyntara/config_loader.py — Config merge logic with priority: CLI env file defaults.
-src/pyntara/task_protocol.py — typing.Protocol contract for all tasks.
-src/pyntara/task_registry.py — Task registration and metadata lookup by task name.
-src/pyntara/task_runner.py — Task execution engine, status handling, idempotency, and force mode.
-src/pyntara/config_edit.py — Targeted config editing adapters (augeas, comby, structured formats, managed blocks fallback).
-src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, queues, retries, and scheduling.
-src/pyntara/systemd.py — Creation/update of systemd unit files and timers.
+src/pyntara/config_edit.py — Managed-block config editing helper.
 src/pyntara/utils.py — Shared helpers (subprocess wrappers with timeout and return-code checks, path/network helpers).
+src/pyntara/systemd.py — Creation/update of systemd unit files and timers.
+src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, queues, retries, and scheduling.
 
 ### src/pyntara/tasks/
 
@@ -75,5 +75,5 @@ task_data/.gitkeep — Keeps empty directory in git; runtime task state is store
 
 This file describes the target structure for the project as implementation work progresses.
 Runtime-generated sensitive data must not be committed.
-Task implementations must stay idempotent and use explicit dependency passing via RunContext.
+Task implementations must stay idempotent and use explicit dependency passing via Context.
 Default datetime format is YYYY-MM-DD-HH-MM-SS unless a compatibility exception is required.

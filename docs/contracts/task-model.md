@@ -7,7 +7,7 @@ repeated runs must not destroy an already configured system
 
 If target state is already reached, a task normally skips changes.
 
-Tasks must support force mode that reruns a task even after completion.
+Tasks must support force mode that reruns a task even after completion. Force mode is a list of task names (PYNTARA_FORCE_TASKS); a forced task reruns even when the target state is already reached.
 
 ## Task configuration
 
@@ -16,13 +16,9 @@ what the task does
 
 ## Structure
 
-Preferred structure:
-each task in a separate file
-dedicated tasks directory
-
-Task file name must match task name in configuration and documentation
-
-Task data is stored in a shared task-data directory, in a subdirectory matching task name.
+Each task is a separate Python module in src/pyntara/tasks/.
+Task file name must match task name in the catalog.
+Task data is stored in the task-data directory, in a subdirectory matching the task name.
 
 ## Example
 
@@ -30,7 +26,7 @@ A meaningful task: install and configure SSH server, patch daemon config, add pr
 
 ## Task catalog
 
-Each task is a separate Python module in src/pyntara/tasks/. Task file name matches task name in configuration.
+The catalog lives in code in src/pyntara/task_catalog.py. Each entry has name, description, dependencies and mode membership.
 
 users — Create and configure i, j, k users and required groups. User i is main user, all belong to sudo users.
 hostname — Generate and persist random 9-character hostname.
@@ -51,21 +47,22 @@ telemetry_setup — Initial telemetry service setup and first-run queue bootstra
 
 Enabling a task auto-enables all its required dependencies transitively.
 Disabling a task does not auto-disable dependent tasks.
-Task set and metadata are defined in configuration (tasks.yaml).
+Task set and metadata are defined in code in task_catalog.py.
 
 ## Task contract (Python)
 
-A task is implemented as a function that accepts RunContext and optional typed parameters.
+A task is a plain function task(ctx) -> TaskResult.
 
-Task return type: TaskResult (dataclass) with fields:
+TaskResult is a dataclass with fields:
 success
-changes made
-error text (if any)
+changed
+message (optional)
+error (optional)
 
 Data transfer between tasks is explicit only:
-through API of objects inside RunContext (e.g., secrets store)
-or through orchestrator passing required values as arguments to the next task
+through Context fields (e.g., secrets)
+or through the orchestrator passing required values as arguments to the next task
 
-Hidden data exchange via shared mutable state outside RunContext and outside arguments is forbidden.
+Hidden data exchange via shared mutable state outside Context and outside arguments is forbidden.
 
-For task contract use typing.Protocol (structural typing), not mandatory ABC inheritance.
+No typing.Protocol, no ABC inheritance.

@@ -28,9 +28,8 @@ The interactive installer variant does not work and its development is stopped.
 AI-Agent rules: `AGENTS.md`
 
 Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions testable in code:
-`docs/contracts/architecture.md` — runtime layers, composition root, RunContext, dependency injection
+`docs/contracts/architecture.md` — runtime boundaries, composition root, Context, resilience rule
 `docs/contracts/bootstrap.md` — bootstrap installer contract for inst.sh
-`docs/contracts/interactive-ui.md` — dialog-based interactive terminal UX flow
 `docs/contracts/task-model.md` — task protocol, TaskResult, idempotency contract, full task catalog with dependencies
 
 Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
@@ -45,3 +44,6 @@ Guides — how to work with the project:
 `docs/guides/project-structure.md` — repository layout, file responsibilities, config editing tools
 `docs/guides/project-rules.md` — code conventions: output policy, datetime format, engineering standards
 `docs/guides/developer-guide.md` — quick start, testing, CI, commit workflow
+
+Architecture decisions:
+`docs/simplified-architecture.md` — approved simplification rationale, resilience rule

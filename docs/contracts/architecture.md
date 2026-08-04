@@ -6,92 +6,76 @@ All new modules and tasks must follow this contract.
 ## 1. Runtime boundaries
 
 inst.sh - bootloader
-pyntara.py (composition root and command entry).
-config_loader.py (configuration normalization and validation).
-context.py (RunContext construction and dependency wiring).
-task_runner.py (task discovery and execution).
+pyntara.py (command entry and composition root)
+task_catalog.py (task metadata, mode defaults, dependency resolution)
+context.py (Context construction)
+task_runner.py (task discovery and execution)
+tasks/*.py (one task per module)
 
 ## 2. Composition root
 
-The run command in pyntara.py is the only place that is allowed to assemble runtime state:
+The run command in pyntara.py is the only place that reads the environment and assembles runtime state:
 
-resolve configuration from defaults, file, env, and CLI overrides
-initialize logging
-initialize secret storage
-create RunContext
-create registry/runner and execute selected tasks
+resolve the install mode (PYNTARA_INSTALL_MODE or the auto-detected default)
+resolve the task set (PYNTARA_TASKS or the mode defaults, dependencies resolved)
+resolve the force task list (PYNTARA_FORCE_TASKS)
+create Context
+launch the runner
 
-No task may create its own global singleton for config, secrets, or logging.
+No task may read the environment, create global singletons, or assemble runtime state itself.
 
-## 3. Configuration contract
+## 3. Configuration
 
-config_loader.load_runtime_configuration resolves config with this strict precedence:
+There is no config file and no CLI options. All runtime configuration comes from environment variables:
 
-CLI flags > environment variables > config file > built-in defaults
+PYNTARA_INSTALL_MODE - minimal, server or desktop. When unset, the mode is auto-detected (desktop when a desktop session or process is present, otherwise server). An unknown value shows the resilience notice and falls back to the auto-detected mode.
+PYNTARA_TASKS - space-separated task names. When unset, the mode defaults are used. Unknown names are reported and ignored.
+PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored.
+PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
+PYNTARA_NOTICE_TIMEOUT - seconds the resilience notice stays visible (default 7).
+PYNTARA_TASK_DATA_DIR - task data root (default /var/lib/pyntara/task-data).
 
-The merged payload is validated by Pydantic models from models.py.
-Invalid schemas must fail fast with explicit errors.
+## 4. Context contract
 
-## 4. RunContext contract
+Context in context.py is a frozen dataclass. It is the only carrier for cross-cutting runtime dependencies:
 
-RunContext in context.py dataclass(frozen=True)).
-It is the only carrier for cross-cutting runtime dependencies:
+install_mode
+vault_password
+vault_source
+force_tasks (frozenset of task names)
+task_data_root (Path)
 
-resolved AppConfig
-install mode config
-task catalog
-secret store API
-logger
-task data root directory
-
-Task catalog is wrapped in a read-only mapping to prevent accidental mutation.
-
-RunContext is passed explicitly through calls.
-Implicit state reads from os.environ (except dedicated components), module-level variables, and other hidden sources are forbidden.
+Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.
 
 ## 5. Task contract
 
-Task entrypoints use structural typing (typing.Protocol) from task_protocol.py:
+A task is a plain function:
 
-(ctx: RunContext, *, force: bool = False) -> TaskResult
+task(ctx) -> TaskResult
 
-TaskResult is a dataclass with explicit outcome fields:
+TaskResult is a dataclass with fields:
 
 success
 changed
-optional message
-optional error
+message (optional)
+error (optional)
 
-Task-to-task data sharing is allowed only through explicit arguments or RunContext dependencies.
+No typing.Protocol, no ABC inheritance, no registry.
 
-Task definitions are declarative manifests loaded from tasks.yaml.
-Each task manifest includes runtime execution metadata such as:
+Task definitions live in code in task_catalog.py. Each entry has name, description, dependencies and mode membership.
 
-dependencies (depends_on)
-conflicts (conflicts_with)
-capability requirements (requires_root, requires_network, requires_secrets)
-timeout and state schema version (timeout_sec, state_version)
-idempotency control flags
+Task-to-task data sharing is allowed only through Context fields or explicit arguments.
 
 Full task model contract: docs/contracts/task-model.md.
 
-## 6. State and side effects
+## 6. Idempotency and side effects
+
+Each task must be idempotent: repeated runs must not destroy an already configured system. A task checks the real system state (user exists, file present, service active) and skips changes when the goal is already reached. Force mode reruns a task even after completion.
 
 Allowed explicit shared state channels:
 
 encrypted vault files (secrets/*.vault)
-task state files under task_data/<task-name>/
-
-Task state is persisted in JSON and must keep at least:
-
-status (pending, running, done, failed, skipped)
-run timestamps and attempt counter
-input fingerprint for idempotent skip decisions
-structured error and result fields
-
-The only allowed shared state outside one process memory is explicit external channels:
-
-encrypted secrets storage file
+task data files under task_data/<task-name>/
 telemetry file queue
 named IPC command channels
 
@@ -100,30 +84,24 @@ Exchange boundaries between processes of different systemd services must be expl
 Forbidden patterns:
 
 module-level mutable state for runtime business data
-implicit os.environ reads inside task modules
+implicit environment reads inside task modules
 hidden data exchange via ad-hoc globals
 
-## 7. Typing and architecture patterns
+## 7. Resilience rule
 
-For task contract use typing.Protocol (structural typing), not mandatory ABC inheritance.
-
-Stateful classes are allowed where encapsulation is truly needed (example: telemetry delivery client).
-Such classes are created once at entrypoint and passed via RunContext, not recreated inside tasks (dependency injection).
-
-Using stdlib logging with module-named logger and SysLogHandler to system journal is an allowed exception to shared-state restrictions, because this is infrastructure layer, not business logic.
+The program must keep working whenever it can and must not crash on recoverable input errors. An invalid environment value shows an error notice naming the problem and the applied fallback, waits a visible countdown (plain numbers, default 7 seconds, PYNTARA_NOTICE_TIMEOUT) so the user can interrupt with Ctrl-C, then continues with the fallback. Only a condition with no possible fallback stops the program.
 
 ## 8. Guardrails
 
 The architecture is guarded by tests:
 
-config precedence tests
-RunContext immutability and read-only catalog tests
-task runner idempotency/force behavior tests
+task catalog tests (mode defaults, dependency resolution, validation)
+entry point tests (mode resolution, task set, force list, resilience rule)
+task runner tests (missing modules, failures, continue-on-error)
 
 Any change that breaks these guarantees must update this document and corresponding tests in the same pull request.
 
 ## 9. Secrets management
 
 Full secrets model specification: `docs/spec/secrets-model.md`.
-VaultStore API is part of RunContext contract (section 4).
 Bootstrap-time vault resolution is specified in `docs/contracts/bootstrap.md` (section 12).
