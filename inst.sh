@@ -312,7 +312,6 @@ if ! declare -f show_message &>/dev/null; then
 show_message() {
     # Print a message as plain text without waiting for any input. The
     # installer never blocks on the user: messages are informational.
-    printf '\n' >&2
     log "$1"
 }
 fi
@@ -322,7 +321,6 @@ if ! declare -f log_status &>/dev/null; then
 log_status() {
     # Print a status message as plain text without pausing for Enter.
     # Status messages report what the installer decided.
-    printf '\n' >&2
     log "$1"
 }
 fi
@@ -336,13 +334,13 @@ show_countdown() {
     # cosmetic.
     local seconds="${1:-7}"
     local message="$2"
-    printf '\n' >&2
     log "$message"
     local remaining
     for ((remaining = seconds; remaining >= 1; remaining--)); do
         printf '\r%s -- %ss left ' "$message" "$remaining" >&2
         sleep 1
     done
+    # The trailing newline ends the carriage-return countdown line.
     printf '\n' >&2
 }
 fi
@@ -357,15 +355,13 @@ prompt_password_input() {
     # dialog renders its box on stderr and misbehaves where stdout is not a
     # terminal (e.g. under sudo), which made the field unreadable and input
     # impossible. The two arguments separate the attempt line from the prompt
-    # line, both on stderr, with a blank separator line first so the input is
-    # clearly set apart from the install log. stdout stays clean. Exit codes
-    # mirror dialog: 0 OK, 5 timeout, 1 cancel/EOF.
+    # line, both on stderr. stdout stays clean. Exit codes mirror dialog:
+    # 0 OK, 5 timeout, 1 cancel/EOF.
     # read -t fires SIGALRM on timeout and returns 142 (128+14); dialog
     # reported a timeout as 5, so map 142 to 5 to keep prompt_vault_password
     # semantics unchanged.
     VAULT_ATTEMPT_PASSWORD=""
     local rc
-    printf '\n' >&2
     printf '%s\n' "$1" >&2
     printf '%s\n' "$2" >&2
     read -r -s -t "$VAULT_PASSWORD_TIMEOUT" VAULT_ATTEMPT_PASSWORD
@@ -503,8 +499,6 @@ select_install_mode() {
     # line is read without time pressure.
     local default_mode="$1"
     local remaining answer mode
-    # A blank line separates the selector from the install log above it.
-    printf '\n' >&2
     for ((remaining = DIALOG_TIMEOUT; remaining >= 1; remaining--)); do
         printf '\rInstall mode (default %s): 1 minimal, 2 server, 3 desktop -- %ss left ' "$default_mode" "$remaining" >&2
         # read -t 1 -n 1 returns 142 on timeout (SIGALRM), 0 on any key.
@@ -595,8 +589,6 @@ select_tasks() {
     # stderr is. Sending it to stderr makes the dialog visible and keeps
     # stdout clean for the result protocol.
     local rc
-    # A blank line separates the dialog from the install log above it.
-    printf '\n' >&2
     # The if guard captures the exit code without triggering errexit.
     if script -qec "$TASK_DIALOG_CMD" /dev/null 1>&2; then
         rc=0
