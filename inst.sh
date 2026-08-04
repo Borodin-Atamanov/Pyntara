@@ -38,7 +38,7 @@ set -euo pipefail
 # Функция run_pyntara: uv run pyntara без ограничения по времени (контракт п.6, п.8).
 #
 # Фаза 4. Конфигурация запуска, отдельный этап
-# 4.1 Пароль production.vault из PYNTARA_VAULT_PASSWORD: при наличии — проверка и автоопределение источника, при отсутствии — уведомление с обратным отсчётом и fallback на default.vault.
+# 4.1 Пароль production.vault из PYNTARA_VAULT_PASSWORD: при наличии — проверка и автоопределение источника, при отсутствии или несовпадении ни с одним хранилищем — уведомление с обратным отсчётом и fallback на default.vault.
 # 4.2 Режим minimal/server/desktop из PYNTARA_INSTALL_MODE, при отсутствии — автоопределение по системе.
 # 4.3 Задачи из PYNTARA_TASKS с разрешением зависимостей, при отсутствии — дефолтный набор режима из каталога (task-catalog).
 # 4.4 Интерактивные экраны не используются, разработка остановлена; функции select_* и prompt_password_input сохранены как deprecated-справка.
@@ -418,9 +418,8 @@ prompt_vault_password() {
     # PYNTARA_VAULT_SOURCE is set, otherwise the source is auto-detected:
     # production wins when the password opens production.vault, default
     # when it matches the well-known default.password. An unmatched
-    # password is an error. Without a password the production vault cannot
-    # be opened and the installer falls back to the default vault after a
-    # countdown notice.
+    # password falls back to the default vault after a countdown notice,
+    # same as when no password is provided at all.
     if [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
         if [[ -n "${PYNTARA_VAULT_SOURCE:-}" ]]; then
             log_status "Vault password from environment, source: $PYNTARA_VAULT_SOURCE"
@@ -440,8 +439,9 @@ prompt_vault_password() {
                 return 0
             fi
         fi
-        show_message "ERROR: PYNTARA_VAULT_PASSWORD does not match any vault."
-        return 1
+        show_countdown "$FALLBACK_NOTICE_TIMEOUT" "ERROR: PYNTARA_VAULT_PASSWORD does not match any vault. Falling back to default vault."
+        fallback_to_default_vault
+        return $?
     fi
     # No password in the environment: the production vault cannot be opened,
     # so the installer falls back to the default vault. A countdown notice

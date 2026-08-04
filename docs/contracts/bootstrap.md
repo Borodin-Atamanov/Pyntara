@@ -5,7 +5,7 @@ This document is the source of truth for the bootstrap installer inst.sh.
 ## 1. Entry point
 
 User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
-The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
+The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD, or with a password that matches no vault, the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
 
 ## 2. Package installation: optimistic apt strategy
@@ -74,7 +74,7 @@ If a function is already declared (test harness injected a mock via source), the
 
 Deprecated: the interactive screens do not work and their development is stopped. This section is kept for reference only. All user interaction is replaced by environment variables.
 
-Password: PYNTARA_VAULT_PASSWORD (optional; without it the default vault is used after a countdown notice).
+Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no vault, the default vault is used after a countdown notice).
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
 Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
 Task selection: PYNTARA_TASKS (optional, default task set when omitted).

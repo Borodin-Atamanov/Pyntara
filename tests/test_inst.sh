@@ -1738,9 +1738,11 @@ EOF
     rm -rf "$tmp"
 }
 
-inst_prompt_vault_password_uses_environment_wrong_password() {
-    # A PYNTARA_VAULT_PASSWORD matching no vault is a fatal error with a
-    # loud message and a non-zero exit code.
+inst_prompt_vault_password_uses_environment_wrong_password_falls_back_to_default() {
+    # A PYNTARA_VAULT_PASSWORD matching no vault is not fatal: the installer
+    # shows a countdown notice and falls back to the default vault, exactly
+    # like the no-password path. The production vault check still runs once
+    # with the candidate password.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
@@ -1757,23 +1759,37 @@ cat > "$UV_STDIN_FILE"
 exit "$UV_EXIT_CODE"
 EOF
     chmod +x "$bin/uv"
-    local rc
-    set +e
-    PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_SOURCE_DIR="$tmp/repo" \
         PYNTARA_PRODUCTION_VAULT="$tmp/repo/secrets/production.vault" \
         PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
         PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
         PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        PYNTARA_FALLBACK_NOTICE_TIMEOUT=0 \
         UV_CALLS_FILE="$uv_calls" UV_STDIN_FILE="$uv_stdin" UV_EXIT_CODE=1 \
         PYNTARA_VAULT_PASSWORD="wrong" \
-        bash -c 'source "$1"; prompt_vault_password' _ "$INSTALLER" > "$tmp/out" 2>&1
-    rc=$?
-    set -e
-    assert_equals "1" "$rc" "exit code on unmatched env password" || {
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"; echo "VAULT_PASSWORD=$PYNTARA_VAULT_PASSWORD"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "Falling back to default vault" "fallback notice" || {
         rm -rf "$tmp"
         return 1
     }
-    assert_contains "$(cat "$tmp/out")" "PYNTARA_VAULT_PASSWORD does not match any vault" "loud error message" || {
+    assert_contains "$output" "VAULT_SOURCE=default" "default source export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_PASSWORD=fallback-password" "default password export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    local uv_call_count
+    uv_call_count="$(wc -l < "$uv_calls")"
+    assert_equals "1" "$uv_call_count" "one uv call for the production check" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    local stdin_content
+    stdin_content="$(cat "$uv_stdin")"
+    assert_equals "wrong" "$stdin_content" "candidate password delivered via stdin" || {
         rm -rf "$tmp"
         return 1
     }
@@ -1842,7 +1858,7 @@ run_test inst_prompt_tasks_exports_defaults
 run_test inst_prompt_vault_password_uses_environment_with_source
 run_test inst_prompt_vault_password_uses_environment_autodetect_production
 run_test inst_prompt_vault_password_uses_environment_autodetect_default
-run_test inst_prompt_vault_password_uses_environment_wrong_password
+run_test inst_prompt_vault_password_uses_environment_wrong_password_falls_back_to_default
 run_test inst_main_calls_root_then_dirs_then_log_in_order
 
 echo "Tests passed: $pass_count, failed: $fail_count, skipped: $skip_count"
