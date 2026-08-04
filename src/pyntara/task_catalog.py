@@ -40,6 +40,11 @@ TASKS: tuple[TaskDef, ...] = (
         modes=("minimal", "server", "desktop"),
     ),
     TaskDef(
+        name="cli_tools",
+        description="Install console utilities: mc, htop, hollywood.",
+        modes=("minimal", "server", "desktop"),
+    ),
+    TaskDef(
         name="zram",
         description="Configure aggressive ZRAM by CPU and RAM.",
         modes=("server", "desktop"),

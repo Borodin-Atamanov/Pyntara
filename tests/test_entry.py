@@ -28,6 +28,9 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     # reports the choice and runs with it (resilience rule).
     _clear_env(monkeypatch)
     monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    # All task modules are mocked as not implemented so no real dpkg or apt
+    # command runs inside the unit test.
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 1  # no task modules implemented yet
     assert "Install mode not set, using detected default: server" in result.output
@@ -43,6 +46,9 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
     monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
     monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    # All task modules are mocked as not implemented so no real dpkg or apt
+    # command runs inside the unit test.
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 1  # no task modules implemented yet
     assert (
@@ -89,6 +95,9 @@ def test_run_unknown_mode_countdown_has_no_unit_letter(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
     monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "2")
     monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    # All task modules are mocked as not implemented so no real dpkg or apt
+    # command runs inside the unit test.
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     slept: list[float] = []
     monkeypatch.setattr("pyntara.pyntara.time.sleep", lambda seconds: slept.append(seconds))
     result = runner.invoke(app, [])
@@ -130,10 +139,12 @@ def test_run_pauses_on_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_uses_mode_defaults_and_reports_not_implemented(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # With no task modules yet, every default task must be reported as failed
-    # and the command must exit nonzero: provisioning did not happen.
+    # All task modules are mocked as not implemented: every default task must
+    # be reported as failed and the command must exit nonzero because
+    # provisioning did not happen.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 1
     for name in task_catalog.default_tasks("minimal"):

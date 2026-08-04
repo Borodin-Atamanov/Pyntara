@@ -41,12 +41,12 @@ src/pyntara/task_catalog.py — Task metadata in code: TASKS, MODES, validate_mo
 src/pyntara/models.py — TaskResult dataclass.
 src/pyntara/context.py — Context frozen dataclass.
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
+src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks.
 src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
 
 Not implemented yet (target modules, see docs/simplified-architecture.md):
 src/pyntara/secrets_store.py — Vault loading/decryption and controlled secret access API.
 src/pyntara/config_edit.py — Managed-block config editing helper.
-src/pyntara/utils.py — Shared helpers (subprocess wrappers with timeout and return-code checks, path/network helpers).
 src/pyntara/systemd.py — Creation/update of systemd unit files and timers.
 src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, queues, retries, and scheduling.
 
@@ -55,6 +55,7 @@ src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, que
 users.py — Create and configure i, j, k users and required groups.
 hostname.py — Generate and persist random 9-character hostname.
 passwords.py — Derive root/user passwords from salt and hostname with configured lengths.
+cli_tools.py — Install console utilities mc, htop, hollywood.
 zram.py — Configure aggressive ZRAM by CPU/RAM with fallback behavior.
 swapfile.py — Calculate and configure swapfile from RAM/free-space formulas.
 ssh.py — Install and configure SSH service, including secure config updates.
