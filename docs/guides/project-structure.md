@@ -55,7 +55,7 @@ src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, que
 users.py — Create and configure i, j, k users and required groups.
 hostname.py — Generate and persist random 9-character hostname.
 passwords.py — Derive root/user passwords from salt and hostname with configured lengths.
-cli_tools.py — Install console utilities mc, htop, hollywood.
+cli_tools.py — Install curated console utilities: file managers, system and media tools.
 zram.py — Configure aggressive ZRAM by CPU/RAM with fallback behavior.
 swapfile.py — Calculate and configure swapfile from RAM/free-space formulas.
 ssh.py — Install and configure SSH service, including secure config updates.

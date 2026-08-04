@@ -25,6 +25,7 @@ Comments must be concise and explain intent, not decorate. Every unnecessary cha
 Full type annotations for all arguments and return values are mandatory.
 Type checking: mypy --strict, zero errors.
 Formatting and static analysis: ruff, zero warnings before merge.
+Descriptive naming: functions, methods, variables and task names must state what they do or hold, so the name alone explains the purpose.
 
 Subprocess calls:
 no shell=True

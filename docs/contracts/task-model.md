@@ -31,7 +31,7 @@ The catalog lives in code in src/pyntara/task_catalog.py. Each entry has name, d
 users — Create and configure i, j, k users and required groups. User i is main user, all belong to sudo users.
 hostname — Generate and persist random 9-character hostname.
 passwords — Derive root/user passwords from salt and hostname. Root: 20 chars, regular user: 16 chars.
-cli_tools — Install console utilities: mc, htop, hollywood.
+cli_tools — Install curated console utilities: file managers, system and media tools.
 zram — Configure aggressive ZRAM by CPU/RAM. Fallback to 8 cores if count cannot be determined. Strong compression, using almost all memory.
 swapfile — Calculate and configure swapfile. Size from formulas considering RAM and free disk space.
 ssh — Install and configure SSH service. Patch daemon config, add pre-generated certificates for passwordless login.

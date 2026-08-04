@@ -79,16 +79,16 @@ def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _install_fake(monkeypatch, installed={"hollywood"})
+    # Only mc is missing; apt must install exactly that package.
+    calls = _install_fake(monkeypatch, installed=set(cli_tools.PACKAGES) - {"mc"})
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "mc" in (result.message or "")
-    assert "htop" in (result.message or "")
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "mc", "htop"]]
+    assert install_calls == [["apt-get", "install", "-y", "mc"]]
 
 
 def test_config_files_leftover_counts_as_not_installed(
@@ -110,7 +110,7 @@ def test_config_files_leftover_counts_as_not_installed(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "mc", "htop", "hollywood"]]
+    assert install_calls == [["apt-get", "install", "-y", *cli_tools.PACKAGES]]
 
 
 def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:

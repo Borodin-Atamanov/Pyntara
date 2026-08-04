@@ -14,6 +14,7 @@ You always refer to yourself in the feminine gender and to me in the masculine, 
 After finishing changes, the agent MUST integrate them into main.
 Before commit, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
+Descriptive naming: functions, variables, methods and task names must explain what they do, so the name alone conveys the purpose.
 No pseudographics: no border characters, decorative lines, or boxed blocks.
 No ASCII diagrams or tables — convey structure and relationships in text.
 No Markdown tables unless explicitly requested.

@@ -41,7 +41,7 @@ TASKS: tuple[TaskDef, ...] = (
     ),
     TaskDef(
         name="cli_tools",
-        description="Install console utilities: mc, htop, hollywood.",
+        description="Install curated console utilities: file managers, system and media tools.",
         modes=("minimal", "server", "desktop"),
     ),
     TaskDef(
