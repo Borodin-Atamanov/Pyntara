@@ -57,6 +57,7 @@ A task is a plain function task(ctx) -> TaskResult.
 TaskResult is a dataclass with fields:
 success
 changed
+skipped (optional; True when the task module is not implemented)
 message (optional)
 error (optional)
 

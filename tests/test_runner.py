@@ -22,14 +22,15 @@ def _ctx() -> Context:
 
 
 def test_run_tasks_reports_missing_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A task without a module is a failed result, not a crash.
+    # A task without a module is a skipped result, not a crash or a failure.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     results = task_runner.run_tasks(_ctx(), ["hostname"])
     assert len(results) == 1
     name, result = results[0]
     assert name == "hostname"
     assert result.success is False
-    assert "not implemented" in (result.error or "")
+    assert result.skipped is True
+    assert "not implemented" in (result.message or "")
 
 
 def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,4 +73,5 @@ def test_run_tasks_continues_after_failure(monkeypatch: pytest.MonkeyPatch) -> N
     results = task_runner.run_tasks(_ctx(), ["a", "b"])
     assert len(results) == 2
     assert results[0][1].success is False
+    assert results[0][1].skipped is True
     assert results[1][1].success is True

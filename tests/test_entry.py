@@ -32,7 +32,7 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert result.exit_code == 1  # no task modules implemented yet
+    assert result.exit_code == 0  # unimplemented tasks are skipped, not failures
     assert "Install mode not set, using detected default: server" in result.output
     assert "Install mode: server" in result.output
 
@@ -50,7 +50,7 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert result.exit_code == 1  # no task modules implemented yet
+    assert result.exit_code == 0  # unimplemented tasks are skipped, not failures
     assert (
         "Install mode 'fancy' was set through environment variables but not "
         "found in the configuration, applied mode 'server'"
@@ -136,19 +136,36 @@ def test_run_pauses_on_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert slept == [1.0]
 
 
-def test_run_uses_mode_defaults_and_reports_not_implemented(
+def test_run_skips_not_implemented_default_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # All task modules are mocked as not implemented: every default task must
-    # be reported as failed and the command must exit nonzero because
-    # provisioning did not happen.
+    # All task modules are mocked as not implemented: every default task is
+    # reported as skipped and the command exits zero because nothing failed.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     for name in task_catalog.default_tasks("minimal"):
-        assert f"[failed] {name}" in result.output
+        assert f"[skip] {name}" in result.output
+
+
+def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Skipped tasks are counted in the summary but do not fail the run.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+
+    def fake_load(name: str) -> object:
+        if name == "cli_tools":
+            return lambda ctx: TaskResult(success=True, changed=True)
+        return None
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "[done] cli_tools" in result.output
+    assert "[skip] users" in result.output
+    assert "Finished 1 of 6 tasks, skipped 5" in result.output
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:

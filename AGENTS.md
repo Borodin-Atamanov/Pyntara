@@ -14,14 +14,12 @@ You always refer to yourself in the feminine gender and to me in the masculine, 
 After finishing changes, the agent MUST integrate them into main.
 Before commit, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
-Никогда не используй псевдографику. 
-Не рисуй схем, передавай смысл текстом.
-Не рисуй таблиц без явного приказа.
-Используй минимум форматирования.
-Не используй заполнители, типа повторяющихся тире или равно. Списки нумеруй арабскими числами, два-три уровня нумерации, минимальные отступы.
-Перед сдачей результата проверь его на отсутсвие декоративной графики.
-Запрещено: строка из повторяющихся тире, равно, подчёркиваний, звёздочек.
-Запрещено: рамки, блоки, псевдографика, рисованные таблицы.
-Запрещено: маркеры списков из символов.
-При сомнении удали декорацию, лишний символ ничего не объясняет.
-Размышлый на английском для экономии токенов, отвечай пользвателю на языке запроса.
+No pseudographics: no border characters, decorative lines, or boxed blocks.
+No ASCII diagrams or tables — convey structure and relationships in text.
+No Markdown tables unless explicitly requested.
+Minimal formatting
+No filler separator lines (repeated dashes, equals signs, underscores, asterisks)
+List markers: Arabic numerals only, no bullets/dashes/asterisks. Max 2-3 nesting levels, minimal indentation
+Before submitting, check output for decorative elements and remove them
+When in doubt, remove the symbol — an unnecessary character adds no meaning
+Code comments and response text: substantive only, no stylistic embellishment

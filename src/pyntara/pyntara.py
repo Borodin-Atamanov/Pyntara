@@ -251,9 +251,17 @@ def run() -> None:
     if force_tasks:
         typer.echo(f"Force: {' '.join(sorted(force_tasks))}")
     results = run_tasks(ctx, names)
-    failed = [name for name, result in results if not result.success]
+    failed = [
+        name
+        for name, result in results
+        if not result.success and not result.skipped
+    ]
+    skipped = [name for name, result in results if result.skipped]
     for name, result in results:
-        if result.success:
+        if result.skipped:
+            detail = result.message or "not implemented"
+            typer.echo(f"[skip] {name}: {detail}")
+        elif result.success:
             line = f"[done] {name}"
             if result.message:
                 line = f"{line}: {result.message}"
@@ -264,6 +272,12 @@ def run() -> None:
     if failed:
         typer.echo(f"Failed {len(failed)} of {len(results)} tasks: {' '.join(failed)}")
         raise typer.Exit(1)
+    if skipped:
+        typer.echo(
+            f"Finished {len(results) - len(skipped)} of {len(results)} tasks, "
+            f"skipped {len(skipped)}"
+        )
+        return
     typer.echo(f"All {len(results)} tasks finished")
 
 

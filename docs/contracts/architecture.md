@@ -57,6 +57,7 @@ TaskResult is a dataclass with fields:
 
 success
 changed
+skipped (default False; True when the task module is missing and the task could not run)
 message (optional)
 error (optional)
 
@@ -97,7 +98,7 @@ The architecture is guarded by tests:
 
 task catalog tests (mode defaults, dependency resolution, validation)
 entry point tests (mode resolution, task set, force list, resilience rule)
-task runner tests (missing modules, failures, continue-on-error)
+task runner tests (missing modules skipped, failures, continue-on-error)
 
 Any change that breaks these guarantees must update this document and corresponding tests in the same pull request.
 

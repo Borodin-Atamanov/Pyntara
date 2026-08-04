@@ -1,9 +1,10 @@
 """Task execution engine.
 
 Runs tasks in resolved order, one module per task under pyntara.tasks. Each
-module exposes a task(ctx) function returning TaskResult. A missing or broken
-module is reported as a failed result so the run continues and the summary
-shows everything that did not happen.
+module exposes a task(ctx) function returning TaskResult. A missing module is
+reported as a skipped result so a partially implemented catalog still runs
+cleanly; a broken module is a failed result. Neither stops the run, and the
+summary shows everything that was skipped or failed.
 """
 
 from __future__ import annotations
@@ -51,7 +52,14 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             continue
         if task is None:
             results.append(
-                (name, TaskResult(success=False, error=f"task module not implemented: {name}"))
+                (
+                    name,
+                    TaskResult(
+                        success=False,
+                        skipped=True,
+                        message=f"task module not implemented: {name}",
+                    ),
+                )
             )
             continue
         try:

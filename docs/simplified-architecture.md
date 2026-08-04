@@ -21,9 +21,9 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 - pyntara.py: command entry, check-vault, run. run is the composition root: it reads the environment, validates it, builds Context and launches the runner.
 - task_catalog.py: TASKS list with name, description, dependencies and mode membership; validate_mode, default_tasks, resolve.
-- models.py: TaskResult dataclass (success, changed, message, error).
+- models.py: TaskResult dataclass (success, changed, skipped, message, error).
 - context.py: Context frozen dataclass.
-- task_runner.py: loads task modules by name, runs them in order, collects results. A missing or broken task is a failed result, not a crash; the run continues and the summary shows everything that failed.
+- task_runner.py: loads task modules by name, runs them in order, collects results. A missing module is a skipped result, a broken module is a failed result; neither crashes the run, and the summary shows everything that was skipped or failed.
 - tasks/<name>.py: one module per task, each exposing task(ctx) -> TaskResult.
 - tests/: pytest for the engine, bash tests for inst.sh.
 
