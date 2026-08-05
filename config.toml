@@ -20,6 +20,10 @@ process_check_timeout_seconds = 5
 package_status_timeout_seconds = 30
 # Retry attempts after a failed package install; total attempts are retries plus one.
 package_install_retries = 3
+# Minimum installed share of the package set, in percent, for the task to
+# succeed. Below this share the task fails; a single failing package is not
+# fatal by itself.
+package_success_threshold_percent = 70
 packages = [
     "mc", # mc: Midnight Commander, two-panel console file manager
     "nnn", # nnn: lightweight terminal file browser

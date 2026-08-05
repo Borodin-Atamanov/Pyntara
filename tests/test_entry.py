@@ -30,6 +30,7 @@ def _test_config(notice_timeout: int = 7) -> Config:
             packages=("mc", "htop", "hollywood"),
             package_status_timeout_seconds=30,
             package_install_retries=3,
+            package_success_threshold_percent=70,
         ),
     )
 

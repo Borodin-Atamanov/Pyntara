@@ -17,10 +17,16 @@ from pyntara.context import Context
 from pyntara.tasks import cli_tools
 
 # Package set used by the tests; mirrors the real config but stays small.
-TEST_PACKAGES = ("mc", "htop", "hollywood")
+# Four packages keep the 70 percent threshold math clean: one failure gives
+# 75 percent, above the threshold.
+TEST_PACKAGES = ("mc", "htop", "hollywood", "wget")
 
 
-def _test_config(packages: tuple[str, ...] = TEST_PACKAGES) -> Config:
+def _test_config(
+    packages: tuple[str, ...] = TEST_PACKAGES,
+    *,
+    threshold: int = 70,
+) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
     return Config(
@@ -34,6 +40,7 @@ def _test_config(packages: tuple[str, ...] = TEST_PACKAGES) -> Config:
             packages=packages,
             package_status_timeout_seconds=30,
             package_install_retries=3,
+            package_success_threshold_percent=threshold,
         ),
     )
 
@@ -53,10 +60,10 @@ def _ctx() -> Context:
 class _FakeProc:
     """Minimal stand-in for subprocess.CompletedProcess."""
 
-    def __init__(self, returncode: int, stdout: str = "") -> None:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
         self.returncode = returncode
         self.stdout = stdout
-        self.stderr = ""
+        self.stderr = stderr
 
 
 def _install_fake(
@@ -108,7 +115,7 @@ def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
-    assert "mc" in (result.message or "")
+    assert "4/4" in (result.message or "")
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
@@ -138,6 +145,7 @@ def test_config_files_leftover_counts_as_not_installed(
         ["apt-get", "install", "-y", "mc"],
         ["apt-get", "install", "-y", "htop"],
         ["apt-get", "install", "-y", "hollywood"],
+        ["apt-get", "install", "-y", "wget"],
     ]
 
 
@@ -175,9 +183,9 @@ def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
+    assert "3/4" in (result.message or "")
+    assert "failed: htop" in (result.message or "")
     assert "htop" in (result.error or "")
-    assert "mc" in (result.message or "")
-    assert "hollywood" in (result.message or "")
 
 
 def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,9 +237,9 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_missing_package_does_not_block_others(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # hollywood does not exist in the repositories: mc and htop still
-    # install, hollywood is reported as failed, and the task succeeds
-    # because the goal is partially reached.
+    # hollywood cannot be installed: mc, htop and wget still install, which
+    # is 75 percent of the set, above the 70 percent threshold, so the task
+    # succeeds and hollywood is reported as failed.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -250,10 +258,8 @@ def test_missing_package_does_not_block_others(
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
-    assert "mc" in (result.message or "")
-    assert "htop" in (result.message or "")
-    assert "hollywood" in (result.message or "")
-    assert "hollywood" in (result.error or "")
+    assert "3/4" in (result.message or "")
+    assert "failed: hollywood" in (result.message or "")
 
 
 def test_all_packages_missing_is_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -322,7 +328,7 @@ def test_retries_transient_install_failure(monkeypatch: pytest.MonkeyPatch) -> N
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
-    assert "mc" in (result.message or "")
+    assert "4/4" in (result.message or "")
     mc_installs = [
         call
         for call in calls
@@ -385,6 +391,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
                 packages=("mc",),
                 package_status_timeout_seconds=30,
                 package_install_retries=0,
+                package_success_threshold_percent=70,
             ),
         ),
     )
@@ -455,6 +462,7 @@ def test_skip_apt_update_still_retries_installs(
                 packages=("mc",),
                 package_status_timeout_seconds=30,
                 package_install_retries=3,
+                package_success_threshold_percent=70,
             ),
         ),
     )
@@ -475,9 +483,118 @@ def test_skip_apt_update_still_retries_installs(
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(ctx)
     assert result.success is True
-    assert "mc" in (result.message or "")
+    assert "1/1" in (result.message or "")
     assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
     installs = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert len(installs) == 2
+
+
+def test_single_failure_within_threshold_is_not_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One of four packages fails: 75 percent installed, above the 70
+    # percent threshold, so the task succeeds and reports the failure.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] == "hollywood"
+        ):
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    assert "3/4" in (result.message or "")
+    assert "failed: hollywood" in (result.message or "")
+
+
+def test_below_threshold_is_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Three of four packages fail: only 25 percent installed, far below the
+    # 70 percent threshold, so the task fails with the reasons.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] != "mc"
+        ):
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is False
+    assert "htop" in (result.error or "")
+    assert "hollywood" in (result.error or "")
+
+
+def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    # One of two packages installs: exactly 50 percent, at the 50 percent
+    # threshold, so the task succeeds (failure only below the threshold).
+    ctx = Context(
+        install_mode="minimal",
+        vault_password=None,
+        vault_source=None,
+        force_tasks=frozenset(),
+        task_data_root=Path("/tmp"),
+        skip_apt_update=True,
+        config=_test_config(packages=("mc", "htop"), threshold=50),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] == "htop"
+        ):
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(ctx)
+    assert result.success is True
+    assert "1/2" in (result.message or "")
+
+
+def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A zero threshold means the task never fails on missing packages.
+    ctx = Context(
+        install_mode="minimal",
+        vault_password=None,
+        vault_source=None,
+        force_tasks=frozenset(),
+        task_data_root=Path("/tmp"),
+        skip_apt_update=True,
+        config=_test_config(packages=("mc",), threshold=0),
+    )
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if command[0] == "apt-get":
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(ctx)
+    assert result.success is True
+    assert "0/1" in (result.message or "")
+    assert "failed: mc" in (result.message or "")

@@ -19,6 +19,7 @@ process_check_timeout_seconds = 5
 packages = ["mc", "htop"]
 package_status_timeout_seconds = 30
 package_install_retries = 3
+package_success_threshold_percent = 70
 """
 
 
@@ -33,6 +34,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.packages == ("mc", "htop")
     assert config.cli_tools.package_status_timeout_seconds == 30
     assert config.cli_tools.package_install_retries == 3
+    assert config.cli_tools.package_success_threshold_percent == 70
 
 
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
@@ -59,7 +61,7 @@ _BASE_CONFIG = (
     '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
     "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
-    "package_install_retries = 3\n"
+    "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 )
 
 
@@ -90,12 +92,41 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "package_install_retries = 3", 'package_install_retries = "3"'
         ),
+        # package_success_threshold_percent is a string, not an integer
+        _BASE_CONFIG.replace(
+            "package_success_threshold_percent = 70",
+            'package_success_threshold_percent = "70"',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(content, encoding="utf-8")
     with pytest.raises(ConfigError):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # threshold above 100 is invalid
+        _BASE_CONFIG.replace(
+            "package_success_threshold_percent = 70",
+            "package_success_threshold_percent = 101",
+        ),
+        # threshold below 0 is invalid
+        _BASE_CONFIG.replace(
+            "package_success_threshold_percent = 70",
+            "package_success_threshold_percent = -1",
+        ),
+    ],
+)
+def test_load_config_threshold_out_of_range_raises(
+    tmp_path: Path, content: str
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(content, encoding="utf-8")
+    with pytest.raises(ConfigError, match="between 0 and 100"):
         load_config(config_path)
 
 

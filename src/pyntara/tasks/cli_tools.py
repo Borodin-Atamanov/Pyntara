@@ -3,12 +3,13 @@
 The package list comes from config.toml through ctx.config.cli_tools.packages
 (architecture contract section 3). The task checks the real system state
 with dpkg-query and installs only what is missing, so repeated runs change
-nothing (docs/contracts/task-model.md). Packages are installed one by one:
-a missing or uninstallable package must not block the others, and the task
-reports a partial success instead of failing the whole run (resilience rule,
-architecture contract section 7). The apt index is refreshed once before
-the first install, so packages resolve from a fresh index; the refresh is
-skipped when ctx.skip_apt_update is True (test or offline runs).
+nothing (docs/contracts/task-model.md). Packages are installed one by one.
+The apt index is refreshed once before the first install, so packages
+resolve from a fresh index; the refresh is skipped when ctx.skip_apt_update
+is True (test or offline runs). The task succeeds when at least the
+configured share of the package set is installed after the run
+(cli_tools.package_success_threshold_percent): a single failing package is
+not fatal by itself, and no package has to be marked as important.
 """
 
 from __future__ import annotations
@@ -61,19 +62,20 @@ def _install_packages(
     update_timeout: float,
     retries: int,
     skip_update: bool,
-) -> tuple[list[str], list[tuple[str, str]]]:
-    """Install each package individually; return (installed, failures).
+) -> tuple[list[str], list[tuple[str, str]], list[str]]:
+    """Install each package individually; return (installed, failures, warnings).
 
-    The apt index is refreshed once before the first install, so packages
-    resolve from a fresh index; skip_update=True disables the refresh for
-    test or offline runs. A failing refresh is recorded and the install is
-    still attempted, because the package may already be in the local cache.
-    A failing package is recorded and never blocks the others; each package
-    gets one initial attempt plus `retries` retries.
+    failures is a list of (name, reason); warnings carries non-fatal
+    problems such as a failed apt index refresh. The apt index is refreshed
+    once before the first install, so packages resolve from a fresh index;
+    skip_update=True disables the refresh for test or offline runs. Each
+    package gets one initial attempt plus `retries` retries; a package that
+    still fails is recorded and never blocks the others.
     """
 
     installed: list[str] = []
     failures: list[tuple[str, str]] = []
+    warnings: list[str] = []
     if not skip_update:
         try:
             run_command(
@@ -82,7 +84,7 @@ def _install_packages(
                 timeout=update_timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            failures.append(("apt index refresh", str(exc)))
+            warnings.append(f"apt index refresh: {exc}")
     for package in packages:
         ok = False
         error = ""
@@ -94,17 +96,18 @@ def _install_packages(
             installed.append(package)
         else:
             failures.append((package, error))
-    return installed, failures
+    return installed, failures, warnings
 
 
 def task(ctx: Context) -> TaskResult:
     """Install the console utility set; skip when the goal is already reached.
 
-    A package that cannot be installed is reported, not fatal: the task
-    succeeds when at least one missing package was installed, and every
-    failure is listed in the message. Timeouts and the retry count come
-    from config.toml through Context; the apt index refresh can be skipped
-    through ctx.skip_apt_update.
+    The installed share is the number of configured packages that are in
+    the installed state after the run, divided by the total package set. A
+    share below cli_tools.package_success_threshold_percent is a fatal
+    error; at or above it the task succeeds and every failing package is
+    reported. Timeouts and the retry count come from config.toml through
+    Context; the apt index refresh can be skipped through ctx.skip_apt_update.
     """
 
     cli = ctx.config.cli_tools
@@ -115,25 +118,34 @@ def task(ctx: Context) -> TaskResult:
     ]
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")
-    installed, failures = _install_packages(
+    installed, failures, warnings = _install_packages(
         missing,
         install_timeout=ctx.config.engine.command_timeout_seconds,
         update_timeout=ctx.config.engine.command_timeout_seconds,
         retries=cli.package_install_retries,
         skip_update=ctx.skip_apt_update,
     )
-    if not installed:
-        detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
-        return TaskResult(success=False, changed=False, error=detail)
-    message = f"installed: {', '.join(installed)}"
+    installed_total = len(cli.packages) - len(missing) + len(installed)
+    installed_percent = installed_total * 100 // len(cli.packages)
+    failed_detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
+    if installed_percent < cli.package_success_threshold_percent:
+        detail = failed_detail
+        if warnings:
+            detail = f"{detail}; {'; '.join(warnings)}"
+        return TaskResult(success=False, changed=bool(installed), error=detail)
+    message = (
+        f"installed {installed_total}/{len(cli.packages)} "
+        f"({installed_percent}%), threshold "
+        f"{cli.package_success_threshold_percent}%"
+    )
     if failures:
         failed_names = ", ".join(name for name, _ in failures)
         message = f"{message}; failed: {failed_names}"
-        detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
-        return TaskResult(
-            success=True,
-            changed=True,
-            message=message,
-            error=detail,
-        )
-    return TaskResult(success=True, changed=True, message=message)
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True,
+        changed=bool(installed),
+        message=message,
+        error=failed_detail if failures else None,
+    )

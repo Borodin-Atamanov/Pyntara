@@ -31,6 +31,7 @@ def _ctx() -> Context:
                 packages=("mc", "htop"),
                 package_status_timeout_seconds=30,
                 package_install_retries=3,
+                package_success_threshold_percent=70,
             ),
         ),
     )

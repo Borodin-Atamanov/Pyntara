@@ -23,7 +23,7 @@ PYNTARA_TASKS — space-separated task names. When omitted, the default task set
 
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that cli_tools runs before the first package install. Use for test or offline runs; omit it in real provisioning so packages resolve from a fresh index.
 
-Engine values used by the Python part come from config.toml at the repository root: the task data root, the notice timeout, the command timeouts and the cli_tools package list with the install retry count. The file is mandatory; a missing or invalid file stops the run.
+Engine values used by the Python part come from config.toml at the repository root: the task data root, the notice timeout, the command timeouts and the cli_tools package list with the install retry count and the success threshold. The file is mandatory; a missing or invalid file stops the run. The cli_tools task succeeds when at least cli_tools.package_success_threshold_percent of the configured packages are installed after the run; a single failing package is not fatal by itself.
 
 The interactive installer variant does not work and its development is stopped.
 

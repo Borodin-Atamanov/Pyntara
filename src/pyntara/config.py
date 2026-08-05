@@ -34,6 +34,7 @@ class CliToolsConfig:
     packages: tuple[str, ...]
     package_status_timeout_seconds: int
     package_install_retries: int
+    package_success_threshold_percent: int
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,14 @@ def _cli_tools_table(raw: object) -> CliToolsConfig:
         isinstance(package, str) for package in packages
     ):
         raise ConfigError("cli_tools.packages must be an array of strings")
+    package_success_threshold_percent = _int_field(
+        raw.get("package_success_threshold_percent"),
+        "cli_tools.package_success_threshold_percent",
+    )
+    if not 0 <= package_success_threshold_percent <= 100:
+        raise ConfigError(
+            "cli_tools.package_success_threshold_percent must be between 0 and 100"
+        )
     return CliToolsConfig(
         packages=tuple(packages),
         package_status_timeout_seconds=_int_field(
@@ -93,6 +102,7 @@ def _cli_tools_table(raw: object) -> CliToolsConfig:
         package_install_retries=_int_field(
             raw.get("package_install_retries"), "cli_tools.package_install_retries"
         ),
+        package_success_threshold_percent=package_success_threshold_percent,
     )
 
 
