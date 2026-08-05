@@ -46,9 +46,11 @@ fi
 LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 
 # Journal identifier for own installer messages. An empty value disables
-# journal forwarding. The variable is not exported, so the Python engine
-# keeps its own identifier (pyntara-engine) when launched by run_pyntara.
-JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER:-pyntara-install}"
+# journal forwarding, matching the engine semantics in logger.py; only an
+# unset variable falls back to the default. The variable is not exported,
+# so the Python engine keeps its own identifier (pyntara-engine) when
+# launched by run_pyntara.
+JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-default}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f log &>/dev/null; then

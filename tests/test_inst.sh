@@ -196,6 +196,132 @@ inst_log_file_defaults_inside_log_dir() {
     rm -rf "$tmp"
 }
 
+inst_log_forwards_to_system_journal() {
+    # log must duplicate its message into the system journal under the
+    # identifier from PYNTARA_JOURNAL_IDENTIFIER, without the timestamp.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local identifier
+    identifier="pyntara-test-$$"
+    local marker
+    marker="journal-smoke-$$"
+    # Probe journal availability first; without journald the test skips.
+    if ! printf '%s\n' "probe-$marker" | systemd-cat --identifier "$identifier" 2>/dev/null; then
+        echo "SKIP: systemd-cat unavailable"
+        rm -rf "$tmp"
+        return 0
+    fi
+    sleep 0.3
+    if ! journalctl --user SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep -q "probe-$marker" &&
+        ! journalctl SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep -q "probe-$marker"; then
+        echo "SKIP: journal not readable"
+        rm -rf "$tmp"
+        return 0
+    fi
+    PYNTARA_LOG_FILE="$logfile" PYNTARA_JOURNAL_IDENTIFIER="$identifier" \
+        bash -c 'source "$1"; log "smoke $2"' _ "$INSTALLER" "$marker"
+    local found
+    found=""
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if journalctl --user SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep -q "smoke $marker"; then
+            found="user"
+            break
+        fi
+        if journalctl SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep -q "smoke $marker"; then
+            found="system"
+            break
+        fi
+        sleep 0.1
+    done
+    if [[ -z "$found" ]]; then
+        echo "journal line missing for identifier $identifier" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    # The journal line must be the plain message, not the timestamped one.
+    local line
+    line="$(journalctl --user SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep "smoke $marker" | head -n 1)"
+    if [[ -z "$line" ]]; then
+        line="$(journalctl SYSLOG_IDENTIFIER="$identifier" --no-pager -o cat 2>/dev/null | grep "smoke $marker" | head -n 1)"
+    fi
+    if [[ "$line" != "smoke $marker" ]]; then
+        echo "journal line must be plain, got [$line]" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_log_empty_identifier_disables_journal() {
+    # An empty PYNTARA_JOURNAL_IDENTIFIER must disable journal forwarding.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local marker
+    marker="no-journal-$$"
+    PYNTARA_LOG_FILE="$logfile" PYNTARA_JOURNAL_IDENTIFIER="" \
+        bash -c 'source "$1"; log "quiet $2"' _ "$INSTALLER" "$marker"
+    local seen
+    seen=""
+    local i
+    for i in 1 2 3 4 5; do
+        if journalctl --user SYSLOG_IDENTIFIER=pyntara-install --no-pager -o cat 2>/dev/null | grep -q "$marker"; then
+            seen="user"
+            break
+        fi
+        if journalctl SYSLOG_IDENTIFIER=pyntara-install --no-pager -o cat 2>/dev/null | grep -q "$marker"; then
+            seen="system"
+            break
+        fi
+        sleep 0.1
+    done
+    if [[ -n "$seen" ]]; then
+        echo "message reached the journal despite empty identifier" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "$marker" "$logfile"; then
+        echo "message missing from log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+inst_log_survives_failing_systemd_cat() {
+    # A failing systemd-cat must never stop the installer (best effort).
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/systemd-cat" <<'EOF'
+#!/bin/bash
+cat > /dev/null
+exit 1
+EOF
+    chmod +x "$bin/systemd-cat"
+    local rc
+    set +e
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" \
+        bash -c 'source "$1"; log "still works"' _ "$INSTALLER"
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 0 ]]; then
+        echo "log must succeed even when systemd-cat fails" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "still works" "$logfile"; then
+        echo "message missing from log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 inst_run_logged_streams_both_streams_and_preserves_exit_code() {
     # stdout and stderr go to terminal and log file, exit code is preserved.
     local tmp
@@ -1543,6 +1669,9 @@ run_test inst_ensure_fhs_dirs_is_idempotent_on_second_run
 run_test inst_log_writes_timestamped_line_to_terminal_and_file
 run_test inst_log_appends_lines_instead_of_overwriting
 run_test inst_log_file_defaults_inside_log_dir
+run_test inst_log_forwards_to_system_journal
+run_test inst_log_empty_identifier_disables_journal
+run_test inst_log_survives_failing_systemd_cat
 run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
 run_test inst_run_timed_logs_duration_and_exit_code
 run_test inst_run_timed_preserves_failing_exit_code

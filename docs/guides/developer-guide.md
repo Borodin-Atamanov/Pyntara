@@ -14,6 +14,7 @@ Every module with task logic must have pytest unit tests.
 In unit tests, all external resources (subprocess, filesystem, network) are mocked via monkeypatch.
 For file logic, use tmp_path, not real paths.
 Shared test factories and fakes live in tests/support.py (make_config, make_context, FakeProc); test modules import them instead of copying the Config and Context shapes.
+Journal forwarding is covered by integration tests in tests/test_logger.py and tests/test_inst.sh that write into the real system journal through systemd-cat and read entries back through journalctl. When journald is unavailable the tests skip; the best-effort branches are always covered by unit tests.
 
 Minimum required per task:
 1 success scenario test

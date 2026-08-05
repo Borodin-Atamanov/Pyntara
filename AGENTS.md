@@ -25,7 +25,7 @@ List markers: Arabic numerals only, no bullets/dashes/asterisks. Max 2-3 nesting
 Before submitting, check output for decorative elements and remove them
 When in doubt, remove the symbol — an unnecessary character adds no meaning
 Code comments and response text: substantive only, no stylistic embellishment
-When I say "plan" (спланируй) first draft a detailed implementation plan and write it out. If the plan is too large and complex, select the first part of the plan for implementation. Find weak points in the plan, critique the plan as a whole and each item individually. Determine how to improve it. Based on the improvements, draft a new plan. Present the improved detailed plan to me for approval.
+When I say "plan" (спланируй) first draft a detailed implementation plan and write it out. If the plan is too large and complex, select the first part of the plan for implementation. Find weak points in the plan, critique the plan as a whole and each item individually. Determine how to improve it. Based on the improvements, create a new plan. Present the improved detailed plan to me for approval.
 Use the MECE principle (Mutually Exclusive, Collectively Exhaustive).
 Do not withhold implementation details — state which decisions you are making before implementing them.
 
