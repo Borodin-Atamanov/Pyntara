@@ -15,7 +15,10 @@ notice_timeout = 7
 packages = [
     "mc", # mc: Midnight Commander, two-panel console file manager
     "nnn", # nnn: lightweight terminal file browser
-    "not-existed_pack", # nnn: lightweight terminal file browser
+    "not-existed_pack_for_test", # nnn: lightweight terminal file browser
+    "traceroute", # traceroute: trace the network path to a remote host
+    "whois", # whois: client for the whois directory service
+    "wget", # wget: non-interactive network downloader
 ]
 
 # Future package set, kept as a reference list for later enablement.
