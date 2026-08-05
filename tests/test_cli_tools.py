@@ -19,6 +19,7 @@ from pyntara.config import (
     Config,
     EngineConfig,
     SwapfileServiceInstallConfig,
+    ZswapServiceConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -64,6 +65,13 @@ def _test_config(
             ram_multiplier=2,
             ram_extra_mb=4096,
             disk_fraction=0.5,
+        ),
+        zswap_service=ZswapServiceConfig(
+            enabled=True,
+            compressor="zstd",
+            max_pool_percent=50,
+            accept_threshold_percent=100,
+            shrinker_enabled=True,
         ),
         tasks=(),
     )
@@ -429,6 +437,13 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
                 ram_extra_mb=4096,
                 disk_fraction=0.5,
             ),
+            zswap_service=ZswapServiceConfig(
+                enabled=True,
+                compressor="zstd",
+                max_pool_percent=50,
+                accept_threshold_percent=100,
+                shrinker_enabled=True,
+            ),
             tasks=(),
         ),
     )
@@ -510,6 +525,13 @@ def test_skip_apt_update_still_retries_installs(
                 ram_multiplier=2,
                 ram_extra_mb=4096,
                 disk_fraction=0.5,
+            ),
+            zswap_service=ZswapServiceConfig(
+                enabled=True,
+                compressor="zstd",
+                max_pool_percent=50,
+                accept_threshold_percent=100,
+                shrinker_enabled=True,
             ),
             tasks=(),
         ),

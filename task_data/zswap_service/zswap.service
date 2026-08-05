@@ -1,0 +1,11 @@
+[Unit]
+Description=Configure zswap compressed swap cache
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+$exec_lines
+
+[Install]
+WantedBy=multi-user.target

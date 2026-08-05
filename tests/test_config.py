@@ -31,6 +31,13 @@ ram_multiplier = 2
 ram_extra_mb = 4096
 disk_fraction = 0.5
 
+[zswap_service]
+enabled = true
+compressor = "zstd"
+max_pool_percent = 50
+accept_threshold_percent = 100
+shrinker_enabled = true
+
 [[tasks]]
 name = "add_extra_repos"
 description = "Enable extra Ubuntu archive components."
@@ -69,6 +76,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.swapfile_service_install.ram_multiplier == 2
     assert config.swapfile_service_install.ram_extra_mb == 4096
     assert config.swapfile_service_install.disk_fraction == 0.5
+    assert config.zswap_service.enabled is True
+    assert config.zswap_service.compressor == "zstd"
+    assert config.zswap_service.max_pool_percent == 50
+    assert config.zswap_service.accept_threshold_percent == 100
+    assert config.zswap_service.shrinker_enabled is True
     assert config.tasks[0].name == "add_extra_repos"
     assert config.tasks[0].description == "Enable extra Ubuntu archive components."
     assert config.tasks[0].depends == ()
@@ -106,6 +118,9 @@ _BASE_CONFIG = (
     '[add_extra_repos]\ncomponents = ["universe"]\n'
     '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
     "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+    '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
+    "max_pool_percent = 50\naccept_threshold_percent = 100\n"
+    "shrinker_enabled = true\n"
     '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
     "depends = []\nmodes = [\"minimal\"]\n"
 )
@@ -167,6 +182,28 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 1.5"),
         # disk_fraction is zero
         _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 0"),
+        # zswap enabled is a string, not a boolean
+        _BASE_CONFIG.replace("enabled = true", 'enabled = "true"'),
+        # zswap compressor is a number, not a string
+        _BASE_CONFIG.replace('compressor = "zstd"', "compressor = 1"),
+        # zswap compressor is an empty string
+        _BASE_CONFIG.replace('compressor = "zstd"', 'compressor = ""'),
+        # zswap max_pool_percent is a string, not an integer
+        _BASE_CONFIG.replace("max_pool_percent = 50", 'max_pool_percent = "50"'),
+        # zswap max_pool_percent is zero
+        _BASE_CONFIG.replace("max_pool_percent = 50", "max_pool_percent = 0"),
+        # zswap max_pool_percent is above 100
+        _BASE_CONFIG.replace("max_pool_percent = 50", "max_pool_percent = 101"),
+        # zswap accept_threshold_percent is below one
+        _BASE_CONFIG.replace(
+            "accept_threshold_percent = 100", "accept_threshold_percent = 0"
+        ),
+        # zswap accept_threshold_percent is above 100
+        _BASE_CONFIG.replace(
+            "accept_threshold_percent = 100", "accept_threshold_percent = 101"
+        ),
+        # zswap shrinker_enabled is an integer, not a boolean
+        _BASE_CONFIG.replace("shrinker_enabled = true", "shrinker_enabled = 1"),
         # task name is a number, not a string
         _BASE_CONFIG.replace('name = "users"', "name = 1"),
         # task name is an empty string
@@ -278,7 +315,10 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
-        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n",
+        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+        '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
+        "max_pool_percent = 50\naccept_threshold_percent = 100\n"
+        "shrinker_enabled = true\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="\\[tasks\\]"):
@@ -299,7 +339,10 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
-        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n",
+        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+        '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
+        "max_pool_percent = 50\naccept_threshold_percent = 100\n"
+        "shrinker_enabled = true\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="at least one task"):

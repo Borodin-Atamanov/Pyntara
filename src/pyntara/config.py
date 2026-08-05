@@ -68,6 +68,24 @@ class SwapfileServiceInstallConfig:
 
 
 @dataclass(frozen=True)
+class ZswapServiceConfig:
+    """Compressed swap cache parameters for the zswap_service task.
+
+    The values are written into /sys/module/zswap/parameters. enabled and
+    shrinker_enabled are strict booleans; compressor names the compression
+    algorithm; max_pool_percent and accept_threshold_percent are the pool
+    ceiling and the re-accept threshold as percentages of RAM and of the
+    pool limit.
+    """
+
+    enabled: bool
+    compressor: str
+    max_pool_percent: int
+    accept_threshold_percent: int
+    shrinker_enabled: bool
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     """One task entry from the [[tasks]] section of config.toml."""
 
@@ -85,6 +103,7 @@ class Config:
     cli_tools: CliToolsConfig
     add_extra_repos: AddExtraReposConfig
     swapfile_service_install: SwapfileServiceInstallConfig
+    zswap_service: ZswapServiceConfig
     tasks: tuple[TaskConfig, ...]
 
 
@@ -241,6 +260,51 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
     )
 
 
+def _zswap_service_table(raw: object) -> ZswapServiceConfig:
+    """Validate the [zswap_service] table and build ZswapServiceConfig.
+
+    enabled and shrinker_enabled are strict booleans; compressor is a
+    non-empty string; max_pool_percent and accept_threshold_percent are
+    integers between 1 and 100, the meaningful range for a percentage that
+    the kernel accepts on the sysfs attributes. A pool ceiling of zero
+    would disable zswap entirely, so it is rejected here.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[zswap_service] section is missing or not a table")
+    enabled = raw.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ConfigError("zswap_service.enabled must be a boolean")
+    compressor = raw.get("compressor")
+    if not isinstance(compressor, str) or not compressor:
+        raise ConfigError("zswap_service.compressor must be a non-empty string")
+    max_pool_percent = _int_field(
+        raw.get("max_pool_percent"), "zswap_service.max_pool_percent"
+    )
+    if not 1 <= max_pool_percent <= 100:
+        raise ConfigError(
+            "zswap_service.max_pool_percent must be between 1 and 100"
+        )
+    accept_threshold_percent = _int_field(
+        raw.get("accept_threshold_percent"),
+        "zswap_service.accept_threshold_percent",
+    )
+    if not 1 <= accept_threshold_percent <= 100:
+        raise ConfigError(
+            "zswap_service.accept_threshold_percent must be between 1 and 100"
+        )
+    shrinker_enabled = raw.get("shrinker_enabled")
+    if not isinstance(shrinker_enabled, bool):
+        raise ConfigError("zswap_service.shrinker_enabled must be a boolean")
+    return ZswapServiceConfig(
+        enabled=enabled,
+        compressor=compressor,
+        max_pool_percent=max_pool_percent,
+        accept_threshold_percent=accept_threshold_percent,
+        shrinker_enabled=shrinker_enabled,
+    )
+
+
 def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
     """Validate the [[tasks]] section and build the task catalog.
 
@@ -320,5 +384,6 @@ def load_config(path: Path) -> Config:
         swapfile_service_install=_swapfile_service_install_table(
             data.get("swapfile_service_install")
         ),
+        zswap_service=_zswap_service_table(data.get("zswap_service")),
         tasks=_tasks_table(data.get("tasks")),
     )

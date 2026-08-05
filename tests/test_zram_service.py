@@ -21,6 +21,7 @@ from pyntara.config import (
     Config,
     EngineConfig,
     SwapfileServiceInstallConfig,
+    ZswapServiceConfig,
 )
 from pyntara.context import Context
 from pyntara.tasks import zram_service
@@ -82,6 +83,13 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
                 ram_multiplier=2,
                 ram_extra_mb=4096,
                 disk_fraction=0.5,
+            ),
+            zswap_service=ZswapServiceConfig(
+                enabled=True,
+                compressor="zstd",
+                max_pool_percent=50,
+                accept_threshold_percent=100,
+                shrinker_enabled=True,
             ),
             tasks=(),
         ),

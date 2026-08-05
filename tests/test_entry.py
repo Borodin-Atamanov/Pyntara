@@ -15,6 +15,7 @@ from pyntara.config import (
     ConfigError,
     EngineConfig,
     SwapfileServiceInstallConfig,
+    ZswapServiceConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -54,6 +55,13 @@ def _test_config(notice_timeout: int = 7) -> Config:
             ram_multiplier=2,
             ram_extra_mb=4096,
             disk_fraction=0.5,
+        ),
+        zswap_service=ZswapServiceConfig(
+            enabled=True,
+            compressor="zstd",
+            max_pool_percent=50,
+            accept_threshold_percent=100,
+            shrinker_enabled=True,
         ),
         tasks=REAL_TASKS,
     )
