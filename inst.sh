@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Non-interactive Pyntara installer.
-# Typical usage:
-# curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
+# The download and run command is documented in README.md under Start;
+# README.md is the only place that holds the command.
 set -euo pipefail
 
 # Every step ends with a short English status message using variables, so
@@ -17,7 +17,7 @@ if ! declare -f check_root &>/dev/null; then
 check_root() {
     # Bootstrap contract section 1: must run as root, otherwise exit with an error.
     if [[ "$EUID" -ne 0 ]]; then
-        echo "Error: Pyntara installer must run as root. Restart with: sudo bash inst.sh" >&2
+        echo "Error: Pyntara installer must run as root. Restart with: sudo bash $0" >&2
         exit 1
     fi
     echo "Running as root"

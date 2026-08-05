@@ -4,7 +4,7 @@ This document is the source of truth for the bootstrap installer inst.sh.
 
 ## 1. Entry point
 
-User downloads and runs: curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o inst.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash inst.sh'
+The download and run command is documented in README.md under Start; README.md is the only place that holds it. The command writes the installer into a unique file in /tmp via mktemp, so it works from any working directory, including read-only roots, then runs it under sudo.
 The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD, or with a password that matches no vault, the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
 
