@@ -6,6 +6,7 @@ These defaults are mandatory for all Pyntara modules and scripts unless a concre
 
 Every command execution must stream output to the terminal in real time by default.
 The same output must be persisted to a log file by default.
+The system journal is the primary destination for own messages; the file log is a residual copy of the full stream.
 Exceptions are allowed only when command output must be suppressed for security or when a third-party tool breaks with streamed mode.
 
 ### 1.1 Task presentation
@@ -28,7 +29,7 @@ Every task reports its progress to stdout so the user sees what is being done.
 
 ### 1.3 Central logging
 
-All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the system journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
+The system journal is the primary destination for all own messages: the engine mirrors them with the identifier pyntara-engine, the installer with pyntara-install. The file log is residual: it persists the full stream for offline review. All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
 
 ## 2. Datetime format policy
 
