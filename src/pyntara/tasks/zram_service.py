@@ -246,8 +246,13 @@ def _add_devices(count: int, read_interface: bool) -> str | None:
     return None
 
 
-def _zram_active(timeout: float) -> set[str]:
-    """Paths of the currently active swap devices (swapon --show)."""
+def _active_swap_devices(timeout: float) -> set[str]:
+    """Paths of every active swap device, including the disk swapfile.
+
+    swapon --show lists all activated swaps; the set includes both the
+    zram devices and a file-backed swap such as /swapfile, so the caller
+    checks the zram paths it cares about individually.
+    """
 
     result = run_command(
         ["swapon", "--show", "--noheadings"],
@@ -389,11 +394,11 @@ def task(ctx: Context) -> TaskResult:
         f"each, total {total_mb} MiB"
     )
 
-    active_paths = _zram_active(timeout)
+    active_paths = _active_swap_devices(timeout)
     enabled = _service_enabled(ZRAM_SERVICE_NAME, timeout)
     existing_count = _existing_device_count()
     _log(f"checking existing zram devices: {existing_count}")
-    _log(f"checking active zram swaps: {len(active_paths)}")
+    _log(f"checking active swap devices: {len(active_paths)}")
     _log(
         f"checking autorun service {ZRAM_SERVICE_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -492,7 +497,7 @@ def task(ctx: Context) -> TaskResult:
     # Verify the configured state by reading the system files back.
     _log("verifying zram configuration")
     problems: list[str] = []
-    verified_active = _zram_active(timeout)
+    verified_active = _active_swap_devices(timeout)
     for index in range(device_count):
         if _read_disksize(index) != per_device_bytes:
             problems.append(f"zram{index} disksize mismatch")
