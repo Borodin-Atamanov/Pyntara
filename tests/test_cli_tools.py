@@ -13,10 +13,12 @@ import pytest
 
 from pyntara import task_catalog
 from pyntara.config import (
+    MODES,
     AddExtraReposConfig,
     CliToolsConfig,
     Config,
     EngineConfig,
+    load_config,
 )
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
@@ -25,6 +27,11 @@ from pyntara.tasks import cli_tools
 # Four packages keep the 70 percent threshold math clean: one failure gives
 # 75 percent, above the threshold.
 TEST_PACKAGES = ("mc", "htop", "hollywood", "wget")
+
+# The real catalog from the repository config; the mode-membership and
+# dependency tests use it so they cover the actual task set.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REAL_TASKS = load_config(REPO_ROOT / "config.toml").tasks
 
 
 def _test_config(
@@ -51,6 +58,7 @@ def _test_config(
         add_extra_repos=AddExtraReposConfig(
             components=("universe", "restricted", "multiverse")
         ),
+        tasks=(),
     )
 
 
@@ -99,14 +107,14 @@ def _install_fake(
 
 
 def test_cli_tools_is_in_every_mode_default_set() -> None:
-    for mode in task_catalog.MODES:
-        assert "cli_tools" in task_catalog.default_tasks(mode)
+    for mode in MODES:
+        assert "cli_tools" in task_catalog.default_tasks(mode, REAL_TASKS)
 
 
 def test_cli_tools_depends_on_add_extra_repos() -> None:
     # cli_tools needs universe and multiverse enabled before its packages
     # can resolve, so add_extra_repos is a hard dependency.
-    task_def = task_catalog.by_name("cli_tools")
+    task_def = task_catalog.by_name("cli_tools", REAL_TASKS)
     assert task_def is not None
     assert task_def.depends == ("add_extra_repos",)
 
@@ -408,6 +416,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
             ),
+            tasks=(),
         ),
     )
     calls: list[list[str]] = []
@@ -483,6 +492,7 @@ def test_skip_apt_update_still_retries_installs(
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
             ),
+            tasks=(),
         ),
     )
     calls: list[list[str]] = []

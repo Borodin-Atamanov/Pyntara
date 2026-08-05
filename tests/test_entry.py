@@ -14,12 +14,18 @@ from pyntara.config import (
     Config,
     ConfigError,
     EngineConfig,
+    load_config,
 )
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
 
 runner = CliRunner()
+
+# The real catalog from the repository config; the run tests use it so the
+# mocked Config matches the actual default task sets and the app output.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REAL_TASKS = load_config(REPO_ROOT / "config.toml").tasks
 
 
 def _test_config(notice_timeout: int = 7) -> Config:
@@ -42,6 +48,7 @@ def _test_config(notice_timeout: int = 7) -> Config:
         add_extra_repos=AddExtraReposConfig(
             components=("universe", "restricted", "multiverse")
         ),
+        tasks=REAL_TASKS,
     )
 
 
@@ -180,7 +187,7 @@ def test_run_skips_not_implemented_default_tasks(
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    for name in task_catalog.default_tasks("minimal"):
+    for name in task_catalog.default_tasks("minimal", REAL_TASKS):
         assert f"[skip] {name}" in result.output
 
 
@@ -278,7 +285,7 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    expected = len(task_catalog.default_tasks("minimal"))
+    expected = len(task_catalog.default_tasks("minimal", REAL_TASKS))
     assert f"All {expected} tasks finished" in result.output
 
 

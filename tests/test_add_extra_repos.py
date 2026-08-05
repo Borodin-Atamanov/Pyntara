@@ -71,6 +71,7 @@ def _ctx(tmp_path: Path, *, skip_apt_update: bool = False) -> Context:
                 package_success_threshold_percent=70,
             ),
             add_extra_repos=AddExtraReposConfig(components=CONFIGURED),
+            tasks=(),
         ),
     )
 

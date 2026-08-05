@@ -21,7 +21,14 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from pyntara import task_catalog
-from pyntara.config import Config, ConfigError, EngineConfig, load_config
+from pyntara.config import (
+    MODES,
+    Config,
+    ConfigError,
+    EngineConfig,
+    TaskConfig,
+    load_config,
+)
 from pyntara.context import Context
 from pyntara.task_runner import run_tasks
 
@@ -184,7 +191,7 @@ def _resolve_mode(cfg: EngineConfig) -> str:
         detected = detect_default_mode(cfg.process_check_timeout_seconds)
         typer.echo(f"Install mode not set, using detected default: {detected}")
         return detected
-    if mode in task_catalog.MODES:
+    if mode in MODES:
         return mode
     detected = detect_default_mode(cfg.process_check_timeout_seconds)
     _warn_and_continue(
@@ -197,7 +204,9 @@ def _resolve_mode(cfg: EngineConfig) -> str:
     return detected
 
 
-def _resolve_task_names(mode: str, notice_timeout: int) -> list[str]:
+def _resolve_task_names(
+    mode: str, notice_timeout: int, tasks: tuple[TaskConfig, ...]
+) -> list[str]:
     """Task set from PYNTARA_TASKS, or the mode defaults.
 
     PYNTARA_TASKS is a space-separated list of task names; dependencies are
@@ -208,18 +217,20 @@ def _resolve_task_names(mode: str, notice_timeout: int) -> list[str]:
 
     selection = _env("PYNTARA_TASKS")
     if selection is None:
-        return task_catalog.default_tasks(mode)
+        return task_catalog.default_tasks(mode, tasks)
     names = selection.split()
-    unknown = task_catalog.unknown_tasks(names)
+    unknown = task_catalog.unknown_tasks(names, tasks)
     if unknown:
         _warn_and_continue(
             f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them",
             notice_timeout,
         )
-    return task_catalog.resolve(names)
+    return task_catalog.resolve(names, tasks)
 
 
-def _resolve_force_tasks(names: list[str], notice_timeout: int) -> frozenset[str]:
+def _resolve_force_tasks(
+    names: list[str], notice_timeout: int, tasks: tuple[TaskConfig, ...]
+) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
     Each forced task must be a known task that is part of the run set.
@@ -234,7 +245,7 @@ def _resolve_force_tasks(names: list[str], notice_timeout: int) -> frozenset[str
     invalid = [
         name
         for name in force_names
-        if task_catalog.by_name(name) is None or name not in names
+        if task_catalog.by_name(name, tasks) is None or name not in names
     ]
     if invalid:
         _warn_and_continue(
@@ -246,7 +257,7 @@ def _resolve_force_tasks(names: list[str], notice_timeout: int) -> frozenset[str
     return frozenset(
         name
         for name in force_names
-        if task_catalog.by_name(name) is not None and name in names
+        if task_catalog.by_name(name, tasks) is not None and name in names
     )
 
 
@@ -256,8 +267,8 @@ def run() -> None:
 
     cfg = _load_config_or_exit()
     mode = _resolve_mode(cfg.engine)
-    names = _resolve_task_names(mode, cfg.engine.notice_timeout)
-    force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout)
+    names = _resolve_task_names(mode, cfg.engine.notice_timeout, cfg.tasks)
+    force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout, cfg.tasks)
     ctx = Context(
         install_mode=mode,
         vault_password=_env("PYNTARA_VAULT_PASSWORD"),

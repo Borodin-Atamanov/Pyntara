@@ -9,18 +9,18 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 ## 2. What changed
 
-1. Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in code in src/pyntara/task_catalog.py. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.
+1. Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in config.toml under the [[tasks]] section. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.
 2. Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and skips when the goal is already reached. Force mode is a list of tasks that must be rerun even when the target state is already reached: PYNTARA_FORCE_TASKS, space-separated task names. Invalid names are reported with a notice and filtered out; the run continues (section 7).
 Уточнение: если передан список задач, а у нас нет нет задачи из этого списка, то показывает ошибка пользователю, 7 секунд она отображается, а дальше продолжается выполнение. Логика такая: если пользователю нужно - он прервёт выполнение и заново определит переменные окружения, а если нет - то продолжит выполнение. Это относится и к списку задач и к списку forced-задач.
 
-3. Single config file added as the source of truth for the Python part. config.toml at the repository root holds the engine values: task data root, notice timeout and per-task data such as the cli_tools package list. The file is mandatory: a missing or invalid file stops the run, there are no defaults. Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred. Invalid environment values never stop the run: they follow the resilience rule (section 7).
+3. Single config file added as the source of truth for the Python part. config.toml at the repository root holds the engine values and the task catalog: task data root, notice timeout, per-task data such as the cli_tools package list, and one [[tasks]] entry per task with name, description, dependencies and mode membership. The file is mandatory: a missing or invalid file stops the run, there are no defaults. Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred. Invalid environment values never stop the run: they follow the resilience rule (section 7).
 4. DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.
 5. Logging to stdout. The engine prints to stdout; inst.sh already tees all output into /var/log/pyntara/install.log (bootstrap contract section 9). No syslog handler, no masking filter. The rule is simpler than a filter: never log secret values.
 
 ## 3. Engine structure
 
 - pyntara.py: command entry, check-vault, run. run is the composition root: it reads the environment, validates it, builds Context and launches the runner.
-- task_catalog.py: TASKS list with name, description, dependencies and mode membership; validate_mode, default_tasks, resolve.
+- task_catalog.py: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from config.toml.
 - models.py: TaskResult dataclass (success, changed, skipped, message, error).
 - context.py: Context frozen dataclass.
 - config.py: loads and validates config.toml into a frozen Config dataclass; the composition root reads it and hands it to tasks through Context.
@@ -44,7 +44,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 ## 6. Documentation updates (completed)
 
 - docs/contracts/architecture.md: rewritten to the simplified module map.
-- docs/contracts/task-model.md: state machine removed, idempotency and the in-code task catalog kept.
+- docs/contracts/task-model.md: state machine removed, idempotency and the config-driven task catalog kept.
 - docs/contracts/interactive-ui.md: deleted.
 - docs/guides/project-structure.md: dropped the removed modules.
 - docs/spec/install-modes.md and docs/contracts/bootstrap.md: task-catalog references dropped.

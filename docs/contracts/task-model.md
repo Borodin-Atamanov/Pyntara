@@ -26,7 +26,7 @@ A meaningful task: install and configure SSH server, patch daemon config, add pr
 
 ## Task catalog
 
-The catalog lives in code in src/pyntara/task_catalog.py. Each entry has name, description, dependencies and mode membership.
+The catalog lives in config.toml under the [[tasks]] section. Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file.
 
 add_extra_repos — Enable extra Ubuntu archive components: universe, restricted, multiverse. Runs first so package tasks resolve their packages.
 users — Create and configure i, j, k users and required groups. User i is main user, all belong to sudo users.
@@ -49,7 +49,7 @@ telemetry_setup — Initial telemetry service setup and first-run queue bootstra
 
 Enabling a task auto-enables all its required dependencies transitively.
 Disabling a task does not auto-disable dependent tasks.
-Task set and metadata are defined in code in task_catalog.py.
+Task set and metadata are defined in config.toml under the [[tasks]] section; task_catalog.py holds the resolution logic.
 
 ## Task contract (Python)
 

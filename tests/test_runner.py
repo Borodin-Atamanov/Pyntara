@@ -42,6 +42,7 @@ def _ctx() -> Context:
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
             ),
+            tasks=(),
         ),
     )
 

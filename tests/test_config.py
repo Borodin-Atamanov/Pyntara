@@ -24,6 +24,24 @@ package_success_threshold_percent = 70
 
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]
+
+[[tasks]]
+name = "add_extra_repos"
+description = "Enable extra Ubuntu archive components."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "users"
+description = "Create and configure i, j, k users."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "passwords"
+description = "Derive root and user passwords."
+depends = ["users", "add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
 """
 
 
@@ -41,6 +59,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.package_install_retries == 3
     assert config.cli_tools.package_success_threshold_percent == 70
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
+    assert config.tasks[0].name == "add_extra_repos"
+    assert config.tasks[0].description == "Enable extra Ubuntu archive components."
+    assert config.tasks[0].depends == ()
+    assert config.tasks[0].modes == ("minimal", "server", "desktop")
+    assert config.tasks[2].name == "passwords"
+    assert config.tasks[2].depends == ("users", "add_extra_repos")
 
 
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
@@ -70,6 +94,8 @@ _BASE_CONFIG = (
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
     '[add_extra_repos]\ncomponents = ["universe"]\n'
+    '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
+    "depends = []\nmodes = [\"minimal\"]\n"
 )
 
 
@@ -119,6 +145,32 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace('components = ["universe"]', 'components = ["universe "]'),
         # components is an empty array
         _BASE_CONFIG.replace('components = ["universe"]', "components = []"),
+        # task name is a number, not a string
+        _BASE_CONFIG.replace('name = "users"', "name = 1"),
+        # task name is an empty string
+        _BASE_CONFIG.replace('name = "users"', 'name = ""'),
+        # task name contains a space, not an identifier
+        _BASE_CONFIG.replace('name = "users"', 'name = "my task"'),
+        # task description is a number, not a string
+        _BASE_CONFIG.replace('description = "Create users."', "description = 1"),
+        # task depends is a string, not an array
+        _BASE_CONFIG.replace("depends = []", 'depends = "users"'),
+        # task depends contains a number, not strings
+        _BASE_CONFIG.replace("depends = []", "depends = [1]"),
+        # task depends names a task that is not listed earlier
+        _BASE_CONFIG.replace("depends = []", 'depends = ["later"]'),
+        # task modes is a string, not an array
+        _BASE_CONFIG.replace('modes = ["minimal"]', 'modes = "minimal"'),
+        # task modes is an empty array
+        _BASE_CONFIG.replace('modes = ["minimal"]', "modes = []"),
+        # task modes contains an unknown install mode
+        _BASE_CONFIG.replace('modes = ["minimal"]', 'modes = ["fancy"]'),
+        # task modes contains a duplicate
+        _BASE_CONFIG.replace(
+            'modes = ["minimal"]', 'modes = ["minimal", "minimal"]'
+        ),
+        # task modes contains a number, not strings
+        _BASE_CONFIG.replace('modes = ["minimal"]', "modes = [1]"),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -189,4 +241,51 @@ def test_load_config_bool_not_accepted_as_retries(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ConfigError):
+        load_config(config_path)
+
+
+def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
+    # The catalog is mandatory: without it the engine cannot compute the
+    # task set (architecture contract section 3).
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
+        "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
+        "task_start_delay_seconds = 0.5\n"
+        '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
+        "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
+        '[add_extra_repos]\ncomponents = ["universe"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="\\[tasks\\]"):
+        load_config(config_path)
+
+
+def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
+    # An empty catalog is invalid: nothing would be provisionable. The
+    # tasks key must sit before any table header, or TOML would attach it
+    # to the preceding table.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "tasks = []\n"
+        '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
+        "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
+        "task_start_delay_seconds = 0.5\n"
+        '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
+        "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
+        '[add_extra_repos]\ncomponents = ["universe"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="at least one task"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_duplicate_task_names(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        _BASE_CONFIG + '[[tasks]]\nname = "users"\ndescription = "Again."\n'
+        "depends = []\nmodes = [\"minimal\"]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="duplicate task name"):
         load_config(config_path)

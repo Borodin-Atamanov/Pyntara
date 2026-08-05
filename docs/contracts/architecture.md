@@ -7,8 +7,8 @@ All new modules and tasks must follow this contract.
 
 inst.sh - bootloader
 pyntara.py (command entry and composition root)
-config.py (config.toml loading and validation)
-task_catalog.py (task metadata, mode defaults, dependency resolution)
+config.py (config.toml loading and validation, including the task catalog)
+task_catalog.py (mode defaults, task selection validation, dependency resolution)
 context.py (Context construction)
 task_runner.py (task discovery and execution)
 tasks/*.py (one task per module)
@@ -29,7 +29,7 @@ No task may read the environment, create global singletons, or assemble runtime 
 
 There are no CLI options. The engine configuration comes from two sources.
 
-config.toml at the repository root is the single source of truth for the values used by the Python part: engine.task_data_root (task data root), engine.notice_timeout (seconds the resilience notice stays visible), engine.command_timeout_seconds (ceiling for provisioning commands), engine.process_check_timeout_seconds (bound for the desktop detection process query) and per-task sections such as cli_tools.packages, cli_tools.package_status_timeout_seconds, cli_tools.package_install_retries, cli_tools.package_success_threshold_percent and add_extra_repos.components (Ubuntu archive components ensured before any package install). The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
+config.toml at the repository root is the single source of truth for the values used by the Python part: engine.task_data_root (task data root), engine.notice_timeout (seconds the resilience notice stays visible), engine.command_timeout_seconds (ceiling for provisioning commands), engine.process_check_timeout_seconds (bound for the desktop detection process query) and per-task sections such as cli_tools.packages, cli_tools.package_status_timeout_seconds, cli_tools.package_install_retries, cli_tools.package_success_threshold_percent and add_extra_repos.components (Ubuntu archive components ensured before any package install). The [[tasks]] section is the task catalog: one entry per task with name, description, dependencies and mode membership. The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
 
 Environment variables are the inst.sh interface for per-run selection and secrets:
 
@@ -69,7 +69,7 @@ error (optional)
 
 No typing.Protocol, no ABC inheritance, no registry.
 
-Task definitions live in code in task_catalog.py. Each entry has name, description, dependencies and mode membership.
+Task definitions live in config.toml under the [[tasks]] section. Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file, which keeps default task sets ordered and rules out cycles. task_catalog.py holds only the logic that operates on the catalog: validate_mode, default_tasks, resolve.
 
 Task-to-task data sharing is allowed only through Context fields or explicit arguments.
 
