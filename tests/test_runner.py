@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from pyntara import task_runner
-from pyntara.config import CliToolsConfig, Config, EngineConfig
+from pyntara.config import (
+    AddExtraReposConfig,
+    CliToolsConfig,
+    Config,
+    EngineConfig,
+)
 from pyntara.context import Context
 from pyntara.models import TaskResult
 
@@ -32,6 +37,9 @@ def _ctx() -> Context:
                 package_status_timeout_seconds=30,
                 package_install_retries=3,
                 package_success_threshold_percent=70,
+            ),
+            add_extra_repos=AddExtraReposConfig(
+                components=("universe", "restricted", "multiverse")
             ),
         ),
     )

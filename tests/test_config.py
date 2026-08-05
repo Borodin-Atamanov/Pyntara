@@ -20,6 +20,9 @@ packages = ["mc", "htop"]
 package_status_timeout_seconds = 30
 package_install_retries = 3
 package_success_threshold_percent = 70
+
+[add_extra_repos]
+components = ["universe", "restricted", "multiverse"]
 """
 
 
@@ -35,6 +38,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.package_status_timeout_seconds == 30
     assert config.cli_tools.package_install_retries == 3
     assert config.cli_tools.package_success_threshold_percent == 70
+    assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
 
 
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
@@ -62,6 +66,7 @@ _BASE_CONFIG = (
     "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
+    '[add_extra_repos]\ncomponents = ["universe"]\n'
 )
 
 
@@ -97,6 +102,16 @@ _BASE_CONFIG = (
             "package_success_threshold_percent = 70",
             'package_success_threshold_percent = "70"',
         ),
+        # components is a string, not an array
+        _BASE_CONFIG.replace('components = ["universe"]', 'components = "universe"'),
+        # components contains a number, not strings
+        _BASE_CONFIG.replace('components = ["universe"]', "components = [1]"),
+        # components contains an empty string
+        _BASE_CONFIG.replace('components = ["universe"]', 'components = [""]'),
+        # components contains whitespace
+        _BASE_CONFIG.replace('components = ["universe"]', 'components = ["universe "]'),
+        # components is an empty array
+        _BASE_CONFIG.replace('components = ["universe"]', "components = []"),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -104,6 +119,19 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
     config_path.write_text(content, encoding="utf-8")
     with pytest.raises(ConfigError):
         load_config(config_path)
+
+
+def test_load_config_deduplicates_components(tmp_path: Path) -> None:
+    # Duplicate components are removed while the configured order is kept.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        _BASE_CONFIG.replace(
+            'components = ["universe"]', 'components = ["universe", "multiverse", "universe"]'
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    assert config.add_extra_repos.components == ("universe", "multiverse")
 
 
 @pytest.mark.parametrize(

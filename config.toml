@@ -94,3 +94,9 @@ packages = [
     "calc", # calc: arbitrary precision calculator
     "hollywood", # hollywood: decorative fake Hollywood-style terminal activity
 ]
+
+[add_extra_repos]
+# Components the add_extra_repos task ensures in every Ubuntu archive
+# section of the apt sources. main is always present on a fresh Kubuntu;
+# universe, restricted and multiverse are enabled here.
+components = ["universe", "restricted", "multiverse"]

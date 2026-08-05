@@ -8,7 +8,13 @@ import pytest
 from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
-from pyntara.config import CliToolsConfig, Config, ConfigError, EngineConfig
+from pyntara.config import (
+    AddExtraReposConfig,
+    CliToolsConfig,
+    Config,
+    ConfigError,
+    EngineConfig,
+)
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
@@ -31,6 +37,9 @@ def _test_config(notice_timeout: int = 7) -> Config:
             package_status_timeout_seconds=30,
             package_install_retries=3,
             package_success_threshold_percent=70,
+        ),
+        add_extra_repos=AddExtraReposConfig(
+            components=("universe", "restricted", "multiverse")
         ),
     )
 
@@ -189,7 +198,7 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     assert "[done] cli_tools" in result.output
     assert "[skip] users" in result.output
-    assert "Finished 1 of 6 tasks, skipped 5" in result.output
+    assert "Finished 1 of 7 tasks, skipped 6" in result.output
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:

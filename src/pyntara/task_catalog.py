@@ -24,6 +24,13 @@ class TaskDef:
 
 TASKS: tuple[TaskDef, ...] = (
     TaskDef(
+        name="add_extra_repos",
+        description=(
+            "Enable extra Ubuntu archive components: universe, restricted, multiverse."
+        ),
+        modes=("minimal", "server", "desktop"),
+    ),
+    TaskDef(
         name="users",
         description="Create and configure i, j, k users and required groups.",
         modes=("minimal", "server", "desktop"),
@@ -42,6 +49,7 @@ TASKS: tuple[TaskDef, ...] = (
     TaskDef(
         name="cli_tools",
         description="Install curated console utilities: file managers, system and media tools.",
+        depends=("add_extra_repos",),
         modes=("minimal", "server", "desktop"),
     ),
     TaskDef(
@@ -90,6 +98,7 @@ TASKS: tuple[TaskDef, ...] = (
     TaskDef(
         name="apps",
         description="Install latest ImageMagick, FFmpeg and scrcpy.",
+        depends=("add_extra_repos",),
         modes=("desktop",),
     ),
     TaskDef(

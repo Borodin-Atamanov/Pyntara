@@ -29,7 +29,7 @@ No task may read the environment, create global singletons, or assemble runtime 
 
 There are no CLI options. The engine configuration comes from two sources.
 
-config.toml at the repository root is the single source of truth for the values used by the Python part: engine.task_data_root (task data root), engine.notice_timeout (seconds the resilience notice stays visible), engine.command_timeout_seconds (ceiling for provisioning commands), engine.process_check_timeout_seconds (bound for the desktop detection process query) and per-task sections such as cli_tools.packages, cli_tools.package_status_timeout_seconds, cli_tools.package_install_retries and cli_tools.package_success_threshold_percent. The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
+config.toml at the repository root is the single source of truth for the values used by the Python part: engine.task_data_root (task data root), engine.notice_timeout (seconds the resilience notice stays visible), engine.command_timeout_seconds (ceiling for provisioning commands), engine.process_check_timeout_seconds (bound for the desktop detection process query) and per-task sections such as cli_tools.packages, cli_tools.package_status_timeout_seconds, cli_tools.package_install_retries, cli_tools.package_success_threshold_percent and add_extra_repos.components (Ubuntu archive components ensured before any package install). The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
 
 Environment variables are the inst.sh interface for per-run selection and secrets:
 
@@ -48,7 +48,7 @@ vault_password
 vault_source
 force_tasks (frozenset of task names)
 task_data_root (Path)
-skip_apt_update (bool; True skips the apt index refresh in cli_tools)
+skip_apt_update (bool; True skips the apt index refresh in cli_tools and add_extra_repos)
 config (Config loaded from config.toml)
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.

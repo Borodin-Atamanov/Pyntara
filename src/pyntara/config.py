@@ -38,11 +38,19 @@ class CliToolsConfig:
 
 
 @dataclass(frozen=True)
+class AddExtraReposConfig:
+    """Ubuntu archive components ensured by the add_extra_repos task."""
+
+    components: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Config:
     """Validated content of config.toml."""
 
     engine: EngineConfig
     cli_tools: CliToolsConfig
+    add_extra_repos: AddExtraReposConfig
 
 
 def _int_field(raw: object, name: str) -> int:
@@ -106,6 +114,40 @@ def _cli_tools_table(raw: object) -> CliToolsConfig:
     )
 
 
+def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
+    """Validate the [add_extra_repos] table and build AddExtraReposConfig.
+
+    Components are non-empty strings without whitespace, deduplicated while
+    preserving their configured order. An empty list is invalid: an empty
+    component set would make the task trivially satisfied.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[add_extra_repos] section is missing or not a table")
+    components = raw.get("components")
+    if not isinstance(components, list) or not components:
+        raise ConfigError(
+            "add_extra_repos.components must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(component, str)
+        and component
+        and component == component.strip()
+        and " " not in component
+        for component in components
+    ):
+        raise ConfigError(
+            "add_extra_repos.components must be non-empty strings without whitespace"
+        )
+    unique: list[str] = []
+    seen: set[str] = set()
+    for component in components:
+        if component not in seen:
+            seen.add(component)
+            unique.append(component)
+    return AddExtraReposConfig(components=tuple(unique))
+
+
 def load_config(path: Path) -> Config:
     """Read and validate config.toml. Raises ConfigError on any problem."""
 
@@ -118,4 +160,5 @@ def load_config(path: Path) -> Config:
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
+        add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
     )

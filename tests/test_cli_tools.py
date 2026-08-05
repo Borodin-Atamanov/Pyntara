@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from pyntara import task_catalog
-from pyntara.config import CliToolsConfig, Config, EngineConfig
+from pyntara.config import (
+    AddExtraReposConfig,
+    CliToolsConfig,
+    Config,
+    EngineConfig,
+)
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
 
@@ -41,6 +46,9 @@ def _test_config(
             package_status_timeout_seconds=30,
             package_install_retries=3,
             package_success_threshold_percent=threshold,
+        ),
+        add_extra_repos=AddExtraReposConfig(
+            components=("universe", "restricted", "multiverse")
         ),
     )
 
@@ -94,10 +102,12 @@ def test_cli_tools_is_in_every_mode_default_set() -> None:
         assert "cli_tools" in task_catalog.default_tasks(mode)
 
 
-def test_cli_tools_has_no_dependencies() -> None:
+def test_cli_tools_depends_on_add_extra_repos() -> None:
+    # cli_tools needs universe and multiverse enabled before its packages
+    # can resolve, so add_extra_repos is a hard dependency.
     task_def = task_catalog.by_name("cli_tools")
     assert task_def is not None
-    assert task_def.depends == ()
+    assert task_def.depends == ("add_extra_repos",)
 
 
 def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,6 +403,9 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
                 package_install_retries=0,
                 package_success_threshold_percent=70,
             ),
+            add_extra_repos=AddExtraReposConfig(
+                components=("universe", "restricted", "multiverse")
+            ),
         ),
     )
     calls: list[list[str]] = []
@@ -463,6 +476,9 @@ def test_skip_apt_update_still_retries_installs(
                 package_status_timeout_seconds=30,
                 package_install_retries=3,
                 package_success_threshold_percent=70,
+            ),
+            add_extra_repos=AddExtraReposConfig(
+                components=("universe", "restricted", "multiverse")
             ),
         ),
     )

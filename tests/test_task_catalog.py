@@ -30,6 +30,24 @@ def test_minimal_mode_defaults_exclude_desktop_tasks() -> None:
     assert "apps" not in defaults
 
 
+def test_add_extra_repos_is_first_in_every_mode() -> None:
+    # add_extra_repos must run before any package install, so it leads the
+    # default task set of every mode.
+    for mode in task_catalog.MODES:
+        defaults = task_catalog.default_tasks(mode)
+        assert defaults[0] == "add_extra_repos"
+
+
+def test_resolve_cli_tools_pulls_add_extra_repos() -> None:
+    # Selecting cli_tools alone must enable add_extra_repos first, because
+    # its packages live in universe and multiverse.
+    assert task_catalog.resolve(["cli_tools"]) == ["add_extra_repos", "cli_tools"]
+
+
+def test_resolve_apps_pulls_add_extra_repos() -> None:
+    assert task_catalog.resolve(["apps"]) == ["add_extra_repos", "apps"]
+
+
 def test_resolve_adds_transitive_dependencies() -> None:
     # Selecting proxy_tunnel must pull in its dependency proxy_server.
     assert task_catalog.resolve(["proxy_tunnel"]) == ["proxy_server", "proxy_tunnel"]
