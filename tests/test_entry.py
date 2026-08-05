@@ -207,7 +207,7 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "[done] cli_tools" in result.output
-    assert "[skip] users" in result.output
+    assert "[skip] add_extra_repos" in result.output
     expected = len(task_catalog.default_tasks("minimal", REAL_TASKS))
     assert (
         f"Finished 1 of {expected} tasks, skipped {expected - 1}"
@@ -217,11 +217,14 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     # PYNTARA_TASKS selects tasks; dependencies are resolved inside the engine.
+    # cli_tools pulls add_extra_repos in first.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
-    monkeypatch.setenv("PYNTARA_TASKS", "proxy_tunnel")
+    monkeypatch.setenv("PYNTARA_TASKS", "cli_tools")
+    # The task module is mocked away so no real dpkg or apt command runs.
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert "Tasks: proxy_server proxy_tunnel" in result.output
+    assert "Tasks: add_extra_repos cli_tools" in result.output
 
 
 def test_run_warns_and_continues_on_unknown_force_tasks(
@@ -231,7 +234,7 @@ def test_run_warns_and_continues_on_unknown_force_tasks(
     # remaining tasks.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "hostnam")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "nope")
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
 
     def ok_task(ctx: object) -> TaskResult:
@@ -240,17 +243,19 @@ def test_run_warns_and_continues_on_unknown_force_tasks(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "invalid task names in PYNTARA_FORCE_TASKS: hostnam" in result.output
+    assert "invalid task names in PYNTARA_FORCE_TASKS: nope" in result.output
 
 
 def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Forcing a task that would never run is a notice, not a stop: the run
-    # continues without the invalid entry.
+    # continues without the invalid entry. cli_tools is a known task that is
+    # not part of the narrowed run set.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "apps")
+    monkeypatch.setenv("PYNTARA_TASKS", "add_extra_repos")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "cli_tools")
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
 
     def ok_task(ctx: object) -> TaskResult:
@@ -259,7 +264,7 @@ def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "invalid task names in PYNTARA_FORCE_TASKS: apps" in result.output
+    assert "invalid task names in PYNTARA_FORCE_TASKS: cli_tools" in result.output
     assert "Force:" not in result.output
 
 
@@ -269,7 +274,7 @@ def test_run_reports_force_tasks_in_the_run_set(
     # A valid force list is reported and does not change the task set.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "hostname users")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "add_extra_repos cli_tools")
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -277,7 +282,7 @@ def test_run_reports_force_tasks_in_the_run_set(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "Force: hostname users" in result.output
+    assert "Force: add_extra_repos cli_tools" in result.output
 
 
 def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,10 +1,12 @@
 """Unit tests for the task catalog logic.
 
 The catalog data lives in config.toml under the [[tasks]] section; this
-module tests the logic that operates on it. The real config file is loaded
-so the tests cover the actual task set, dependencies and mode membership.
-inst.sh never parses the catalog file: the engine owns defaults, validation
-and dependency resolution.
+module tests the logic that operates on it. The mechanics of dependency
+resolution are tested on a small synthetic catalog so they never depend on
+specific task names. Data checks against the real config only reference
+implemented tasks: future tasks are expected to change and must not be
+mentioned by name in tests. inst.sh never parses the catalog file: the
+engine owns defaults, validation and dependency resolution.
 """
 
 from __future__ import annotations
@@ -20,6 +22,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TASKS = load_config(REPO_ROOT / "config.toml").tasks
 
 
+# A synthetic three-task chain with one transitive dependency. Mechanics
+# tests use it so they stay valid regardless of which tasks exist or are
+# implemented; only the two implemented tasks are referenced by name in
+# data tests. All three tasks belong to every mode.
+_ALL_MODES = ("minimal", "server", "desktop")
+SYNTHETIC_TASKS: tuple[TaskConfig, ...] = (
+    TaskConfig(name="a", description="A.", modes=_ALL_MODES),
+    TaskConfig(name="b", description="B.", depends=("a",), modes=_ALL_MODES),
+    TaskConfig(name="c", description="C.", depends=("b",), modes=_ALL_MODES),
+)
+
+
 def test_modes_are_the_three_install_modes() -> None:
     assert MODES == ("minimal", "server", "desktop")
 
@@ -30,10 +44,11 @@ def test_default_tasks_match_mode_membership_exactly() -> None:
         assert task_catalog.default_tasks(mode, TASKS) == expected
 
 
-def test_minimal_mode_defaults_exclude_desktop_tasks() -> None:
-    defaults = task_catalog.default_tasks("minimal", TASKS)
-    assert "desktop" not in defaults
-    assert "apps" not in defaults
+def test_default_tasks_use_configured_mode_membership() -> None:
+    # A task listed only for desktop must never appear in minimal defaults.
+    desktop_only = TaskConfig(name="desktop", description="D.", modes=("desktop",))
+    catalog = SYNTHETIC_TASKS + (desktop_only,)
+    assert task_catalog.default_tasks("minimal", catalog) == ["a", "b", "c"]
 
 
 def test_add_extra_repos_is_first_in_every_mode() -> None:
@@ -53,38 +68,27 @@ def test_resolve_cli_tools_pulls_add_extra_repos() -> None:
     ]
 
 
-def test_resolve_apps_pulls_add_extra_repos() -> None:
-    assert task_catalog.resolve(["apps"], TASKS) == ["add_extra_repos", "apps"]
-
-
 def test_resolve_adds_transitive_dependencies() -> None:
-    # Selecting proxy_tunnel must pull in its dependency proxy_server.
-    assert task_catalog.resolve(["proxy_tunnel"], TASKS) == [
-        "proxy_server",
-        "proxy_tunnel",
-    ]
+    # Selecting c must pull in its transitive dependency a through b.
+    assert task_catalog.resolve(["c"], SYNTHETIC_TASKS) == ["a", "b", "c"]
 
 
 def test_resolve_puts_dependencies_before_the_task() -> None:
-    assert task_catalog.resolve(["passwords"], TASKS) == [
-        "users",
-        "hostname",
-        "passwords",
-    ]
+    assert task_catalog.resolve(["b"], SYNTHETIC_TASKS) == ["a", "b"]
 
 
 def test_resolve_keeps_catalog_order_and_deduplicates() -> None:
-    result = task_catalog.resolve(["hostname", "passwords", "hostname"], TASKS)
-    assert result == ["users", "hostname", "passwords"]
+    result = task_catalog.resolve(["c", "a", "c"], SYNTHETIC_TASKS)
+    assert result == ["a", "b", "c"]
 
 
 def test_resolve_ignores_unknown_names() -> None:
     # The engine validates selections before resolving; resolve stays lenient.
-    assert task_catalog.resolve(["nope"], TASKS) == []
+    assert task_catalog.resolve(["nope"], SYNTHETIC_TASKS) == []
 
 
 def test_unknown_tasks_reports_unknown_names() -> None:
-    assert task_catalog.unknown_tasks(["nope", "users"], TASKS) == ["nope"]
+    assert task_catalog.unknown_tasks(["nope", "cli_tools"], TASKS) == ["nope"]
 
 
 def test_validate_mode_accepts_known_modes() -> None:

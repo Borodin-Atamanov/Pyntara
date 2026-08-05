@@ -64,10 +64,9 @@ swapfile.py — Calculate and configure swapfile from RAM/free-space formulas.
 ssh.py — Install and configure SSH service, including secure config updates.
 proxy_server.py — Local authenticated proxy service setup and management.
 proxy_tunnel.py — Local tunnel to remote proxy/VPN using secrets.
-ntp.py — Enable and tune NTP synchronization from ntp_servers.txt.
 power.py — Configure power behavior (no suspend on lid close/idle).
 desktop.py — Desktop defaults (Kate, terminal profile, folders/sidebar behavior).
-apps.py — Installation/configuration of ImageMagick, FFmpeg, and scrcpy.
+imagemagick_install.py — Installation/configuration of ImageMagick.
 nextdns.py — NextDNS account/bootstrap integration and system DNS application.
 telemetry_setup.py — Initial telemetry service setup and first-run queue bootstrap.
 

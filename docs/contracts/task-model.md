@@ -38,10 +38,9 @@ swapfile — Calculate and configure swapfile. Size from formulas considering RA
 ssh — Install and configure SSH service. Patch daemon config, add pre-generated certificates for passwordless login.
 proxy_server — Local authenticated proxy service with password/port. Runs as Kubuntu system service.
 proxy_tunnel — Local tunnel to remote proxy/VPN. Connection parameters from secrets.
-ntp — Enable and tune NTP synchronization. Uses large server list from most accurate to least.
 power — Configure power behavior. No suspend on lid close, no suspend on user inactivity.
 desktop — Desktop defaults: Kate opens new document, terminal starts in /home/i/Downloads with larger font and scrollback, language indicator shows Argentina flag for Spanish, user folders point to /home/i/Downloads, Dolphin sidebar cleanup.
-apps — Install latest ImageMagick, FFmpeg, scrcpy. High resource limits, execution stability, widest format support. Depends on add_extra_repos.
+imagemagick_install — Install latest ImageMagick. High resource limits, execution stability, widest format support. Depends on add_extra_repos.
 nextdns — Per-user NextDNS account via browser automation. Apply DNS endpoint system-wide. Include endpoint in telemetry.
 telemetry_setup — Initial telemetry service setup and first-run queue bootstrap. See docs/spec/telemetry.md.
 

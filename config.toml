@@ -190,8 +190,8 @@ depends = ["users"]
 modes = ["desktop"]
 
 [[tasks]]
-name = "apps"
-description = "Install latest ImageMagick, FFmpeg and scrcpy."
+name = "imagemagick_install"
+description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]
 modes = ["desktop"]
 
