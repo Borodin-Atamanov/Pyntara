@@ -2,8 +2,7 @@
 
 run_command is the single command-execution wrapper used by tasks: no
 shell, real-time output streaming, timeout and return-code checking
-(docs/guides/project-rules.md section 4). parse_commented_lines turns a
-comment-friendly line list into plain entries.
+(docs/guides/project-rules.md section 4).
 """
 
 from __future__ import annotations
@@ -53,21 +52,3 @@ def run_command(
         check=check,
         text=True,
     )
-
-
-def parse_commented_lines(raw: str) -> list[str]:
-    """Parse a line list where # starts a comment.
-
-    One entry per line; blank lines and comment lines are ignored. This
-    keeps lists readable inside code, like classic config files, without
-    quoting every entry. Entries cannot contain spaces: each non-comment
-    line is exactly one entry.
-    """
-
-    entries: list[str] = []
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        entries.append(stripped)
-    return entries

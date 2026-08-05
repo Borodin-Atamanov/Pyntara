@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from pyntara import task_runner
+from pyntara.config import CliToolsConfig, Config, EngineConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
 
@@ -18,6 +19,10 @@ def _ctx() -> Context:
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
+        config=Config(
+            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
+            cli_tools=CliToolsConfig(packages=("mc", "htop")),
+        ),
     )
 
 

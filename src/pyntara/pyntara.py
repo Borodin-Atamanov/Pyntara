@@ -21,13 +21,17 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from pyntara import task_catalog
+from pyntara.config import Config, ConfigError, load_config
 from pyntara.context import Context
 from pyntara.task_runner import run_tasks
 
 app = typer.Typer(invoke_without_command=True)
 
-# Runtime task data root per FHS: /var/lib/pyntara holds runtime state.
-DEFAULT_TASK_DATA_ROOT = Path("/var/lib/pyntara/task-data")
+# The engine configuration lives in the repository root. inst.sh launches
+# pyntara from the clone root, so the file is always found there. The file
+# is mandatory: a missing or invalid config stops the run (architecture
+# contract section 3).
+CONFIG_PATH = Path("config.toml")
 
 
 @app.callback()
@@ -85,23 +89,22 @@ def _env(name: str) -> str | None:
     return value
 
 
-def _notice_timeout() -> int:
-    """Seconds the error notice stays visible; PYNTARA_NOTICE_TIMEOUT, default 7.
+def _load_config_or_exit() -> Config:
+    """Load config.toml; a missing or invalid file stops the run.
 
-    An unparsable value falls back to the default: the notice must never
-    crash the run it is meant to protect.
+    The config is the single source of truth for the Python part, so a
+    broken file has no safe fallback: without it the engine cannot know
+    what to provision. The failure is reported and the program exits.
     """
 
-    raw = _env("PYNTARA_NOTICE_TIMEOUT")
-    if raw is None:
-        return 7
     try:
-        return int(raw)
-    except ValueError:
-        return 7
+        return load_config(CONFIG_PATH)
+    except ConfigError as exc:
+        typer.echo(f"Error! {exc}", err=True)
+        raise typer.Exit(1) from exc
 
 
-def _warn_and_continue(message: str) -> None:
+def _warn_and_continue(message: str, notice_timeout: int) -> None:
     """Show an error notice with a visible countdown, then continue.
 
     General resilience rule: an invalid environment value must never stop the
@@ -111,9 +114,8 @@ def _warn_and_continue(message: str) -> None:
     continues.
     """
 
-    timeout = _notice_timeout()
     typer.echo(f"Error! {message}", err=True)
-    for remaining in range(timeout, 0, -1):
+    for remaining in range(notice_timeout, 0, -1):
         print(f"\r{remaining} ", end="", flush=True, file=sys.stderr)
         time.sleep(1)
     # The final carriage return ends the countdown line cleanly.
@@ -152,7 +154,7 @@ def detect_default_mode() -> str:
     return "server"
 
 
-def _resolve_mode() -> str:
+def _resolve_mode(notice_timeout: int) -> str:
     """Resolve the install mode from PYNTARA_INSTALL_MODE or auto-detection.
 
     A missing variable is not an error: the mode is auto-detected and
@@ -173,12 +175,13 @@ def _resolve_mode() -> str:
         f"Install mode '{mode}' was set through environment variables but not "
         f"found in the configuration, applied mode '{detected}'. If this does "
         "not suit you, interrupt the program and redefine the mode through "
-        "environment variables. Execution continues in"
+        "environment variables. Execution continues in",
+        notice_timeout,
     )
     return detected
 
 
-def _resolve_task_names(mode: str) -> list[str]:
+def _resolve_task_names(mode: str, notice_timeout: int) -> list[str]:
     """Task set from PYNTARA_TASKS, or the mode defaults.
 
     PYNTARA_TASKS is a space-separated list of task names; dependencies are
@@ -194,12 +197,13 @@ def _resolve_task_names(mode: str) -> list[str]:
     unknown = task_catalog.unknown_tasks(names)
     if unknown:
         _warn_and_continue(
-            f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them"
+            f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them",
+            notice_timeout,
         )
     return task_catalog.resolve(names)
 
 
-def _resolve_force_tasks(names: list[str]) -> frozenset[str]:
+def _resolve_force_tasks(names: list[str], notice_timeout: int) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
     Each forced task must be a known task that is part of the run set.
@@ -220,7 +224,8 @@ def _resolve_force_tasks(names: list[str]) -> frozenset[str]:
         _warn_and_continue(
             "invalid task names in PYNTARA_FORCE_TASKS: "
             + ", ".join(invalid)
-            + "; continuing without them"
+            + "; continuing without them",
+            notice_timeout,
         )
     return frozenset(
         name
@@ -233,18 +238,17 @@ def _resolve_force_tasks(names: list[str]) -> frozenset[str]:
 def run() -> None:
     """Run the Pyntara provisioning engine."""
 
-    mode = _resolve_mode()
-    names = _resolve_task_names(mode)
-    force_tasks = _resolve_force_tasks(names)
-    raw_task_data_root = _env("PYNTARA_TASK_DATA_DIR")
+    cfg = _load_config_or_exit()
+    mode = _resolve_mode(cfg.engine.notice_timeout)
+    names = _resolve_task_names(mode, cfg.engine.notice_timeout)
+    force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout)
     ctx = Context(
         install_mode=mode,
         vault_password=_env("PYNTARA_VAULT_PASSWORD"),
         vault_source=_env("PYNTARA_VAULT_SOURCE"),
         force_tasks=force_tasks,
-        task_data_root=Path(raw_task_data_root)
-        if raw_task_data_root is not None
-        else DEFAULT_TASK_DATA_ROOT,
+        task_data_root=cfg.engine.task_data_root,
+        config=cfg,
     )
     typer.echo(f"Install mode: {mode}")
     typer.echo(f"Tasks: {' '.join(names)}")

@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
+from pyntara.config import CliToolsConfig, Config, ConfigError, EngineConfig
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
 
 runner = CliRunner()
+
+
+def _test_config(notice_timeout: int = 7) -> Config:
+    """Config with values safe for unit tests; the real file is never touched."""
+
+    return Config(
+        engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=notice_timeout),
+        cli_tools=CliToolsConfig(packages=("mc", "htop", "hollywood")),
+    )
 
 
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -44,7 +56,7 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     # and falls back to the auto-detected mode: the run continues.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
     monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
@@ -93,7 +105,7 @@ def test_run_unknown_mode_countdown_has_no_unit_letter(
     # The countdown counts seconds as plain numbers, without the letter s.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "2")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=2))
     monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
@@ -115,7 +127,7 @@ def test_run_warns_and_continues_on_unknown_tasks(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "nope")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "unknown task names in PYNTARA_TASKS" in result.output
@@ -128,7 +140,7 @@ def test_run_pauses_on_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "nope")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "1")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=1))
     slept: list[float] = []
     monkeypatch.setattr("pyntara.pyntara.time.sleep", lambda seconds: slept.append(seconds))
     result = runner.invoke(app, [])
@@ -185,7 +197,7 @@ def test_run_warns_and_continues_on_unknown_force_tasks(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "hostnam")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -204,7 +216,7 @@ def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "apps")
-    monkeypatch.setenv("PYNTARA_NOTICE_TIMEOUT", "0")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -247,3 +259,16 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     expected = len(task_catalog.default_tasks("minimal"))
     assert f"All {expected} tasks finished" in result.output
     assert "[done] users" in result.output
+
+
+def test_run_fails_when_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The config file is mandatory: without it the engine cannot know what
+    # to provision, so the run stops with an error and a nonzero exit code.
+    def missing_config(path: Path) -> Config:
+        raise ConfigError("config file not found: config.toml")
+
+    _clear_env(monkeypatch)
+    monkeypatch.setattr("pyntara.pyntara.load_config", missing_config)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 1
+    assert "config file not found" in result.output

@@ -12,8 +12,12 @@ from pathlib import Path
 import pytest
 
 from pyntara import task_catalog
+from pyntara.config import CliToolsConfig, Config, EngineConfig
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
+
+# Package set used by the tests; mirrors the real config but stays small.
+TEST_PACKAGES = ("mc", "htop", "hollywood")
 
 
 def _ctx() -> Context:
@@ -23,6 +27,10 @@ def _ctx() -> Context:
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
+        config=Config(
+            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
+            cli_tools=CliToolsConfig(packages=TEST_PACKAGES),
+        ),
     )
 
 
@@ -70,7 +78,7 @@ def test_cli_tools_has_no_dependencies() -> None:
 
 
 def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _install_fake(monkeypatch, installed=set(cli_tools.PACKAGES))
+    calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is False
@@ -80,7 +88,7 @@ def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     # Only mc is missing; apt must install exactly that package.
-    calls = _install_fake(monkeypatch, installed=set(cli_tools.PACKAGES) - {"mc"})
+    calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
     result = cli_tools.task(_ctx())
     assert result.success is True
     assert result.changed is True
@@ -110,7 +118,7 @@ def test_config_files_leftover_counts_as_not_installed(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", *cli_tools.PACKAGES]]
+    assert install_calls == [["apt-get", "install", "-y", *TEST_PACKAGES]]
 
 
 def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,8 +179,12 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
         vault_source=None,
         force_tasks=frozenset({"cli_tools"}),
         task_data_root=Path("/tmp"),
+        config=Config(
+            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
+            cli_tools=CliToolsConfig(packages=TEST_PACKAGES),
+        ),
     )
-    calls = _install_fake(monkeypatch, installed=set(cli_tools.PACKAGES))
+    calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(ctx)
     assert result.success is True
     assert result.changed is False

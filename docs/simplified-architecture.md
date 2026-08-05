@@ -13,7 +13,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 2. Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and skips when the goal is already reached. Force mode is a list of tasks that must be rerun even when the target state is already reached: PYNTARA_FORCE_TASKS, space-separated task names. Invalid names are reported with a notice and filtered out; the run continues (section 7).
 Уточнение: если передан список задач, а у нас нет нет задачи из этого списка, то показывает ошибка пользователю, 7 секунд она отображается, а дальше продолжается выполнение. Логика такая: если пользователю нужно - он прервёт выполнение и заново определит переменные окружения, а если нет - то продолжит выполнение. Это относится и к списку задач и к списку forced-задач.
 
-3. Config precedence chain removed. No file config, no CLI options, no Pydantic config models. The engine reads validated environment variables: PYNTARA_INSTALL_MODE, PYNTARA_TASKS, PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE, PYNTARA_FORCE_TASKS. Invalid values never stop the run: they follow the resilience rule (section 7).
+3. Single config file added as the source of truth for the Python part. config.toml at the repository root holds the engine values: task data root, notice timeout and per-task data such as the cli_tools package list. The file is mandatory: a missing or invalid file stops the run, there are no defaults. Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred. Invalid environment values never stop the run: they follow the resilience rule (section 7).
 4. DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.
 5. Logging to stdout. The engine prints to stdout; inst.sh already tees all output into /var/log/pyntara/install.log (bootstrap contract section 9). No syslog handler, no masking filter. The rule is simpler than a filter: never log secret values.
 
@@ -23,6 +23,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 - task_catalog.py: TASKS list with name, description, dependencies and mode membership; validate_mode, default_tasks, resolve.
 - models.py: TaskResult dataclass (success, changed, skipped, message, error).
 - context.py: Context frozen dataclass.
+- config.py: loads and validates config.toml into a frozen Config dataclass; the composition root reads it and hands it to tasks through Context.
 - task_runner.py: loads task modules by name, runs them in order, collects results. A missing module is a skipped result, a broken module is a failed result; neither crashes the run, and the summary shows everything that was skipped or failed.
 - tasks/<name>.py: one module per task, each exposing task(ctx) -> TaskResult.
 - tests/: pytest for the engine, bash tests for inst.sh.

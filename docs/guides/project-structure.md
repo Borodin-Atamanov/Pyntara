@@ -18,6 +18,7 @@ The managed-block fallback must be implemented as a small shared library, not du
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.
 README.md — Quick start, installation modes, and links to detailed docs.
+config.toml — Engine configuration, single source of truth for the Python part. See docs/contracts/architecture.md.
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
@@ -37,6 +38,7 @@ secrets/production.password — Password for production.vault. Not in git (.giti
 
 src/pyntara/__init__.py — Package version and public exports.
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
+src/pyntara/config.py — Config.toml loading: Config frozen dataclass, load_config, ConfigError.
 src/pyntara/task_catalog.py — Task metadata in code: TASKS, MODES, validate_mode, default_tasks, resolve, unknown_tasks.
 src/pyntara/models.py — TaskResult dataclass.
 src/pyntara/context.py — Context frozen dataclass.
