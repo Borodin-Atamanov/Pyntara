@@ -10,18 +10,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support import FakeProc as _FakeProc
+from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import (
-    MODES,
-    AddExtraReposConfig,
-    CliToolsConfig,
-    Config,
-    EngineConfig,
-    SwapfileServiceInstallConfig,
-    ZswapServiceConfig,
-    load_config,
-)
+from pyntara.config import MODES, Config, load_config
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
 
@@ -43,59 +36,11 @@ def _test_config(
 ) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
-    return Config(
-        engine=EngineConfig(
-            task_data_root=Path("/tmp"),
-            notice_timeout=7,
-            command_timeout_seconds=1800,
-            process_check_timeout_seconds=5,
-            task_start_delay_seconds=0.5,
-        ),
-        cli_tools=CliToolsConfig(
-            packages=packages,
-            package_status_timeout_seconds=30,
-            package_install_retries=3,
-            package_success_threshold_percent=threshold,
-        ),
-        add_extra_repos=AddExtraReposConfig(
-            components=("universe", "restricted", "multiverse")
-        ),
-        swapfile_service_install=SwapfileServiceInstallConfig(
-            swapfile_path=Path("/swapfile"),
-            ram_multiplier=2,
-            ram_extra_mb=4096,
-            disk_fraction=0.5,
-        ),
-        zswap_service=ZswapServiceConfig(
-            enabled=True,
-            compressor="zstd",
-            max_pool_percent=50,
-            accept_threshold_percent=100,
-            shrinker_enabled=True,
-        ),
-        tasks=(),
-    )
+    return make_config(cli_tools_packages=packages, cli_tools_threshold=threshold)
 
 
 def _ctx() -> Context:
-    return Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        task_data_root=Path("/tmp"),
-        skip_apt_update=False,
-        config=_test_config(),
-    )
-
-
-class _FakeProc:
-    """Minimal stand-in for subprocess.CompletedProcess."""
-
-    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+    return make_context(config=_test_config())
 
 
 def _install_fake(
@@ -407,45 +352,8 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
 def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # retries=0 means a single attempt per package: a failing package is
     # attempted once and reported without a retry.
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        task_data_root=Path("/tmp"),
-        skip_apt_update=False,
-        config=Config(
-            engine=EngineConfig(
-                task_data_root=Path("/tmp"),
-                notice_timeout=7,
-                command_timeout_seconds=1800,
-                process_check_timeout_seconds=5,
-                task_start_delay_seconds=0.5,
-            ),
-            cli_tools=CliToolsConfig(
-                packages=("mc",),
-                package_status_timeout_seconds=30,
-                package_install_retries=0,
-                package_success_threshold_percent=70,
-            ),
-            add_extra_repos=AddExtraReposConfig(
-                components=("universe", "restricted", "multiverse")
-            ),
-            swapfile_service_install=SwapfileServiceInstallConfig(
-                swapfile_path=Path("/swapfile"),
-                ram_multiplier=2,
-                ram_extra_mb=4096,
-                disk_fraction=0.5,
-            ),
-            zswap_service=ZswapServiceConfig(
-                enabled=True,
-                compressor="zstd",
-                max_pool_percent=50,
-                accept_threshold_percent=100,
-                shrinker_enabled=True,
-            ),
-            tasks=(),
-        ),
+    ctx = make_context(
+        config=make_config(cli_tools_packages=("mc",), cli_tools_retries=0)
     )
     calls: list[list[str]] = []
 
@@ -471,15 +379,7 @@ def test_skip_apt_update_skips_index_refresh(
 ) -> None:
     # skip_apt_update=True disables the index refresh entirely: only
     # installs run, so a test run never waits for apt-get update.
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        task_data_root=Path("/tmp"),
-        skip_apt_update=True,
-        config=_test_config(),
-    )
+    ctx = make_context(skip_apt_update=True, config=_test_config())
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
     result = cli_tools.task(ctx)
     assert result.success is True
@@ -496,45 +396,9 @@ def test_skip_apt_update_still_retries_installs(
 ) -> None:
     # With the refresh skipped, a transient install failure still succeeds
     # on a retry without any apt-get update call.
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        task_data_root=Path("/tmp"),
+    ctx = make_context(
         skip_apt_update=True,
-        config=Config(
-            engine=EngineConfig(
-                task_data_root=Path("/tmp"),
-                notice_timeout=7,
-                command_timeout_seconds=1800,
-                process_check_timeout_seconds=5,
-                task_start_delay_seconds=0.5,
-            ),
-            cli_tools=CliToolsConfig(
-                packages=("mc",),
-                package_status_timeout_seconds=30,
-                package_install_retries=3,
-                package_success_threshold_percent=70,
-            ),
-            add_extra_repos=AddExtraReposConfig(
-                components=("universe", "restricted", "multiverse")
-            ),
-            swapfile_service_install=SwapfileServiceInstallConfig(
-                swapfile_path=Path("/swapfile"),
-                ram_multiplier=2,
-                ram_extra_mb=4096,
-                disk_fraction=0.5,
-            ),
-            zswap_service=ZswapServiceConfig(
-                enabled=True,
-                compressor="zstd",
-                max_pool_percent=50,
-                accept_threshold_percent=100,
-                shrinker_enabled=True,
-            ),
-            tasks=(),
-        ),
+        config=make_config(cli_tools_packages=("mc",), cli_tools_retries=3),
     )
     calls: list[list[str]] = []
     mc_attempts = 0

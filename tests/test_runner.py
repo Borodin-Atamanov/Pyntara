@@ -2,64 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+from support import make_context
 
 from pyntara import task_runner
-from pyntara.config import (
-    AddExtraReposConfig,
-    CliToolsConfig,
-    Config,
-    EngineConfig,
-    SwapfileServiceInstallConfig,
-    ZswapServiceConfig,
-)
 from pyntara.context import Context
 from pyntara.models import TaskResult
 
 
 def _ctx() -> Context:
-    return Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        task_data_root=Path("/tmp"),
-        skip_apt_update=False,
-        config=Config(
-            engine=EngineConfig(
-                task_data_root=Path("/tmp"),
-                notice_timeout=7,
-                command_timeout_seconds=1800,
-                process_check_timeout_seconds=5,
-                task_start_delay_seconds=0.5,
-            ),
-            cli_tools=CliToolsConfig(
-                packages=("mc", "htop"),
-                package_status_timeout_seconds=30,
-                package_install_retries=3,
-                package_success_threshold_percent=70,
-            ),
-            add_extra_repos=AddExtraReposConfig(
-                components=("universe", "restricted", "multiverse")
-            ),
-            swapfile_service_install=SwapfileServiceInstallConfig(
-                swapfile_path=Path("/swapfile"),
-                ram_multiplier=2,
-                ram_extra_mb=4096,
-                disk_fraction=0.5,
-            ),
-            zswap_service=ZswapServiceConfig(
-                enabled=True,
-                compressor="zstd",
-                max_pool_percent=50,
-                accept_threshold_percent=100,
-                shrinker_enabled=True,
-            ),
-            tasks=(),
-        ),
-    )
+    return make_context()
 
 
 def test_run_tasks_reports_missing_implementation(monkeypatch: pytest.MonkeyPatch) -> None:

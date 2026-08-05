@@ -12,15 +12,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support import FakeProc as _FakeProc
+from support import make_config, make_context
 
-from pyntara.config import (
-    AddExtraReposConfig,
-    CliToolsConfig,
-    Config,
-    EngineConfig,
-    SwapfileServiceInstallConfig,
-    ZswapServiceConfig,
-)
 from pyntara.context import Context
 from pyntara.tasks import swapfile_service_install
 
@@ -45,15 +39,6 @@ FREE_BYTES = 100 * 1024**3
 TARGET_MB = 16 * 1024 * 2 + 4096
 
 
-class _FakeProc:
-    """Minimal stand-in for subprocess.CompletedProcess."""
-
-    def __init__(self, returncode: int, stdout: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = ""
-
-
 class _FakeDiskUsage:
     """Minimal stand-in for shutil.disk_usage; only free is read."""
 
@@ -66,42 +51,18 @@ class _FakeDiskUsage:
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
-    return Context(
+    return make_context(
         install_mode="server",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset({"swapfile_service_install"}) if force else frozenset(),
+        force_tasks=(
+            frozenset({"swapfile_service_install"}) if force else frozenset()
+        ),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=Config(
-            engine=EngineConfig(
-                task_data_root=tmp_path,
-                notice_timeout=7,
-                command_timeout_seconds=1800,
-                process_check_timeout_seconds=5,
-                task_start_delay_seconds=0.5,
-            ),
-            cli_tools=CliToolsConfig(
-                packages=("mc",),
-                package_status_timeout_seconds=30,
-                package_install_retries=3,
-                package_success_threshold_percent=70,
-            ),
-            add_extra_repos=AddExtraReposConfig(components=("universe",)),
-            swapfile_service_install=SwapfileServiceInstallConfig(
-                swapfile_path=tmp_path / "swapfile",
-                ram_multiplier=2,
-                ram_extra_mb=4096,
-                disk_fraction=0.5,
-            ),
-            zswap_service=ZswapServiceConfig(
-                enabled=True,
-                compressor="zstd",
-                max_pool_percent=50,
-                accept_threshold_percent=100,
-                shrinker_enabled=True,
-            ),
-            tasks=(),
+        config=make_config(
+            task_data_root=tmp_path,
+            cli_tools_packages=("mc",),
+            add_extra_repos_components=("universe",),
+            swapfile_path=tmp_path / "swapfile",
         ),
     )
 

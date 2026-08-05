@@ -5,19 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from support import make_config
 from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
-from pyntara.config import (
-    AddExtraReposConfig,
-    CliToolsConfig,
-    Config,
-    ConfigError,
-    EngineConfig,
-    SwapfileServiceInstallConfig,
-    ZswapServiceConfig,
-    load_config,
-)
+from pyntara.config import Config, ConfigError, load_config
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
@@ -33,36 +25,9 @@ REAL_TASKS = load_config(REPO_ROOT / "config.toml").tasks
 def _test_config(notice_timeout: int = 7) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
-    return Config(
-        engine=EngineConfig(
-            task_data_root=Path("/tmp"),
-            notice_timeout=notice_timeout,
-            command_timeout_seconds=1800,
-            process_check_timeout_seconds=5,
-            task_start_delay_seconds=0.5,
-        ),
-        cli_tools=CliToolsConfig(
-            packages=("mc", "htop", "hollywood"),
-            package_status_timeout_seconds=30,
-            package_install_retries=3,
-            package_success_threshold_percent=70,
-        ),
-        add_extra_repos=AddExtraReposConfig(
-            components=("universe", "restricted", "multiverse")
-        ),
-        swapfile_service_install=SwapfileServiceInstallConfig(
-            swapfile_path=Path("/swapfile"),
-            ram_multiplier=2,
-            ram_extra_mb=4096,
-            disk_fraction=0.5,
-        ),
-        zswap_service=ZswapServiceConfig(
-            enabled=True,
-            compressor="zstd",
-            max_pool_percent=50,
-            accept_threshold_percent=100,
-            shrinker_enabled=True,
-        ),
+    return make_config(
+        notice_timeout=notice_timeout,
+        cli_tools_packages=("mc", "htop", "hollywood"),
         tasks=REAL_TASKS,
     )
 

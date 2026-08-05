@@ -12,15 +12,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support import FakeProc as _FakeProc
+from support import make_config, make_context
 
-from pyntara.config import (
-    AddExtraReposConfig,
-    CliToolsConfig,
-    Config,
-    EngineConfig,
-    SwapfileServiceInstallConfig,
-    ZswapServiceConfig,
-)
 from pyntara.context import Context
 from pyntara.tasks import add_extra_repos
 
@@ -56,42 +50,14 @@ CONFIGURED = ("universe", "restricted", "multiverse")
 def _ctx(tmp_path: Path, *, skip_apt_update: bool = False) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
-    return Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
+    return make_context(
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
-        config=Config(
-            engine=EngineConfig(
-                task_data_root=tmp_path,
-                notice_timeout=7,
-                command_timeout_seconds=1800,
-                process_check_timeout_seconds=5,
-                task_start_delay_seconds=0.5,
-            ),
-            cli_tools=CliToolsConfig(
-                packages=("mc",),
-                package_status_timeout_seconds=30,
-                package_install_retries=3,
-                package_success_threshold_percent=70,
-            ),
-            add_extra_repos=AddExtraReposConfig(components=CONFIGURED),
-            swapfile_service_install=SwapfileServiceInstallConfig(
-                swapfile_path=tmp_path / "swapfile",
-                ram_multiplier=2,
-                ram_extra_mb=4096,
-                disk_fraction=0.5,
-            ),
-            zswap_service=ZswapServiceConfig(
-                enabled=True,
-                compressor="zstd",
-                max_pool_percent=50,
-                accept_threshold_percent=100,
-                shrinker_enabled=True,
-            ),
-            tasks=(),
+        config=make_config(
+            task_data_root=tmp_path,
+            cli_tools_packages=("mc",),
+            add_extra_repos_components=CONFIGURED,
+            swapfile_path=tmp_path / "swapfile",
         ),
     )
 
@@ -111,15 +77,6 @@ def _install_sources(
     legacy = tmp_path / "sources.list"
     monkeypatch.setattr(add_extra_repos, "LEGACY_SOURCES_FILE", legacy)
     return sources_dir
-
-
-class _FakeProc:
-    """Minimal stand-in for subprocess.CompletedProcess."""
-
-    def __init__(self, returncode: int) -> None:
-        self.returncode = returncode
-        self.stdout = ""
-        self.stderr = ""
 
 
 def _record_calls(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:

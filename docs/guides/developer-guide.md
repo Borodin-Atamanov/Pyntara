@@ -13,6 +13,7 @@ Run uv run mypy --strict src/ for type checking.
 Every module with task logic must have pytest unit tests.
 In unit tests, all external resources (subprocess, filesystem, network) are mocked via monkeypatch.
 For file logic, use tmp_path, not real paths.
+Shared test factories and fakes live in tests/support.py (make_config, make_context, FakeProc); test modules import them instead of copying the Config and Context shapes.
 
 Minimum required per task:
 1 success scenario test
