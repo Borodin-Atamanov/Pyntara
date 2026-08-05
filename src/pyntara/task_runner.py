@@ -74,7 +74,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     results: list[tuple[str, TaskResult]] = []
     for name in names:
         print()
-        typer.secho(f" {name} ", fg=colors.BLACK, bg=colors.GREEN, color=True)
+        typer.secho(f" {name} ", fg=colors.BLACK, bg=colors.GREEN, bold=True, color=True)
         try:
             task = load_task(name)
         except Exception as exc:  # noqa: BLE001 - a broken import must not kill the run
