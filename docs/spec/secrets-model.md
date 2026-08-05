@@ -25,6 +25,13 @@ some values become environment variables
 some values are saved into internal machine configuration
 some values are one-time-use and must only live in memory during execution
 
+## Runtime storage on the target machine
+
+The runtime secret database and its password live on the target machine in fixed locations, so services that start after install can decrypt the database without user input.
+
+1. The runtime secret database lives at /var/lib/pyntara/secrets/pyntara.vault. The directory /var/lib/pyntara/secrets/ has mode 0700, the file has mode 0640.
+2. The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.
+
 ## Salts
 
 The system uses salts:
