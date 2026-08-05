@@ -33,6 +33,7 @@ packages = [
     "wget", # wget: non-interactive network downloader
     "lsscsi", # lsscsi: list SCSI and other storage devices
     "lshw", # lshw: detailed hardware information
+    "augeas-tools", # augeas-tools: command-line tools for the Augeas configuration editor
 
 ]
 
