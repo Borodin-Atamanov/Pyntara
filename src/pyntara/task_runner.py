@@ -10,6 +10,7 @@ summary shows everything that was skipped or failed.
 from __future__ import annotations
 
 import importlib
+import time
 from collections.abc import Callable
 
 from pyntara.context import Context
@@ -34,38 +35,64 @@ def load_task(name: str) -> Callable[[Context], TaskResult] | None:
     return task
 
 
+def _print_task_result(name: str, result: TaskResult) -> None:
+    """Print one task outcome line immediately after the task finishes.
+
+    Uses the same prefixes as the final summary in the entry point, so the
+    per-task report and the summary read consistently.
+    """
+
+    if result.skipped:
+        detail = result.message or "not implemented"
+        print(f"[skip] {name}: {detail}")
+    elif result.success:
+        line = f"[done] {name}"
+        if result.message:
+            line = f"{line}: {result.message}"
+        print(line)
+    else:
+        detail = result.error or "unknown error"
+        print(f"[failed] {name}: {detail}")
+
+
 def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     """Run each task in order, continuing after failures.
 
-    Returns (name, result) pairs in run order. A task that is not implemented
-    or raises becomes a failed result with the reason in error.
+    Each task is announced with an empty line and a title line, then a short
+    pause before execution so the user sees which task starts (project rules
+    section 1.1). Task output streams in real time through run_command; the
+    outcome line is printed right after the task finishes. Returns (name,
+    result) pairs in run order. A task that is not implemented or raises
+    becomes a failed result with the reason in error. The entry point prints
+    the final summary, so each outcome appears twice: next to the task and
+    in the summary.
     """
 
     results: list[tuple[str, TaskResult]] = []
     for name in names:
+        print()
+        print(f"[start] {name}")
         try:
             task = load_task(name)
         except Exception as exc:  # noqa: BLE001 - a broken import must not kill the run
-            results.append(
-                (name, TaskResult(success=False, error=f"task import failed: {exc}"))
-            )
+            result = TaskResult(success=False, error=f"task import failed: {exc}")
+            _print_task_result(name, result)
+            results.append((name, result))
             continue
         if task is None:
-            results.append(
-                (
-                    name,
-                    TaskResult(
-                        success=False,
-                        skipped=True,
-                        message=f"task module not implemented: {name}",
-                    ),
-                )
+            result = TaskResult(
+                success=False,
+                skipped=True,
+                message=f"task module not implemented: {name}",
             )
+            _print_task_result(name, result)
+            results.append((name, result))
             continue
+        time.sleep(ctx.config.engine.task_start_delay_seconds)
         try:
             result = task(ctx)
         except Exception as exc:  # noqa: BLE001 - a raising task must not kill the run
-            results.append((name, TaskResult(success=False, error=str(exc))))
-            continue
+            result = TaskResult(success=False, error=str(exc))
+        _print_task_result(name, result)
         results.append((name, result))
     return results

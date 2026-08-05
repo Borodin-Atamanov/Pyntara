@@ -13,6 +13,8 @@ notice_timeout = 7
 command_timeout_seconds = 1800
 # Seconds the desktop detection process check may take.
 process_check_timeout_seconds = 5
+# Seconds the engine pauses after showing a task title before running it.
+task_start_delay_seconds = 0.5
 
 [cli_tools]
 # Console utilities installed by the cli_tools task.

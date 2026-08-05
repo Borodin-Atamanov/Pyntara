@@ -8,6 +8,13 @@ Every command execution must stream output to the terminal in real time by defau
 The same output must be persisted to a log file by default.
 Exceptions are allowed only when command output must be suppressed for security or when a third-party tool breaks with streamed mode.
 
+### 1.1 Task presentation
+
+Before each new task the engine prints an empty line, then the task title.
+After the title there is a 0.5 second pause, so the user sees which task starts.
+The task then runs and its output streams in real time, showing what is being done.
+After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
+
 ## 2. Datetime format policy
 
 Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.

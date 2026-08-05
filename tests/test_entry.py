@@ -31,6 +31,7 @@ def _test_config(notice_timeout: int = 7) -> Config:
             notice_timeout=notice_timeout,
             command_timeout_seconds=1800,
             process_check_timeout_seconds=5,
+            task_start_delay_seconds=0.5,
         ),
         cli_tools=CliToolsConfig(
             packages=("mc", "htop", "hollywood"),

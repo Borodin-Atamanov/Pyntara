@@ -55,6 +55,8 @@ Task set and metadata are defined in code in task_catalog.py.
 
 A task is a plain function task(ctx) -> TaskResult.
 
+The runner must print an empty line and the task title before each task, pause 0.5 seconds, then execute the task with real-time output and print a completion report line with the task status and the details from the result after it finishes.
+
 TaskResult is a dataclass with fields:
 success
 changed

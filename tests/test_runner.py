@@ -31,6 +31,7 @@ def _ctx() -> Context:
                 notice_timeout=7,
                 command_timeout_seconds=1800,
                 process_check_timeout_seconds=5,
+                task_start_delay_seconds=0.5,
             ),
             cli_tools=CliToolsConfig(
                 packages=("mc", "htop"),

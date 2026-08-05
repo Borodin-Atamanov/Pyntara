@@ -25,6 +25,7 @@ class EngineConfig:
     notice_timeout: int
     command_timeout_seconds: int
     process_check_timeout_seconds: int
+    task_start_delay_seconds: float
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,18 @@ def _int_field(raw: object, name: str) -> int:
     return raw
 
 
+def _float_field(raw: object, name: str) -> float:
+    """Validate a numeric config value; bool is a subclass of int and must
+    be excluded explicitly."""
+
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ConfigError(f"{name} must be a number")
+    value = float(raw)
+    if value < 0:
+        raise ConfigError(f"{name} must not be negative")
+    return value
+
+
 def _engine_table(raw: object) -> EngineConfig:
     """Validate the [engine] table and build EngineConfig."""
 
@@ -79,6 +92,9 @@ def _engine_table(raw: object) -> EngineConfig:
         process_check_timeout_seconds=_int_field(
             raw.get("process_check_timeout_seconds"),
             "engine.process_check_timeout_seconds",
+        ),
+        task_start_delay_seconds=_float_field(
+            raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
         ),
     )
 

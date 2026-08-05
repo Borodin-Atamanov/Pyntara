@@ -14,6 +14,7 @@ task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
 command_timeout_seconds = 1800
 process_check_timeout_seconds = 5
+task_start_delay_seconds = 0.5
 
 [cli_tools]
 packages = ["mc", "htop"]
@@ -34,6 +35,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.engine.notice_timeout == 7
     assert config.engine.command_timeout_seconds == 1800
     assert config.engine.process_check_timeout_seconds == 5
+    assert config.engine.task_start_delay_seconds == 0.5
     assert config.cli_tools.packages == ("mc", "htop")
     assert config.cli_tools.package_status_timeout_seconds == 30
     assert config.cli_tools.package_install_retries == 3
@@ -64,6 +66,7 @@ def test_load_config_missing_section_raises(tmp_path: Path) -> None:
 _BASE_CONFIG = (
     '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
     "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
+    "task_start_delay_seconds = 0.5\n"
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
     '[add_extra_repos]\ncomponents = ["universe"]\n'
@@ -88,6 +91,10 @@ _BASE_CONFIG = (
         # process_check_timeout_seconds is a string, not an integer
         _BASE_CONFIG.replace(
             "process_check_timeout_seconds = 5", 'process_check_timeout_seconds = "5"'
+        ),
+        # task_start_delay_seconds is a string, not a number
+        _BASE_CONFIG.replace(
+            "task_start_delay_seconds = 0.5", 'task_start_delay_seconds = "0.5"'
         ),
         # package_status_timeout_seconds is a string, not an integer
         _BASE_CONFIG.replace(

@@ -40,6 +40,7 @@ def _test_config(
             notice_timeout=7,
             command_timeout_seconds=1800,
             process_check_timeout_seconds=5,
+            task_start_delay_seconds=0.5,
         ),
         cli_tools=CliToolsConfig(
             packages=packages,
@@ -396,6 +397,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
                 notice_timeout=7,
                 command_timeout_seconds=1800,
                 process_check_timeout_seconds=5,
+                task_start_delay_seconds=0.5,
             ),
             cli_tools=CliToolsConfig(
                 packages=("mc",),
@@ -470,6 +472,7 @@ def test_skip_apt_update_still_retries_installs(
                 notice_timeout=7,
                 command_timeout_seconds=1800,
                 process_check_timeout_seconds=5,
+                task_start_delay_seconds=0.5,
             ),
             cli_tools=CliToolsConfig(
                 packages=("mc",),
