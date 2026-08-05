@@ -54,21 +54,7 @@ src/pyntara/telemetry.py — Telemetry generation, in-memory PDF encryption, que
 
 ### src/pyntara/tasks/
 
-add_extra_repos.py — Enable extra Ubuntu archive components: universe, restricted, multiverse.
-users.py — Create and configure i, j, k users and required groups.
-hostname.py — Generate and persist random 9-character hostname.
-passwords.py — Derive root/user passwords from salt and hostname with configured lengths.
-cli_tools.py — Install curated console utilities: file managers, system and media tools. Depends on add_extra_repos.
-zram.py — Configure aggressive ZRAM by CPU/RAM with fallback behavior.
-swapfile.py — Calculate and configure swapfile from RAM/free-space formulas.
-ssh.py — Install and configure SSH service, including secure config updates.
-proxy_server.py — Local authenticated proxy service setup and management.
-proxy_tunnel.py — Local tunnel to remote proxy/VPN using secrets.
-power.py — Configure power behavior (no suspend on lid close/idle).
-desktop.py — Desktop defaults (Kate, terminal profile, folders/sidebar behavior).
-imagemagick_install.py — Installation/configuration of ImageMagick.
-nextdns.py — NextDNS account/bootstrap integration and system DNS application.
-telemetry_setup.py — Initial telemetry service setup and first-run queue bootstrap.
+One module per task, each exposing task(ctx) -> TaskResult. Task names come from the [[tasks]] section of config.toml, the single source of truth; the module list is not repeated here so renames in the config cannot leave stale names behind.
 
 ## task_data/
 

@@ -32,6 +32,9 @@ packages = [
     # shell completion
     "bash-completion", # bash-completion: programmable completion for the bash shell
     "complete-alias", # complete-alias: tab completion for shell aliases
+    "hstr", # better history in console
+
+
 
     # file operations
     "tree", # tree: displays an indented directory tree, in color

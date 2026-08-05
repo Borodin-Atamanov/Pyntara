@@ -26,23 +26,7 @@ A meaningful task: install and configure SSH server, patch daemon config, add pr
 
 ## Task catalog
 
-The catalog lives in config.toml under the [[tasks]] section. Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file.
-
-add_extra_repos — Enable extra Ubuntu archive components: universe, restricted, multiverse. Runs first so package tasks resolve their packages.
-users — Create and configure i, j, k users and required groups. User i is main user, all belong to sudo users.
-hostname — Generate and persist random 9-character hostname.
-passwords — Derive root/user passwords from salt and hostname. Root: 20 chars, regular user: 16 chars.
-cli_tools — Install curated console utilities: file managers, system and media tools. Depends on add_extra_repos.
-zram — Configure aggressive ZRAM by CPU/RAM. Fallback to 8 cores if count cannot be determined. Strong compression, using almost all memory.
-swapfile — Calculate and configure swapfile. Size from formulas considering RAM and free disk space.
-ssh — Install and configure SSH service. Patch daemon config, add pre-generated certificates for passwordless login.
-proxy_server — Local authenticated proxy service with password/port. Runs as Kubuntu system service.
-proxy_tunnel — Local tunnel to remote proxy/VPN. Connection parameters from secrets.
-power — Configure power behavior. No suspend on lid close, no suspend on user inactivity.
-desktop — Desktop defaults: Kate opens new document, terminal starts in /home/i/Downloads with larger font and scrollback, language indicator shows Argentina flag for Spanish, user folders point to /home/i/Downloads, Dolphin sidebar cleanup.
-imagemagick_install — Install latest ImageMagick. High resource limits, execution stability, widest format support. Depends on add_extra_repos.
-nextdns — Per-user NextDNS account via browser automation. Apply DNS endpoint system-wide. Include endpoint in telemetry.
-telemetry_setup — Initial telemetry service setup and first-run queue bootstrap. See docs/spec/telemetry.md.
+The catalog lives in config.toml under the [[tasks]] section. Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file. The file is the single source of truth for task names: the docs never repeat the catalog, so a rename in the config cannot leave stale names behind. Per-task behavior is described in the spec documents (docs/spec/).
 
 ## Task dependencies
 
