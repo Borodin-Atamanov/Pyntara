@@ -24,21 +24,13 @@ package_install_retries = 3
 # succeed. Below this share the task fails; a single failing package is not
 # fatal by itself.
 package_success_threshold_percent = 70
+
+#package set
 packages = [
-    "mc", # mc: Midnight Commander, two-panel console file manager
-    "nnn", # nnn: lightweight terminal file browser
-    "not-existed_pack_for_test", # nnn: lightweight terminal file browser
-    "traceroute", # traceroute: trace the network path to a remote host
-    "whois", # whois: client for the whois directory service
-    "wget", # wget: non-interactive network downloader
-    "lsscsi", # lsscsi: list SCSI and other storage devices
-    "lshw", # lshw: detailed hardware information
-    "augeas-tools", # augeas-tools: command-line tools for the Augeas configuration editor
+    #TODO: clasterize this commands
+    "bash-completion",
+    "complete-alias",
 
-]
-
-# Future package set, kept as a reference list for later enablement.
-future_packages = [
     # file managers
     "mc", # mc: Midnight Commander, two-panel console file manager
     "nnn", # nnn: lightweight terminal file browser
