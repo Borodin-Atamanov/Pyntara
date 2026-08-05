@@ -31,10 +31,12 @@ packages = [
     "traceroute", # traceroute: trace the network path to a remote host
     "whois", # whois: client for the whois directory service
     "wget", # wget: non-interactive network downloader
+    "lsscsi", # lsscsi: list SCSI and other storage devices
+    "lshw", # lshw: detailed hardware information
+
 ]
 
 # Future package set, kept as a reference list for later enablement.
-# Clustered by purpose: each group header names the category.
 future_packages = [
     # file managers
     "mc", # mc: Midnight Commander, two-panel console file manager
