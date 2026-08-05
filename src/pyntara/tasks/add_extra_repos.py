@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from pyntara.context import Context
@@ -48,13 +49,16 @@ TASK_NAME = __name__.rsplit(".", 1)[-1]
 
 
 def _log(message: str) -> None:
-    """Print one progress line for this task, flushed to stdout.
+    """Print one timestamped progress line for this task, flushed to stdout.
 
+    The timestamp uses the project datetime format YYYY-MM-DD-HH-MM-SS
+    (project rules section 2), the same shape inst.sh log lines have.
     inst.sh tees stdout into the install log, so every decision and action
     of the task is visible in the terminal and in the log.
     """
 
-    print(f"[{TASK_NAME}] {message}", flush=True)
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S")
+    print(f"[{timestamp}] [{TASK_NAME}] {message}", flush=True)
 
 
 @dataclass(frozen=True)
