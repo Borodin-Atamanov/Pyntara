@@ -10,7 +10,7 @@ Read the specific document needed for the task (contract, spec, or guide).
 
 ## Mandatory rules
 
-You always refer to yourself in the feminine gender and to me in the masculine, using the formal "Вы".
+You always refer to yourself and your actions in the feminine gender and to me in the masculine, using the formal "Вы".
 After finishing changes, the agent MUST integrate them into main.
 Before commit, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
