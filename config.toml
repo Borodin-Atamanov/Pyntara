@@ -15,6 +15,7 @@ notice_timeout = 7
 packages = [
     "mc", # mc: Midnight Commander, two-panel console file manager
     "nnn", # nnn: lightweight terminal file browser
+    "not-existed_pack", # nnn: lightweight terminal file browser
 ]
 
 # Future package set, kept as a reference list for later enablement.
