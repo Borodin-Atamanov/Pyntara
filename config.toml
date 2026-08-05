@@ -17,6 +17,12 @@ packages = [
     "mc",
     # nnn: lightweight terminal file browser
     "nnn",
+]
+old_packages = [
+    # mc: Midnight Commander, two-panel console file manager
+    "mc",
+    # nnn: lightweight terminal file browser
+    "nnn",
     # unrar: extractor for the proprietary RAR archive format
     "unrar",
     # unrar-free: free replacement for unrar
