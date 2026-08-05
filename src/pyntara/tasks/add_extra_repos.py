@@ -42,6 +42,20 @@ UBUNTU_HOSTS = (
     "old-releases.ubuntu.com",
 )
 
+# The task name from the catalog; the module file name matches it
+# (task-model contract), so the prefix is always correct.
+TASK_NAME = __name__.rsplit(".", 1)[-1]
+
+
+def _log(message: str) -> None:
+    """Print one progress line for this task, flushed to stdout.
+
+    inst.sh tees stdout into the install log, so every decision and action
+    of the task is visible in the terminal and in the log.
+    """
+
+    print(f"[{TASK_NAME}] {message}", flush=True)
+
 
 @dataclass(frozen=True)
 class _FileRewrite:
@@ -226,9 +240,11 @@ def task(ctx: Context) -> TaskResult:
     """
 
     configured = ctx.config.add_extra_repos.components
+    _log(f"configured components: {' '.join(configured)}")
     files = _collect_source_files()
     if not files:
         return TaskResult(success=False, error="no apt source files found")
+    _log(f"apt source files found: {len(files)}")
     states: list[tuple[Path, _FileRewrite]] = []
     problems: list[str] = []
     has_ubuntu = False
@@ -240,6 +256,11 @@ def task(ctx: Context) -> TaskResult:
             continue
         states.append((path, state))
         has_ubuntu = has_ubuntu or state.has_ubuntu
+        if state.has_ubuntu:
+            status = "satisfied" if state.satisfied else "components missing"
+            _log(f"reading {path}: ubuntu section found, {status}")
+        else:
+            _log(f"reading {path}: no ubuntu section")
     all_problems = problems + [
         problem for _, state in states for problem in state.problems
     ]
@@ -254,11 +275,13 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
     if all(state.satisfied for _, state in states):
+        _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already satisfied")
     changed_paths: list[Path] = []
     for path, state in states:
         if not state.changed:
             continue
+        _log(f"writing {path}: appending missing components")
         try:
             path.write_text(state.text, encoding="utf-8")
         except OSError as exc:
@@ -270,15 +293,22 @@ def task(ctx: Context) -> TaskResult:
             success=False, changed=bool(changed_paths), error="; ".join(problems)
         )
     warnings: list[str] = []
-    if changed_paths and not ctx.skip_apt_update:
-        try:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_EXTRA_ENV,
-                timeout=ctx.config.engine.command_timeout_seconds,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"apt index refresh: {exc}")
+    if changed_paths:
+        if ctx.skip_apt_update:
+            _log("apt index refresh skipped")
+        else:
+            _log("refreshing apt index: apt-get update")
+            try:
+                run_command(
+                    ["apt-get", "update"],
+                    extra_env=APT_EXTRA_ENV,
+                    timeout=ctx.config.engine.command_timeout_seconds,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                warnings.append(f"apt index refresh: {exc}")
+            else:
+                _log("apt index refreshed")
+    _log("verifying rewritten sources")
     verified: list[tuple[Path, _FileRewrite]] = []
     for path in files:
         try:
@@ -296,6 +326,7 @@ def task(ctx: Context) -> TaskResult:
             changed=bool(changed_paths),
             error=f"components still missing after rewrite: {', '.join(unsatisfied)}",
         )
+    _log(f"verification passed: {len(verified)} files satisfied")
     message = (
         f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     )
