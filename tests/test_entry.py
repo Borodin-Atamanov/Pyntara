@@ -192,7 +192,9 @@ def test_run_skips_not_implemented_default_tasks(
 
 
 def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Skipped tasks are counted in the summary but do not fail the run.
+    # Skipped tasks are counted in the summary but do not fail the run. The
+    # expected counts are derived from the real catalog so the test stays
+    # correct when the catalog grows or shrinks.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
 
@@ -206,7 +208,11 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     assert "[done] cli_tools" in result.output
     assert "[skip] users" in result.output
-    assert "Finished 1 of 7 tasks, skipped 6" in result.output
+    expected = len(task_catalog.default_tasks("minimal", REAL_TASKS))
+    assert (
+        f"Finished 1 of {expected} tasks, skipped {expected - 1}"
+        in result.output
+    )
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:

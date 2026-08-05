@@ -178,12 +178,6 @@ depends = ["proxy_server"]
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "ntp"
-description = "Enable and tune NTP synchronization."
-depends = []
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
 name = "power"
 description = "Configure power behavior, no suspend on lid close or inactivity."
 depends = []
