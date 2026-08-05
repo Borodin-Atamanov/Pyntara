@@ -15,6 +15,17 @@ After the title there is a 0.5 second pause, so the user sees which task starts.
 The task then runs and its output streams in real time, showing what is being done.
 After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
 
+### 1.2 Task progress output
+
+Every task reports its progress to stdout so the user sees what is being done.
+
+1. Each progress line starts with a `[task_name]` prefix, where task_name is the task name from the catalog. It equals the module file name (task-model contract), so the prefix is taken from `__name__` and never diverges from the catalog.
+2. Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.
+3. A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.
+4. A state check is printed as one line with the check result.
+5. A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
+6. Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
+
 ## 2. Datetime format policy
 
 Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.
