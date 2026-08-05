@@ -23,6 +23,8 @@ class EngineConfig:
 
     task_data_root: Path
     notice_timeout: int
+    command_timeout_seconds: int
+    process_check_timeout_seconds: int
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,8 @@ class CliToolsConfig:
     """Console utility set installed by the cli_tools task."""
 
     packages: tuple[str, ...]
+    package_status_timeout_seconds: int
+    package_install_retries: int
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,15 @@ class Config:
     cli_tools: CliToolsConfig
 
 
+def _int_field(raw: object, name: str) -> int:
+    """Validate an integer config value; bool is a subclass of int and must
+    be excluded explicitly."""
+
+    if not isinstance(raw, int) or isinstance(raw, bool):
+        raise ConfigError(f"{name} must be an integer")
+    return raw
+
+
 def _engine_table(raw: object) -> EngineConfig:
     """Validate the [engine] table and build EngineConfig."""
 
@@ -48,13 +61,16 @@ def _engine_table(raw: object) -> EngineConfig:
     task_data_root = raw.get("task_data_root")
     if not isinstance(task_data_root, str):
         raise ConfigError("engine.task_data_root must be a string")
-    notice_timeout = raw.get("notice_timeout")
-    # bool is a subclass of int in Python, so it must be excluded explicitly.
-    if not isinstance(notice_timeout, int) or isinstance(notice_timeout, bool):
-        raise ConfigError("engine.notice_timeout must be an integer")
     return EngineConfig(
         task_data_root=Path(task_data_root),
-        notice_timeout=notice_timeout,
+        notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
+        command_timeout_seconds=_int_field(
+            raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
+        ),
+        process_check_timeout_seconds=_int_field(
+            raw.get("process_check_timeout_seconds"),
+            "engine.process_check_timeout_seconds",
+        ),
     )
 
 
@@ -68,7 +84,16 @@ def _cli_tools_table(raw: object) -> CliToolsConfig:
         isinstance(package, str) for package in packages
     ):
         raise ConfigError("cli_tools.packages must be an array of strings")
-    return CliToolsConfig(packages=tuple(packages))
+    return CliToolsConfig(
+        packages=tuple(packages),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "cli_tools.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"), "cli_tools.package_install_retries"
+        ),
+    )
 
 
 def load_config(path: Path) -> Config:

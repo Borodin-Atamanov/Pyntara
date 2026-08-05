@@ -19,8 +19,17 @@ def _test_config(notice_timeout: int = 7) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
     return Config(
-        engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=notice_timeout),
-        cli_tools=CliToolsConfig(packages=("mc", "htop", "hollywood")),
+        engine=EngineConfig(
+            task_data_root=Path("/tmp"),
+            notice_timeout=notice_timeout,
+            command_timeout_seconds=1800,
+            process_check_timeout_seconds=5,
+        ),
+        cli_tools=CliToolsConfig(
+            packages=("mc", "htop", "hollywood"),
+            package_status_timeout_seconds=30,
+            package_install_retries=3,
+        ),
     )
 
 
@@ -39,7 +48,7 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     # A missing install mode is not an error: the engine auto-detects it,
     # reports the choice and runs with it (resilience rule).
     _clear_env(monkeypatch)
-    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda timeout: "server")
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
@@ -57,7 +66,7 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
-    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda timeout: "server")
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
@@ -76,13 +85,13 @@ def test_detect_default_mode_uses_desktop_session(
     # A desktop session variable means desktop.
     monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
     monkeypatch.delenv("DESKTOP_SESSION", raising=False)
-    monkeypatch.setattr("pyntara.pyntara._process_running", lambda name: False)
-    assert detect_default_mode() == "server"
+    monkeypatch.setattr("pyntara.pyntara._process_running", lambda name, timeout: False)
+    assert detect_default_mode(5) == "server"
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
-    assert detect_default_mode() == "desktop"
+    assert detect_default_mode(5) == "desktop"
     monkeypatch.delenv("XDG_CURRENT_DESKTOP")
     monkeypatch.setenv("DESKTOP_SESSION", "plasma")
-    assert detect_default_mode() == "desktop"
+    assert detect_default_mode(5) == "desktop"
 
 
 def test_detect_default_mode_uses_desktop_process(
@@ -92,11 +101,11 @@ def test_detect_default_mode_uses_desktop_process(
     monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
     monkeypatch.delenv("DESKTOP_SESSION", raising=False)
 
-    def fake_running(name: str) -> bool:
+    def fake_running(name: str, timeout: float) -> bool:
         return name == "plasmashell"
 
     monkeypatch.setattr("pyntara.pyntara._process_running", fake_running)
-    assert detect_default_mode() == "desktop"
+    assert detect_default_mode(5) == "desktop"
 
 
 def test_run_unknown_mode_countdown_has_no_unit_letter(
@@ -106,7 +115,7 @@ def test_run_unknown_mode_countdown_has_no_unit_letter(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=2))
-    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda: "server")
+    monkeypatch.setattr("pyntara.pyntara.detect_default_mode", lambda timeout: "server")
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)

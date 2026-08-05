@@ -20,6 +20,24 @@ from pyntara.tasks import cli_tools
 TEST_PACKAGES = ("mc", "htop", "hollywood")
 
 
+def _test_config(packages: tuple[str, ...] = TEST_PACKAGES) -> Config:
+    """Config with values safe for unit tests; the real file is never touched."""
+
+    return Config(
+        engine=EngineConfig(
+            task_data_root=Path("/tmp"),
+            notice_timeout=7,
+            command_timeout_seconds=1800,
+            process_check_timeout_seconds=5,
+        ),
+        cli_tools=CliToolsConfig(
+            packages=packages,
+            package_status_timeout_seconds=30,
+            package_install_retries=3,
+        ),
+    )
+
+
 def _ctx() -> Context:
     return Context(
         install_mode="minimal",
@@ -27,10 +45,7 @@ def _ctx() -> Context:
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
-        config=Config(
-            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
-            cli_tools=CliToolsConfig(packages=TEST_PACKAGES),
-        ),
+        config=_test_config(),
     )
 
 
@@ -197,10 +212,7 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
         vault_source=None,
         force_tasks=frozenset({"cli_tools"}),
         task_data_root=Path("/tmp"),
-        config=Config(
-            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
-            cli_tools=CliToolsConfig(packages=TEST_PACKAGES),
-        ),
+        config=_test_config(),
     )
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(ctx)
@@ -282,3 +294,108 @@ def test_update_failure_still_installs_from_cache(
     assert result.changed is True
     assert "installed" in (result.message or "")
     assert "apt index refresh" in (result.message or "")
+
+
+def test_retries_transient_install_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # mc fails once (transient error), then installs on the first retry:
+    # exactly two install attempts for mc and one index refresh.
+    calls: list[list[str]] = []
+    mc_attempts = 0
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        nonlocal mc_attempts
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if command[0] == "apt-get" and command[1] == "install" and command[-1] == "mc":
+            mc_attempts += 1
+            if mc_attempts == 1:
+                raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    assert "mc" in (result.message or "")
+    mc_installs = [
+        call
+        for call in calls
+        if call[0] == "apt-get" and call[1] == "install" and call[-1] == "mc"
+    ]
+    assert len(mc_installs) == 2
+    updates = [call for call in calls if call[0] == "apt-get" and call[1] == "update"]
+    assert len(updates) == 1
+
+
+def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    # hollywood always fails: the task tries one initial attempt plus three
+    # retries, then reports the failure and keeps the other packages.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] == "hollywood"
+        ):
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is True
+    assert "hollywood" in (result.error or "")
+    hollywood_installs = [
+        call
+        for call in calls
+        if call[0] == "apt-get"
+        and call[1] == "install"
+        and call[-1] == "hollywood"
+    ]
+    assert len(hollywood_installs) == 4
+
+
+def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    # retries=0 means a single attempt per package: a failing package is
+    # attempted once and reported without a retry.
+    ctx = Context(
+        install_mode="minimal",
+        vault_password=None,
+        vault_source=None,
+        force_tasks=frozenset(),
+        task_data_root=Path("/tmp"),
+        config=Config(
+            engine=EngineConfig(
+                task_data_root=Path("/tmp"),
+                notice_timeout=7,
+                command_timeout_seconds=1800,
+                process_check_timeout_seconds=5,
+            ),
+            cli_tools=CliToolsConfig(
+                packages=("mc",),
+                package_status_timeout_seconds=30,
+                package_install_retries=0,
+            ),
+        ),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if command[0] == "apt-get" and command[1] == "install":
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(ctx)
+    assert result.success is False
+    installs = [
+        call for call in calls if call[0] == "apt-get" and call[1] == "install"
+    ]
+    assert len(installs) == 1

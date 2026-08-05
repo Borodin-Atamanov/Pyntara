@@ -2,7 +2,9 @@
 
 run_command is the single command-execution wrapper used by tasks: no
 shell, real-time output streaming, timeout and return-code checking
-(docs/guides/project-rules.md section 4).
+(docs/guides/project-rules.md section 4). The timeout is a required
+parameter: the value comes from config.toml through Context, never from a
+hardcoded default (architecture contract section 3).
 """
 
 from __future__ import annotations
@@ -11,16 +13,12 @@ import os
 import subprocess
 from collections.abc import Iterable, Mapping
 
-# Provisioning commands are slow; 30 minutes is a generous ceiling that
-# still prevents a hung process from blocking the whole run.
-DEFAULT_TIMEOUT_SECONDS = 1800
-
 
 def run_command(
     command: Iterable[str],
     *,
+    timeout: float,
     extra_env: Mapping[str, str] | None = None,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
     check: bool = True,
     capture: bool = False,
 ) -> subprocess.CompletedProcess[str]:

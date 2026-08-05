@@ -9,9 +9,17 @@
 task_data_root = "/var/lib/pyntara/task-data"
 # Seconds the resilience notice stays visible.
 notice_timeout = 7
+# Seconds a provisioning command may run before it is killed.
+command_timeout_seconds = 1800
+# Seconds the desktop detection process check may take.
+process_check_timeout_seconds = 5
 
 [cli_tools]
 # Console utilities installed by the cli_tools task.
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are retries plus one.
+package_install_retries = 3
 packages = [
     "mc", # mc: Midnight Commander, two-panel console file manager
     "nnn", # nnn: lightweight terminal file browser

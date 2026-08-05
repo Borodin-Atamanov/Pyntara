@@ -21,60 +21,73 @@ from pyntara.utils import run_command
 APT_EXTRA_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
 
 
-def _is_installed(package: str) -> bool:
+def _is_installed(package: str, timeout: float) -> bool:
     """True when dpkg considers the package fully installed.
 
     The status query distinguishes "install ok installed" from leftovers
     like "deinstall ok config-files", so an uninstalled package is never
-    treated as installed.
+    treated as installed. The timeout comes from config.toml.
     """
 
     result = run_command(
         ["dpkg-query", "-W", "-f=${Status}", package],
         check=False,
         capture=True,
-        timeout=30,
+        timeout=timeout,
     )
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
-def _install_once(package: str) -> tuple[bool, str]:
+def _install_once(package: str, timeout: float) -> tuple[bool, str]:
     """Install one package; return (success, error_text)."""
 
     try:
         run_command(
             ["apt-get", "install", "-y", package],
             extra_env=APT_EXTRA_ENV,
+            timeout=timeout,
         )
         return True, ""
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, str(exc)
 
 
-def _install_packages(packages: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+def _install_packages(
+    packages: list[str],
+    *,
+    install_timeout: float,
+    update_timeout: float,
+    retries: int,
+) -> tuple[list[str], list[tuple[str, str]]]:
     """Install each package individually; return (installed, failures).
 
-    A failing package is recorded and never blocks the others. The apt
-    index is refreshed once, on the first install failure; a refresh that
-    itself fails is recorded and the install is still retried once, because
-    the package may already be in the local cache.
+    A failing package is recorded and never blocks the others. Each package
+    gets one initial attempt plus `retries` retries; the apt index is
+    refreshed once, after the first failure. A refresh that itself fails is
+    recorded and the install is still retried, because the package may
+    already be in the local cache.
     """
 
     installed: list[str] = []
     failures: list[tuple[str, str]] = []
-    index_refreshed = False
+    update_attempted = False
     for package in packages:
-        ok, _ = _install_once(package)
-        if ok:
-            installed.append(package)
-            continue
-        if not index_refreshed:
-            try:
-                run_command(["apt-get", "update"], extra_env=APT_EXTRA_ENV)
-                index_refreshed = True
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                failures.append(("apt index refresh", str(exc)))
-        ok, error = _install_once(package)
+        ok = False
+        error = ""
+        for _ in range(retries + 1):
+            ok, error = _install_once(package, install_timeout)
+            if ok:
+                break
+            if not update_attempted:
+                update_attempted = True
+                try:
+                    run_command(
+                        ["apt-get", "update"],
+                        extra_env=APT_EXTRA_ENV,
+                        timeout=update_timeout,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    failures.append(("apt index refresh", str(exc)))
         if ok:
             installed.append(package)
         else:
@@ -87,17 +100,24 @@ def task(ctx: Context) -> TaskResult:
 
     A package that cannot be installed is reported, not fatal: the task
     succeeds when at least one missing package was installed, and every
-    failure is listed in the message.
+    failure is listed in the message. Timeouts and the retry count come
+    from config.toml through Context.
     """
 
+    cli = ctx.config.cli_tools
     missing = [
         package
-        for package in ctx.config.cli_tools.packages
-        if not _is_installed(package)
+        for package in cli.packages
+        if not _is_installed(package, cli.package_status_timeout_seconds)
     ]
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")
-    installed, failures = _install_packages(missing)
+    installed, failures = _install_packages(
+        missing,
+        install_timeout=ctx.config.engine.command_timeout_seconds,
+        update_timeout=ctx.config.engine.command_timeout_seconds,
+        retries=cli.package_install_retries,
+    )
     if not installed:
         detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
         return TaskResult(success=False, changed=False, error=detail)

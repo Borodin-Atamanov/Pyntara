@@ -21,7 +21,7 @@ PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is a
 
 PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
 
-Engine values used by the Python part come from config.toml at the repository root: the task data root, the notice timeout and the cli_tools package list. The file is mandatory; a missing or invalid file stops the run.
+Engine values used by the Python part come from config.toml at the repository root: the task data root, the notice timeout, the command timeouts and the cli_tools package list with the install retry count. The file is mandatory; a missing or invalid file stops the run.
 
 The interactive installer variant does not work and its development is stopped.
 

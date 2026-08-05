@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from pyntara.utils import DEFAULT_TIMEOUT_SECONDS, run_command
+from pyntara.utils import run_command
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -19,13 +19,13 @@ def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    run_command(["true"], extra_env={"DEBIAN_FRONTEND": "noninteractive"})
+    run_command(["true"], timeout=1800, extra_env={"DEBIAN_FRONTEND": "noninteractive"})
     env = captured["kwargs"]["env"]
     assert isinstance(env, dict)
     assert env["DEBIAN_FRONTEND"] == "noninteractive"
 
 
-def test_run_command_applies_default_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_command_applies_explicit_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_run(
@@ -35,8 +35,8 @@ def test_run_command_applies_default_timeout(monkeypatch: pytest.MonkeyPatch) ->
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    run_command(["true"])
-    assert captured["kwargs"]["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    run_command(["true"], timeout=42)
+    assert captured["kwargs"]["timeout"] == 42
 
 
 def test_run_command_streams_by_default_and_captures_on_request(
@@ -51,8 +51,8 @@ def test_run_command_streams_by_default_and_captures_on_request(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    run_command(["true"])
-    run_command(["true"], capture=True)
+    run_command(["true"], timeout=1800)
+    run_command(["true"], timeout=1800, capture=True)
     assert "capture_output" not in captured[0] or captured[0]["capture_output"] is False
     assert captured[1]["capture_output"] is True
 

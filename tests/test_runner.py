@@ -20,8 +20,17 @@ def _ctx() -> Context:
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
         config=Config(
-            engine=EngineConfig(task_data_root=Path("/tmp"), notice_timeout=7),
-            cli_tools=CliToolsConfig(packages=("mc", "htop")),
+            engine=EngineConfig(
+                task_data_root=Path("/tmp"),
+                notice_timeout=7,
+                command_timeout_seconds=1800,
+                process_check_timeout_seconds=5,
+            ),
+            cli_tools=CliToolsConfig(
+                packages=("mc", "htop"),
+                package_status_timeout_seconds=30,
+                package_install_retries=3,
+            ),
         ),
     )
 

@@ -21,7 +21,7 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from pyntara import task_catalog
-from pyntara.config import Config, ConfigError, load_config
+from pyntara.config import Config, ConfigError, EngineConfig, load_config
 from pyntara.context import Context
 from pyntara.task_runner import run_tasks
 
@@ -122,8 +122,11 @@ def _warn_and_continue(message: str, notice_timeout: int) -> None:
     print("\r", end="", flush=True, file=sys.stderr)
 
 
-def _process_running(name: str) -> bool:
-    """True when a process with the exact name is running (pgrep -x)."""
+def _process_running(name: str, timeout: float) -> bool:
+    """True when a process with the exact name is running (pgrep -x).
+
+    The timeout comes from config.toml and bounds the pgrep query.
+    """
 
     pgrep = shutil.which("pgrep")
     if pgrep is None:
@@ -133,7 +136,7 @@ def _process_running(name: str) -> bool:
             [pgrep, "-x", name],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=5,
+            timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -141,7 +144,7 @@ def _process_running(name: str) -> bool:
     return result.returncode == 0
 
 
-def detect_default_mode() -> str:
+def detect_default_mode(process_check_timeout: float) -> str:
     """Pick the default install mode without asking: desktop when a desktop
     session is present, otherwise server. Mirrors inst.sh detection.
     """
@@ -149,12 +152,12 @@ def detect_default_mode() -> str:
     if os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION"):
         return "desktop"
     for process in ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"):
-        if _process_running(process):
+        if _process_running(process, process_check_timeout):
             return "desktop"
     return "server"
 
 
-def _resolve_mode(notice_timeout: int) -> str:
+def _resolve_mode(cfg: EngineConfig) -> str:
     """Resolve the install mode from PYNTARA_INSTALL_MODE or auto-detection.
 
     A missing variable is not an error: the mode is auto-detected and
@@ -165,18 +168,18 @@ def _resolve_mode(notice_timeout: int) -> str:
 
     mode = _env("PYNTARA_INSTALL_MODE")
     if mode is None:
-        detected = detect_default_mode()
+        detected = detect_default_mode(cfg.process_check_timeout_seconds)
         typer.echo(f"Install mode not set, using detected default: {detected}")
         return detected
     if mode in task_catalog.MODES:
         return mode
-    detected = detect_default_mode()
+    detected = detect_default_mode(cfg.process_check_timeout_seconds)
     _warn_and_continue(
         f"Install mode '{mode}' was set through environment variables but not "
         f"found in the configuration, applied mode '{detected}'. If this does "
         "not suit you, interrupt the program and redefine the mode through "
         "environment variables. Execution continues in",
-        notice_timeout,
+        cfg.notice_timeout,
     )
     return detected
 
@@ -239,7 +242,7 @@ def run() -> None:
     """Run the Pyntara provisioning engine."""
 
     cfg = _load_config_or_exit()
-    mode = _resolve_mode(cfg.engine.notice_timeout)
+    mode = _resolve_mode(cfg.engine)
     names = _resolve_task_names(mode, cfg.engine.notice_timeout)
     force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout)
     ctx = Context(
