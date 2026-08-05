@@ -27,7 +27,7 @@ package_success_threshold_percent = 70
 
 #package set
 packages = [
-    #TODO: clasterize this commands, add comments
+    #TODO: clasterize this commands, add comments:
     "bash-completion",
     "complete-alias",
     "tree",
@@ -39,6 +39,7 @@ packages = [
     "tmux",
     "screen",
     "sshpass",
+    "openssl",
 
     # file managers
     "mc", # mc: Midnight Commander, two-panel console file manager
