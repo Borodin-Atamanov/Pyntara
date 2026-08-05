@@ -1,0 +1,12 @@
+[Unit]
+Description=Activate swap file
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/swapon $swapfile_path
+ExecStop=/sbin/swapoff $swapfile_path
+
+[Install]
+WantedBy=multi-user.target

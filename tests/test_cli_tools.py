@@ -18,6 +18,7 @@ from pyntara.config import (
     CliToolsConfig,
     Config,
     EngineConfig,
+    SwapfileServiceInstallConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -57,6 +58,12 @@ def _test_config(
         ),
         add_extra_repos=AddExtraReposConfig(
             components=("universe", "restricted", "multiverse")
+        ),
+        swapfile_service_install=SwapfileServiceInstallConfig(
+            swapfile_path=Path("/swapfile"),
+            ram_multiplier=2,
+            ram_extra_mb=4096,
+            disk_fraction=0.5,
         ),
         tasks=(),
     )
@@ -416,6 +423,12 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
             ),
+            swapfile_service_install=SwapfileServiceInstallConfig(
+                swapfile_path=Path("/swapfile"),
+                ram_multiplier=2,
+                ram_extra_mb=4096,
+                disk_fraction=0.5,
+            ),
             tasks=(),
         ),
     )
@@ -491,6 +504,12 @@ def test_skip_apt_update_still_retries_installs(
             ),
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
+            ),
+            swapfile_service_install=SwapfileServiceInstallConfig(
+                swapfile_path=Path("/swapfile"),
+                ram_multiplier=2,
+                ram_extra_mb=4096,
+                disk_fraction=0.5,
             ),
             tasks=(),
         ),

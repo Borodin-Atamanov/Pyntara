@@ -5,7 +5,5 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.pyc
-task_data/**
-!task_data/.gitkeep
 secrets/production.password
 

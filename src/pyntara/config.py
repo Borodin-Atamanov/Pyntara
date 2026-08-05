@@ -53,6 +53,21 @@ class AddExtraReposConfig:
 
 
 @dataclass(frozen=True)
+class SwapfileServiceInstallConfig:
+    """Swap file parameters for the swapfile_service_install task.
+
+    The swap size is min(RAM * ram_multiplier + ram_extra_mb,
+    free_disk * disk_fraction); ram_multiplier and ram_extra_mb size the
+    swap from installed RAM, disk_fraction caps it by free disk space.
+    """
+
+    swapfile_path: Path
+    ram_multiplier: float
+    ram_extra_mb: int
+    disk_fraction: float
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     """One task entry from the [[tasks]] section of config.toml."""
 
@@ -69,6 +84,7 @@ class Config:
     engine: EngineConfig
     cli_tools: CliToolsConfig
     add_extra_repos: AddExtraReposConfig
+    swapfile_service_install: SwapfileServiceInstallConfig
     tasks: tuple[TaskConfig, ...]
 
 
@@ -182,6 +198,49 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
     return AddExtraReposConfig(components=tuple(unique))
 
 
+def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig:
+    """Validate the [swapfile_service_install] table and build the config.
+
+    swapfile_path is a non-empty string; ram_multiplier is a non-negative
+    number; ram_extra_mb is a non-negative integer; disk_fraction must be
+    greater than zero and at most one, so the swap size always stays finite
+    and positive when RAM and disk are present.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[swapfile_service_install] section is missing or not a table"
+        )
+    swapfile_path = raw.get("swapfile_path")
+    if not isinstance(swapfile_path, str) or not swapfile_path:
+        raise ConfigError(
+            "swapfile_service_install.swapfile_path must be a non-empty string"
+        )
+    ram_multiplier = _float_field(
+        raw.get("ram_multiplier"), "swapfile_service_install.ram_multiplier"
+    )
+    ram_extra_mb = _int_field(
+        raw.get("ram_extra_mb"), "swapfile_service_install.ram_extra_mb"
+    )
+    if ram_extra_mb < 0:
+        raise ConfigError(
+            "swapfile_service_install.ram_extra_mb must not be negative"
+        )
+    disk_fraction = _float_field(
+        raw.get("disk_fraction"), "swapfile_service_install.disk_fraction"
+    )
+    if not 0 < disk_fraction <= 1:
+        raise ConfigError(
+            "swapfile_service_install.disk_fraction must be between 0 (exclusive) and 1"
+        )
+    return SwapfileServiceInstallConfig(
+        swapfile_path=Path(swapfile_path),
+        ram_multiplier=ram_multiplier,
+        ram_extra_mb=ram_extra_mb,
+        disk_fraction=disk_fraction,
+    )
+
+
 def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
     """Validate the [[tasks]] section and build the task catalog.
 
@@ -258,5 +317,8 @@ def load_config(path: Path) -> Config:
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
+        swapfile_service_install=_swapfile_service_install_table(
+            data.get("swapfile_service_install")
+        ),
         tasks=_tasks_table(data.get("tasks")),
     )

@@ -14,6 +14,7 @@ from pyntara.config import (
     Config,
     ConfigError,
     EngineConfig,
+    SwapfileServiceInstallConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -47,6 +48,12 @@ def _test_config(notice_timeout: int = 7) -> Config:
         ),
         add_extra_repos=AddExtraReposConfig(
             components=("universe", "restricted", "multiverse")
+        ),
+        swapfile_service_install=SwapfileServiceInstallConfig(
+            swapfile_path=Path("/swapfile"),
+            ram_multiplier=2,
+            ram_extra_mb=4096,
+            disk_fraction=0.5,
         ),
         tasks=REAL_TASKS,
     )

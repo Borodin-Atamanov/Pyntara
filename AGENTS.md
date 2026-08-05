@@ -24,6 +24,8 @@ List markers: Arabic numerals only, no bullets/dashes/asterisks. Max 2-3 nesting
 Before submitting, check output for decorative elements and remove them
 When in doubt, remove the symbol — an unnecessary character adds no meaning
 Code comments and response text: substantive only, no stylistic embellishment
-Когда я говорю спланируй, нужно сначала составить подробный план реализации, написать его. Найти слабые места плана, покритиковать план в целом и каждый пункт. Понять, как улучшить план. На основе улучшений составить новый план. Если план слишком большой и сложный, то выбрать первую часть плана. Представить улучшенный подробный план мне на согласование.
+Когда я говорю спланируй, нужно сначала составить подробный план реализации, написать его. Если план слишком большой и сложный, то выбрать для реализации первую часть плана. Найти слабые места плана, критиковать план в целом и каждый пункт. Понять, как улучшить план. На основе улучшений составить новый план. Представить улучшенный подробный план мне на согласование.
 Используй принцип MECE Mutually Exclusive, Collectively Exhaustive.
 Не замалчивай детали реализации, пиши, какие решения ты принимаешь до их реализации.
+
+Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity — ask or fail loudly. One obvious way; don't invent variants. Prefer working now over perfect later, but never break correctness for speed. If code needs a paragraph to explain, rewrite it.

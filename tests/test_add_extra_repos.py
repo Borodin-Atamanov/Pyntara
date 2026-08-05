@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from pyntara.config import AddExtraReposConfig, CliToolsConfig, Config, EngineConfig
+from pyntara.config import (
+    AddExtraReposConfig,
+    CliToolsConfig,
+    Config,
+    EngineConfig,
+    SwapfileServiceInstallConfig,
+)
 from pyntara.context import Context
 from pyntara.tasks import add_extra_repos
 
@@ -71,6 +77,12 @@ def _ctx(tmp_path: Path, *, skip_apt_update: bool = False) -> Context:
                 package_success_threshold_percent=70,
             ),
             add_extra_repos=AddExtraReposConfig(components=CONFIGURED),
+            swapfile_service_install=SwapfileServiceInstallConfig(
+                swapfile_path=tmp_path / "swapfile",
+                ram_multiplier=2,
+                ram_extra_mb=4096,
+                disk_fraction=0.5,
+            ),
             tasks=(),
         ),
     )

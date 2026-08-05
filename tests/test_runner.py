@@ -12,6 +12,7 @@ from pyntara.config import (
     CliToolsConfig,
     Config,
     EngineConfig,
+    SwapfileServiceInstallConfig,
 )
 from pyntara.context import Context
 from pyntara.models import TaskResult
@@ -41,6 +42,12 @@ def _ctx() -> Context:
             ),
             add_extra_repos=AddExtraReposConfig(
                 components=("universe", "restricted", "multiverse")
+            ),
+            swapfile_service_install=SwapfileServiceInstallConfig(
+                swapfile_path=Path("/swapfile"),
+                ram_multiplier=2,
+                ram_extra_mb=4096,
+                disk_fraction=0.5,
             ),
             tasks=(),
         ),

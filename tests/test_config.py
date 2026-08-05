@@ -25,6 +25,12 @@ package_success_threshold_percent = 70
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]
 
+[swapfile_service_install]
+swapfile_path = "/swapfile"
+ram_multiplier = 2
+ram_extra_mb = 4096
+disk_fraction = 0.5
+
 [[tasks]]
 name = "add_extra_repos"
 description = "Enable extra Ubuntu archive components."
@@ -59,6 +65,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.package_install_retries == 3
     assert config.cli_tools.package_success_threshold_percent == 70
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
+    assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
+    assert config.swapfile_service_install.ram_multiplier == 2
+    assert config.swapfile_service_install.ram_extra_mb == 4096
+    assert config.swapfile_service_install.disk_fraction == 0.5
     assert config.tasks[0].name == "add_extra_repos"
     assert config.tasks[0].description == "Enable extra Ubuntu archive components."
     assert config.tasks[0].depends == ()
@@ -94,6 +104,8 @@ _BASE_CONFIG = (
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
     '[add_extra_repos]\ncomponents = ["universe"]\n'
+    '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
+    "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
     '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
     "depends = []\nmodes = [\"minimal\"]\n"
 )
@@ -145,6 +157,16 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace('components = ["universe"]', 'components = ["universe "]'),
         # components is an empty array
         _BASE_CONFIG.replace('components = ["universe"]', "components = []"),
+        # swapfile_path is a number, not a string
+        _BASE_CONFIG.replace('swapfile_path = "/swapfile"', "swapfile_path = 1"),
+        # ram_multiplier is a string, not a number
+        _BASE_CONFIG.replace("ram_multiplier = 2", 'ram_multiplier = "2"'),
+        # ram_extra_mb is a string, not an integer
+        _BASE_CONFIG.replace("ram_extra_mb = 4096", 'ram_extra_mb = "4096"'),
+        # disk_fraction is above one
+        _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 1.5"),
+        # disk_fraction is zero
+        _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 0"),
         # task name is a number, not a string
         _BASE_CONFIG.replace('name = "users"', "name = 1"),
         # task name is an empty string
@@ -254,7 +276,9 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "task_start_delay_seconds = 0.5\n"
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-        '[add_extra_repos]\ncomponents = ["universe"]\n',
+        '[add_extra_repos]\ncomponents = ["universe"]\n'
+        '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
+        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="\\[tasks\\]"):
@@ -273,7 +297,9 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "task_start_delay_seconds = 0.5\n"
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-        '[add_extra_repos]\ncomponents = ["universe"]\n',
+        '[add_extra_repos]\ncomponents = ["universe"]\n'
+        '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
+        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="at least one task"):

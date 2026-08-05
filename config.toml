@@ -117,6 +117,19 @@ packages = [
 # universe, restricted and multiverse are enabled here.
 components = ["main", "universe", "restricted", "multiverse"]
 
+[swapfile_service_install]
+# Swap file path and size calculation. The task creates a swapfile at the
+# given path and a systemd service to activate it at boot. The size is
+# min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction).
+# Path to the swap file.
+swapfile_path = "/swapfile"
+# Multiplier applied to installed RAM to get the base swap size.
+ram_multiplier = 2
+# Extra mebibytes added to the RAM-derived swap size before the disk cap.
+ram_extra_mb = 4096
+# Maximum share of free disk space the swap file may occupy, 0.0 to 1.0.
+disk_fraction = 0.5
+
 # Task catalog: single source of truth for task metadata, one [[tasks]]
 # entry per task. Each entry has a name, a human-readable description,
 # optional dependencies and the install modes it belongs to. The engine
@@ -162,7 +175,7 @@ depends = []
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "swapfile_service"
+name = "swapfile_service_install"
 description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []
 modes = ["server", "desktop"]
