@@ -1,4 +1,4 @@
-# Pyntara — Agent Rules
+# Agent Rules
 
 ## Required reading chain
 
