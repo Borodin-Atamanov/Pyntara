@@ -167,14 +167,14 @@ depends = ["users_setup", "hostname"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "zram_service"
-description = "Configure aggressive ZRAM by CPU and RAM."
+name = "swapfile_service_install"
+description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "swapfile_service_install"
-description = "Calculate and configure swapfile from RAM and free disk space."
+name = "zram_service"
+description = "Configure aggressive ZRAM by CPU and RAM."
 depends = []
 modes = ["server", "desktop"]
 

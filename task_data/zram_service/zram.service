@@ -1,0 +1,11 @@
+[Unit]
+Description=Configure ZRAM swap devices
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+$exec_lines
+
+[Install]
+WantedBy=multi-user.target

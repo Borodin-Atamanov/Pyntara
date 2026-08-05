@@ -7,7 +7,16 @@ Task descriptions and dependencies are in the catalog; this document covers only
 
 ZRAM is configured based on CPU core count.
 If core count cannot be determined, use 8.
+
+The number of ZRAM devices equals the number of CPU cores.
+Each device is sized to the same share of 96 percent of installed RAM, rounded down to the 4096-byte zram page size.
+Total ZRAM capacity is 96 percent of installed RAM.
+
 ZRAM should be aggressive, with strong compression, using almost all memory.
+Each device uses the zstd compression algorithm.
+ZRAM swap is activated with priority 1111, so it is used before the disk swapfile.
+
+The zram_service task configures the devices immediately and installs a systemd oneshot service that repeats the setup at every boot.
 
 ## Swap file
 
