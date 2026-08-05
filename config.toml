@@ -124,21 +124,21 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "users"
+name = "users_setup"
 description = "Create and configure i, j, k users and required groups."
 depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "hostname"
-description = "Generate and persist random 9-character hostname."
+description = "Generate and persist random hostname."
 depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "passwords"
 description = "Derive root and user passwords from salt and hostname."
-depends = ["users", "hostname"]
+depends = ["users_setup", "hostname"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -148,21 +148,21 @@ depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "zram"
+name = "zram_service"
 description = "Configure aggressive ZRAM by CPU and RAM."
 depends = []
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "swapfile"
+name = "swapfile_service"
 description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "ssh"
+name = "ssh_server"
 description = "Install and configure SSH service with passwordless login keys."
-depends = ["users"]
+depends = ["users_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -178,31 +178,31 @@ depends = ["proxy_server"]
 modes = ["server", "desktop"]
 
 [[tasks]]
-name = "power"
+name = "power_behavior_configure_kde6"
 description = "Configure power behavior, no suspend on lid close or inactivity."
 depends = []
-modes = ["server", "desktop"]
+modes = ["desktop"]
 
 [[tasks]]
-name = "desktop"
+name = "desktop_apps_install"
 description = "Desktop defaults: Kate, terminal, language indicator, folders."
-depends = ["users"]
+depends = ["users_setup"]
 modes = ["desktop"]
 
 [[tasks]]
 name = "imagemagick_install"
 description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]
-modes = ["desktop"]
+modes = ["server", "desktop"]
 
 [[tasks]]
-name = "nextdns"
+name = "nextdns_setup_system_wide"
 description = "Per-user NextDNS account and system-wide DNS endpoint."
-depends = ["users"]
-modes = ["desktop"]
+depends = ["users_setup"]
+modes = ["server", "desktop"]
 
 [[tasks]]
 name = "telemetry_setup"
 description = "Initial telemetry service setup and first-run queue bootstrap."
-depends = ["users"]
+depends = ["users_setup"]
 modes = ["server", "desktop"]
