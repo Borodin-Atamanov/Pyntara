@@ -95,7 +95,8 @@ def _install_fixtures(
     ram_kib: int = RAM_KIB,
     cores: int = 2,
     with_cpuinfo: bool = True,
-) -> dict[str, Path]:
+    read_interface: bool = True,
+) -> dict[str, object]:
     """Point the task at temporary fixtures; return the fixture paths."""
 
     meminfo = tmp_path / "meminfo"
@@ -115,13 +116,12 @@ def _install_fixtures(
     sys_block = tmp_path / "sys" / "block"
     sys_block.mkdir(parents=True)
     monkeypatch.setattr(zram_service, "SYS_BLOCK_PATH", sys_block)
-    control_dir = tmp_path / "sys" / "class" / "zram-control"
-    control_dir.mkdir(parents=True)
-    hot_add = control_dir / "hot_add"
-    hot_remove = control_dir / "hot_remove"
-    hot_add.write_text("", encoding="utf-8")
+    hot_remove = tmp_path / "sys" / "class" / "zram-control" / "hot_remove"
+    hot_remove.parent.mkdir(parents=True)
     hot_remove.write_text("", encoding="utf-8")
-    monkeypatch.setattr(zram_service, "ZRAM_CONTROL_PATH", hot_add)
+    hot_add = _FakeHotAdd(sys_block, read_interface=read_interface)
+    monkeypatch.setattr(zram_service, "ZRAM_HOT_ADD_PATH", hot_add)
+    monkeypatch.setattr(zram_service, "ZRAM_HOT_REMOVE_PATH", hot_remove)
     monkeypatch.setattr(zram_service, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     return {
         "sys_block": sys_block,
@@ -163,9 +163,42 @@ def _device_count(sys_block: Path) -> int:
     return len([path for path in sys_block.iterdir() if path.name.startswith("zram")])
 
 
+class _Stat:
+    """Minimal stand-in for os.stat_result; only st_mode is read."""
+
+    def __init__(self, st_mode: int) -> None:
+        self.st_mode = st_mode
+
+
+class _FakeHotAdd:
+    """hot_add as kernel 7.0 exposes it: reading creates a device.
+
+    stat reports the attribute mode: 0400 read-only for the read-to-add
+    interface, 0200 write-only for the write interface of older kernels.
+    A read on the read interface creates one device and returns its id.
+    """
+
+    def __init__(self, sys_block: Path, *, read_interface: bool = True) -> None:
+        self.sys_block = sys_block
+        self.read_interface = read_interface
+        self.read_count = 0
+
+    def stat(self) -> _Stat:
+        return _Stat(0o400 if self.read_interface else 0o200)
+
+    def read_text(self, encoding: str = "utf-8") -> str:
+        del encoding
+        if not self.read_interface:
+            raise PermissionError(13, "Permission denied")
+        index = _device_count(self.sys_block)
+        _create_device(self.sys_block, index)
+        self.read_count += 1
+        return f"{index}\n"
+
+
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
-    fixtures: dict[str, Path],
+    fixtures: dict[str, object],
     *,
     enabled: bool,
     active: set[str],
@@ -216,11 +249,9 @@ def _install_fake(
 
     def fake_write_sysfs(path: Path, value: str) -> None:
         writes.append((path, value))
-        if path == hot_add:
-            count = int(value)
-            start = _device_count(sys_block)
-            for index in range(start, start + count):
-                _create_device(sys_block, index)
+        if path is hot_add:
+            # Write interface of older kernels: one write creates one device.
+            _create_device(sys_block, _device_count(sys_block))
             return
         if path == hot_remove:
             index = int(value)
@@ -239,14 +270,19 @@ def _install_fake(
     return calls, writes, active
 
 
-def _expected_unit(device_count: int, per_device_bytes: int) -> str:
+def _expected_unit(
+    device_count: int, per_device_bytes: int, *, read_interface: bool = True
+) -> str:
     """The unit file the task must render for the given target."""
 
     lines = ["ExecStart=/bin/sh -c 'modprobe zram || true'"]
     for index in range(1, device_count):
-        lines.append(
-            "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
-        )
+        if read_interface:
+            lines.append("ExecStart=/bin/cat /sys/class/zram-control/hot_add")
+        else:
+            lines.append(
+                "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
+            )
     for index in range(device_count):
         lines.append(
             f"ExecStart=/bin/sh -c 'echo zstd > "
@@ -330,12 +366,13 @@ def test_creates_devices_and_service(
     assert ["swapon", "--priority", "1111", "/dev/zram1"] in calls
     assert ["systemctl", "daemon-reload"] in calls
     assert ["systemctl", "enable", "zram.service"] in calls
-    # modprobe made zram0, hot_add makes zram1.
-    assert (fixtures["hot_add"], "1") in writes
+    # modprobe made zram0, one read of hot_add makes zram1.
+    assert fixtures["hot_add"].read_count == 1
+    assert not any(path is fixtures["hot_add"] for path, _ in writes)
     assert active == {"/dev/zram0", "/dev/zram1"}
     unit = tmp_path / "systemd" / "zram.service"
     assert unit.read_text(encoding="utf-8") == _expected_unit(
-        device_count, per_device_bytes
+        device_count, per_device_bytes, read_interface=True
     )
 
 
@@ -344,14 +381,14 @@ def test_fallback_cpu_count_uses_8(
 ) -> None:
     # Missing cpuinfo: the spec fallback of 8 devices is used and reported.
     fixtures = _install_fixtures(monkeypatch, tmp_path, with_cpuinfo=False)
-    calls, writes, _ = _install_fake(
+    calls, _, _ = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )
     result = zram_service.task(_ctx(tmp_path))
     assert result.success is True
     assert ["mkswap", "/dev/zram7"] in calls
-    # modprobe made zram0, hot_add makes zram1..zram7.
-    assert (fixtures["hot_add"], "7") in writes
+    # modprobe made zram0, seven reads of hot_add make zram1..zram7.
+    assert fixtures["hot_add"].read_count == 7
     assert "8 devices" in (result.message or "")
     captured = capsys.readouterr()
     assert "using fallback 8" in captured.out
@@ -378,7 +415,8 @@ def test_removes_extra_devices(
     assert (fixtures["hot_remove"], "2") in writes
     assert (fixtures["hot_remove"], "3") in writes
     assert active_after == {"/dev/zram0", "/dev/zram1"}
-    assert not any(path == fixtures["hot_add"] for path, _ in writes)
+    assert fixtures["hot_add"].read_count == 0
+    assert not any(path is fixtures["hot_add"] for path, _ in writes)
 
 
 def test_force_mode_reconfigures(
@@ -476,3 +514,27 @@ def test_systemctl_enable_failure_reports_error(
     assert result.changed is True
     assert "systemd setup failed" in (result.error or "")
     assert ["mkswap", "/dev/zram0"] in calls
+
+
+def test_write_interface_creates_devices_and_renders_write_unit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # On an older kernel hot_add is write-only: the task detects the write
+    # interface, creates the missing device by writing and renders the
+    # boot unit with the echo command.
+    fixtures = _install_fixtures(monkeypatch, tmp_path, read_interface=False)
+    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    calls, writes, active = _install_fake(
+        monkeypatch, fixtures, enabled=False, active=set()
+    )
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert result.changed is True
+    assert ["mkswap", "/dev/zram1"] in calls
+    assert fixtures["hot_add"].read_count == 0
+    assert any(path is fixtures["hot_add"] for path, _ in writes)
+    assert active == {"/dev/zram0", "/dev/zram1"}
+    unit = tmp_path / "systemd" / "zram.service"
+    assert unit.read_text(encoding="utf-8") == _expected_unit(
+        device_count, per_device_bytes, read_interface=False
+    )

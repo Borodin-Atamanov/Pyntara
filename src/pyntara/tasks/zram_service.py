@@ -7,12 +7,16 @@ size. Every device uses the zstd compression algorithm and is activated
 with swap priority 1111, so ZRAM swap is preferred over the disk
 swapfile (docs/spec/users-and-host.md). The task configures the devices
 immediately and installs a systemd oneshot service that repeats the same
-setup at every boot. The unit file is rendered from the template at
-task_data/zram_service/zram.service with the ExecStart block substituted
-(string.Template); the service never reads config.toml itself. The task
-is idempotent: it skips when every device already exists at the computed
-size with zstd active, no extra devices are present and the service is
-enabled; force mode tears the devices down and configures them again.
+setup at every boot. Kernel 7.0 creates one zram device on every read of
+the hot_add attribute and returns the new device id; older kernels
+create one device per write. The task detects the interface at run time
+and renders the boot unit with the matching commands. The unit file is
+rendered from the template at task_data/zram_service/zram.service with
+the ExecStart block substituted (string.Template); the service never
+reads config.toml itself. The task is idempotent: it skips when every
+device already exists at the computed size with zstd active, no extra
+devices are present and the service is enabled; force mode tears the
+devices down and configures them again.
 """
 
 from __future__ import annotations
@@ -36,7 +40,9 @@ SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 MEMINFO_PATH = Path("/proc/meminfo")
 CPUINFO_PATH = Path("/proc/cpuinfo")
 SYS_BLOCK_PATH = Path("/sys/block")
-ZRAM_CONTROL_PATH = Path("/sys/class/zram-control/hot_add")
+ZRAM_CONTROL_DIR = Path("/sys/class/zram-control")
+ZRAM_HOT_ADD_PATH = ZRAM_CONTROL_DIR / "hot_add"
+ZRAM_HOT_REMOVE_PATH = ZRAM_CONTROL_DIR / "hot_remove"
 
 # Fixed behavior parameters per docs/spec/users-and-host.md: the device
 # count follows the CPU core count, the total capacity is 96 percent of
@@ -129,17 +135,28 @@ def _calculate_devices(ram_kib: int, cpu_count: int) -> tuple[int, int]:
     return cpu_count, per_device_bytes
 
 
-def _existing_device_count() -> int:
-    """Number of zram devices currently present in /sys/block."""
+def _existing_device_indices() -> list[int]:
+    """Sorted device indices currently present in /sys/block.
+
+    Iterating the actual indices instead of a numeric range keeps the
+    teardown correct when a device is missing in the middle, which
+    happens when a device was removed by hand.
+    """
 
     if not SYS_BLOCK_PATH.is_dir():
-        return 0
-    count = 0
+        return []
+    indices: list[int] = []
     for path in SYS_BLOCK_PATH.iterdir():
         name = path.name
         if name.startswith("zram") and name[4:].isdigit():
-            count += 1
-    return count
+            indices.append(int(name[4:]))
+    return sorted(indices)
+
+
+def _existing_device_count() -> int:
+    """Number of zram devices currently present in /sys/block."""
+
+    return len(_existing_device_indices())
 
 
 def _read_disksize(index: int) -> int | None:
@@ -184,6 +201,49 @@ def _write_sysfs(path: Path, value: str) -> None:
     """
 
     path.write_text(value, encoding="utf-8")
+
+
+def _hot_add_read_interface() -> bool:
+    """True when hot_add is the read-to-add interface (kernel 7.0+).
+
+    Kernel 7.0 creates a zram device on every read of hot_add and
+    returns the new device id; older kernels create one device per
+    write. The interface is told apart by the attribute mode: readable
+    files are read-to-add, write-only files are write-to-add. The mode
+    query itself does not create a device.
+    """
+
+    mode = ZRAM_HOT_ADD_PATH.stat().st_mode
+    return bool(mode & 0o400)
+
+
+def _add_devices(count: int, read_interface: bool) -> str | None:
+    """Create zram devices via hot_add; return an error message or None.
+
+    On the read-to-add interface every read creates one device and
+    returns its id, which is logged; on the write interface every write
+    creates one device. A failed operation returns a message and stops
+    the task.
+    """
+
+    for _ in range(count):
+        if read_interface:
+            try:
+                text = ZRAM_HOT_ADD_PATH.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                return f"cannot add zram devices: {exc}"
+            try:
+                device_id = int(text)
+            except ValueError:
+                return f"cannot add zram devices: hot_add returned {text!r}"
+            _log(f"device added: zram{device_id}")
+        else:
+            try:
+                _write_sysfs(ZRAM_HOT_ADD_PATH, "1")
+            except OSError as exc:
+                return f"cannot add zram devices: {exc}"
+            _log("device added via hot_add write")
+    return None
 
 
 def _zram_active(timeout: float) -> set[str]:
@@ -242,22 +302,30 @@ def _target_reached(
 
 
 def _render_unit(
-    template_path: Path, device_count: int, per_device_bytes: int
+    template_path: Path,
+    device_count: int,
+    per_device_bytes: int,
+    read_interface: bool,
 ) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
     The boot service repeats the install-time setup: load the module, add
     the devices past zram0 through hot_add, then configure, format and
-    activate every device. The block is fully expanded here, so the
+    activate every device. The hot_add command matches the interface
+    detected at install time: a read creates a device on kernel 7.0, a
+    write on older kernels. The block is fully expanded here, so the
     template carries no shell variables of its own and substitute cannot
     trip on stray dollar signs.
     """
 
     lines: list[str] = ["ExecStart=/bin/sh -c 'modprobe zram || true'"]
     for index in range(1, device_count):
-        lines.append(
-            "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
-        )
+        if read_interface:
+            lines.append("ExecStart=/bin/cat /sys/class/zram-control/hot_add")
+        else:
+            lines.append(
+                "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
+            )
     for index in range(device_count):
         lines.append(
             f"ExecStart=/bin/sh -c 'echo {COMPRESSION_ALGORITHM} > "
@@ -340,7 +408,7 @@ def task(ctx: Context) -> TaskResult:
     # Deactivate, reset and remove the existing devices so sizes and
     # algorithms can be rewritten; devices beyond the target count are
     # removed entirely.
-    for index in range(existing_count):
+    for index in _existing_device_indices():
         device_path = f"/dev/zram{index}"
         if device_path in active_paths:
             _log(f"deactivating swap: swapoff {device_path}")
@@ -363,7 +431,7 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log(f"removing extra device zram{index}: echo {index} > hot_remove")
             try:
-                _write_sysfs(ZRAM_CONTROL_PATH.with_name("hot_remove"), str(index))
+                _write_sysfs(ZRAM_HOT_REMOVE_PATH, str(index))
             except OSError as exc:
                 return TaskResult(
                     success=False, error=f"cannot remove zram{index}: {exc}"
@@ -378,13 +446,17 @@ def task(ctx: Context) -> TaskResult:
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot load zram module: {exc}")
     _log("module loaded")
+    try:
+        read_interface = _hot_add_read_interface()
+    except OSError as exc:
+        return TaskResult(success=False, error=f"cannot query hot_add: {exc}")
+    _log(f"hot_add interface: {'read' if read_interface else 'write'}")
     missing = device_count - _existing_device_count()
     if missing > 0:
-        _log(f"creating missing devices: echo {missing} > hot_add")
-        try:
-            _write_sysfs(ZRAM_CONTROL_PATH, str(missing))
-        except OSError as exc:
-            return TaskResult(success=False, error=f"cannot add zram devices: {exc}")
+        _log(f"creating missing devices: hot_add {missing} times")
+        add_error = _add_devices(missing, read_interface)
+        if add_error is not None:
+            return TaskResult(success=False, error=add_error)
         _log("devices created")
 
     # Configure every device in order: algorithm, size, swap signature,
@@ -436,7 +508,9 @@ def task(ctx: Context) -> TaskResult:
 
     _log(f"rendering unit template from {TEMPLATE_PATH}")
     try:
-        content = _render_unit(TEMPLATE_PATH, device_count, per_device_bytes)
+        content = _render_unit(
+            TEMPLATE_PATH, device_count, per_device_bytes, read_interface
+        )
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"
