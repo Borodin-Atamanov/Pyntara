@@ -78,7 +78,6 @@ packages = [
     "htop", # htop: interactive process viewer
     "nmon", # nmon: system performance monitor for CPU, memory, network, disk
     "ncdu", # ncdu: disk usage analyzer with interactive curses interface
-    "nload", # nload: console network traffic monitor
 
     # network tools
     "net-tools", # net-tools: classic networking tools, ifconfig, netstat, route, arp
@@ -88,6 +87,12 @@ packages = [
     "whois", # whois: client for the whois directory service
     "wget", # wget: non-interactive network downloader
     "dnsutils", # dnsutils: DNS utilities dig, nslookup and host
+    "nload", # nload: console network traffic monitor
+    "speedometer", # speedometer: console bandwidth usage meter
+    "bmon", # bmon: bandwidth monitor with interactive curses interface
+    "iftop", # iftop: real-time bandwidth usage by connection
+    "nethogs", # nethogs: per-process network traffic monitor
+    "iptraf-ng", # iptraf-ng: interactive IP network traffic monitor
 
     # disk and file tools
     "exfat-fuse", # exfat-fuse: read and write exFAT filesystems through FUSE
