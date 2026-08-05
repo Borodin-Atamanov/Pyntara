@@ -13,86 +13,57 @@ notice_timeout = 7
 [cli_tools]
 # Console utilities installed by the cli_tools task.
 packages = [
-    # mc: Midnight Commander, two-panel console file manager
-    "mc",
-    # nnn: lightweight terminal file browser
-    "nnn",
+    "mc", # mc: Midnight Commander, two-panel console file manager
+    "nnn", # nnn: lightweight terminal file browser
 ]
 
 # Future package set, kept as a reference list for later enablement.
 # Clustered by purpose: each group header names the category.
 future_packages = [
     # file managers
-    # mc: Midnight Commander, two-panel console file manager
-    "mc",
-    # nnn: lightweight terminal file browser
-    "nnn",
+    "mc", # mc: Midnight Commander, two-panel console file manager
+    "nnn", # nnn: lightweight terminal file browser
 
     # archivers
-    # unrar: extractor for the proprietary RAR archive format
-    "unrar",
-    # unrar-free: free replacement for unrar
-    "unrar-free",
-    # unzip: ZIP archive extractor
-    "unzip",
+    "unrar", # unrar: extractor for the proprietary RAR archive format
+    "unrar-free", # unrar-free: free replacement for unrar
+    "unzip", # unzip: ZIP archive extractor
 
     # system information
-    # inxi: full system information report
-    "inxi",
-    # lsscsi: list SCSI and other storage devices
-    "lsscsi",
-    # lshw: detailed hardware information
-    "lshw",
+    "inxi", # inxi: full system information report
+    "lsscsi", # lsscsi: list SCSI and other storage devices
+    "lshw", # lshw: detailed hardware information
 
     # resource monitoring
-    # htop: interactive process viewer
-    "htop",
-    # nmon: system performance monitor for CPU, memory, network, disk
-    "nmon",
-    # ncdu: disk usage analyzer with interactive curses interface
-    "ncdu",
-    # nload: console network traffic monitor
-    "nload",
+    "htop", # htop: interactive process viewer
+    "nmon", # nmon: system performance monitor for CPU, memory, network, disk
+    "ncdu", # ncdu: disk usage analyzer with interactive curses interface
+    "nload", # nload: console network traffic monitor
 
     # network tools
-    # net-tools: classic networking tools, ifconfig, netstat, route, arp
-    "net-tools",
-    # nmap: network scanner
-    "nmap",
-    # tcpdump: command-line packet analyzer
-    "tcpdump",
-    # traceroute: trace the network path to a remote host
-    "traceroute",
-    # whois: client for the whois directory service
-    "whois",
-    # wget: non-interactive network downloader
-    "wget",
+    "net-tools", # net-tools: classic networking tools, ifconfig, netstat, route, arp
+    "nmap", # nmap: network scanner
+    "tcpdump", # tcpdump: command-line packet analyzer
+    "traceroute", # traceroute: trace the network path to a remote host
+    "whois", # whois: client for the whois directory service
+    "wget", # wget: non-interactive network downloader
 
     # DNS utilities
-    # dnsutils: DNS utilities dig, nslookup and host
-    "dnsutils",
+    "dnsutils", # dnsutils: DNS utilities dig, nslookup and host
 
     # disk and file tools
-    # exfat-fuse: read and write exFAT filesystems through FUSE
-    "exfat-fuse",
-    # fdupes: find and remove duplicate files
-    "fdupes",
+    "exfat-fuse", # exfat-fuse: read and write exFAT filesystems through FUSE
+    "fdupes", # fdupes: find and remove duplicate files
 
     # media tools
-    # mediainfo: technical details of media files, codecs and streams
-    "mediainfo",
-    # exiftool: read and write EXIF and IPTC metadata in media files
-    "exiftool",
+    "mediainfo", # mediainfo: technical details of media files, codecs and streams
+    "exiftool", # exiftool: read and write EXIF and IPTC metadata in media files
 
     # automation and configuration
-    # expect: automate interactive terminal programs
-    "expect",
-    # augeas-tools: command-line tools for the Augeas configuration editor
-    "augeas-tools",
+    "expect", # expect: automate interactive terminal programs
+    "augeas-tools", # augeas-tools: command-line tools for the Augeas configuration editor
 
     # small utilities
-    # calc: arbitrary precision calculator
-    "calc",
-    # hollywood: decorative fake Hollywood-style terminal activity
-    "hollywood",
+    "calc", # calc: arbitrary precision calculator
+    "hollywood", # hollywood: decorative fake Hollywood-style terminal activity
 ]
