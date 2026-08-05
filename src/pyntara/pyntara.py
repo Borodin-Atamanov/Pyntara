@@ -89,6 +89,19 @@ def _env(name: str) -> str | None:
     return value
 
 
+def _env_flag(name: str) -> bool:
+    """Read a boolean environment variable; True for 1, true or yes.
+
+    Any other value, including an unset or empty variable, is False. The
+    explicit value list prevents a stray "0" from silently enabling a flag.
+    """
+
+    value = os.environ.get(name)
+    if not value:
+        return False
+    return value.strip().lower() in ("1", "true", "yes")
+
+
 def _load_config_or_exit() -> Config:
     """Load config.toml; a missing or invalid file stops the run.
 
@@ -251,6 +264,7 @@ def run() -> None:
         vault_source=_env("PYNTARA_VAULT_SOURCE"),
         force_tasks=force_tasks,
         task_data_root=cfg.engine.task_data_root,
+        skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
         config=cfg,
     )
     typer.echo(f"Install mode: {mode}")

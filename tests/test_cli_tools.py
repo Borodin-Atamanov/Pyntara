@@ -45,6 +45,7 @@ def _ctx() -> Context:
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
+        skip_apt_update=False,
         config=_test_config(),
     )
 
@@ -179,9 +180,10 @@ def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "hollywood" in (result.message or "")
 
 
-def test_optimistic_retry_refreshes_index(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The first install fails on a stale index; apt-get update runs and the
-    # retry succeeds (bootstrap contract section 2 strategy).
+def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    # By default the apt index is refreshed once, before the first install,
+    # so the first apt-get call is an update and a transient install failure
+    # still succeeds on the first retry.
     calls: list[list[str]] = []
     first_install = True
 
@@ -201,6 +203,8 @@ def test_optimistic_retry_refreshes_index(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.changed is True
     updates = [call for call in calls if call[0] == "apt-get" and call[1] == "update"]
     assert len(updates) == 1
+    apt_calls = [call for call in calls if call[0] == "apt-get"]
+    assert apt_calls[0] == ["apt-get", "update"]
 
 
 def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,6 +216,7 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
         vault_source=None,
         force_tasks=frozenset({"cli_tools"}),
         task_data_root=Path("/tmp"),
+        skip_apt_update=False,
         config=_test_config(),
     )
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
@@ -368,6 +373,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
+        skip_apt_update=False,
         config=Config(
             engine=EngineConfig(
                 task_data_root=Path("/tmp"),
@@ -399,3 +405,79 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert len(installs) == 1
+
+
+def test_skip_apt_update_skips_index_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # skip_apt_update=True disables the index refresh entirely: only
+    # installs run, so a test run never waits for apt-get update.
+    ctx = Context(
+        install_mode="minimal",
+        vault_password=None,
+        vault_source=None,
+        force_tasks=frozenset(),
+        task_data_root=Path("/tmp"),
+        skip_apt_update=True,
+        config=_test_config(),
+    )
+    calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
+    result = cli_tools.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
+    install_calls = [
+        call for call in calls if call[0] == "apt-get" and call[1] == "install"
+    ]
+    assert install_calls == [["apt-get", "install", "-y", "mc"]]
+
+
+def test_skip_apt_update_still_retries_installs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With the refresh skipped, a transient install failure still succeeds
+    # on a retry without any apt-get update call.
+    ctx = Context(
+        install_mode="minimal",
+        vault_password=None,
+        vault_source=None,
+        force_tasks=frozenset(),
+        task_data_root=Path("/tmp"),
+        skip_apt_update=True,
+        config=Config(
+            engine=EngineConfig(
+                task_data_root=Path("/tmp"),
+                notice_timeout=7,
+                command_timeout_seconds=1800,
+                process_check_timeout_seconds=5,
+            ),
+            cli_tools=CliToolsConfig(
+                packages=("mc",),
+                package_status_timeout_seconds=30,
+                package_install_retries=3,
+            ),
+        ),
+    )
+    calls: list[list[str]] = []
+    mc_attempts = 0
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        nonlocal mc_attempts
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if command[0] == "apt-get" and command[1] == "install":
+            mc_attempts += 1
+            if mc_attempts == 1:
+                raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(ctx)
+    assert result.success is True
+    assert "mc" in (result.message or "")
+    assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
+    installs = [
+        call for call in calls if call[0] == "apt-get" and call[1] == "install"
+    ]
+    assert len(installs) == 2

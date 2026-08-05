@@ -22,4 +22,5 @@ class Context:
     vault_source: str | None
     force_tasks: frozenset[str]
     task_data_root: Path
+    skip_apt_update: bool
     config: Config

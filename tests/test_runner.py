@@ -19,6 +19,7 @@ def _ctx() -> Context:
         vault_source=None,
         force_tasks=frozenset(),
         task_data_root=Path("/tmp"),
+        skip_apt_update=False,
         config=Config(
             engine=EngineConfig(
                 task_data_root=Path("/tmp"),

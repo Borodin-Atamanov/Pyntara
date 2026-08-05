@@ -6,7 +6,9 @@ with dpkg-query and installs only what is missing, so repeated runs change
 nothing (docs/contracts/task-model.md). Packages are installed one by one:
 a missing or uninstallable package must not block the others, and the task
 reports a partial success instead of failing the whole run (resilience rule,
-architecture contract section 7).
+architecture contract section 7). The apt index is refreshed once before
+the first install, so packages resolve from a fresh index; the refresh is
+skipped when ctx.skip_apt_update is True (test or offline runs).
 """
 
 from __future__ import annotations
@@ -58,19 +60,29 @@ def _install_packages(
     install_timeout: float,
     update_timeout: float,
     retries: int,
+    skip_update: bool,
 ) -> tuple[list[str], list[tuple[str, str]]]:
     """Install each package individually; return (installed, failures).
 
-    A failing package is recorded and never blocks the others. Each package
-    gets one initial attempt plus `retries` retries; the apt index is
-    refreshed once, after the first failure. A refresh that itself fails is
-    recorded and the install is still retried, because the package may
-    already be in the local cache.
+    The apt index is refreshed once before the first install, so packages
+    resolve from a fresh index; skip_update=True disables the refresh for
+    test or offline runs. A failing refresh is recorded and the install is
+    still attempted, because the package may already be in the local cache.
+    A failing package is recorded and never blocks the others; each package
+    gets one initial attempt plus `retries` retries.
     """
 
     installed: list[str] = []
     failures: list[tuple[str, str]] = []
-    update_attempted = False
+    if not skip_update:
+        try:
+            run_command(
+                ["apt-get", "update"],
+                extra_env=APT_EXTRA_ENV,
+                timeout=update_timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            failures.append(("apt index refresh", str(exc)))
     for package in packages:
         ok = False
         error = ""
@@ -78,16 +90,6 @@ def _install_packages(
             ok, error = _install_once(package, install_timeout)
             if ok:
                 break
-            if not update_attempted:
-                update_attempted = True
-                try:
-                    run_command(
-                        ["apt-get", "update"],
-                        extra_env=APT_EXTRA_ENV,
-                        timeout=update_timeout,
-                    )
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                    failures.append(("apt index refresh", str(exc)))
         if ok:
             installed.append(package)
         else:
@@ -101,7 +103,8 @@ def task(ctx: Context) -> TaskResult:
     A package that cannot be installed is reported, not fatal: the task
     succeeds when at least one missing package was installed, and every
     failure is listed in the message. Timeouts and the retry count come
-    from config.toml through Context.
+    from config.toml through Context; the apt index refresh can be skipped
+    through ctx.skip_apt_update.
     """
 
     cli = ctx.config.cli_tools
@@ -117,6 +120,7 @@ def task(ctx: Context) -> TaskResult:
         install_timeout=ctx.config.engine.command_timeout_seconds,
         update_timeout=ctx.config.engine.command_timeout_seconds,
         retries=cli.package_install_retries,
+        skip_update=ctx.skip_apt_update,
     )
     if not installed:
         detail = "; ".join(f"{name}: {reason}" for name, reason in failures)

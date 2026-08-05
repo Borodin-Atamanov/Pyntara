@@ -76,6 +76,7 @@ Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no va
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
 Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
 Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).
+Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that cli_tools runs before the first install).
 
 The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. The interactive UI contract was deleted.
 

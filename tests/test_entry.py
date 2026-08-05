@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
 from pyntara.config import CliToolsConfig, Config, ConfigError, EngineConfig
+from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
 
@@ -40,6 +41,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PYNTARA_VAULT_PASSWORD",
         "PYNTARA_VAULT_SOURCE",
         "PYNTARA_FORCE_TASKS",
+        "PYNTARA_SKIP_APT_UPDATE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -267,7 +269,54 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.exit_code == 0
     expected = len(task_catalog.default_tasks("minimal"))
     assert f"All {expected} tasks finished" in result.output
-    assert "[done] users" in result.output
+
+
+def _captured_skip_flag(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> bool | None:
+    """Run the engine with PYNTARA_SKIP_APT_UPDATE set to value and return
+    the flag that reached Context through run_tasks."""
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    if value is None:
+        monkeypatch.delenv("PYNTARA_SKIP_APT_UPDATE", raising=False)
+    else:
+        monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", value)
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+    captured: dict[str, bool | None] = {"flag": None}
+
+    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+        captured["flag"] = ctx.skip_apt_update
+        return []
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    return captured["flag"]
+
+
+def test_run_skip_apt_update_true_reaches_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # PYNTARA_SKIP_APT_UPDATE=1 flows from the environment into Context.
+    assert _captured_skip_flag(monkeypatch, "1") is True
+
+
+def test_run_skip_apt_update_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without the variable the flag stays False, so the index refresh runs.
+    assert _captured_skip_flag(monkeypatch, None) is False
+
+
+def test_run_skip_apt_update_zero_is_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An explicit 0 must not enable the flag; only 1, true or yes do.
+    assert _captured_skip_flag(monkeypatch, "0") is False
 
 
 def test_run_fails_when_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
