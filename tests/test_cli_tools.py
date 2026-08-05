@@ -103,7 +103,7 @@ def test_config_files_leftover_counts_as_not_installed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A package in "deinstall ok config-files" state is not fully installed
-    # and must be reinstalled.
+    # and must be reinstalled. Each package is installed in its own call.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -118,10 +118,16 @@ def test_config_files_leftover_counts_as_not_installed(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", *TEST_PACKAGES]]
+    assert install_calls == [
+        ["apt-get", "install", "-y", "mc"],
+        ["apt-get", "install", "-y", "htop"],
+        ["apt-get", "install", "-y", "hollywood"],
+    ]
 
 
 def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Every package fails and the index refresh fails too: nothing could be
+    # installed, so the task reports a failure with the reasons.
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
@@ -132,18 +138,30 @@ def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is False
     assert result.changed is False
     assert result.error
+    assert "mc" in (result.error or "")
+    assert "htop" in (result.error or "")
 
 
 def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A hung apt-get must not block the other packages; the timed-out
+    # package is reported and the rest still installs.
+    calls: list[list[str]] = []
+
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
-        raise subprocess.TimeoutExpired(command, timeout=1800)
+        if command[0] == "apt-get" and command[1] == "install" and command[-1] == "htop":
+            raise subprocess.TimeoutExpired(command, timeout=1800)
+        return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(_ctx())
-    assert result.success is False
-    assert result.error
+    assert result.success is True
+    assert result.changed is True
+    assert "htop" in (result.error or "")
+    assert "mc" in (result.message or "")
+    assert "hollywood" in (result.message or "")
 
 
 def test_optimistic_retry_refreshes_index(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -189,3 +207,78 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is True
     assert result.changed is False
     assert not any(call[0] == "apt-get" for call in calls)
+
+
+def test_missing_package_does_not_block_others(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # hollywood does not exist in the repositories: mc and htop still
+    # install, hollywood is reported as failed, and the task succeeds
+    # because the goal is partially reached.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] == "hollywood"
+        ):
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    assert "mc" in (result.message or "")
+    assert "htop" in (result.message or "")
+    assert "hollywood" in (result.message or "")
+    assert "hollywood" in (result.error or "")
+
+
+def test_all_packages_missing_is_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No package can be installed at all: the task must fail with reasons.
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        raise subprocess.CalledProcessError(100, command)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is False
+    assert result.changed is False
+    assert result.error
+    assert "mc" in (result.error or "")
+    assert "hollywood" in (result.error or "")
+
+
+def test_update_failure_still_installs_from_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The apt index refresh fails (e.g. a broken repository), but the first
+    # retried package is already in the local cache, so the install still
+    # succeeds and the refresh failure is reported as a warning.
+    calls: list[list[str]] = []
+    first_install = True
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        nonlocal first_install
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            return _FakeProc(1, "")
+        if command[0] == "apt-get" and command[1] == "install" and first_install:
+            first_install = False
+            raise subprocess.CalledProcessError(100, command)
+        if command[0] == "apt-get" and command[1] == "update":
+            raise subprocess.CalledProcessError(100, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = cli_tools.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    assert "installed" in (result.message or "")
+    assert "apt index refresh" in (result.message or "")

@@ -24,3 +24,4 @@ List markers: Arabic numerals only, no bullets/dashes/asterisks. Max 2-3 nesting
 Before submitting, check output for decorative elements and remove them
 When in doubt, remove the symbol — an unnecessary character adds no meaning
 Code comments and response text: substantive only, no stylistic embellishment
+Когда я говорю спланируй, нужно сначала составить подробный план реализации, написать его. Найти слабые места плана, покритиковать план в целом и каждый пункт. Понять, как улучшить план. На основе улучшений составить новый план. Если план слишком большой и сложный, то выбрать первую часть плана. Представить план мне на согласование.
