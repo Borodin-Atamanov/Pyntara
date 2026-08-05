@@ -16,6 +16,7 @@ from pyntara.config import (
     CliToolsConfig,
     Config,
     EngineConfig,
+    LocalVaultSetupConfig,
     SwapfileServiceInstallConfig,
     TaskConfig,
     ZswapServiceConfig,
@@ -57,6 +58,12 @@ def make_config(
     zswap_max_pool_percent: int = 50,
     zswap_accept_threshold_percent: int = 100,
     zswap_shrinker_enabled: bool = True,
+    local_vault_source_production: Path = Path("secrets/production.vault"),
+    local_vault_source_default: Path = Path("secrets/default.vault"),
+    local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
+    local_vault_pass_file_path: Path = Path("/etc/pyntara/pass"),
+    local_vault_entry_title: str = "pyntara_local_vault_password",
+    local_vault_entry_group: str = "core",
     tasks: tuple[TaskConfig, ...] = (),
 ) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
@@ -88,6 +95,14 @@ def make_config(
             max_pool_percent=zswap_max_pool_percent,
             accept_threshold_percent=zswap_accept_threshold_percent,
             shrinker_enabled=zswap_shrinker_enabled,
+        ),
+        local_vault_setup=LocalVaultSetupConfig(
+            source_vault_production=local_vault_source_production,
+            source_vault_default=local_vault_source_default,
+            local_vault_path=local_vault_path,
+            pass_file_path=local_vault_pass_file_path,
+            vault_password_entry_title=local_vault_entry_title,
+            vault_password_entry_group=local_vault_entry_group,
         ),
         tasks=tasks,
     )

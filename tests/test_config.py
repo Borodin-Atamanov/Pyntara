@@ -38,6 +38,14 @@ max_pool_percent = 50
 accept_threshold_percent = 100
 shrinker_enabled = true
 
+[local_vault_setup]
+source_vault_production = "secrets/production.vault"
+source_vault_default = "secrets/default.vault"
+local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"
+pass_file_path = "/etc/pyntara/pass"
+vault_password_entry_title = "pyntara_local_vault_password"
+vault_password_entry_group = "core"
+
 [[tasks]]
 name = "add_extra_repos"
 description = "Enable extra Ubuntu archive components."
@@ -81,6 +89,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zswap_service.max_pool_percent == 50
     assert config.zswap_service.accept_threshold_percent == 100
     assert config.zswap_service.shrinker_enabled is True
+    assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
+    assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
+    assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
+    assert config.local_vault_setup.pass_file_path == Path("/etc/pyntara/pass")
+    assert config.local_vault_setup.vault_password_entry_title == "pyntara_local_vault_password"
+    assert config.local_vault_setup.vault_password_entry_group == "core"
     assert config.tasks[0].name == "add_extra_repos"
     assert config.tasks[0].description == "Enable extra Ubuntu archive components."
     assert config.tasks[0].depends == ()
@@ -121,6 +135,12 @@ _BASE_CONFIG = (
     '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
     "max_pool_percent = 50\naccept_threshold_percent = 100\n"
     "shrinker_enabled = true\n"
+    '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
+    'source_vault_default = "secrets/default.vault"\n'
+    'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
+    'pass_file_path = "/etc/pyntara/pass"\n'
+    'vault_password_entry_title = "pyntara_local_vault_password"\n'
+    'vault_password_entry_group = "core"\n'
     '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
     "depends = []\nmodes = [\"minimal\"]\n"
 )
@@ -204,6 +224,31 @@ _BASE_CONFIG = (
         ),
         # zswap shrinker_enabled is an integer, not a boolean
         _BASE_CONFIG.replace("shrinker_enabled = true", "shrinker_enabled = 1"),
+        # local_vault_setup source_vault_production is a number, not a string
+        _BASE_CONFIG.replace(
+            'source_vault_production = "secrets/production.vault"',
+            "source_vault_production = 1",
+        ),
+        # local_vault_setup source_vault_default is an empty string
+        _BASE_CONFIG.replace(
+            'source_vault_default = "secrets/default.vault"', 'source_vault_default = ""'
+        ),
+        # local_vault_setup local_vault_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"',
+            "local_vault_path = 1",
+        ),
+        # local_vault_setup pass_file_path is an empty string
+        _BASE_CONFIG.replace('pass_file_path = "/etc/pyntara/pass"', 'pass_file_path = ""'),
+        # local_vault_setup vault_password_entry_title is a number, not a string
+        _BASE_CONFIG.replace(
+            'vault_password_entry_title = "pyntara_local_vault_password"',
+            "vault_password_entry_title = 1",
+        ),
+        # local_vault_setup vault_password_entry_group is an empty string
+        _BASE_CONFIG.replace(
+            'vault_password_entry_group = "core"', 'vault_password_entry_group = ""'
+        ),
         # task name is a number, not a string
         _BASE_CONFIG.replace('name = "users"', "name = 1"),
         # task name is an empty string
@@ -318,7 +363,13 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        "shrinker_enabled = true\n",
+        "shrinker_enabled = true\n"
+        '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
+        'source_vault_default = "secrets/default.vault"\n'
+        'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
+        'pass_file_path = "/etc/pyntara/pass"\n'
+        'vault_password_entry_title = "pyntara_local_vault_password"\n'
+        'vault_password_entry_group = "core"\n',
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="\\[tasks\\]"):
@@ -342,7 +393,13 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        "shrinker_enabled = true\n",
+        "shrinker_enabled = true\n"
+        '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
+        'source_vault_default = "secrets/default.vault"\n'
+        'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
+        'pass_file_path = "/etc/pyntara/pass"\n'
+        'vault_password_entry_title = "pyntara_local_vault_password"\n'
+        'vault_password_entry_group = "core"\n',
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="at least one task"):

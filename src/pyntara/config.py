@@ -86,6 +86,26 @@ class ZswapServiceConfig:
 
 
 @dataclass(frozen=True)
+class LocalVaultSetupConfig:
+    """Runtime secret vault parameters for the local_vault_setup task.
+
+    source_vault_production and source_vault_default are repository-root
+    relative paths to the KeePass databases whose copy becomes the runtime
+    vault; local_vault_path and pass_file_path are the absolute target
+    locations fixed by docs/spec/secrets-model.md; vault_password_entry_title
+    and vault_password_entry_group locate the entry that carries the future
+    local vault password.
+    """
+
+    source_vault_production: Path
+    source_vault_default: Path
+    local_vault_path: Path
+    pass_file_path: Path
+    vault_password_entry_title: str
+    vault_password_entry_group: str
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     """One task entry from the [[tasks]] section of config.toml."""
 
@@ -104,6 +124,7 @@ class Config:
     add_extra_repos: AddExtraReposConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
+    local_vault_setup: LocalVaultSetupConfig
     tasks: tuple[TaskConfig, ...]
 
 
@@ -305,6 +326,56 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
     )
 
 
+def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
+    """Validate the [local_vault_setup] table and build the config.
+
+    Source vault paths and entry names are non-empty strings; the source
+    paths are repository-root relative, the target paths absolute (the
+    fixed locations from docs/spec/secrets-model.md).
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[local_vault_setup] section is missing or not a table")
+    source_vault_production = raw.get("source_vault_production")
+    if not isinstance(source_vault_production, str) or not source_vault_production:
+        raise ConfigError(
+            "local_vault_setup.source_vault_production must be a non-empty string"
+        )
+    source_vault_default = raw.get("source_vault_default")
+    if not isinstance(source_vault_default, str) or not source_vault_default:
+        raise ConfigError(
+            "local_vault_setup.source_vault_default must be a non-empty string"
+        )
+    local_vault_path = raw.get("local_vault_path")
+    if not isinstance(local_vault_path, str) or not local_vault_path:
+        raise ConfigError(
+            "local_vault_setup.local_vault_path must be a non-empty string"
+        )
+    pass_file_path = raw.get("pass_file_path")
+    if not isinstance(pass_file_path, str) or not pass_file_path:
+        raise ConfigError(
+            "local_vault_setup.pass_file_path must be a non-empty string"
+        )
+    vault_password_entry_title = raw.get("vault_password_entry_title")
+    if not isinstance(vault_password_entry_title, str) or not vault_password_entry_title:
+        raise ConfigError(
+            "local_vault_setup.vault_password_entry_title must be a non-empty string"
+        )
+    vault_password_entry_group = raw.get("vault_password_entry_group")
+    if not isinstance(vault_password_entry_group, str) or not vault_password_entry_group:
+        raise ConfigError(
+            "local_vault_setup.vault_password_entry_group must be a non-empty string"
+        )
+    return LocalVaultSetupConfig(
+        source_vault_production=Path(source_vault_production),
+        source_vault_default=Path(source_vault_default),
+        local_vault_path=Path(local_vault_path),
+        pass_file_path=Path(pass_file_path),
+        vault_password_entry_title=vault_password_entry_title,
+        vault_password_entry_group=vault_password_entry_group,
+    )
+
+
 def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
     """Validate the [[tasks]] section and build the task catalog.
 
@@ -385,5 +456,6 @@ def load_config(path: Path) -> Config:
             data.get("swapfile_service_install")
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
+        local_vault_setup=_local_vault_setup_table(data.get("local_vault_setup")),
         tasks=_tasks_table(data.get("tasks")),
     )

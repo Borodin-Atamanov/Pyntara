@@ -36,19 +36,15 @@ _journal_proc: subprocess.Popen[str] | None = None
 _last_log_time = 0.0
 
 
-def _send_to_journal(message: str) -> None:
-    """Duplicate one message into the system journal, best effort.
+def _write_to_shared_journal(text: str, identifier: str) -> None:
+    """Write one line through the reused systemd-cat process, best effort.
 
-    The journal identifier comes from PYNTARA_JOURNAL_IDENTIFIER; an empty
-    value disables journal forwarding, which unit tests use. systemd-cat
-    is started lazily and reused. A missing executable or a failed write
-    never stops the run (general resilience rule): without a journal the
-    console and the install log keep working as before.
+    The shared process writes informational entries (syslog level 6), the
+    default for every message that does not carry an explicit priority.
+    A missing executable or a failed write never stops the run: without a
+    journal the console and the install log keep working as before.
     """
 
-    identifier = os.environ.get("PYNTARA_JOURNAL_IDENTIFIER", "pyntara-engine")
-    if not identifier:
-        return
     global _journal_proc
     if _journal_proc is None or _journal_proc.poll() is not None:
         systemd_cat = shutil.which("systemd-cat")
@@ -69,14 +65,77 @@ def _send_to_journal(message: str) -> None:
     if stdin is None:
         return
     try:
-        stdin.write(_ANSI_RE.sub("", message) + "\n")
+        stdin.write(text)
         stdin.flush()
     except OSError:
         # The journal pipe broke; stop forwarding for the rest of the run.
         _journal_proc = None
 
 
-def log_progress(message: str) -> None:
+def _write_to_priority_journal(text: str, identifier: str, priority: int) -> None:
+    """Write one line through a short-lived systemd-cat process, best effort.
+
+    systemd-cat fixes the priority at process start, so a message with a
+    non-default priority cannot go through the shared process: a dedicated
+    process is spawned with the numeric --priority option and closed after
+    the single line. The priority is passed as a number, never embedded in
+    the message text. A missing executable or a failed write never stops
+    the run.
+    """
+
+    systemd_cat = shutil.which("systemd-cat")
+    if systemd_cat is None:
+        return
+    try:
+        proc = subprocess.Popen(
+            [
+                systemd_cat,
+                "--identifier",
+                identifier,
+                "--priority",
+                str(priority),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return
+    stdin = proc.stdin
+    if stdin is None:
+        return
+    try:
+        stdin.write(text)
+        # Closing stdin lets systemd-cat flush the line and exit.
+        stdin.close()
+    except OSError:
+        return
+
+
+def _send_to_journal(message: str, priority: int = 6) -> None:
+    """Duplicate one message into the system journal, best effort.
+
+    The journal identifier comes from PYNTARA_JOURNAL_IDENTIFIER; an empty
+    value disables journal forwarding, which unit tests use. The priority
+    is the syslog level as a number, 6 (informational) by default, and is
+    passed to systemd-cat as a number, never embedded in the message text.
+    Informational messages flow through a reused process; a different
+    priority spawns a short-lived process, because the priority is fixed
+    at process start.
+    """
+
+    identifier = os.environ.get("PYNTARA_JOURNAL_IDENTIFIER", "pyntara-engine")
+    if not identifier:
+        return
+    text = _ANSI_RE.sub("", message) + "\n"
+    if priority == 6:
+        _write_to_shared_journal(text, identifier)
+        return
+    _write_to_priority_journal(text, identifier, priority)
+
+
+def log_progress(message: str, *, priority: int = 6) -> None:
     """Print one progress line of the calling task, flushed to stdout.
 
     The task name in the prefix comes from the calling module: one task
@@ -84,7 +143,8 @@ def log_progress(message: str) -> None:
     diverge from the catalog. A timestamp in the project datetime format
     YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has
     passed since the previous progress line, so bursts of lines stay
-    compact. The journal receives the message without the timestamp.
+    compact. The journal receives the message without the timestamp at
+    the given syslog priority, informational by default.
     """
 
     frame = inspect.currentframe()
@@ -101,29 +161,35 @@ def log_progress(message: str) -> None:
     else:
         prefix = f"{task_name}:"
     print(f"{prefix} {message}", flush=True)
-    _send_to_journal(f"{task_name}: {message}")
+    _send_to_journal(f"{task_name}: {message}", priority=priority)
 
 
-def log_task_start(name: str) -> None:
+def log_task_start(name: str, *, priority: int = 6) -> None:
     """Announce a task: empty line, colored banner, journal line.
 
-    The console banner keeps its colors; the journal gets plain text.
+    The console banner keeps its colors; the journal gets plain text at
+    the given syslog priority, informational by default.
     """
 
     print()
     typer.secho(f" {name} ", bold=True, color=True)
-    _send_to_journal(f"starting task: {name}")
+    _send_to_journal(f"starting task: {name}", priority=priority)
 
 
 def log_result_line(
-    name: str, result: TaskResult, *, to_journal: bool = True
+    name: str,
+    result: TaskResult,
+    *,
+    to_journal: bool = True,
+    priority: int = 6,
 ) -> None:
     """Print one task outcome line immediately after the task finishes.
 
     Uses the same prefixes as the final summary in the entry point, so the
     per-task report and the summary read consistently. to_journal=False
     prints to the console only; the summary repeats these lines and must
-    not duplicate them in the journal.
+    not duplicate them in the journal. The journal line carries the given
+    syslog priority, informational by default.
     """
 
     if result.skipped:
@@ -138,20 +204,25 @@ def log_result_line(
         line = f"[failed] {name}: {detail}"
     print(line)
     if to_journal:
-        _send_to_journal(line)
+        _send_to_journal(line, priority=priority)
 
 
 def log_event(
-    message: str, *, to_stderr: bool = False, to_journal: bool = True
+    message: str,
+    *,
+    to_stderr: bool = False,
+    to_journal: bool = True,
+    priority: int = 6,
 ) -> None:
     """Print one status line to the console and mirror it to the journal.
 
     to_stderr=True routes the console copy to stderr, matching typer.echo
     with err=True for error notices. to_journal=False prints to the console
-    only, for lines the per-task report already journaled.
+    only, for lines the per-task report already journaled. The journal
+    line carries the given syslog priority, informational by default.
     """
 
     stream = sys.stderr if to_stderr else sys.stdout
     print(message, file=stream)
     if to_journal:
-        _send_to_journal(message)
+        _send_to_journal(message, priority=priority)

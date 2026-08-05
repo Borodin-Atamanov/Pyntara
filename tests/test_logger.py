@@ -10,6 +10,7 @@ the best-effort unit tests still run.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 import uuid
@@ -140,6 +141,43 @@ def _new_identifier(prefix: str) -> str:
     return f"pyntara-{prefix}-{uuid.uuid4().hex[:8]}"
 
 
+def _read_journal_priority(identifier: str, needle: str) -> str | None:
+    """Return the syslog priority of the journal line containing the needle.
+
+    The plain -o cat output carries no priority, so the JSON form is read
+    and parsed per line; the first line that contains the needle reports
+    its PRIORITY field, or None when the journal is not readable.
+    """
+
+    for extra in (["--user"], []):
+        try:
+            result = subprocess.run(
+                [
+                    "journalctl",
+                    *extra,
+                    f"SYSLOG_IDENTIFIER={identifier}",
+                    "--no-pager",
+                    "-o",
+                    "json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                try:
+                    data = json.loads(line)
+                except ValueError:
+                    continue
+                if needle in data.get("MESSAGE", ""):
+                    return data.get("PRIORITY")
+    return None
+
+
 def test_log_progress_mirrors_message_without_timestamp(
     monkeypatch: pytest.MonkeyPatch, journal_available: bool
 ) -> None:
@@ -180,6 +218,36 @@ def test_log_event_mirrors_status_line(monkeypatch: pytest.MonkeyPatch, journal_
     monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
     logger.log_event(marker)
     assert _wait_for(identifier, marker)
+
+
+def test_log_event_default_priority_is_informational(
+    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+) -> None:
+    # Without an explicit priority the journal entry must be informational
+    # (syslog level 6), the default for messages inside tasks.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    identifier = _new_identifier("info-priority")
+    marker = f"info-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    logger.log_event(marker)
+    assert _wait_for(identifier, marker)
+    assert _read_journal_priority(identifier, marker) == "6"
+
+
+def test_log_event_explicit_priority_reaches_the_journal(
+    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+) -> None:
+    # A serious error must be journaled at syslog level 3, passed as a
+    # number, never as text in the message.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    identifier = _new_identifier("error-priority")
+    marker = f"error-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    logger.log_event(marker, priority=3)
+    assert _wait_for(identifier, marker)
+    assert _read_journal_priority(identifier, marker) == "3"
 
 
 def test_log_result_line_to_journal_false_skips_journal(
