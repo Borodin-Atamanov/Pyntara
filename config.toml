@@ -27,19 +27,27 @@ package_success_threshold_percent = 70
 
 #package set
 packages = [
-    #TODO: clasterize this commands, add comments:
-    "bash-completion",
-    "complete-alias",
-    "tree",
-    "rsync",
-    "lsof",
-    "gnupg",
-    "ca-certificates",
-    "smartmontools",
-    "tmux",
-    "screen",
-    "sshpass",
-    "openssl",
+    # shell completion
+    "bash-completion", # bash-completion: programmable completion for the bash shell
+    "complete-alias", # complete-alias: tab completion for shell aliases
+
+    # file operations
+    "tree", # tree: displays an indented directory tree, in color
+    "rsync", # rsync: fast, versatile, remote and local file-copying tool
+
+    # storage monitoring
+    "lsof", # lsof: utility to list open files
+    "smartmontools", # smartmontools: control and monitor storage systems via S.M.A.R.T.
+
+    # security and cryptography
+    "gnupg", # gnupg: GNU privacy guard, a free PGP replacement
+    "ca-certificates", # ca-certificates: common CA certificates for TLS verification
+    "openssl", # openssl: OpenSSL cryptographic toolkit
+    "sshpass", # sshpass: non-interactive SSH password authentication
+
+    # terminal multiplexers
+    "tmux", # tmux: terminal multiplexer with sessions and windows
+    "screen", # screen: terminal multiplexer with VT100/ANSI terminal emulation
 
     # file managers
     "mc", # mc: Midnight Commander, two-panel console file manager
@@ -74,8 +82,6 @@ packages = [
     "traceroute", # traceroute: trace the network path to a remote host
     "whois", # whois: client for the whois directory service
     "wget", # wget: non-interactive network downloader
-
-    # DNS utilities
     "dnsutils", # dnsutils: DNS utilities dig, nslookup and host
 
     # disk and file tools
@@ -99,4 +105,4 @@ packages = [
 # Components the add_extra_repos task ensures in every Ubuntu archive
 # section of the apt sources. main is always present on a fresh Kubuntu;
 # universe, restricted and multiverse are enabled here.
-components = ["universe", "restricted", "multiverse"]
+components = ["main", "universe", "restricted", "multiverse"]
