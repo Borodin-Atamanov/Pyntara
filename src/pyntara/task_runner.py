@@ -13,9 +13,8 @@ import importlib
 import time
 from collections.abc import Callable
 
-import typer
-
 from pyntara.context import Context
+from pyntara.logger import log_result_line, log_task_start
 from pyntara.models import TaskResult
 
 
@@ -37,26 +36,6 @@ def load_task(name: str) -> Callable[[Context], TaskResult] | None:
     return task
 
 
-def _print_task_result(name: str, result: TaskResult) -> None:
-    """Print one task outcome line immediately after the task finishes.
-
-    Uses the same prefixes as the final summary in the entry point, so the
-    per-task report and the summary read consistently.
-    """
-
-    if result.skipped:
-        detail = result.message or "not implemented"
-        print(f"[skip] {name}: {detail}")
-    elif result.success:
-        line = f"[done] {name}"
-        if result.message:
-            line = f"{line}: {result.message}"
-        print(line)
-    else:
-        detail = result.error or "unknown error"
-        print(f"[failed] {name}: {detail}")
-
-
 def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     """Run each task in order, continuing after failures.
 
@@ -72,13 +51,12 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
 
     results: list[tuple[str, TaskResult]] = []
     for name in names:
-        print()
-        typer.secho(f" {name} ", bold=True, color=True)
+        log_task_start(name)
         try:
             task = load_task(name)
         except Exception as exc:  # noqa: BLE001 - a broken import must not kill the run
             result = TaskResult(success=False, error=f"task import failed: {exc}")
-            _print_task_result(name, result)
+            log_result_line(name, result)
             results.append((name, result))
             continue
         if task is None:
@@ -87,7 +65,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
                 skipped=True,
                 message=f"task module not implemented: {name}",
             )
-            _print_task_result(name, result)
+            log_result_line(name, result)
             results.append((name, result))
             continue
         time.sleep(ctx.config.engine.task_start_delay_seconds)
@@ -95,6 +73,6 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             result = task(ctx)
         except Exception as exc:  # noqa: BLE001 - a raising task must not kill the run
             result = TaskResult(success=False, error=str(exc))
-        _print_task_result(name, result)
+        log_result_line(name, result)
         results.append((name, result))
     return results

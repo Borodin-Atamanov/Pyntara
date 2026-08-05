@@ -26,6 +26,10 @@ Every task reports its progress to stdout so the user sees what is being done.
 5. A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
 6. Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
 
+### 1.3 Central logging
+
+All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the system journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
+
 ## 2. Datetime format policy
 
 Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.

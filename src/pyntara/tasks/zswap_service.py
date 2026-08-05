@@ -19,13 +19,12 @@ force mode rewrites all parameters.
 from __future__ import annotations
 
 import subprocess
-import time
-from datetime import datetime
 from pathlib import Path
 from string import Template
 
 from pyntara.config import ZswapServiceConfig
 from pyntara.context import Context
+from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command
 
@@ -54,35 +53,6 @@ PARAM_PATHS = {
     "accept_threshold_percent": ZSWAP_PARAMS_DIR / "accept_threshold_percent",
     "shrinker_enabled": ZSWAP_PARAMS_DIR / "shrinker_enabled",
 }
-
-# The task name from the catalog; the module file name matches it
-# (task-model contract), so the prefix is always correct.
-TASK_NAME = __name__.rsplit(".", 1)[-1]
-
-# Monotonic time of the previous progress line; presentation state only, not
-# business data (architecture contract forbids business data here, not this).
-_last_log_time = 0.0
-
-
-def _log(message: str) -> None:
-    """Print one progress line for this task, flushed to stdout.
-
-    A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is
-    prepended only when more than one second has passed since the previous
-    line, so bursts of lines stay compact. inst.sh tees stdout into the
-    install log, so every decision and action of the task is visible in the
-    terminal and in the log.
-    """
-
-    global _last_log_time
-    now = time.monotonic()
-    if now - _last_log_time >= 1.0:
-        timestamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S")
-        prefix = f"{timestamp} {TASK_NAME}:"
-        _last_log_time = now
-    else:
-        prefix = f"{TASK_NAME}:"
-    print(f"{prefix} {message}", flush=True)
 
 
 def _target_values(cfg: ZswapServiceConfig) -> dict[str, str]:

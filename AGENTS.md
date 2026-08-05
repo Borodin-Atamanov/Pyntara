@@ -1,5 +1,6 @@
 # Agent Rules
 
+<project_instructions priority="critical">
 ## Required reading chain
 
 Before any repository action, the agent MUST follow this chain:
@@ -29,3 +30,6 @@ Code comments and response text: substantive only, no stylistic embellishment
 Не замалчивай детали реализации, пиши, какие решения ты принимаешь до их реализации.
 
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity — ask or fail loudly. One obvious way; don't invent variants. Prefer working now over perfect later, but never break correctness for speed. If code needs a paragraph to explain, rewrite it.
+
+YAGNI! DRY! KISS! Separation of Concerns!
+</project_instructions priority="critical">

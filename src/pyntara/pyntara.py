@@ -30,6 +30,7 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.context import Context
+from pyntara.logger import log_event, log_result_line
 from pyntara.task_runner import run_tasks
 
 app = typer.Typer(invoke_without_command=True)
@@ -120,7 +121,7 @@ def _load_config_or_exit() -> Config:
     try:
         return load_config(CONFIG_PATH)
     except ConfigError as exc:
-        typer.echo(f"Error! {exc}", err=True)
+        log_event(f"Error! {exc}", to_stderr=True)
         raise typer.Exit(1) from exc
 
 
@@ -134,7 +135,7 @@ def _warn_and_continue(message: str, notice_timeout: int) -> None:
     continues.
     """
 
-    typer.echo(f"Error! {message}", err=True)
+    log_event(f"Error! {message}", to_stderr=True)
     for remaining in range(notice_timeout, 0, -1):
         print(f"\r{remaining} ", end="", flush=True, file=sys.stderr)
         time.sleep(1)
@@ -189,7 +190,7 @@ def _resolve_mode(cfg: EngineConfig) -> str:
     mode = _env("PYNTARA_INSTALL_MODE")
     if mode is None:
         detected = detect_default_mode(cfg.process_check_timeout_seconds)
-        typer.echo(f"Install mode not set, using detected default: {detected}")
+        log_event(f"Install mode not set, using detected default: {detected}")
         return detected
     if mode in MODES:
         return mode
@@ -278,10 +279,10 @@ def run() -> None:
         skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
         config=cfg,
     )
-    typer.echo(f"Install mode: {mode}")
-    typer.echo(f"Tasks: {' '.join(names)}")
+    log_event(f"Install mode: {mode}")
+    log_event(f"Tasks: {' '.join(names)}")
     if force_tasks:
-        typer.echo(f"Force: {' '.join(sorted(force_tasks))}")
+        log_event(f"Force: {' '.join(sorted(force_tasks))}")
     results = run_tasks(ctx, names)
     failed = [
         name
@@ -290,27 +291,17 @@ def run() -> None:
     ]
     skipped = [name for name, result in results if result.skipped]
     for name, result in results:
-        if result.skipped:
-            detail = result.message or "not implemented"
-            typer.echo(f"[skip] {name}: {detail}")
-        elif result.success:
-            line = f"[done] {name}"
-            if result.message:
-                line = f"{line}: {result.message}"
-            typer.echo(line)
-        else:
-            detail = result.error or "unknown error"
-            typer.echo(f"[failed] {name}: {detail}")
+        log_result_line(name, result, to_journal=False)
     if failed:
-        typer.echo(f"Failed {len(failed)} of {len(results)} tasks: {' '.join(failed)}")
+        log_event(f"Failed {len(failed)} of {len(results)} tasks: {' '.join(failed)}")
         raise typer.Exit(1)
     if skipped:
-        typer.echo(
+        log_event(
             f"Finished {len(results) - len(skipped)} of {len(results)} tasks, "
             f"skipped {len(skipped)}"
         )
         return
-    typer.echo(f"All {len(results)} tasks finished")
+    log_event(f"All {len(results)} tasks finished")
 
 
 def main() -> None:
