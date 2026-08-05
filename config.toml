@@ -124,7 +124,7 @@ components = ["main", "universe", "restricted", "multiverse"]
 # Path to the swap file.
 swapfile_path = "/swapfile"
 # Multiplier applied to installed RAM to get the base swap size.
-ram_multiplier = 2
+ram_multiplier = 1.6
 # Extra mebibytes added to the RAM-derived swap size before the disk cap.
 ram_extra_mb = 4096
 # Maximum share of free disk space the swap file may occupy, 0.0 to 1.0.

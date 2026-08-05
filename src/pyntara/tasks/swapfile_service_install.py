@@ -34,6 +34,20 @@ SWAPFILE_SERVICE_NAME = "swapfile.service"
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 MEMINFO_PATH = Path("/proc/meminfo")
 
+# The task name from the catalog; the module file name matches it
+# (task-model contract), so the prefix is always correct.
+TASK_NAME = __name__.rsplit(".", 1)[-1]
+
+
+def _log(message: str) -> None:
+    """Print one progress line for this task, flushed to stdout.
+
+    inst.sh tees stdout into the install log, so every decision and action
+    of the task is visible in the terminal and in the log.
+    """
+
+    print(f"[{TASK_NAME}] {message}", flush=True)
+
 
 def _read_ram_kib() -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
@@ -121,8 +135,11 @@ def task(ctx: Context) -> TaskResult:
     active and the service is enabled; the task then returns changed=False.
     Otherwise it deactivates and removes an obsolete swapfile, creates a
     new one at the computed size, activates it, writes the unit file and
-    enables the service. Any failure is returned as an error TaskResult:
-    the runner continues with the remaining tasks and never stops here.
+    enables the service. Every step is reported to stdout: measurements and
+    decisions as single lines that include their result, long-running
+    commands as a line before and a line after. Any failure is returned as
+    an error TaskResult: the runner continues with the remaining tasks and
+    never stops here.
     """
 
     cfg = ctx.config.swapfile_service_install
@@ -137,10 +154,36 @@ def task(ctx: Context) -> TaskResult:
             success=False, error=f"cannot determine RAM or free disk space: {exc}"
         )
 
+    ram_mb = ram_kib // 1024
+    free_disk_mb = free_disk_kib // 1024
+    _log(f"reading RAM from {MEMINFO_PATH}: {ram_mb} MiB")
+    _log(f"reading free disk space on {cfg.swapfile_path.parent}: {free_disk_mb} MiB")
+
+    multiplier = cfg.ram_multiplier
+    multiplier_text = (
+        str(int(multiplier)) if multiplier.is_integer() else str(multiplier)
+    )
+    fraction = cfg.disk_fraction
+    fraction_text = str(int(fraction)) if fraction.is_integer() else str(fraction)
     target_mb = _calculate_swap_size_mb(ram_kib, free_disk_kib, cfg)
+    _log(
+        f"calculated target size: min({ram_mb} MiB * {multiplier_text} + "
+        f"{cfg.ram_extra_mb} MiB, {free_disk_mb} MiB * {fraction_text}) = "
+        f"{target_mb} MiB"
+    )
+
     current_mb = _current_swap_size_mb(cfg.swapfile_path)
+    if current_mb is None:
+        _log(f"checking swapfile {cfg.swapfile_path}: absent")
+    else:
+        _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
     active = _swap_active(cfg.swapfile_path, timeout)
+    _log(f"checking system service activation: {'active' if active else 'inactive'}")
     enabled = _service_enabled(SWAPFILE_SERVICE_NAME, timeout)
+    _log(
+        f"checking autorun service {SWAPFILE_SERVICE_NAME}: "
+        f"{'enabled' if enabled else 'disabled'}"
+    )
 
     if (
         not force
@@ -149,61 +192,94 @@ def task(ctx: Context) -> TaskResult:
         and active
         and enabled
     ):
+        _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
 
     changed = False
     if not force and current_mb is not None and abs(current_mb - target_mb) <= 1:
         # The swapfile exists at the computed size; only activation or the
         # service is missing, so no recreation is needed.
+        _log(f"swapfile already at target size: {current_mb} MiB")
         if not active:
+            _log(f"activating swap: swapon {cfg.swapfile_path}")
             try:
                 run_command(["swapon", str(cfg.swapfile_path)], timeout=timeout)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 return TaskResult(success=False, error=f"swapon failed: {exc}")
+            _log("swap active")
             changed = True
     else:
         # Recreate the swapfile at the computed size. An active swap must be
         # deactivated first, or the resize would fail on a busy file.
+        if force:
+            _log(f"force mode, recreating swapfile at target size {target_mb} MiB")
+        else:
+            current_text = f"{current_mb} MiB" if current_mb is not None else "missing"
+            _log(
+                f"swapfile size {current_text} differs from target "
+                f"{target_mb} MiB, recreating"
+            )
         if active:
+            _log(f"deactivating swap: swapoff {cfg.swapfile_path}")
             try:
                 run_command(["swapoff", str(cfg.swapfile_path)], timeout=timeout)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 return TaskResult(
                     success=False, error=f"cannot deactivate old swapfile: {exc}"
                 )
+            _log("swap deactivated")
+        _log(f"removing old swapfile {cfg.swapfile_path}")
         try:
             cfg.swapfile_path.unlink(missing_ok=True)
         except OSError as exc:
             return TaskResult(success=False, error=f"cannot remove old swapfile: {exc}")
+        _log("old swapfile removed")
         try:
+            _log(f"creating swapfile: fallocate -l {target_mb}M {cfg.swapfile_path}")
             run_command(
                 ["fallocate", "-l", f"{target_mb}M", str(cfg.swapfile_path)],
                 timeout=timeout,
             )
+            _log(f"swapfile created: {target_mb} MiB")
+            _log(f"setting permissions: chmod 600 {cfg.swapfile_path}")
             run_command(["chmod", "600", str(cfg.swapfile_path)], timeout=timeout)
+            _log("permissions set")
+            _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
             run_command(["mkswap", str(cfg.swapfile_path)], timeout=timeout)
+            _log("swapfile formatted")
+            _log(f"activating swap: swapon {cfg.swapfile_path}")
             run_command(["swapon", str(cfg.swapfile_path)], timeout=timeout)
+            _log("swap active")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"swapfile setup failed: {exc}")
         changed = True
 
+    _log(f"rendering unit template from {TEMPLATE_PATH}")
     try:
         content = _render_unit(TEMPLATE_PATH, cfg.swapfile_path)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"
         )
+    _log(f"writing unit file {SYSTEMD_UNIT_DIR / SWAPFILE_SERVICE_NAME}")
     try:
         _write_unit_file(SYSTEMD_UNIT_DIR, SWAPFILE_SERVICE_NAME, content)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot write unit file: {exc}"
         )
+    _log("unit file written")
     try:
+        _log("reloading systemd: systemctl daemon-reload")
         run_command(["systemctl", "daemon-reload"], timeout=timeout)
+        _log("systemd reloaded")
+        _log(f"enabling service: systemctl enable {SWAPFILE_SERVICE_NAME}")
         run_command(["systemctl", "enable", SWAPFILE_SERVICE_NAME], timeout=timeout)
+        _log("service enabled")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(success=False, changed=True, error=f"systemd setup failed: {exc}")
+        return TaskResult(
+            success=False, changed=True, error=f"systemd setup failed: {exc}"
+        )
     return TaskResult(
         success=True,
         changed=True,
