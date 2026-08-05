@@ -18,23 +18,33 @@ packages = [
     # nnn: lightweight terminal file browser
     "nnn",
 ]
-old_packages = [
+
+# Future package set, kept as a reference list for later enablement.
+# Clustered by purpose: each group header names the category.
+future_packages = [
+    # file managers
     # mc: Midnight Commander, two-panel console file manager
     "mc",
     # nnn: lightweight terminal file browser
     "nnn",
+
+    # archivers
     # unrar: extractor for the proprietary RAR archive format
     "unrar",
     # unrar-free: free replacement for unrar
     "unrar-free",
     # unzip: ZIP archive extractor
     "unzip",
+
+    # system information
     # inxi: full system information report
     "inxi",
     # lsscsi: list SCSI and other storage devices
     "lsscsi",
     # lshw: detailed hardware information
     "lshw",
+
+    # resource monitoring
     # htop: interactive process viewer
     "htop",
     # nmon: system performance monitor for CPU, memory, network, disk
@@ -43,6 +53,8 @@ old_packages = [
     "ncdu",
     # nload: console network traffic monitor
     "nload",
+
+    # network tools
     # net-tools: classic networking tools, ifconfig, netstat, route, arp
     "net-tools",
     # nmap: network scanner
@@ -55,20 +67,30 @@ old_packages = [
     "whois",
     # wget: non-interactive network downloader
     "wget",
+
+    # DNS utilities
     # dnsutils: DNS utilities dig, nslookup and host
     "dnsutils",
+
+    # disk and file tools
     # exfat-fuse: read and write exFAT filesystems through FUSE
     "exfat-fuse",
     # fdupes: find and remove duplicate files
     "fdupes",
+
+    # media tools
     # mediainfo: technical details of media files, codecs and streams
     "mediainfo",
     # exiftool: read and write EXIF and IPTC metadata in media files
     "exiftool",
+
+    # automation and configuration
     # expect: automate interactive terminal programs
     "expect",
     # augeas-tools: command-line tools for the Augeas configuration editor
     "augeas-tools",
+
+    # small utilities
     # calc: arbitrary precision calculator
     "calc",
     # hollywood: decorative fake Hollywood-style terminal activity
