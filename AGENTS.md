@@ -32,5 +32,5 @@ Do not withhold implementation details — state which decisions you are making 
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity — ask or fail loudly. One obvious way; don't invent variants. Prefer working now over perfect later, but never break correctness for speed. If code needs a paragraph to explain, rewrite it.
 
 YAGNI! DRY! KISS! Separation of Concerns!
-</project_instructions priority="critical">
+</project_instructions>
 
