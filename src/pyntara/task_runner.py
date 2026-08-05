@@ -13,6 +13,9 @@ import importlib
 import time
 from collections.abc import Callable
 
+import typer
+from typer import colors
+
 from pyntara.context import Context
 from pyntara.models import TaskResult
 
@@ -58,9 +61,9 @@ def _print_task_result(name: str, result: TaskResult) -> None:
 def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     """Run each task in order, continuing after failures.
 
-    Each task is announced with an empty line and a title line, then a short
-    pause before execution so the user sees which task starts (project rules
-    section 1.1). Task output streams in real time through run_command; the
+    Each task is announced with an empty line and a green banner line, then a
+    short pause before execution so the user sees which task starts (project
+    rules section 1.1). Task output streams in real time through run_command; the
     outcome line is printed right after the task finishes. Returns (name,
     result) pairs in run order. A task that is not implemented or raises
     becomes a failed result with the reason in error. The entry point prints
@@ -71,7 +74,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     results: list[tuple[str, TaskResult]] = []
     for name in names:
         print()
-        print(f"[start] {name}")
+        typer.secho(f"{name} ", fg=colors.BLACK, bg=colors.GREEN)
         try:
             task = load_task(name)
         except Exception as exc:  # noqa: BLE001 - a broken import must not kill the run

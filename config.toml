@@ -34,8 +34,6 @@ packages = [
     "complete-alias", # complete-alias: tab completion for shell aliases
     "hstr", # better history in console
 
-
-
     # file operations
     "tree", # tree: displays an indented directory tree, in color
     "rsync", # rsync: fast, versatile, remote and local file-copying tool
@@ -86,7 +84,7 @@ packages = [
     "traceroute", # traceroute: trace the network path to a remote host
     "whois", # whois: client for the whois directory service
     "wget", # wget: non-interactive network downloader
-    "dnsutils", # dnsutils: DNS utilities dig, nslookup and host
+    "bind9-dnsutils", # bind9-dnsutils: DNS utilities dig, nslookup and host; the real package behind the transitional dnsutils
     "nload", # nload: console network traffic monitor
     "speedometer", # speedometer: console bandwidth usage meter
     "bmon", # bmon: bandwidth monitor with interactive curses interface
@@ -145,6 +143,12 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "cli_tools"
+description = "Install curated console utilities: file managers, system and media tools."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "users_setup"
 description = "Create and configure i, j, k users and required groups."
 depends = []
@@ -160,12 +164,6 @@ modes = ["minimal", "server", "desktop"]
 name = "passwords"
 description = "Derive root and user passwords from salt and hostname."
 depends = ["users_setup", "hostname"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "cli_tools"
-description = "Install curated console utilities: file managers, system and media tools."
-depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
