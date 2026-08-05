@@ -15,7 +15,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 3. Single config file added as the source of truth for the Python part. config.toml at the repository root holds the engine values and the task catalog: task data root, notice timeout, per-task data such as the cli_tools package list, and one [[tasks]] entry per task with name, description, dependencies and mode membership. The file is mandatory: a missing or invalid file stops the run, there are no defaults. Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred. Invalid environment values never stop the run: they follow the resilience rule (section 7).
 4. DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.
-5. Logging to stdout. The engine prints to stdout; inst.sh already tees all output into /var/log/pyntara/install.log (bootstrap contract section 9). No syslog handler, no masking filter. The rule is simpler than a filter: never log secret values.
+5. Logging to stdout with journal mirroring. The engine prints to stdout; inst.sh already tees all output into /var/log/pyntara/install.log (bootstrap contract section 9). Own engine messages are mirrored into the system journal through src/pyntara/logger.py with the identifier pyntara-engine; inst.sh mirrors its own messages with the identifier pyntara-install. No masking filter. The rule is simpler than a filter: never log secret values.
 
 ## 3. Engine structure
 

@@ -33,3 +33,4 @@ Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No sile
 
 YAGNI! DRY! KISS! Separation of Concerns!
 </project_instructions priority="critical">
+

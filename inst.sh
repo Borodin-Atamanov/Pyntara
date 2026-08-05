@@ -45,20 +45,30 @@ fi
 # Overridable via environment so tests never touch real system paths.
 LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 
+# Journal identifier for own installer messages. An empty value disables
+# journal forwarding. The variable is not exported, so the Python engine
+# keeps its own identifier (pyntara-engine) when launched by run_pyntara.
+JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER:-pyntara-install}"
+
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f log &>/dev/null; then
 log() {
-    # Bootstrap contract section 9: timestamped message written to log file and terminal.
+    # Bootstrap contract section 9: timestamped message written to log file
+    # and terminal, duplicated into the system journal without the timestamp
+    # because the journal stamps its own time.
     local message="$1"
     local timestamp
     timestamp="$(date +%Y-%m-%d-%H-%M-%S)"
     echo "[$timestamp] $message" | tee -a "$LOG_FILE"
+    if [[ -n "$JOURNAL_IDENTIFIER" ]] && command -v systemd-cat >/dev/null 2>&1; then
+        printf '%s\n' "$message" | systemd-cat --identifier "$JOURNAL_IDENTIFIER" || true
+    fi
 }
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
-if ! declare -f run_logged &>/dev/null; then
-run_logged() {
+if ! declare -f run_stream_to_log &>/dev/null; then
+run_stream_to_log() {
     # Bootstrap contract section 9: run a command, stream output to terminal and log file.
     # stderr is merged into stdout so errors are captured too.
     # The if guard captures the command exit code without triggering errexit.
@@ -66,6 +76,14 @@ run_logged() {
         return 0
     fi
     return "${PIPESTATUS[0]}"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+if ! declare -f run_logged &>/dev/null; then
+run_logged() {
+    # Bootstrap contract section 9: run a command, stream output to terminal and log file.
+    run_stream_to_log "$@"
 }
 fi
 
@@ -77,10 +95,10 @@ run_timed() {
     local start rc elapsed
     start="$(date +%s)"
     # The if guard captures the command exit code without triggering errexit.
-    if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+    if run_stream_to_log "$@"; then
         rc=0
     else
-        rc="${PIPESTATUS[0]}"
+        rc=$?
     fi
     elapsed="$(($(date +%s) - start))"
     log "Finished in ${elapsed}s with exit code ${rc}: $*"

@@ -53,6 +53,7 @@ The uv run pyntara process runs without any time limit. Provisioning tasks take 
 
 Every command and its output are written to /var/log/pyntara/install.log.
 The same output is streamed to the terminal in real time.
+Every own message of the installer (log) is also duplicated into the system journal with the identifier pyntara-install, without the console timestamp: the journal stamps its own time. The Python engine mirrors its own messages with the identifier pyntara-engine (project rules section 1.3). Journal forwarding is best effort: a missing systemd-cat or a failed write never stops the run.
 Timestamps use YYYY-MM-DD-HH-MM-SS format.
 Logging is always verbose. There is no quiet mode.
 
