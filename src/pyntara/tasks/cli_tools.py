@@ -20,10 +20,7 @@ import subprocess
 
 from pyntara.context import Context
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
-
-# apt must never ask questions; all package operations run noninteractive.
-APT_EXTRA_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
+from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
 
 
 def _is_installed(package: str, timeout: float) -> bool:
@@ -49,7 +46,7 @@ def _install_once(package: str, timeout: float) -> tuple[bool, str]:
     try:
         run_command(
             ["apt-get", "install", "-y", package],
-            extra_env=APT_EXTRA_ENV,
+            extra_env=APT_NONINTERACTIVE_ENV,
             timeout=timeout,
         )
         return True, ""
@@ -82,7 +79,7 @@ def _install_packages(
         try:
             run_command(
                 ["apt-get", "update"],
-                extra_env=APT_EXTRA_ENV,
+                extra_env=APT_NONINTERACTIVE_ENV,
                 timeout=update_timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

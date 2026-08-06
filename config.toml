@@ -114,6 +114,14 @@ packages = [
 # section of the apt sources. main is always present on a fresh Kubuntu;
 # universe, restricted and multiverse are enabled here.
 components = ["main", "universe", "restricted", "multiverse"]
+# Official Ubuntu archive hosts the task may manage. A source file whose
+# URIs match none of these hosts is third-party and left untouched.
+ubuntu_hosts = [
+    "archive.ubuntu.com",
+    "security.ubuntu.com",
+    "ports.ubuntu.com",
+    "old-releases.ubuntu.com",
+]
 
 [swapfile_service_install]
 # Swap file path and size calculation. The task creates a swapfile at the
@@ -147,55 +155,38 @@ accept_threshold_percent = 100
 # Whether the shrinker proactively writes cold pages to the backing swap.
 shrinker_enabled = true
 
+[zram_service]
+# Aggressive in-memory swap parameters (docs/spec/users-and-host.md).
+# The device count equals the CPU core count; the total capacity is
+# memory_fraction_percent of installed RAM split evenly across the devices
+# and rounded down to the alignment_bytes zram page size. Every device uses
+# the compressor algorithm and is activated with swap_priority, so ZRAM
+# swap is preferred over the disk swapfile.
+# Compression algorithm applied to every device.
+compressor = "zstd"
+# Swap priority; ZRAM must rank above the disk swapfile.
+swap_priority = 1111
+# Total ZRAM capacity as a percentage of installed RAM, 1 to 100.
+memory_fraction_percent = 96
+# CPU core count used when the real count cannot be determined.
+fallback_cpu_count = 8
+# Byte boundary the zram driver requires for disksize values.
+alignment_bytes = 4096
+
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow
 # this structure, and any tooling that creates or inspects them must read
 # this table (docs/spec/secrets-model.md). The structure is flat: every
 # entry lives directly in the root group, the title alone identifies the
 # entry, and titles are verbose so the purpose is clear without opening
-# the vault. The purpose field of every entry explains what is stored
+# the vault. The keys of every entry map one-to-one to the KeePass entry
+# field names; the notes field of every entry explains what is stored
 # there, who consumes it and why.
 [vault_structure]
 
 [[vault_structure.entries]]
-title = "password_salt"
-notes = "Primary salt for deterministic password derivation (docs/spec/secrets-model.md). Combined with the random hostname it produces the generated passwords; when present, this salt overrides the default salt from GitHub."
-
-[[vault_structure.entries]]
 title = "pyntara_local_vault_password"
 notes = "Password that protects the runtime secret vault at /var/lib/pyntara/secrets/pyntara.vault on the target machine. Read by the local_vault_setup task and written to /etc/pyntara/pass, so the source vault password never opens the runtime vault. The default vault carries a well-known test value mirroring its well-known vault password."
-
-[[vault_structure.entries]]
-title = "telegram_bot_token"
-notes = "Telegram bot token used by the telemetry sender (docs/spec/telemetry.md) to push reports to Telegram."
-
-[[vault_structure.entries]]
-title = "telegram_chat_id"
-notes = "Telegram chat identifier that receives the telemetry reports."
-
-[[vault_structure.entries]]
-title = "google_drive_service_account_json"
-notes = "JSON credentials payload of the Google Drive service account used by the telemetry uploader."
-
-[[vault_structure.entries]]
-title = "remote_proxy_host"
-notes = "Hostname or IP address of the remote proxy server (docs/spec/networking.md)."
-
-[[vault_structure.entries]]
-title = "remote_proxy_port"
-notes = "TCP port of the remote proxy server."
-
-[[vault_structure.entries]]
-title = "remote_proxy_username"
-notes = "Username for authentication against the remote proxy server."
-
-[[vault_structure.entries]]
-title = "remote_proxy_password"
-notes = "Password for authentication against the remote proxy server."
-
-[[vault_structure.entries]]
-title = "nextdns_profile_dns"
-notes = "Generated NextDNS endpoint used as the system DNS configuration (docs/spec/networking.md)."
 
 [local_vault_setup]
 # Runtime secret vault creation parameters (docs/spec/secrets-model.md).
@@ -217,6 +208,15 @@ pass_file_path = "/etc/pyntara/pass"
 # password. The entry must exist in the [vault_structure] table: the
 # config loader rejects a title that is not listed there.
 vault_password_entry_title = "pyntara_local_vault_password"
+# File modes for the runtime secret storage, as octal strings: the secrets
+# directory is 0700, the runtime vault 0640, the password directory 0700
+# and the password file 0400 (docs/spec/secrets-model.md).
+secrets_dir_mode = "0700"
+local_vault_file_mode = "0640"
+pass_dir_mode = "0700"
+pass_file_mode = "0400"
+# Syslog priority used when journaling a serious vault failure, 0 to 7.
+error_priority = 3
 
 # Task catalog: single source of truth for task metadata, one [[tasks]]
 # entry per task. Each entry has a name, a human-readable description,

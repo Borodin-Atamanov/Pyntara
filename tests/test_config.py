@@ -24,6 +24,7 @@ package_success_threshold_percent = 70
 
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]
+ubuntu_hosts = ["archive.ubuntu.com", "security.ubuntu.com"]
 
 [swapfile_service_install]
 swapfile_path = "/swapfile"
@@ -37,6 +38,13 @@ compressor = "zstd"
 max_pool_percent = 50
 accept_threshold_percent = 100
 shrinker_enabled = true
+
+[zram_service]
+compressor = "zstd"
+swap_priority = 1111
+memory_fraction_percent = 96
+fallback_cpu_count = 8
+alignment_bytes = 4096
 
 [vault_structure]
 
@@ -58,6 +66,11 @@ source_vault_default = "secrets/default.vault"
 local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"
 pass_file_path = "/etc/pyntara/pass"
 vault_password_entry_title = "pyntara_local_vault_password"
+secrets_dir_mode = "0700"
+local_vault_file_mode = "0640"
+pass_dir_mode = "0700"
+pass_file_mode = "0400"
+error_priority = 3
 
 [[tasks]]
 name = "add_extra_repos"
@@ -93,6 +106,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.package_install_retries == 3
     assert config.cli_tools.package_success_threshold_percent == 70
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
+    assert config.add_extra_repos.ubuntu_hosts == (
+        "archive.ubuntu.com",
+        "security.ubuntu.com",
+    )
     assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
     assert config.swapfile_service_install.ram_multiplier == 2
     assert config.swapfile_service_install.ram_extra_mb == 4096
@@ -102,11 +119,21 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zswap_service.max_pool_percent == 50
     assert config.zswap_service.accept_threshold_percent == 100
     assert config.zswap_service.shrinker_enabled is True
+    assert config.zram_service.compressor == "zstd"
+    assert config.zram_service.swap_priority == 1111
+    assert config.zram_service.memory_fraction_percent == 96
+    assert config.zram_service.fallback_cpu_count == 8
+    assert config.zram_service.alignment_bytes == 4096
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
     assert config.local_vault_setup.pass_file_path == Path("/etc/pyntara/pass")
     assert config.local_vault_setup.vault_password_entry_title == "pyntara_local_vault_password"
+    assert config.local_vault_setup.secrets_dir_mode == 0o700
+    assert config.local_vault_setup.local_vault_file_mode == 0o640
+    assert config.local_vault_setup.pass_dir_mode == 0o700
+    assert config.local_vault_setup.pass_file_mode == 0o400
+    assert config.local_vault_setup.error_priority == 3
     assert config.vault_structure.entries[0].title == "password_salt"
     assert config.vault_structure.entries[0].notes == "Primary salt for password derivation."
     assert config.vault_structure.entries[1].title == "pyntara_local_vault_password"
@@ -146,11 +173,15 @@ _BASE_CONFIG = (
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
     '[add_extra_repos]\ncomponents = ["universe"]\n'
+    'ubuntu_hosts = ["archive.ubuntu.com"]\n'
     '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
     "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
     '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
     "max_pool_percent = 50\naccept_threshold_percent = 100\n"
     "shrinker_enabled = true\n"
+    '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
+    "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
+    "alignment_bytes = 4096\n"
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -159,6 +190,8 @@ _BASE_CONFIG = (
     'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
     'pass_file_path = "/etc/pyntara/pass"\n'
     'vault_password_entry_title = "pyntara_local_vault_password"\n'
+    'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
+    'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n'
     '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
     "depends = []\nmodes = [\"minimal\"]\n"
 )
@@ -419,11 +452,15 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
+        'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
+        '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
+        "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
+        "alignment_bytes = 4096\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -431,7 +468,9 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
         'pass_file_path = "/etc/pyntara/pass"\n'
-        'vault_password_entry_title = "pyntara_local_vault_password"\n',
+        'vault_password_entry_title = "pyntara_local_vault_password"\n'
+        'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
+        'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n',
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="\\[tasks\\]"):
@@ -451,11 +490,15 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
+        'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
+        '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
+        "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
+        "alignment_bytes = 4096\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -463,7 +506,9 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
         'pass_file_path = "/etc/pyntara/pass"\n'
-        'vault_password_entry_title = "pyntara_local_vault_password"\n',
+        'vault_password_entry_title = "pyntara_local_vault_password"\n'
+        'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
+        'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n',
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="at least one task"):

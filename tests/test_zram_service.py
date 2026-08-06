@@ -55,6 +55,14 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     )
 
 
+def _target(tmp_path: Path) -> tuple[int, int]:
+    """Target (device_count, per_device_bytes) from the test config."""
+
+    return zram_service._calculate_devices(
+        RAM_KIB, 2, make_config(task_data_root=tmp_path).zram_service
+    )
+
+
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -267,7 +275,9 @@ def _expected_unit(
 def test_calculate_devices_uses_96_percent_and_core_count() -> None:
     # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
     # of RAM rounded down to the 4096-byte zram page size.
-    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    device_count, per_device_bytes = zram_service._calculate_devices(
+        RAM_KIB, 2, make_config().zram_service
+    )
     assert device_count == 2
     total_bytes = RAM_KIB * 1024 * 96 // 100
     assert per_device_bytes * 2 <= total_bytes
@@ -282,7 +292,7 @@ def test_read_cpu_count_returns_processor_count(
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("processor : 0\nprocessor : 1\n", encoding="utf-8")
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", cpuinfo)
-    assert zram_service._read_cpu_count() == (2, False)
+    assert zram_service._read_cpu_count(8) == (2, False)
 
 
 def test_read_cpu_count_falls_back_to_8(
@@ -290,7 +300,7 @@ def test_read_cpu_count_falls_back_to_8(
 ) -> None:
     # A missing cpuinfo file means the spec fallback of 8, flagged.
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", tmp_path / "cpuinfo")
-    assert zram_service._read_cpu_count() == (8, True)
+    assert zram_service._read_cpu_count(8) == (8, True)
 
 
 def test_already_configured_skips(
@@ -299,7 +309,7 @@ def test_already_configured_skips(
     # Both devices exist at the computed size with zstd, are active and the
     # service is enabled: the task skips and runs only the status queries.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
-    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    device_count, per_device_bytes = _target(tmp_path)
     for index in range(device_count):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(device_count)}
@@ -319,7 +329,7 @@ def test_creates_devices_and_service(
     # device, configures both, activates them, renders the unit template
     # and enables the service.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
-    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    device_count, per_device_bytes = _target(tmp_path)
     calls, writes, active = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )
@@ -367,7 +377,7 @@ def test_removes_extra_devices(
     # Four devices exist, the target is two: the extras are swapped off,
     # removed and never reconfigured.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
-    _, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    _, per_device_bytes = _target(tmp_path)
     for index in range(4):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(4)}
@@ -392,7 +402,7 @@ def test_force_mode_reconfigures(
     # Everything is already configured, but the task is forced: it swaps
     # the devices off, resets them and configures them again.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
-    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    device_count, per_device_bytes = _target(tmp_path)
     for index in range(device_count):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(device_count)}
@@ -490,7 +500,7 @@ def test_write_interface_creates_devices_and_renders_write_unit(
     # interface, creates the missing device by writing and renders the
     # boot unit with the echo command.
     fixtures = _install_fixtures(monkeypatch, tmp_path, read_interface=False)
-    device_count, per_device_bytes = zram_service._calculate_devices(RAM_KIB, 2)
+    device_count, per_device_bytes = _target(tmp_path)
     calls, writes, active = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )

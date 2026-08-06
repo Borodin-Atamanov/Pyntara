@@ -25,6 +25,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -43,17 +44,6 @@ ZRAM_CONTROL_DIR = Path("/sys/class/zram-control")
 ZRAM_HOT_ADD_PATH = ZRAM_CONTROL_DIR / "hot_add"
 ZRAM_HOT_REMOVE_PATH = ZRAM_CONTROL_DIR / "hot_remove"
 
-# Fixed behavior parameters per docs/spec/users-and-host.md: the device
-# count follows the CPU core count, the total capacity is 96 percent of
-# RAM, compression is aggressive zstd, and swap priority 1111 keeps ZRAM
-# ahead of the disk swapfile.
-COMPRESSION_ALGORITHM = "zstd"
-SWAP_PRIORITY = 1111
-MEMORY_FRACTION_NUMERATOR = 96
-MEMORY_FRACTION_DENOMINATOR = 100
-FALLBACK_CPU_COUNT = 8
-ALIGNMENT_BYTES = 4096
-
 
 def _read_ram_kib() -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
@@ -69,39 +59,38 @@ def _read_ram_kib() -> int:
     raise OSError(f"{MEMINFO_PATH} has no MemTotal line")
 
 
-def _read_cpu_count() -> tuple[int, bool]:
+def _read_cpu_count(fallback_cpu_count: int) -> tuple[int, bool]:
     """CPU core count and whether the fallback was used.
 
     The count comes from the processor lines in /proc/cpuinfo. When the
-    file cannot be read or reports no processors, the spec fallback of 8
+    file cannot be read or reports no processors, the configured fallback
     is used and the flag is True.
     """
 
     try:
         text = CPUINFO_PATH.read_text(encoding="utf-8")
     except OSError:
-        return FALLBACK_CPU_COUNT, True
+        return fallback_cpu_count, True
     count = sum(1 for line in text.splitlines() if line.startswith("processor"))
     if count == 0:
-        return FALLBACK_CPU_COUNT, True
+        return fallback_cpu_count, True
     return count, False
 
 
-def _calculate_devices(ram_kib: int, cpu_count: int) -> tuple[int, int]:
+def _calculate_devices(
+    ram_kib: int, cpu_count: int, cfg: ZramServiceConfig
+) -> tuple[int, int]:
     """Target (device_count, per_device_bytes).
 
     The total capacity is the configured fraction of installed RAM; it is
-    split evenly across the devices and rounded down to the 4096-byte
-    boundary that the zram driver requires for disksize.
+    split evenly across the devices and rounded down to the configured
+    byte boundary that the zram driver requires for disksize.
     """
 
-    total_bytes = (
-        ram_kib
-        * 1024
-        * MEMORY_FRACTION_NUMERATOR
-        // MEMORY_FRACTION_DENOMINATOR
+    total_bytes = ram_kib * 1024 * cfg.memory_fraction_percent // 100
+    per_device_bytes = (
+        total_bytes // cpu_count // cfg.alignment_bytes * cfg.alignment_bytes
     )
-    per_device_bytes = total_bytes // cpu_count // ALIGNMENT_BYTES * ALIGNMENT_BYTES
     return cpu_count, per_device_bytes
 
 
@@ -257,6 +246,7 @@ def _target_reached(
     per_device_bytes: int,
     active_paths: set[str],
     enabled: bool,
+    cfg: ZramServiceConfig,
 ) -> bool:
     """True when every device exists at the target size with the target
     algorithm, is active, no extra devices exist and the service is enabled.
@@ -269,7 +259,7 @@ def _target_reached(
     for index in range(device_count):
         if _read_disksize(index) != per_device_bytes:
             return False
-        if _read_active_algorithm(index) != COMPRESSION_ALGORITHM:
+        if _read_active_algorithm(index) != cfg.compressor:
             return False
         if f"/dev/zram{index}" not in active_paths:
             return False
@@ -281,6 +271,7 @@ def _render_unit(
     device_count: int,
     per_device_bytes: int,
     read_interface: bool,
+    cfg: ZramServiceConfig,
 ) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
@@ -303,7 +294,7 @@ def _render_unit(
             )
     for index in range(device_count):
         lines.append(
-            f"ExecStart=/bin/sh -c 'echo {COMPRESSION_ALGORITHM} > "
+            f"ExecStart=/bin/sh -c 'echo {cfg.compressor} > "
             f"/sys/block/zram{index}/comp_algorithm'"
         )
         lines.append(
@@ -312,7 +303,7 @@ def _render_unit(
         )
         lines.append(f"ExecStart=/sbin/mkswap /dev/zram{index}")
         lines.append(
-            f"ExecStart=/sbin/swapon --priority {SWAP_PRIORITY} /dev/zram{index}"
+            f"ExecStart=/sbin/swapon --priority {cfg.swap_priority} /dev/zram{index}"
         )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(exec_lines="\n".join(lines))
@@ -340,6 +331,7 @@ def task(ctx: Context) -> TaskResult:
     remaining tasks and never stops here.
     """
 
+    cfg = ctx.config.zram_service
     timeout = ctx.config.engine.command_timeout_seconds
     force = "zram_service" in ctx.force_tasks
 
@@ -347,15 +339,15 @@ def task(ctx: Context) -> TaskResult:
         ram_kib = _read_ram_kib()
     except OSError as exc:
         return TaskResult(success=False, error=f"cannot determine RAM size: {exc}")
-    cpu_count, cpu_fallback = _read_cpu_count()
-    device_count, per_device_bytes = _calculate_devices(ram_kib, cpu_count)
+    cpu_count, cpu_fallback = _read_cpu_count(cfg.fallback_cpu_count)
+    device_count, per_device_bytes = _calculate_devices(ram_kib, cpu_count, cfg)
     total_mb = per_device_bytes * device_count // (1024 * 1024)
 
     _log(f"reading RAM from {MEMINFO_PATH}: {ram_kib // 1024} MiB")
     if cpu_fallback:
         _log(
             f"reading CPU count from {CPUINFO_PATH}: undeterminable, "
-            f"using fallback {FALLBACK_CPU_COUNT}"
+            f"using fallback {cfg.fallback_cpu_count}"
         )
     else:
         _log(f"reading CPU count from {CPUINFO_PATH}: {cpu_count} cores")
@@ -375,7 +367,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     if not force and _target_reached(
-        device_count, per_device_bytes, active_paths, enabled
+        device_count, per_device_bytes, active_paths, enabled, cfg
     ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
@@ -438,11 +430,11 @@ def task(ctx: Context) -> TaskResult:
     # activation with the configured priority.
     for index in range(device_count):
         device_path = f"/dev/zram{index}"
-        _log(f"configuring zram{index}: algorithm {COMPRESSION_ALGORITHM}")
+        _log(f"configuring zram{index}: algorithm {cfg.compressor}")
         try:
             _write_sysfs(
                 SYS_BLOCK_PATH / f"zram{index}" / "comp_algorithm",
-                COMPRESSION_ALGORITHM,
+                cfg.compressor,
             )
             _write_sysfs(
                 SYS_BLOCK_PATH / f"zram{index}" / "disksize",
@@ -454,9 +446,9 @@ def task(ctx: Context) -> TaskResult:
         _log(f"formatting zram{index}: mkswap {device_path}")
         try:
             run_command(["mkswap", device_path], timeout=timeout)
-            _log(f"activating zram{index}: swapon --priority {SWAP_PRIORITY}")
+            _log(f"activating zram{index}: swapon --priority {cfg.swap_priority}")
             run_command(
-                ["swapon", "--priority", str(SWAP_PRIORITY), device_path],
+                ["swapon", "--priority", str(cfg.swap_priority), device_path],
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -471,7 +463,7 @@ def task(ctx: Context) -> TaskResult:
     for index in range(device_count):
         if _read_disksize(index) != per_device_bytes:
             problems.append(f"zram{index} disksize mismatch")
-        if _read_active_algorithm(index) != COMPRESSION_ALGORITHM:
+        if _read_active_algorithm(index) != cfg.compressor:
             problems.append(f"zram{index} algorithm mismatch")
         if f"/dev/zram{index}" not in verified_active:
             problems.append(f"zram{index} not active")
@@ -484,7 +476,7 @@ def task(ctx: Context) -> TaskResult:
     _log(f"rendering unit template from {TEMPLATE_PATH}")
     try:
         content = _render_unit(
-            TEMPLATE_PATH, device_count, per_device_bytes, read_interface
+            TEMPLATE_PATH, device_count, per_device_bytes, read_interface, cfg
         )
     except OSError as exc:
         return TaskResult(

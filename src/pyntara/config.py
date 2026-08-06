@@ -47,9 +47,16 @@ class CliToolsConfig:
 
 @dataclass(frozen=True)
 class AddExtraReposConfig:
-    """Ubuntu archive components ensured by the add_extra_repos task."""
+    """Ubuntu archive components and hosts managed by add_extra_repos.
+
+    components are the archive components ensured in every Ubuntu section;
+    ubuntu_hosts are the official archive hosts whose source files the task
+    may rewrite. A source file matching none of the hosts is third-party
+    and left untouched.
+    """
 
     components: tuple[str, ...]
+    ubuntu_hosts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,25 @@ class ZswapServiceConfig:
     max_pool_percent: int
     accept_threshold_percent: int
     shrinker_enabled: bool
+
+
+@dataclass(frozen=True)
+class ZramServiceConfig:
+    """Aggressive in-memory swap parameters for the zram_service task.
+
+    The device count equals the CPU core count (fallback_cpu_count when it
+    cannot be determined); the total capacity is memory_fraction_percent of
+    installed RAM split evenly across the devices and rounded down to the
+    alignment_bytes zram page size. Every device uses the compressor
+    algorithm and is activated with swap_priority, so ZRAM swap is
+    preferred over the disk swapfile.
+    """
+
+    compressor: str
+    swap_priority: int
+    memory_fraction_percent: int
+    fallback_cpu_count: int
+    alignment_bytes: int
 
 
 @dataclass(frozen=True)
@@ -127,6 +153,11 @@ class LocalVaultSetupConfig:
     local_vault_path: Path
     pass_file_path: Path
     vault_password_entry_title: str
+    secrets_dir_mode: int
+    local_vault_file_mode: int
+    pass_dir_mode: int
+    pass_file_mode: int
+    error_priority: int
 
 
 @dataclass(frozen=True)
@@ -148,6 +179,7 @@ class Config:
     add_extra_repos: AddExtraReposConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
+    zram_service: ZramServiceConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
     tasks: tuple[TaskConfig, ...]
@@ -260,7 +292,19 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         if component not in seen:
             seen.add(component)
             unique.append(component)
-    return AddExtraReposConfig(components=tuple(unique))
+    ubuntu_hosts = raw.get("ubuntu_hosts")
+    if not isinstance(ubuntu_hosts, list) or not ubuntu_hosts:
+        raise ConfigError(
+            "add_extra_repos.ubuntu_hosts must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(host, str) and host and host == host.strip()
+        for host in ubuntu_hosts
+    ):
+        raise ConfigError(
+            "add_extra_repos.ubuntu_hosts must be non-empty strings"
+        )
+    return AddExtraReposConfig(components=tuple(unique), ubuntu_hosts=tuple(ubuntu_hosts))
 
 
 def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig:
@@ -351,6 +395,52 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
     )
 
 
+def _zram_service_table(raw: object) -> ZramServiceConfig:
+    """Validate the [zram_service] table and build ZramServiceConfig.
+
+    compressor is a non-empty string; swap_priority is a positive swap
+    priority; memory_fraction_percent is a percentage between 1 and 100;
+    fallback_cpu_count is at least 1; alignment_bytes is positive, because
+    the zram driver rejects a non-positive or unaligned disksize.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[zram_service] section is missing or not a table")
+    compressor = raw.get("compressor")
+    if not isinstance(compressor, str) or not compressor:
+        raise ConfigError("zram_service.compressor must be a non-empty string")
+    swap_priority = _int_field(
+        raw.get("swap_priority"), "zram_service.swap_priority"
+    )
+    if swap_priority < 1:
+        raise ConfigError("zram_service.swap_priority must be positive")
+    memory_fraction_percent = _int_field(
+        raw.get("memory_fraction_percent"),
+        "zram_service.memory_fraction_percent",
+    )
+    if not 1 <= memory_fraction_percent <= 100:
+        raise ConfigError(
+            "zram_service.memory_fraction_percent must be between 1 and 100"
+        )
+    fallback_cpu_count = _int_field(
+        raw.get("fallback_cpu_count"), "zram_service.fallback_cpu_count"
+    )
+    if fallback_cpu_count < 1:
+        raise ConfigError("zram_service.fallback_cpu_count must be at least 1")
+    alignment_bytes = _int_field(
+        raw.get("alignment_bytes"), "zram_service.alignment_bytes"
+    )
+    if alignment_bytes < 1:
+        raise ConfigError("zram_service.alignment_bytes must be positive")
+    return ZramServiceConfig(
+        compressor=compressor,
+        swap_priority=swap_priority,
+        memory_fraction_percent=memory_fraction_percent,
+        fallback_cpu_count=fallback_cpu_count,
+        alignment_bytes=alignment_bytes,
+    )
+
+
 def _vault_structure_table(raw: object) -> VaultStructureConfig:
     """Validate the [vault_structure] table and build VaultStructureConfig.
 
@@ -424,12 +514,46 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         raise ConfigError(
             "local_vault_setup.vault_password_entry_title must be a non-empty string"
         )
+
+    def _file_mode_field(name: str) -> int:
+        """Parse one octal file mode string like "0700" into an int.
+
+        TOML has no octal literals, so the modes are configured as strings
+        and converted here; a value that is not four octal digits is a
+        config error.
+        """
+
+        value = raw.get(name)
+        if not isinstance(value, str) or len(value) != 4:
+            raise ConfigError(
+                f"local_vault_setup.{name} must be an octal string like '0700'"
+            )
+        try:
+            parsed = int(value, 8)
+        except ValueError:
+            raise ConfigError(
+                f"local_vault_setup.{name} must be an octal string like '0700'"
+            ) from None
+        return parsed
+
+    error_priority = _int_field(
+        raw.get("error_priority"), "local_vault_setup.error_priority"
+    )
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "local_vault_setup.error_priority must be between 0 and 7"
+        )
     return LocalVaultSetupConfig(
         source_vault_production=Path(source_vault_production),
         source_vault_default=Path(source_vault_default),
         local_vault_path=Path(local_vault_path),
         pass_file_path=Path(pass_file_path),
         vault_password_entry_title=vault_password_entry_title,
+        secrets_dir_mode=_file_mode_field("secrets_dir_mode"),
+        local_vault_file_mode=_file_mode_field("local_vault_file_mode"),
+        pass_dir_mode=_file_mode_field("pass_dir_mode"),
+        pass_file_mode=_file_mode_field("pass_file_mode"),
+        error_priority=error_priority,
     )
 
 
@@ -523,6 +647,7 @@ def load_config(path: Path) -> Config:
             data.get("swapfile_service_install")
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
+        zram_service=_zram_service_table(data.get("zram_service")),
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,
         tasks=_tasks_table(data.get("tasks")),

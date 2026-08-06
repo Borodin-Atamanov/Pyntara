@@ -65,6 +65,8 @@ All package-install operations and other operations must have timeouts.
 Tasks must also have reasonable large timeouts configured.
 All processes started from Python must provide return code used for correctness control.
 
+Behavioral values must live in config.toml, never as constants inside task modules; each constant that stays in code must be an explicitly documented exception (system paths, kernel interfaces, unit names). The same value or the same logic must never be duplicated across modules: shared values and helpers are defined once in a common module and imported.
+
 ## 5. Documentation and comment style
 
 When creating code and configurations, add comments in simple English.

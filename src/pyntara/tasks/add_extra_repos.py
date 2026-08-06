@@ -23,25 +23,12 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
-
-# apt must never ask questions; all package operations run noninteractive.
-APT_EXTRA_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
+from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 LEGACY_SOURCES_FILE = Path("/etc/apt/sources.list")
 SOURCES_LIST_D = Path("/etc/apt/sources.list.d")
-
-# Only the official Ubuntu archive domains are managed. A mirror such as
-# mirror.yandex.ru is outside the scope and reported as not found, so the
-# task never guesses about unknown sources.
-UBUNTU_HOSTS = (
-    "archive.ubuntu.com",
-    "security.ubuntu.com",
-    "ports.ubuntu.com",
-    "old-releases.ubuntu.com",
-)
 
 
 @dataclass(frozen=True)
@@ -55,13 +42,15 @@ class _FileRewrite:
     problems: tuple[str, ...]
 
 
-def _uri_is_ubuntu(uri: str) -> bool:
+def _uri_is_ubuntu(uri: str, hosts: tuple[str, ...]) -> bool:
     """True when the URI points to an official Ubuntu archive host."""
 
-    return any(host in uri for host in UBUNTU_HOSTS)
+    return any(host in uri for host in hosts)
 
 
-def _process_deb822(text: str, configured: tuple[str, ...]) -> _FileRewrite:
+def _process_deb822(
+    text: str, configured: tuple[str, ...], hosts: tuple[str, ...]
+) -> _FileRewrite:
     """Rewrite Components lines of Ubuntu sections in a deb822 source file.
 
     Sections are separated by blank lines. A section is an Ubuntu archive
@@ -94,13 +83,13 @@ def _process_deb822(text: str, configured: tuple[str, ...]) -> _FileRewrite:
             lower = stripped.lower()
             if lower.startswith("uris:"):
                 uris = stripped.split(":", 1)[1].split()
-                if any(_uri_is_ubuntu(uri) for uri in uris):
+                if any(_uri_is_ubuntu(uri, hosts) for uri in uris):
                     is_ubuntu = True
             elif lower.startswith("components:"):
                 components_line = line_index
         if not is_ubuntu:
             section_text = "".join(lines[i] for i in section)
-            if any(host in section_text for host in UBUNTU_HOSTS):
+            if any(host in section_text for host in hosts):
                 is_ubuntu = True
         if not is_ubuntu:
             continue
@@ -137,7 +126,9 @@ def _split_trailing_comment(line: str) -> tuple[str, str]:
     return content[:comment_at].rstrip(), content[comment_at:]
 
 
-def _process_legacy(text: str, configured: tuple[str, ...]) -> _FileRewrite:
+def _process_legacy(
+    text: str, configured: tuple[str, ...], hosts: tuple[str, ...]
+) -> _FileRewrite:
     """Append missing components to legacy Ubuntu deb lines.
 
     A legacy line has the shape deb [options] URI suite component...
@@ -154,7 +145,7 @@ def _process_legacy(text: str, configured: tuple[str, ...]) -> _FileRewrite:
         stripped = line.strip()
         if not stripped.startswith(("deb ", "deb-src ")):
             continue
-        if not any(host in line for host in UBUNTU_HOSTS):
+        if not any(host in line for host in hosts):
             continue
         has_ubuntu = True
         body, comment = _split_trailing_comment(line)
@@ -208,12 +199,14 @@ def _collect_source_files() -> list[Path]:
     return files
 
 
-def _process_file(path: Path, configured: tuple[str, ...]) -> _FileRewrite:
+def _process_file(
+    path: Path, configured: tuple[str, ...], hosts: tuple[str, ...]
+) -> _FileRewrite:
     """Analyze and rewrite one source file in memory, by its format."""
 
     if path.suffix == ".sources":
-        return _process_deb822(path.read_text(encoding="utf-8"), configured)
-    return _process_legacy(path.read_text(encoding="utf-8"), configured)
+        return _process_deb822(path.read_text(encoding="utf-8"), configured, hosts)
+    return _process_legacy(path.read_text(encoding="utf-8"), configured, hosts)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -227,6 +220,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     configured = ctx.config.add_extra_repos.components
+    hosts = ctx.config.add_extra_repos.ubuntu_hosts
     _log(f"configured components: {' '.join(configured)}")
     files = _collect_source_files()
     if not files:
@@ -237,7 +231,7 @@ def task(ctx: Context) -> TaskResult:
     has_ubuntu = False
     for path in files:
         try:
-            state = _process_file(path, configured)
+            state = _process_file(path, configured, hosts)
         except OSError as exc:
             problems.append(f"cannot read {path}: {exc}")
             continue
@@ -288,7 +282,7 @@ def task(ctx: Context) -> TaskResult:
             try:
                 run_command(
                     ["apt-get", "update"],
-                    extra_env=APT_EXTRA_ENV,
+                    extra_env=APT_NONINTERACTIVE_ENV,
                     timeout=ctx.config.engine.command_timeout_seconds,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -299,7 +293,7 @@ def task(ctx: Context) -> TaskResult:
     verified: list[tuple[Path, _FileRewrite]] = []
     for path in files:
         try:
-            verified.append((path, _process_file(path, configured)))
+            verified.append((path, _process_file(path, configured, hosts)))
         except OSError as exc:
             problems.append(f"cannot read {path} for verification: {exc}")
     if problems:

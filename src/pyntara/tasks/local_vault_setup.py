@@ -35,17 +35,6 @@ from pyntara.models import TaskResult
 # against temporary fixtures instead of the real system (developer guide).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# Fixed modes from docs/spec/secrets-model.md: the secrets directory is
-# 0700 and the runtime vault 0640; the password directory is 0700 and the
-# password file 0400. The paths themselves come from config.toml.
-SECRETS_DIR_MODE = 0o700
-LOCAL_VAULT_FILE_MODE = 0o640
-PASS_DIR_MODE = 0o700
-PASS_FILE_MODE = 0o400
-
-# Syslog level for serious failures: 3 is LOG_ERR (error).
-ERROR_PRIORITY = 3
-
 
 def _resolve_source_vault(cfg: LocalVaultSetupConfig) -> tuple[Path, Path]:
     """Source vault paths resolved against the repository root.
@@ -215,7 +204,7 @@ def task(ctx: Context) -> TaskResult:
     if opened is None:
         _log(
             "cannot open any source vault: production and default did not open",
-            priority=ERROR_PRIORITY,
+            priority=cfg.error_priority,
         )
         return TaskResult(
             success=False,
@@ -231,7 +220,7 @@ def task(ctx: Context) -> TaskResult:
     if local_password is None:
         _log(
             "cannot read local vault password: entry missing or empty",
-            priority=ERROR_PRIORITY,
+            priority=cfg.error_priority,
         )
         return TaskResult(
             success=False,
@@ -248,13 +237,13 @@ def task(ctx: Context) -> TaskResult:
             kp,
             local_password.strip(),
             cfg.local_vault_path,
-            SECRETS_DIR_MODE,
-            LOCAL_VAULT_FILE_MODE,
+            cfg.secrets_dir_mode,
+            cfg.local_vault_file_mode,
         )
     except (OSError, ValueError) as exc:
         _log(
             f"cannot write runtime vault {cfg.local_vault_path}: {exc}",
-            priority=ERROR_PRIORITY,
+            priority=cfg.error_priority,
         )
         return TaskResult(success=False, error=f"cannot write runtime vault: {exc}")
     _log("runtime vault written")
@@ -266,12 +255,12 @@ def task(ctx: Context) -> TaskResult:
     try:
         _log(f"writing password file {cfg.pass_file_path}")
         _write_password_file(
-            local_password, cfg.pass_file_path, PASS_DIR_MODE, PASS_FILE_MODE
+            local_password, cfg.pass_file_path, cfg.pass_dir_mode, cfg.pass_file_mode
         )
     except (OSError, ValueError) as exc:
         _log(
             f"cannot write password file {cfg.pass_file_path}: {exc}",
-            priority=ERROR_PRIORITY,
+            priority=cfg.error_priority,
         )
         return TaskResult(success=False, error=f"cannot write password file: {exc}")
     _log("password file written")
@@ -284,7 +273,7 @@ def task(ctx: Context) -> TaskResult:
     if not _verify_local_vault(cfg.local_vault_path, local_password.strip()):
         _log(
             "verification failed: runtime vault does not open with the local password",
-            priority=ERROR_PRIORITY,
+            priority=cfg.error_priority,
         )
         return TaskResult(
             success=False,

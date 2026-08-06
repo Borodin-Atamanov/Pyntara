@@ -52,6 +52,8 @@ The runtime secret database and its password live on the target machine in fixed
 1. The runtime secret database lives at /var/lib/pyntara/secrets/pyntara.vault. The directory /var/lib/pyntara/secrets/ has mode 0700, the file has mode 0640.
 2. The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.
 
+The file modes are configurable in the [local_vault_setup] table of config.toml as octal strings: secrets_dir_mode, local_vault_file_mode, pass_dir_mode and pass_file_mode.
+
 Passwords are written to files strictly without a trailing newline: the file holds only the password itself, with surrounding whitespace trimmed.
 
 ## Runtime vault creation

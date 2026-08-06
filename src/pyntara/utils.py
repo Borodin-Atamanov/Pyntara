@@ -13,6 +13,10 @@ import os
 import subprocess
 from collections.abc import Iterable, Mapping
 
+# apt must never ask questions; every package operation runs noninteractive.
+# The single definition lives here so tasks cannot diverge.
+APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
+
 
 def run_command(
     command: Iterable[str],

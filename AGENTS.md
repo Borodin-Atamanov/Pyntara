@@ -29,7 +29,7 @@ When I say "plan" (спланируй) first draft a detailed implementation pla
 Use the MECE principle (Mutually Exclusive, Collectively Exhaustive).
 Do not withhold implementation details — state which decisions you are making before implementing them.
 
-Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity — ask or fail loudly. One obvious way; don't invent variants. Prefer working now over perfect later, but never break correctness for speed. If code needs a paragraph to explain, rewrite it.
+Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity — ask or fail loudly. One obvious way; don't invent variants. Prefer working now over perfect later, but never break correctness for speed.
 
 YAGNI! DRY! KISS! Separation of Concerns!
 

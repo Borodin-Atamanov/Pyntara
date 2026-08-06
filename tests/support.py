@@ -21,6 +21,7 @@ from pyntara.config import (
     TaskConfig,
     VaultEntry,
     VaultStructureConfig,
+    ZramServiceConfig,
     ZswapServiceConfig,
 )
 from pyntara.context import Context
@@ -51,6 +52,12 @@ def make_config(
         "restricted",
         "multiverse",
     ),
+    add_extra_repos_ubuntu_hosts: tuple[str, ...] = (
+        "archive.ubuntu.com",
+        "security.ubuntu.com",
+        "ports.ubuntu.com",
+        "old-releases.ubuntu.com",
+    ),
     swapfile_path: Path = Path("/swapfile"),
     swapfile_ram_multiplier: float = 2.0,
     swapfile_ram_extra_mb: int = 4096,
@@ -60,11 +67,21 @@ def make_config(
     zswap_max_pool_percent: int = 50,
     zswap_accept_threshold_percent: int = 100,
     zswap_shrinker_enabled: bool = True,
+    zram_compressor: str = "zstd",
+    zram_swap_priority: int = 1111,
+    zram_memory_fraction_percent: int = 96,
+    zram_fallback_cpu_count: int = 8,
+    zram_alignment_bytes: int = 4096,
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
     local_vault_pass_file_path: Path = Path("/etc/pyntara/pass"),
     local_vault_entry_title: str = "pyntara_local_vault_password",
+    local_vault_secrets_dir_mode: int = 0o700,
+    local_vault_file_mode: int = 0o640,
+    local_vault_pass_dir_mode: int = 0o700,
+    local_vault_pass_file_mode: int = 0o400,
+    local_vault_error_priority: int = 3,
     vault_entries: tuple[tuple[str, str], ...] = (
         ("password_salt", "Salt for deterministic password derivation."),
         ("pyntara_local_vault_password", "Password for the runtime secret vault."),
@@ -88,7 +105,10 @@ def make_config(
             package_install_retries=cli_tools_retries,
             package_success_threshold_percent=cli_tools_threshold,
         ),
-        add_extra_repos=AddExtraReposConfig(components=add_extra_repos_components),
+        add_extra_repos=AddExtraReposConfig(
+            components=add_extra_repos_components,
+            ubuntu_hosts=add_extra_repos_ubuntu_hosts,
+        ),
         swapfile_service_install=SwapfileServiceInstallConfig(
             swapfile_path=swapfile_path,
             ram_multiplier=swapfile_ram_multiplier,
@@ -102,6 +122,13 @@ def make_config(
             accept_threshold_percent=zswap_accept_threshold_percent,
             shrinker_enabled=zswap_shrinker_enabled,
         ),
+        zram_service=ZramServiceConfig(
+            compressor=zram_compressor,
+            swap_priority=zram_swap_priority,
+            memory_fraction_percent=zram_memory_fraction_percent,
+            fallback_cpu_count=zram_fallback_cpu_count,
+            alignment_bytes=zram_alignment_bytes,
+        ),
         vault_structure=VaultStructureConfig(
             entries=tuple(
                 VaultEntry(title=title, notes=notes)
@@ -114,6 +141,11 @@ def make_config(
             local_vault_path=local_vault_path,
             pass_file_path=local_vault_pass_file_path,
             vault_password_entry_title=local_vault_entry_title,
+            secrets_dir_mode=local_vault_secrets_dir_mode,
+            local_vault_file_mode=local_vault_file_mode,
+            pass_dir_mode=local_vault_pass_dir_mode,
+            pass_file_mode=local_vault_pass_file_mode,
+            error_priority=local_vault_error_priority,
         ),
         tasks=tasks,
     )
