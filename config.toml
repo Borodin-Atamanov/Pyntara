@@ -239,6 +239,30 @@ depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "swapfile_service_install"
+description = "Calculate and configure swapfile from RAM and free disk space."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "zram_service"
+description = "Configure aggressive ZRAM by CPU and RAM."
+depends = ["swapfile_service_install"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "zswap_service"
+description = "Configure aggressive zswap compressed swap cache with zstd."
+depends = ["swapfile_service_install"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "system_metrics_setup"
+description = "Initial telemetry service setup and first-run queue bootstrap."
+depends = ["zram_service"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "local_vault_setup"
 description = "Setup local vault for secrets storage"
 depends = []
@@ -260,24 +284,6 @@ modes = ["minimal", "server", "desktop"]
 name = "passwords"
 description = "Derive root and user passwords from salt and hostname."
 depends = ["users_setup", "hostname"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "swapfile_service_install"
-description = "Calculate and configure swapfile from RAM and free disk space."
-depends = []
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "zram_service"
-description = "Configure aggressive ZRAM by CPU and RAM."
-depends = ["swapfile_service_install"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "zswap_service"
-description = "Configure aggressive zswap compressed swap cache with zstd."
-depends = ["swapfile_service_install"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -322,8 +328,3 @@ description = "Per-user NextDNS account and system-wide DNS endpoint."
 depends = ["users_setup"]
 modes = ["minimal", "server", "desktop"]
 
-[[tasks]]
-name = "telemetry_setup"
-description = "Initial telemetry service setup and first-run queue bootstrap."
-depends = ["users_setup"]
-modes = ["minimal", "server", "desktop"]
