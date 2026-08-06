@@ -34,6 +34,8 @@ secrets/production.vault — Production KeePass database with real secrets. In g
 secrets/default.password — Password for default.vault (well-known test value). In git.
 secrets/production.password — Password for production.vault. Not in git (.gitignore).
 
+The layout of both vault files is described in the [vault_structure] table of config.toml, the single source of truth for the vault structure (docs/spec/secrets-model.md).
+
 ## src/pyntara/
 
 src/pyntara/__init__.py — Package version and public exports.

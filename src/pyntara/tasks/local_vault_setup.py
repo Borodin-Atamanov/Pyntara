@@ -5,16 +5,17 @@ password file at pass_file_path are created so services that start after
 install can decrypt the vault without user input
 (docs/spec/secrets-model.md). The copy is re-encrypted with the password
 from the vault_password_entry_title entry of the source vault, so the
-source password never opens the runtime vault. All paths and the entry
-location come from config.toml through ctx.config.local_vault_setup
-(architecture contract section 3). The source vault is not fixed: the
-production vault is tried first, then the default vault, both with the
-password from Context; when neither opens, the task journals a serious
-error at syslog level 3 and fails without stopping the run. The task is
-idempotent: without force it skips when the runtime vault already exists;
-force mode rewrites the vault and the password file. Passwords are
-written to files trimmed of surrounding whitespace and strictly without a
-trailing newline.
+source password never opens the runtime vault. The entry lives in the
+root group of the vault, because the structure is flat (the
+[vault_structure] table in config.toml). All paths and the entry title
+come from config.toml through ctx.config.local_vault_setup (architecture
+contract section 3). The source vault is not fixed: the production vault
+is tried first, then the default vault, both with the password from
+Context; when neither opens, the task journals a serious error at syslog
+level 3 and fails without stopping the run. The task is idempotent:
+without force it skips when the runtime vault already exists; force mode
+rewrites the vault and the password file. Passwords are written to files
+trimmed of surrounding whitespace and strictly without a trailing newline.
 """
 
 from __future__ import annotations
@@ -92,16 +93,17 @@ def _open_source_vault(
 def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str | None:
     """Runtime vault password from the source vault entry, or None.
 
-    The entry is looked up by title inside the configured group; a missing
-    group, a missing entry or an empty password value all mean the source
-    vault cannot provide the runtime password, and None is returned.
+    The entry is looked up by title in the root group, matching the flat
+    structure of the [vault_structure] table; a missing entry or an empty
+    password value both mean the source vault cannot provide the runtime
+    password, and None is returned.
     """
 
-    group = kp.find_groups(name=cfg.vault_password_entry_group, first=True)
-    if group is None:
-        return None
     entry = kp.find_entries(
-        title=cfg.vault_password_entry_title, group=group, first=True
+        title=cfg.vault_password_entry_title,
+        group=kp.root_group,
+        recursive=False,
+        first=True,
     )
     if entry is None:
         return None
@@ -234,8 +236,8 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=False,
             error=(
-                f"entry {cfg.vault_password_entry_title!r} in group "
-                f"{cfg.vault_password_entry_group!r} is missing or empty"
+                f"entry {cfg.vault_password_entry_title!r} is missing or empty "
+                "in the source vault"
             ),
         )
     _log("local vault password entry found")

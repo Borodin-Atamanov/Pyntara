@@ -33,6 +33,6 @@ Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No sile
 
 YAGNI! DRY! KISS! Separation of Concerns!
 
-Этот проект одного разработчика - весь код написан, тобой агенткой.
+Этот проект одного разработчика - весь код написан, тобой, ии-агентессой. Под руководством человека.
 </project_instructions>
 

@@ -8,6 +8,10 @@ Two password files: default.password (in git, well-known test value) and product
 
 KeePass database handling is done via a Python library.
 
+## Vault structure
+
+The structure of both vault files is described in the [vault_structure] table of config.toml, the single source of truth. The structure is flat: every entry lives directly in the root group and is identified by its unique title; the purpose field of each entry explains what it carries and who consumes it. Tooling that creates or inspects the vaults reads this table.
+
 ## Password prompt
 
 Deprecated: the interactive password prompt is not used and its development is stopped. The installer runs non-interactively. The production vault password is passed through the PYNTARA_VAULT_PASSWORD environment variable, entered by the user via read -s before sudo. Without a password, or with a password that matches no vault, the installer shows a countdown notice and falls back to default.vault. PYNTARA_VAULT_SOURCE (production or default) is optional: when omitted, the source is auto-detected from the password.
@@ -40,7 +44,7 @@ The local_vault_setup task creates the runtime vault from a source vault on the 
 
 The source vault is not fixed: the task tries the production vault first, then the default vault, both with the vault password from the run (PYNTARA_VAULT_PASSWORD). When neither opens, the task journals a serious error at syslog level 3 and fails without stopping the run.
 
-The future local vault password comes from the pyntara_local_vault_password entry of the core group in the source vault. The task copies the source vault and re-encrypts the copy with that password, so the source vault password never opens the runtime vault. The copy is written to /var/lib/pyntara/secrets/pyntara.vault (mode 0640, directory 0700) and the password to /etc/pyntara/pass (mode 0400), both owned by root:root.
+The future local vault password comes from the pyntara_local_vault_password entry of the source vault, defined in the [vault_structure] table of config.toml. The task copies the source vault and re-encrypts the copy with that password, so the source vault password never opens the runtime vault. The copy is written to /var/lib/pyntara/secrets/pyntara.vault (mode 0640, directory 0700) and the password to /etc/pyntara/pass (mode 0400), both owned by root:root.
 
 The task is idempotent: without force it skips when the runtime vault already exists; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file.
 

@@ -23,19 +23,17 @@ from pyntara.tasks import local_vault_setup
 
 LOCAL_PASSWORD = "local-secret-password"
 ENTRY_TITLE = "pyntara_local_vault_password"
-ENTRY_GROUP = "core"
 
 
 def _create_source_vault(
     path: Path, password: str, *, local_password: str | None = LOCAL_PASSWORD
 ) -> None:
-    """Create a source vault with the local password entry in group core."""
+    """Create a source vault with the local password entry in the root group."""
 
     create_database(str(path), password=password)
     kp = PyKeePass(str(path), password=password)
     if local_password is not None:
-        group = kp.add_group(kp.root_group, ENTRY_GROUP)
-        kp.add_entry(group, ENTRY_TITLE, "pyntara", local_password)
+        kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", local_password)
     kp.save()
 
 
@@ -183,6 +181,22 @@ def test_fails_when_entry_missing(
     _create_source_vault(
         tmp_path / "production.vault", "prod-pass", local_password=None
     )
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is False
+    assert "missing or empty" in (result.error or "")
+
+
+def test_fails_when_entry_nested_in_subgroup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The vault structure is flat: an entry inside a group is not part of
+    # the structure and must not satisfy the root-group lookup.
+    create_database(str(tmp_path / "production.vault"), password="prod-pass")
+    kp = PyKeePass(str(tmp_path / "production.vault"), password="prod-pass")
+    group = kp.add_group(kp.root_group, "core")
+    kp.add_entry(group, ENTRY_TITLE, "pyntara", LOCAL_PASSWORD)
+    kp.save()
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
     assert result.success is False

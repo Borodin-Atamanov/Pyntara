@@ -147,6 +147,56 @@ accept_threshold_percent = 100
 # Whether the shrinker proactively writes cold pages to the backing swap.
 shrinker_enabled = true
 
+# Vault structure: the single source of truth for the KeePass database
+# layout. Both secrets/default.vault and secrets/production.vault follow
+# this structure, and any tooling that creates or inspects them must read
+# this table (docs/spec/secrets-model.md). The structure is flat: every
+# entry lives directly in the root group, the title alone identifies the
+# entry, and titles are verbose so the purpose is clear without opening
+# the vault. The purpose field of every entry explains what is stored
+# there, who consumes it and why.
+[vault_structure]
+
+[[vault_structure.entries]]
+title = "password_salt"
+purpose = "Primary salt for deterministic password derivation (docs/spec/secrets-model.md). Combined with the random hostname it produces the generated passwords; when present, this salt overrides the default salt from GitHub."
+
+[[vault_structure.entries]]
+title = "pyntara_local_vault_password"
+purpose = "Password that protects the runtime secret vault at /var/lib/pyntara/secrets/pyntara.vault on the target machine. Read by the local_vault_setup task and written to /etc/pyntara/pass, so the source vault password never opens the runtime vault. The default vault carries a well-known test value mirroring its well-known vault password."
+
+[[vault_structure.entries]]
+title = "telegram_bot_token"
+purpose = "Telegram bot token used by the telemetry sender (docs/spec/telemetry.md) to push reports to Telegram."
+
+[[vault_structure.entries]]
+title = "telegram_chat_id"
+purpose = "Telegram chat identifier that receives the telemetry reports."
+
+[[vault_structure.entries]]
+title = "google_drive_service_account_json"
+purpose = "JSON credentials payload of the Google Drive service account used by the telemetry uploader."
+
+[[vault_structure.entries]]
+title = "remote_proxy_host"
+purpose = "Hostname or IP address of the remote proxy server (docs/spec/networking.md)."
+
+[[vault_structure.entries]]
+title = "remote_proxy_port"
+purpose = "TCP port of the remote proxy server."
+
+[[vault_structure.entries]]
+title = "remote_proxy_username"
+purpose = "Username for authentication against the remote proxy server."
+
+[[vault_structure.entries]]
+title = "remote_proxy_password"
+purpose = "Password for authentication against the remote proxy server."
+
+[[vault_structure.entries]]
+title = "nextdns_profile_dns"
+purpose = "Generated NextDNS endpoint used as the system DNS configuration (docs/spec/networking.md)."
+
 [local_vault_setup]
 # Runtime secret vault creation parameters (docs/spec/secrets-model.md).
 # The task copies the first source vault that the run password decrypts,
@@ -163,10 +213,10 @@ source_vault_default = "secrets/default.vault"
 local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"
 # Target path of the plain root-only vault password file (mode 0400).
 pass_file_path = "/etc/pyntara/pass"
-# Title of the source vault entry that carries the future local vault password.
+# Title of the source vault entry that carries the future local vault
+# password. The entry must exist in the [vault_structure] table: the
+# config loader rejects a title that is not listed there.
 vault_password_entry_title = "pyntara_local_vault_password"
-# Group of the source vault entry that carries the future local vault password.
-vault_password_entry_group = "core"
 
 # Task catalog: single source of truth for task metadata, one [[tasks]]
 # entry per task. Each entry has a name, a human-readable description,

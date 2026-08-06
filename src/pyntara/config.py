@@ -86,6 +86,27 @@ class ZswapServiceConfig:
 
 
 @dataclass(frozen=True)
+class VaultEntry:
+    """One entry of the [vault_structure] table."""
+
+    title: str
+    purpose: str
+
+
+@dataclass(frozen=True)
+class VaultStructureConfig:
+    """KeePass vault layout described in the [vault_structure] table.
+
+    The table is the single source of truth for the vault structure
+    (docs/spec/secrets-model.md): the structure is flat, every entry lives
+    in the root group and is identified by its unique title; purpose
+    explains what the entry carries and who consumes it.
+    """
+
+    entries: tuple[VaultEntry, ...]
+
+
+@dataclass(frozen=True)
 class LocalVaultSetupConfig:
     """Runtime secret vault parameters for the local_vault_setup task.
 
@@ -93,8 +114,8 @@ class LocalVaultSetupConfig:
     relative paths to the KeePass databases whose copy becomes the runtime
     vault; local_vault_path and pass_file_path are the absolute target
     locations fixed by docs/spec/secrets-model.md; vault_password_entry_title
-    and vault_password_entry_group locate the entry that carries the future
-    local vault password.
+    names the source vault entry (from the [vault_structure] table) that
+    carries the future local vault password.
     """
 
     source_vault_production: Path
@@ -102,7 +123,6 @@ class LocalVaultSetupConfig:
     local_vault_path: Path
     pass_file_path: Path
     vault_password_entry_title: str
-    vault_password_entry_group: str
 
 
 @dataclass(frozen=True)
@@ -124,6 +144,7 @@ class Config:
     add_extra_repos: AddExtraReposConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
+    vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
     tasks: tuple[TaskConfig, ...]
 
@@ -326,12 +347,50 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
     )
 
 
+def _vault_structure_table(raw: object) -> VaultStructureConfig:
+    """Validate the [vault_structure] table and build VaultStructureConfig.
+
+    The section is mandatory and non-empty; every entry is a table with a
+    unique non-empty title and a non-empty purpose. The structure is flat
+    by contract, so the parser reads entries directly from the table and
+    rejects anything that is not a title/purpose pair.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[vault_structure] section is missing or not a table")
+    entries_raw = raw.get("entries")
+    if not isinstance(entries_raw, list) or not entries_raw:
+        raise ConfigError(
+            "[vault_structure] entries must be a non-empty array of tables"
+        )
+    entries: list[VaultEntry] = []
+    seen_titles: set[str] = set()
+    for entry_raw in entries_raw:
+        if not isinstance(entry_raw, dict):
+            raise ConfigError("[vault_structure] entries must be tables")
+        title = entry_raw.get("title")
+        if not isinstance(title, str) or not title:
+            raise ConfigError(
+                "[vault_structure] entry title must be a non-empty string"
+            )
+        if title in seen_titles:
+            raise ConfigError(f"[vault_structure] duplicate entry title: {title}")
+        seen_titles.add(title)
+        purpose = entry_raw.get("purpose")
+        if not isinstance(purpose, str) or not purpose:
+            raise ConfigError(
+                f"[vault_structure] entry {title}: purpose must be a non-empty string"
+            )
+        entries.append(VaultEntry(title=title, purpose=purpose))
+    return VaultStructureConfig(entries=tuple(entries))
+
+
 def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
     """Validate the [local_vault_setup] table and build the config.
 
-    Source vault paths and entry names are non-empty strings; the source
-    paths are repository-root relative, the target paths absolute (the
-    fixed locations from docs/spec/secrets-model.md).
+    Source vault paths and the entry title are non-empty strings; the
+    source paths are repository-root relative, the target paths absolute
+    (the fixed locations from docs/spec/secrets-model.md).
     """
 
     if not isinstance(raw, dict):
@@ -361,18 +420,12 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         raise ConfigError(
             "local_vault_setup.vault_password_entry_title must be a non-empty string"
         )
-    vault_password_entry_group = raw.get("vault_password_entry_group")
-    if not isinstance(vault_password_entry_group, str) or not vault_password_entry_group:
-        raise ConfigError(
-            "local_vault_setup.vault_password_entry_group must be a non-empty string"
-        )
     return LocalVaultSetupConfig(
         source_vault_production=Path(source_vault_production),
         source_vault_default=Path(source_vault_default),
         local_vault_path=Path(local_vault_path),
         pass_file_path=Path(pass_file_path),
         vault_password_entry_title=vault_password_entry_title,
-        vault_password_entry_group=vault_password_entry_group,
     )
 
 
@@ -448,6 +501,16 @@ def load_config(path: Path) -> Config:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"cannot read config file {path}: {exc}") from exc
+    vault_structure = _vault_structure_table(data.get("vault_structure"))
+    local_vault_setup = _local_vault_setup_table(data.get("local_vault_setup"))
+    if not any(
+        entry.title == local_vault_setup.vault_password_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "local_vault_setup.vault_password_entry_title must name an entry "
+            "of the [vault_structure] table"
+        )
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
@@ -456,6 +519,7 @@ def load_config(path: Path) -> Config:
             data.get("swapfile_service_install")
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
-        local_vault_setup=_local_vault_setup_table(data.get("local_vault_setup")),
+        vault_structure=vault_structure,
+        local_vault_setup=local_vault_setup,
         tasks=_tasks_table(data.get("tasks")),
     )
