@@ -46,7 +46,8 @@ src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks
 src/pyntara/models.py — TaskResult dataclass.
 src/pyntara/context.py — Context frozen dataclass.
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
-src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks.
+src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries.
+src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/telemetry.md).
 src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
 
 Not implemented yet (target modules, see docs/simplified-architecture.md):

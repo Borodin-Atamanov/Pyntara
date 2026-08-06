@@ -5,8 +5,9 @@ from __future__ import annotations
 import subprocess
 
 import pytest
+from support import FakeProc as _FakeProc
 
-from pyntara.utils import run_command
+from pyntara.utils import run_command, service_is_active, service_is_enabled
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,4 +56,46 @@ def test_run_command_streams_by_default_and_captures_on_request(
     run_command(["true"], timeout=1800, capture=True)
     assert "capture_output" not in captured[0] or captured[0]["capture_output"] is False
     assert captured[1]["capture_output"] is True
+
+
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        ("enabled\n", True),
+        ("disabled\n", False),
+        ("", False),
+    ],
+)
+def test_service_is_enabled_matches_only_enabled(
+    monkeypatch: pytest.MonkeyPatch, output: str, expected: bool
+) -> None:
+    # Only the exact "enabled" state means the service starts at boot.
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        assert command == ["systemctl", "is-enabled", "svc.service"]
+        assert kwargs["check"] is False
+        return _FakeProc(0 if output == "enabled\n" else 1, output)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    assert service_is_enabled("svc.service", timeout=5) is expected
+
+
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        ("active\n", True),
+        ("inactive\n", False),
+        ("failed\n", False),
+    ],
+)
+def test_service_is_active_matches_only_active(
+    monkeypatch: pytest.MonkeyPatch, output: str, expected: bool
+) -> None:
+    # Only the exact "active" state means the service is running.
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        assert command == ["systemctl", "is-active", "svc.service"]
+        assert kwargs["check"] is False
+        return _FakeProc(0 if output == "active\n" else 1, output)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    assert service_is_active("svc.service", timeout=5) is expected
 

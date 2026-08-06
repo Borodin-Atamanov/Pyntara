@@ -54,3 +54,37 @@ def run_command(
         check=check,
         text=True,
     )
+
+
+def service_is_enabled(name: str, timeout: float) -> bool:
+    """True when the systemd service is enabled for boot.
+
+    systemctl is-enabled reports the boot state; "enabled" is the only
+    state that means the service starts at boot, every other output
+    (disabled, masked, not-found) is False.
+    """
+
+    result = run_command(
+        ["systemctl", "is-enabled", name],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "enabled"
+
+
+def service_is_active(name: str, timeout: float) -> bool:
+    """True when the systemd service is currently running.
+
+    systemctl is-active reports the runtime state; "active" is the only
+    state that means the service is running, every other output (inactive,
+    failed, activating) is False.
+    """
+
+    result = run_command(
+        ["systemctl", "is-active", name],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "active"

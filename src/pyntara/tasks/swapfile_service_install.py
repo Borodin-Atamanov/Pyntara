@@ -25,7 +25,7 @@ from pyntara.config import SwapfileServiceInstallConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
+from pyntara.utils import run_command, service_is_enabled
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -87,18 +87,6 @@ def _swap_active(path: Path, timeout: float) -> bool:
         timeout=timeout,
     )
     return result.returncode == 0 and str(path) in result.stdout
-
-
-def _service_enabled(name: str, timeout: float) -> bool:
-    """True when the systemd service is enabled for boot."""
-
-    result = run_command(
-        ["systemctl", "is-enabled", name],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return result.returncode == 0 and result.stdout.strip() == "enabled"
 
 
 def _render_unit(template_path: Path, swapfile_path: Path) -> str:
@@ -166,7 +154,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
     active = _swap_active(cfg.swapfile_path, timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
-    enabled = _service_enabled(SWAPFILE_SERVICE_NAME, timeout)
+    enabled = service_is_enabled(SWAPFILE_SERVICE_NAME, timeout)
     _log(
         f"checking autorun service {SWAPFILE_SERVICE_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"

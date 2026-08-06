@@ -1,0 +1,13 @@
+[Unit]
+Description=System Metrics telemetry service
+After=local-fs.target
+
+[Service]
+Type=simple
+Environment=PYNTARA_JOURNAL_IDENTIFIER=system_metrics
+StandardOutput=null
+Restart=on-failure
+$exec_lines
+
+[Install]
+WantedBy=multi-user.target

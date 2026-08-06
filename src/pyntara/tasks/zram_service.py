@@ -29,7 +29,7 @@ from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
+from pyntara.utils import run_command, service_is_enabled
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -229,18 +229,6 @@ def _active_swap_devices(timeout: float) -> set[str]:
     return paths
 
 
-def _service_enabled(name: str, timeout: float) -> bool:
-    """True when the systemd service is enabled for boot."""
-
-    result = run_command(
-        ["systemctl", "is-enabled", name],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return result.returncode == 0 and result.stdout.strip() == "enabled"
-
-
 def _target_reached(
     device_count: int,
     per_device_bytes: int,
@@ -357,7 +345,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     active_paths = _active_swap_devices(timeout)
-    enabled = _service_enabled(ZRAM_SERVICE_NAME, timeout)
+    enabled = service_is_enabled(ZRAM_SERVICE_NAME, timeout)
     existing_count = _existing_device_count()
     _log(f"checking existing zram devices: {existing_count}")
     _log(f"checking active swap devices: {len(active_paths)}")

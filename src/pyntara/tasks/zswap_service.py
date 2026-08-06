@@ -26,7 +26,7 @@ from pyntara.config import ZswapServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
+from pyntara.utils import run_command, service_is_enabled
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -104,18 +104,6 @@ def _write_sysfs(path: Path, value: str) -> None:
     path.write_text(value, encoding="utf-8")
 
 
-def _service_enabled(name: str, timeout: float) -> bool:
-    """True when the systemd service is enabled for boot."""
-
-    result = run_command(
-        ["systemctl", "is-enabled", name],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return result.returncode == 0 and result.stdout.strip() == "enabled"
-
-
 def _render_unit(template_path: Path, target: dict[str, str]) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
@@ -172,7 +160,7 @@ def task(ctx: Context) -> TaskResult:
         if value is None or _normalize(name, value) != target[name]:
             mismatches.append(name)
 
-    enabled = _service_enabled(ZSWAP_SERVICE_NAME, timeout)
+    enabled = service_is_enabled(ZSWAP_SERVICE_NAME, timeout)
     _log(
         f"checking autorun service {ZSWAP_SERVICE_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"

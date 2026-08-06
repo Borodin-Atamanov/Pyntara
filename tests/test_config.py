@@ -46,6 +46,9 @@ memory_fraction_percent = 96
 fallback_cpu_count = 8
 alignment_bytes = 4096
 
+[system_metrics_setup]
+check_interval_seconds = 300
+
 [vault_structure]
 
 [[vault_structure.entries]]
@@ -124,6 +127,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.memory_fraction_percent == 96
     assert config.zram_service.fallback_cpu_count == 8
     assert config.zram_service.alignment_bytes == 4096
+    assert config.system_metrics_setup.check_interval_seconds == 300
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -182,6 +186,7 @@ _BASE_CONFIG = (
     '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
     "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
     "alignment_bytes = 4096\n"
+    "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -275,6 +280,18 @@ _BASE_CONFIG = (
         ),
         # zswap shrinker_enabled is an integer, not a boolean
         _BASE_CONFIG.replace("shrinker_enabled = true", "shrinker_enabled = 1"),
+        # system_metrics_setup check_interval_seconds is a string, not an integer
+        _BASE_CONFIG.replace(
+            "check_interval_seconds = 300", 'check_interval_seconds = "300"'
+        ),
+        # system_metrics_setup check_interval_seconds is zero
+        _BASE_CONFIG.replace(
+            "check_interval_seconds = 300", "check_interval_seconds = 0"
+        ),
+        # system_metrics_setup check_interval_seconds is negative
+        _BASE_CONFIG.replace(
+            "check_interval_seconds = 300", "check_interval_seconds = -5"
+        ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
             'source_vault_production = "secrets/production.vault"',
@@ -461,6 +478,7 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         "alignment_bytes = 4096\n"
+        "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -499,6 +517,7 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         "alignment_bytes = 4096\n"
+        "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

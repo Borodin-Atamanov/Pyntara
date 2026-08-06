@@ -18,6 +18,7 @@ from pyntara.config import (
     EngineConfig,
     LocalVaultSetupConfig,
     SwapfileServiceInstallConfig,
+    SystemMetricsSetupConfig,
     TaskConfig,
     VaultEntry,
     VaultStructureConfig,
@@ -72,6 +73,7 @@ def make_config(
     zram_memory_fraction_percent: int = 96,
     zram_fallback_cpu_count: int = 8,
     zram_alignment_bytes: int = 4096,
+    system_metrics_check_interval_seconds: int = 300,
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -128,6 +130,9 @@ def make_config(
             memory_fraction_percent=zram_memory_fraction_percent,
             fallback_cpu_count=zram_fallback_cpu_count,
             alignment_bytes=zram_alignment_bytes,
+        ),
+        system_metrics_setup=SystemMetricsSetupConfig(
+            check_interval_seconds=system_metrics_check_interval_seconds,
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(

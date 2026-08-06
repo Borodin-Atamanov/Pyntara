@@ -112,6 +112,21 @@ class ZramServiceConfig:
 
 
 @dataclass(frozen=True)
+class SystemMetricsSetupConfig:
+    """Runtime parameters of the long-running System Metrics service.
+
+    The section is read by the deployed service on the target machine
+    through pyntara.config.load_config, the same loader the installer
+    uses: /etc/pyntara/config.toml is the single config of the system.
+    check_interval_seconds is the pause between two vault availability
+    checks; the current placeholder check is replaced by the real
+    telemetry logic in a later stage (docs/spec/telemetry.md).
+    """
+
+    check_interval_seconds: int
+
+
+@dataclass(frozen=True)
 class VaultEntry:
     """One entry of the [vault_structure] table.
 
@@ -180,6 +195,7 @@ class Config:
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
+    system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
     tasks: tuple[TaskConfig, ...]
@@ -441,6 +457,30 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
     )
 
 
+def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
+    """Validate the [system_metrics_setup] table and build the config.
+
+    check_interval_seconds is a positive integer; a zero or negative
+    interval would busy-loop the service.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[system_metrics_setup] section is missing or not a table"
+        )
+    check_interval_seconds = _int_field(
+        raw.get("check_interval_seconds"),
+        "system_metrics_setup.check_interval_seconds",
+    )
+    if check_interval_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.check_interval_seconds must be positive"
+        )
+    return SystemMetricsSetupConfig(
+        check_interval_seconds=check_interval_seconds
+    )
+
+
 def _vault_structure_table(raw: object) -> VaultStructureConfig:
     """Validate the [vault_structure] table and build VaultStructureConfig.
 
@@ -648,6 +688,9 @@ def load_config(path: Path) -> Config:
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
         zram_service=_zram_service_table(data.get("zram_service")),
+        system_metrics_setup=_system_metrics_setup_table(
+            data.get("system_metrics_setup")
+        ),
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,
         tasks=_tasks_table(data.get("tasks")),
