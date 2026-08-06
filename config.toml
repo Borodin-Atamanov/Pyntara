@@ -266,37 +266,37 @@ modes = ["minimal", "server", "desktop"]
 name = "swapfile_service_install"
 description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []
-modes = ["server", "desktop"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "zram_service"
 description = "Configure aggressive ZRAM by CPU and RAM."
-depends = []
-modes = ["server", "desktop"]
+depends = ["swapfile_service_install"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "zswap_service"
 description = "Configure aggressive zswap compressed swap cache with zstd."
 depends = ["swapfile_service_install"]
-modes = ["server", "desktop"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "ssh_server"
+name = "sshd_server_setup"
 description = "Install and configure SSH service with passwordless login keys."
-depends = ["users_setup"]
+depends = ["local_vault_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "proxy_server"
 description = "Local authenticated proxy service with password and port."
-depends = []
-modes = ["server", "desktop"]
+depends = ["local_vault_setup"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "proxy_tunnel"
 description = "Local tunnel to remote proxy or VPN."
 depends = ["proxy_server"]
-modes = ["server", "desktop"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "power_behavior_configure_kde6"
@@ -320,10 +320,10 @@ modes = ["server", "desktop"]
 name = "nextdns_setup_system_wide"
 description = "Per-user NextDNS account and system-wide DNS endpoint."
 depends = ["users_setup"]
-modes = ["server", "desktop"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "telemetry_setup"
 description = "Initial telemetry service setup and first-run queue bootstrap."
 depends = ["users_setup"]
-modes = ["server", "desktop"]
+modes = ["minimal", "server", "desktop"]
