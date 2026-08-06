@@ -151,7 +151,7 @@ compressor = "zstd"
 max_pool_percent = 12
 # Percent of the pool limit at which zswap starts accepting pages again
 # after being full; 100 disables the hysteresis.
-accept_threshold_percent = 100
+accept_threshold_percent = 87
 # Whether the shrinker proactively writes cold pages to the backing swap.
 shrinker_enabled = true
 
