@@ -107,7 +107,7 @@ def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str
     )
     if entry is None:
         return None
-    password = entry.password
+    password: str | None = entry.password
     if not password:
         return None
     return password

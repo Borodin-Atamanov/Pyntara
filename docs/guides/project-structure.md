@@ -35,6 +35,7 @@ secrets/default.password — Password for default.vault (well-known test value).
 secrets/production.password — Password for production.vault. Not in git (.gitignore).
 
 The layout of both vault files is described in the [vault_structure] table of config.toml, the single source of truth for the vault structure (docs/spec/secrets-model.md).
+secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of config.toml (docs/spec/secrets-model.md).
 
 ## src/pyntara/
 

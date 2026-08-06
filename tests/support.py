@@ -104,8 +104,8 @@ def make_config(
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(
-                VaultEntry(title=title, purpose=purpose)
-                for title, purpose in vault_entries
+                VaultEntry(title=title, notes=notes)
+                for title, notes in vault_entries
             )
         ),
         local_vault_setup=LocalVaultSetupConfig(

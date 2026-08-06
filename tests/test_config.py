@@ -42,15 +42,15 @@ shrinker_enabled = true
 
 [[vault_structure.entries]]
 title = "password_salt"
-purpose = "Primary salt for password derivation."
+notes = "Primary salt for password derivation."
 
 [[vault_structure.entries]]
 title = "pyntara_local_vault_password"
-purpose = "Password for the runtime secret vault."
+notes = "Password for the runtime secret vault."
 
 [[vault_structure.entries]]
 title = "telegram_bot_token"
-purpose = "Telegram bot token for telemetry."
+notes = "Telegram bot token for telemetry."
 
 [local_vault_setup]
 source_vault_production = "secrets/production.vault"
@@ -108,7 +108,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.local_vault_setup.pass_file_path == Path("/etc/pyntara/pass")
     assert config.local_vault_setup.vault_password_entry_title == "pyntara_local_vault_password"
     assert config.vault_structure.entries[0].title == "password_salt"
-    assert config.vault_structure.entries[0].purpose == "Primary salt for password derivation."
+    assert config.vault_structure.entries[0].notes == "Primary salt for password derivation."
     assert config.vault_structure.entries[1].title == "pyntara_local_vault_password"
     assert config.vault_structure.entries[2].title == "telegram_bot_token"
     assert config.tasks[0].name == "add_extra_repos"
@@ -152,8 +152,8 @@ _BASE_CONFIG = (
     "max_pool_percent = 50\naccept_threshold_percent = 100\n"
     "shrinker_enabled = true\n"
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
-    'purpose = "Primary salt."\n[[vault_structure.entries]]\n'
-    'title = "pyntara_local_vault_password"\npurpose = "Local vault password."\n'
+    'notes = "Primary salt."\n[[vault_structure.entries]]\n'
+    'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
     '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
     'source_vault_default = "secrets/default.vault"\n'
     'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
@@ -276,20 +276,20 @@ _BASE_CONFIG = (
         # vault_structure entries are missing entirely: the section is gone
         _BASE_CONFIG.replace(
             "[vault_structure]\n[[vault_structure.entries]]\n"
-            'title = "password_salt"\npurpose = "Primary salt."\n'
+            'title = "password_salt"\nnotes = "Primary salt."\n'
             "[[vault_structure.entries]]\n"
             'title = "pyntara_local_vault_password"\n'
-            'purpose = "Local vault password."\n',
+            'notes = "Local vault password."\n',
             "",
         ),
         # vault_structure entry title is a number, not a string
         _BASE_CONFIG.replace('title = "password_salt"', "title = 1"),
         # vault_structure entry title is an empty string
         _BASE_CONFIG.replace('title = "password_salt"', 'title = ""'),
-        # vault_structure entry purpose is missing
-        _BASE_CONFIG.replace('purpose = "Primary salt."', ""),
-        # vault_structure entry purpose is an empty string
-        _BASE_CONFIG.replace('purpose = "Primary salt."', 'purpose = ""'),
+        # vault_structure entry notes is missing
+        _BASE_CONFIG.replace('notes = "Primary salt."', ""),
+        # vault_structure entry notes is an empty string
+        _BASE_CONFIG.replace('notes = "Primary salt."', 'notes = ""'),
         # vault_structure entry titles are duplicated
         _BASE_CONFIG.replace(
             'title = "pyntara_local_vault_password"', 'title = "password_salt"'
@@ -425,8 +425,8 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
-        'purpose = "Primary salt."\n[[vault_structure.entries]]\n'
-        'title = "pyntara_local_vault_password"\npurpose = "Local vault password."\n'
+        'notes = "Primary salt."\n[[vault_structure.entries]]\n'
+        'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
@@ -457,8 +457,8 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
-        'purpose = "Primary salt."\n[[vault_structure.entries]]\n'
-        'title = "pyntara_local_vault_password"\npurpose = "Local vault password."\n'
+        'notes = "Primary salt."\n[[vault_structure.entries]]\n'
+        'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'

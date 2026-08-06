@@ -159,43 +159,43 @@ shrinker_enabled = true
 
 [[vault_structure.entries]]
 title = "password_salt"
-purpose = "Primary salt for deterministic password derivation (docs/spec/secrets-model.md). Combined with the random hostname it produces the generated passwords; when present, this salt overrides the default salt from GitHub."
+notes = "Primary salt for deterministic password derivation (docs/spec/secrets-model.md). Combined with the random hostname it produces the generated passwords; when present, this salt overrides the default salt from GitHub."
 
 [[vault_structure.entries]]
 title = "pyntara_local_vault_password"
-purpose = "Password that protects the runtime secret vault at /var/lib/pyntara/secrets/pyntara.vault on the target machine. Read by the local_vault_setup task and written to /etc/pyntara/pass, so the source vault password never opens the runtime vault. The default vault carries a well-known test value mirroring its well-known vault password."
+notes = "Password that protects the runtime secret vault at /var/lib/pyntara/secrets/pyntara.vault on the target machine. Read by the local_vault_setup task and written to /etc/pyntara/pass, so the source vault password never opens the runtime vault. The default vault carries a well-known test value mirroring its well-known vault password."
 
 [[vault_structure.entries]]
 title = "telegram_bot_token"
-purpose = "Telegram bot token used by the telemetry sender (docs/spec/telemetry.md) to push reports to Telegram."
+notes = "Telegram bot token used by the telemetry sender (docs/spec/telemetry.md) to push reports to Telegram."
 
 [[vault_structure.entries]]
 title = "telegram_chat_id"
-purpose = "Telegram chat identifier that receives the telemetry reports."
+notes = "Telegram chat identifier that receives the telemetry reports."
 
 [[vault_structure.entries]]
 title = "google_drive_service_account_json"
-purpose = "JSON credentials payload of the Google Drive service account used by the telemetry uploader."
+notes = "JSON credentials payload of the Google Drive service account used by the telemetry uploader."
 
 [[vault_structure.entries]]
 title = "remote_proxy_host"
-purpose = "Hostname or IP address of the remote proxy server (docs/spec/networking.md)."
+notes = "Hostname or IP address of the remote proxy server (docs/spec/networking.md)."
 
 [[vault_structure.entries]]
 title = "remote_proxy_port"
-purpose = "TCP port of the remote proxy server."
+notes = "TCP port of the remote proxy server."
 
 [[vault_structure.entries]]
 title = "remote_proxy_username"
-purpose = "Username for authentication against the remote proxy server."
+notes = "Username for authentication against the remote proxy server."
 
 [[vault_structure.entries]]
 title = "remote_proxy_password"
-purpose = "Password for authentication against the remote proxy server."
+notes = "Password for authentication against the remote proxy server."
 
 [[vault_structure.entries]]
 title = "nextdns_profile_dns"
-purpose = "Generated NextDNS endpoint used as the system DNS configuration (docs/spec/networking.md)."
+notes = "Generated NextDNS endpoint used as the system DNS configuration (docs/spec/networking.md)."
 
 [local_vault_setup]
 # Runtime secret vault creation parameters (docs/spec/secrets-model.md).

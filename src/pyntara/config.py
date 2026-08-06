@@ -87,10 +87,14 @@ class ZswapServiceConfig:
 
 @dataclass(frozen=True)
 class VaultEntry:
-    """One entry of the [vault_structure] table."""
+    """One entry of the [vault_structure] table.
+
+    title names the KeePass entry; notes carries the explanatory text that
+    the regeneration tooling stores in the notes field of the entry.
+    """
 
     title: str
-    purpose: str
+    notes: str
 
 
 @dataclass(frozen=True)
@@ -99,7 +103,7 @@ class VaultStructureConfig:
 
     The table is the single source of truth for the vault structure
     (docs/spec/secrets-model.md): the structure is flat, every entry lives
-    in the root group and is identified by its unique title; purpose
+    in the root group and is identified by its unique title; notes
     explains what the entry carries and who consumes it.
     """
 
@@ -351,9 +355,9 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
     """Validate the [vault_structure] table and build VaultStructureConfig.
 
     The section is mandatory and non-empty; every entry is a table with a
-    unique non-empty title and a non-empty purpose. The structure is flat
-    by contract, so the parser reads entries directly from the table and
-    rejects anything that is not a title/purpose pair.
+    unique non-empty title and a non-empty notes field. The structure is
+    flat by contract, so the parser reads entries directly from the table
+    and rejects anything that is not a title/notes pair.
     """
 
     if not isinstance(raw, dict):
@@ -376,12 +380,12 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
         if title in seen_titles:
             raise ConfigError(f"[vault_structure] duplicate entry title: {title}")
         seen_titles.add(title)
-        purpose = entry_raw.get("purpose")
-        if not isinstance(purpose, str) or not purpose:
+        notes = entry_raw.get("notes")
+        if not isinstance(notes, str) or not notes:
             raise ConfigError(
-                f"[vault_structure] entry {title}: purpose must be a non-empty string"
+                f"[vault_structure] entry {title}: notes must be a non-empty string"
             )
-        entries.append(VaultEntry(title=title, purpose=purpose))
+        entries.append(VaultEntry(title=title, notes=notes))
     return VaultStructureConfig(entries=tuple(entries))
 
 

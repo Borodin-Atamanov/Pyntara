@@ -10,7 +10,23 @@ KeePass database handling is done via a Python library.
 
 ## Vault structure
 
-The structure of both vault files is described in the [vault_structure] table of config.toml, the single source of truth. The structure is flat: every entry lives directly in the root group and is identified by its unique title; the purpose field of each entry explains what it carries and who consumes it. Tooling that creates or inspects the vaults reads this table.
+The structure of both vault files is described in the [vault_structure] table of config.toml, the single source of truth. The structure is flat: every entry lives directly in the root group and is identified by its unique title; the notes field of each entry explains what it carries and who consumes it. The mapping between the config and the database is one-to-one: the keys of a [[vault_structure.entries]] table are the KeePass entry field names (title, username, password, url, notes), and a key that is not a field name is a config error. Tooling that creates or inspects the vaults reads this table.
+
+## Vault regeneration
+
+The script secrets/regenerate_vault_by_config.py creates or updates a vault file from the [vault_structure] table of config.toml. Run it with the project interpreter, for example .venv/bin/python secrets/regenerate_vault_by_config.py secrets/default.vault; invoked directly, the script re-executes itself with the project virtualenv interpreter. The vault password comes from the first available source in this order:
+1. The PYNTARA_VAULT_PASSWORD environment variable.
+2. The file next to the vault with the same name and the .password extension, its content trimmed of surrounding whitespace.
+3. An interactive prompt, only when stdin is a terminal.
+
+The script never writes password files: default.password and production.password are maintained by hand.
+
+The script works in one of three modes:
+1. The vault file is absent or empty: the vault is created from the config, with every configured entry in the root group.
+2. --overwrite is given: the vault is recreated from the config; existing entries outside the config are lost.
+3. Otherwise the vault is opened with the password and the entries missing from the root group are added; every existing entry is kept.
+
+Newly created entries carry exactly the configured fields; a missing password field leaves the entry password empty for manual filling. The script exits with code 0 on success and no-op, 1 on any error, 2 on invalid usage; with no arguments it prints its usage help.
 
 ## Password prompt
 
