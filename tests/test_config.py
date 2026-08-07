@@ -15,6 +15,7 @@ notice_timeout = 7
 command_timeout_seconds = 1800
 process_check_timeout_seconds = 5
 task_start_delay_seconds = 0.5
+desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]
 
 [cli_tools]
 packages = ["mc", "htop"]
@@ -31,6 +32,8 @@ swapfile_path = "/swapfile"
 ram_multiplier = 2
 ram_extra_mb = 4096
 disk_fraction = 0.5
+swapfile_mode = "0600"
+size_tolerance_mb = 1
 
 [zswap_service]
 enabled = true
@@ -48,6 +51,11 @@ alignment_bytes = 4096
 
 [system_metrics_setup]
 check_interval_seconds = 300
+python_version = "3"
+error_priority = 3
+success_priority = 7
+venv_dir = "/usr/local/lib/pyntara/venv"
+system_config_path = "/etc/pyntara/config.toml"
 
 [vault_structure]
 
@@ -104,6 +112,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.engine.command_timeout_seconds == 1800
     assert config.engine.process_check_timeout_seconds == 5
     assert config.engine.task_start_delay_seconds == 0.5
+    assert config.engine.desktop_detect_processes == (
+        "kwin_wayland",
+        "kwin_x11",
+        "plasmashell",
+        "gnome-shell",
+    )
     assert config.cli_tools.packages == ("mc", "htop")
     assert config.cli_tools.package_status_timeout_seconds == 30
     assert config.cli_tools.package_install_retries == 3
@@ -117,6 +131,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.swapfile_service_install.ram_multiplier == 2
     assert config.swapfile_service_install.ram_extra_mb == 4096
     assert config.swapfile_service_install.disk_fraction == 0.5
+    assert config.swapfile_service_install.swapfile_mode == 0o600
+    assert config.swapfile_service_install.size_tolerance_mb == 1
     assert config.zswap_service.enabled is True
     assert config.zswap_service.compressor == "zstd"
     assert config.zswap_service.max_pool_percent == 50
@@ -128,6 +144,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.fallback_cpu_count == 8
     assert config.zram_service.alignment_bytes == 4096
     assert config.system_metrics_setup.check_interval_seconds == 300
+    assert config.system_metrics_setup.python_version == "3"
+    assert config.system_metrics_setup.error_priority == 3
+    assert config.system_metrics_setup.success_priority == 7
+    assert config.system_metrics_setup.venv_dir == Path("/usr/local/lib/pyntara/venv")
+    assert config.system_metrics_setup.system_config_path == Path("/etc/pyntara/config.toml")
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -174,12 +195,14 @@ _BASE_CONFIG = (
     '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
     "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
     "task_start_delay_seconds = 0.5\n"
+    'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
     '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
     "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
     '[add_extra_repos]\ncomponents = ["universe"]\n'
     'ubuntu_hosts = ["archive.ubuntu.com"]\n'
     '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
     "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+    'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
     '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
     "max_pool_percent = 50\naccept_threshold_percent = 100\n"
     "shrinker_enabled = true\n"
@@ -187,6 +210,9 @@ _BASE_CONFIG = (
     "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
     "alignment_bytes = 4096\n"
     "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+    'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+    'venv_dir = "/usr/local/lib/pyntara/venv"\n'
+    'system_config_path = "/etc/pyntara/config.toml"\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -225,6 +251,26 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "task_start_delay_seconds = 0.5", 'task_start_delay_seconds = "0.5"'
         ),
+        # desktop_detect_processes is a string, not an array
+        _BASE_CONFIG.replace(
+            'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',
+            'desktop_detect_processes = "kwin_wayland"',
+        ),
+        # desktop_detect_processes is an empty array
+        _BASE_CONFIG.replace(
+            'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',
+            "desktop_detect_processes = []",
+        ),
+        # desktop_detect_processes contains a number, not strings
+        _BASE_CONFIG.replace(
+            'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',
+            "desktop_detect_processes = [1]",
+        ),
+        # desktop_detect_processes contains an empty string
+        _BASE_CONFIG.replace(
+            'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',
+            'desktop_detect_processes = [""]',
+        ),
         # package_status_timeout_seconds is a string, not an integer
         _BASE_CONFIG.replace(
             "package_status_timeout_seconds = 30", 'package_status_timeout_seconds = "30"'
@@ -258,6 +304,16 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 1.5"),
         # disk_fraction is zero
         _BASE_CONFIG.replace("disk_fraction = 0.5", "disk_fraction = 0"),
+        # swapfile_mode is not a four-digit octal string
+        _BASE_CONFIG.replace('swapfile_mode = "0600"', 'swapfile_mode = "600"'),
+        # swapfile_mode is not octal
+        _BASE_CONFIG.replace('swapfile_mode = "0600"', 'swapfile_mode = "zzzz"'),
+        # swapfile_mode is a number, not a string
+        _BASE_CONFIG.replace('swapfile_mode = "0600"', "swapfile_mode = 600"),
+        # size_tolerance_mb is a string, not an integer
+        _BASE_CONFIG.replace("size_tolerance_mb = 1", 'size_tolerance_mb = "1"'),
+        # size_tolerance_mb is negative
+        _BASE_CONFIG.replace("size_tolerance_mb = 1", "size_tolerance_mb = -1"),
         # zswap enabled is a string, not a boolean
         _BASE_CONFIG.replace("enabled = true", 'enabled = "true"'),
         # zswap compressor is a number, not a string
@@ -291,6 +347,43 @@ _BASE_CONFIG = (
         # system_metrics_setup check_interval_seconds is negative
         _BASE_CONFIG.replace(
             "check_interval_seconds = 300", "check_interval_seconds = -5"
+        ),
+        # system_metrics_setup python_version is a number, not a string
+        _BASE_CONFIG.replace('python_version = "3"', "python_version = 3"),
+        # system_metrics_setup python_version is an empty string
+        _BASE_CONFIG.replace('python_version = "3"', 'python_version = ""'),
+        # system_metrics_setup error_priority is a string, not an integer
+        _BASE_CONFIG.replace(
+            'python_version = "3"\nerror_priority = 3\n',
+            'python_version = "3"\nerror_priority = "3"\n',
+        ),
+        # system_metrics_setup error_priority is above 7
+        _BASE_CONFIG.replace(
+            'python_version = "3"\nerror_priority = 3\n',
+            'python_version = "3"\nerror_priority = 8\n',
+        ),
+        # system_metrics_setup success_priority is below zero
+        _BASE_CONFIG.replace(
+            "error_priority = 3\nsuccess_priority = 7\n",
+            "error_priority = 3\nsuccess_priority = -1\n",
+        ),
+        # system_metrics_setup venv_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'venv_dir = "/usr/local/lib/pyntara/venv"', "venv_dir = 1"
+        ),
+        # system_metrics_setup venv_dir is an empty string
+        _BASE_CONFIG.replace(
+            'venv_dir = "/usr/local/lib/pyntara/venv"', 'venv_dir = ""'
+        ),
+        # system_metrics_setup system_config_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'system_config_path = "/etc/pyntara/config.toml"',
+            "system_config_path = 1",
+        ),
+        # system_metrics_setup system_config_path is an empty string
+        _BASE_CONFIG.replace(
+            'system_config_path = "/etc/pyntara/config.toml"',
+            'system_config_path = ""',
         ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
@@ -466,12 +559,14 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
         "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
+        'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+        'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
@@ -479,6 +574,9 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         "alignment_bytes = 4096\n"
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+        'venv_dir = "/usr/local/lib/pyntara/venv"\n'
+        'system_config_path = "/etc/pyntara/config.toml"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -505,12 +603,14 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
         "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
+        'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
+        'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         "shrinker_enabled = true\n"
@@ -518,6 +618,9 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         "alignment_bytes = 4096\n"
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+        'venv_dir = "/usr/local/lib/pyntara/venv"\n'
+        'system_config_path = "/etc/pyntara/config.toml"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

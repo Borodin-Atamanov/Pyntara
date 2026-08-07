@@ -14,7 +14,7 @@ import pytest
 from pykeepass import create_database
 from support import make_config
 
-from pyntara.config import LocalVaultSetupConfig
+from pyntara.config import Config
 from pyntara.metrics import check_runtime_vault, main
 
 PASSWORD = "local-secret-password"
@@ -27,16 +27,15 @@ def _create_vault(path: Path, password: str) -> None:
     create_database(str(path), password=password)
 
 
-def _vault_config(tmp_path: Path) -> LocalVaultSetupConfig:
-    """Local vault config whose paths live in the temporary directory."""
+def _vault_config(tmp_path: Path) -> Config:
+    """Config whose local vault paths live in the temporary directory."""
 
-    config = make_config(
+    return make_config(
         task_data_root=tmp_path,
         local_vault_path=tmp_path / "secrets" / "pyntara.vault",
         local_vault_pass_file_path=tmp_path / "etc" / "pass",
         system_metrics_check_interval_seconds=5,
     )
-    return config.local_vault_setup
 
 
 def _install_logger_capture(

@@ -44,6 +44,12 @@ def make_config(
     command_timeout_seconds: int = 1800,
     process_check_timeout_seconds: int = 5,
     task_start_delay_seconds: float = 0.5,
+    engine_desktop_detect_processes: tuple[str, ...] = (
+        "kwin_wayland",
+        "kwin_x11",
+        "plasmashell",
+        "gnome-shell",
+    ),
     cli_tools_packages: tuple[str, ...] = ("mc", "htop"),
     cli_tools_threshold: int = 70,
     cli_tools_retries: int = 3,
@@ -63,6 +69,8 @@ def make_config(
     swapfile_ram_multiplier: float = 2.0,
     swapfile_ram_extra_mb: int = 4096,
     swapfile_disk_fraction: float = 0.5,
+    swapfile_mode: int = 0o600,
+    swapfile_size_tolerance_mb: int = 1,
     zswap_enabled: bool = True,
     zswap_compressor: str = "zstd",
     zswap_max_pool_percent: int = 50,
@@ -74,6 +82,11 @@ def make_config(
     zram_fallback_cpu_count: int = 8,
     zram_alignment_bytes: int = 4096,
     system_metrics_check_interval_seconds: int = 300,
+    system_metrics_python_version: str = "3",
+    system_metrics_error_priority: int = 3,
+    system_metrics_success_priority: int = 7,
+    system_metrics_venv_dir: Path = Path("/usr/local/lib/pyntara/venv"),
+    system_metrics_system_config_path: Path = Path("/etc/pyntara/config.toml"),
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -100,6 +113,7 @@ def make_config(
             command_timeout_seconds=command_timeout_seconds,
             process_check_timeout_seconds=process_check_timeout_seconds,
             task_start_delay_seconds=task_start_delay_seconds,
+            desktop_detect_processes=engine_desktop_detect_processes,
         ),
         cli_tools=CliToolsConfig(
             packages=cli_tools_packages,
@@ -116,6 +130,8 @@ def make_config(
             ram_multiplier=swapfile_ram_multiplier,
             ram_extra_mb=swapfile_ram_extra_mb,
             disk_fraction=swapfile_disk_fraction,
+            swapfile_mode=swapfile_mode,
+            size_tolerance_mb=swapfile_size_tolerance_mb,
         ),
         zswap_service=ZswapServiceConfig(
             enabled=zswap_enabled,
@@ -133,6 +149,11 @@ def make_config(
         ),
         system_metrics_setup=SystemMetricsSetupConfig(
             check_interval_seconds=system_metrics_check_interval_seconds,
+            python_version=system_metrics_python_version,
+            error_priority=system_metrics_error_priority,
+            success_priority=system_metrics_success_priority,
+            venv_dir=system_metrics_venv_dir,
+            system_config_path=system_metrics_system_config_path,
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(

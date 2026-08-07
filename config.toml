@@ -15,6 +15,10 @@ command_timeout_seconds = 1800
 process_check_timeout_seconds = 5
 # Seconds the engine pauses after showing a task title before running it.
 task_start_delay_seconds = 0.5
+# Process names whose presence marks a desktop session in the default
+# install mode detection. A desktop session variable wins over these;
+# the list is checked only when no session variable is set.
+desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]
 
 [cli_tools]
 # Console utilities installed by the cli_tools task.
@@ -135,6 +139,11 @@ ram_multiplier = 1.6
 ram_extra_mb = 4096
 # Maximum share of free disk space the swap file may occupy, 0.0 to 1.0.
 disk_fraction = 0.5
+# File mode of the created swapfile, as an octal string.
+swapfile_mode = "0600"
+# Accepted deviation between the existing and the target swap size, in
+# mebibytes; a swapfile within the tolerance is not recreated.
+size_tolerance_mb = 1
 
 [zswap_service]
 # Compressed swap cache parameters. The zswap_service task writes these
@@ -176,12 +185,24 @@ alignment_bytes = 4096
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The
 # deployed service reads this section through the same config loader as
-# the installer: /etc/pyntara/config.toml is the single config of the
-# target system (docs/contracts/architecture.md section 3). The current
-# periodic vault availability check is a placeholder that the real
-# telemetry logic replaces in a later stage (docs/spec/telemetry.md).
+# the installer: system_config_path is the single config of the target
+# system (docs/contracts/architecture.md section 3). The current periodic
+# vault availability check is a placeholder that the real telemetry logic
+# replaces in a later stage (docs/spec/telemetry.md).
 # Pause between two runtime vault availability checks, in seconds.
 check_interval_seconds = 300
+# Python version selector for the dedicated venv created by the task.
+python_version = "3"
+# Syslog priority of a failed runtime vault check, 0 to 7.
+error_priority = 3
+# Syslog priority of a successful runtime vault check, 0 to 7.
+success_priority = 7
+# Directory of the dedicated venv the task creates for the deployed
+# service on the target machine.
+venv_dir = "/usr/local/lib/pyntara/venv"
+# Path of the single system config copied from the repository root; the
+# deployed service reads it through the same loader as the installer.
+system_config_path = "/etc/pyntara/config.toml"
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

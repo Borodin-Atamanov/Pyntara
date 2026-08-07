@@ -163,7 +163,7 @@ def task(ctx: Context) -> TaskResult:
     if (
         not force
         and current_mb is not None
-        and abs(current_mb - target_mb) <= 1
+        and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
         and active
         and enabled
     ):
@@ -171,7 +171,11 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=True, changed=False, message="already configured")
 
     changed = False
-    if not force and current_mb is not None and abs(current_mb - target_mb) <= 1:
+    if (
+        not force
+        and current_mb is not None
+        and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
+    ):
         # The swapfile exists at the computed size; only activation or the
         # service is missing, so no recreation is needed.
         _log(f"swapfile already at target size: {current_mb} MiB")
@@ -216,8 +220,11 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
             _log(f"swapfile created: {target_mb} MiB")
-            _log(f"setting permissions: chmod 600 {cfg.swapfile_path}")
-            run_command(["chmod", "600", str(cfg.swapfile_path)], timeout=timeout)
+            _log(f"setting permissions: chmod {cfg.swapfile_mode:o} {cfg.swapfile_path}")
+            run_command(
+                ["chmod", f"{cfg.swapfile_mode:o}", str(cfg.swapfile_path)],
+                timeout=timeout,
+            )
             _log("permissions set")
             _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
             run_command(["mkswap", str(cfg.swapfile_path)], timeout=timeout)

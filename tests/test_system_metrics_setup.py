@@ -16,6 +16,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_setup
 
@@ -36,7 +37,9 @@ WantedBy=multi-user.target
 """
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+def _ctx(
+    tmp_path: Path, *, force: bool = False, config: Config | None = None
+) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
@@ -44,7 +47,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
         force_tasks=frozenset({"system_metrics_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(task_data_root=tmp_path),
+        config=config if config is not None else make_config(task_data_root=tmp_path),
     )
 
 
@@ -81,10 +84,11 @@ def _install_fixtures(
     monkeypatch.setattr(system_metrics_setup, "REPO_ROOT", repo)
     monkeypatch.setattr(system_metrics_setup, "TEMPLATE_PATH", template)
     monkeypatch.setattr(system_metrics_setup, "SYSTEMD_UNIT_DIR", systemd_dir)
-    monkeypatch.setattr(system_metrics_setup, "VENV_DIR", venv_dir)
-    monkeypatch.setattr(system_metrics_setup, "VENV_PYTHON", venv_python)
-    monkeypatch.setattr(system_metrics_setup, "SYSTEM_CONFIG_DIR", system_config_dir)
-    monkeypatch.setattr(system_metrics_setup, "SYSTEM_CONFIG_PATH", system_config)
+    config = make_config(
+        task_data_root=tmp_path,
+        system_metrics_venv_dir=venv_dir,
+        system_metrics_system_config_path=system_config,
+    )
     return {
         "repo": repo,
         "source_config": source_config,
@@ -93,6 +97,7 @@ def _install_fixtures(
         "venv_python": venv_python,
         "system_config": system_config,
         "systemd_dir": systemd_dir,
+        "config": config,
     }
 
 
@@ -202,7 +207,7 @@ def test_deploys_service_and_starts_it(
     # from the clone, copies the config, writes the unit, enables and
     # starts the service.
     fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
-    result = system_metrics_setup.task(_ctx(tmp_path))
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
     assert ["uv", "venv", str(fixtures["venv_dir"]), "--python", "3"] in calls
@@ -237,7 +242,7 @@ def test_skips_when_already_configured(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path))
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is False
     assert result.message == "already configured"
@@ -254,7 +259,7 @@ def test_force_reinstalls_and_restarts(
     # Everything is already configured but the task is forced: the package
     # is reinstalled with --reinstall, the config and unit rewritten, the
     # service enabled and restarted.
-    _, calls = _deploy_fixture(
+    fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         enabled=True,
@@ -262,7 +267,7 @@ def test_force_reinstalls_and_restarts(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, force=True))
+    result = system_metrics_setup.task(_ctx(tmp_path, force=True, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
     assert any(
@@ -294,8 +299,8 @@ def test_uv_pip_install_failure_fails(
     def fail_uv_install(command: list[str]) -> bool:
         return command[0] == "uv" and command[1] == "pip" and command[2] == "install"
 
-    _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_install)
-    result = system_metrics_setup.task(_ctx(tmp_path))
+    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_install)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is False
     assert "cannot install" in (result.error or "")
 
@@ -314,7 +319,7 @@ def test_only_service_disabled_starts_it(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path))
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "uv" for call in calls)
@@ -339,7 +344,7 @@ def test_config_change_restarts_running_service(
         import_ok=True,
         deployed=False,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path))
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
     assert ["systemctl", "restart", "system_metrics.service"] in calls

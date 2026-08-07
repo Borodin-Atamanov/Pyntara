@@ -26,13 +26,19 @@ MODES: tuple[str, ...] = ("minimal", "server", "desktop")
 
 @dataclass(frozen=True)
 class EngineConfig:
-    """Engine-wide runtime values from the [engine] table."""
+    """Engine-wide runtime values from the [engine] table.
+
+    desktop_detect_processes are the process names whose presence marks a
+    desktop session in the default mode detection; the list lives here so
+    the detection is configurable without code changes.
+    """
 
     task_data_root: Path
     notice_timeout: int
     command_timeout_seconds: int
     process_check_timeout_seconds: int
     task_start_delay_seconds: float
+    desktop_detect_processes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -66,12 +72,20 @@ class SwapfileServiceInstallConfig:
     The swap size is min(RAM * ram_multiplier + ram_extra_mb,
     free_disk * disk_fraction); ram_multiplier and ram_extra_mb size the
     swap from installed RAM, disk_fraction caps it by free disk space.
+    swapfile_mode is the octal file mode of the created swapfile;
+    size_tolerance_mb is the accepted deviation between the existing and
+    the target swap size in mebibytes, so a swapfile resized by rounding
+    is not recreated.
     """
 
     swapfile_path: Path
     ram_multiplier: float
     ram_extra_mb: int
     disk_fraction: float
+    swapfile_mode: int
+    size_tolerance_mb: int
+    swapfile_mode: int
+    size_tolerance_mb: int
 
 
 @dataclass(frozen=True)
@@ -117,13 +131,22 @@ class SystemMetricsSetupConfig:
 
     The section is read by the deployed service on the target machine
     through pyntara.config.load_config, the same loader the installer
-    uses: /etc/pyntara/config.toml is the single config of the system.
+    uses: system_config_path is the single config of the system.
     check_interval_seconds is the pause between two vault availability
-    checks; the current placeholder check is replaced by the real
-    telemetry logic in a later stage (docs/spec/telemetry.md).
+    checks; python_version selects the interpreter for the deployed
+    venv; error_priority and success_priority are the syslog levels of
+    failed and successful checks; venv_dir and system_config_path are
+    the deployment locations on the target machine. The current
+    placeholder check is replaced by the real telemetry logic in a
+    later stage (docs/spec/telemetry.md).
     """
 
     check_interval_seconds: int
+    python_version: str
+    error_priority: int
+    success_priority: int
+    venv_dir: Path
+    system_config_path: Path
 
 
 @dataclass(frozen=True)
@@ -222,6 +245,23 @@ def _float_field(raw: object, name: str) -> float:
     return value
 
 
+def _octal_mode_field(raw: object, name: str) -> int:
+    """Parse one octal file mode string like "0700" into an int.
+
+    TOML has no octal literals, so the modes are configured as strings
+    and converted here; a value that is not four octal digits is a
+    config error.
+    """
+
+    if not isinstance(raw, str) or len(raw) != 4:
+        raise ConfigError(f"{name} must be an octal string like '0700'")
+    try:
+        parsed = int(raw, 8)
+    except ValueError:
+        raise ConfigError(f"{name} must be an octal string like '0700'") from None
+    return parsed
+
+
 def _engine_table(raw: object) -> EngineConfig:
     """Validate the [engine] table and build EngineConfig."""
 
@@ -230,6 +270,18 @@ def _engine_table(raw: object) -> EngineConfig:
     task_data_root = raw.get("task_data_root")
     if not isinstance(task_data_root, str):
         raise ConfigError("engine.task_data_root must be a string")
+    desktop_detect_processes = raw.get("desktop_detect_processes")
+    if not isinstance(desktop_detect_processes, list) or not desktop_detect_processes:
+        raise ConfigError(
+            "engine.desktop_detect_processes must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(process, str) and process and process == process.strip()
+        for process in desktop_detect_processes
+    ):
+        raise ConfigError(
+            "engine.desktop_detect_processes must be non-empty strings"
+        )
     return EngineConfig(
         task_data_root=Path(task_data_root),
         notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
@@ -243,6 +295,7 @@ def _engine_table(raw: object) -> EngineConfig:
         task_start_delay_seconds=_float_field(
             raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
         ),
+        desktop_detect_processes=tuple(desktop_detect_processes),
     )
 
 
@@ -329,7 +382,8 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
     swapfile_path is a non-empty string; ram_multiplier is a non-negative
     number; ram_extra_mb is a non-negative integer; disk_fraction must be
     greater than zero and at most one, so the swap size always stays finite
-    and positive when RAM and disk are present.
+    and positive when RAM and disk are present. swapfile_mode is an octal
+    string like "0600"; size_tolerance_mb is a non-negative integer.
     """
 
     if not isinstance(raw, dict):
@@ -358,11 +412,22 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
         raise ConfigError(
             "swapfile_service_install.disk_fraction must be between 0 (exclusive) and 1"
         )
+    size_tolerance_mb = _int_field(
+        raw.get("size_tolerance_mb"), "swapfile_service_install.size_tolerance_mb"
+    )
+    if size_tolerance_mb < 0:
+        raise ConfigError(
+            "swapfile_service_install.size_tolerance_mb must not be negative"
+        )
     return SwapfileServiceInstallConfig(
         swapfile_path=Path(swapfile_path),
         ram_multiplier=ram_multiplier,
         ram_extra_mb=ram_extra_mb,
         disk_fraction=disk_fraction,
+        swapfile_mode=_octal_mode_field(
+            raw.get("swapfile_mode"), "swapfile_service_install.swapfile_mode"
+        ),
+        size_tolerance_mb=size_tolerance_mb,
     )
 
 
@@ -461,7 +526,9 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """Validate the [system_metrics_setup] table and build the config.
 
     check_interval_seconds is a positive integer; a zero or negative
-    interval would busy-loop the service.
+    interval would busy-loop the service. python_version is a non-empty
+    string; error_priority and success_priority are syslog levels between
+    0 and 7; venv_dir and system_config_path are non-empty strings.
     """
 
     if not isinstance(raw, dict):
@@ -476,8 +543,42 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.check_interval_seconds must be positive"
         )
+    python_version = raw.get("python_version")
+    if not isinstance(python_version, str) or not python_version:
+        raise ConfigError(
+            "system_metrics_setup.python_version must be a non-empty string"
+        )
+    error_priority = _int_field(
+        raw.get("error_priority"), "system_metrics_setup.error_priority"
+    )
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "system_metrics_setup.error_priority must be between 0 and 7"
+        )
+    success_priority = _int_field(
+        raw.get("success_priority"), "system_metrics_setup.success_priority"
+    )
+    if not 0 <= success_priority <= 7:
+        raise ConfigError(
+            "system_metrics_setup.success_priority must be between 0 and 7"
+        )
+    venv_dir = raw.get("venv_dir")
+    if not isinstance(venv_dir, str) or not venv_dir:
+        raise ConfigError(
+            "system_metrics_setup.venv_dir must be a non-empty string"
+        )
+    system_config_path = raw.get("system_config_path")
+    if not isinstance(system_config_path, str) or not system_config_path:
+        raise ConfigError(
+            "system_metrics_setup.system_config_path must be a non-empty string"
+        )
     return SystemMetricsSetupConfig(
-        check_interval_seconds=check_interval_seconds
+        check_interval_seconds=check_interval_seconds,
+        python_version=python_version,
+        error_priority=error_priority,
+        success_priority=success_priority,
+        venv_dir=Path(venv_dir),
+        system_config_path=Path(system_config_path),
     )
 
 
@@ -556,25 +657,9 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         )
 
     def _file_mode_field(name: str) -> int:
-        """Parse one octal file mode string like "0700" into an int.
+        """Parse one octal file mode string like "0700" into an int."""
 
-        TOML has no octal literals, so the modes are configured as strings
-        and converted here; a value that is not four octal digits is a
-        config error.
-        """
-
-        value = raw.get(name)
-        if not isinstance(value, str) or len(value) != 4:
-            raise ConfigError(
-                f"local_vault_setup.{name} must be an octal string like '0700'"
-            )
-        try:
-            parsed = int(value, 8)
-        except ValueError:
-            raise ConfigError(
-                f"local_vault_setup.{name} must be an octal string like '0700'"
-            ) from None
-        return parsed
+        return _octal_mode_field(raw.get(name), f"local_vault_setup.{name}")
 
     error_priority = _int_field(
         raw.get("error_priority"), "local_vault_setup.error_priority"

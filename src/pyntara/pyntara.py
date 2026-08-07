@@ -165,14 +165,20 @@ def _process_running(name: str, timeout: float) -> bool:
     return result.returncode == 0
 
 
-def detect_default_mode(process_check_timeout: float) -> str:
+def detect_default_mode(
+    process_check_timeout: float, desktop_processes: tuple[str, ...]
+) -> str:
     """Pick the default install mode without asking: desktop when a desktop
     session is present, otherwise server. Mirrors inst.sh detection.
+
+    desktop_processes is the configured list of process names whose
+    presence marks a desktop session; the check runs only when no session
+    variable is set.
     """
 
     if os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION"):
         return "desktop"
-    for process in ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"):
+    for process in desktop_processes:
         if _process_running(process, process_check_timeout):
             return "desktop"
     return "server"
@@ -189,12 +195,16 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 
     mode = _env("PYNTARA_INSTALL_MODE")
     if mode is None:
-        detected = detect_default_mode(cfg.process_check_timeout_seconds)
+        detected = detect_default_mode(
+            cfg.process_check_timeout_seconds, cfg.desktop_detect_processes
+        )
         log_event(f"Install mode not set, using detected default: {detected}")
         return detected
     if mode in MODES:
         return mode
-    detected = detect_default_mode(cfg.process_check_timeout_seconds)
+    detected = detect_default_mode(
+        cfg.process_check_timeout_seconds, cfg.desktop_detect_processes
+    )
     _warn_and_continue(
         f"Install mode '{mode}' was set through environment variables but not "
         f"found in the configuration, applied mode '{detected}'. If this does "
