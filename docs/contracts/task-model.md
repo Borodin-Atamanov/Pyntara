@@ -1,5 +1,7 @@
 # Task model and idempotency
 
+This contract fixes the task model: what a task is, how tasks are declared, ordered and stored, and how idempotency is enforced. The runtime task contract (signature, TaskResult fields, presentation) lives in docs/contracts/architecture.md section 5 and docs/guides/project-rules.md section 1.1; this document covers the model and the catalog.
+
 ## Idempotency
 
 Each task must be idempotent:
@@ -36,21 +38,11 @@ Task set and metadata are defined in config.toml under the [[tasks]] section; ta
 
 ## Task contract (Python)
 
-A task is a plain function task(ctx) -> TaskResult.
-
-The runner must print an empty line and the task title before each task, pause 0.5 seconds, then execute the task with real-time output and print a completion report line with the task status and the details from the result after it finishes.
-
-TaskResult is a dataclass with fields:
-success
-changed
-skipped (optional; True when the task module is not implemented)
-message (optional)
-error (optional)
+The runtime contract of a task is fixed by docs/contracts/architecture.md section 5: a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error). The presentation contract (banner, pause, outcome line) is fixed by docs/guides/project-rules.md section 1.1.
 
 Data transfer between tasks is explicit only:
 through Context fields (e.g., secrets)
 or through the orchestrator passing required values as arguments to the next task
 
 Hidden data exchange via shared mutable state outside Context and outside arguments is forbidden.
-
 No typing.Protocol, no ABC inheritance.

@@ -12,7 +12,7 @@ Exceptions are allowed only when command output must be suppressed for security 
 ### 1.1 Task presentation
 
 Before each new task the engine prints an empty line, then the task title.
-After the title there is a 0.5 second pause, so the user sees which task starts.
+After the title there is a pause of engine.task_start_delay_seconds (config.toml), so the user sees which task starts.
 The task then runs and its output streams in real time, showing what is being done.
 After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
 
@@ -59,8 +59,8 @@ mandatory return-code checking
 All setup tasks must be idempotent.
 Re-runs must not break the system and must not overwrite already generated secrets.
 Plaintext secret storage is forbidden (including code and logs).
-External inputs (including config) are validated via Pydantic.
-Internal structures without validation need use dataclass.
+External inputs (including config.toml) are validated by explicit checks in the loading code: config.py type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.
+Internal structures without external validation use frozen dataclasses.
 All package-install operations and other operations must have timeouts.
 Tasks must also have reasonable large timeouts configured.
 All processes started from Python must provide return code used for correctness control.

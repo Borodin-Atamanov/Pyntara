@@ -21,6 +21,8 @@ PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is a
 
 PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
 
+PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state is already reached. When omitted, no task is forced. Invalid names are reported with a countdown notice and ignored.
+
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_extra_repos and cli_tools run before package operations. Use for test or offline runs; omit it in real provisioning so packages resolve from a fresh index.
 
 Quick test run without the apt index refresh. The flag sits in the prefix of the script invocation, so it reaches the installer and the engine; a flag joined with && would only set a shell variable and never reach the installer:
@@ -40,10 +42,10 @@ AI-Agent rules: `AGENTS.md`
 Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions testable in code:
 `docs/contracts/architecture.md` — runtime boundaries, composition root, Context, resilience rule
 `docs/contracts/bootstrap.md` — bootstrap installer contract for inst.sh
-`docs/contracts/task-model.md` — task protocol, TaskResult, idempotency contract, full task catalog with dependencies
+`docs/contracts/task-model.md` — task model, idempotency contract, catalog and dependencies
 
 Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
-`docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, timers
+`docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, task and force selection
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
 `docs/spec/telemetry.md` — encrypted PDF telemetry, queues, retries, Telegram and Google Drive
 `docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
