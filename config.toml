@@ -203,6 +203,29 @@ venv_dir = "/usr/local/lib/pyntara/venv"
 # Path of the single system config copied from the repository root; the
 # deployed service reads it through the same loader as the installer.
 system_config_path = "/etc/pyntara/config.toml"
+# Root directory of the System Metrics queue on the target machine. The
+# commit_system_metrics utility publishes committed files into main_outbox
+# inside this directory; the deployed service fans them out into the
+# channel queues and archives sent files (docs/spec/system-metrics.md,
+# section Queue architecture).
+system_metrics_dir = "/var/lib/pyntara/metrics"
+# File mode of every queue directory (system_metrics_dir, main_outbox,
+# temp and the channel queues), as an octal string. Queue entries carry
+# potential secrets, so the mode is the strictest possible, root only.
+system_metrics_dir_mode = "0700"
+# File mode of every queue entry, as an octal string.
+queue_file_mode = "0600"
+# Maximum size of a single committed file in bytes; larger files are
+# rejected by commit_system_metrics and by the sender.
+max_queue_file_size_bytes = 104857600
+# Order in which the deployed service sends queued entries: oldest_first
+# sends the earliest committed entry first, newest_first the latest.
+send_order = "oldest_first"
+# Length of the random alphanumeric suffix appended to the original file
+# name of every queue entry after a dot. The suffix lets entries with
+# identical original names coexist; the sender strips it before upload,
+# so the remote server receives the original name.
+queue_file_suffix_length = 12
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

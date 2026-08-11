@@ -56,6 +56,12 @@ error_priority = 3
 success_priority = 7
 venv_dir = "/usr/local/lib/pyntara/venv"
 system_config_path = "/etc/pyntara/config.toml"
+system_metrics_dir = "/var/lib/pyntara/metrics"
+system_metrics_dir_mode = "0700"
+queue_file_mode = "0600"
+max_queue_file_size_bytes = 104857600
+send_order = "oldest_first"
+queue_file_suffix_length = 12
 
 [vault_structure]
 
@@ -149,6 +155,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.success_priority == 7
     assert config.system_metrics_setup.venv_dir == Path("/usr/local/lib/pyntara/venv")
     assert config.system_metrics_setup.system_config_path == Path("/etc/pyntara/config.toml")
+    assert config.system_metrics_setup.system_metrics_dir == Path("/var/lib/pyntara/metrics")
+    assert config.system_metrics_setup.system_metrics_dir_mode == 0o700
+    assert config.system_metrics_setup.queue_file_mode == 0o600
+    assert config.system_metrics_setup.max_queue_file_size_bytes == 104857600
+    assert config.system_metrics_setup.send_order == "oldest_first"
+    assert config.system_metrics_setup.queue_file_suffix_length == 12
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -213,6 +225,10 @@ _BASE_CONFIG = (
     'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
     'system_config_path = "/etc/pyntara/config.toml"\n'
+    'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
+    'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
+    'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
+    'queue_file_suffix_length = 12\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -384,6 +400,51 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'system_config_path = "/etc/pyntara/config.toml"',
             'system_config_path = ""',
+        ),
+        # system_metrics_setup system_metrics_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'system_metrics_dir = "/var/lib/pyntara/metrics"',
+            "system_metrics_dir = 1",
+        ),
+        # system_metrics_setup system_metrics_dir is an empty string
+        _BASE_CONFIG.replace(
+            'system_metrics_dir = "/var/lib/pyntara/metrics"',
+            'system_metrics_dir = ""',
+        ),
+        # system_metrics_setup system_metrics_dir_mode is not a four-digit octal string
+        _BASE_CONFIG.replace(
+            'system_metrics_dir_mode = "0700"', 'system_metrics_dir_mode = "700"'
+        ),
+        # system_metrics_setup queue_file_mode is not a four-digit octal string
+        _BASE_CONFIG.replace(
+            'queue_file_mode = "0600"', 'queue_file_mode = "060"'
+        ),
+        # system_metrics_setup max_queue_file_size_bytes is a string, not an integer
+        _BASE_CONFIG.replace(
+            "max_queue_file_size_bytes = 104857600",
+            'max_queue_file_size_bytes = "104857600"',
+        ),
+        # system_metrics_setup max_queue_file_size_bytes is zero
+        _BASE_CONFIG.replace(
+            "max_queue_file_size_bytes = 104857600",
+            "max_queue_file_size_bytes = 0",
+        ),
+        # system_metrics_setup max_queue_file_size_bytes is negative
+        _BASE_CONFIG.replace(
+            "max_queue_file_size_bytes = 104857600",
+            "max_queue_file_size_bytes = -1",
+        ),
+        # system_metrics_setup send_order is not a known order
+        _BASE_CONFIG.replace(
+            'send_order = "oldest_first"', 'send_order = "middle_first"'
+        ),
+        # system_metrics_setup queue_file_suffix_length is a string, not an integer
+        _BASE_CONFIG.replace(
+            "queue_file_suffix_length = 12", 'queue_file_suffix_length = "12"'
+        ),
+        # system_metrics_setup queue_file_suffix_length is zero
+        _BASE_CONFIG.replace(
+            "queue_file_suffix_length = 12", "queue_file_suffix_length = 0"
         ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
@@ -582,6 +643,10 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
+        'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
+        'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
+        'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
+        'queue_file_suffix_length = 12\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -626,6 +691,10 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
+        'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
+        'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
+        'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
+        'queue_file_suffix_length = 12\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

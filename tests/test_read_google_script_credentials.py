@@ -11,13 +11,11 @@ function arguments.
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 from pykeepass import PyKeePass, create_database
-from pykeepass.exceptions import CredentialsError
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -171,7 +169,7 @@ def test_password_file_used_when_no_environment(
 ) -> None:
     # Without PYNTARA_VAULT_PASSWORD the .password file next to the vault
     # supplies the password, trimmed of surrounding whitespace.
-    production, default = _point_at(gen, tmp_path, monkeypatch)
+    _production, default = _point_at(gen, tmp_path, monkeypatch)
     _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
     default.with_suffix(".password").write_text(
         f"  {DEFAULT_PASSWORD}  \n", encoding="utf-8"

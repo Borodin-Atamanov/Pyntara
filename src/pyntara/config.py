@@ -23,6 +23,10 @@ class ConfigError(RuntimeError):
 # truth for the mode vocabulary.
 MODES: tuple[str, ...] = ("minimal", "server", "desktop")
 
+# Allowed values of system_metrics_setup.send_order. The vocabulary is part
+# of the config contract and therefore validated here, like MODES.
+SEND_ORDERS: tuple[str, ...] = ("oldest_first", "newest_first")
+
 
 @dataclass(frozen=True)
 class EngineConfig:
@@ -134,9 +138,15 @@ class SystemMetricsSetupConfig:
     checks; python_version selects the interpreter for the deployed
     venv; error_priority and success_priority are the syslog levels of
     failed and successful checks; venv_dir and system_config_path are
-    the deployment locations on the target machine. The current
-    placeholder check is replaced by the real System Metrics logic in a
-    later stage (docs/spec/system-metrics.md).
+    the deployment locations on the target machine. system_metrics_dir
+    is the root of the System Metrics queue, system_metrics_dir_mode and
+    queue_file_mode are the strict file modes of the queue directories
+    and entries, max_queue_file_size_bytes is the per-entry size limit,
+    send_order is the drain order of the senders and
+    queue_file_suffix_length is the length of the random name suffix
+    (docs/spec/system-metrics.md, section Queue architecture). The
+    current placeholder check is replaced by the real System Metrics
+    logic in a later stage (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -145,6 +155,12 @@ class SystemMetricsSetupConfig:
     success_priority: int
     venv_dir: Path
     system_config_path: Path
+    system_metrics_dir: Path
+    system_metrics_dir_mode: int
+    queue_file_mode: int
+    max_queue_file_size_bytes: int
+    send_order: str
+    queue_file_suffix_length: int
 
 
 @dataclass(frozen=True)
@@ -526,7 +542,11 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     check_interval_seconds is a positive integer; a zero or negative
     interval would busy-loop the service. python_version is a non-empty
     string; error_priority and success_priority are syslog levels between
-    0 and 7; venv_dir and system_config_path are non-empty strings.
+    0 and 7; venv_dir and system_config_path are non-empty strings;
+    system_metrics_dir is a non-empty string; system_metrics_dir_mode and
+    queue_file_mode are octal strings; max_queue_file_size_bytes and
+    queue_file_suffix_length are positive integers; send_order is one of
+    the SEND_ORDERS values.
     """
 
     if not isinstance(raw, dict):
@@ -570,6 +590,33 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.system_config_path must be a non-empty string"
         )
+    system_metrics_dir = raw.get("system_metrics_dir")
+    if not isinstance(system_metrics_dir, str) or not system_metrics_dir:
+        raise ConfigError(
+            "system_metrics_setup.system_metrics_dir must be a non-empty string"
+        )
+    max_queue_file_size_bytes = _int_field(
+        raw.get("max_queue_file_size_bytes"),
+        "system_metrics_setup.max_queue_file_size_bytes",
+    )
+    if max_queue_file_size_bytes < 1:
+        raise ConfigError(
+            "system_metrics_setup.max_queue_file_size_bytes must be positive"
+        )
+    send_order = raw.get("send_order")
+    if send_order not in SEND_ORDERS:
+        raise ConfigError(
+            "system_metrics_setup.send_order must be one of "
+            + ", ".join(SEND_ORDERS)
+        )
+    queue_file_suffix_length = _int_field(
+        raw.get("queue_file_suffix_length"),
+        "system_metrics_setup.queue_file_suffix_length",
+    )
+    if queue_file_suffix_length < 1:
+        raise ConfigError(
+            "system_metrics_setup.queue_file_suffix_length must be positive"
+        )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
         python_version=python_version,
@@ -577,6 +624,17 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         success_priority=success_priority,
         venv_dir=Path(venv_dir),
         system_config_path=Path(system_config_path),
+        system_metrics_dir=Path(system_metrics_dir),
+        system_metrics_dir_mode=_octal_mode_field(
+            raw.get("system_metrics_dir_mode"),
+            "system_metrics_setup.system_metrics_dir_mode",
+        ),
+        queue_file_mode=_octal_mode_field(
+            raw.get("queue_file_mode"), "system_metrics_setup.queue_file_mode"
+        ),
+        max_queue_file_size_bytes=max_queue_file_size_bytes,
+        send_order=send_order,
+        queue_file_suffix_length=queue_file_suffix_length,
     )
 
 
