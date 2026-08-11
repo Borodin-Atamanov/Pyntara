@@ -11,8 +11,8 @@ success_priority on success). The password itself is never logged. The
 service reads the single system config system_config_path through the same
 loader as the installer, so its parameters come from the same source of
 truth (architecture contract section 3). The current check is a
-placeholder: the real telemetry logic (encrypted PDF, queues, delivery
-channels) replaces it in a later stage (docs/spec/telemetry.md).
+placeholder: the real System Metrics logic (encrypted PDF, queues, delivery
+channels) replaces it in a later stage (docs/spec/system-metrics.md).
 """
 
 from __future__ import annotations

@@ -22,7 +22,7 @@ from pyntara.tasks import system_metrics_setup
 
 UNIT_TEMPLATE = """\
 [Unit]
-Description=System Metrics telemetry service
+Description=System Metrics service
 After=local-fs.target
 
 [Service]
@@ -299,7 +299,7 @@ def test_uv_pip_install_failure_fails(
     def fail_uv_install(command: list[str]) -> bool:
         return command[0] == "uv" and command[1] == "pip" and command[2] == "install"
 
-    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_install)
+    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_install)
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is False
     assert "cannot install" in (result.error or "")

@@ -37,7 +37,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 1. config_edit.py: managed-block editing helper for targeted config changes.
 2. secrets_store.py: controlled KeePass access for tasks that need vault values. All secrets are loaded at startup and become available to all tasks; no task requests a secret and receives it later.
-3. systemd.py and telemetry.py with the telemetry_setup task.
+3. systemd.py and system_metrics.py with the System Metrics delivery task.
 
 The system_metrics_setup task was implemented as the first separate change: it deploys the long-running System Metrics service on the target machine (docs/contracts/architecture.md section 6).
 

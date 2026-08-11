@@ -3,7 +3,7 @@
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
 
-Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, creates users, derives passwords from a KeePass vault, configures ZRAM and swap, sets up SSH, deploys a local proxy with a remote tunnel, tunes the desktop environment, and enables encrypted telemetry reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
+Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, creates users, derives passwords from a KeePass vault, configures ZRAM and swap, sets up SSH, deploys a local proxy with a remote tunnel, tunes the desktop environment, and enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
 
 ## Start
 
@@ -47,7 +47,7 @@ Contracts — mandatory runtime specifications, must not be violated. Only MUST 
 Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
 `docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, task and force selection
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
-`docs/spec/telemetry.md` — encrypted PDF telemetry, queues, retries, Telegram and Google Drive
+`docs/spec/system-metrics.md` — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
 `docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
 `docs/spec/users-and-host.md` — users i/j/k, hostname, passwords, ZRAM, swap, NTP, power
 `docs/spec/desktop-apps.md` — ImageMagick, FFmpeg, scrcpy, Kate, terminal, browsers

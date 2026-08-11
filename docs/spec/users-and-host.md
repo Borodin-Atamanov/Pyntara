@@ -56,6 +56,6 @@ Do not restore previous windows at next system start.
 Pyntara creates background services.
 Services write logs to proper Linux-standard storage locations.
 Logs must be rotated.
-Other logs are usually not sent regularly to telemetry and remain local with rotation.
+Other logs are usually not sent regularly to System Metrics and remain local with rotation.
 Service logs should be verbose by default (detail levels), with consistent history of actions and command results.
 Secrets must not appear in logs in plain form; masking is required.

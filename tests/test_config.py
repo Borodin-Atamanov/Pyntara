@@ -69,7 +69,7 @@ notes = "Password for the runtime secret vault."
 
 [[vault_structure.entries]]
 title = "telegram_bot_token"
-notes = "Telegram bot token for telemetry."
+notes = "Telegram bot token for System Metrics."
 
 [local_vault_setup]
 source_vault_production = "secrets/production.vault"

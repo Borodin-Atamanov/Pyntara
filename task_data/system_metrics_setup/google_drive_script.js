@@ -17,6 +17,12 @@
 
  */
 
+// Авторизованные ключи доступа; запрос без ключа из этого списка отклоняется.
+const ALLOWED_KEYS = [
+  'CHANGE_ME_first_key',
+  'CHANGE_ME_second_key',
+];
+
 function doGet(e) {
   return handleRequest(e);
 }
@@ -29,6 +35,11 @@ function handleRequest(e) {
   try {
     if (!e || !e.parameter) {
       throw new Error("No request parameters");
+    }
+
+    const key = e.parameter.key;
+    if (!key || !ALLOWED_KEYS.includes(key)) {
+      throw new Error("Unauthorized: missing or invalid key");
     }
 
     const data = e.parameter.data;

@@ -84,8 +84,6 @@ class SwapfileServiceInstallConfig:
     disk_fraction: float
     swapfile_mode: int
     size_tolerance_mb: int
-    swapfile_mode: int
-    size_tolerance_mb: int
 
 
 @dataclass(frozen=True)
@@ -137,8 +135,8 @@ class SystemMetricsSetupConfig:
     venv; error_priority and success_priority are the syslog levels of
     failed and successful checks; venv_dir and system_config_path are
     the deployment locations on the target machine. The current
-    placeholder check is replaced by the real telemetry logic in a
-    later stage (docs/spec/telemetry.md).
+    placeholder check is replaced by the real System Metrics logic in a
+    later stage (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int

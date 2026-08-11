@@ -1,5 +1,5 @@
 [Unit]
-Description=System Metrics telemetry service
+Description=System Metrics service
 After=local-fs.target
 
 [Service]

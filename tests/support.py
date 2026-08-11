@@ -100,7 +100,7 @@ def make_config(
     vault_entries: tuple[tuple[str, str], ...] = (
         ("password_salt", "Salt for deterministic password derivation."),
         ("pyntara_local_vault_password", "Password for the runtime secret vault."),
-        ("telegram_bot_token", "Telegram bot token for telemetry."),
+        ("telegram_bot_token", "Telegram bot token for System Metrics."),
     ),
     tasks: tuple[TaskConfig, ...] = (),
 ) -> Config:

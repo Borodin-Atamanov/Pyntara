@@ -1,12 +1,12 @@
-# Telemetry
+# System Metrics
 
-There is a dedicated telemetry installation task.
+There is a dedicated System Metrics installation task.
 
 ## Network detection
 
 At system start, network availability is checked.
 If network is unavailable, retry interval increases by sqrt(2) each attempt (e.g., 1.0 s, 1.4 s, ...).
-When network appears, telemetry attempts to send data.
+When network appears, System Metrics attempts to send data.
 
 ## Delivery channels
 
@@ -20,7 +20,7 @@ Google Drive queue
 
 ## PDF generation and encryption
 
-Telemetry is generated as encrypted PDF files.
+System Metrics data is generated as encrypted PDF files.
 Encryption: AES-256.
 
 PDF encryption password is generated during Pyntara initialization from:
@@ -31,24 +31,24 @@ Hostname is generated randomly: 9 characters (as one of the tasks).
 
 Unencrypted PDF versions must never be saved to disk (in-memory generation only).
 
-After send, telemetry files are saved in a dedicated folder.
+After send, System Metrics files are saved in a dedicated folder.
 
 ## Schedule and retry
 
-Telemetry attempts to send immediately after computer boot.
+System Metrics attempts to send immediately after computer boot.
 
 Base accumulation/retry behavior:
-telemetry accumulates for one day
+System Metrics data accumulates for one day
 after successful send, next send is scheduled for 12:00 local time
 if unsent files exist, retries continue with sqrt(2) interval growth
 retries with this scheme run only if more than one day has passed since last send
 
 ## Collected data
 
-Telemetry additionally includes:
+System Metrics additionally includes:
 clipboard text (inside encrypted PDF)
 startup network information: attempts to detect addresses/channels (Cloudflare, Yggdrasil, IPv6, etc.), machine's own addresses, and connection availability status
 
 ## Installation log
 
-Installation log (full install + messages) is sent to telemetry as a separate file.
+Installation log (full install + messages) is sent to System Metrics as a separate file.

@@ -187,8 +187,8 @@ alignment_bytes = 4096
 # deployed service reads this section through the same config loader as
 # the installer: system_config_path is the single config of the target
 # system (docs/contracts/architecture.md section 3). The current periodic
-# vault availability check is a placeholder that the real telemetry logic
-# replaces in a later stage (docs/spec/telemetry.md).
+# vault availability check is a placeholder that the real System Metrics logic
+# replaces in a later stage (docs/spec/system-metrics.md).
 # Pause between two runtime vault availability checks, in seconds.
 check_interval_seconds = 300
 # Python version selector for the dedicated venv created by the task.

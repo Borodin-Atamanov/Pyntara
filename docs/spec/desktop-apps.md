@@ -49,5 +49,5 @@ Dedicated task: per-user NextDNS account setup.
 Account is created through browser automation.
 Unique DNS endpoint is obtained.
 This endpoint is applied system-wide so DNS requests go through these DNS servers.
-Generated endpoint is included in telemetry.
+Generated endpoint is included in System Metrics.
 NextDNS keeps query logs and supports filtering.
