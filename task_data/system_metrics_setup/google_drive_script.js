@@ -57,7 +57,7 @@ function handleRequest(e) {
     const random = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
     const finalName = timestamp + '-' + random + '-' + safeFilename;
 
-    let folder;
+    var folder;
     const folders = DriveApp.getFoldersByName('pyntara');
     if (folders.hasNext()) {
       folder = folders.next();
