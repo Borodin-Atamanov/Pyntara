@@ -25,6 +25,10 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "secrets" / "regenerate_vaul
 DEFAULT_ENTRIES = [
     {"title": "password_salt", "notes": "Primary salt for password derivation."},
     {"title": "pyntara_local_vault_password", "notes": "Password for the runtime secret vault."},
+    {
+        "title": "google_script_key",
+        "notes": "Auth key of the System Metrics Google Drive web app.",
+    },
 ]
 
 VAULT_PASSWORD = "vault-secret"
@@ -124,6 +128,7 @@ def test_creates_vault_when_file_absent(
     assert {entry.title for entry in entries} == {
         "password_salt",
         "pyntara_local_vault_password",
+        "google_script_key",
     }
     salt = kp.find_entries(
         title="password_salt", group=kp.root_group, recursive=False, first=True
@@ -131,6 +136,12 @@ def test_creates_vault_when_file_absent(
     assert salt is not None
     assert salt.notes == "Primary salt for password derivation."
     assert not salt.password
+    script = kp.find_entries(
+        title="google_script_key", group=kp.root_group, recursive=False, first=True
+    )
+    assert script is not None
+    assert script.notes == "Auth key of the System Metrics Google Drive web app."
+    assert not script.password
 
 
 def test_creates_vault_when_file_empty(
@@ -164,6 +175,7 @@ def test_overwrite_recreates_vault(
     assert {entry.title for entry in entries} == {
         "password_salt",
         "pyntara_local_vault_password",
+        "google_script_key",
     }
 
 
@@ -413,7 +425,6 @@ def test_future_fields_applied_one_to_one(
                 "title": "service",
                 "username": "svc-user",
                 "password": "svc-pass",
-                "url": "https://example.com",
                 "notes": "Service credentials.",
             }
         ],
@@ -427,8 +438,29 @@ def test_future_fields_applied_one_to_one(
     assert entry is not None
     assert entry.username == "svc-user"
     assert entry.password == "svc-pass"
-    assert entry.url == "https://example.com"
     assert entry.notes == "Service credentials."
+
+
+def test_url_field_is_rejected(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # url is not a structure field: it is maintained directly in the vault
+    # databases, so a config that carries it must be rejected.
+    _prepare(
+        gen,
+        tmp_path,
+        monkeypatch,
+        entries=[
+            {
+                "title": "google_script_key",
+                "url": "https://example.com/exec",
+                "notes": "Auth key.",
+            }
+        ],
+    )
+    vault_path = tmp_path / "default.vault"
+    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
+    assert not vault_path.exists()
 
 
 def test_help_without_arguments(

@@ -219,6 +219,10 @@ system_config_path = "/etc/pyntara/config.toml"
 title = "pyntara_local_vault_password"
 notes = "Password that protects the runtime secret vault at /var/lib/pyntara/secrets/pyntara.vault on the target machine. Read by the local_vault_setup task and written to /etc/pyntara/pass, so the source vault password never opens the runtime vault. The default vault carries a well-known test value mirroring its well-known vault password."
 
+[[vault_structure.entries]]
+title = "google_script_key"
+notes = "Auth key of the System Metrics Google Drive web app. The url and password fields are maintained directly in the vault database: url holds the deployment endpoint of the app, password holds the shared auth key that the deployed script mirrors into its ALLOWED_KEYS list. Consumed by the System Metrics client when uploading files through the Google Drive queue. The default vault carries a well-known test value mirroring its well-known vault password."
+
 [local_vault_setup]
 # Runtime secret vault creation parameters (docs/spec/secrets-model.md).
 # The task copies the first source vault that the run password decrypts,

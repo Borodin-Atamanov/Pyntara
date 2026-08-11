@@ -72,8 +72,10 @@ except ModuleNotFoundError:
 
 # KeePass entry fields that a [vault_structure] entry may name. The config
 # names must equal the database field names one-to-one, no mapping; any
-# other key is a config error.
-VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "url", "notes")
+# other key is a config error. url is deliberately absent: per-entry
+# values that are not structure (url, password) are maintained directly in
+# the vault databases, not in the config.
+VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
 
 CONFIG_PATH = REPO_ROOT / "config.toml"
 

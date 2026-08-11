@@ -1,26 +1,29 @@
 /**
   Веб-приложение для приёма файлов через GET/POST и сохранения на Google Диск.
 
-  Примеры вызовов:
+  Адрес деплоя и ключ доступа хранятся в KeePass-базе (запись
+  google_script_key): url — адрес веб-приложения, password — ключ, зеркало
+  которого лежит в ALLOWED_KEYS ниже. Запрос без pass-параметра,
+  совпадающего с ALLOWED_KEYS, отклоняется. Примеры вызовов
+  (GOOGLE_DEPLOYMENT_ID и GOOGLE_SCRIPT_KEY подставьте из записи
+  google_script_key в KeePass):
 
-   GOOGLE_DEPLOYMENT_ID=AKfycbwS8UUcp_qu4Q9i9D0qklDItSMQMie7LjROprgMAEX_TYu5MRUx3XBX28qV_sTw4nyL
+  curl -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt&data=Hello%20World&pass=$GOOGLE_SCRIPT_KEY"
 
-  curl -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt&data=Hello%20World"
-
-  curl -v -L -X POST -d "data=Hello World" \
+  curl -v -L -X POST -d "data=Hello World&pass=$GOOGLE_SCRIPT_KEY" \
     "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=hello_world.md"
 
   curl -v -L -X POST --data-urlencode "data@file.txt" \
-    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt"
+    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt&pass=$GOOGLE_SCRIPT_KEY"
 
-  curl -v -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=some.data.txt&data=some-data"
+  curl -v -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=some.data.txt&data=some-data&pass=$GOOGLE_SCRIPT_KEY"
 
  */
 
-// Авторизованные ключи доступа; запрос без ключа из этого списка отклоняется.
+// Зеркало ключа из записи google_script_key KeePass-базы; при деплое
+// замените тестовое значение на реальный ключ из базы.
 const ALLOWED_KEYS = [
-  'CHANGE_ME_first_key',
-  'CHANGE_ME_second_key',
+  'test-google-drive-script-key',
 ];
 
 function doGet(e) {
@@ -37,9 +40,9 @@ function handleRequest(e) {
       throw new Error("No request parameters");
     }
 
-    const key = e.parameter.key;
-    if (!key || !ALLOWED_KEYS.includes(key)) {
-      throw new Error("Unauthorized: missing or invalid key");
+    const pass = e.parameter.pass;
+    if (!pass || !ALLOWED_KEYS.includes(pass)) {
+      throw new Error("Unauthorized: missing or invalid pass");
     }
 
     const data = e.parameter.data;

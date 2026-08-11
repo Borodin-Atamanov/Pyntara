@@ -586,7 +586,8 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
     The section is mandatory and non-empty; every entry is a table with a
     unique non-empty title and a non-empty notes field. The structure is
     flat by contract, so the parser reads entries directly from the table
-    and rejects anything that is not a title/notes pair.
+    and rejects unknown field names: url and any other per-entry value
+    live in the vault database, not in the config.
     """
 
     if not isinstance(raw, dict):
@@ -598,9 +599,17 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
         )
     entries: list[VaultEntry] = []
     seen_titles: set[str] = set()
-    for entry_raw in entries_raw:
+    for index, entry_raw in enumerate(entries_raw):
         if not isinstance(entry_raw, dict):
             raise ConfigError("[vault_structure] entries must be tables")
+        unknown = sorted(
+            name for name in entry_raw if name not in ("title", "notes")
+        )
+        if unknown:
+            raise ConfigError(
+                f"[vault_structure] entry {index + 1} names unknown field(s) "
+                f"{', '.join(unknown)}; expected title, notes"
+            )
         title = entry_raw.get("title")
         if not isinstance(title, str) or not title:
             raise ConfigError(

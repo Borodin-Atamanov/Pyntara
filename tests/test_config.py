@@ -437,6 +437,11 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'title = "pyntara_local_vault_password"', 'title = "password_salt"'
         ),
+        # vault_structure entry names an unknown field; url lives in the vault
+        _BASE_CONFIG.replace(
+            'notes = "Primary salt."',
+            'notes = "Primary salt."\nurl = "https://example.com/exec"',
+        ),
         # task name is a number, not a string
         _BASE_CONFIG.replace('name = "users"', "name = 1"),
         # task name is an empty string
