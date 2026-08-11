@@ -1,36 +1,37 @@
 /**
-  Веб-приложение для приёма файлов через GET/POST и сохранения на Google Диск.
+  Web app that receives files via GET/POST and saves them to Google Drive.
 
-  Протокол: содержимое файла передаётся в параметре data в кодировке Base64.
-  Base64 обязателен для бинарных данных (зашифрованные PDF System Metrics):
-  Apps Script декодирует тело запроса как UTF-8, что портит произвольные
-  байты, а Base64 состоит только из ASCII и проходит без потерь. Имя файла —
-  параметр filename, ключ доступа — параметр pass. Ответ — текст OK <имя>
-  или ERROR: <причина>.
+  Protocol: the file content is sent in the data parameter in Base64
+  encoding. Base64 is mandatory for binary data (encrypted System Metrics
+  PDFs): Apps Script decodes the request body as UTF-8, which corrupts
+  arbitrary bytes, while Base64 consists only of ASCII and survives
+  unchanged. The file name is the filename parameter, the access key is the
+  pass parameter. The response is the text OK <name> or ERROR: <reason>.
 
-  В репозитории скрипт хранится как шаблон: реальный ключ доступа живёт
-  только в KeePass-базе (запись google_script_key, поле password), и скрипт
-  деплоя deploy_google_script.sh подставляет его в ALLOWED_KEYS на место
-  плейсхолдера __GOOGLE_SCRIPT_KEY__ при сборке. Деплой файла как есть
-  оставит нерабочий плейсхолдер — скрипт не запустится.
+  In the repository the script is stored as a template: the real access key
+  lives only in the KeePass database (the google_script_key entry, the
+  password field), and the deploy script deploy_google_script.sh
+  substitutes it into ALLOWED_KEYS in place of the __GOOGLE_SCRIPT_KEY__
+  placeholder during the build. Deploying the file as is leaves a
+  non-working placeholder: the script will not start.
 
-  Адрес деплоя и ключ хранятся в KeePass-базе (запись google_script_key): url —
-  адрес веб-приложения, password — ключ. Примеры вызовов (GOOGLE_DEPLOYMENT_ID
-  и GOOGLE_SCRIPT_KEY подставьте из записи; DATA_BASE64 — Base64 содержимого
-  файла):
+  The deployment URL and the key are stored in the KeePass database (the
+  google_script_key entry): url is the web app URL, password is the key.
+  Call examples (substitute GOOGLE_DEPLOYMENT_ID and GOOGLE_SCRIPT_KEY from
+  the entry; DATA_BASE64 is the Base64 of the file content):
 
-  # GET, только для небольших файлов: длина URL ограничена
+  # GET, only for small files: URL length is limited
   curl -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=hello.txt&data=SGVsbG8gV29ybGQ%3D&pass=$GOOGLE_SCRIPT_KEY"
 
-  # POST, данные в теле формы; --data-urlencode обязателен, иначе символы
-  # + / = в Base64 будут прочитаны как разделители формы
+  # POST, data in the form body; --data-urlencode is required, otherwise
+  # + / = characters in Base64 are read as form separators
   curl -L -X POST \
     --data-urlencode "filename=report.pdf" \
     --data-urlencode "pass=$GOOGLE_SCRIPT_KEY" \
     --data-urlencode "data=SGVsbG8gV29ybGQ=" \
     "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec"
 
-  # POST из файла с Base64: сначала base64 -w0 report.pdf > report.b64
+  # POST from a Base64 file: first run base64 -w0 report.pdf > report.b64
   curl -L -X POST \
     --data-urlencode "filename=report.pdf" \
     --data-urlencode "pass=$GOOGLE_SCRIPT_KEY" \
@@ -39,16 +40,16 @@
 
  */
 
-// Плейсхолдер ключа доступа: deploy_google_script.sh подставляет сюда
-// значение password из записи google_script_key KeePass-базы через
-// json.dumps, поэтому кавычки и спецсимволы ключа безопасны. Файл без
-// подстановки не запускается: плейсхолдер не определён.
+// Access key placeholder: deploy_google_script.sh substitutes the password
+// value of the google_script_key KeePass entry here through json.dumps, so
+// quotes and special characters in the key are safe. The file does not
+// start without the substitution: the placeholder is undefined.
 const ALLOWED_KEYS = [
   __GOOGLE_SCRIPT_KEY__,
 ];
 
-// Расширение -> MIME-тип сохраняемого файла; без совпадения используется
-// application/octet-stream.
+// Extension -> MIME type of the saved file; without a match
+// application/octet-stream is used.
 const MIME_BY_EXTENSION = {
   'pdf': 'application/pdf',
   'txt': 'text/plain',
