@@ -51,7 +51,6 @@ trap 'rm -rf "$workdir"' EXIT
 cp "$SCRIPT_FILE" "$workdir/Code.gs"
 cat > "$workdir/appsscript.json" <<'EOF'
 {
-  "timeZone": "UTC+3",
   "dependencies": {},
   "webapp": {
     "access": "ANYONE_ANONYMOUS",
