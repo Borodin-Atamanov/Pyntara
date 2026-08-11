@@ -83,4 +83,8 @@ Queue rules:
 7. The utility creates only system_metrics_dir, main_outbox and temp. The channel queues and main_sent are created by the deployed service.
 8. main_sent grows without a rotation policy for now; the archive retention is a future decision.
 
-Current stage: commit_system_metrics, the queue config and the directory structure are implemented. The dispatcher and the channel senders are the next stages; main_outbox accumulates entries in the meantime.
+## Commit command
+
+The commit_system_metrics utility is installed as a system command by the system_metrics_setup task. The package entry point script lives inside the deployed venv at venv_dir/bin/commit_system_metrics; the task links it at the configured system_metrics_setup.command_path (default /usr/local/bin/commit_system_metrics), so the command is on PATH after the install. The link is idempotent: the task skips when command_path is a symlink to the existing venv script. A wrong symlink or a regular file on command_path is replaced, because the path is explicitly configured; the replacement is reported in the task message. A directory on command_path is never removed recursively and fails the task with a clear error.
+
+Current stage: commit_system_metrics, the queue config, the directory structure and the system command installation are implemented. The dispatcher and the channel senders are the next stages; main_outbox accumulates entries in the meantime.

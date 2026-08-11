@@ -203,6 +203,10 @@ venv_dir = "/usr/local/lib/pyntara/venv"
 # Path of the single system config copied from the repository root; the
 # deployed service reads it through the same loader as the installer.
 system_config_path = "/etc/pyntara/config.toml"
+# Path of the system command commit_system_metrics. The task creates a
+# symlink at this path to the entry point script inside the deployed
+# venv, so the queue commit utility is on PATH after the install.
+command_path = "/usr/local/bin/commit_system_metrics"
 # Root directory of the System Metrics queue on the target machine. The
 # commit_system_metrics utility publishes committed files into main_outbox
 # inside this directory; the deployed service fans them out into the

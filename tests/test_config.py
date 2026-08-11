@@ -56,6 +56,7 @@ error_priority = 3
 success_priority = 7
 venv_dir = "/usr/local/lib/pyntara/venv"
 system_config_path = "/etc/pyntara/config.toml"
+command_path = "/usr/local/bin/commit_system_metrics"
 system_metrics_dir = "/var/lib/pyntara/metrics"
 system_metrics_dir_mode = "0700"
 queue_file_mode = "0600"
@@ -155,6 +156,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.success_priority == 7
     assert config.system_metrics_setup.venv_dir == Path("/usr/local/lib/pyntara/venv")
     assert config.system_metrics_setup.system_config_path == Path("/etc/pyntara/config.toml")
+    assert config.system_metrics_setup.command_path == Path("/usr/local/bin/commit_system_metrics")
     assert config.system_metrics_setup.system_metrics_dir == Path("/var/lib/pyntara/metrics")
     assert config.system_metrics_setup.system_metrics_dir_mode == 0o700
     assert config.system_metrics_setup.queue_file_mode == 0o600
@@ -225,6 +227,7 @@ _BASE_CONFIG = (
     'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
     'system_config_path = "/etc/pyntara/config.toml"\n'
+    'command_path = "/usr/local/bin/commit_system_metrics"\n'
     'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
     'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
     'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
@@ -400,6 +403,16 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'system_config_path = "/etc/pyntara/config.toml"',
             'system_config_path = ""',
+        ),
+        # system_metrics_setup command_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'command_path = "/usr/local/bin/commit_system_metrics"',
+            "command_path = 1",
+        ),
+        # system_metrics_setup command_path is an empty string
+        _BASE_CONFIG.replace(
+            'command_path = "/usr/local/bin/commit_system_metrics"',
+            'command_path = ""',
         ),
         # system_metrics_setup system_metrics_dir is a number, not a string
         _BASE_CONFIG.replace(
@@ -643,6 +656,7 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
+        'command_path = "/usr/local/bin/commit_system_metrics"\n'
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
@@ -691,6 +705,7 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
+        'command_path = "/usr/local/bin/commit_system_metrics"\n'
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'

@@ -10,14 +10,18 @@ so the deployed service reads its parameters with the same loader as the
 installer (architecture contract section 3). The systemd unit
 system_metrics.service starts the service at boot; the task enables it and
 starts it immediately, so a broken deployment fails the task and shows in
-the install log instead of surfacing at the first reboot. The task is
-idempotent: it skips when the venv imports pyntara, the config and the
-unit match their sources and the service is enabled; force mode
-reinstalls the package and restarts the service.
+the install log instead of surfacing at the first reboot. The task also
+links the commit_system_metrics command script from the venv into the
+configured command_path, so the queue commit utility is on PATH after the
+install. The task is idempotent: it skips when the venv imports pyntara,
+the config and the unit match their sources, the service is enabled and
+the command symlink points at the venv script; force mode reinstalls the
+package and restarts the service.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -39,6 +43,12 @@ TEMPLATE_PATH = (
 )
 SERVICE_NAME = "system_metrics.service"
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
+# Name of the command script the package installer creates inside the venv
+# from [project.scripts] in pyproject.toml. The task links command_path to
+# this script. The name is a fixed package contract, not a deployment
+# parameter, so it lives here as a documented exception (architecture
+# contract section 3) instead of in config.toml.
+COMMIT_COMMAND_NAME = "commit_system_metrics"
 
 
 def _venv_import_ok(venv_python: Path, timeout: float) -> bool:
@@ -178,16 +188,70 @@ def _write_unit(venv_python: Path, system_config_path: Path) -> None:
     )
 
 
+def _command_symlink_ok(venv_script: Path, command_path: Path) -> bool:
+    """True when the command path is a symlink to the existing venv script.
+
+    The target is compared as a literal string, so a relative or
+    differently spelled link is wrong even when it resolves to the same
+    file; our own links always carry the absolute path. A missing venv
+    script would leave any link dangling, so the goal is not reached
+    then. Any OSError (missing path, unreadable link) is not ok.
+    """
+
+    if not venv_script.is_file():
+        return False
+    try:
+        return os.readlink(command_path) == str(venv_script)
+    except OSError:
+        return False
+
+
+def _link_command(
+    venv_script: Path, command_path: Path, *, recreate: bool = False
+) -> str | None:
+    """Ensure the command symlink points at the venv script.
+
+    The parent directory is created when missing. A symlink that already
+    points at the venv script is left untouched unless recreate is set
+    (force mode): then it is recreated so the link is refreshed. Any
+    other owner of the path (a wrong symlink or a regular file) is
+    replaced, because command_path is explicitly configured; the returned
+    string describes the replacement for the final task message. A
+    directory on command_path is never removed recursively and raises
+    OSError with a clear message.
+    """
+
+    replaced = None
+    if command_path.is_symlink():
+        if os.readlink(command_path) == str(venv_script) and not recreate:
+            return None
+        command_path.unlink()
+        replaced = f"replaced command symlink {command_path}"
+    elif command_path.is_dir():
+        raise OSError(
+            f"command path {command_path} is a directory; refusing to remove it"
+        )
+    elif command_path.exists():
+        command_path.unlink()
+        replaced = f"replaced command file {command_path}"
+    command_path.parent.mkdir(parents=True, exist_ok=True)
+    command_path.symlink_to(venv_script)
+    return replaced
+
+
 def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
     The goal is reached when the venv imports pyntara, the system config
-    and the unit file match their sources and the service is enabled; the
-    task then returns changed=False. Otherwise it creates the venv,
-    installs the package, copies the config, writes the unit, reloads
-    systemd, enables the service and starts it (restarts it when something
-    changed while the service was running, and always in force mode), so a
-    broken deployment fails the task and shows in the install log. A
+    and the unit file match their sources, the service is enabled and the
+    command symlink points at the venv script; the task then returns
+    changed=False. Otherwise it creates the venv, installs the package,
+    copies the config, writes the unit, reloads systemd, enables the
+    service and starts it (restarts it when something changed while the
+    service was running, and always in force mode), so a broken deployment
+    fails the task and shows in the install log. The systemd work runs
+    only when the service itself needs it: a task that only has to add
+    the missing command symlink leaves a running service untouched. A
     missing uv executable and a failed command are errors: the task
     returns success=False and the runner continues.
     """
@@ -196,7 +260,9 @@ def task(ctx: Context) -> TaskResult:
     force = "system_metrics_setup" in ctx.force_tasks
     venv_dir = ctx.config.system_metrics_setup.venv_dir
     venv_python = venv_dir / "bin" / "python"
+    venv_script = venv_dir / "bin" / COMMIT_COMMAND_NAME
     system_config_path = ctx.config.system_metrics_setup.system_config_path
+    command_path = ctx.config.system_metrics_setup.command_path
 
     venv_ok = _venv_import_ok(venv_python, timeout)
     _log(f"checking venv {venv_python}: {'ok' if venv_ok else 'missing or broken'}")
@@ -207,8 +273,13 @@ def task(ctx: Context) -> TaskResult:
         f"checking autorun service {SERVICE_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"
     )
+    command_ok = _command_symlink_ok(venv_script, command_path)
+    _log(
+        f"checking command {command_path}: "
+        f"{'ok' if command_ok else 'missing or wrong'}"
+    )
 
-    if not force and venv_ok and config_ok and unit_ok and enabled:
+    if not force and venv_ok and config_ok and unit_ok and enabled and command_ok:
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
 
@@ -247,29 +318,44 @@ def task(ctx: Context) -> TaskResult:
         _log("unit file written")
         changed = True
 
-    try:
-        _log("reloading systemd: systemctl daemon-reload")
-        run_command(["systemctl", "daemon-reload"], timeout=timeout)
-        _log("systemd reloaded")
-        if not enabled or force:
-            _log(f"enabling service: systemctl enable {SERVICE_NAME}")
-            run_command(["systemctl", "enable", SERVICE_NAME], timeout=timeout)
-            _log("service enabled")
-        active = service_is_active(SERVICE_NAME, timeout)
-        if force or (changed and active):
-            _log(f"restarting service: systemctl restart {SERVICE_NAME}")
-            run_command(["systemctl", "restart", SERVICE_NAME], timeout=timeout)
-            _log("service restarted")
-        else:
-            _log(f"starting service: systemctl start {SERVICE_NAME}")
-            run_command(["systemctl", "start", SERVICE_NAME], timeout=timeout)
-            _log("service started")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, changed=True, error=f"systemd setup failed: {exc}"
-        )
-    return TaskResult(
-        success=True,
-        changed=True,
-        message=f"System Metrics service deployed, venv {venv_dir}",
-    )
+    if force or not (config_ok and unit_ok and enabled):
+        try:
+            _log("reloading systemd: systemctl daemon-reload")
+            run_command(["systemctl", "daemon-reload"], timeout=timeout)
+            _log("systemd reloaded")
+            if not enabled or force:
+                _log(f"enabling service: systemctl enable {SERVICE_NAME}")
+                run_command(["systemctl", "enable", SERVICE_NAME], timeout=timeout)
+                _log("service enabled")
+            active = service_is_active(SERVICE_NAME, timeout)
+            if force or (changed and active):
+                _log(f"restarting service: systemctl restart {SERVICE_NAME}")
+                run_command(["systemctl", "restart", SERVICE_NAME], timeout=timeout)
+                _log("service restarted")
+            else:
+                _log(f"starting service: systemctl start {SERVICE_NAME}")
+                run_command(["systemctl", "start", SERVICE_NAME], timeout=timeout)
+                _log("service started")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False, changed=True, error=f"systemd setup failed: {exc}"
+            )
+
+    replacement = None
+    if not command_ok or force:
+        _log(f"linking command {command_path} to {venv_script}")
+        try:
+            replacement = _link_command(venv_script, command_path, recreate=force)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"cannot link command {command_path}: {exc}",
+            )
+        _log("command linked")
+        changed = True
+
+    message = f"System Metrics service deployed, venv {venv_dir}"
+    if replacement is not None:
+        message += f"; {replacement}"
+    return TaskResult(success=True, changed=True, message=message)

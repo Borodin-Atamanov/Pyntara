@@ -8,6 +8,7 @@ fixture, so the tests never read the repository template.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -75,9 +76,12 @@ def _install_fixtures(
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
     venv_python = venv_dir / "bin" / "python"
+    venv_script = venv_dir / "bin" / system_metrics_setup.COMMIT_COMMAND_NAME
     if venv_ok:
         venv_python.parent.mkdir(parents=True)
         venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+        venv_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    command_path = tmp_path / "usr" / "local" / "bin" / system_metrics_setup.COMMIT_COMMAND_NAME
     system_config_dir = tmp_path / "etc" / "pyntara"
     system_config = system_config_dir / "config.toml"
     systemd_dir = tmp_path / "systemd"
@@ -88,6 +92,7 @@ def _install_fixtures(
         task_data_root=tmp_path,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
+        system_metrics_command_path=command_path,
     )
     return {
         "repo": repo,
@@ -95,6 +100,8 @@ def _install_fixtures(
         "template": template,
         "venv_dir": venv_dir,
         "venv_python": venv_python,
+        "venv_script": venv_script,
+        "command_path": command_path,
         "system_config": system_config,
         "systemd_dir": systemd_dir,
         "config": config,
@@ -169,10 +176,11 @@ def _deploy_fixture(
     active: bool = False,
     import_ok: bool = False,
     deployed: bool = False,
+    command_linked: bool = True,
     uv_available: bool = True,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> tuple[dict[str, Path], list[list[str]]]:
-    """Fixtures plus a fake; when deployed, config and unit match."""
+    """Fixtures plus a fake; when deployed, config, unit and link match."""
 
     fixtures = _install_fixtures(
         monkeypatch, tmp_path, venv_ok=deployed or import_ok
@@ -187,6 +195,9 @@ def _deploy_fixture(
         (fixtures["systemd_dir"] / system_metrics_setup.SERVICE_NAME).write_text(
             _expected_unit(fixtures), encoding="utf-8"
         )
+        if command_linked:
+            fixtures["command_path"].parent.mkdir(parents=True)
+            fixtures["command_path"].symlink_to(fixtures["venv_script"])
     calls = _install_fake(
         monkeypatch,
         enabled=enabled,
@@ -225,6 +236,8 @@ def test_deploys_service_and_starts_it(
     assert ["systemctl", "enable", "system_metrics.service"] in calls
     assert ["systemctl", "start", "system_metrics.service"] in calls
     assert "System Metrics service deployed" in (result.message or "")
+    assert fixtures["command_path"].is_symlink()
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
     captured = capsys.readouterr()
     assert "creating venv" in captured.out
 
@@ -352,3 +365,126 @@ def test_config_change_restarts_running_service(
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
         fixtures["source_config"].read_text(encoding="utf-8")
     )
+
+
+def test_only_command_missing_links_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The venv, config, unit and service enablement are in place, only the
+    # command symlink is missing: no venv or systemd work happens, the
+    # symlink is created.
+    fixtures, calls = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+        command_linked=False,
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert result.changed is True
+    assert not any(call[0] == "uv" for call in calls)
+    assert not any(
+        call[0] == "systemctl"
+        and call[1] in ("daemon-reload", "enable", "start", "restart")
+        for call in calls
+    )
+    assert fixtures["command_path"].is_symlink()
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
+
+
+def test_wrong_symlink_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A symlink that points at the wrong target is replaced with the
+    # correct one; the service itself is untouched.
+    fixtures, _ = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+        command_linked=False,
+    )
+    wrong_target = tmp_path / "elsewhere"
+    wrong_target.write_text("#!/bin/sh\n", encoding="utf-8")
+    fixtures["command_path"].parent.mkdir(parents=True)
+    fixtures["command_path"].symlink_to(wrong_target)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert result.changed is True
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
+    assert "replaced" in (result.message or "")
+
+
+def test_command_regular_file_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A regular file occupying the command path is replaced: the path is
+    # explicitly configured, so a foreign file is a conflict the operator
+    # wants resolved, not a reason to abort.
+    fixtures, _ = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+        command_linked=False,
+    )
+    fixtures["command_path"].parent.mkdir(parents=True)
+    fixtures["command_path"].write_text("foreign\n", encoding="utf-8")
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert result.changed is True
+    assert fixtures["command_path"].is_symlink()
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
+    assert "replaced" in (result.message or "")
+
+
+def test_command_directory_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A directory on the command path cannot be replaced (no recursive
+    # removal): the task fails with a clear error and leaves the
+    # directory alone.
+    fixtures, _ = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+        command_linked=False,
+    )
+    fixtures["command_path"].mkdir(parents=True)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is False
+    assert "directory" in (result.error or "")
+    assert fixtures["command_path"].is_dir()
+
+
+def test_force_recreates_command_link(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # In force mode the command symlink is recreated even when it already
+    # points at the venv script.
+    fixtures, _ = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+    )
+    inode_before = fixtures["command_path"].lstat().st_ino
+    result = system_metrics_setup.task(
+        _ctx(tmp_path, force=True, config=fixtures["config"])
+    )
+    assert result.success is True
+    assert result.changed is True
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
+    assert fixtures["command_path"].lstat().st_ino != inode_before

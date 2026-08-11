@@ -137,16 +137,18 @@ class SystemMetricsSetupConfig:
     check_interval_seconds is the pause between two vault availability
     checks; python_version selects the interpreter for the deployed
     venv; error_priority and success_priority are the syslog levels of
-    failed and successful checks; venv_dir and system_config_path are
-    the deployment locations on the target machine. system_metrics_dir
-    is the root of the System Metrics queue, system_metrics_dir_mode and
-    queue_file_mode are the strict file modes of the queue directories
-    and entries, max_queue_file_size_bytes is the per-entry size limit,
-    send_order is the drain order of the senders and
-    queue_file_suffix_length is the length of the random name suffix
-    (docs/spec/system-metrics.md, section Queue architecture). The
-    current placeholder check is replaced by the real System Metrics
-    logic in a later stage (docs/spec/system-metrics.md).
+    failed and successful checks; venv_dir, system_config_path and
+    command_path are the deployment locations on the target machine,
+    command_path being the system path of the commit_system_metrics
+    command symlink. system_metrics_dir is the root of the System
+    Metrics queue, system_metrics_dir_mode and queue_file_mode are the
+    strict file modes of the queue directories and entries,
+    max_queue_file_size_bytes is the per-entry size limit, send_order is
+    the drain order of the senders and queue_file_suffix_length is the
+    length of the random name suffix (docs/spec/system-metrics.md,
+    section Queue architecture). The current placeholder check is
+    replaced by the real System Metrics logic in a later stage
+    (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -155,6 +157,7 @@ class SystemMetricsSetupConfig:
     success_priority: int
     venv_dir: Path
     system_config_path: Path
+    command_path: Path
     system_metrics_dir: Path
     system_metrics_dir_mode: int
     queue_file_mode: int
@@ -542,11 +545,11 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     check_interval_seconds is a positive integer; a zero or negative
     interval would busy-loop the service. python_version is a non-empty
     string; error_priority and success_priority are syslog levels between
-    0 and 7; venv_dir and system_config_path are non-empty strings;
-    system_metrics_dir is a non-empty string; system_metrics_dir_mode and
-    queue_file_mode are octal strings; max_queue_file_size_bytes and
-    queue_file_suffix_length are positive integers; send_order is one of
-    the SEND_ORDERS values.
+    0 and 7; venv_dir, system_config_path and command_path are non-empty
+    strings; system_metrics_dir is a non-empty string;
+    system_metrics_dir_mode and queue_file_mode are octal strings;
+    max_queue_file_size_bytes and queue_file_suffix_length are positive
+    integers; send_order is one of the SEND_ORDERS values.
     """
 
     if not isinstance(raw, dict):
@@ -590,6 +593,11 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.system_config_path must be a non-empty string"
         )
+    command_path = raw.get("command_path")
+    if not isinstance(command_path, str) or not command_path:
+        raise ConfigError(
+            "system_metrics_setup.command_path must be a non-empty string"
+        )
     system_metrics_dir = raw.get("system_metrics_dir")
     if not isinstance(system_metrics_dir, str) or not system_metrics_dir:
         raise ConfigError(
@@ -624,6 +632,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         success_priority=success_priority,
         venv_dir=Path(venv_dir),
         system_config_path=Path(system_config_path),
+        command_path=Path(command_path),
         system_metrics_dir=Path(system_metrics_dir),
         system_metrics_dir_mode=_octal_mode_field(
             raw.get("system_metrics_dir_mode"),
