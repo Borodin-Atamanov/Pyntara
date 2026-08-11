@@ -29,9 +29,6 @@ from pyntara.logger import log_progress as _log
 # Characters of the random entry-name suffix: letters and digits.
 _SUFFIX_ALPHABET = string.ascii_letters + string.digits
 
-# Publication attempts before giving up on a unique queue name.
-_LINK_ATTEMPTS = 5
-
 
 def build_queue_name(original_name: str, suffix: str) -> str:
     """Queue entry name: the original name plus the suffix after a dot."""
@@ -112,6 +109,7 @@ def ingest_spool(cfg: Config) -> None:
             temp,
             metrics.queue_file_mode,
             metrics.queue_file_suffix_length,
+            metrics.queue_link_attempts,
         )
 
 
@@ -144,6 +142,7 @@ def _publish_entry(
     temp: Path,
     file_mode: int,
     suffix_length: int,
+    link_attempts: int,
 ) -> None:
     """Publish one spool entry into the queue and remove it from the spool.
 
@@ -163,7 +162,7 @@ def _publish_entry(
         os.chmod(temp_path, file_mode)
         commit_time_ns = int(commit_time * 1_000_000_000)
         os.utime(temp_path, ns=(commit_time_ns, commit_time_ns))
-        for _ in range(_LINK_ATTEMPTS):
+        for _ in range(link_attempts):
             queue_name = build_queue_name(entry.name, _random_suffix(suffix_length))
             entry_path = outbox / queue_name
             try:
@@ -178,7 +177,7 @@ def _publish_entry(
             return
         _log(
             f"ingesting spool entry {entry}: cannot allocate a unique queue "
-            f"name after {_LINK_ATTEMPTS} attempts, leaving it",
+            f"name after {link_attempts} attempts, leaving it",
             priority=3,
         )
     except OSError as exc:

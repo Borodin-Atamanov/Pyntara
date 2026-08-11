@@ -144,6 +144,8 @@ swapfile_mode = "0600"
 # Accepted deviation between the existing and the target swap size, in
 # mebibytes; a swapfile within the tolerance is not recreated.
 size_tolerance_mb = 1
+# Name of the systemd oneshot service unit that activates the swap at boot.
+service_unit_name = "swapfile.service"
 
 [zswap_service]
 # Compressed swap cache parameters. The zswap_service task writes these
@@ -163,6 +165,8 @@ max_pool_percent = 12
 accept_threshold_percent = 87
 # Whether the shrinker proactively writes cold pages to the backing swap.
 shrinker_enabled = true
+# Name of the systemd oneshot service unit that repeats the writes at boot.
+service_unit_name = "zswap.service"
 
 [zram_service]
 # Aggressive in-memory swap parameters (docs/spec/users-and-host.md).
@@ -181,6 +185,8 @@ memory_fraction_percent = 96
 fallback_cpu_count = 8
 # Byte boundary the zram driver requires for disksize values.
 alignment_bytes = 4096
+# Name of the systemd oneshot service unit that repeats the setup at boot.
+service_unit_name = "zram.service"
 
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The
@@ -259,6 +265,8 @@ temp_dir = "temp"
 # Prefix of temporary files the commit command creates in the spool
 # before publishing; entries with this prefix are never ingested.
 spool_temp_prefix = ".commit-"
+# Publication attempts before the ingest gives up on a unique queue name.
+queue_link_attempts = 5
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

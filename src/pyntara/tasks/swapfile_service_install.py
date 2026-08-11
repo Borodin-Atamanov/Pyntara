@@ -31,7 +31,6 @@ from pyntara.utils import run_command, service_is_enabled
 # against temporary fixtures instead of the real system (developer guide).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "swapfile_service_install" / "swapfile.service"
-SWAPFILE_SERVICE_NAME = "swapfile.service"
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 MEMINFO_PATH = Path("/proc/meminfo")
 
@@ -120,6 +119,7 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.swapfile_service_install
     timeout = ctx.config.engine.command_timeout_seconds
     force = "swapfile_service_install" in ctx.force_tasks
+    service_name = cfg.service_unit_name
 
     try:
         ram_kib = _read_ram_kib()
@@ -154,9 +154,9 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
     active = _swap_active(cfg.swapfile_path, timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
-    enabled = service_is_enabled(SWAPFILE_SERVICE_NAME, timeout)
+    enabled = service_is_enabled(service_name, timeout)
     _log(
-        f"checking autorun service {SWAPFILE_SERVICE_NAME}: "
+        f"checking autorun service {service_name}: "
         f"{'enabled' if enabled else 'disabled'}"
     )
 
@@ -243,9 +243,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"
         )
-    _log(f"writing unit file {SYSTEMD_UNIT_DIR / SWAPFILE_SERVICE_NAME}")
+    _log(f"writing unit file {SYSTEMD_UNIT_DIR / service_name}")
     try:
-        _write_unit_file(SYSTEMD_UNIT_DIR, SWAPFILE_SERVICE_NAME, content)
+        _write_unit_file(SYSTEMD_UNIT_DIR, service_name, content)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot write unit file: {exc}"
@@ -255,8 +255,8 @@ def task(ctx: Context) -> TaskResult:
         _log("reloading systemd: systemctl daemon-reload")
         run_command(["systemctl", "daemon-reload"], timeout=timeout)
         _log("systemd reloaded")
-        _log(f"enabling service: systemctl enable {SWAPFILE_SERVICE_NAME}")
-        run_command(["systemctl", "enable", SWAPFILE_SERVICE_NAME], timeout=timeout)
+        _log(f"enabling service: systemctl enable {service_name}")
+        run_command(["systemctl", "enable", service_name], timeout=timeout)
         _log("service enabled")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(

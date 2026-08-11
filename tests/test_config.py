@@ -34,6 +34,7 @@ ram_extra_mb = 4096
 disk_fraction = 0.5
 swapfile_mode = "0600"
 size_tolerance_mb = 1
+service_unit_name = "swapfile.service"
 
 [zswap_service]
 enabled = true
@@ -41,6 +42,7 @@ compressor = "zstd"
 max_pool_percent = 50
 accept_threshold_percent = 100
 shrinker_enabled = true
+service_unit_name = "zswap.service"
 
 [zram_service]
 compressor = "zstd"
@@ -48,6 +50,7 @@ swap_priority = 1111
 memory_fraction_percent = 96
 fallback_cpu_count = 8
 alignment_bytes = 4096
+service_unit_name = "zram.service"
 
 [system_metrics_setup]
 check_interval_seconds = 300
@@ -74,6 +77,7 @@ commit_journal_identifier = "commit_system_metrics"
 main_outbox_dir = "main_outbox"
 temp_dir = "temp"
 spool_temp_prefix = ".commit-"
+queue_link_attempts = 5
 
 [vault_structure]
 
@@ -151,16 +155,19 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.swapfile_service_install.disk_fraction == 0.5
     assert config.swapfile_service_install.swapfile_mode == 0o600
     assert config.swapfile_service_install.size_tolerance_mb == 1
+    assert config.swapfile_service_install.service_unit_name == "swapfile.service"
     assert config.zswap_service.enabled is True
     assert config.zswap_service.compressor == "zstd"
     assert config.zswap_service.max_pool_percent == 50
     assert config.zswap_service.accept_threshold_percent == 100
     assert config.zswap_service.shrinker_enabled is True
+    assert config.zswap_service.service_unit_name == "zswap.service"
     assert config.zram_service.compressor == "zstd"
     assert config.zram_service.swap_priority == 1111
     assert config.zram_service.memory_fraction_percent == 96
     assert config.zram_service.fallback_cpu_count == 8
     assert config.zram_service.alignment_bytes == 4096
+    assert config.zram_service.service_unit_name == "zram.service"
     assert config.system_metrics_setup.check_interval_seconds == 300
     assert config.system_metrics_setup.python_version == "3"
     assert config.system_metrics_setup.error_priority == 3
@@ -196,6 +203,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.main_outbox_dir == "main_outbox"
     assert config.system_metrics_setup.temp_dir == "temp"
     assert config.system_metrics_setup.spool_temp_prefix == ".commit-"
+    assert config.system_metrics_setup.queue_link_attempts == 5
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -250,12 +258,13 @@ _BASE_CONFIG = (
     '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
     "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
     'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
+    'service_unit_name = "swapfile.service"\n'
     '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
     "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-    "shrinker_enabled = true\n"
+    'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
     '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
     "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-    "alignment_bytes = 4096\n"
+    'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
     "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
     'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
@@ -273,7 +282,7 @@ _BASE_CONFIG = (
     'service_journal_identifier = "system_metrics"\n'
     'commit_journal_identifier = "commit_system_metrics"\n'
     'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-    'spool_temp_prefix = ".commit-"\n'
+    'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -397,6 +406,22 @@ _BASE_CONFIG = (
         ),
         # zswap shrinker_enabled is an integer, not a boolean
         _BASE_CONFIG.replace("shrinker_enabled = true", "shrinker_enabled = 1"),
+        # swapfile service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "swapfile.service"', "service_unit_name = 1"
+        ),
+        # swapfile service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "swapfile.service"', 'service_unit_name = ""'
+        ),
+        # zswap service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "zswap.service"', "service_unit_name = 1"
+        ),
+        # zram service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "zram.service"', 'service_unit_name = ""'
+        ),
         # system_metrics_setup check_interval_seconds is a string, not an integer
         _BASE_CONFIG.replace(
             "check_interval_seconds = 300", 'check_interval_seconds = "300"'
@@ -546,6 +571,14 @@ _BASE_CONFIG = (
         # system_metrics_setup spool_temp_prefix is a number, not a string
         _BASE_CONFIG.replace(
             'spool_temp_prefix = ".commit-"', "spool_temp_prefix = 1"
+        ),
+        # system_metrics_setup queue_link_attempts is a string, not an integer
+        _BASE_CONFIG.replace(
+            "queue_link_attempts = 5", 'queue_link_attempts = "5"'
+        ),
+        # system_metrics_setup queue_link_attempts is zero
+        _BASE_CONFIG.replace(
+            "queue_link_attempts = 5", "queue_link_attempts = 0"
         ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
@@ -734,12 +767,13 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
+        'service_unit_name = "swapfile.service"\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        "shrinker_enabled = true\n"
+        'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        "alignment_bytes = 4096\n"
+        'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
@@ -757,7 +791,7 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'service_journal_identifier = "system_metrics"\n'
         'commit_journal_identifier = "commit_system_metrics"\n'
         'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-        'spool_temp_prefix = ".commit-"\n'
+        'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -792,12 +826,13 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
+        'service_unit_name = "swapfile.service"\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        "shrinker_enabled = true\n"
+        'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        "alignment_bytes = 4096\n"
+        'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
@@ -815,7 +850,7 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'service_journal_identifier = "system_metrics"\n'
         'commit_journal_identifier = "commit_system_metrics"\n'
         'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-        'spool_temp_prefix = ".commit-"\n'
+        'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

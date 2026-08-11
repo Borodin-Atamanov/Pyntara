@@ -79,7 +79,8 @@ class SwapfileServiceInstallConfig:
     swapfile_mode is the octal file mode of the created swapfile;
     size_tolerance_mb is the accepted deviation between the existing and
     the target swap size in mebibytes, so a swapfile resized by rounding
-    is not recreated.
+    is not recreated. service_unit_name is the name of the systemd
+    oneshot service that activates the swap at boot.
     """
 
     swapfile_path: Path
@@ -88,6 +89,7 @@ class SwapfileServiceInstallConfig:
     disk_fraction: float
     swapfile_mode: int
     size_tolerance_mb: int
+    service_unit_name: str
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,8 @@ class ZswapServiceConfig:
     shrinker_enabled are strict booleans; compressor names the compression
     algorithm; max_pool_percent and accept_threshold_percent are the pool
     ceiling and the re-accept threshold as percentages of RAM and of the
-    pool limit.
+    pool limit. service_unit_name is the name of the systemd oneshot
+    service that repeats the writes at boot.
     """
 
     enabled: bool
@@ -106,6 +109,7 @@ class ZswapServiceConfig:
     max_pool_percent: int
     accept_threshold_percent: int
     shrinker_enabled: bool
+    service_unit_name: str
 
 
 @dataclass(frozen=True)
@@ -117,7 +121,8 @@ class ZramServiceConfig:
     installed RAM split evenly across the devices and rounded down to the
     alignment_bytes zram page size. Every device uses the compressor
     algorithm and is activated with swap_priority, so ZRAM swap is
-    preferred over the disk swapfile.
+    preferred over the disk swapfile. service_unit_name is the name of the
+    systemd oneshot service that repeats the setup at boot.
     """
 
     compressor: str
@@ -125,6 +130,7 @@ class ZramServiceConfig:
     memory_fraction_percent: int
     fallback_cpu_count: int
     alignment_bytes: int
+    service_unit_name: str
 
 
 @dataclass(frozen=True)
@@ -144,8 +150,10 @@ class SystemMetricsSetupConfig:
     of the System Metrics queue, system_metrics_dir_mode and
     queue_file_mode are the strict file modes of the queue directories
     and entries, max_queue_file_size_bytes is the per-entry size limit,
-    send_order is the drain order of the senders and
-    queue_file_suffix_length is the length of the random name suffix
+    send_order is the drain order of the senders,
+    queue_file_suffix_length is the length of the random name suffix and
+    queue_link_attempts is the number of publication attempts before the
+    ingest gives up on a unique queue name
     (docs/spec/system-metrics.md, section Queue architecture). The
     spool is the intake pre-queue: spool_dir is the directory where the
     generated commit_system_metrics command publishes files, its mode
@@ -186,6 +194,7 @@ class SystemMetricsSetupConfig:
     main_outbox_dir: str
     temp_dir: str
     spool_temp_prefix: str
+    queue_link_attempts: int
 
 
 @dataclass(frozen=True)
@@ -475,6 +484,10 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
             raw.get("swapfile_mode"), "swapfile_service_install.swapfile_mode"
         ),
         size_tolerance_mb=size_tolerance_mb,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "swapfile_service_install.service_unit_name",
+        ),
     )
 
 
@@ -520,6 +533,9 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
         max_pool_percent=max_pool_percent,
         accept_threshold_percent=accept_threshold_percent,
         shrinker_enabled=shrinker_enabled,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "zswap_service.service_unit_name"
+        ),
     )
 
 
@@ -566,6 +582,9 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         memory_fraction_percent=memory_fraction_percent,
         fallback_cpu_count=fallback_cpu_count,
         alignment_bytes=alignment_bytes,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "zram_service.service_unit_name"
+        ),
     )
 
 
@@ -657,6 +676,14 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.queue_file_suffix_length must be positive"
         )
+    queue_link_attempts = _int_field(
+        raw.get("queue_link_attempts"),
+        "system_metrics_setup.queue_link_attempts",
+    )
+    if queue_link_attempts < 1:
+        raise ConfigError(
+            "system_metrics_setup.queue_link_attempts must be positive"
+        )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
         python_version=python_version,
@@ -719,6 +746,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("spool_temp_prefix"),
             "system_metrics_setup.spool_temp_prefix",
         ),
+        queue_link_attempts=queue_link_attempts,
     )
 
 
