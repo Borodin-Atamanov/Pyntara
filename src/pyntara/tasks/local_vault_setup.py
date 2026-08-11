@@ -30,6 +30,7 @@ from pyntara.config import LocalVaultSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.utils import ensure_root_owner
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -143,18 +144,6 @@ def _write_password_file(
     os.chmod(pass_file_path, pass_file_mode)
 
 
-def _ensure_owner(path: Path) -> None:
-    """Set owner root:root when the process runs as root.
-
-    The installer runs under sudo, so the ownership is applied on real
-    machines; non-root test runs skip the chown, because it would fail
-    without privileges.
-    """
-
-    if os.geteuid() == 0:
-        os.chown(path, 0, 0)
-
-
 def _verify_local_vault(local_vault_path: Path, password: str) -> bool:
     """True when the written runtime vault opens with the local password.
 
@@ -248,7 +237,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot write runtime vault: {exc}")
     _log("runtime vault written")
     try:
-        _ensure_owner(cfg.local_vault_path)
+        ensure_root_owner(cfg.local_vault_path)
     except OSError:
         _log("cannot set owner of the runtime vault")
 
@@ -265,7 +254,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot write password file: {exc}")
     _log("password file written")
     try:
-        _ensure_owner(cfg.pass_file_path)
+        ensure_root_owner(cfg.pass_file_path)
     except OSError:
         _log("cannot set owner of the password file")
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 
 # apt must never ask questions; every package operation runs noninteractive.
 # The single definition lives here so tasks cannot diverge.
@@ -88,3 +89,15 @@ def service_is_active(name: str, timeout: float) -> bool:
         timeout=timeout,
     )
     return result.returncode == 0 and result.stdout.strip() == "active"
+
+
+def ensure_root_owner(path: Path) -> None:
+    """Set owner root:root when the process runs as root.
+
+    The installer runs under sudo, so the ownership is applied on real
+    machines; non-root test runs skip the chown, because it would fail
+    without privileges.
+    """
+
+    if os.geteuid() == 0:
+        os.chown(path, 0, 0)

@@ -63,6 +63,17 @@ queue_file_mode = "0600"
 max_queue_file_size_bytes = 104857600
 send_order = "oldest_first"
 queue_file_suffix_length = 12
+spool_dir = "/var/spool/system_metrics"
+spool_dir_mode = "1733"
+command_file_mode = "0755"
+service_unit_name = "system_metrics.service"
+ingest_service_unit_name = "system_metrics-ingest.service"
+ingest_path_unit_name = "system_metrics-ingest.path"
+service_journal_identifier = "system_metrics"
+commit_journal_identifier = "commit_system_metrics"
+main_outbox_dir = "main_outbox"
+temp_dir = "temp"
+spool_temp_prefix = ".commit-"
 
 [vault_structure]
 
@@ -163,6 +174,28 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.max_queue_file_size_bytes == 104857600
     assert config.system_metrics_setup.send_order == "oldest_first"
     assert config.system_metrics_setup.queue_file_suffix_length == 12
+    assert config.system_metrics_setup.spool_dir == Path("/var/spool/system_metrics")
+    assert config.system_metrics_setup.spool_dir_mode == 0o1733
+    assert config.system_metrics_setup.command_file_mode == 0o755
+    assert config.system_metrics_setup.service_unit_name == "system_metrics.service"
+    assert (
+        config.system_metrics_setup.ingest_service_unit_name
+        == "system_metrics-ingest.service"
+    )
+    assert (
+        config.system_metrics_setup.ingest_path_unit_name
+        == "system_metrics-ingest.path"
+    )
+    assert (
+        config.system_metrics_setup.service_journal_identifier == "system_metrics"
+    )
+    assert (
+        config.system_metrics_setup.commit_journal_identifier
+        == "commit_system_metrics"
+    )
+    assert config.system_metrics_setup.main_outbox_dir == "main_outbox"
+    assert config.system_metrics_setup.temp_dir == "temp"
+    assert config.system_metrics_setup.spool_temp_prefix == ".commit-"
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -232,6 +265,15 @@ _BASE_CONFIG = (
     'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
     'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
     'queue_file_suffix_length = 12\n'
+    'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
+    'command_file_mode = "0755"\n'
+    'service_unit_name = "system_metrics.service"\n'
+    'ingest_service_unit_name = "system_metrics-ingest.service"\n'
+    'ingest_path_unit_name = "system_metrics-ingest.path"\n'
+    'service_journal_identifier = "system_metrics"\n'
+    'commit_journal_identifier = "commit_system_metrics"\n'
+    'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
+    'spool_temp_prefix = ".commit-"\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -459,6 +501,52 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "queue_file_suffix_length = 12", "queue_file_suffix_length = 0"
         ),
+        # system_metrics_setup spool_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'spool_dir = "/var/spool/system_metrics"', "spool_dir = 1"
+        ),
+        # system_metrics_setup spool_dir is an empty string
+        _BASE_CONFIG.replace(
+            'spool_dir = "/var/spool/system_metrics"', 'spool_dir = ""'
+        ),
+        # system_metrics_setup spool_dir_mode is not a four-digit octal string
+        _BASE_CONFIG.replace('spool_dir_mode = "1733"', 'spool_dir_mode = "173"'),
+        # system_metrics_setup command_file_mode is not a four-digit octal string
+        _BASE_CONFIG.replace('command_file_mode = "0755"', 'command_file_mode = "755"'),
+        # system_metrics_setup service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "system_metrics.service"', 'service_unit_name = ""'
+        ),
+        # system_metrics_setup ingest_service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'ingest_service_unit_name = "system_metrics-ingest.service"',
+            "ingest_service_unit_name = 1",
+        ),
+        # system_metrics_setup ingest_path_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'ingest_path_unit_name = "system_metrics-ingest.path"',
+            'ingest_path_unit_name = ""',
+        ),
+        # system_metrics_setup service_journal_identifier is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_journal_identifier = "system_metrics"',
+            "service_journal_identifier = 1",
+        ),
+        # system_metrics_setup commit_journal_identifier is an empty string
+        _BASE_CONFIG.replace(
+            'commit_journal_identifier = "commit_system_metrics"',
+            'commit_journal_identifier = ""',
+        ),
+        # system_metrics_setup main_outbox_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'main_outbox_dir = "main_outbox"', "main_outbox_dir = 1"
+        ),
+        # system_metrics_setup temp_dir is an empty string
+        _BASE_CONFIG.replace('temp_dir = "temp"', 'temp_dir = ""'),
+        # system_metrics_setup spool_temp_prefix is a number, not a string
+        _BASE_CONFIG.replace(
+            'spool_temp_prefix = ".commit-"', "spool_temp_prefix = 1"
+        ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
             'source_vault_production = "secrets/production.vault"',
@@ -661,6 +749,15 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
         'queue_file_suffix_length = 12\n'
+        'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
+        'command_file_mode = "0755"\n'
+        'service_unit_name = "system_metrics.service"\n'
+        'ingest_service_unit_name = "system_metrics-ingest.service"\n'
+        'ingest_path_unit_name = "system_metrics-ingest.path"\n'
+        'service_journal_identifier = "system_metrics"\n'
+        'commit_journal_identifier = "commit_system_metrics"\n'
+        'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
+        'spool_temp_prefix = ".commit-"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -710,6 +807,15 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
         'queue_file_suffix_length = 12\n'
+        'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
+        'command_file_mode = "0755"\n'
+        'service_unit_name = "system_metrics.service"\n'
+        'ingest_service_unit_name = "system_metrics-ingest.service"\n'
+        'ingest_path_unit_name = "system_metrics-ingest.path"\n'
+        'service_journal_identifier = "system_metrics"\n'
+        'commit_journal_identifier = "commit_system_metrics"\n'
+        'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
+        'spool_temp_prefix = ".commit-"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

@@ -1,55 +1,36 @@
-"""System command commit_system_metrics: commit a file to the metrics queue.
+"""System Metrics queue ingest: move spool files into the queue.
 
-The utility is the single write path of the System Metrics queue: it
-copies a regular file into the main_outbox directory of the queue with its
-original name plus a random alphanumeric suffix, strict permissions and a
-modification time equal to the commit time. The suffix makes entries with
-identical original names coexist without collisions; the deployed service
-strips it before upload, so the remote server receives the original name.
-The source file is left untouched. The utility never encrypts, reads
-secrets or sends anything: producers create their artifacts (encrypted
-PDFs, logs) and only commit paths to the queue (docs/spec/system-metrics.md,
-section Queue architecture).
-
-The utility creates only system_metrics_dir, main_outbox and temp; the
-channel queues and the sent archive are created by the deployed service.
-Temporary files left in temp by a crash between the hard link and the
-unlink are never swept (explicit decision, docs/spec/system-metrics.md).
+The ingest step is the single bridge between the commit command and the
+System Metrics queue: it moves every file published into the configured
+spool_dir into the main_outbox directory of the queue. The deployed
+ingest service (system_metrics-ingest.service, started by the
+system_metrics-ingest.path unit whenever a file appears in the spool)
+runs this step as root, so the strict queue modes apply. Every action is
+journaled through the shared pyntara.logger helpers. The queue entry
+keeps the original name plus a random alphanumeric suffix, the strict
+queue file mode and the modification time of the spool file, which the
+commit command sets to the commit time; the source spool file is removed
+after publication (docs/spec/system-metrics.md, section Queue
+architecture).
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 import secrets
 import shutil
 import stat
 import string
-import sys
-import time
 from pathlib import Path
 
-from pyntara.config import Config, load_config
-
-# Queue directory names are fixed machine contracts
-# (docs/spec/system-metrics.md, section Queue architecture).
-MAIN_OUTBOX = "main_outbox"
-TEMP_DIR = "temp"
-
-# The utility must know where to find the config before it can read it;
-# the system path is a documented exception to the rule that behavioral
-# values live in config.toml (docs/guides/project-rules.md section 4).
-DEFAULT_CONFIG_PATH = "/etc/pyntara/config.toml"
+from pyntara.config import Config
+from pyntara.logger import log_progress as _log
 
 # Characters of the random entry-name suffix: letters and digits.
 _SUFFIX_ALPHABET = string.ascii_letters + string.digits
 
 # Publication attempts before giving up on a unique queue name.
 _LINK_ATTEMPTS = 5
-
-
-class CommitError(RuntimeError):
-    """Raised when a file cannot be committed to the queue."""
 
 
 def build_queue_name(original_name: str, suffix: str) -> str:
@@ -77,8 +58,9 @@ def _random_suffix(length: int) -> str:
 def _queue_dirs(cfg: Config) -> tuple[Path, Path, Path]:
     """The queue root, main_outbox and temp directories from the config."""
 
-    root = cfg.system_metrics_setup.system_metrics_dir
-    return root, root / MAIN_OUTBOX, root / TEMP_DIR
+    metrics = cfg.system_metrics_setup
+    root = metrics.system_metrics_dir
+    return root, root / metrics.main_outbox_dir, root / metrics.temp_dir
 
 
 def _ensure_dirs(root: Path, outbox: Path, temp: Path, mode: int) -> None:
@@ -88,53 +70,101 @@ def _ensure_dirs(root: Path, outbox: Path, temp: Path, mode: int) -> None:
         directory.mkdir(mode=mode, parents=True, exist_ok=True)
 
 
-def enqueue_file(cfg: Config, source: Path) -> Path:
-    """Commit a copy of the source file to the queue; return the entry path.
+def ingest_spool(cfg: Config) -> None:
+    """Move every spool file into the queue; log each action.
 
-    The source must be an existing non-empty regular file no larger than
-    max_queue_file_size_bytes; symlinks and hard links are followed and
-    treated as the files they point to. The copy is written into temp
-    first, given the queue file mode and the commit time, then published
-    into main_outbox under the original name plus a random suffix through
-    a hard link; the temp name is removed afterwards. If the random
-    suffix collides with an existing entry, a new suffix is tried. The
-    source file is never modified. Raises CommitError on any problem.
+    Each spool entry that is a regular non-empty file no larger than
+    max_queue_file_size_bytes is published into main_outbox and then
+    removed from the spool. Entries with the spool_temp_prefix are the
+    commit command temporaries and are skipped. Rejected entries (not
+    regular, empty, oversized) are removed from the spool and reported
+    in the journal; a failed publication leaves the spool entry in place
+    so the next ingest run retries it.
+    """
+
+    metrics = cfg.system_metrics_setup
+    spool_dir = metrics.spool_dir
+    root, outbox, temp = _queue_dirs(cfg)
+    _ensure_dirs(root, outbox, temp, metrics.system_metrics_dir_mode)
+    if not spool_dir.is_dir():
+        _log(f"ingesting spool {spool_dir}: directory missing, nothing to do")
+        return
+    for entry in sorted(spool_dir.iterdir()):
+        if entry.name.startswith(metrics.spool_temp_prefix):
+            continue
+        reason = _reject_reason(entry, metrics.max_queue_file_size_bytes)
+        if reason is not None:
+            _log(
+                f"ingesting spool entry {entry}: {reason}, removing",
+                priority=3,
+            )
+            try:
+                entry.unlink(missing_ok=True)
+            except OSError as exc:
+                _log(
+                    f"ingesting spool entry {entry}: cannot remove it: {exc}",
+                    priority=3,
+                )
+            continue
+        _publish_entry(
+            entry,
+            outbox,
+            temp,
+            metrics.queue_file_mode,
+            metrics.queue_file_suffix_length,
+        )
+
+
+def _reject_reason(entry: Path, limit: int) -> str | None:
+    """Why the spool entry must be rejected, or None when it is valid.
+
+    Stat errors, non-regular files, empty files and files larger than
+    the limit are all rejections; the returned reason is journaled before
+    the entry is removed.
     """
 
     try:
-        source_stat = source.stat()
-    except FileNotFoundError:
-        raise CommitError(f"source file not found: {source}") from None
+        entry_stat = entry.stat()
     except OSError as exc:
-        raise CommitError(f"cannot stat source file {source}: {exc}") from exc
-    if not stat.S_ISREG(source_stat.st_mode):
-        raise CommitError(f"source is not a regular file: {source}")
-    if source_stat.st_size == 0:
-        raise CommitError(f"source file is empty: {source}")
-    limit = cfg.system_metrics_setup.max_queue_file_size_bytes
-    if source_stat.st_size > limit:
-        raise CommitError(
-            f"source file {source} is {source_stat.st_size} bytes, "
-            f"larger than the limit of {limit} bytes"
+        return f"cannot stat: {exc}"
+    if not stat.S_ISREG(entry_stat.st_mode):
+        return "not a regular file"
+    if entry_stat.st_size == 0:
+        return "empty"
+    if entry_stat.st_size > limit:
+        return (
+            f"{entry_stat.st_size} bytes, larger than the limit of {limit} bytes"
         )
+    return None
 
-    root, outbox, temp = _queue_dirs(cfg)
-    _ensure_dirs(root, outbox, temp, cfg.system_metrics_setup.system_metrics_dir_mode)
 
-    file_mode = cfg.system_metrics_setup.queue_file_mode
-    suffix_length = cfg.system_metrics_setup.queue_file_suffix_length
-    temp_path = temp / f".commit-{secrets.token_hex(8)}"
-    commit_time = time.time()
+def _publish_entry(
+    entry: Path,
+    outbox: Path,
+    temp: Path,
+    file_mode: int,
+    suffix_length: int,
+) -> None:
+    """Publish one spool entry into the queue and remove it from the spool.
+
+    The entry is copied into the queue temp directory, given the queue
+    file mode and the modification time of the spool entry (the commit
+    time set by the commit command), published into main_outbox under
+    the original name plus a random suffix through a hard link and then
+    removed from the spool. A queue name collision tries another suffix.
+    On any failure the spool entry is left in place so the next ingest
+    run retries it; every successful ingest is journaled.
+    """
+
+    commit_time = entry.stat().st_mtime
+    temp_path = temp / f".ingest-{secrets.token_hex(8)}"
     try:
-        shutil.copy2(source, temp_path)
-        # copy2 preserves the source mode, which could be world-readable;
-        # the queue entry must carry the strict configured mode, so the
-        # mode and the commit time are set before publication.
+        shutil.copy2(entry, temp_path)
         os.chmod(temp_path, file_mode)
         commit_time_ns = int(commit_time * 1_000_000_000)
         os.utime(temp_path, ns=(commit_time_ns, commit_time_ns))
         for _ in range(_LINK_ATTEMPTS):
-            queue_name = build_queue_name(source.name, _random_suffix(suffix_length))
+            queue_name = build_queue_name(entry.name, _random_suffix(suffix_length))
             entry_path = outbox / queue_name
             try:
                 os.link(temp_path, entry_path)
@@ -143,47 +173,18 @@ def enqueue_file(cfg: Config, source: Path) -> Path:
                 # another suffix instead of overwriting anything.
                 continue
             temp_path.unlink(missing_ok=True)
-            return entry_path
-        raise CommitError(
-            f"cannot allocate a unique queue name for {source.name} "
-            f"after {_LINK_ATTEMPTS} attempts"
+            entry.unlink(missing_ok=True)
+            _log(f"ingested spool entry {entry} into {entry_path}")
+            return
+        _log(
+            f"ingesting spool entry {entry}: cannot allocate a unique queue "
+            f"name after {_LINK_ATTEMPTS} attempts, leaving it",
+            priority=3,
+        )
+    except OSError as exc:
+        _log(
+            f"ingesting spool entry {entry}: failed: {exc}, leaving it",
+            priority=3,
         )
     finally:
         temp_path.unlink(missing_ok=True)
-
-
-def main() -> None:
-    """Parse the command line, load the config and commit the file.
-
-    Exit codes: 0 on success with the entry path on stdout, 1 on any
-    execution error with the message on stderr, 2 on usage errors from
-    argparse. The utility does not write to the journal: it is a CLI for
-    scripts and must not produce noise per commit.
-    """
-
-    parser = argparse.ArgumentParser(
-        prog="commit_system_metrics",
-        description="Commit a file to the System Metrics queue.",
-    )
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help="path of the system config (default: %(default)s)",
-    )
-    parser.add_argument("file", help="path of the file to commit")
-    args = parser.parse_args()
-    try:
-        cfg = load_config(Path(args.config))
-    except Exception as exc:
-        print(f"error: cannot load config: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    try:
-        entry_path = enqueue_file(cfg, Path(args.file))
-    except CommitError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    print(entry_path)
-
-
-if __name__ == "__main__":
-    main()

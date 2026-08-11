@@ -1,4 +1,4 @@
-"""Task system_metrics_setup: deploy the long-running System Metrics service.
+"""Task system_metrics_setup: deploy the System Metrics service and spool ingest.
 
 The task makes the pyntara package and its dependencies available to the
 services on the target machine: a dedicated virtual environment is created
@@ -7,16 +7,23 @@ from the repository clone (REPO_ROOT), so deployed services import the
 same code base the installer uses and never need the clone afterwards.
 The single system config is copied to the configured system_config_path,
 so the deployed service reads its parameters with the same loader as the
-installer (architecture contract section 3). The systemd unit
-system_metrics.service starts the service at boot; the task enables it and
-starts it immediately, so a broken deployment fails the task and shows in
-the install log instead of surfacing at the first reboot. The task also
-links the commit_system_metrics command script from the venv into the
-configured command_path, so the queue commit utility is on PATH after the
-install. The task is idempotent: it skips when the venv imports pyntara,
-the config and the unit match their sources, the service is enabled and
-the command symlink points at the venv script; force mode reinstalls the
-package and restarts the service.
+installer (architecture contract section 3). The long-running service
+system_metrics.service checks the runtime vault every
+check_interval_seconds; the ingest service system_metrics-ingest.service
+moves committed files from the spool into the queue and is started by the
+path unit system_metrics-ingest.path whenever a file appears in the spool.
+All unit names, journal identifiers and the spool path come from config
+(architecture contract section 3). The task generates the thin
+commit_system_metrics command file from the command template with the
+configured spool path and journal identifier embedded, so the command
+needs no config access and no root privileges; it also creates the spool
+directory with the configured mode. The task enables and starts the
+service and the path unit immediately, so a broken deployment fails the
+task and shows in the install log instead of surfacing at the first
+reboot. The task is idempotent: it skips when the venv imports pyntara,
+the config, the unit files and the command file match their sources, the
+service and the path unit are enabled and the spool directory is in
+place; force mode reinstalls the package and restarts the units.
 """
 
 from __future__ import annotations
@@ -30,25 +37,33 @@ from string import Template
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_active, service_is_enabled
+from pyntara.utils import (
+    ensure_root_owner,
+    run_command,
+    service_is_active,
+    service_is_enabled,
+)
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-# Repository layout and the unit directory are fixed machine contracts
-# (architecture contract section 3); the deployment paths of the venv and
-# the system config live in config.toml through Context.
+# Repository layout and the systemd unit directory are fixed machine
+# contracts (architecture contract section 3); the unit file names, the
+# deployment paths of the venv and the system config live in config.toml
+# through Context.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics.service"
 )
-SERVICE_NAME = "system_metrics.service"
+INGEST_SERVICE_TEMPLATE_PATH = (
+    REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics-ingest.service"
+)
+INGEST_PATH_TEMPLATE_PATH = (
+    REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics-ingest.path"
+)
+COMMAND_TEMPLATE_PATH = (
+    REPO_ROOT / "task_data" / "system_metrics_setup" / "commit_system_metrics.sh"
+)
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
-# Name of the command script the package installer creates inside the venv
-# from [project.scripts] in pyproject.toml. The task links command_path to
-# this script. The name is a fixed package contract, not a deployment
-# parameter, so it lives here as a documented exception (architecture
-# contract section 3) instead of in config.toml.
-COMMIT_COMMAND_NAME = "commit_system_metrics"
 
 
 def _venv_import_ok(venv_python: Path, timeout: float) -> bool:
@@ -84,16 +99,11 @@ def _ensure_venv(
     force: bool,
     timeout: float,
     venv_dir: Path,
-    venv_script: Path,
     python_version: str,
 ) -> tuple[bool, str | None]:
     """Ensure the venv exists with pyntara installed; (changed, error).
 
-    A venv is working when its python imports pyntara and the
-    commit_system_metrics console script exists: a venv created before
-    the entry point was added passes the import check but has no script,
-    so without the script check the stale venv would be left untouched
-    and the command link would point at a missing file. Without force an
+    A venv is working when its python imports pyntara. Without force an
     existing working venv is left untouched. Otherwise the venv is
     created when missing with the configured python version and the
     package is installed from the repository clone; force adds
@@ -102,11 +112,7 @@ def _ensure_venv(
     """
 
     venv_python = venv_dir / "bin" / "python"
-    if (
-        _venv_import_ok(venv_python, timeout)
-        and venv_script.is_file()
-        and not force
-    ):
+    if _venv_import_ok(venv_python, timeout) and not force:
         return False, None
     if not venv_dir.is_dir():
         _log(f"creating venv: uv venv {venv_dir}")
@@ -160,136 +166,231 @@ def _write_system_config(system_config_path: Path) -> None:
     )
 
 
-def _render_unit(venv_python: Path, system_config_path: Path) -> str:
+def _render_service_unit(
+    venv_python: Path, system_config_path: Path, journal_identifier: str
+) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
     The service runs the venv python with the metrics module and the
     configured system config path as its only argument; the line is fully
     expanded here, so the template carries no shell variables of its own.
+    The journal identifier comes from the config.
     """
 
     command = " ".join(
         [str(venv_python), "-m", "pyntara.metrics", str(system_config_path)]
     )
     template = Template(TEMPLATE_PATH.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}")
-
-
-def _unit_matches(venv_python: Path, system_config_path: Path) -> bool:
-    """True when the deployed unit file equals the rendered one."""
-
-    unit_path = SYSTEMD_UNIT_DIR / SERVICE_NAME
-    try:
-        if not unit_path.is_file():
-            return False
-        return unit_path.read_text(encoding="utf-8") == _render_unit(
-            venv_python, system_config_path
-        )
-    except OSError:
-        return False
-
-
-def _write_unit(venv_python: Path, system_config_path: Path) -> None:
-    """Write the rendered unit file into the systemd unit directory."""
-
-    SYSTEMD_UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    (SYSTEMD_UNIT_DIR / SERVICE_NAME).write_text(
-        _render_unit(venv_python, system_config_path), encoding="utf-8"
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
     )
 
 
-def _command_symlink_ok(venv_script: Path, command_path: Path) -> bool:
-    """True when the command path is a symlink to the existing venv script.
+def _render_ingest_service_unit(
+    venv_python: Path, system_config_path: Path, journal_identifier: str
+) -> str:
+    """Render the ingest service unit with the ExecStart line substituted.
 
-    The target is compared as a literal string, so a relative or
-    differently spelled link is wrong even when it resolves to the same
-    file; our own links always carry the absolute path. A missing venv
-    script would leave any link dangling, so the goal is not reached
-    then. Any OSError (missing path, unreadable link) is not ok.
+    The oneshot service runs the venv python with the metrics_ingest
+    module and the configured system config path as its only argument.
     """
 
-    if not venv_script.is_file():
-        return False
+    command = " ".join(
+        [str(venv_python), "-m", "pyntara.metrics_ingest", str(system_config_path)]
+    )
+    template = Template(INGEST_SERVICE_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
+    )
+
+
+def _render_ingest_path_unit(spool_dir: Path) -> str:
+    """Render the path unit that watches the spool directory."""
+
+    template = Template(INGEST_PATH_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return template.substitute(spool_dir=spool_dir)
+
+
+def _render_commit_command(
+    spool_dir: Path, journal_identifier: str, temp_prefix: str
+) -> str:
+    """Render the thin commit command with the configured values embedded.
+
+    The command needs no config access at runtime: the spool path, the
+    journal identifier and the temporary file prefix are substituted at
+    generation time, so any user can run the command (architecture
+    contract section 3).
+    """
+
+    template = Template(COMMAND_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return template.substitute(
+        spool_dir=spool_dir,
+        commit_journal_identifier=journal_identifier,
+        spool_temp_prefix=temp_prefix,
+    )
+
+
+def _unit_matches(name: str, expected: str) -> bool:
+    """True when the deployed unit file equals the expected content."""
+
+    unit_path = SYSTEMD_UNIT_DIR / name
     try:
-        return os.readlink(command_path) == str(venv_script)
+        if not unit_path.is_file():
+            return False
+        return unit_path.read_text(encoding="utf-8") == expected
     except OSError:
         return False
 
 
-def _link_command(
-    venv_script: Path, command_path: Path, *, recreate: bool = False
-) -> str | None:
-    """Ensure the command symlink points at the venv script.
+def _write_unit(name: str, content: str) -> None:
+    """Write the rendered unit file into the systemd unit directory."""
 
-    The parent directory is created when missing. A symlink that already
-    points at the venv script is left untouched unless recreate is set
-    (force mode): then it is recreated so the link is refreshed. Any
-    other owner of the path (a wrong symlink or a regular file) is
-    replaced, because command_path is explicitly configured; the returned
-    string describes the replacement for the final task message. A
-    directory on command_path is never removed recursively and raises
-    OSError with a clear message.
+    SYSTEMD_UNIT_DIR.mkdir(parents=True, exist_ok=True)
+    (SYSTEMD_UNIT_DIR / name).write_text(content, encoding="utf-8")
+
+
+def _command_file_matches(command_path: Path, expected: str, mode: int) -> bool:
+    """True when the command file content and mode equal the expected.
+
+    The command is a generated regular file: the mode matters as much as
+    the content, because the file must stay executable for every user.
+    Any OSError (missing path, unreadable file) is not ok.
     """
 
-    replaced = None
-    if command_path.is_symlink():
-        if os.readlink(command_path) == str(venv_script) and not recreate:
-            return None
-        command_path.unlink()
-        replaced = f"replaced command symlink {command_path}"
-    elif command_path.is_dir():
+    try:
+        if not command_path.is_file():
+            return False
+        return command_path.read_text(encoding="utf-8") == expected and (
+            os.stat(command_path).st_mode & 0o777 == mode
+        )
+    except OSError:
+        return False
+
+
+def _write_command_file(command_path: Path, content: str, mode: int) -> None:
+    """Write the generated commit command with the configured mode.
+
+    The parent directory is created when missing. Any other owner of the
+    path (a stale generated file or a foreign file) is replaced, because
+    command_path is explicitly configured. A directory on command_path is
+    never removed recursively and raises OSError with a clear message.
+    """
+
+    if command_path.is_dir():
         raise OSError(
             f"command path {command_path} is a directory; refusing to remove it"
         )
-    elif command_path.exists():
-        command_path.unlink()
-        replaced = f"replaced command file {command_path}"
     command_path.parent.mkdir(parents=True, exist_ok=True)
-    command_path.symlink_to(venv_script)
-    return replaced
+    if command_path.is_symlink() or command_path.exists():
+        command_path.unlink()
+    command_path.write_text(content, encoding="utf-8")
+    os.chmod(command_path, mode)
+
+
+def _spool_dir_ok(spool_dir: Path, mode: int) -> bool:
+    """True when the spool directory exists with the configured mode.
+
+    The mask covers the sticky bit (0o1000) of the 1733 mode, so the
+    check does not silently drop it.
+    """
+
+    try:
+        return spool_dir.is_dir() and (os.stat(spool_dir).st_mode & 0o7777 == mode)
+    except OSError:
+        return False
+
+
+def _ensure_spool_dir(spool_dir: Path, mode: int) -> None:
+    """Create the spool directory with the configured mode and root owner."""
+
+    spool_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(spool_dir, mode)
+    ensure_root_owner(spool_dir)
 
 
 def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
-    The goal is reached when the venv imports pyntara, the system config
-    and the unit file match their sources, the service is enabled and the
-    command symlink points at the venv script; the task then returns
-    changed=False. Otherwise it creates the venv, installs the package,
-    copies the config, writes the unit, reloads systemd, enables the
-    service and starts it (restarts it when something changed while the
-    service was running, and always in force mode), so a broken deployment
-    fails the task and shows in the install log. The systemd work runs
-    only when the service itself needs it: a task that only has to add
-    the missing command symlink leaves a running service untouched. A
-    missing uv executable and a failed command are errors: the task
-    returns success=False and the runner continues.
+    The goal is reached when the venv imports pyntara, the system config,
+    the three unit files and the generated command file match their
+    sources, the service and the path unit are enabled and the spool
+    directory is in place; the task then returns changed=False. Otherwise
+    it creates the venv, installs the package, copies the config, writes
+    the units, reloads systemd, enables and starts the service and the
+    path unit, generates the commit command and creates the spool
+    directory, so a broken deployment fails the task and shows in the
+    install log. The systemd work runs only when the units themselves
+    need it: a task that only has to write the missing command file
+    leaves the running units untouched. A missing uv executable and a
+    failed command are errors: the task returns success=False and the
+    runner continues.
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
     force = "system_metrics_setup" in ctx.force_tasks
-    venv_dir = ctx.config.system_metrics_setup.venv_dir
+    metrics = ctx.config.system_metrics_setup
+    venv_dir = metrics.venv_dir
     venv_python = venv_dir / "bin" / "python"
-    venv_script = venv_dir / "bin" / COMMIT_COMMAND_NAME
-    system_config_path = ctx.config.system_metrics_setup.system_config_path
-    command_path = ctx.config.system_metrics_setup.command_path
+    system_config_path = metrics.system_config_path
+    command_path = metrics.command_path
+    service_name = metrics.service_unit_name
+    ingest_service_name = metrics.ingest_service_unit_name
+    ingest_path_name = metrics.ingest_path_unit_name
+    spool_dir = metrics.spool_dir
+    journal_identifier = metrics.service_journal_identifier
+
+    service_unit = _render_service_unit(
+        venv_python, system_config_path, journal_identifier
+    )
+    ingest_service_unit = _render_ingest_service_unit(
+        venv_python, system_config_path, journal_identifier
+    )
+    ingest_path_unit = _render_ingest_path_unit(spool_dir)
+    command_content = _render_commit_command(
+        spool_dir, metrics.commit_journal_identifier, metrics.spool_temp_prefix
+    )
 
     venv_ok = _venv_import_ok(venv_python, timeout)
     _log(f"checking venv {venv_python}: {'ok' if venv_ok else 'missing or broken'}")
     config_ok = _system_config_matches(system_config_path)
-    unit_ok = _unit_matches(venv_python, system_config_path)
-    enabled = service_is_enabled(SERVICE_NAME, timeout)
+    service_unit_ok = _unit_matches(service_name, service_unit)
+    ingest_service_unit_ok = _unit_matches(ingest_service_name, ingest_service_unit)
+    ingest_path_unit_ok = _unit_matches(ingest_path_name, ingest_path_unit)
+    service_enabled = service_is_enabled(service_name, timeout)
     _log(
-        f"checking autorun service {SERVICE_NAME}: "
-        f"{'enabled' if enabled else 'disabled'}"
+        f"checking autorun service {service_name}: "
+        f"{'enabled' if service_enabled else 'disabled'}"
     )
-    command_ok = _command_symlink_ok(venv_script, command_path)
+    path_enabled = service_is_enabled(ingest_path_name, timeout)
+    _log(
+        f"checking spool watcher {ingest_path_name}: "
+        f"{'enabled' if path_enabled else 'disabled'}"
+    )
+    command_ok = _command_file_matches(
+        command_path, command_content, metrics.command_file_mode
+    )
     _log(
         f"checking command {command_path}: "
-        f"{'ok' if command_ok else 'missing or wrong'}"
+        f"{'ok' if command_ok else 'missing or stale'}"
+    )
+    spool_ok = _spool_dir_ok(spool_dir, metrics.spool_dir_mode)
+    _log(
+        f"checking spool {spool_dir}: "
+        f"{'ok' if spool_ok else 'missing or wrong mode'}"
     )
 
-    if not force and venv_ok and config_ok and unit_ok and enabled and command_ok:
+    if (
+        not force
+        and venv_ok
+        and config_ok
+        and service_unit_ok
+        and ingest_service_unit_ok
+        and ingest_path_unit_ok
+        and service_enabled
+        and path_enabled
+        and command_ok
+        and spool_ok
+    ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
 
@@ -298,12 +399,7 @@ def task(ctx: Context) -> TaskResult:
     if uv is None:
         return TaskResult(success=False, error="uv executable not found on PATH")
     venv_changed, error = _ensure_venv(
-        uv,
-        force,
-        timeout,
-        venv_dir,
-        venv_script,
-        ctx.config.system_metrics_setup.python_version,
+        uv, force, timeout, venv_dir, metrics.python_version
     )
     if error is not None:
         return TaskResult(success=False, error=error)
@@ -320,57 +416,95 @@ def task(ctx: Context) -> TaskResult:
         _log("system config written")
         changed = True
 
-    if not unit_ok or force:
-        _log(f"rendering unit template from {TEMPLATE_PATH}")
-        try:
-            _write_unit(venv_python, system_config_path)
-        except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write unit file: {exc}",
-            )
-        _log("unit file written")
-        changed = True
+    units = (
+        (service_name, service_unit),
+        (ingest_service_name, ingest_service_unit),
+        (ingest_path_name, ingest_path_unit),
+    )
+    unit_states = (service_unit_ok, ingest_service_unit_ok, ingest_path_unit_ok)
+    if not all(unit_states) or force:
+        for name, content in units:
+            if not force and _unit_matches(name, content):
+                continue
+            _log(f"writing unit {name}")
+            try:
+                _write_unit(name, content)
+            except OSError as exc:
+                return TaskResult(
+                    success=False,
+                    changed=changed,
+                    error=f"cannot write unit file {name}: {exc}",
+                )
+            _log(f"unit {name} written")
+            changed = True
 
-    if force or not (config_ok and unit_ok and enabled):
+    if force or not (
+        config_ok
+        and all(unit_states)
+        and service_enabled
+        and path_enabled
+    ):
         try:
             _log("reloading systemd: systemctl daemon-reload")
             run_command(["systemctl", "daemon-reload"], timeout=timeout)
             _log("systemd reloaded")
-            if not enabled or force:
-                _log(f"enabling service: systemctl enable {SERVICE_NAME}")
-                run_command(["systemctl", "enable", SERVICE_NAME], timeout=timeout)
-                _log("service enabled")
-            active = service_is_active(SERVICE_NAME, timeout)
+            for name in (service_name, ingest_path_name):
+                if force or not service_is_enabled(name, timeout):
+                    _log(f"enabling unit: systemctl enable {name}")
+                    run_command(["systemctl", "enable", name], timeout=timeout)
+                    _log(f"unit {name} enabled")
+            active = service_is_active(service_name, timeout)
             if force or (changed and active):
-                _log(f"restarting service: systemctl restart {SERVICE_NAME}")
-                run_command(["systemctl", "restart", SERVICE_NAME], timeout=timeout)
+                _log(f"restarting service: systemctl restart {service_name}")
+                run_command(["systemctl", "restart", service_name], timeout=timeout)
                 _log("service restarted")
             else:
-                _log(f"starting service: systemctl start {SERVICE_NAME}")
-                run_command(["systemctl", "start", SERVICE_NAME], timeout=timeout)
+                _log(f"starting service: systemctl start {service_name}")
+                run_command(["systemctl", "start", service_name], timeout=timeout)
                 _log("service started")
+            path_active = service_is_active(ingest_path_name, timeout)
+            if force or not ingest_path_unit_ok or not path_active:
+                if path_active:
+                    _log(f"restarting path unit: systemctl restart {ingest_path_name}")
+                    run_command(["systemctl", "restart", ingest_path_name], timeout=timeout)
+                    _log("path unit restarted")
+                else:
+                    _log(f"starting path unit: systemctl start {ingest_path_name}")
+                    run_command(["systemctl", "start", ingest_path_name], timeout=timeout)
+                    _log("path unit started")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False, changed=True, error=f"systemd setup failed: {exc}"
             )
 
-    replacement = None
     if not command_ok or force:
-        _log(f"linking command {command_path} to {venv_script}")
+        _log(f"writing command {command_path}")
         try:
-            replacement = _link_command(venv_script, command_path, recreate=force)
+            _write_command_file(command_path, command_content, metrics.command_file_mode)
+            ensure_root_owner(command_path)
         except OSError as exc:
             return TaskResult(
                 success=False,
                 changed=changed,
-                error=f"cannot link command {command_path}: {exc}",
+                error=f"cannot write command {command_path}: {exc}",
             )
-        _log("command linked")
+        _log("command written")
         changed = True
 
-    message = f"System Metrics service deployed, venv {venv_dir}"
-    if replacement is not None:
-        message += f"; {replacement}"
+    if not spool_ok or force:
+        _log(f"creating spool {spool_dir} with mode {metrics.spool_dir_mode:04o}")
+        try:
+            _ensure_spool_dir(spool_dir, metrics.spool_dir_mode)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"cannot create spool directory {spool_dir}: {exc}",
+            )
+        _log("spool ready")
+        changed = True
+
+    message = (
+        f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
+    )
     return TaskResult(success=True, changed=True, message=message)

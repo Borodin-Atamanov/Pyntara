@@ -4,7 +4,7 @@ After=local-fs.target
 
 [Service]
 Type=simple
-Environment=PYNTARA_JOURNAL_IDENTIFIER=system_metrics
+Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 StandardOutput=null
 Restart=on-failure
 $exec_lines

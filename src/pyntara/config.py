@@ -139,16 +139,27 @@ class SystemMetricsSetupConfig:
     venv; error_priority and success_priority are the syslog levels of
     failed and successful checks; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
-    command_path being the system path of the commit_system_metrics
-    command symlink. system_metrics_dir is the root of the System
-    Metrics queue, system_metrics_dir_mode and queue_file_mode are the
-    strict file modes of the queue directories and entries,
-    max_queue_file_size_bytes is the per-entry size limit, send_order is
-    the drain order of the senders and queue_file_suffix_length is the
-    length of the random name suffix (docs/spec/system-metrics.md,
-    section Queue architecture). The current placeholder check is
-    replaced by the real System Metrics logic in a later stage
-    (docs/spec/system-metrics.md).
+    command_path being the system path of the generated
+    commit_system_metrics command file. system_metrics_dir is the root
+    of the System Metrics queue, system_metrics_dir_mode and
+    queue_file_mode are the strict file modes of the queue directories
+    and entries, max_queue_file_size_bytes is the per-entry size limit,
+    send_order is the drain order of the senders and
+    queue_file_suffix_length is the length of the random name suffix
+    (docs/spec/system-metrics.md, section Queue architecture). The
+    spool is the intake pre-queue: spool_dir is the directory where the
+    generated commit_system_metrics command publishes files, its mode
+    spool_dir_mode is 1733 (sticky, write and search for everyone, no
+    listing) and command_file_mode is the mode of the generated command
+    file. service_unit_name, ingest_service_unit_name and
+    ingest_path_unit_name are the unit file names of the service, the
+    ingest oneshot and the path watcher; service_journal_identifier and
+    commit_journal_identifier are the journal identifiers of the
+    services and of the commit command; main_outbox_dir and temp_dir
+    are the queue directory names; spool_temp_prefix is the prefix of
+    the commit command temporary files, which the ingest never moves.
+    The current placeholder check is replaced by the real System
+    Metrics logic in a later stage (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -164,6 +175,17 @@ class SystemMetricsSetupConfig:
     max_queue_file_size_bytes: int
     send_order: str
     queue_file_suffix_length: int
+    spool_dir: Path
+    spool_dir_mode: int
+    command_file_mode: int
+    service_unit_name: str
+    ingest_service_unit_name: str
+    ingest_path_unit_name: str
+    service_journal_identifier: str
+    commit_journal_identifier: str
+    main_outbox_dir: str
+    temp_dir: str
+    spool_temp_prefix: str
 
 
 @dataclass(frozen=True)
@@ -277,6 +299,14 @@ def _octal_mode_field(raw: object, name: str) -> int:
     except ValueError:
         raise ConfigError(f"{name} must be an octal string like '0700'") from None
     return parsed
+
+
+def _nonempty_string_field(raw: object, name: str) -> str:
+    """Validate a non-empty string config value."""
+
+    if not isinstance(raw, str) or not raw:
+        raise ConfigError(f"{name} must be a non-empty string")
+    return raw
 
 
 def _engine_table(raw: object) -> EngineConfig:
@@ -545,11 +575,13 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     check_interval_seconds is a positive integer; a zero or negative
     interval would busy-loop the service. python_version is a non-empty
     string; error_priority and success_priority are syslog levels between
-    0 and 7; venv_dir, system_config_path and command_path are non-empty
-    strings; system_metrics_dir is a non-empty string;
-    system_metrics_dir_mode and queue_file_mode are octal strings;
-    max_queue_file_size_bytes and queue_file_suffix_length are positive
-    integers; send_order is one of the SEND_ORDERS values.
+    0 and 7; venv_dir, system_config_path, command_path,
+    system_metrics_dir, spool_dir and every unit name, journal
+    identifier, queue directory name and spool temp prefix are non-empty
+    strings; system_metrics_dir_mode, queue_file_mode, spool_dir_mode
+    and command_file_mode are octal strings; max_queue_file_size_bytes
+    and queue_file_suffix_length are positive integers; send_order is
+    one of the SEND_ORDERS values.
     """
 
     if not isinstance(raw, dict):
@@ -644,6 +676,49 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         max_queue_file_size_bytes=max_queue_file_size_bytes,
         send_order=send_order,
         queue_file_suffix_length=queue_file_suffix_length,
+        spool_dir=Path(
+            _nonempty_string_field(
+                raw.get("spool_dir"), "system_metrics_setup.spool_dir"
+            )
+        ),
+        spool_dir_mode=_octal_mode_field(
+            raw.get("spool_dir_mode"), "system_metrics_setup.spool_dir_mode"
+        ),
+        command_file_mode=_octal_mode_field(
+            raw.get("command_file_mode"),
+            "system_metrics_setup.command_file_mode",
+        ),
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "system_metrics_setup.service_unit_name",
+        ),
+        ingest_service_unit_name=_nonempty_string_field(
+            raw.get("ingest_service_unit_name"),
+            "system_metrics_setup.ingest_service_unit_name",
+        ),
+        ingest_path_unit_name=_nonempty_string_field(
+            raw.get("ingest_path_unit_name"),
+            "system_metrics_setup.ingest_path_unit_name",
+        ),
+        service_journal_identifier=_nonempty_string_field(
+            raw.get("service_journal_identifier"),
+            "system_metrics_setup.service_journal_identifier",
+        ),
+        commit_journal_identifier=_nonempty_string_field(
+            raw.get("commit_journal_identifier"),
+            "system_metrics_setup.commit_journal_identifier",
+        ),
+        main_outbox_dir=_nonempty_string_field(
+            raw.get("main_outbox_dir"),
+            "system_metrics_setup.main_outbox_dir",
+        ),
+        temp_dir=_nonempty_string_field(
+            raw.get("temp_dir"), "system_metrics_setup.temp_dir"
+        ),
+        spool_temp_prefix=_nonempty_string_field(
+            raw.get("spool_temp_prefix"),
+            "system_metrics_setup.spool_temp_prefix",
+        ),
     )
 
 

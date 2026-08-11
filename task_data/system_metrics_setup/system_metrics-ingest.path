@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch the System Metrics spool directory
+After=local-fs.target
+
+[Path]
+PathChanged=$spool_dir
+
+[Install]
+WantedBy=multi-user.target

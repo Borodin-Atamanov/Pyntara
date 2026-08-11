@@ -203,12 +203,13 @@ venv_dir = "/usr/local/lib/pyntara/venv"
 # Path of the single system config copied from the repository root; the
 # deployed service reads it through the same loader as the installer.
 system_config_path = "/etc/pyntara/config.toml"
-# Path of the system command commit_system_metrics. The task creates a
-# symlink at this path to the entry point script inside the deployed
-# venv, so the queue commit utility is on PATH after the install.
+# Path of the system command commit_system_metrics. The task generates
+# a thin bash command file at this path from the command template with
+# the spool path and the journal identifier embedded, so any user can
+# commit without config access and without root privileges.
 command_path = "/usr/local/bin/commit_system_metrics"
 # Root directory of the System Metrics queue on the target machine. The
-# commit_system_metrics utility publishes committed files into main_outbox
+# ingest service moves committed files from the spool into main_outbox
 # inside this directory; the deployed service fans them out into the
 # channel queues and archives sent files (docs/spec/system-metrics.md,
 # section Queue architecture).
@@ -220,7 +221,7 @@ system_metrics_dir_mode = "0700"
 # File mode of every queue entry, as an octal string.
 queue_file_mode = "0600"
 # Maximum size of a single committed file in bytes; larger files are
-# rejected by commit_system_metrics and by the sender.
+# rejected by the ingest service and by the sender.
 max_queue_file_size_bytes = 104857600
 # Order in which the deployed service sends queued entries: oldest_first
 # sends the earliest committed entry first, newest_first the latest.
@@ -230,6 +231,34 @@ send_order = "oldest_first"
 # identical original names coexist; the sender strips it before upload,
 # so the remote server receives the original name.
 queue_file_suffix_length = 12
+# Directory of the System Metrics spool: the intake directory where the
+# generated commit_system_metrics command publishes files for the ingest
+# service to move into main_outbox. The path is a behavioral value and
+# therefore lives in the config (architecture contract section 3).
+spool_dir = "/var/spool/system_metrics"
+# File mode of the spool directory, as an octal string. The mode is 1733:
+# sticky, write and search for everyone, no listing, so spool entry names
+# stay private; the commit command creates entries with queue_file_mode.
+spool_dir_mode = "1733"
+# File mode of the generated commit_system_metrics command file.
+command_file_mode = "0755"
+# Name of the long-running System Metrics service unit file.
+service_unit_name = "system_metrics.service"
+# Name of the ingest oneshot service unit file, started by the path unit.
+ingest_service_unit_name = "system_metrics-ingest.service"
+# Name of the ingest path unit that watches the spool directory.
+ingest_path_unit_name = "system_metrics-ingest.path"
+# Journal identifier of the System Metrics services.
+service_journal_identifier = "system_metrics"
+# Journal identifier of the commit command.
+commit_journal_identifier = "commit_system_metrics"
+# Name of the intake queue directory inside system_metrics_dir.
+main_outbox_dir = "main_outbox"
+# Name of the temp queue directory inside system_metrics_dir.
+temp_dir = "temp"
+# Prefix of temporary files the commit command creates in the spool
+# before publishing; entries with this prefix are never ingested.
+spool_temp_prefix = ".commit-"
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

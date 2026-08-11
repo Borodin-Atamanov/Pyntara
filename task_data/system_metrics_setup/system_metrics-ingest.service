@@ -1,0 +1,8 @@
+[Unit]
+Description=System Metrics spool ingest
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
+$exec_lines
