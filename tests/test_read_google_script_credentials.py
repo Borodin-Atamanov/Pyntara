@@ -132,7 +132,7 @@ def test_reads_production_when_password_matches(
     _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
     _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
     output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
+    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
 
 
 def test_falls_back_to_default_when_production_does_not_open(
@@ -144,7 +144,7 @@ def test_falls_back_to_default_when_production_does_not_open(
     _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
     _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
     output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": DEFAULT_PASSWORD})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
+    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
 
 
 def test_vault_source_forces_default(
@@ -163,7 +163,7 @@ def test_vault_source_forces_default(
             "PYNTARA_VAULT_SOURCE": "default",
         }
     )
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
+    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
 
 
 def test_password_file_used_when_no_environment(
@@ -177,7 +177,7 @@ def test_password_file_used_when_no_environment(
         f"  {DEFAULT_PASSWORD}  \n", encoding="utf-8"
     )
     output = gen.read_credentials({})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
+    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
 
 
 def test_empty_username_is_an_error_not_a_fallback(
@@ -191,6 +191,21 @@ def test_empty_username_is_an_error_not_a_fallback(
     _make_vault(production, PRODUCTION_PASSWORD, entry)
     _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
     with pytest.raises(gen.ScriptError, match="empty username"):
+        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+
+
+def test_empty_password_is_an_error_not_a_fallback(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Production opens but its entry has no password: the reader fails
+    # loudly instead of silently reading the default vault, because the
+    # deploy script must never substitute a missing auth key.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    entry = dict(GOOGLE_ENTRY)
+    entry["password"] = ""
+    _make_vault(production, PRODUCTION_PASSWORD, entry)
+    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
+    with pytest.raises(gen.ScriptError, match="empty password"):
         gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
 
 
@@ -248,7 +263,7 @@ def test_main_prints_credentials_and_exits_zero(
     monkeypatch.setenv("PYNTARA_VAULT_PASSWORD", PRODUCTION_PASSWORD)
     assert gen.main() == 0
     captured = capsys.readouterr()
-    assert captured.out == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
+    assert captured.out == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
     assert captured.err == ""
 
 
@@ -286,3 +301,4 @@ def test_opens_with_pykeepass() -> None:
         assert entry is not None
         assert entry.username == "test-script-id"
         assert entry.url == "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
+        assert entry.password == "test-key"

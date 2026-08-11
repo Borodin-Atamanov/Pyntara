@@ -2,12 +2,14 @@
 """Read Google script credentials from the vault databases.
 
 The deploy script for the System Metrics Google Drive web app needs the
-script ID of the Apps Script project and the deployment ID whose URL stays
-stable across redeploys. Both live in the google_script_key entry of the
-vault databases: the username field holds the script ID, the url field
-holds the web app endpoint from which the deployment ID is extracted as
-the path segment between /macros/s/ and /exec. This maintenance script
-prints both values as key=value lines for the deploy script to consume;
+script ID of the Apps Script project, the deployment ID whose URL stays
+stable across redeploys and the shared auth key. All three live in the
+google_script_key entry of the vault databases: the username field holds
+the script ID, the url field holds the web app endpoint from which the
+deployment ID is extracted as the path segment between /macros/s/ and
+/exec, the password field holds the auth key that the deploy script
+substitutes into the script template. This maintenance script prints the
+values as key=value lines for the deploy script to consume;
 it is a standalone script like secrets/regenerate_vault_by_config.py and
 is invoked with the project interpreter.
 
@@ -127,13 +129,13 @@ def _source_vault_paths() -> tuple[Path, Path]:
 
 
 def read_credentials(environ: Mapping[str, str]) -> str:
-    """script_id and deployment_id lines from the first vault that opens.
+    """script_id, deployment_id and script_key lines from the first vault.
 
     Production is tried first, then default; PYNTARA_VAULT_SOURCE
     (production or default) forces one source. The first vault that opens
-    with the password is authoritative: a missing entry, an empty username
-    or a url that is not a web app URL are errors, not reasons to fall
-    back. When no vault opens, ScriptError is raised.
+    with the password is authoritative: a missing entry, an empty username,
+    an empty password or a url that is not a web app URL are errors, not
+    reasons to fall back. When no vault opens, ScriptError is raised.
     """
 
     production_path, default_path = _source_vault_paths()
@@ -180,8 +182,18 @@ def read_credentials(environ: Mapping[str, str]) -> str:
                 f"entry {ENTRY_TITLE!r} in the {name} vault has an empty "
                 "username; fill the Apps Script project script ID there"
             )
+        script_key = (entry.password or "").strip()
+        if not script_key:
+            raise ScriptError(
+                f"entry {ENTRY_TITLE!r} in the {name} vault has an empty "
+                "password; fill the shared auth key there"
+            )
         deployment_id = deployment_id_from_url(entry.url or "")
-        return f"script_id={script_id}\ndeployment_id={deployment_id}\n"
+        return (
+            f"script_id={script_id}\n"
+            f"deployment_id={deployment_id}\n"
+            f"script_key={script_key}\n"
+        )
     raise ScriptError(
         "cannot open any vault: neither production nor default opened with "
         "the provided password"

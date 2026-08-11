@@ -15,8 +15,12 @@ set -euo pipefail
 # The vault source is read by secrets/read_google_script_credentials.py
 # with the project interpreter: the script ID lives in the username field
 # of the google_script_key entry, the deployment ID is extracted from the
-# url field; PYNTARA_VAULT_SOURCE (production or default) selects the
-# vault, production is tried first by default.
+# url field, and the shared auth key lives in the password field.
+# PYNTARA_VAULT_SOURCE (production or default) selects the vault,
+# production is tried first by default. The repository JS file is a
+# template: the build step substitutes the auth key from the vault for the
+# __GOOGLE_SCRIPT_KEY__ placeholder via json.dumps, so any key characters
+# are safe and a file without the substitution fails to load.
 #
 # Usage:
 #   deploy_google_script.sh [SCRIPT_ID DEPLOYMENT_ID]
@@ -34,6 +38,9 @@ VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
 
 script_id="${1:-${GOOGLE_SCRIPT_ID:-}}"
 deployment_id="${2:-${GOOGLE_DEPLOYMENT_ID:-}}"
+# The shared auth key comes only from the vault databases; the reader
+# fills it below together with the IDs.
+script_key=""
 
 fail() {
   echo "error: $*" >&2
@@ -59,11 +66,13 @@ if [[ -z "$script_id" || -z "$deployment_id" ]]; then
   fi
   vault_script_id="$(printf '%s\n' "$credentials" | sed -n 's/^script_id=//p')"
   vault_deployment_id="$(printf '%s\n' "$credentials" | sed -n 's/^deployment_id=//p')"
-  if [[ -z "$vault_script_id" || -z "$vault_deployment_id" ]]; then
+  vault_script_key="$(printf '%s\n' "$credentials" | sed -n 's/^script_key=//p')"
+  if [[ -z "$vault_script_id" || -z "$vault_deployment_id" || -z "$vault_script_key" ]]; then
     fail "the vault reader returned incomplete credentials"
   fi
   [[ -n "$script_id" ]] || script_id="$vault_script_id"
   [[ -n "$deployment_id" ]] || deployment_id="$vault_deployment_id"
+  [[ -n "$script_key" ]] || script_key="$vault_script_key"
 fi
 
 [[ -n "$script_id" ]] \
@@ -72,11 +81,27 @@ fi
   || fail "missing deployment ID; pass it as the second argument, set GOOGLE_DEPLOYMENT_ID, or fill the google_script_key url in the vault"
 [[ -f "$SCRIPT_FILE" ]] \
   || fail "script file not found: $SCRIPT_FILE"
+[[ -n "$script_key" ]] \
+  || fail "missing script key; fill the google_script_key password in the vault"
 
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
 cp "$SCRIPT_FILE" "$workdir/Code.gs"
+GOOGLE_SCRIPT_KEY_VALUE="$script_key" "$VENV_PYTHON" - "$workdir/Code.gs" <<'PYEOF'
+import json
+import os
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = os.environ["GOOGLE_SCRIPT_KEY_VALUE"]
+placeholder = "__GOOGLE_SCRIPT_KEY__"
+text = path.read_text(encoding="utf-8")
+if placeholder not in text:
+    raise SystemExit(f"placeholder {placeholder} not found in {path}")
+path.write_text(text.replace(placeholder, json.dumps(key)), encoding="utf-8")
+PYEOF
 cat > "$workdir/appsscript.json" <<'EOF'
 {
   "runtimeVersion": "V8",
