@@ -12,6 +12,8 @@ KeePass database handling is done via a Python library.
 
 The structure of both vault files is described in the [vault_structure] table of config.toml, the single source of truth. The structure is flat: every entry lives directly in the root group and is identified by its unique title; the notes field of each entry explains what it carries and who consumes it. The mapping between the config and the database is one-to-one: the keys of a [[vault_structure.entries]] table are the KeePass entry field names (title, username, password, url, notes), and a key that is not a field name is a config error. Tooling that creates or inspects the vaults reads this table.
 
+The google_script_key entry carries the System Metrics Google Drive web app credentials: the username field holds the Apps Script project script ID, the url field holds the web app deployment endpoint (the deployment ID is the path segment between /macros/s/ and /exec), the password field holds the shared auth key that the deployed script mirrors into its ALLOWED_KEYS list. The deploy helper reads the username and derives the deployment ID from the url; the System Metrics client sends files to the url.
+
 ## Vault regeneration
 
 The script secrets/regenerate_vault_by_config.py creates or updates a vault file from the [vault_structure] table of config.toml. Run it with the project interpreter, for example .venv/bin/python secrets/regenerate_vault_by_config.py secrets/default.vault; invoked directly, the script re-executes itself with the project virtualenv interpreter. The vault password comes from the first available source in this order:
