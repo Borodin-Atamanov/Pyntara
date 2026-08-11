@@ -84,19 +84,29 @@ def _ensure_venv(
     force: bool,
     timeout: float,
     venv_dir: Path,
+    venv_script: Path,
     python_version: str,
 ) -> tuple[bool, str | None]:
     """Ensure the venv exists with pyntara installed; (changed, error).
 
-    Without force an existing working venv is left untouched. Otherwise the
-    venv is created when missing with the configured python version and
-    the package is installed from the repository clone; force adds
+    A venv is working when its python imports pyntara and the
+    commit_system_metrics console script exists: a venv created before
+    the entry point was added passes the import check but has no script,
+    so without the script check the stale venv would be left untouched
+    and the command link would point at a missing file. Without force an
+    existing working venv is left untouched. Otherwise the venv is
+    created when missing with the configured python version and the
+    package is installed from the repository clone; force adds
     --reinstall so the running code is refreshed even when the installed
     version did not change.
     """
 
     venv_python = venv_dir / "bin" / "python"
-    if _venv_import_ok(venv_python, timeout) and not force:
+    if (
+        _venv_import_ok(venv_python, timeout)
+        and venv_script.is_file()
+        and not force
+    ):
         return False, None
     if not venv_dir.is_dir():
         _log(f"creating venv: uv venv {venv_dir}")
@@ -288,7 +298,12 @@ def task(ctx: Context) -> TaskResult:
     if uv is None:
         return TaskResult(success=False, error="uv executable not found on PATH")
     venv_changed, error = _ensure_venv(
-        uv, force, timeout, venv_dir, ctx.config.system_metrics_setup.python_version
+        uv,
+        force,
+        timeout,
+        venv_dir,
+        venv_script,
+        ctx.config.system_metrics_setup.python_version,
     )
     if error is not None:
         return TaskResult(success=False, error=error)

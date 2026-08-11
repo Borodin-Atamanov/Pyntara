@@ -57,12 +57,16 @@ def _install_fixtures(
     tmp_path: Path,
     *,
     venv_ok: bool = False,
+    venv_script_ok: bool = True,
 ) -> dict[str, Path]:
     """Point the task at temporary fixtures; return the fixture paths.
 
     The repository clone is a temporary directory holding config.toml and
     the unit template; the venv, the system config and the unit directory
     are temporary paths as well, so the real machine is never touched.
+    venv_script_ok controls whether the console script is created next to
+    the venv python: a venv that predates the entry point has the python
+    but no script.
     """
 
     repo = tmp_path / "repo"
@@ -80,7 +84,8 @@ def _install_fixtures(
     if venv_ok:
         venv_python.parent.mkdir(parents=True)
         venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
-        venv_script.write_text("#!/bin/sh\n", encoding="utf-8")
+        if venv_script_ok:
+            venv_script.write_text("#!/bin/sh\n", encoding="utf-8")
     command_path = tmp_path / "usr" / "local" / "bin" / system_metrics_setup.COMMIT_COMMAND_NAME
     system_config_dir = tmp_path / "etc" / "pyntara"
     system_config = system_config_dir / "config.toml"
@@ -130,12 +135,15 @@ def _install_fake(
     import_ok: bool,
     uv_available: bool = True,
     fail: Callable[[list[str]], bool] | None = None,
+    on_pip_install: Callable[[], None] | None = None,
 ) -> list[list[str]]:
     """Install subprocess and uv fakes; return the recorded command calls.
 
     systemctl is-enabled and is-active answer from the flags, the venv
     python import answers from import_ok, and uv commands succeed unless
-    matched by fail.
+    matched by fail. on_pip_install runs after a successful uv pip
+    install, so a test can simulate the console script appearing in the
+    venv.
     """
 
     calls: list[list[str]] = []
@@ -157,6 +165,13 @@ def _install_fake(
             if import_ok:
                 return _FakeProc(0)
             return _FakeProc(1)
+        if (
+            command[0] == "uv"
+            and command[1] == "pip"
+            and command[2] == "install"
+            and on_pip_install is not None
+        ):
+            on_pip_install()
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -178,12 +193,22 @@ def _deploy_fixture(
     deployed: bool = False,
     command_linked: bool = True,
     uv_available: bool = True,
+    venv_script_ok: bool = True,
+    create_script_on_install: bool = False,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> tuple[dict[str, Path], list[list[str]]]:
-    """Fixtures plus a fake; when deployed, config, unit and link match."""
+    """Fixtures plus a fake; when deployed, config, unit and link match.
+
+    create_script_on_install makes the fake uv pip install create the
+    console script in the venv, as the real installer does; it simulates
+    the package refresh of a venv that predates the entry point.
+    """
 
     fixtures = _install_fixtures(
-        monkeypatch, tmp_path, venv_ok=deployed or import_ok
+        monkeypatch,
+        tmp_path,
+        venv_ok=deployed or import_ok,
+        venv_script_ok=venv_script_ok,
     )
     if deployed:
         fixtures["system_config"].parent.mkdir(parents=True)
@@ -198,6 +223,12 @@ def _deploy_fixture(
         if command_linked:
             fixtures["command_path"].parent.mkdir(parents=True)
             fixtures["command_path"].symlink_to(fixtures["venv_script"])
+
+    def on_pip_install() -> None:
+        if create_script_on_install:
+            fixtures["venv_script"].parent.mkdir(parents=True, exist_ok=True)
+            fixtures["venv_script"].write_text("#!/bin/sh\n", encoding="utf-8")
+
     calls = _install_fake(
         monkeypatch,
         enabled=enabled,
@@ -205,6 +236,7 @@ def _deploy_fixture(
         import_ok=import_ok,
         uv_available=uv_available,
         fail=fail,
+        on_pip_install=on_pip_install,
     )
     return fixtures, calls
 
@@ -391,6 +423,42 @@ def test_only_command_missing_links_it(
         and call[1] in ("daemon-reload", "enable", "start", "restart")
         for call in calls
     )
+    assert fixtures["command_path"].is_symlink()
+    assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
+
+
+def test_missing_command_script_reinstalls_venv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The venv imports pyntara but the console script was never created
+    # (the venv predates the entry point): the package is reinstalled
+    # without --reinstall so the script appears, then the command symlink
+    # is created; the service itself is untouched.
+    fixtures, calls = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        enabled=True,
+        active=True,
+        import_ok=True,
+        deployed=True,
+        command_linked=False,
+        venv_script_ok=False,
+        create_script_on_install=True,
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert result.changed is True
+    assert any(
+        call[0] == "uv" and call[1] == "pip" and call[2] == "install"
+        and "--reinstall" not in call
+        for call in calls
+    )
+    assert not any(
+        call[0] == "systemctl"
+        and call[1] in ("daemon-reload", "enable", "start", "restart")
+        for call in calls
+    )
+    assert fixtures["venv_script"].is_file()
     assert fixtures["command_path"].is_symlink()
     assert os.readlink(fixtures["command_path"]) == str(fixtures["venv_script"])
 
