@@ -1,22 +1,35 @@
 /**
   Веб-приложение для приёма файлов через GET/POST и сохранения на Google Диск.
 
-  Адрес деплоя и ключ доступа хранятся в KeePass-базе (запись
-  google_script_key): url — адрес веб-приложения, password — ключ, зеркало
-  которого лежит в ALLOWED_KEYS ниже. Запрос без pass-параметра,
-  совпадающего с ALLOWED_KEYS, отклоняется. Примеры вызовов
-  (GOOGLE_DEPLOYMENT_ID и GOOGLE_SCRIPT_KEY подставьте из записи
-  google_script_key в KeePass):
+  Протокол: содержимое файла передаётся в параметре data в кодировке Base64.
+  Base64 обязателен для бинарных данных (зашифрованные PDF System Metrics):
+  Apps Script декодирует тело запроса как UTF-8, что портит произвольные
+  байты, а Base64 состоит только из ASCII и проходит без потерь. Имя файла —
+  параметр filename, ключ доступа — параметр pass, зеркало которого лежит в
+  ALLOWED_KEYS ниже. Ответ — текст OK <имя> или ERROR: <причина>.
 
-  curl -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt&data=Hello%20World&pass=$GOOGLE_SCRIPT_KEY"
+  Адрес деплоя и ключ хранятся в KeePass-базе (запись google_script_key): url —
+  адрес веб-приложения, password — ключ. Примеры вызовов (GOOGLE_DEPLOYMENT_ID
+  и GOOGLE_SCRIPT_KEY подставьте из записи; DATA_BASE64 — Base64 содержимого
+  файла):
 
-  curl -v -L -X POST -d "data=Hello World&pass=$GOOGLE_SCRIPT_KEY" \
-    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=hello_world.md"
+  # GET, только для небольших файлов: длина URL ограничена
+  curl -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=hello.txt&data=SGVsbG8gV29ybGQ%3D&pass=$GOOGLE_SCRIPT_KEY"
 
-  curl -v -L -X POST --data-urlencode "data@file.txt" \
-    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=test.txt&pass=$GOOGLE_SCRIPT_KEY"
+  # POST, данные в теле формы; --data-urlencode обязателен, иначе символы
+  # + / = в Base64 будут прочитаны как разделители формы
+  curl -L -X POST \
+    --data-urlencode "filename=report.pdf" \
+    --data-urlencode "pass=$GOOGLE_SCRIPT_KEY" \
+    --data-urlencode "data=SGVsbG8gV29ybGQ=" \
+    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec"
 
-  curl -v -L "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec?filename=some.data.txt&data=some-data&pass=$GOOGLE_SCRIPT_KEY"
+  # POST из файла с Base64: сначала base64 -w0 report.pdf > report.b64
+  curl -L -X POST \
+    --data-urlencode "filename=report.pdf" \
+    --data-urlencode "pass=$GOOGLE_SCRIPT_KEY" \
+    --data-urlencode "data@report.b64" \
+    "https://script.google.com/macros/s/$GOOGLE_DEPLOYMENT_ID/exec"
 
  */
 
@@ -26,12 +39,30 @@ const ALLOWED_KEYS = [
   'test-google-drive-script-key',
 ];
 
+// Расширение -> MIME-тип сохраняемого файла; без совпадения используется
+// application/octet-stream.
+const MIME_BY_EXTENSION = {
+  'pdf': 'application/pdf',
+  'txt': 'text/plain',
+  'log': 'text/plain',
+  'json': 'application/json',
+};
+
 function doGet(e) {
   return handleRequest(e);
 }
 
 function doPost(e) {
   return handleRequest(e);
+}
+
+function mimeTypeForName(name) {
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) {
+    return 'application/octet-stream';
+  }
+  const ext = name.slice(dot + 1).toLowerCase();
+  return MIME_BY_EXTENSION[ext] || 'application/octet-stream';
 }
 
 function handleRequest(e) {
@@ -68,7 +99,8 @@ function handleRequest(e) {
       throw new Error("Could not get or create 'pyntara' folder");
     }
 
-    const blob = Utilities.newBlob(data, 'application/octet-stream', finalName);
+    const bytes = Utilities.base64Decode(data);
+    const blob = Utilities.newBlob(bytes, mimeTypeForName(safeFilename), finalName);
     const file = folder.createFile(blob);
     if (!file) {
       throw new Error("Failed to create file");

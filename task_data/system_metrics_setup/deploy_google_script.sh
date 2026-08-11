@@ -79,6 +79,7 @@ trap 'rm -rf "$workdir"' EXIT
 cp "$SCRIPT_FILE" "$workdir/Code.gs"
 cat > "$workdir/appsscript.json" <<'EOF'
 {
+  "runtimeVersion": "V8",
   "dependencies": {},
   "webapp": {
     "access": "ANYONE_ANONYMOUS",
