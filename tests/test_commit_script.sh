@@ -45,9 +45,9 @@ make_command() {
     local identifier="${2:-commit_system_metrics_test}"
     local script
     script="$(mktemp)"
-    sed -e "s|\$spool_dir|$spool_dir|g" \
-        -e "s|\$commit_journal_identifier|$identifier|g" \
-        -e "s|\$spool_temp_prefix|.commit-|g" \
+    sed -e "s|@SPOOL_DIR@|$spool_dir|g" \
+        -e "s|@JOURNAL_IDENTIFIER@|$identifier|g" \
+        -e "s|@TEMP_PREFIX@|.commit-|g" \
         "$TEMPLATE" > "$script"
     chmod +x "$script"
     echo "$script"

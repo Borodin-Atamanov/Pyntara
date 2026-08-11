@@ -63,9 +63,9 @@ WantedBy=multi-user.target
 
 COMMAND_TEMPLATE = """\
 #!/usr/bin/env bash
-SPOOL_DIR='$spool_dir'
-JOURNAL_IDENTIFIER='$commit_journal_identifier'
-TEMP_PREFIX='$spool_temp_prefix'
+SPOOL_DIR='@SPOOL_DIR@'
+JOURNAL_IDENTIFIER='@JOURNAL_IDENTIFIER@'
+TEMP_PREFIX='@TEMP_PREFIX@'
 """
 
 SERVICE_JOURNAL_IDENTIFIER = "system_metrics"
@@ -200,10 +200,10 @@ def _expected_ingest_path_unit(fixtures: dict[str, Path]) -> str:
 def _expected_command(fixtures: dict[str, Path]) -> str:
     """The commit command the task must render for the given fixtures."""
 
-    return Template(COMMAND_TEMPLATE).substitute(
-        spool_dir=fixtures["spool_dir"],
-        commit_journal_identifier=COMMIT_JOURNAL_IDENTIFIER,
-        spool_temp_prefix=SPOOL_TEMP_PREFIX,
+    return (
+        COMMAND_TEMPLATE.replace("@SPOOL_DIR@", str(fixtures["spool_dir"]))
+        .replace("@JOURNAL_IDENTIFIER@", COMMIT_JOURNAL_IDENTIFIER)
+        .replace("@TEMP_PREFIX@", SPOOL_TEMP_PREFIX)
     )
 
 

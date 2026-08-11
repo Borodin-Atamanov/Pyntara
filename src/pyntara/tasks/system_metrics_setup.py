@@ -222,11 +222,14 @@ def _render_commit_command(
     contract section 3).
     """
 
-    template = Template(COMMAND_TEMPLATE_PATH.read_text(encoding="utf-8"))
-    return template.substitute(
-        spool_dir=spool_dir,
-        commit_journal_identifier=journal_identifier,
-        spool_temp_prefix=temp_prefix,
+    template = COMMAND_TEMPLATE_PATH.read_text(encoding="utf-8")
+    # The command template is a bash script with @PLACEHOLDER@ markers:
+    # string.Template would clash with bash variables, so plain text
+    # replacement is used instead.
+    return (
+        template.replace("@SPOOL_DIR@", str(spool_dir))
+        .replace("@JOURNAL_IDENTIFIER@", journal_identifier)
+        .replace("@TEMP_PREFIX@", temp_prefix)
     )
 
 

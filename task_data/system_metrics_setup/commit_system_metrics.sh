@@ -5,12 +5,14 @@
 # The file is copied with mode 0600 and the commit time, then published
 # atomically under the original name; a name collision is an error. The
 # source file is never modified. Every action is mirrored into the
-# system journal (best effort).
+# system journal (best effort). The @SPOOL_DIR@, @JOURNAL_IDENTIFIER@
+# and @TEMP_PREFIX@ markers are replaced at generation time; the rest of
+# the script keeps normal bash syntax.
 set -euo pipefail
 
-SPOOL_DIR='$spool_dir'
-JOURNAL_IDENTIFIER='$commit_journal_identifier'
-TEMP_PREFIX='$spool_temp_prefix'
+SPOOL_DIR='@SPOOL_DIR@'
+JOURNAL_IDENTIFIER='@JOURNAL_IDENTIFIER@'
+TEMP_PREFIX='@TEMP_PREFIX@'
 
 log_to_journal() {
     local message="$1"
