@@ -30,4 +30,4 @@ Task set and metadata are defined in config.toml under the [[tasks]] section. Un
 
 ## Force task selection
 
-The force task list is fixed by the PYNTARA_FORCE_TASKS environment variable: space-separated task names that must rerun even when the target state is already reached. Invalid names (unknown or not part of the run set) show the resilience notice and are ignored.
+The force task list is fixed by the PYNTARA_FORCE_TASKS environment variable: space-separated task names that must rerun even when the target state is already reached. The keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive. Invalid names (unknown or not part of the run set) show the resilience notice and are ignored.

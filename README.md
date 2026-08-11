@@ -21,7 +21,7 @@ PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is a
 
 PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
 
-PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state is already reached. When omitted, no task is forced. Invalid names are reported with a countdown notice and ignored.
+PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state is already reached. When omitted, no task is forced. The keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive. Invalid names are reported with a countdown notice and ignored.
 
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_extra_repos and cli_tools run before package operations. Use for test or offline runs; omit it in real provisioning so packages resolve from a fresh index.
 

@@ -37,7 +37,7 @@ Environment variables are the inst.sh interface for per-run selection and secret
 
 PYNTARA_INSTALL_MODE - minimal, server or desktop. When unset, the mode is auto-detected (desktop when a desktop session or process is present, otherwise server). An unknown value shows the resilience notice and falls back to the auto-detected mode.
 PYNTARA_TASKS - space-separated task names. When unset, the mode defaults are used. Unknown names are reported and ignored.
-PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored.
+PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored. The keyword all (case-insensitive) forces every task of the resolved run set. Task names and the keyword are case-insensitive.
 PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that cli_tools and add_extra_repos run before package operations. Omit it in real runs so the index stays fresh; set it for test or offline runs.
 PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
 

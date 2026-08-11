@@ -22,10 +22,15 @@ def validate_mode(mode: str) -> None:
 
 
 def by_name(name: str, tasks: tuple[TaskConfig, ...]) -> TaskConfig | None:
-    """Return the task definition for a name, or None."""
+    """Return the task definition for a name, or None.
 
+    Names are compared case-insensitively; the catalog name is returned as
+    written in the catalog.
+    """
+
+    folded = name.casefold()
     for task in tasks:
-        if task.name == name:
+        if task.name.casefold() == folded:
             return task
     return None
 
@@ -46,16 +51,18 @@ def resolve(selected: list[str], tasks: tuple[TaskConfig, ...]) -> list[str]:
     """Expand selected tasks with all transitive dependencies.
 
     The result lists every selected task and its dependencies in catalog
-    order, each exactly once. Dependencies of a task appear before the task
-    itself. Unknown names are ignored; the engine validates the selection
-    before resolving it.
+    order, each exactly once, under the canonical catalog names. Selection
+    names are matched case-insensitively. Dependencies of a task appear
+    before the task itself. Unknown names are ignored; the engine validates
+    the selection before resolving it.
     """
 
+    selected_folded = {name.casefold() for name in selected}
     result: list[str] = []
     for task in tasks:
         # A task is included when it is selected itself or when any selected
         # task depends on it, directly or transitively.
-        if task.name in selected:
+        if task.name.casefold() in selected_folded:
             result.append(task.name)
             continue
         for selection in selected:

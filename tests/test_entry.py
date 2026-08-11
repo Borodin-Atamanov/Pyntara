@@ -277,6 +277,142 @@ def test_run_reports_force_tasks_in_the_run_set(
     assert "Force: add_extra_repos cli_tools" in result.output
 
 
+def test_run_force_all_reports_the_full_run_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The keyword all forces every task of the run set, not every catalog
+    # task: the Force line lists exactly the minimal defaults.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "all")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+
+    def ok_task(ctx: object) -> TaskResult:
+        return TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    assert f"Force: {expected}" in result.output
+
+
+def test_run_force_all_is_case_insensitive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The keyword all matches in any case and forces the whole run set.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "ALL")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+
+    def ok_task(ctx: object) -> TaskResult:
+        return TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    assert f"Force: {expected}" in result.output
+
+
+def test_run_force_all_still_reports_invalid_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Validation stays unconditional: a typo next to all shows the notice,
+    # and all still forces the whole run set.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "all nope")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+
+    def ok_task(ctx: object) -> TaskResult:
+        return TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "invalid task names in PYNTARA_FORCE_TASKS: nope" in result.output
+    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    assert f"Force: {expected}" in result.output
+
+
+def test_run_force_tasks_match_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A force entry in another case resolves to the canonical catalog name,
+    # so the task's own lowercase check still matches.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "CLI_TOOLS")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+
+    def ok_task(ctx: object) -> TaskResult:
+        return TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "invalid task names" not in result.output
+    assert "Force: cli_tools" in result.output
+
+
+def test_run_tasks_match_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # PYNTARA_TASKS entries are matched case-insensitively; the run set
+    # carries the canonical catalog names.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
+    monkeypatch.setenv("PYNTARA_TASKS", "CLI_TOOLS")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert "Tasks: add_extra_repos cli_tools" in result.output
+
+
+def _captured_force_tasks(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> frozenset[str]:
+    """Run the engine with PYNTARA_FORCE_TASKS set to value and return the
+    set that reached Context through run_tasks."""
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", value)
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+    captured: dict[str, frozenset[str]] = {"force_tasks": frozenset()}
+
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> list[tuple[str, TaskResult]]:
+        captured["force_tasks"] = ctx.force_tasks
+        return []
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    return captured["force_tasks"]
+
+
+def test_run_force_all_reaches_context_as_run_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # all expands to exactly the resolved run set: forced and selected are
+    # the same set, so every selected task reruns.
+    expected = frozenset(task_catalog.default_tasks("minimal", REAL_TASKS))
+    assert _captured_force_tasks(monkeypatch, "all") == expected
+
+
 def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # When every task succeeds, the run reports the count and exits 0.
     _clear_env(monkeypatch)

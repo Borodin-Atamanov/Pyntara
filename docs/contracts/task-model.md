@@ -9,7 +9,7 @@ repeated runs must not destroy an already configured system
 
 If target state is already reached, a task normally skips changes.
 
-Tasks must support force mode that reruns a task even after completion. Force mode is a list of task names (PYNTARA_FORCE_TASKS); a forced task reruns even when the target state is already reached.
+Tasks must support force mode that reruns a task even after completion. Force mode is a list of task names (PYNTARA_FORCE_TASKS); a forced task reruns even when the target state is already reached. The keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive.
 
 ## Task configuration
 

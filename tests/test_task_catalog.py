@@ -91,6 +91,27 @@ def test_unknown_tasks_reports_unknown_names() -> None:
     assert task_catalog.unknown_tasks(["nope", "cli_tools"], TASKS) == ["nope"]
 
 
+def test_by_name_matches_case_insensitively() -> None:
+    assert task_catalog.by_name("CLI_TOOLS", TASKS) is not None
+    assert task_catalog.by_name("Cli_Tools", TASKS) is not None
+    assert task_catalog.by_name("nope", TASKS) is None
+
+
+def test_unknown_tasks_matches_case_insensitively() -> None:
+    # An unknown name is still reported, a known name in another case is not.
+    assert task_catalog.unknown_tasks(["NOPE", "CLI_TOOLS"], TASKS) == ["NOPE"]
+
+
+def test_resolve_matches_selection_case_insensitively() -> None:
+    # Selection names are matched case-insensitively; the result carries the
+    # canonical catalog names.
+    assert task_catalog.resolve(["CLI_TOOLS"], TASKS) == [
+        "add_extra_repos",
+        "cli_tools",
+    ]
+    assert task_catalog.resolve(["C", "A"], SYNTHETIC_TASKS) == ["a", "b", "c"]
+
+
 def test_validate_mode_accepts_known_modes() -> None:
     for mode in MODES:
         task_catalog.validate_mode(mode)

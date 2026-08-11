@@ -244,7 +244,9 @@ def _resolve_force_tasks(
 ) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
-    Each forced task must be a known task that is part of the run set.
+    The keyword all (case-insensitive) forces every task in the run set.
+    Every other entry must be a known task that is part of the run set,
+    matched case-insensitively; the canonical catalog names are returned.
     Invalid entries are not fatal: an error notice is shown, the run pauses
     so the user can interrupt, then the run continues with the valid entries.
     """
@@ -253,10 +255,13 @@ def _resolve_force_tasks(
     if selection is None:
         return frozenset()
     force_names = selection.split()
+    known = {task.name.casefold() for task in tasks}
+    names_folded = {name.casefold() for name in names}
     invalid = [
         name
         for name in force_names
-        if task_catalog.by_name(name, tasks) is None or name not in names
+        if name.casefold() != "all"
+        and (name.casefold() not in known or name.casefold() not in names_folded)
     ]
     if invalid:
         _warn_and_continue(
@@ -265,11 +270,10 @@ def _resolve_force_tasks(
             + "; continuing without them",
             notice_timeout,
         )
-    return frozenset(
-        name
-        for name in force_names
-        if task_catalog.by_name(name, tasks) is not None and name in names
-    )
+    if any(name.casefold() == "all" for name in force_names):
+        return frozenset(names)
+    force_folded = {name.casefold() for name in force_names}
+    return frozenset(name for name in names if name.casefold() in force_folded)
 
 
 @app.command()
