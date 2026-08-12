@@ -142,6 +142,24 @@ def check_runtime_vault(cfg: Config) -> bool:
     return True
 
 
+def _retry_delay(
+    failures: int, base_seconds: int, multiplier: int, max_seconds: int
+) -> int:
+    """The pause after failures consecutive failed cycles, in seconds.
+
+    The first failed cycle waits base_seconds, every further failure
+    multiplies the pause by the integer multiplier until max_seconds; all
+    values are whole seconds, so no rounding is needed
+    (docs/spec/system-metrics.md, section Schedule and retry). A call
+    without failures returns the base, so the helper is safe at any
+    counter value.
+    """
+
+    if failures < 1:
+        return base_seconds
+    return min(base_seconds * multiplier ** (failures - 1), max_seconds)
+
+
 def main() -> None:
     """Run the periodic check, dispatch and send loop until the service stops.
 
@@ -151,19 +169,39 @@ def main() -> None:
     cannot know what to check. Every cycle checks the runtime vault,
     dispatches the committed entries into the channel queues and drains
     the Google Drive channel; a failure of any step is journaled and the
-    loop continues with the next cycle.
+    loop continues with the next cycle. A cycle with send attempts and no
+    success switches the loop to the retry mode: one random uploadable
+    entry is sent per cycle and the pause grows geometrically from the
+    configured backoff values; a successful cycle or a cycle without
+    attempts returns the loop to the normal mode
+    (docs/spec/system-metrics.md, section Schedule and retry).
     """
 
     if len(sys.argv) < 2:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    interval = cfg.system_metrics_setup.check_interval_seconds
+    metrics = cfg.system_metrics_setup
+    interval = metrics.check_interval_seconds
+    failed_cycles = 0
     while True:
         check_runtime_vault(cfg)
         pyntara.metrics_send.dispatch_entries(cfg)
-        pyntara.metrics_send.send_google_queue(cfg)
-        time.sleep(interval)
+        attempts, sent = pyntara.metrics_send.send_google_queue(
+            cfg, single_random=failed_cycles > 0
+        )
+        if sent > 0 or attempts == 0:
+            failed_cycles = 0
+            pause = interval
+        else:
+            failed_cycles += 1
+            pause = _retry_delay(
+                failed_cycles,
+                metrics.backoff_base_seconds,
+                metrics.backoff_multiplier,
+                metrics.backoff_max_seconds,
+            )
+        time.sleep(pause)
 
 
 if __name__ == "__main__":

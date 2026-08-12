@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import os
+import random
 import stat
 import subprocess
 from pathlib import Path
@@ -77,7 +78,9 @@ def dispatch_entries(cfg: Config) -> None:
             _log(f"dispatched {entry.name} into the channel queues")
 
 
-def send_google_queue(cfg: Config) -> None:
+def send_google_queue(
+    cfg: Config, single_random: bool = False
+) -> tuple[int, int]:
     """Drain the Google Drive channel queue into the web app.
 
     Every regular non-empty entry no larger than the configured limit is
@@ -86,7 +89,12 @@ def send_google_queue(cfg: Config) -> None:
     An OK response moves the entry to main_sent; an ERROR response, a
     curl failure or missing credentials keep every entry for the next
     cycle. Each entry is handled independently, so one failure never
-    stops the drain.
+    stops the drain. The function returns the number of send attempts
+    and the number of entries moved to main_sent; a skipped entry is not
+    an attempt. In the retry mode (single_random) exactly one randomly
+    chosen uploadable entry is attempted, so one permanently rejected
+    entry never blocks the drain of the rest
+    (docs/spec/system-metrics.md, section Schedule and retry).
     """
 
     metrics = cfg.system_metrics_setup
@@ -95,16 +103,29 @@ def send_google_queue(cfg: Config) -> None:
     sent.mkdir(mode=metrics.system_metrics_dir_mode, parents=True, exist_ok=True)
     if not channel.is_dir():
         _log(f"google script channel: queue {channel} missing, skipping")
-        return
+        return 0, 0
     credentials = _google_script_credentials(cfg)
     if credentials is None:
         _log("google script channel: no credentials, skipping the drain")
-        return
+        return 0, 0
     url, key = credentials
-    for entry in _ordered_entries(channel, metrics.send_order):
-        if not _entry_uploadable(entry, metrics.max_queue_file_size_bytes):
-            continue
-        _send_entry(cfg, entry, url, key, sent)
+    entries = [
+        entry
+        for entry in _ordered_entries(channel, metrics.send_order)
+        if _entry_uploadable(entry, metrics.max_queue_file_size_bytes)
+    ]
+    if single_random:
+        if not entries:
+            return 0, 0
+        chosen = random.choice(entries)
+        return 1, 1 if _send_entry(cfg, chosen, url, key, sent) else 0
+    attempts = 0
+    sent_count = 0
+    for entry in entries:
+        attempts += 1
+        if _send_entry(cfg, entry, url, key, sent):
+            sent_count += 1
+    return attempts, sent_count
 
 
 def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
@@ -195,7 +216,7 @@ def _entry_uploadable(entry: Path, limit: int) -> bool:
     return True
 
 
-def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> None:
+def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> bool:
     """Upload one entry and move it to main_sent on success.
 
     The content is read and Base64-encoded; the original name is
@@ -213,7 +234,9 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
     own --max-time is the effective limit, the process bound is a
     backstop that never fires in practice. On an OK response the entry
     moves to main_sent; every other outcome journals the failure and
-    keeps the entry for the next cycle.
+    keeps the entry for the next cycle. Returns True when the entry
+    moved to main_sent, False on every failure; the caller counts the
+    call as one send attempt regardless of the outcome.
     """
 
     metrics = cfg.system_metrics_setup
@@ -221,7 +244,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
         content = entry.read_bytes()
     except OSError as exc:
         _log(f"google script channel: cannot read {entry}: {exc}", priority=3)
-        return
+        return False
     data = base64.b64encode(content).decode("ascii")
     name = restore_original_name(entry.name, metrics.queue_file_suffix_length)
     timeout = metrics.google_script_timeout_seconds
@@ -246,14 +269,14 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         _log(f"google script channel: sending {entry.name} failed: {exc}", priority=3)
-        return
+        return False
     if result.returncode != 0:
         _log(
             f"google script channel: sending {entry.name} failed: curl exited "
             f"{result.returncode}: {(result.stderr or '').strip()}",
             priority=3,
         )
-        return
+        return False
     output = (result.stdout or "").strip()
     if not output.startswith("OK "):
         _log(
@@ -261,7 +284,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
             f"answered: {output}",
             priority=3,
         )
-        return
+        return False
     sent_path = sent / entry.name
     try:
         os.replace(entry, sent_path)
@@ -271,5 +294,6 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
             f"{sent_path}: {exc}",
             priority=3,
         )
-        return
+        return False
     _log(f"google script channel: sent {entry.name}")
+    return True

@@ -205,6 +205,15 @@ service_unit_name = "zram.service"
 # (docs/spec/system-metrics.md).
 # Pause between two runtime vault availability checks, in seconds.
 check_interval_seconds = 300
+# Retry mode of the send loop: after a cycle with send attempts and no
+# success the service sends one random uploadable entry per cycle and the
+# pause grows. The first failed cycle waits backoff_base_seconds, every
+# further consecutive failure multiplies the pause by the integer
+# backoff_multiplier until backoff_max_seconds; all values are whole
+# seconds (docs/spec/system-metrics.md, section Schedule and retry).
+backoff_base_seconds = 2
+backoff_multiplier = 2
+backoff_max_seconds = 14400
 # Python version selector for the dedicated venv created by the task.
 python_version = "3"
 # Syslog priority of a failed runtime vault check, 0 to 7.

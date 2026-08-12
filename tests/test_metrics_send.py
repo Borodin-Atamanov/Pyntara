@@ -319,3 +319,114 @@ def test_send_newest_first_uploads_newest_first(
     send_google_queue(cfg)
     order = [_arg(call, "filename=") for call in calls]
     assert order == ["third.txt", "second.txt", "first.txt"]
+
+
+def test_send_returns_attempts_and_sent_counts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Two uploadable entries both succeed: the drain reports two attempts
+    # and two sent entries.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    calls = _fake_curl(monkeypatch)
+    channel = tmp_path / "metrics" / "google_script"
+    _make_entry(channel, "a.txt", "1", time.time())
+    _make_entry(channel, "b.txt", "2", time.time())
+    attempts, sent = send_google_queue(cfg)
+    assert len(calls) == 2
+    assert attempts == 2
+    assert sent == 2
+
+
+def test_send_counts_partial_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # One entry is accepted, the next is rejected: the drain reports two
+    # attempts and one sent entry, and the rejected entry stays queued.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    responses = iter(["OK a", "ERROR: bad"])
+
+    def fake_run(command: list[str], **kwargs: object) -> FakeProc:
+        return FakeProc(returncode=0, stdout=next(responses))
+
+    monkeypatch.setattr("pyntara.metrics_send.run_command", fake_run)
+    channel = tmp_path / "metrics" / "google_script"
+    first = _make_entry(channel, "a.txt", "1", time.time())
+    second = _make_entry(channel, "b.txt", "2", time.time())
+    attempts, sent = send_google_queue(cfg)
+    assert attempts == 2
+    assert sent == 1
+    assert not first.exists()
+    assert second.exists()
+
+
+def test_send_retry_mode_attempts_one_random_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # In the retry mode exactly one randomly chosen uploadable entry is
+    # attempted; the others stay queued for later retries.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    calls = _fake_curl(monkeypatch)
+    monkeypatch.setattr("pyntara.metrics_send.random.choice", lambda seq: seq[1])
+    channel = tmp_path / "metrics" / "google_script"
+    first = _make_entry(channel, "a.txt", "1", time.time())
+    second = _make_entry(channel, "b.txt", "2", time.time())
+    third = _make_entry(channel, "c.txt", "3", time.time())
+    attempts, sent = send_google_queue(cfg, single_random=True)
+    assert attempts == 1
+    assert sent == 1
+    assert len(calls) == 1
+    assert _arg(calls[0], "filename=") == "b.txt"
+    assert first.exists()
+    assert not second.exists()
+    assert third.exists()
+
+
+def test_send_retry_mode_failure_counts_one_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The web app rejects the chosen entry: the retry mode reports one
+    # attempt, no sent entry, and the entry stays queued.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    calls = _fake_curl(monkeypatch, stdout="ERROR: Unauthorized")
+    channel = tmp_path / "metrics" / "google_script"
+    entry = _make_entry(channel, "a.txt", "1", time.time())
+    attempts, sent = send_google_queue(cfg, single_random=True)
+    assert len(calls) == 1
+    assert attempts == 1
+    assert sent == 0
+    assert entry.exists()
+
+
+def test_send_retry_mode_without_vault_returns_zero_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No runtime vault: the retry mode reports no attempts and no sent
+    # entries, so the loop stays in the normal mode.
+    cfg = _send_config(tmp_path)
+    calls = _fake_curl(monkeypatch)
+    channel = tmp_path / "metrics" / "google_script"
+    _make_entry(channel, "a.txt", "1", time.time())
+    attempts, sent = send_google_queue(cfg, single_random=True)
+    assert calls == []
+    assert attempts == 0
+    assert sent == 0
+
+
+def test_send_retry_mode_without_uploadable_returns_zero_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Only a non-uploadable entry is queued: the retry mode reports no
+    # attempts, so the loop stays in the normal mode.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    calls = _fake_curl(monkeypatch)
+    channel = tmp_path / "metrics" / "google_script"
+    _make_entry(channel, "empty.txt", "", time.time())
+    attempts, sent = send_google_queue(cfg, single_random=True)
+    assert calls == []
+    assert attempts == 0
+    assert sent == 0

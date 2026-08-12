@@ -56,6 +56,9 @@ service_unit_name = "zram.service"
 
 [system_metrics_setup]
 check_interval_seconds = 300
+backoff_base_seconds = 2
+backoff_multiplier = 2
+backoff_max_seconds = 14400
 python_version = "3"
 error_priority = 3
 success_priority = 7
@@ -182,6 +185,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.reset_busy_attempts == 5
     assert config.zram_service.reset_busy_retry_delay_seconds == 0.5
     assert config.system_metrics_setup.check_interval_seconds == 300
+    assert config.system_metrics_setup.backoff_base_seconds == 2
+    assert config.system_metrics_setup.backoff_multiplier == 2
+    assert config.system_metrics_setup.backoff_max_seconds == 14400
     assert config.system_metrics_setup.python_version == "3"
     assert config.system_metrics_setup.error_priority == 3
     assert config.system_metrics_setup.success_priority == 7
@@ -293,6 +299,8 @@ _BASE_CONFIG = (
     "reset_busy_retry_delay_seconds = 0.5\n"
     'service_unit_name = "zram.service"\n'
     "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+    "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
+    "backoff_max_seconds = 14400\n"
     'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
     'system_config_path = "/etc/pyntara/config.toml"\n'
@@ -480,6 +488,42 @@ _BASE_CONFIG = (
         # system_metrics_setup check_interval_seconds is negative
         _BASE_CONFIG.replace(
             "check_interval_seconds = 300", "check_interval_seconds = -5"
+        ),
+        # system_metrics_setup backoff_base_seconds is a string
+        _BASE_CONFIG.replace(
+            "backoff_base_seconds = 2", 'backoff_base_seconds = "2"'
+        ),
+        # system_metrics_setup backoff_base_seconds is zero
+        _BASE_CONFIG.replace(
+            "backoff_base_seconds = 2", "backoff_base_seconds = 0"
+        ),
+        # system_metrics_setup backoff_base_seconds is negative
+        _BASE_CONFIG.replace(
+            "backoff_base_seconds = 2", "backoff_base_seconds = -5"
+        ),
+        # system_metrics_setup backoff_multiplier is a string
+        _BASE_CONFIG.replace(
+            "backoff_multiplier = 2", 'backoff_multiplier = "2"'
+        ),
+        # system_metrics_setup backoff_multiplier is one: no growth
+        _BASE_CONFIG.replace(
+            "backoff_multiplier = 2", "backoff_multiplier = 1"
+        ),
+        # system_metrics_setup backoff_multiplier is zero
+        _BASE_CONFIG.replace(
+            "backoff_multiplier = 2", "backoff_multiplier = 0"
+        ),
+        # system_metrics_setup backoff_max_seconds is a string
+        _BASE_CONFIG.replace(
+            "backoff_max_seconds = 14400", 'backoff_max_seconds = "14400"'
+        ),
+        # system_metrics_setup backoff_max_seconds is below the base
+        _BASE_CONFIG.replace(
+            "backoff_max_seconds = 14400", "backoff_max_seconds = 1"
+        ),
+        # system_metrics_setup backoff_max_seconds is negative
+        _BASE_CONFIG.replace(
+            "backoff_max_seconds = 14400", "backoff_max_seconds = -5"
         ),
         # system_metrics_setup python_version is a number, not a string
         _BASE_CONFIG.replace('python_version = "3"', "python_version = 3"),
@@ -897,6 +941,8 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "reset_busy_retry_delay_seconds = 0.5\n"
         'service_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
+        "backoff_max_seconds = 14400\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
@@ -964,6 +1010,8 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "reset_busy_retry_delay_seconds = 0.5\n"
         'service_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
+        "backoff_max_seconds = 14400\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'

@@ -5,7 +5,7 @@ There is a dedicated System Metrics installation task.
 ## Network detection
 
 At system start, network availability is checked.
-If network is unavailable, retry interval increases by sqrt(2) each attempt (e.g., 1.0 s, 1.4 s, ...).
+If network is unavailable, the service enters the retry mode: the pause grows by the backoff_multiplier factor each consecutive failed cycle, starting from backoff_base_seconds and capped at backoff_max_seconds. All three values are whole seconds, so every pause is a whole number of seconds.
 When network appears, System Metrics attempts to send data.
 
 ## Delivery channels
@@ -36,6 +36,9 @@ After send, System Metrics files are saved in a dedicated folder.
 ## Schedule and retry
 
 System Metrics attempts to send immediately after computer boot.
+
+Retry mode:
+The service runs in the normal mode while it can send: every cycle drains all uploadable entries of the Google Drive channel queue. When a cycle made at least one send attempt and none succeeded (a curl failure, a timeout or a non-OK answer), the service switches to the retry mode. In the retry mode every cycle sends one randomly chosen uploadable entry, so one permanently rejected entry never blocks the drain of the rest; after n consecutive failed cycles the pause is delay(n) = min(backoff_base_seconds x backoff_multiplier^(n-1), backoff_max_seconds): the first failure waits the base, every further failure multiplies the pause by the integer multiplier until the ceiling. The parameters live in config.toml under [system_metrics_setup] (defaults: 2 seconds, a multiplier of 2, a ceiling of 4 hours). All three values are whole seconds, so every delay is a positive whole number of seconds by construction and never drops below the base. A cycle with a successful send, or with no send attempt at all (an empty queue, missing credentials or only non-uploadable entries), returns the service to the normal mode and resets k to zero. The counter lives in memory only, so a service restart starts from the normal mode, which matches the immediate send after boot.
 
 Base accumulation/retry behavior:
 System Metrics data accumulates for one day
@@ -72,7 +75,7 @@ Entry lifecycle:
 1. The producer creates an artifact (encrypted PDF in memory, install log, anything) and runs commit_system_metrics FILE. The thin command checks that the file is regular and non-empty and publishes it into the spool atomically under the original name with mode 0600 and the commit time; a name that is already pending in the spool is an explicit error, never an overwrite.
 2. The path unit system_metrics-ingest.path watches the spool with inotify and starts the ingest service system_metrics-ingest.service on every file appearance; there is no polling. The service runs venv_dir/bin/python -m pyntara.metrics_ingest system_config_path, copies each spool file into temp with the queue file mode and the spool modification time (the commit time), publishes it into main_outbox under the original name plus a random alphanumeric suffix through a hard link and removes the spool entry. The source file is never modified.
 3. The dispatcher creates one hard link per main_outbox entry in every channel queue, and only after every link succeeds removes the name from main_outbox. A channel enabled later receives only entries committed after its enablement.
-4. Every channel drains its queue independently: entries are ordered by modification time according to send_order, the suffix is stripped and the original name is uploaded; on success the entry name is moved to main_sent, on failure it stays for retry with the sqrt(2) interval growth.
+4. Every channel drains its queue independently: entries are ordered by modification time according to send_order, the suffix is stripped and the original name is uploaded; on success the entry name is moved to main_sent, on failure it stays for retry. When a cycle made at least one send attempt and none succeeded, the loop switches to the retry mode described in the Schedule and retry section.
 
 Queue rules:
 
@@ -90,4 +93,4 @@ Queue rules:
 
 The commit_system_metrics command is a thin generated bash script installed by the system_metrics_setup task. The task renders it from a template at the configured system_metrics_setup.command_path (default /usr/local/bin/commit_system_metrics) with the spool path, the journal identifier and the temporary prefix embedded from the system config, and sets the mode from system_metrics_setup.command_file_mode (default 0755). The command needs no config access and no root privileges, so any user can commit. It takes exactly one file argument, verifies that the file is regular and non-empty, copies it into the spool with mode 0600 and the commit time and publishes it atomically under the original name; every action and every error is mirrored into the system journal under the configured identifier (best effort, like the installer logging). A name collision is an explicit error. The command file is idempotent: the task skips when its content and mode match, rewrites it on change or in force mode, replaces a foreign file on command_path and fails on a directory there.
 
-Current stage: the spool, the thin commit command, the ingest service with its inotify path unit, the queue config, the directory structure, the dispatcher and the Google Drive channel sender are implemented. The service loop dispatches main_outbox entries into the google_script channel and drains it into the web app every check_interval_seconds; sent entries accumulate in main_sent without a rotation policy for now. The Telegram channel and the encrypted PDF generation are the next stages. The Schedule and retry section (the daily 12:00 send, the once-a-day gate and the sqrt(2) interval growth) is not yet implemented: the sender attempts a drain on every service cycle instead.
+Current stage: the spool, the thin commit command, the ingest service with its inotify path unit, the queue config, the directory structure, the dispatcher and the Google Drive channel sender are implemented. The service loop dispatches main_outbox entries into the google_script channel and drains it into the web app every check_interval_seconds; sent entries accumulate in main_sent without a rotation policy for now. The Telegram channel and the encrypted PDF generation are the next stages. The retry mode of the Schedule and retry section is implemented: a cycle with send attempts and no successes switches the loop to the single-random-entry retry with the geometric backoff from config.toml; the daily 12:00 send and the once-a-day gate are not yet implemented.

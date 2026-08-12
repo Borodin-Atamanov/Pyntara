@@ -147,7 +147,12 @@ class SystemMetricsSetupConfig:
     through pyntara.config.load_config, the same loader the installer
     uses: system_config_path is the single config of the system.
     check_interval_seconds is the pause between two vault availability
-    checks; python_version selects the interpreter for the deployed
+    checks; backoff_base_seconds, backoff_multiplier and
+    backoff_max_seconds are the retry mode parameters of the send loop:
+    the first failed cycle waits backoff_base_seconds, every further
+    consecutive failure multiplies the pause by backoff_multiplier until
+    backoff_max_seconds (docs/spec/system-metrics.md, section Schedule
+    and retry); python_version selects the interpreter for the deployed
     venv; error_priority and success_priority are the syslog levels of
     failed and successful checks; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
@@ -185,6 +190,9 @@ class SystemMetricsSetupConfig:
     """
 
     check_interval_seconds: int
+    backoff_base_seconds: int
+    backoff_multiplier: int
+    backoff_max_seconds: int
     python_version: str
     error_priority: int
     success_priority: int
@@ -629,8 +637,10 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
 def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """Validate the [system_metrics_setup] table and build the config.
 
-    check_interval_seconds is a positive integer; a zero or negative
-    interval would busy-loop the service. python_version is a non-empty
+    check_interval_seconds, backoff_base_seconds and
+    backoff_max_seconds are positive integers and backoff_max_seconds is
+    not below backoff_base_seconds; backoff_multiplier is an integer of
+    at least 2, so the pause always grows. python_version is a non-empty
     string; error_priority and success_priority are syslog levels between
     0 and 7; venv_dir, system_config_path, command_path,
     system_metrics_dir, spool_dir and every unit name, journal
@@ -656,6 +666,31 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     if check_interval_seconds < 1:
         raise ConfigError(
             "system_metrics_setup.check_interval_seconds must be positive"
+        )
+    backoff_base_seconds = _int_field(
+        raw.get("backoff_base_seconds"),
+        "system_metrics_setup.backoff_base_seconds",
+    )
+    if backoff_base_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.backoff_base_seconds must be positive"
+        )
+    backoff_multiplier = _int_field(
+        raw.get("backoff_multiplier"),
+        "system_metrics_setup.backoff_multiplier",
+    )
+    if backoff_multiplier < 2:
+        raise ConfigError(
+            "system_metrics_setup.backoff_multiplier must be at least 2"
+        )
+    backoff_max_seconds = _int_field(
+        raw.get("backoff_max_seconds"),
+        "system_metrics_setup.backoff_max_seconds",
+    )
+    if backoff_max_seconds < backoff_base_seconds:
+        raise ConfigError(
+            "system_metrics_setup.backoff_max_seconds must be at least "
+            "backoff_base_seconds"
         )
     python_version = raw.get("python_version")
     if not isinstance(python_version, str) or not python_version:
@@ -771,6 +806,9 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
+        backoff_base_seconds=backoff_base_seconds,
+        backoff_multiplier=backoff_multiplier,
+        backoff_max_seconds=backoff_max_seconds,
         python_version=python_version,
         error_priority=error_priority,
         success_priority=success_priority,
