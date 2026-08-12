@@ -279,6 +279,11 @@ google_script_dir = "google_script"
 main_sent_dir = "main_sent"
 # curl timeout of a single Google Drive channel upload, in seconds.
 google_script_timeout_seconds = 60
+# Title of the vault entry that carries the Google Drive web app
+# credentials: url holds the endpoint, password holds the shared auth
+# key (docs/spec/secrets-model.md). The value must name an entry of the
+# [vault_structure] table.
+google_script_key_entry_title = "google_script_key"
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

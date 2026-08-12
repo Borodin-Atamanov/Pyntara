@@ -112,6 +112,7 @@ def make_config(
     system_metrics_google_script_dir: str = "google_script",
     system_metrics_main_sent_dir: str = "main_sent",
     system_metrics_google_script_timeout_seconds: int = 60,
+    system_metrics_google_script_key_entry_title: str = "google_script_key",
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -126,6 +127,7 @@ def make_config(
         ("password_salt", "Salt for deterministic password derivation."),
         ("pyntara_local_vault_password", "Password for the runtime secret vault."),
         ("telegram_bot_token", "Telegram bot token for System Metrics."),
+        ("google_script_key", "Google Drive web app credentials for System Metrics."),
     ),
     tasks: tuple[TaskConfig, ...] = (),
 ) -> Config:
@@ -204,6 +206,7 @@ def make_config(
             google_script_dir=system_metrics_google_script_dir,
             main_sent_dir=system_metrics_main_sent_dir,
             google_script_timeout_seconds=system_metrics_google_script_timeout_seconds,
+            google_script_key_entry_title=system_metrics_google_script_key_entry_title,
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(

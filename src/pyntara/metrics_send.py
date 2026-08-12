@@ -33,11 +33,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.utils import run_command
 
-# Title of the runtime vault entry that carries the Google Drive web app
-# credentials: url holds the endpoint, password holds the shared auth key
-# (docs/spec/secrets-model.md).
-GOOGLE_SCRIPT_ENTRY = "google_script_key"
-
 
 def dispatch_entries(cfg: Config) -> None:
     """Link every main_outbox entry into every channel queue.
@@ -115,23 +110,25 @@ def send_google_queue(cfg: Config) -> None:
 def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
     """The Google web app url and auth key from the runtime vault, or None.
 
-    The google_script_key entry of the runtime vault carries the web app
-    endpoint in the url field and the shared auth key in the password
-    field (docs/spec/secrets-model.md). A vault that does not open, a
-    missing entry or an empty field are journaled and None is returned,
-    so the sender skips the drain instead of failing the service loop.
-    The auth key never appears in any message.
+    The entry whose title comes from system_metrics_setup
+    .google_script_key_entry_title carries the web app endpoint in the
+    url field and the shared auth key in the password field
+    (docs/spec/secrets-model.md). A vault that does not open, a missing
+    entry or an empty field are journaled and None is returned, so the
+    sender skips the drain instead of failing the service loop. The
+    auth key never appears in any message.
     """
 
     kp = pyntara.metrics.open_runtime_vault(cfg)
     if kp is None:
         return None
+    title = cfg.system_metrics_setup.google_script_key_entry_title
     entry = kp.find_entries(
-        title=GOOGLE_SCRIPT_ENTRY, group=kp.root_group, recursive=False, first=True
+        title=title, group=kp.root_group, recursive=False, first=True
     )
     if entry is None:
         _log(
-            f"google script channel: entry {GOOGLE_SCRIPT_ENTRY!r} not found "
+            f"google script channel: entry {title!r} not found "
             "in the runtime vault",
             priority=3,
         )
@@ -140,7 +137,7 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
     key = (entry.password or "").strip()
     if not url or not key:
         _log(
-            f"google script channel: entry {GOOGLE_SCRIPT_ENTRY!r} has an "
+            f"google script channel: entry {title!r} has an "
             "empty url or password",
             priority=3,
         )

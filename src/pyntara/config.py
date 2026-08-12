@@ -169,9 +169,10 @@ class SystemMetricsSetupConfig:
     google_script_dir and main_sent_dir are the queue directory names
     of the Google Drive channel and of the sent archive;
     google_script_timeout_seconds is the curl timeout of the Google
-    Drive channel upload. The encrypted PDF generation and the Telegram
-    channel replace the current Google-only sending in a later stage
-    (docs/spec/system-metrics.md).
+    Drive channel upload; google_script_key_entry_title is the title of
+    the vault entry that carries the web app credentials. The encrypted
+    PDF generation and the Telegram channel replace the current
+    Google-only sending in a later stage (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -202,6 +203,7 @@ class SystemMetricsSetupConfig:
     google_script_dir: str
     main_sent_dir: str
     google_script_timeout_seconds: int
+    google_script_key_entry_title: str
 
 
 @dataclass(frozen=True)
@@ -608,8 +610,8 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     and command_file_mode are octal strings; max_queue_file_size_bytes,
     queue_file_suffix_length, queue_link_attempts and
     google_script_timeout_seconds are positive integers; send_order is
-    one of the SEND_ORDERS values; google_script_dir and main_sent_dir
-    are non-empty strings.
+    one of the SEND_ORDERS values; google_script_dir, main_sent_dir and
+    google_script_key_entry_title are non-empty strings.
     """
 
     if not isinstance(raw, dict):
@@ -709,6 +711,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.google_script_timeout_seconds must be positive"
         )
+    google_script_key_entry_title = _nonempty_string_field(
+        raw.get("google_script_key_entry_title"),
+        "system_metrics_setup.google_script_key_entry_title",
+    )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
         python_version=python_version,
@@ -775,6 +781,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_dir=google_script_dir,
         main_sent_dir=main_sent_dir,
         google_script_timeout_seconds=google_script_timeout_seconds,
+        google_script_key_entry_title=google_script_key_entry_title,
     )
 
 
@@ -961,6 +968,9 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"cannot read config file {path}: {exc}") from exc
     vault_structure = _vault_structure_table(data.get("vault_structure"))
     local_vault_setup = _local_vault_setup_table(data.get("local_vault_setup"))
+    system_metrics_setup = _system_metrics_setup_table(
+        data.get("system_metrics_setup")
+    )
     if not any(
         entry.title == local_vault_setup.vault_password_entry_title
         for entry in vault_structure.entries
@@ -968,6 +978,14 @@ def load_config(path: Path) -> Config:
         raise ConfigError(
             "local_vault_setup.vault_password_entry_title must name an entry "
             "of the [vault_structure] table"
+        )
+    if not any(
+        entry.title == system_metrics_setup.google_script_key_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "system_metrics_setup.google_script_key_entry_title must name an "
+            "entry of the [vault_structure] table"
         )
     return Config(
         engine=_engine_table(data.get("engine")),
@@ -978,9 +996,7 @@ def load_config(path: Path) -> Config:
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
         zram_service=_zram_service_table(data.get("zram_service")),
-        system_metrics_setup=_system_metrics_setup_table(
-            data.get("system_metrics_setup")
-        ),
+        system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,
         tasks=_tasks_table(data.get("tasks")),

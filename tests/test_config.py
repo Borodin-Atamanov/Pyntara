@@ -81,6 +81,7 @@ queue_link_attempts = 5
 google_script_dir = "google_script"
 main_sent_dir = "main_sent"
 google_script_timeout_seconds = 60
+google_script_key_entry_title = "google_script_key"
 
 [vault_structure]
 
@@ -95,6 +96,10 @@ notes = "Password for the runtime secret vault."
 [[vault_structure.entries]]
 title = "telegram_bot_token"
 notes = "Telegram bot token for System Metrics."
+
+[[vault_structure.entries]]
+title = "google_script_key"
+notes = "Google Drive web app credentials for System Metrics."
 
 [local_vault_setup]
 source_vault_production = "secrets/production.vault"
@@ -210,6 +215,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.google_script_dir == "google_script"
     assert config.system_metrics_setup.main_sent_dir == "main_sent"
     assert config.system_metrics_setup.google_script_timeout_seconds == 60
+    assert (
+        config.system_metrics_setup.google_script_key_entry_title
+        == "google_script_key"
+    )
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -224,6 +233,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.vault_structure.entries[0].notes == "Primary salt for password derivation."
     assert config.vault_structure.entries[1].title == "pyntara_local_vault_password"
     assert config.vault_structure.entries[2].title == "telegram_bot_token"
+    assert config.vault_structure.entries[3].title == "google_script_key"
     assert config.tasks[0].name == "add_extra_repos"
     assert config.tasks[0].description == "Enable extra Ubuntu archive components."
     assert config.tasks[0].depends == ()
@@ -291,9 +301,12 @@ _BASE_CONFIG = (
     'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
     'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
     "google_script_timeout_seconds = 60\n"
+    'google_script_key_entry_title = "google_script_key"\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
+    '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
+    'notes = "Google script credentials."\n'
     '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
     'source_vault_default = "secrets/default.vault"\n'
     'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
@@ -614,6 +627,16 @@ _BASE_CONFIG = (
             "google_script_timeout_seconds = 60",
             "google_script_timeout_seconds = 0",
         ),
+        # system_metrics_setup google_script_key_entry_title is a number
+        _BASE_CONFIG.replace(
+            'google_script_key_entry_title = "google_script_key"',
+            "google_script_key_entry_title = 1",
+        ),
+        # system_metrics_setup google_script_key_entry_title is an empty string
+        _BASE_CONFIG.replace(
+            'google_script_key_entry_title = "google_script_key"',
+            'google_script_key_entry_title = ""',
+        ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
             'source_vault_production = "secrets/production.vault"',
@@ -734,6 +757,23 @@ def test_load_config_entry_title_must_exist_in_vault_structure(tmp_path: Path) -
         load_config(config_path)
 
 
+def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
+    tmp_path: Path,
+) -> None:
+    # The Google script entry title must be part of the vault structure:
+    # a typo is caught at config load, not on the target machine.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        _BASE_CONFIG.replace(
+            'google_script_key_entry_title = "google_script_key"',
+            'google_script_key_entry_title = "no_such_entry"',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="must name an entry"):
+        load_config(config_path)
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -828,9 +868,12 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
+        'google_script_key_entry_title = "google_script_key"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
+        '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
+        'notes = "Google script credentials."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
@@ -889,9 +932,12 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
+        'google_script_key_entry_title = "google_script_key"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
+        '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
+        'notes = "Google script credentials."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
