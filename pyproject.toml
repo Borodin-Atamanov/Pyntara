@@ -15,7 +15,18 @@ dependencies = [
 [dependency-groups]
 # Developer tooling per docs/guides/developer-guide.md: pytest runs the test
 # suite, ruff and mypy --strict are mandatory before every merge.
-dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5"]
+dev = [
+    "pytest>=8",
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "pytest-xdist>=3.8.0",
+]
+
+[tool.pytest.ini_options]
+# The suite runs in parallel across worker processes; xdist distributes the
+# tests at collection time. Each worker builds its own cheap-KDF template
+# vault once (tests/conftest.py), so vault tests stay fast in every worker.
+addopts = "-n auto"
 
 [project.scripts]
 pyntara = "pyntara.pyntara:main"

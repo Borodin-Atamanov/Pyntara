@@ -26,10 +26,15 @@ DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-s
 
 
 def _test_config(notice_timeout: int = 7) -> Config:
-    """Config with values safe for unit tests; the real file is never touched."""
+    """Config with values safe for unit tests; the real file is never touched.
+
+    task_start_delay_seconds is zeroed so a run over the full task set does
+    not sleep half a second per task (14 tasks would add 7 seconds).
+    """
 
     return make_config(
         notice_timeout=notice_timeout,
+        task_start_delay_seconds=0,
         cli_tools_packages=("mc", "htop", "hollywood"),
         tasks=REAL_TASKS,
     )
@@ -189,6 +194,9 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     # correct when the catalog grows or shrinks.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
 
     def fake_load(name: str) -> object:
         if name == "cli_tools":
@@ -267,6 +275,9 @@ def test_run_reports_force_tasks_in_the_run_set(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "add_extra_repos cli_tools")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -417,6 +428,9 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     # When every task succeeds, the run reports the count and exits 0.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True, message="done")

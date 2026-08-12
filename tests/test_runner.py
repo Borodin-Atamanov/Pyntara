@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from support import make_context
+from support import make_config, make_context
 
 from pyntara import task_runner
 from pyntara.context import Context
@@ -11,7 +11,9 @@ from pyntara.models import TaskResult
 
 
 def _ctx() -> Context:
-    return make_context()
+    # task_start_delay_seconds is zeroed so an implemented task does not
+    # sleep half a second before running.
+    return make_context(config=make_config(task_start_delay_seconds=0))
 
 
 def test_run_tasks_reports_missing_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
