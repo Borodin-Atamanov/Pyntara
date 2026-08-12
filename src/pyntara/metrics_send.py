@@ -199,19 +199,21 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
     """Upload one entry and move it to main_sent on success.
 
     The content is read and Base64-encoded; the original name is
-    recovered by stripping the random suffix. curl runs with --location
-    and an explicit --request POST, so the method and the body survive
-    the redirect the web app endpoint answers with. The endpoint, the
-    key and the name travel as separate argv entries and the command
-    runs without a shell, so no metacharacter in them is interpreted.
-    The Base64 content travels through stdin as --data-urlencode
-    data@-: a payload argument would hit the kernel argv length limit
-    (E2BIG) for files larger than about 96 KiB. The process bound
-    equals the configured curl timeout: curl's own --max-time is the
-    effective limit, the process bound is a backstop that never fires
-    in practice. On an OK response the entry moves to main_sent; every
-    other outcome journals the failure and keeps the entry for the
-    next cycle.
+    recovered by stripping the random suffix. The data arguments make
+    the first request a POST; curl runs with --location and without a
+    forced method, so on the 302 redirect the web app answers with it
+    switches to GET by itself, the only method the final endpoint
+    accepts (a forced POST there is answered with 405 and an HTML
+    page). The endpoint, the key and the name travel as separate argv
+    entries and the command runs without a shell, so no metacharacter
+    in them is interpreted. The Base64 content travels through stdin
+    as --data-urlencode data@-: a payload argument would hit the
+    kernel argv length limit (E2BIG) for files larger than about 96
+    KiB. The process bound equals the configured curl timeout: curl's
+    own --max-time is the effective limit, the process bound is a
+    backstop that never fires in practice. On an OK response the entry
+    moves to main_sent; every other outcome journals the failure and
+    keeps the entry for the next cycle.
     """
 
     metrics = cfg.system_metrics_setup
@@ -226,8 +228,6 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
     command = [
         "curl",
         "--location",
-        "--request",
-        "POST",
         "--max-time",
         str(timeout),
         "--silent",

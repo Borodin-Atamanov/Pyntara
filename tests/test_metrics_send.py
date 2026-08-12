@@ -174,7 +174,10 @@ def test_send_uploads_original_name_key_and_base64_and_moves_to_sent(
     # shared auth key from the vault and the Base64 content; an OK
     # response moves the entry to main_sent. The Base64 payload travels
     # through stdin (--data-urlencode data@-), not as an argument, so
-    # the kernel argv length limit can never reject a large file.
+    # the kernel argv length limit can never reject a large file. The
+    # method is not forced: the data arguments make the first request a
+    # POST and --location lets curl switch to GET on the 302 redirect,
+    # the only method the final Apps Script endpoint accepts.
     cfg = _send_config(tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
@@ -190,7 +193,7 @@ def test_send_uploads_original_name_key_and_base64_and_moves_to_sent(
     assert not any(arg.startswith("data=") for arg in command)
     assert command[-1] == URL
     assert "--location" in command
-    assert command[command.index("--request") + 1] == "POST"
+    assert "--request" not in command
     assert "--max-time" in command
     assert not entry.exists()
     sent = tmp_path / "metrics" / "main_sent"
