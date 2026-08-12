@@ -4,14 +4,17 @@
 The deploy script for the System Metrics Google Drive web app needs the
 script ID of the Apps Script project, the deployment ID whose URL stays
 stable across redeploys and the shared auth key. All three live in the
-google_script_key entry of the vault databases: the username field holds
-the script ID, the url field holds the web app endpoint from which the
-deployment ID is extracted as the path segment between /macros/s/ and
-/exec, the password field holds the auth key that the deploy script
-substitutes into the script template. This maintenance script prints the
-values as key=value lines for the deploy script to consume;
-it is a standalone script like secrets/regenerate_vault_by_config.py and
-is invoked with the project interpreter.
+google_script_key entry of the vault databases, whose title comes from
+system_metrics_setup.google_script_key_entry_title in the repository
+config.toml, the same single source of truth the deployed service uses:
+the username field holds the script ID, the url field holds the web app
+endpoint from which the deployment ID is extracted as the path segment
+between /macros/s/ and /exec, the password field holds the auth key that
+the deploy script substitutes into the script template. This maintenance
+script prints the values as key=value lines for the deploy script to
+consume; it is a standalone script like
+secrets/regenerate_vault_by_config.py and is invoked with the project
+interpreter.
 
 The production vault is tried first, then the default vault, both with the
 vault password from the PYNTARA_VAULT_PASSWORD environment variable or the
@@ -28,6 +31,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -35,9 +39,6 @@ from pathlib import Path
 # the project virtualenv interpreter sits at its well-known location.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
-
-# The entry whose username and url carry the Google script credentials.
-ENTRY_TITLE = "google_script_key"
 
 # The web app endpoint is https://script.google.com/macros/s/<ID>/exec; the
 # deployment ID is the single path segment between /macros/s/ and /exec.
@@ -72,7 +73,41 @@ except ModuleNotFoundError:
 
 
 class ScriptError(RuntimeError):
-    """Fatal problem with the vaults or the google_script_key entry."""
+    """Fatal problem with the config or the vault databases."""
+
+
+def _entry_title_from_config() -> str:
+    """The Google script entry title from the repository config.toml.
+
+    The value of system_metrics_setup.google_script_key_entry_title is
+    the single source of truth for the entry that carries the Google
+    script credentials; the deployed service reads the same key from the
+    system config. A missing config, a missing key or a non-string value
+    is a loud error, never a silent hardcoded fallback.
+    """
+
+    config_path = REPO_ROOT / "config.toml"
+    try:
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ScriptError(f"config file not found: {config_path}") from None
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ScriptError(
+            f"cannot read config file {config_path}: {exc}"
+        ) from exc
+    try:
+        title = data["system_metrics_setup"]["google_script_key_entry_title"]
+    except KeyError:
+        raise ScriptError(
+            "system_metrics_setup.google_script_key_entry_title is missing "
+            f"in {config_path}"
+        ) from None
+    if not isinstance(title, str) or not title:
+        raise ScriptError(
+            "system_metrics_setup.google_script_key_entry_title must be a "
+            "non-empty string"
+        )
+    return title
 
 
 def resolve_vault_password(
@@ -115,9 +150,7 @@ def deployment_id_from_url(url: str) -> str:
 
     match = DEPLOYMENT_URL_RE.match(url.strip())
     if match is None:
-        raise ScriptError(
-            f"entry {ENTRY_TITLE!r}: url is not a web app URL: {url!r}"
-        )
+        raise ScriptError(f"url is not a web app URL: {url!r}")
     return match.group(1)
 
 
@@ -131,6 +164,8 @@ def _source_vault_paths() -> tuple[Path, Path]:
 def read_credentials(environ: Mapping[str, str]) -> str:
     """script_id, deployment_id and script_key lines from the first vault.
 
+    The entry title comes from system_metrics_setup
+    .google_script_key_entry_title in the repository config.toml.
     Production is tried first, then default; PYNTARA_VAULT_SOURCE
     (production or default) forces one source. The first vault that opens
     with the password is authoritative: a missing entry, an empty username,
@@ -138,6 +173,7 @@ def read_credentials(environ: Mapping[str, str]) -> str:
     reasons to fall back. When no vault opens, ScriptError is raised.
     """
 
+    title = _entry_title_from_config()
     production_path, default_path = _source_vault_paths()
     source = environ.get("PYNTARA_VAULT_SOURCE", "")
     if source not in ("", "production", "default"):
@@ -170,22 +206,22 @@ def read_credentials(environ: Mapping[str, str]) -> str:
                 f"cannot open {name} vault {path}: {exc}"
             ) from exc
         entry = kp.find_entries(
-            title=ENTRY_TITLE, group=kp.root_group, recursive=False, first=True
+            title=title, group=kp.root_group, recursive=False, first=True
         )
         if entry is None:
             raise ScriptError(
-                f"entry {ENTRY_TITLE!r} not found in the {name} vault {path}"
+                f"entry {title!r} not found in the {name} vault {path}"
             )
         script_id = (entry.username or "").strip()
         if not script_id:
             raise ScriptError(
-                f"entry {ENTRY_TITLE!r} in the {name} vault has an empty "
+                f"entry {title!r} in the {name} vault has an empty "
                 "username; fill the Apps Script project script ID there"
             )
         script_key = (entry.password or "").strip()
         if not script_key:
             raise ScriptError(
-                f"entry {ENTRY_TITLE!r} in the {name} vault has an empty "
+                f"entry {title!r} in the {name} vault has an empty "
                 "password; fill the shared auth key there"
             )
         deployment_id = deployment_id_from_url(entry.url or "")

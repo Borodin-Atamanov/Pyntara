@@ -4,8 +4,9 @@ The standalone script secrets/read_google_script_credentials.py is loaded
 as a module through importlib.util (the secrets directory is not a package)
 and its functions are exercised against real KeePass databases in
 temporary directories. REPO_ROOT is monkeypatched so the repository vaults
-are never touched, and the environment is injected explicitly through the
-function arguments.
+and the repository config are never touched; a config.toml with the entry
+title is written into the temporary root, and the environment is injected
+explicitly through the function arguments.
 """
 
 from __future__ import annotations
@@ -78,11 +79,16 @@ def _make_vault(path: Path, password: str, entry: dict[str, str] | None) -> None
 def _point_at(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Path, Path]:
-    """Point the script at temp vaults; return (production, default) paths."""
+    """Point the script at temp vaults and config; return (production, default)."""
 
     production = tmp_path / "secrets" / "production.vault"
     default = tmp_path / "secrets" / "default.vault"
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
+    (tmp_path / "config.toml").write_text(
+        "[system_metrics_setup]\n"
+        'google_script_key_entry_title = "google_script_key"\n',
+        encoding="utf-8",
+    )
     return production, default
 
 
@@ -246,6 +252,39 @@ def test_no_vault_opens_is_an_error(
     _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
     with pytest.raises(gen.ScriptError, match="cannot open any vault"):
         gen.read_credentials({"PYNTARA_VAULT_PASSWORD": "wrong-password"})
+
+
+def test_entry_title_comes_from_config(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A vault entry under a custom title configured in config.toml is
+    # found: the title is not hardcoded in the script.
+    production, _ = _point_at(gen, tmp_path, monkeypatch)
+    entry = dict(GOOGLE_ENTRY)
+    entry["title"] = "custom_key_title"
+    _make_vault(production, PRODUCTION_PASSWORD, entry)
+    (tmp_path / "config.toml").write_text(
+        "[system_metrics_setup]\n"
+        'google_script_key_entry_title = "custom_key_title"\n',
+        encoding="utf-8",
+    )
+    output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+    assert (
+        output
+        == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
+    )
+
+
+def test_missing_config_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without config.toml the entry title is unknown: a loud error, never
+    # a silent hardcoded fallback.
+    production, _ = _point_at(gen, tmp_path, monkeypatch)
+    (tmp_path / "config.toml").unlink()
+    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
+    with pytest.raises(gen.ScriptError, match="config file not found"):
+        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
 
 
 def test_main_prints_credentials_and_exits_zero(
