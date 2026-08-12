@@ -96,6 +96,14 @@ def _arg(call: tuple[list[str], dict[str, object]], prefix: str) -> str:
     raise AssertionError(f"no argument starting with {prefix!r} in {call[0]}")
 
 
+def _input(call: tuple[list[str], dict[str, object]]) -> str:
+    """The stdin payload recorded for the command call."""
+
+    value = call[1].get("input")
+    assert value is not None, f"no input recorded in {call[1]}"
+    return str(value)
+
+
 def test_dispatch_links_entry_into_channel_and_removes_from_outbox(
     tmp_path: Path,
 ) -> None:
@@ -164,7 +172,9 @@ def test_send_uploads_original_name_key_and_base64_and_moves_to_sent(
 ) -> None:
     # The upload carries the original name (the suffix stripped), the
     # shared auth key from the vault and the Base64 content; an OK
-    # response moves the entry to main_sent.
+    # response moves the entry to main_sent. The Base64 payload travels
+    # through stdin (--data-urlencode data@-), not as an argument, so
+    # the kernel argv length limit can never reject a large file.
     cfg = _send_config(tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
@@ -175,7 +185,9 @@ def test_send_uploads_original_name_key_and_base64_and_moves_to_sent(
     command = calls[0][0]
     assert _arg(calls[0], "filename=") == "report.txt"
     assert _arg(calls[0], "pass=") == AUTH_KEY
-    assert _arg(calls[0], "data=") == base64.b64encode(b"hello").decode()
+    assert _input(calls[0]) == base64.b64encode(b"hello").decode()
+    assert "data@-" in command
+    assert not any(arg.startswith("data=") for arg in command)
     assert command[-1] == URL
     assert "--location" in command
     assert command[command.index("--request") + 1] == "POST"
@@ -264,6 +276,29 @@ def test_send_oldest_first_uploads_in_commit_order(
     send_google_queue(cfg)
     order = [_arg(call, "filename=") for call in calls]
     assert order == ["first.txt", "second.txt", "third.txt"]
+
+
+def test_send_large_entry_through_stdin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A payload whose Base64 form would exceed the kernel argv limit
+    # (128 KiB per argument, reached at about 96 KiB of source) is fed
+    # through stdin; the upload succeeds and the entry moves to sent.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    calls = _fake_curl(monkeypatch)
+    channel = tmp_path / "metrics" / "google_script"
+    body = "x" * 200000
+    entry = _make_entry(channel, "large.bin", body, time.time())
+    send_google_queue(cfg)
+    assert len(calls) == 1
+    command = calls[0][0]
+    assert "data@-" in command
+    assert not any(arg.startswith("data=") for arg in command)
+    assert _input(calls[0]) == base64.b64encode(body.encode()).decode()
+    assert not entry.exists()
+    sent = tmp_path / "metrics" / "main_sent"
+    assert len(list(sent.iterdir())) == 1
 
 
 def test_send_newest_first_uploads_newest_first(

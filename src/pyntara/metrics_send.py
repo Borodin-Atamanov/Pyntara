@@ -204,11 +204,14 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
     the redirect the web app endpoint answers with. The endpoint, the
     key and the name travel as separate argv entries and the command
     runs without a shell, so no metacharacter in them is interpreted.
-    The process bound equals the configured curl timeout: curl's own
-    --max-time is the effective limit, the process bound is a backstop
-    that never fires in practice. On an OK response the entry moves to
-    main_sent; every other outcome journals the failure and keeps the
-    entry for the next cycle.
+    The Base64 content travels through stdin as --data-urlencode
+    data@-: a payload argument would hit the kernel argv length limit
+    (E2BIG) for files larger than about 96 KiB. The process bound
+    equals the configured curl timeout: curl's own --max-time is the
+    effective limit, the process bound is a backstop that never fires
+    in practice. On an OK response the entry moves to main_sent; every
+    other outcome journals the failure and keeps the entry for the
+    next cycle.
     """
 
     metrics = cfg.system_metrics_setup
@@ -234,11 +237,13 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> Non
         "--data-urlencode",
         f"pass={key}",
         "--data-urlencode",
-        f"data={data}",
+        "data@-",
         url,
     ]
     try:
-        result = run_command(command, timeout=timeout, check=False, capture=True)
+        result = run_command(
+            command, timeout=timeout, check=False, capture=True, input=data
+        )
     except (subprocess.TimeoutExpired, OSError) as exc:
         _log(f"google script channel: sending {entry.name} failed: {exc}", priority=3)
         return

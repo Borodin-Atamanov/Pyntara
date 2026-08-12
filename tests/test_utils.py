@@ -58,6 +58,40 @@ def test_run_command_streams_by_default_and_captures_on_request(
     assert captured[1]["capture_output"] is True
 
 
+def test_run_command_feeds_stdin_when_input_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(["cat"], timeout=1800, input="payload")
+    assert captured["kwargs"]["input"] == "payload"
+
+
+def test_run_command_omits_input_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(["true"], timeout=1800)
+    # Without input the subprocess default (None) is used, so the
+    # explicit argument never carries a payload.
+    assert captured["kwargs"].get("input") is None
+
+
 @pytest.mark.parametrize(
     "output,expected",
     [

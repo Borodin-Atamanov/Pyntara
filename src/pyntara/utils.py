@@ -26,6 +26,7 @@ def run_command(
     extra_env: Mapping[str, str] | None = None,
     check: bool = True,
     capture: bool = False,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command without a shell and control its outcome.
 
@@ -33,7 +34,8 @@ def run_command(
     capture=True for quiet status queries. With check=True a nonzero return
     code raises CalledProcessError; with check=False the caller inspects
     returncode itself. A command that exceeds the timeout raises
-    TimeoutExpired.
+    TimeoutExpired. The optional input feeds the process stdin, so a
+    caller can pass data that is too large for a command argument.
     """
 
     env = dict(os.environ)
@@ -47,6 +49,7 @@ def run_command(
             check=check,
             capture_output=True,
             text=True,
+            input=input,
         )
     return subprocess.run(
         list(command),
@@ -54,6 +57,7 @@ def run_command(
         timeout=timeout,
         check=check,
         text=True,
+        input=input,
     )
 
 
