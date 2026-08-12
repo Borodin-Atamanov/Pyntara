@@ -78,6 +78,9 @@ main_outbox_dir = "main_outbox"
 temp_dir = "temp"
 spool_temp_prefix = ".commit-"
 queue_link_attempts = 5
+google_script_dir = "google_script"
+main_sent_dir = "main_sent"
+google_script_timeout_seconds = 60
 
 [vault_structure]
 
@@ -204,6 +207,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.temp_dir == "temp"
     assert config.system_metrics_setup.spool_temp_prefix == ".commit-"
     assert config.system_metrics_setup.queue_link_attempts == 5
+    assert config.system_metrics_setup.google_script_dir == "google_script"
+    assert config.system_metrics_setup.main_sent_dir == "main_sent"
+    assert config.system_metrics_setup.google_script_timeout_seconds == 60
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -283,6 +289,8 @@ _BASE_CONFIG = (
     'commit_journal_identifier = "commit_system_metrics"\n'
     'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
     'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
+    'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
+    "google_script_timeout_seconds = 60\n"
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -580,6 +588,32 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "queue_link_attempts = 5", "queue_link_attempts = 0"
         ),
+        # system_metrics_setup google_script_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'google_script_dir = "google_script"', "google_script_dir = 1"
+        ),
+        # system_metrics_setup google_script_dir is an empty string
+        _BASE_CONFIG.replace(
+            'google_script_dir = "google_script"', 'google_script_dir = ""'
+        ),
+        # system_metrics_setup main_sent_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'main_sent_dir = "main_sent"', "main_sent_dir = 1"
+        ),
+        # system_metrics_setup main_sent_dir is an empty string
+        _BASE_CONFIG.replace(
+            'main_sent_dir = "main_sent"', 'main_sent_dir = ""'
+        ),
+        # system_metrics_setup google_script_timeout_seconds is a string
+        _BASE_CONFIG.replace(
+            "google_script_timeout_seconds = 60",
+            'google_script_timeout_seconds = "60"',
+        ),
+        # system_metrics_setup google_script_timeout_seconds is zero
+        _BASE_CONFIG.replace(
+            "google_script_timeout_seconds = 60",
+            "google_script_timeout_seconds = 0",
+        ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
             'source_vault_production = "secrets/production.vault"',
@@ -792,6 +826,8 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'commit_journal_identifier = "commit_system_metrics"\n'
         'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
         'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
+        'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
+        "google_script_timeout_seconds = 60\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -851,6 +887,8 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'commit_journal_identifier = "commit_system_metrics"\n'
         'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
         'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
+        'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
+        "google_script_timeout_seconds = 60\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

@@ -109,6 +109,9 @@ def make_config(
     system_metrics_temp_dir: str = "temp",
     system_metrics_spool_temp_prefix: str = ".commit-",
     system_metrics_queue_link_attempts: int = 5,
+    system_metrics_google_script_dir: str = "google_script",
+    system_metrics_main_sent_dir: str = "main_sent",
+    system_metrics_google_script_timeout_seconds: int = 60,
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -198,6 +201,9 @@ def make_config(
             temp_dir=system_metrics_temp_dir,
             spool_temp_prefix=system_metrics_spool_temp_prefix,
             queue_link_attempts=system_metrics_queue_link_attempts,
+            google_script_dir=system_metrics_google_script_dir,
+            main_sent_dir=system_metrics_main_sent_dir,
+            google_script_timeout_seconds=system_metrics_google_script_timeout_seconds,
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(

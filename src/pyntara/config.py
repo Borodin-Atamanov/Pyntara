@@ -166,8 +166,12 @@ class SystemMetricsSetupConfig:
     services and of the commit command; main_outbox_dir and temp_dir
     are the queue directory names; spool_temp_prefix is the prefix of
     the commit command temporary files, which the ingest never moves.
-    The current placeholder check is replaced by the real System
-    Metrics logic in a later stage (docs/spec/system-metrics.md).
+    google_script_dir and main_sent_dir are the queue directory names
+    of the Google Drive channel and of the sent archive;
+    google_script_timeout_seconds is the curl timeout of the Google
+    Drive channel upload. The encrypted PDF generation and the Telegram
+    channel replace the current Google-only sending in a later stage
+    (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -195,6 +199,9 @@ class SystemMetricsSetupConfig:
     temp_dir: str
     spool_temp_prefix: str
     queue_link_attempts: int
+    google_script_dir: str
+    main_sent_dir: str
+    google_script_timeout_seconds: int
 
 
 @dataclass(frozen=True)
@@ -598,9 +605,11 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     system_metrics_dir, spool_dir and every unit name, journal
     identifier, queue directory name and spool temp prefix are non-empty
     strings; system_metrics_dir_mode, queue_file_mode, spool_dir_mode
-    and command_file_mode are octal strings; max_queue_file_size_bytes
-    and queue_file_suffix_length are positive integers; send_order is
-    one of the SEND_ORDERS values.
+    and command_file_mode are octal strings; max_queue_file_size_bytes,
+    queue_file_suffix_length, queue_link_attempts and
+    google_script_timeout_seconds are positive integers; send_order is
+    one of the SEND_ORDERS values; google_script_dir and main_sent_dir
+    are non-empty strings.
     """
 
     if not isinstance(raw, dict):
@@ -684,6 +693,22 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.queue_link_attempts must be positive"
         )
+    google_script_dir = _nonempty_string_field(
+        raw.get("google_script_dir"),
+        "system_metrics_setup.google_script_dir",
+    )
+    main_sent_dir = _nonempty_string_field(
+        raw.get("main_sent_dir"),
+        "system_metrics_setup.main_sent_dir",
+    )
+    google_script_timeout_seconds = _int_field(
+        raw.get("google_script_timeout_seconds"),
+        "system_metrics_setup.google_script_timeout_seconds",
+    )
+    if google_script_timeout_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.google_script_timeout_seconds must be positive"
+        )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
         python_version=python_version,
@@ -747,6 +772,9 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             "system_metrics_setup.spool_temp_prefix",
         ),
         queue_link_attempts=queue_link_attempts,
+        google_script_dir=google_script_dir,
+        main_sent_dir=main_sent_dir,
+        google_script_timeout_seconds=google_script_timeout_seconds,
     )
 
 

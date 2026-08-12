@@ -141,8 +141,9 @@ def test_main_loops_with_configured_interval(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # main reads the config path from the argument, loads the config and
-    # runs the check once per configured interval; the loop is interrupted
-    # after the first sleep, like a service stop.
+    # runs the vault check, the dispatch and the Google send once per
+    # configured interval; the loop is interrupted after the first sleep,
+    # like a service stop.
     config_path = tmp_path / "config.toml"
     config = make_config(
         task_data_root=tmp_path,
@@ -150,6 +151,8 @@ def test_main_loops_with_configured_interval(
     )
     seen_paths: list[Path] = []
     checks: list[object] = []
+    dispatched: list[object] = []
+    sent: list[object] = []
 
     def fake_load_config(path: Path) -> object:
         seen_paths.append(Path(path))
@@ -163,9 +166,17 @@ def test_main_loops_with_configured_interval(
         checks.append(cfg)
         return True
 
+    def fake_dispatch(cfg: object) -> None:
+        dispatched.append(cfg)
+
+    def fake_send(cfg: object) -> None:
+        sent.append(cfg)
+
     monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.check_runtime_vault", fake_check)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
+    monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
     monkeypatch.setattr(
         "sys.argv", ["pyntara.metrics", str(config_path)]
     )
@@ -173,3 +184,5 @@ def test_main_loops_with_configured_interval(
         main()
     assert seen_paths == [config_path]
     assert len(checks) == 1
+    assert dispatched == [config]
+    assert sent == [config]

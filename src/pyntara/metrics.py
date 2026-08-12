@@ -1,18 +1,20 @@
-"""Long-running System Metrics service: periodic runtime vault check.
+"""Long-running System Metrics service: vault check, dispatch and send.
 
 The service runs continuously on the target machine; the systemd unit
 system_metrics.service, deployed by the system_metrics_setup task, starts
 it at boot and restarts it on failure. Every check_interval_seconds it
 verifies that the runtime secret vault created by local_vault_setup still
-exists and opens with the password from the password file, and writes the
-outcome to the system journal through the shared pyntara.logger functions
-at the configured syslog priorities (error_priority on failure,
+exists and opens with the password from the password file, dispatches the
+committed entries from main_outbox into the channel queues and drains the
+Google Drive channel into the web app; the outcomes are written to the
+system journal through the shared pyntara.logger functions at the
+configured syslog priorities (error_priority on failure,
 success_priority on success). The password itself is never logged. The
-service reads the single system config system_config_path through the same
-loader as the installer, so its parameters come from the same source of
-truth (architecture contract section 3). The current check is a
-placeholder: the real System Metrics logic (encrypted PDF, queues, delivery
-channels) replaces it in a later stage (docs/spec/system-metrics.md).
+service reads the single system config system_config_path through the
+same loader as the installer, so its parameters come from the same source
+of truth (architecture contract section 3). The encrypted PDF generation
+and the Telegram channel replace the current Google-only sending in a
+later stage (docs/spec/system-metrics.md).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from pathlib import Path
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
+import pyntara.metrics_send
 from pyntara.config import Config, load_config
 from pyntara.logger import log_progress as _log
 
@@ -40,6 +43,53 @@ def _read_password(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8").strip() or None
     except OSError:
+        return None
+
+
+def open_runtime_vault(cfg: Config) -> PyKeePass | None:
+    """Open the runtime vault with the local password, or None.
+
+    A missing or empty vault, a missing or empty password file and a
+    vault that does not open with the password are all failures, each
+    journaled at system_metrics_setup.error_priority. The password never
+    appears in any message. The helper is the shared vault opener of the
+    System Metrics service: the periodic check and the channel senders
+    read the runtime vault through it.
+    """
+
+    vault = cfg.local_vault_setup.local_vault_path
+    error_priority = cfg.system_metrics_setup.error_priority
+    if not vault.is_file():
+        _log(f"opening runtime vault {vault}: absent", priority=error_priority)
+        return None
+    try:
+        if vault.stat().st_size == 0:
+            _log(f"opening runtime vault {vault}: empty", priority=error_priority)
+            return None
+    except OSError:
+        _log(f"opening runtime vault {vault}: cannot stat", priority=error_priority)
+        return None
+    password = _read_password(cfg.local_vault_setup.pass_file_path)
+    if password is None:
+        _log(
+            f"opening runtime vault {vault}: password file "
+            f"{cfg.local_vault_setup.pass_file_path} missing or empty",
+            priority=error_priority,
+        )
+        return None
+    try:
+        return PyKeePass(str(vault), password=password)
+    except CredentialsError:
+        _log(
+            f"opening runtime vault {vault}: password does not match",
+            priority=error_priority,
+        )
+        return None
+    except Exception as exc:  # noqa: BLE001 - any open failure is a failed check
+        _log(
+            f"opening runtime vault {vault}: cannot open: {exc}",
+            priority=error_priority,
+        )
         return None
 
 
@@ -93,12 +143,15 @@ def check_runtime_vault(cfg: Config) -> bool:
 
 
 def main() -> None:
-    """Run the periodic check loop until the service is stopped.
+    """Run the periodic check, dispatch and send loop until the service stops.
 
     The config path is the first command line argument; the systemd unit
     renders the configured system_config_path into the ExecStart line. A
     missing argument is an explicit error: without a config the service
-    cannot know what to check.
+    cannot know what to check. Every cycle checks the runtime vault,
+    dispatches the committed entries into the channel queues and drains
+    the Google Drive channel; a failure of any step is journaled and the
+    loop continues with the next cycle.
     """
 
     if len(sys.argv) < 2:
@@ -108,6 +161,8 @@ def main() -> None:
     interval = cfg.system_metrics_setup.check_interval_seconds
     while True:
         check_runtime_vault(cfg)
+        pyntara.metrics_send.dispatch_entries(cfg)
+        pyntara.metrics_send.send_google_queue(cfg)
         time.sleep(interval)
 
 
