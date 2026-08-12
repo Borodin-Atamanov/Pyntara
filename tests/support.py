@@ -84,6 +84,8 @@ def make_config(
     zram_fallback_cpu_count: int = 8,
     zram_alignment_bytes: int = 4096,
     zram_service_unit_name: str = "zram.service",
+    zram_reset_busy_attempts: int = 5,
+    zram_reset_busy_retry_delay_seconds: float = 0.5,
     system_metrics_check_interval_seconds: int = 300,
     system_metrics_python_version: str = "3",
     system_metrics_error_priority: int = 3,
@@ -179,6 +181,8 @@ def make_config(
             fallback_cpu_count=zram_fallback_cpu_count,
             alignment_bytes=zram_alignment_bytes,
             service_unit_name=zram_service_unit_name,
+            reset_busy_attempts=zram_reset_busy_attempts,
+            reset_busy_retry_delay_seconds=zram_reset_busy_retry_delay_seconds,
         ),
         system_metrics_setup=SystemMetricsSetupConfig(
             check_interval_seconds=system_metrics_check_interval_seconds,

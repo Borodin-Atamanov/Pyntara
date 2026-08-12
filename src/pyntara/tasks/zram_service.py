@@ -21,7 +21,9 @@ devices down and configures them again.
 
 from __future__ import annotations
 
+import errno
 import subprocess
+import time
 from pathlib import Path
 from string import Template
 
@@ -159,6 +161,31 @@ def _write_sysfs(path: Path, value: str) -> None:
     """
 
     path.write_text(value, encoding="utf-8")
+
+
+def _write_sysfs_with_retry(
+    path: Path, value: str, attempts: int, delay_seconds: float
+) -> None:
+    """Write a sysfs attribute, retrying when the device is transiently busy.
+
+    The kernel returns EBUSY for reset and hot_remove while the device is
+    momentarily open, for example by a udev blkid probe triggered by a
+    preceding event; the condition clears within milliseconds. The write
+    is retried with a short pause until attempts run out, then the last
+    error is re-raised so the caller reports it. Other errors are raised
+    immediately: they are not transient.
+    """
+
+    for attempt in range(attempts):
+        try:
+            _write_sysfs(path, value)
+            return
+        except OSError as exc:
+            if exc.errno != errno.EBUSY:
+                raise
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(delay_seconds)
 
 
 def _hot_add_read_interface() -> bool:
@@ -377,7 +404,12 @@ def task(ctx: Context) -> TaskResult:
         if index < device_count:
             _log(f"resetting device zram{index}: echo 1 > reset")
             try:
-                _write_sysfs(SYS_BLOCK_PATH / f"zram{index}" / "reset", "1")
+                _write_sysfs_with_retry(
+                    SYS_BLOCK_PATH / f"zram{index}" / "reset",
+                    "1",
+                    attempts=cfg.reset_busy_attempts,
+                    delay_seconds=cfg.reset_busy_retry_delay_seconds,
+                )
             except OSError as exc:
                 return TaskResult(
                     success=False, error=f"cannot reset zram{index}: {exc}"
@@ -386,7 +418,12 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log(f"removing extra device zram{index}: echo {index} > hot_remove")
             try:
-                _write_sysfs(ZRAM_HOT_REMOVE_PATH, str(index))
+                _write_sysfs_with_retry(
+                    ZRAM_HOT_REMOVE_PATH,
+                    str(index),
+                    attempts=cfg.reset_busy_attempts,
+                    delay_seconds=cfg.reset_busy_retry_delay_seconds,
+                )
             except OSError as exc:
                 return TaskResult(
                     success=False, error=f"cannot remove zram{index}: {exc}"

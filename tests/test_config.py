@@ -50,6 +50,8 @@ swap_priority = 1111
 memory_fraction_percent = 96
 fallback_cpu_count = 8
 alignment_bytes = 4096
+reset_busy_attempts = 5
+reset_busy_retry_delay_seconds = 0.5
 service_unit_name = "zram.service"
 
 [system_metrics_setup]
@@ -177,6 +179,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.fallback_cpu_count == 8
     assert config.zram_service.alignment_bytes == 4096
     assert config.zram_service.service_unit_name == "zram.service"
+    assert config.zram_service.reset_busy_attempts == 5
+    assert config.zram_service.reset_busy_retry_delay_seconds == 0.5
     assert config.system_metrics_setup.check_interval_seconds == 300
     assert config.system_metrics_setup.python_version == "3"
     assert config.system_metrics_setup.error_priority == 3
@@ -285,7 +289,9 @@ _BASE_CONFIG = (
     'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
     '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
     "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-    'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
+    'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
+    "reset_busy_retry_delay_seconds = 0.5\n"
+    'service_unit_name = "zram.service"\n'
     "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
     'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
@@ -448,6 +454,20 @@ _BASE_CONFIG = (
         # zram service_unit_name is an empty string
         _BASE_CONFIG.replace(
             'service_unit_name = "zram.service"', 'service_unit_name = ""'
+        ),
+        # zram reset_busy_attempts is zero
+        _BASE_CONFIG.replace(
+            "reset_busy_attempts = 5", "reset_busy_attempts = 0"
+        ),
+        # zram reset_busy_retry_delay_seconds is a string, not a number
+        _BASE_CONFIG.replace(
+            "reset_busy_retry_delay_seconds = 0.5",
+            'reset_busy_retry_delay_seconds = "0.5"',
+        ),
+        # zram reset_busy_retry_delay_seconds is zero
+        _BASE_CONFIG.replace(
+            "reset_busy_retry_delay_seconds = 0.5",
+            "reset_busy_retry_delay_seconds = 0",
         ),
         # system_metrics_setup check_interval_seconds is a string, not an integer
         _BASE_CONFIG.replace(
@@ -873,7 +893,9 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
+        'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
+        "reset_busy_retry_delay_seconds = 0.5\n"
+        'service_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
@@ -938,7 +960,9 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        'alignment_bytes = 4096\nservice_unit_name = "zram.service"\n'
+        'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
+        "reset_busy_retry_delay_seconds = 0.5\n"
+        'service_unit_name = "zram.service"\n'
         "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
         'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'

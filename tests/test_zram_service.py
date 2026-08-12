@@ -8,6 +8,7 @@ fixture, so the tests never read the repository template.
 
 from __future__ import annotations
 
+import errno
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -38,7 +39,13 @@ WantedBy=multi-user.target
 RAM_KIB = 16 * 1024 * 1024
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    busy_attempts: int = 5,
+    busy_retry_delay_seconds: float = 0.5,
+) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
@@ -51,6 +58,8 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
+            zram_reset_busy_attempts=busy_attempts,
+            zram_reset_busy_retry_delay_seconds=busy_retry_delay_seconds,
         ),
     )
 
@@ -394,6 +403,72 @@ def test_removes_extra_devices(
     assert active_after == {"/dev/zram0", "/dev/zram1"}
     assert fixtures["hot_add"].read_count == 0
     assert not any(path is fixtures["hot_add"] for path, _ in writes)
+
+
+def test_reset_retries_on_transient_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The first reset of zram0 hits a transient EBUSY, as when a udev
+    # probe holds the device open for a moment: the task retries and
+    # completes the teardown.
+    fixtures = _install_fixtures(monkeypatch, tmp_path)
+    device_count, per_device_bytes = _target(tmp_path)
+    for index in range(device_count):
+        _configure_device(fixtures["sys_block"], index, per_device_bytes)
+    active = {f"/dev/zram{index}" for index in range(device_count)}
+    _, _, _ = _install_fake(
+        monkeypatch, fixtures, enabled=True, active=set(active)
+    )
+    reset_path = fixtures["sys_block"] / "zram0" / "reset"
+    plain_write = zram_service._write_sysfs
+    attempts = {"count": 0}
+
+    def busy_once(path: Path, value: str) -> None:
+        if path == reset_path:
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise OSError(errno.EBUSY, "Device or resource busy", str(path))
+        plain_write(path, value)
+
+    monkeypatch.setattr(zram_service, "_write_sysfs", busy_once)
+    result = zram_service.task(
+        _ctx(tmp_path, force=True, busy_retry_delay_seconds=0)
+    )
+    assert result.success is True
+    assert attempts["count"] == 2
+
+
+def test_reset_failure_after_retries_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The reset of zram0 stays busy across every attempt: the task reports
+    # the error after the configured number of retries.
+    fixtures = _install_fixtures(monkeypatch, tmp_path)
+    device_count, per_device_bytes = _target(tmp_path)
+    for index in range(device_count):
+        _configure_device(fixtures["sys_block"], index, per_device_bytes)
+    active = {f"/dev/zram{index}" for index in range(device_count)}
+    _, _, _ = _install_fake(
+        monkeypatch, fixtures, enabled=True, active=set(active)
+    )
+    reset_path = fixtures["sys_block"] / "zram0" / "reset"
+    plain_write = zram_service._write_sysfs
+    attempts = {"count": 0}
+
+    def always_busy(path: Path, value: str) -> None:
+        if path == reset_path:
+            attempts["count"] += 1
+            raise OSError(errno.EBUSY, "Device or resource busy", str(path))
+        plain_write(path, value)
+
+    monkeypatch.setattr(zram_service, "_write_sysfs", always_busy)
+    result = zram_service.task(
+        _ctx(tmp_path, force=True, busy_attempts=3, busy_retry_delay_seconds=0)
+    )
+    assert result.success is False
+    assert result.changed is False
+    assert "cannot reset zram0" in (result.error or "")
+    assert attempts["count"] == 3
 
 
 def test_force_mode_reconfigures(

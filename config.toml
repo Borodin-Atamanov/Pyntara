@@ -185,6 +185,11 @@ memory_fraction_percent = 96
 fallback_cpu_count = 8
 # Byte boundary the zram driver requires for disksize values.
 alignment_bytes = 4096
+# Retries of a reset or hot_remove rejected with EBUSY while a transient
+# opener, for example a udev probe, holds the device.
+reset_busy_attempts = 5
+# Pause in seconds between two retry attempts.
+reset_busy_retry_delay_seconds = 0.5
 # Name of the systemd oneshot service unit that repeats the setup at boot.
 service_unit_name = "zram.service"
 

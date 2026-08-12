@@ -124,6 +124,9 @@ class ZramServiceConfig:
     algorithm and is activated with swap_priority, so ZRAM swap is
     preferred over the disk swapfile. service_unit_name is the name of the
     systemd oneshot service that repeats the setup at boot.
+    reset_busy_attempts and reset_busy_retry_delay_seconds bound the
+    retries of a reset or hot_remove rejected with EBUSY while a
+    transient opener, for example a udev probe, holds the device.
     """
 
     compressor: str
@@ -132,6 +135,8 @@ class ZramServiceConfig:
     fallback_cpu_count: int
     alignment_bytes: int
     service_unit_name: str
+    reset_busy_attempts: int
+    reset_busy_retry_delay_seconds: float
 
 
 @dataclass(frozen=True)
@@ -559,7 +564,9 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
     compressor is a non-empty string; swap_priority is a positive swap
     priority; memory_fraction_percent is a percentage between 1 and 100;
     fallback_cpu_count is at least 1; alignment_bytes is positive, because
-    the zram driver rejects a non-positive or unaligned disksize.
+    the zram driver rejects a non-positive or unaligned disksize;
+    reset_busy_attempts is at least 1 and
+    reset_busy_retry_delay_seconds is positive.
     """
 
     if not isinstance(raw, dict):
@@ -590,6 +597,21 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
     )
     if alignment_bytes < 1:
         raise ConfigError("zram_service.alignment_bytes must be positive")
+    reset_busy_attempts = _int_field(
+        raw.get("reset_busy_attempts"), "zram_service.reset_busy_attempts"
+    )
+    if reset_busy_attempts < 1:
+        raise ConfigError(
+            "zram_service.reset_busy_attempts must be at least 1"
+        )
+    reset_busy_retry_delay_seconds = _float_field(
+        raw.get("reset_busy_retry_delay_seconds"),
+        "zram_service.reset_busy_retry_delay_seconds",
+    )
+    if reset_busy_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "zram_service.reset_busy_retry_delay_seconds must be positive"
+        )
     return ZramServiceConfig(
         compressor=compressor,
         swap_priority=swap_priority,
@@ -599,6 +621,8 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"), "zram_service.service_unit_name"
         ),
+        reset_busy_attempts=reset_busy_attempts,
+        reset_busy_retry_delay_seconds=reset_busy_retry_delay_seconds,
     )
 
 
