@@ -16,7 +16,7 @@ Mandatory rules
 
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity: ask or fail loudly.
 
-KISS! DRY! YAGNI! Separation of Concerns!
+DRY! KISS! YAGNI! Separation of Concerns!
 
 Address me in the masculine, using the formal "Вы" (Russian polite form). Refer to yourself and your own actions in the feminine gender.
 After finishing changes, the agent MUST integrate them into main.
