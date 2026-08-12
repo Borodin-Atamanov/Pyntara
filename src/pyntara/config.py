@@ -8,6 +8,7 @@ loads the config once and hands it to every task through Context.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,9 +171,12 @@ class SystemMetricsSetupConfig:
     of the Google Drive channel and of the sent archive;
     google_script_timeout_seconds is the curl timeout of the Google
     Drive channel upload; google_script_key_entry_title is the title of
-    the vault entry that carries the web app credentials. The encrypted
-    PDF generation and the Telegram channel replace the current
-    Google-only sending in a later stage (docs/spec/system-metrics.md).
+    the vault entry that carries the web app credentials;
+    google_script_deployment_url_regex is the Python regular expression
+    of the web app deployment URL, whose single capture group yields the
+    deployment ID. The encrypted PDF generation and the Telegram
+    channel replace the current Google-only sending in a later stage
+    (docs/spec/system-metrics.md).
     """
 
     check_interval_seconds: int
@@ -204,6 +208,7 @@ class SystemMetricsSetupConfig:
     main_sent_dir: str
     google_script_timeout_seconds: int
     google_script_key_entry_title: str
+    google_script_deployment_url_regex: str
 
 
 @dataclass(frozen=True)
@@ -611,7 +616,9 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     queue_file_suffix_length, queue_link_attempts and
     google_script_timeout_seconds are positive integers; send_order is
     one of the SEND_ORDERS values; google_script_dir, main_sent_dir and
-    google_script_key_entry_title are non-empty strings.
+    google_script_key_entry_title are non-empty strings;
+    google_script_deployment_url_regex is a non-empty string that
+    compiles as a regular expression with exactly one capture group.
     """
 
     if not isinstance(raw, dict):
@@ -715,6 +722,29 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raw.get("google_script_key_entry_title"),
         "system_metrics_setup.google_script_key_entry_title",
     )
+    google_script_deployment_url_regex = raw.get(
+        "google_script_deployment_url_regex"
+    )
+    if (
+        not isinstance(google_script_deployment_url_regex, str)
+        or not google_script_deployment_url_regex
+    ):
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "be a non-empty string"
+        )
+    try:
+        compiled_url_regex = re.compile(google_script_deployment_url_regex)
+    except re.error as exc:
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex is not "
+            f"a valid regular expression: {exc}"
+        ) from None
+    if compiled_url_regex.groups != 1:
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "contain exactly one capture group"
+        )
     return SystemMetricsSetupConfig(
         check_interval_seconds=check_interval_seconds,
         python_version=python_version,
@@ -782,6 +812,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         main_sent_dir=main_sent_dir,
         google_script_timeout_seconds=google_script_timeout_seconds,
         google_script_key_entry_title=google_script_key_entry_title,
+        google_script_deployment_url_regex=google_script_deployment_url_regex,
     )
 
 

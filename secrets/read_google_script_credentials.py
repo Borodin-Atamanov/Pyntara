@@ -4,15 +4,16 @@
 The deploy script for the System Metrics Google Drive web app needs the
 script ID of the Apps Script project, the deployment ID whose URL stays
 stable across redeploys and the shared auth key. All three live in the
-google_script_key entry of the vault databases, whose title comes from
-system_metrics_setup.google_script_key_entry_title in the repository
-config.toml, the same single source of truth the deployed service uses:
-the username field holds the script ID, the url field holds the web app
-endpoint from which the deployment ID is extracted as the path segment
-between /macros/s/ and /exec, the password field holds the auth key that
-the deploy script substitutes into the script template. This maintenance
-script prints the values as key=value lines for the deploy script to
-consume; it is a standalone script like
+google_script_key entry of the vault databases, whose title and URL
+pattern come from system_metrics_setup.google_script_key_entry_title and
+system_metrics_setup.google_script_deployment_url_regex in the
+repository config.toml, the same single source of truth the deployed
+service uses: the username field holds the script ID, the url field
+holds the web app endpoint from which the deployment ID is extracted
+with the configured URL pattern, the password field holds the auth key
+that the deploy script substitutes into the script template. This
+maintenance script prints the values as key=value lines for the deploy
+script to consume; it is a standalone script like
 secrets/regenerate_vault_by_config.py and is invoked with the project
 interpreter.
 
@@ -39,12 +40,6 @@ from pathlib import Path
 # the project virtualenv interpreter sits at its well-known location.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
-
-# The web app endpoint is https://script.google.com/macros/s/<ID>/exec; the
-# deployment ID is the single path segment between /macros/s/ and /exec.
-DEPLOYMENT_URL_RE = re.compile(
-    r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
-)
 
 # pykeepass is installed into the project virtualenv, not into the system
 # python; when the script is invoked directly the kernel starts the system
@@ -76,14 +71,17 @@ class ScriptError(RuntimeError):
     """Fatal problem with the config or the vault databases."""
 
 
-def _entry_title_from_config() -> str:
-    """The Google script entry title from the repository config.toml.
+def _google_script_config() -> tuple[str, re.Pattern[str]]:
+    """The entry title and the compiled deployment URL pattern from config.
 
-    The value of system_metrics_setup.google_script_key_entry_title is
-    the single source of truth for the entry that carries the Google
-    script credentials; the deployed service reads the same key from the
-    system config. A missing config, a missing key or a non-string value
-    is a loud error, never a silent hardcoded fallback.
+    system_metrics_setup.google_script_key_entry_title names the vault
+    entry that carries the Google script credentials, and
+    system_metrics_setup.google_script_deployment_url_regex is the
+    regular expression whose single capture group yields the deployment
+    ID; the deployed service reads the same keys from the system config.
+    A missing config, a missing or non-string key, a regex that does not
+    compile or one without exactly one capture group is a loud error,
+    never a silent hardcoded fallback.
     """
 
     config_path = REPO_ROOT / "config.toml"
@@ -96,18 +94,38 @@ def _entry_title_from_config() -> str:
             f"cannot read config file {config_path}: {exc}"
         ) from exc
     try:
-        title = data["system_metrics_setup"]["google_script_key_entry_title"]
+        section = data["system_metrics_setup"]
+        title = section["google_script_key_entry_title"]
+        pattern = section["google_script_deployment_url_regex"]
     except KeyError:
         raise ScriptError(
-            "system_metrics_setup.google_script_key_entry_title is missing "
-            f"in {config_path}"
+            "system_metrics_setup.google_script_key_entry_title and "
+            "google_script_deployment_url_regex must be present in "
+            f"{config_path}"
         ) from None
     if not isinstance(title, str) or not title:
         raise ScriptError(
             "system_metrics_setup.google_script_key_entry_title must be a "
             "non-empty string"
         )
-    return title
+    if not isinstance(pattern, str) or not pattern:
+        raise ScriptError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "be a non-empty string"
+        )
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise ScriptError(
+            "system_metrics_setup.google_script_deployment_url_regex is not "
+            f"a valid regular expression: {exc}"
+        ) from None
+    if compiled.groups != 1:
+        raise ScriptError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "contain exactly one capture group"
+        )
+    return title, compiled
 
 
 def resolve_vault_password(
@@ -142,13 +160,14 @@ def resolve_vault_password(
 def deployment_id_from_url(url: str) -> str:
     """The deployment ID embedded in a web app URL.
 
-    The URL must be the exact web app endpoint shape
-    https://script.google.com/macros/s/<ID>/exec; any other shape raises
+    The URL must match the deployment URL pattern from the config, whose
+    single capture group yields the ID; any other shape raises
     ScriptError, so a wrong url fails loudly instead of deploying to an
     unexpected place.
     """
 
-    match = DEPLOYMENT_URL_RE.match(url.strip())
+    _, pattern = _google_script_config()
+    match = pattern.match(url.strip())
     if match is None:
         raise ScriptError(f"url is not a web app URL: {url!r}")
     return match.group(1)
@@ -164,16 +183,16 @@ def _source_vault_paths() -> tuple[Path, Path]:
 def read_credentials(environ: Mapping[str, str]) -> str:
     """script_id, deployment_id and script_key lines from the first vault.
 
-    The entry title comes from system_metrics_setup
-    .google_script_key_entry_title in the repository config.toml.
-    Production is tried first, then default; PYNTARA_VAULT_SOURCE
-    (production or default) forces one source. The first vault that opens
-    with the password is authoritative: a missing entry, an empty username,
-    an empty password or a url that is not a web app URL are errors, not
-    reasons to fall back. When no vault opens, ScriptError is raised.
+    The entry title and the deployment URL pattern come from the
+    system_metrics_setup table of the repository config.toml. Production
+    is tried first, then default; PYNTARA_VAULT_SOURCE (production or
+    default) forces one source. The first vault that opens is
+    authoritative: a missing entry, an empty username, an empty password
+    or a url that is not a web app URL are errors, not reasons to fall
+    back. When no vault opens, ScriptError is raised.
     """
 
-    title = _entry_title_from_config()
+    title, _ = _google_script_config()
     production_path, default_path = _source_vault_paths()
     source = environ.get("PYNTARA_VAULT_SOURCE", "")
     if source not in ("", "production", "default"):

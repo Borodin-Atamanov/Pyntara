@@ -5,8 +5,8 @@ as a module through importlib.util (the secrets directory is not a package)
 and its functions are exercised against real KeePass databases in
 temporary directories. REPO_ROOT is monkeypatched so the repository vaults
 and the repository config are never touched; a config.toml with the entry
-title is written into the temporary root, and the environment is injected
-explicitly through the function arguments.
+title and the deployment URL pattern is written into the temporary root,
+and the environment is injected explicitly through the function arguments.
 """
 
 from __future__ import annotations
@@ -35,6 +35,25 @@ GOOGLE_ENTRY = {
     "password": "test-key",
     "notes": "Test credentials.",
 }
+
+# The deployment URL pattern that mirrors the real config value.
+DEPLOYMENT_PATTERN = r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
+
+
+def _write_config(
+    tmp_path: Path,
+    *,
+    title: str = "google_script_key",
+    pattern: str = DEPLOYMENT_PATTERN,
+) -> None:
+    """Write a config.toml with the two Google script keys into the root."""
+
+    (tmp_path / "config.toml").write_text(
+        "[system_metrics_setup]\n"
+        f'google_script_key_entry_title = "{title}"\n'
+        f"google_script_deployment_url_regex = '{pattern}'\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture(scope="module")
@@ -84,15 +103,15 @@ def _point_at(
     production = tmp_path / "secrets" / "production.vault"
     default = tmp_path / "secrets" / "default.vault"
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
-    (tmp_path / "config.toml").write_text(
-        "[system_metrics_setup]\n"
-        'google_script_key_entry_title = "google_script_key"\n',
-        encoding="utf-8",
-    )
+    _write_config(tmp_path)
     return production, default
 
 
-def test_deployment_id_from_url_valid(gen: ModuleType) -> None:
+def test_deployment_id_from_url_valid(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
+    _write_config(tmp_path)
     assert (
         gen.deployment_id_from_url(
             "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
@@ -119,10 +138,12 @@ def test_deployment_id_from_url_valid(gen: ModuleType) -> None:
     ],
 )
 def test_deployment_id_from_url_rejects_other_shapes(
-    gen: ModuleType, url: str
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str
 ) -> None:
     # A url that is not the exact web app endpoint shape is a fatal error:
     # the deploy helper must never guess a deployment ID.
+    monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
+    _write_config(tmp_path)
     with pytest.raises(gen.ScriptError):
         gen.deployment_id_from_url(url)
 
@@ -263,16 +284,33 @@ def test_entry_title_comes_from_config(
     entry = dict(GOOGLE_ENTRY)
     entry["title"] = "custom_key_title"
     _make_vault(production, PRODUCTION_PASSWORD, entry)
-    (tmp_path / "config.toml").write_text(
-        "[system_metrics_setup]\n"
-        'google_script_key_entry_title = "custom_key_title"\n',
-        encoding="utf-8",
-    )
+    _write_config(tmp_path, title="custom_key_title")
     output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
     assert (
         output
         == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
     )
+
+
+def test_deployment_pattern_comes_from_config(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The deployment URL pattern is not hardcoded: a custom pattern from
+    # config.toml drives the ID extraction, and a URL outside the pattern
+    # is rejected even when it matches the old Google shape.
+    monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
+    _write_config(
+        tmp_path,
+        pattern=r"^https://example\.com/deploy/([A-Za-z0-9_-]+)/exec$",
+    )
+    assert (
+        gen.deployment_id_from_url("https://example.com/deploy/ABC123/exec")
+        == "ABC123"
+    )
+    with pytest.raises(gen.ScriptError, match="not a web app URL"):
+        gen.deployment_id_from_url(
+            "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
+        )
 
 
 def test_missing_config_is_an_error(

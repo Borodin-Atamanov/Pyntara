@@ -113,6 +113,9 @@ def make_config(
     system_metrics_main_sent_dir: str = "main_sent",
     system_metrics_google_script_timeout_seconds: int = 60,
     system_metrics_google_script_key_entry_title: str = "google_script_key",
+    system_metrics_google_script_deployment_url_regex: str = (
+        r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
+    ),
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -207,6 +210,9 @@ def make_config(
             main_sent_dir=system_metrics_main_sent_dir,
             google_script_timeout_seconds=system_metrics_google_script_timeout_seconds,
             google_script_key_entry_title=system_metrics_google_script_key_entry_title,
+            google_script_deployment_url_regex=(
+                system_metrics_google_script_deployment_url_regex
+            ),
         ),
         vault_structure=VaultStructureConfig(
             entries=tuple(

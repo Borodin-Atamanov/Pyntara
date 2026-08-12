@@ -284,6 +284,12 @@ google_script_timeout_seconds = 60
 # key (docs/spec/secrets-model.md). The value must name an entry of the
 # [vault_structure] table.
 google_script_key_entry_title = "google_script_key"
+# Python regular expression of the Google web app deployment URL. The
+# pattern must contain exactly one capture group: the deploy helper
+# extracts the deployment ID from the group, so a pattern without a
+# capture group is a config error. Written as a TOML literal string
+# (single quotes) so the backslashes stay literal.
+google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
 
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow

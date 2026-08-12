@@ -82,6 +82,7 @@ google_script_dir = "google_script"
 main_sent_dir = "main_sent"
 google_script_timeout_seconds = 60
 google_script_key_entry_title = "google_script_key"
+google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
 
 [vault_structure]
 
@@ -219,6 +220,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         config.system_metrics_setup.google_script_key_entry_title
         == "google_script_key"
     )
+    assert (
+        config.system_metrics_setup.google_script_deployment_url_regex
+        == r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
+    )
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -302,6 +307,7 @@ _BASE_CONFIG = (
     'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
     "google_script_timeout_seconds = 60\n"
     'google_script_key_entry_title = "google_script_key"\n'
+    "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -637,6 +643,26 @@ _BASE_CONFIG = (
             'google_script_key_entry_title = "google_script_key"',
             'google_script_key_entry_title = ""',
         ),
+        # system_metrics_setup google_script_deployment_url_regex is a number
+        _BASE_CONFIG.replace(
+            "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'",
+            "google_script_deployment_url_regex = 1",
+        ),
+        # system_metrics_setup google_script_deployment_url_regex is empty
+        _BASE_CONFIG.replace(
+            "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'",
+            "google_script_deployment_url_regex = ''",
+        ),
+        # system_metrics_setup google_script_deployment_url_regex is invalid
+        _BASE_CONFIG.replace(
+            "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'",
+            "google_script_deployment_url_regex = 'a['",
+        ),
+        # system_metrics_setup google_script_deployment_url_regex has no group
+        _BASE_CONFIG.replace(
+            "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'",
+            "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/[A-Za-z0-9_-]+/exec$'",
+        ),
         # local_vault_setup source_vault_production is a number, not a string
         _BASE_CONFIG.replace(
             'source_vault_production = "secrets/production.vault"',
@@ -869,6 +895,7 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
         'google_script_key_entry_title = "google_script_key"\n'
+        "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -933,6 +960,7 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
         'google_script_key_entry_title = "google_script_key"\n'
+        "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
