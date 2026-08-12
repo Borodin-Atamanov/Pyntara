@@ -8,7 +8,11 @@ Pyntara turns a fresh Kubuntu installation into a fully configured workstation o
 ## Start
 
 ```bash
-inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" && curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
+inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
+&& curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
+-o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh \
+&& sudo --preserve-env=PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
+bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
 ```
 
 The installer runs non-interactively and never asks the user anything. The production vault password is optional: enter it once via read -s (hidden input) and pass it through the PYNTARA_VAULT_PASSWORD environment variable to use the production vault. Without a password, or with a password that matches no vault, the installer shows a short countdown notice and falls back to the default vault.
@@ -28,7 +32,14 @@ PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_
 Quick test run without the apt index refresh. The flag sits in the prefix of the script invocation, so it reaches the installer and the engine; a flag joined with && would only set a shell variable and never reach the installer. The password is asked only when PYNTARA_VAULT_PASSWORD is not already set in the terminal; after the first run the variable stays exported in the same terminal, so a repeated run skips the prompt:
 
 ```bash
-{ [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]] || read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD; } && export PYNTARA_VAULT_PASSWORD && inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" && curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh && sudo --preserve-env=PYNTARA_VAULT_PASSWORD bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
+{ [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]] \
+|| read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD; } \
+&& export PYNTARA_VAULT_PASSWORD \
+&& inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
+&& curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
+-o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh \
+&& sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
+bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
 ```
 
 Engine values used by the Python part come from config.toml at the repository root: the task data root, the notice and command timeouts, the desktop detection process list, the Ubuntu archive components enabled by add_extra_repos, the cli_tools package list with the install retry count and the success threshold, the swapfile parameters, the ZRAM and zswap settings, the secret vault structure and the System Metrics deployment parameters (service and ingest units, the spool path and modes, the journal identifiers, the channel queue names), and the task catalog under [[tasks]] with each task's name, description, dependencies and mode membership. The file is mandatory; a missing or invalid file stops the run. The cli_tools task succeeds when at least cli_tools.package_success_threshold_percent of the configured packages are installed after the run; a single failing package is not fatal by itself.
