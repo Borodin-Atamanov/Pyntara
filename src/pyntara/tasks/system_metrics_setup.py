@@ -8,8 +8,8 @@ same code base the installer uses and never need the clone afterwards.
 The single system config is copied to the configured system_config_path,
 so the deployed service reads its parameters with the same loader as the
 installer (architecture contract section 3). The long-running service
-system_metrics.service checks the runtime vault every
-check_interval_seconds; the ingest service system_metrics-ingest.service
+system_metrics.service drains the Google Drive channel queue; the ingest
+service system_metrics-ingest.service
 moves committed files from the spool into the queue and is started by the
 path unit system_metrics-ingest.path whenever a file appears in the spool.
 All unit names, journal identifiers and the spool path come from config

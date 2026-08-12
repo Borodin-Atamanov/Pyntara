@@ -105,7 +105,7 @@ def _install_fixtures(
     repo.mkdir(parents=True)
     source_config = repo / "config.toml"
     source_config.write_text(
-        "[system_metrics_setup]\ncheck_interval_seconds = 300\n", encoding="utf-8"
+        "[system_metrics_setup]\n", encoding="utf-8"
     )
     task_data = repo / "task_data" / "system_metrics_setup"
     task_data.mkdir(parents=True)

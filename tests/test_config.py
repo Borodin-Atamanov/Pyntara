@@ -55,13 +55,11 @@ reset_busy_retry_delay_seconds = 0.5
 service_unit_name = "zram.service"
 
 [system_metrics_setup]
-check_interval_seconds = 300
 backoff_base_seconds = 2
 backoff_multiplier = 2
 backoff_max_seconds = 14400
 python_version = "3"
 error_priority = 3
-success_priority = 7
 venv_dir = "/usr/local/lib/pyntara/venv"
 system_config_path = "/etc/pyntara/config.toml"
 command_path = "/usr/local/bin/commit_system_metrics"
@@ -184,13 +182,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.service_unit_name == "zram.service"
     assert config.zram_service.reset_busy_attempts == 5
     assert config.zram_service.reset_busy_retry_delay_seconds == 0.5
-    assert config.system_metrics_setup.check_interval_seconds == 300
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400
     assert config.system_metrics_setup.python_version == "3"
     assert config.system_metrics_setup.error_priority == 3
-    assert config.system_metrics_setup.success_priority == 7
     assert config.system_metrics_setup.venv_dir == Path("/usr/local/lib/pyntara/venv")
     assert config.system_metrics_setup.system_config_path == Path("/etc/pyntara/config.toml")
     assert config.system_metrics_setup.command_path == Path("/usr/local/bin/commit_system_metrics")
@@ -298,10 +294,10 @@ _BASE_CONFIG = (
     'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
     "reset_busy_retry_delay_seconds = 0.5\n"
     'service_unit_name = "zram.service"\n'
-    "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+    "[system_metrics_setup]\n"
     "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
     "backoff_max_seconds = 14400\n"
-    'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+    'python_version = "3"\nerror_priority = 3\n'
     'venv_dir = "/usr/local/lib/pyntara/venv"\n'
     'system_config_path = "/etc/pyntara/config.toml"\n'
     'command_path = "/usr/local/bin/commit_system_metrics"\n'
@@ -477,18 +473,6 @@ _BASE_CONFIG = (
             "reset_busy_retry_delay_seconds = 0.5",
             "reset_busy_retry_delay_seconds = 0",
         ),
-        # system_metrics_setup check_interval_seconds is a string, not an integer
-        _BASE_CONFIG.replace(
-            "check_interval_seconds = 300", 'check_interval_seconds = "300"'
-        ),
-        # system_metrics_setup check_interval_seconds is zero
-        _BASE_CONFIG.replace(
-            "check_interval_seconds = 300", "check_interval_seconds = 0"
-        ),
-        # system_metrics_setup check_interval_seconds is negative
-        _BASE_CONFIG.replace(
-            "check_interval_seconds = 300", "check_interval_seconds = -5"
-        ),
         # system_metrics_setup backoff_base_seconds is a string
         _BASE_CONFIG.replace(
             "backoff_base_seconds = 2", 'backoff_base_seconds = "2"'
@@ -538,11 +522,6 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'python_version = "3"\nerror_priority = 3\n',
             'python_version = "3"\nerror_priority = 8\n',
-        ),
-        # system_metrics_setup success_priority is below zero
-        _BASE_CONFIG.replace(
-            "error_priority = 3\nsuccess_priority = 7\n",
-            "error_priority = 3\nsuccess_priority = -1\n",
         ),
         # system_metrics_setup venv_dir is a number, not a string
         _BASE_CONFIG.replace(
@@ -940,10 +919,10 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
         "reset_busy_retry_delay_seconds = 0.5\n"
         'service_unit_name = "zram.service"\n'
-        "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"
-        'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+        'python_version = "3"\nerror_priority = 3\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'
@@ -1009,10 +988,10 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
         "reset_busy_retry_delay_seconds = 0.5\n"
         'service_unit_name = "zram.service"\n'
-        "[system_metrics_setup]\ncheck_interval_seconds = 300\n"
+        "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"
-        'python_version = "3"\nerror_priority = 3\nsuccess_priority = 7\n'
+        'python_version = "3"\nerror_priority = 3\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'

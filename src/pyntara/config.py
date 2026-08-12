@@ -146,15 +146,14 @@ class SystemMetricsSetupConfig:
     The section is read by the deployed service on the target machine
     through pyntara.config.load_config, the same loader the installer
     uses: system_config_path is the single config of the system.
-    check_interval_seconds is the pause between two vault availability
-    checks; backoff_base_seconds, backoff_multiplier and
+    backoff_base_seconds, backoff_multiplier and
     backoff_max_seconds are the retry mode parameters of the send loop:
     the first failed cycle waits backoff_base_seconds, every further
     consecutive failure multiplies the pause by backoff_multiplier until
     backoff_max_seconds (docs/spec/system-metrics.md, section Schedule
     and retry); python_version selects the interpreter for the deployed
-    venv; error_priority and success_priority are the syslog levels of
-    failed and successful checks; venv_dir, system_config_path and
+    venv; error_priority is the syslog level of a failed vault open by
+    the senders; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
     command_path being the system path of the generated
     commit_system_metrics command file. system_metrics_dir is the root
@@ -189,13 +188,11 @@ class SystemMetricsSetupConfig:
     (docs/spec/system-metrics.md).
     """
 
-    check_interval_seconds: int
     backoff_base_seconds: int
     backoff_multiplier: int
     backoff_max_seconds: int
     python_version: str
     error_priority: int
-    success_priority: int
     venv_dir: Path
     system_config_path: Path
     command_path: Path
@@ -637,12 +634,12 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
 def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """Validate the [system_metrics_setup] table and build the config.
 
-    check_interval_seconds, backoff_base_seconds and
-    backoff_max_seconds are positive integers and backoff_max_seconds is
-    not below backoff_base_seconds; backoff_multiplier is an integer of
-    at least 2, so the pause always grows. python_version is a non-empty
-    string; error_priority and success_priority are syslog levels between
-    0 and 7; venv_dir, system_config_path, command_path,
+    backoff_base_seconds and backoff_max_seconds are positive integers
+    and backoff_max_seconds is not below backoff_base_seconds;
+    backoff_multiplier is an integer of at least 2, so the pause always
+    grows. python_version is a non-empty string; error_priority is a
+    syslog level between 0 and 7; venv_dir, system_config_path,
+    command_path,
     system_metrics_dir, spool_dir and every unit name, journal
     identifier, queue directory name and spool temp prefix are non-empty
     strings; system_metrics_dir_mode, queue_file_mode, spool_dir_mode
@@ -658,14 +655,6 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     if not isinstance(raw, dict):
         raise ConfigError(
             "[system_metrics_setup] section is missing or not a table"
-        )
-    check_interval_seconds = _int_field(
-        raw.get("check_interval_seconds"),
-        "system_metrics_setup.check_interval_seconds",
-    )
-    if check_interval_seconds < 1:
-        raise ConfigError(
-            "system_metrics_setup.check_interval_seconds must be positive"
         )
     backoff_base_seconds = _int_field(
         raw.get("backoff_base_seconds"),
@@ -703,13 +692,6 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     if not 0 <= error_priority <= 7:
         raise ConfigError(
             "system_metrics_setup.error_priority must be between 0 and 7"
-        )
-    success_priority = _int_field(
-        raw.get("success_priority"), "system_metrics_setup.success_priority"
-    )
-    if not 0 <= success_priority <= 7:
-        raise ConfigError(
-            "system_metrics_setup.success_priority must be between 0 and 7"
         )
     venv_dir = raw.get("venv_dir")
     if not isinstance(venv_dir, str) or not venv_dir:
@@ -805,13 +787,11 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             "contain exactly one capture group"
         )
     return SystemMetricsSetupConfig(
-        check_interval_seconds=check_interval_seconds,
         backoff_base_seconds=backoff_base_seconds,
         backoff_multiplier=backoff_multiplier,
         backoff_max_seconds=backoff_max_seconds,
         python_version=python_version,
         error_priority=error_priority,
-        success_priority=success_priority,
         venv_dir=Path(venv_dir),
         system_config_path=Path(system_config_path),
         command_path=Path(command_path),

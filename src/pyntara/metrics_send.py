@@ -94,7 +94,9 @@ def send_google_queue(
     an attempt. In the retry mode (single_random) exactly one randomly
     chosen uploadable entry is attempted, so one permanently rejected
     entry never blocks the drain of the rest
-    (docs/spec/system-metrics.md, section Schedule and retry).
+    (docs/spec/system-metrics.md, section Schedule and retry). The
+    runtime vault is opened only when the queue holds at least one
+    uploadable entry, so an idle queue never pays the vault open cost.
     """
 
     metrics = cfg.system_metrics_setup
@@ -104,19 +106,19 @@ def send_google_queue(
     if not channel.is_dir():
         _log(f"google script channel: queue {channel} missing, skipping")
         return 0, 0
-    credentials = _google_script_credentials(cfg)
-    if credentials is None:
-        _log("google script channel: no credentials, skipping the drain")
-        return 0, 0
-    url, key = credentials
     entries = [
         entry
         for entry in _ordered_entries(channel, metrics.send_order)
         if _entry_uploadable(entry, metrics.max_queue_file_size_bytes)
     ]
+    if not entries:
+        return 0, 0
+    credentials = _google_script_credentials(cfg)
+    if credentials is None:
+        _log("google script channel: no credentials, skipping the drain")
+        return 0, 0
+    url, key = credentials
     if single_random:
-        if not entries:
-            return 0, 0
         chosen = random.choice(entries)
         return 1, 1 if _send_entry(cfg, chosen, url, key, sent) else 0
     attempts = 0

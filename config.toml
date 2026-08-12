@@ -198,13 +198,10 @@ service_unit_name = "zram.service"
 # deployed service reads this section through the same config loader as
 # the installer: system_config_path is the single config of the target
 # system (docs/contracts/architecture.md section 3). Every cycle the
-# service checks the runtime vault availability, dispatches committed
-# entries from main_outbox into the channel queues and drains the Google
-# Drive channel into the web app; the encrypted PDF generation and the
-# Telegram channel replace the Google-only sending in a later stage
-# (docs/spec/system-metrics.md).
-# Pause between two runtime vault availability checks, in seconds.
-check_interval_seconds = 300
+# service dispatches committed entries from main_outbox into the channel
+# queues and drains the Google Drive channel into the web app; the
+# encrypted PDF generation and the Telegram channel replace the
+# Google-only sending in a later stage (docs/spec/system-metrics.md).
 # Retry mode of the send loop: after a cycle with send attempts and no
 # success the service sends one random uploadable entry per cycle and the
 # pause grows. The first failed cycle waits backoff_base_seconds, every
@@ -216,10 +213,8 @@ backoff_multiplier = 2
 backoff_max_seconds = 14400
 # Python version selector for the dedicated venv created by the task.
 python_version = "3"
-# Syslog priority of a failed runtime vault check, 0 to 7.
+# Syslog priority of a failed vault open by the senders, 0 to 7.
 error_priority = 3
-# Syslog priority of a successful runtime vault check, 0 to 7.
-success_priority = 7
 # Directory of the dedicated venv the task creates for the deployed
 # service on the target machine.
 venv_dir = "/usr/local/lib/pyntara/venv"
