@@ -6,7 +6,7 @@ The task installs the SSH server package, runs its systemd service and patches t
 
 ## Key pair
 
-The key pair lives in the repository under task_data/ssh_daemon_setup/: the private key pyntara_mesh and the public key pyntara_mesh.pub. Both files are committed to the repository. The private key is an OpenSSH private key encrypted with a strong pass phrase, so committing it is safe: the pass phrase is never stored in the repository, in the config or on the target machine. The task copies the private key as is, still encrypted, and never needs the pass phrase.
+The key pair lives in the repository under task_data/ssh_daemon_setup/: the private key id_ed25519 and the public key id_ed25519.pub. Both files are committed to the repository. The deployed file names equal the repository names and match the OpenSSH default identity name id_ed25519, so the client offers the key automatically on every connection, without -i or ssh-add. The private key is an OpenSSH private key encrypted with a strong pass phrase, so committing it is safe: the pass phrase is never stored in the repository, in the config or on the target machine. The task copies the private key as is, still encrypted, and never needs the pass phrase. The pass phrase stays on the target: the first connection prompts for it, or the user runs ssh-add once to load the key into the agent. A key deployed under another name by an earlier task version is a harmless leftover and is removed by hand; the task does not clean it up.
 
 ## Configuration ownership
 

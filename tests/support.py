@@ -113,8 +113,8 @@ def make_config(
         "/etc/ssh/sshd_config.d/pyntara.conf"
     ),
     ssh_daemon_dropin_file_mode: int = 0o644,
-    ssh_daemon_private_key_file_name: str = "pyntara_mesh",
-    ssh_daemon_public_key_file_name: str = "pyntara_mesh.pub",
+    ssh_daemon_private_key_file_name: str = "id_ed25519",
+    ssh_daemon_public_key_file_name: str = "id_ed25519.pub",
     ssh_daemon_private_key_file_mode: int = 0o600,
     ssh_daemon_public_key_file_mode: int = 0o644,
     ssh_daemon_authorized_keys_file_mode: int = 0o600,

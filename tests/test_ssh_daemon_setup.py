@@ -97,12 +97,18 @@ def _ctx(
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> Path:
-    """Write the key fixtures; return the task data directory."""
+    """Write the key fixtures; return the task data directory.
 
+    The file names come from the make_config defaults, the same defaults
+    every test uses through _ctx, so the fixtures always match the names
+    the task reads from its config.
+    """
+
+    cfg = make_config().ssh_daemon_setup
     data_dir = tmp_path / "task_data" / "ssh_daemon_setup"
     data_dir.mkdir(parents=True)
-    (data_dir / "pyntara_mesh").write_bytes(PRIVATE_KEY_BYTES)
-    (data_dir / "pyntara_mesh.pub").write_text(PUBLIC_KEY_LINE + "\n")
+    (data_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
+    (data_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
     monkeypatch.setattr(ssh_daemon_setup, "SSH_DATA_DIR", data_dir)
     return data_dir
 
@@ -324,8 +330,8 @@ def _deploy_keys_directories(ctx: Context, tmp_path: Path) -> list[Path]:
     )
     for ssh_dir in directories:
         ssh_dir.mkdir(parents=True, exist_ok=True)
-        (ssh_dir / "pyntara_mesh").write_bytes(PRIVATE_KEY_BYTES)
-        (ssh_dir / "pyntara_mesh.pub").write_text(PUBLIC_KEY_LINE + "\n")
+        (ssh_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
+        (ssh_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
         (ssh_dir / "authorized_keys").write_text(
             PUBLIC_KEY_LINE + "\n", encoding="utf-8"
         )
@@ -463,17 +469,18 @@ def test_writes_dropin_and_deploys_keys(
     )
     assert (cfg.sshd_config_dropin_path.stat().st_mode & 0o777) == 0o644
     directories = _deploy_keys_directories(ctx, tmp_path)
+    cfg = ctx.config.ssh_daemon_setup
     for ssh_dir in directories:
-        assert (ssh_dir / "pyntara_mesh").read_bytes() == PRIVATE_KEY_BYTES
-        assert (ssh_dir / "pyntara_mesh.pub").read_text(encoding="utf-8") == (
+        assert (ssh_dir / cfg.private_key_file_name).read_bytes() == PRIVATE_KEY_BYTES
+        assert (ssh_dir / cfg.public_key_file_name).read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n"
         )
         assert (ssh_dir / "authorized_keys").read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n"
         )
         assert (ssh_dir.stat().st_mode & 0o777) == 0o700
-        assert (ssh_dir / "pyntara_mesh").stat().st_mode & 0o777 == 0o600
-        assert (ssh_dir / "pyntara_mesh.pub").stat().st_mode & 0o777 == 0o644
+        assert (ssh_dir / cfg.private_key_file_name).stat().st_mode & 0o777 == 0o600
+        assert (ssh_dir / cfg.public_key_file_name).stat().st_mode & 0o777 == 0o644
         assert (ssh_dir / "authorized_keys").stat().st_mode & 0o777 == 0o600
 
 
@@ -547,7 +554,8 @@ def test_missing_key_files_are_an_error(
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
-    (Path(ssh_daemon_setup.SSH_DATA_DIR) / "pyntara_mesh.pub").unlink()
+    cfg = ctx.config.ssh_daemon_setup
+    (Path(ssh_daemon_setup.SSH_DATA_DIR) / cfg.public_key_file_name).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
     assert "missing in" in (result.error or "")

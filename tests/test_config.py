@@ -77,8 +77,8 @@ start_check_retry_delay_seconds = 1
 sshd_config_path = "/etc/ssh/sshd_config"
 sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"
 dropin_file_mode = "0644"
-private_key_file_name = "pyntara_mesh"
-public_key_file_name = "pyntara_mesh.pub"
+private_key_file_name = "id_ed25519"
+public_key_file_name = "id_ed25519.pub"
 private_key_file_mode = "0600"
 public_key_file_mode = "0644"
 authorized_keys_file_mode = "0600"
@@ -272,8 +272,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/etc/ssh/sshd_config.d/pyntara.conf"
     )
     assert config.ssh_daemon_setup.dropin_file_mode == 0o644
-    assert config.ssh_daemon_setup.private_key_file_name == "pyntara_mesh"
-    assert config.ssh_daemon_setup.public_key_file_name == "pyntara_mesh.pub"
+    assert config.ssh_daemon_setup.private_key_file_name == "id_ed25519"
+    assert config.ssh_daemon_setup.public_key_file_name == "id_ed25519.pub"
     assert config.ssh_daemon_setup.private_key_file_mode == 0o600
     assert config.ssh_daemon_setup.public_key_file_mode == 0o644
     assert config.ssh_daemon_setup.authorized_keys_file_mode == 0o600
@@ -456,8 +456,8 @@ _BASE_CONFIG = (
     'sshd_config_path = "/etc/ssh/sshd_config"\n'
     'sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"\n'
     'dropin_file_mode = "0644"\n'
-    'private_key_file_name = "pyntara_mesh"\n'
-    'public_key_file_name = "pyntara_mesh.pub"\n'
+    'private_key_file_name = "id_ed25519"\n'
+    'public_key_file_name = "id_ed25519.pub"\n'
     'private_key_file_mode = "0600"\n'
     'public_key_file_mode = "0644"\n'
     'authorized_keys_file_mode = "0600"\n'
@@ -768,11 +768,11 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace('dropin_file_mode = "0644"', 'dropin_file_mode = "zzzz"'),
         # ssh_daemon_setup private_key_file_name is an empty string
         _BASE_CONFIG.replace(
-            'private_key_file_name = "pyntara_mesh"', 'private_key_file_name = ""'
+            'private_key_file_name = "id_ed25519"', 'private_key_file_name = ""'
         ),
         # ssh_daemon_setup public_key_file_name is a number, not a string
         _BASE_CONFIG.replace(
-            'public_key_file_name = "pyntara_mesh.pub"', "public_key_file_name = 1"
+            'public_key_file_name = "id_ed25519.pub"', "public_key_file_name = 1"
         ),
         # ssh_daemon_setup private_key_file_mode is not four digits
         _BASE_CONFIG.replace('private_key_file_mode = "0600"', 'private_key_file_mode = "600"'),
