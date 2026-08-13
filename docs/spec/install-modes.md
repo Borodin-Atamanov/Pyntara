@@ -26,7 +26,7 @@ explicit ordering
 name
 human-readable description
 
-Task set and metadata are defined in config.toml under the [[tasks]] section. Unknown task names show the resilience notice and are ignored.
+Task set and metadata are defined in the config/ directory under the [[tasks]] section. Unknown task names show the resilience notice and are ignored.
 
 ## Force task selection
 

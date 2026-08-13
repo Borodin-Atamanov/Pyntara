@@ -1,0 +1,24 @@
+# Pyntara engine configuration.
+# Single source of truth for the values used by the Python part of the
+# engine. The config/ directory holds one TOML file per top-level section;
+# the loader joins the files in sorted order into a single document before
+# parsing (pyntara.config.loader.render_config_source). The directory is
+# mandatory: a missing or invalid config stops the run, there are no
+# defaults. Secrets never live here; vault credentials come from the
+# environment (architecture contract section 3).
+
+[engine]
+# Directory for runtime task state.
+task_data_root = "/var/lib/pyntara/task-data"
+# Seconds the resilience notice stays visible.
+notice_timeout = 7
+# Seconds a provisioning command may run before it is killed.
+command_timeout_seconds = 1800
+# Seconds the desktop detection process check may take.
+process_check_timeout_seconds = 5
+# Seconds the engine pauses after showing a task title before running it.
+task_start_delay_seconds = 0.5
+# Process names whose presence marks a desktop session in the default
+# install mode detection. A desktop session variable wins over these;
+# the list is checked only when no session variable is set.
+desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]

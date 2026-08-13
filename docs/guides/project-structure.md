@@ -16,7 +16,7 @@ The helpers fit files where one setting is one line and the line order does not 
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.
 README.md — Quick start, installation modes, and links to detailed docs.
-config.toml — Engine configuration and the task catalog, single source of truth for the Python part. See docs/contracts/architecture.md.
+config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
@@ -32,8 +32,8 @@ secrets/production.vault — Production KeePass database with real secrets. In g
 secrets/default.password — Password for default.vault (well-known test value). In git.
 secrets/production.password — Password for production.vault. Not in git (.gitignore).
 
-The layout of both vault files is described in the [vault_structure] table of config.toml, the single source of truth for the vault structure (docs/spec/secrets-model.md).
-secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of config.toml (docs/spec/secrets-model.md).
+The layout of both vault files is described in the [vault_structure] table of the config/ directory, the single source of truth for the vault structure (docs/spec/secrets-model.md).
+secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).
 secrets/read_google_script_credentials.py — Prints the script ID, the deployment ID and the shared auth key of the System Metrics Google Drive web app from the google_script_key entry of a vault (username, the deployment ID embedded in url, and the password field); consumed by task_data/system_metrics_setup/deploy_google_script.sh, which substitutes the key into the __GOOGLE_SCRIPT_KEY__ template placeholder of google_drive_script.js.
 
 ## src/pyntara/
@@ -41,7 +41,7 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 src/pyntara/__init__.py — Package version and public exports.
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
 src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.
-src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from config.toml.
+src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.
 src/pyntara/models.py — TaskResult dataclass.
 src/pyntara/context.py — Context frozen dataclass.
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
@@ -57,7 +57,7 @@ src/pyntara/system_metrics.py — System Metrics generation, in-memory PDF encry
 
 ### src/pyntara/tasks/
 
-One module per task, each exposing task(ctx) -> TaskResult. Task names come from the [[tasks]] section of config.toml, the single source of truth; the module list is not repeated here so renames in the config cannot leave stale names behind.
+One module per task, each exposing task(ctx) -> TaskResult. Task names come from the [[tasks]] section of the config/ directory, the single source of truth; the module list is not repeated here so renames in the config cannot leave stale names behind.
 
 ## task_data/
 

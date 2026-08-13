@@ -1,0 +1,128 @@
+[ssh_daemon_setup]
+# SSH server parameters (docs/spec/ssh-daemon-setup.md). The task
+# installs the openssh-server package, runs ssh.service and patches the
+# daemon configuration through a drop-in, never through sshd_config
+# itself. Directives are written through augeas (augtool from
+# augeas-tools, already installed by cli_tools), which parses the real
+# syntax and updates only what differs, so the file is never blindly
+# overwritten. The pre-generated key pair lives in
+# task_data/ssh_daemon_setup/: the private key is encrypted with a strong
+# pass phrase, so it is committed to the repository as is; the task
+# copies both files to root and to every configured user and guarantees
+# the public key in authorized_keys. The directives list is the starting
+# set and will grow later without code changes.
+# Package that provides the SSH server daemon.
+package_name = "openssh-server"
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
+# Name of the systemd service unit of the SSH daemon.
+service_unit_name = "ssh.service"
+# Name of the systemd socket unit of the SSH daemon. Ubuntu activates the
+# daemon through the socket, and the socket then owns the listen port:
+# sshd_config Port is ignored while the socket is enabled. The task
+# disables the socket, so the SSH daemon listens on the port from the
+# configuration, written through augeas into the drop-in.
+socket_unit_name = "ssh.socket"
+# Readiness loop after a start: attempts and pause between two is-active
+# checks. The reload path never waits, because the daemon stays up.
+start_check_attempts = 5
+# Pause in seconds between two readiness checks.
+start_check_retry_delay_seconds = 1
+# Main sshd configuration file. It is only checked for an Include
+# directive that pulls the drop-in directory in, never rewritten.
+sshd_config_path = "/etc/ssh/sshd_config"
+# Drop-in configuration file the task owns. Directives are written
+# through augeas and updated only when they differ; an empty directives
+# list removes the file.
+sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"
+# File mode of the rendered drop-in, as an octal string.
+dropin_file_mode = "0644"
+# Repository key file names under task_data/ssh_daemon_setup/. The
+# deployed name equals the repository name, and the pair is named like
+# the OpenSSH default identity id_ed25519, so the client offers it
+# automatically without -i or ssh-add.
+private_key_file_name = "id_ed25519"
+public_key_file_name = "id_ed25519.pub"
+# File modes of the deployed key files, as octal strings: the private
+# key stays readable only by its owner, the public key is world-readable.
+private_key_file_mode = "0600"
+public_key_file_mode = "0644"
+# File mode of the authorized_keys file, as an octal string.
+authorized_keys_file_mode = "0600"
+# File mode of the .ssh directories created for the users, as an octal
+# string.
+ssh_dir_mode = "0700"
+# Target .ssh directory of the root user.
+root_ssh_dir = "/root/.ssh"
+# Additional users whose .ssh directories receive the keys. A user that
+# does not exist yet is skipped with a log line, so the task stays
+# idempotent while users_setup runs later.
+users = ["i", "j", "k"]
+# sshd_config directives guaranteed by the task, written through augeas
+# into the drop-in. Each entry is a keyword and its value; a directive
+# that is already present with the same value is left untouched, a
+# directive with a different value is updated, and a directive that is no
+# longer configured is removed. Durations are whole seconds, so the
+# sshd -T comparison stays exact.
+[[ssh_daemon_setup.directives]]
+name = "Port"
+value = "30222"
+
+[[ssh_daemon_setup.directives]]
+name = "PubkeyAuthentication"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "PermitRootLogin"
+value = "prohibit-password"
+
+[[ssh_daemon_setup.directives]]
+name = "PasswordAuthentication"
+value = "no"
+
+[[ssh_daemon_setup.directives]]
+name = "X11Forwarding"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "UseDNS"
+value = "no"
+
+[[ssh_daemon_setup.directives]]
+name = "PermitTunnel"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "MaxStartups"
+value = "11:30:151"
+
+[[ssh_daemon_setup.directives]]
+name = "LoginGraceTime"
+value = "360"
+
+[[ssh_daemon_setup.directives]]
+name = "GatewayPorts"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "Compression"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "ClientAliveInterval"
+value = "157"
+
+[[ssh_daemon_setup.directives]]
+name = "ClientAliveCountMax"
+value = "17"
+
+[[ssh_daemon_setup.directives]]
+name = "AllowTcpForwarding"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "AddressFamily"
+value = "any"

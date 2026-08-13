@@ -1,0 +1,127 @@
+# Task catalog: single source of truth for task metadata, one [[tasks]]
+# entry per task. Each entry has a name, a human-readable description,
+# optional dependencies and the install modes it belongs to. The engine
+# computes the default task set for a mode and expands selections with
+# transitive dependencies. inst.sh never parses this file. A listed task
+# without an implemented module is skipped at run time, not a failure.
+# Dependencies must name tasks listed earlier in this file: this keeps
+# default task sets ordered and rules out dependency cycles.
+[[tasks]]
+name = "add_extra_repos"
+description = "Enable extra Ubuntu archive components: universe, restricted, multiverse."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "cli_tools"
+description = "Install curated console utilities: file managers, system and media tools."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "swapfile_service_install"
+description = "Calculate and configure swapfile from RAM and free disk space."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "zram_service"
+description = "Configure aggressive ZRAM by CPU and RAM."
+depends = ["swapfile_service_install"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "zswap_service"
+description = "Configure aggressive zswap compressed swap cache with zstd."
+depends = ["swapfile_service_install"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "local_vault_setup"
+description = "Setup local vault for secrets storage"
+depends = ["zram_service"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "system_metrics_setup"
+description = "Deploy and run the System Metrics service with periodic vault checks."
+depends = ["local_vault_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "users_setup"
+description = "Create and configure i, j, k users and required groups."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "hostname"
+description = "Generate and persist random hostname."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "passwords"
+description = "Derive root and user passwords from salt and hostname."
+depends = ["users_setup", "hostname"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "ssh_daemon_setup"
+description = "Install and configure SSH service with passwordless login keys."
+depends = ["users_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "ssh_client_setup"
+description = "Configure system-wide SSH client defaults through a drop-in."
+depends = []
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "proxy_server"
+description = "Local authenticated proxy service with password and port."
+depends = ["local_vault_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "proxy_tunnel"
+description = "Local tunnel to remote proxy or VPN."
+depends = ["proxy_server"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "power_behavior_configure_kde6"
+description = "Configure power behavior, no suspend on lid close or inactivity."
+depends = []
+modes = ["desktop"]
+
+[[tasks]]
+name = "desktop_apps_install"
+description = "Desktop defaults: Kate, terminal, language indicator, folders."
+depends = ["users_setup"]
+modes = ["desktop"]
+
+[[tasks]]
+name = "imagemagick_install"
+description = "Install latest ImageMagick"
+depends = ["add_extra_repos"]
+modes = ["server", "desktop"]
+
+[[tasks]]
+name = "nextdns_setup_system_wide"
+description = "Per-user NextDNS account and system-wide DNS endpoint."
+depends = ["users_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "i2pd_service_setup"
+description = "Install and configure the latest i2pd from GitHub releases as a system service."
+depends = ["add_extra_repos"]
+modes = ["server", "desktop"]
+
+[[tasks]]
+name = "yggdrasil_service_setup"
+description = "Install the latest yggdrasil from GitHub releases as a system service."
+depends = []
+modes = ["server", "desktop"]

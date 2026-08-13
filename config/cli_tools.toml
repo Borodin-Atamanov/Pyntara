@@ -1,0 +1,92 @@
+[cli_tools]
+# Console utilities installed by the cli_tools task.
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are retries plus one.
+package_install_retries = 3
+# Minimum installed share of the package set, in percent, for the task to
+# succeed. Below this share the task fails; a single failing package is not
+# fatal by itself.
+package_success_threshold_percent = 70
+
+#package set
+packages = [
+    # shell completion
+    "bash-completion", # bash-completion: programmable completion for the bash shell
+    "complete-alias", # complete-alias: tab completion for shell aliases
+    "hstr", # better history in console
+
+    # file operations
+    "tree", # tree: displays an indented directory tree, in color
+    "rsync", # rsync: fast, versatile, remote and local file-copying tool
+
+    # storage monitoring
+    "lsof", # lsof: utility to list open files
+    "smartmontools", # smartmontools: control and monitor storage systems via S.M.A.R.T.
+
+    # security and cryptography
+    "gnupg", # gnupg: GNU privacy guard, a free PGP replacement
+    "ca-certificates", # ca-certificates: common CA certificates for TLS verification
+    "openssl", # openssl: OpenSSL cryptographic toolkit
+    "sshpass", # sshpass: non-interactive SSH password authentication
+
+    # terminal multiplexers
+    "tmux", # tmux: terminal multiplexer with sessions and windows
+    "screen", # screen: terminal multiplexer with VT100/ANSI terminal emulation
+
+    # file managers
+    "mc", # mc: Midnight Commander, two-panel console file manager
+    "nnn", # nnn: lightweight terminal file browser
+
+    # archivers
+    "unrar", # unrar: extractor for the proprietary RAR archive format
+    "unrar-free", # unrar-free: free replacement for unrar
+    "unzip", # unzip: ZIP archive extractor
+    "7zip", # 7zip: modern 7-Zip archiver, replaces the removed p7zip-full
+    "xz-utils", # xz-utils: XZ and LZMA compression tools
+    "zstd", # zstd: Zstandard compression tool with high ratio and speed
+    "lrzip", # lrzip: long-range ZIP, compression for large files
+    "pigz", # pigz: parallel gzip implementation using all CPU cores
+    "lz4", # lz4: extremely fast LZ4 compression tool
+
+    # system information
+    "inxi", # inxi: full system information report
+    "lsscsi", # lsscsi: list SCSI and other storage devices
+    "lshw", # lshw: detailed hardware information
+
+    # resource monitoring
+    "htop", # htop: interactive process viewer
+    "nmon", # nmon: system performance monitor for CPU, memory, network, disk
+    "ncdu", # ncdu: disk usage analyzer with interactive curses interface
+
+    # network tools
+    "net-tools", # net-tools: classic networking tools, ifconfig, netstat, route, arp
+    "nmap", # nmap: network scanner
+    "tcpdump", # tcpdump: command-line packet analyzer
+    "traceroute", # traceroute: trace the network path to a remote host
+    "whois", # whois: client for the whois directory service
+    "wget", # wget: non-interactive network downloader
+    "bind9-dnsutils", # bind9-dnsutils: DNS utilities dig, nslookup and host; the real package behind the transitional dnsutils
+    "nload", # nload: console network traffic monitor
+    "speedometer", # speedometer: console bandwidth usage meter
+    "bmon", # bmon: bandwidth monitor with interactive curses interface
+    "iftop", # iftop: real-time bandwidth usage by connection
+    "nethogs", # nethogs: per-process network traffic monitor
+    "iptraf-ng", # iptraf-ng: interactive IP network traffic monitor
+
+    # disk and file tools
+    "exfat-fuse", # exfat-fuse: read and write exFAT filesystems through FUSE
+    "fdupes", # fdupes: find and remove duplicate files
+
+    # media tools
+    "mediainfo", # mediainfo: technical details of media files, codecs and streams
+    "exiftool", # exiftool: read and write EXIF and IPTC metadata in media files
+
+    # automation and configuration
+    "expect", # expect: automate interactive terminal programs
+    "augeas-tools", # augeas-tools: command-line tools for the Augeas configuration editor
+
+    # small utilities
+    "calc", # calc: arbitrary precision calculator
+    "hollywood", # hollywood: decorative fake Hollywood-style terminal activity
+]

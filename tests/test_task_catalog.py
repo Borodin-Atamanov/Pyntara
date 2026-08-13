@@ -19,7 +19,7 @@ from pyntara import task_catalog
 from pyntara.config import MODES, TaskConfig, load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TASKS = load_config(REPO_ROOT / "config.toml").tasks
+TASKS = load_config(REPO_ROOT / "config").tasks
 
 
 # A synthetic three-task chain with one transitive dependency. Mechanics

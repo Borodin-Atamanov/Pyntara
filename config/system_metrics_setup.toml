@@ -1,0 +1,203 @@
+[system_metrics_setup]
+# Runtime parameters of the long-running System Metrics service. The
+# deployed service reads this section through the same config loader as
+# the installer: system_config_path is the single config of the target
+# system (docs/contracts/architecture.md section 3). Every cycle the
+# service dispatches committed entries from main_outbox into the channel
+# queues and drains the Google Drive channel into the web app; the
+# encrypted PDF generation and the Telegram channel replace the
+# Google-only sending in a later stage (docs/spec/system-metrics.md).
+# Retry mode of the send loop: after a cycle with send attempts and no
+# success the service sends one random uploadable entry per cycle and the
+# pause grows. The first failed cycle waits backoff_base_seconds, every
+# further consecutive failure multiplies the pause by the integer
+# backoff_multiplier until backoff_max_seconds; all values are whole
+# seconds (docs/spec/system-metrics.md, section Schedule and retry).
+backoff_base_seconds = 2
+backoff_multiplier = 2
+backoff_max_seconds = 14400
+# Python version selector for the dedicated venv created by the task.
+python_version = "3"
+# Syslog priority of a failed vault open by the senders, 0 to 7.
+error_priority = 3
+# Directory of the dedicated venv the task creates for the deployed
+# service on the target machine.
+venv_dir = "/usr/local/lib/pyntara/venv"
+# Path of the single system config copied from the repository root; the
+# deployed service reads it through the same loader as the installer.
+system_config_path = "/etc/pyntara/config.toml"
+# Path of the system command commit_system_metrics. The task generates
+# a thin bash command file at this path from the command template with
+# the spool path and the journal identifier embedded, so any user can
+# commit without config access and without root privileges.
+command_path = "/usr/local/bin/commit_system_metrics"
+# Root directory of the System Metrics queue on the target machine. The
+# ingest service moves committed files from the spool into main_outbox
+# inside this directory; the deployed service fans them out into the
+# channel queues and archives sent files (docs/spec/system-metrics.md,
+# section Queue architecture).
+system_metrics_dir = "/var/lib/pyntara/metrics"
+# File mode of every queue directory (system_metrics_dir, main_outbox,
+# temp and the channel queues), as an octal string. Queue entries carry
+# potential secrets, so the mode is the strictest possible, root only.
+system_metrics_dir_mode = "0700"
+# File mode of every queue entry, as an octal string.
+queue_file_mode = "0600"
+# Maximum size of a single committed file in bytes; larger files are
+# rejected by the ingest service and by the sender.
+max_queue_file_size_bytes = 104857600
+# Order in which the deployed service sends queued entries: oldest_first
+# sends the earliest committed entry first, newest_first the latest.
+send_order = "oldest_first"
+# Length of the random alphanumeric suffix appended to the original file
+# name of every queue entry after a dot. The suffix lets entries with
+# identical original names coexist; the sender strips it before upload,
+# so the remote server receives the original name.
+queue_file_suffix_length = 12
+# Directory of the System Metrics spool: the intake directory where the
+# generated commit_system_metrics command publishes files for the ingest
+# service to move into main_outbox. The path is a behavioral value and
+# therefore lives in the config (architecture contract section 3).
+spool_dir = "/var/spool/system_metrics"
+# File mode of the spool directory, as an octal string. The mode is 1733:
+# sticky, write and search for everyone, no listing, so spool entry names
+# stay private; the commit command creates entries with queue_file_mode.
+spool_dir_mode = "1733"
+# File mode of the generated commit_system_metrics command file.
+command_file_mode = "0755"
+# Name of the long-running System Metrics service unit file.
+service_unit_name = "system_metrics.service"
+# Name of the ingest oneshot service unit file, started by the path unit.
+ingest_service_unit_name = "system_metrics-ingest.service"
+# Name of the ingest path unit that watches the spool directory.
+ingest_path_unit_name = "system_metrics-ingest.path"
+# Journal identifier of the System Metrics services.
+service_journal_identifier = "system_metrics"
+# Journal identifier of the commit command.
+commit_journal_identifier = "commit_system_metrics"
+# Name of the intake queue directory inside system_metrics_dir.
+main_outbox_dir = "main_outbox"
+# Name of the temp queue directory inside system_metrics_dir.
+temp_dir = "temp"
+# Prefix of temporary files the commit command creates in the spool
+# before publishing; entries with this prefix are never ingested.
+spool_temp_prefix = ".commit-"
+# Publication attempts before the ingest gives up on a unique queue name.
+queue_link_attempts = 5
+# Name of the Google Drive channel queue directory inside system_metrics_dir.
+# The dispatcher links every main_outbox entry here; the Google sender drains
+# it into the web app and moves sent entries to main_sent.
+google_script_dir = "google_script"
+# Name of the sent archive directory inside system_metrics_dir. Senders move
+# successfully sent entries here.
+main_sent_dir = "main_sent"
+# curl timeout of a single Google Drive channel upload, in seconds.
+google_script_timeout_seconds = 60
+# Title of the vault entry that carries the Google Drive web app
+# credentials: url holds the endpoint, password holds the shared auth
+# key (docs/spec/secrets-model.md). The value must name an entry of the
+# [vault_structure] table.
+google_script_key_entry_title = "google_script_key"
+# Python regular expression of the Google web app deployment URL. The
+# pattern must contain exactly one capture group: the deploy helper
+# extracts the deployment ID from the group, so a pattern without a
+# capture group is a config error. Written as a TOML literal string
+# (single quotes) so the backslashes stay literal.
+google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
+
+[system_metrics_setup.collector]
+# Report collector parameters (docs/spec/system-metrics.md, section
+# Report collector). The collector is a producer of the System Metrics
+# queue: the systemd timer system_metrics_collector.timer starts the
+# oneshot service system_metrics_collector.service after boot and at the
+# configured daily time; the service runs the configured console
+# commands, keeps their full output, waits up to the retry window for
+# threshold_percent of the network modules to answer, writes the report
+# as report_file_name and commits it through the commit_system_metrics
+# command. All waiting happens inside the service, never in systemd:
+# boot_delay_seconds only sets the OnBootSec of the timer.
+# Seconds after boot before the timer fires the collector service.
+boot_delay_seconds = 30
+# Time of day of the daily collector run, "HH:MM" or "HH:MM:SS"; the
+# timer fires every day at this local time.
+daily_send_time = "12:00:00"
+# Minimum share of the configured network modules that must have
+# answered (status ok) before the report is committed immediately, in
+# percent from 0 to 100. Below this share the service retries with the
+# geometric backoff below until the retry window is exhausted, then
+# commits the report as is. 0 commits after the first collection, 100
+# waits for every network module.
+threshold_percent = 50
+# Retry window of the collector: the geometric backoff below repeats
+# collections until retry_max_seconds have passed since the first
+# collection. The first retry waits retry_base_seconds, every further
+# retry multiplies the pause by retry_multiplier until
+# retry_max_seconds; all values are whole seconds.
+retry_base_seconds = 2
+retry_multiplier = 2
+retry_max_seconds = 600
+# Seconds a single console command may run before it is killed; the
+# same timeout bounds one commit_system_metrics call.
+command_timeout_seconds = 15
+# Name of the oneshot collector service unit file.
+service_unit_name = "system_metrics_collector.service"
+# Name of the collector timer unit file.
+timer_unit_name = "system_metrics_collector.timer"
+# Journal identifier of the collector service.
+journal_identifier = "system_metrics_collector"
+# Path of the flock lock file. The collector takes a non-blocking
+# exclusive lock for the whole run, so two instances (a boot run that
+# overran into the daily run) never commit simultaneously; the second
+# instance exits.
+lock_file_path = "/run/pyntara/system_metrics_collector.lock"
+# Name of the committed report file. The report is written under this
+# name into the system temp directory and committed through the
+# commit_system_metrics command; the queue keeps the name and the random
+# suffix of the ingest, so daily reports with the same name coexist in
+# the queue.
+report_file_name = "network.json"
+
+# Network modules: console commands whose full output forms the network
+# section of the report. ready_percent counts only these modules, so the
+# collector waits only for addresses. A module reports ok when the
+# command exited 0 with non-empty output, empty when it exited 0 with
+# empty output, error otherwise (nonzero exit, missing command, timeout).
+# Commands are argv arrays, never shell lines. Unconfigured sources are
+# simply absent: add or remove modules here without code changes. Future
+# candidates, commented out until the services are installed:
+# [[system_metrics_setup.collector.network_modules]]
+# name = "tor_onion"
+# command = ["cat", "/var/lib/tor/hidden_service/hostname"]
+# [[system_metrics_setup.collector.network_modules]]
+# name = "yggdrasil"
+# command = ["yggdrasilctl", "getSelf"]
+# [[system_metrics_setup.collector.network_modules]]
+# name = "cloudflared"
+# command = ["cat", "/home/i/.cloudflared/config.yml"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv4"
+command = ["ip", "-4", "addr", "show", "scope", "global"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv6"
+command = ["ip", "-6", "addr", "show", "scope", "global"]
+
+# System modules: console commands whose full output forms the system
+# section of the report. Their status never affects ready_percent and
+# the waiting.
+[[system_metrics_setup.collector.system_modules]]
+name = "hostname"
+command = ["hostname"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "memory"
+command = ["free", "-h"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "cpu"
+command = ["lscpu"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "disk"
+command = ["df", "-h", "/"]

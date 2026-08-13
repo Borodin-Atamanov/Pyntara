@@ -131,7 +131,9 @@ def _install_fixtures(
 
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    source_config = repo / "config.toml"
+    config_dir = repo / "config"
+    config_dir.mkdir(parents=True)
+    source_config = config_dir / "system_metrics_setup.toml"
     source_config.write_text(
         "[system_metrics_setup]\n", encoding="utf-8"
     )

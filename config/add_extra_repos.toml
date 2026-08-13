@@ -1,0 +1,13 @@
+[add_extra_repos]
+# Components the add_extra_repos task ensures in every Ubuntu archive
+# section of the apt sources. main is always present on a fresh Kubuntu;
+# universe, restricted and multiverse are enabled here.
+components = ["main", "universe", "restricted", "multiverse"]
+# Official Ubuntu archive hosts the task may manage. A source file whose
+# URIs match none of these hosts is third-party and left untouched.
+ubuntu_hosts = [
+    "archive.ubuntu.com",
+    "security.ubuntu.com",
+    "ports.ubuntu.com",
+    "old-releases.ubuntu.com",
+]

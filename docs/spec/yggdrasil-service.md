@@ -60,7 +60,7 @@ The target state is reached when the installed version equals the newest release
 
 ## Parameters
 
-All parameters live in config.toml under [yggdrasil_service_setup]:
+All parameters live in the config/ directory under [yggdrasil_service_setup]:
 
 github_repo is the GitHub repository in owner/name form
 download_dir is the directory for the downloaded package file

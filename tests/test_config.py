@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from config_helpers import base_config
 
 from pyntara.config import (
     ConfigError,
@@ -510,3 +511,48 @@ def test_load_config_missing_section_raises(tmp_path: Path) -> None:
     config_path.write_text("[engine]\nnotice_timeout = 7\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load_config(config_path)
+
+
+def test_load_config_directory_joins_files(tmp_path: Path) -> None:
+    # The repository config is a directory: the loader joins the *.toml
+    # files in sorted order into one document and parses it. The base
+    # document is split across two files to prove the join.
+    text = base_config()
+    split_at = text.index("[cli_tools]")
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "engine.toml").write_text(
+        text[:split_at], encoding="utf-8"
+    )
+    (config_dir / "rest.toml").write_text(
+        text[split_at:], encoding="utf-8"
+    )
+    config = load_config(config_dir)
+    assert config.engine.notice_timeout == 7
+    assert config.cli_tools.package_install_retries == 3
+    assert config.tasks[0].name == "users"
+
+
+def test_load_config_directory_duplicate_table_raises(tmp_path: Path) -> None:
+    # The same table in two files is a duplicate table error: the join is
+    # one document, so tomllib rejects it exactly like a duplicated table
+    # in a single file.
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "engine.toml").write_text(
+        '[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8"
+    )
+    (config_dir / "duplicate.toml").write_text(
+        '[engine]\nnotice_timeout = 7\n', encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="cannot read"):
+        load_config(config_dir)
+
+
+def test_load_config_empty_directory_raises(tmp_path: Path) -> None:
+    # An empty directory renders an empty document: no section exists, so
+    # the first parser reports the missing table.
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    with pytest.raises(ConfigError):
+        load_config(config_dir)

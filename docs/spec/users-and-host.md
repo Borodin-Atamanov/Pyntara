@@ -15,7 +15,7 @@ ZRAM should be aggressive, with strong compression, using almost all memory.
 Each device uses the configured compressor algorithm.
 ZRAM swap is activated with the configured swap_priority, so it is used before the disk swapfile.
 
-All parameter values live in the [zram_service] table of config.toml: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts and reset_busy_retry_delay_seconds.
+All parameter values live in the [zram_service] table of the config/ directory: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts and reset_busy_retry_delay_seconds.
 reset_busy_attempts and reset_busy_retry_delay_seconds bound the retries of a reset or hot_remove that the kernel rejects with EBUSY while a transient opener, for example a udev probe, holds the device.
 
 The zram_service task configures the devices immediately and installs a systemd oneshot service that repeats the setup at every boot.

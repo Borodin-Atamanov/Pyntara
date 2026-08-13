@@ -1,0 +1,24 @@
+[zram_service]
+# Aggressive in-memory swap parameters (docs/spec/users-and-host.md).
+# The device count equals the CPU core count; the total capacity is
+# memory_fraction_percent of installed RAM split evenly across the devices
+# and rounded down to the alignment_bytes zram page size. Every device uses
+# the compressor algorithm and is activated with swap_priority, so ZRAM
+# swap is preferred over the disk swapfile.
+# Compression algorithm applied to every device.
+compressor = "zstd"
+# Swap priority; ZRAM must rank above the disk swapfile.
+swap_priority = 1111
+# Total ZRAM capacity as a percentage of installed RAM, 1 to 100.
+memory_fraction_percent = 96
+# CPU core count used when the real count cannot be determined.
+fallback_cpu_count = 8
+# Byte boundary the zram driver requires for disksize values.
+alignment_bytes = 4096
+# Retries of a reset or hot_remove rejected with EBUSY while a transient
+# opener, for example a udev probe, holds the device.
+reset_busy_attempts = 5
+# Pause in seconds between two retry attempts.
+reset_busy_retry_delay_seconds = 0.5
+# Name of the systemd oneshot service unit that repeats the setup at boot.
+service_unit_name = "zram.service"

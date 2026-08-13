@@ -1,0 +1,19 @@
+[swapfile_service_install]
+# Swap file path and size calculation. The task creates a swapfile at the
+# given path and a systemd service to activate it at boot. The size is
+# min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction).
+# Path to the swap file.
+swapfile_path = "/swapfile"
+# Multiplier applied to installed RAM to get the base swap size.
+ram_multiplier = 1.6
+# Extra mebibytes added to the RAM-derived swap size before the disk cap.
+ram_extra_mb = 4096
+# Maximum share of free disk space the swap file may occupy, 0.0 to 1.0.
+disk_fraction = 0.5
+# File mode of the created swapfile, as an octal string.
+swapfile_mode = "0600"
+# Accepted deviation between the existing and the target swap size, in
+# mebibytes; a swapfile within the tolerance is not recreated.
+size_tolerance_mb = 1
+# Name of the systemd oneshot service unit that activates the swap at boot.
+service_unit_name = "swapfile.service"

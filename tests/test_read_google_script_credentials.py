@@ -4,14 +4,16 @@ The standalone script secrets/read_google_script_credentials.py is loaded
 as a module through importlib.util (the secrets directory is not a package)
 and its functions are exercised against real KeePass databases in
 temporary directories. REPO_ROOT is monkeypatched so the repository vaults
-and the repository config are never touched; a config.toml with the entry
-title and the deployment URL pattern is written into the temporary root,
-and the environment is injected explicitly through the function arguments.
+and the repository config are never touched; a config/ directory with the
+entry title and the deployment URL pattern is written into the temporary
+root, and the environment is injected explicitly through the function
+arguments.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import shutil
 from pathlib import Path
 from types import ModuleType
 
@@ -46,9 +48,11 @@ def _write_config(
     title: str = "google_script_key",
     pattern: str = DEPLOYMENT_PATTERN,
 ) -> None:
-    """Write a config.toml with the two Google script keys into the root."""
+    """Write a config/system_metrics_setup.toml with the Google keys."""
 
-    (tmp_path / "config.toml").write_text(
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "system_metrics_setup.toml").write_text(
         "[system_metrics_setup]\n"
         f'google_script_key_entry_title = "{title}"\n'
         f"google_script_deployment_url_regex = '{pattern}'\n",
@@ -319,7 +323,7 @@ def test_missing_config_is_an_error(
     # Without config.toml the entry title is unknown: a loud error, never
     # a silent hardcoded fallback.
     production, _ = _point_at(gen, tmp_path, monkeypatch)
-    (tmp_path / "config.toml").unlink()
+    shutil.rmtree(tmp_path / "config")
     _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
     with pytest.raises(gen.ScriptError, match="config file not found"):
         gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})

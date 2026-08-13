@@ -36,10 +36,10 @@ from pyntara.task_runner import run_tasks
 app = typer.Typer(invoke_without_command=True)
 
 # The engine configuration lives in the repository root. inst.sh launches
-# pyntara from the clone root, so the file is always found there. The file
-# is mandatory: a missing or invalid config stops the run (architecture
-# contract section 3).
-CONFIG_PATH = Path("config.toml")
+# pyntara from the clone root, so the config/ directory is always found
+# there. The directory is mandatory: a missing or invalid config stops the
+# run (architecture contract section 3).
+CONFIG_PATH = Path("config")
 
 
 @app.callback()

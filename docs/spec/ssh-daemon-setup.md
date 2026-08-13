@@ -41,7 +41,7 @@ The target state is reached when the package is installed, sshd_config pulls the
 
 ## Parameters
 
-All parameters live in config.toml under [ssh_daemon_setup]:
+All parameters live in the config/ directory under [ssh_daemon_setup]:
 
 package_name is the package that provides the SSH server daemon
 package_status_timeout_seconds bounds the dpkg status query

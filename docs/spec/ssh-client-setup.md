@@ -23,7 +23,7 @@ The target state is reached when ssh_config pulls the drop-in directory in and t
 
 ## Parameters
 
-All parameters live in config.toml under [ssh_client_setup]:
+All parameters live in the config/ directory under [ssh_client_setup]:
 
 ssh_config_path is the main client configuration, checked for the Include directive but never rewritten
 ssh_config_dropin_path is the drop-in file owned by the task, written through augeas under the Host block

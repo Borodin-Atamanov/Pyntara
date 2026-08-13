@@ -70,6 +70,12 @@ except ModuleNotFoundError:
         sys.exit(1)
     raise
 
+# The joined config text and its ConfigError come from the shared loader,
+# the same single source the engine uses; the script never re-implements
+# the config reading.
+from pyntara.config import ConfigError
+from pyntara.config.loader import render_config_source
+
 # KeePass entry fields that a [vault_structure] entry may name. The config
 # names must equal the database field names one-to-one, no mapping; any
 # other key is a config error. url is deliberately absent: per-entry
@@ -77,7 +83,7 @@ except ModuleNotFoundError:
 # the vault databases, not in the config.
 VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
 
-CONFIG_PATH = REPO_ROOT / "config.toml"
+CONFIG_PATH = REPO_ROOT / "config"
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -119,10 +125,12 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
     config errors, reported with the offending entry.
     """
 
-    if not config_path.is_file():
+    if not config_path.exists():
         raise ScriptError(f"config file not found: {config_path}")
     try:
-        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        data = tomllib.loads(render_config_source(config_path))
+    except ConfigError as exc:
+        raise ScriptError(str(exc)) from None
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ScriptError(f"cannot read config file {config_path}: {exc}") from exc
     table = data.get("vault_structure")

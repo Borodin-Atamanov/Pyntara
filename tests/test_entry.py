@@ -19,7 +19,7 @@ runner = CliRunner()
 # The real catalog from the repository config; the run tests use it so the
 # mocked Config matches the actual default task sets and the app output.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config.toml").tasks
+REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
 # Process names that mark a desktop session in the mode detection tests.
 DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell")

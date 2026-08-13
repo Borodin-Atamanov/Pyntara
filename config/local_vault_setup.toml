@@ -1,0 +1,29 @@
+[local_vault_setup]
+# Runtime secret vault creation parameters (docs/spec/secrets-model.md).
+# The task copies the first source vault that the run password decrypts,
+# re-encrypts it with the local vault password and stores the vault and
+# the password in fixed system locations, so services that start after
+# install can decrypt the vault without user input. Source vault paths are
+# relative to the repository root, so the clone can live anywhere on the
+# machine; the target paths are absolute and fixed by the secrets spec.
+# Path to the production KeePass vault.
+source_vault_production = "secrets/production.vault"
+# Path to the default KeePass vault, tried when production does not open.
+source_vault_default = "secrets/default.vault"
+# Target path of the runtime secret vault (file mode 0640, directory 0700).
+local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"
+# Target path of the plain root-only vault password file (mode 0400).
+pass_file_path = "/etc/pyntara/pass"
+# Title of the source vault entry that carries the future local vault
+# password. The entry must exist in the [vault_structure] table: the
+# config loader rejects a title that is not listed there.
+vault_password_entry_title = "pyntara_local_vault_password"
+# File modes for the runtime secret storage, as octal strings: the secrets
+# directory is 0700, the runtime vault 0640, the password directory 0700
+# and the password file 0400 (docs/spec/secrets-model.md).
+secrets_dir_mode = "0700"
+local_vault_file_mode = "0640"
+pass_dir_mode = "0700"
+pass_file_mode = "0400"
+# Syslog priority used when journaling a serious vault failure, 0 to 7.
+error_priority = 3

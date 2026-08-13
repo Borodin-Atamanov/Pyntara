@@ -1,0 +1,20 @@
+[zswap_service]
+# Compressed swap cache parameters. The zswap_service task writes these
+# values into /sys/module/zswap/parameters and installs a systemd oneshot
+# service that repeats the writes at every boot. The values are aggressive:
+# zstd compresses stronger than the lzo default, the pool may grow to the
+# configured percentage of RAM, and accept_threshold_percent 100 disables
+# the hysteresis so the pool accepts pages until the limit is hit.
+# Whether the compressed cache is enabled at all.
+enabled = true
+# Compression algorithm; zstd is the strongest available on Kubuntu.
+compressor = "zstd"
+# Maximum share of RAM the compressed pool may occupy, in percent.
+max_pool_percent = 12
+# Percent of the pool limit at which zswap starts accepting pages again
+# after being full; 100 disables the hysteresis.
+accept_threshold_percent = 87
+# Whether the shrinker proactively writes cold pages to the backing swap.
+shrinker_enabled = true
+# Name of the systemd oneshot service unit that repeats the writes at boot.
+service_unit_name = "zswap.service"

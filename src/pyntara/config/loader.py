@@ -60,13 +60,34 @@ class Config:
     tasks: tuple[TaskConfig, ...]
 
 
-def load_config(path: Path) -> Config:
-    """Read and validate config.toml. Raises ConfigError on any problem."""
+def render_config_source(path: Path) -> str:
+    """Return the TOML text of the config at path.
 
-    if not path.is_file():
+    A single file is returned as is; a directory is joined from its *.toml
+    files in sorted order. The directory form is the repository layout,
+    one file per top-level section; the deployed system config is always
+    the joined single file. A path that is neither a file nor a directory
+    is a ConfigError.
+    """
+
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    if path.is_dir():
+        return "\n".join(
+            child.read_text(encoding="utf-8")
+            for child in sorted(path.glob("*.toml"))
+        )
+    raise ConfigError(f"config file not found: {path}")
+
+
+def load_config(path: Path) -> Config:
+    """Read and validate the config at path. Raises ConfigError on any
+    problem."""
+
+    if not path.exists():
         raise ConfigError(f"config file not found: {path}")
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(render_config_source(path))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"cannot read config file {path}: {exc}") from exc
     vault_structure = _vault_structure_table(data.get("vault_structure"))

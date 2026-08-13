@@ -39,6 +39,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara.config.loader import render_config_source
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -157,29 +158,31 @@ def _ensure_venv(
 def _system_config_matches(system_config_path: Path) -> bool:
     """True when the system config copy equals the repository config."""
 
-    source = REPO_ROOT / "config.toml"
+    source = REPO_ROOT / "config"
     try:
         if not system_config_path.is_file():
             return False
         return (
             system_config_path.read_text(encoding="utf-8")
-            == source.read_text(encoding="utf-8")
+            == render_config_source(source)
         )
     except OSError:
         return False
 
 
 def _write_system_config(system_config_path: Path) -> None:
-    """Copy the repository config to the configured system path.
+    """Render the repository config to the configured system path.
 
     The copy is the single config of the target system: deployed services
-    read it through load_config, so they never need the repository.
+    read it through load_config, so they never need the repository. The
+    repository config/ directory is joined into one document, the same
+    joined text load_config parses.
     """
 
-    source = REPO_ROOT / "config.toml"
+    source = REPO_ROOT / "config"
     system_config_path.parent.mkdir(parents=True, exist_ok=True)
     system_config_path.write_text(
-        source.read_text(encoding="utf-8"), encoding="utf-8"
+        render_config_source(source), encoding="utf-8"
     )
 
 
