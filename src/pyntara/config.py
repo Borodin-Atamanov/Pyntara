@@ -362,6 +362,63 @@ class LocalVaultSetupConfig:
 
 
 @dataclass(frozen=True)
+class SshDirective:
+    """One sshd_config directive: a keyword and its value.
+
+    The value is kept as a single string and joined as-is into the
+    rendered drop-in, so the directive spelling stays exactly as
+    configured.
+    """
+
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class SshDaemonSetupConfig:
+    """SSH server parameters for the ssh_daemon_setup task.
+
+    The task installs package_name and runs service_unit_name; the
+    sshd configuration is patched through the drop-in at
+    sshd_config_dropin_path, never through sshd_config_path itself,
+    which is only checked for an Include directive that pulls the
+    drop-in directory in. private_key_file_name and public_key_file_name
+    are the repository key file names under task_data/ssh_daemon_setup/;
+    the private key is deployed as-is, still encrypted with its pass
+    phrase. The keys are deployed to root (root_ssh_dir) and to every
+    user of users, using ssh_dir_mode for the .ssh directories,
+    private_key_file_mode and public_key_file_mode for the key files and
+    authorized_keys_file_mode for the authorized_keys file; the public
+    key is appended to authorized_keys without duplicates. directives
+    are the sshd_config keywords guaranteed by the task, rendered into
+    the drop-in in order. package_status_timeout_seconds bounds the
+    dpkg status query, install_retries is the retry count of the
+    package install, start_check_attempts and
+    start_check_retry_delay_seconds bound the loop that waits for the
+    service to become active after a start.
+    """
+
+    package_name: str
+    package_status_timeout_seconds: int
+    install_retries: int
+    service_unit_name: str
+    start_check_attempts: int
+    start_check_retry_delay_seconds: float
+    sshd_config_path: Path
+    sshd_config_dropin_path: Path
+    dropin_file_mode: int
+    private_key_file_name: str
+    public_key_file_name: str
+    private_key_file_mode: int
+    public_key_file_mode: int
+    authorized_keys_file_mode: int
+    ssh_dir_mode: int
+    root_ssh_dir: Path
+    users: tuple[str, ...]
+    directives: tuple[SshDirective, ...]
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     """One task entry from the [[tasks]] section of config.toml."""
 
@@ -382,6 +439,7 @@ class Config:
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
     i2pd_service_setup: I2pdServiceSetupConfig
+    ssh_daemon_setup: SshDaemonSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
