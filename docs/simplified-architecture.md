@@ -35,11 +35,10 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 ## 5. What is next (separate changes)
 
-1. config_edit.py: managed-block editing helper for targeted config changes.
-2. secrets_store.py: controlled KeePass access for tasks that need vault values. All secrets are loaded at startup and become available to all tasks; no task requests a secret and receives it later.
-3. systemd.py and system_metrics.py with the System Metrics delivery task.
+1. secrets_store.py: controlled KeePass access for tasks that need vault values. All secrets are loaded at startup and become available to all tasks; no task requests a secret and receives it later.
+2. systemd.py and system_metrics.py with the System Metrics delivery task.
 
-The system_metrics_setup task was implemented as the first separate change: it deploys the long-running System Metrics service on the target machine (docs/contracts/architecture.md section 6).
+The system_metrics_setup task was implemented as the first separate change: it deploys the long-running System Metrics service on the target machine (docs/contracts/architecture.md section 6). The config editing helper src/pyntara/config_edit.py was implemented as the second separate change; its description lives in docs/guides/project-structure.md, section Configuration editing.
 
 ## 6. Documentation updates (completed)
 

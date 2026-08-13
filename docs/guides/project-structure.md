@@ -4,15 +4,13 @@ This document defines the target repository layout for Pyntara and explains what
 
 ## Configuration editing
 
-Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments.
+Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments. The single shared implementation of the line-edit approach lives in src/pyntara/config_edit.py; tasks import its functions instead of copying the logic (docs/guides/project-rules.md section 4).
 
-Preferred tools and approaches:
-Augeas where a format lens exists
-comby where no lens exists but structure is regular (most .conf/.ini-like files)
-dasel/yq/jq for JSON/YAML/TOML/XML
-managed blocks with marker verification as universal fallback
+replace_line_by_string edits text in memory: every line containing the needle or the slide is replaced with the slide, a line containing the stop word is left untouched, a line equal to the slide is never touched, and the slide is appended when nothing matched and add_slide_if_no_needle is true. It returns the new text and whether anything changed.
 
-The managed-block fallback must be implemented as a small shared library, not duplicated across scripts.
+add_line_to_file ensures a line is present in a file: an exact line is kept, a fuzzy line containing it is normalized to the exact line, a line containing the comment sign is left untouched and the missing line is appended. It returns whether the file changed; a missing file is not created.
+
+The helpers fit files where one setting is one line and the line order does not matter: systemd unit files, fstab, hosts, key = value files. External tools complement them where a line edit cannot express the change: Augeas (augeas-tools, installed by cli_tools) where a format lens exists, comby where no lens exists but the structure is regular, dasel/yq/jq for JSON/YAML/TOML/XML. Structured formats are edited with their parsers, never with line edits: config.toml loads through tomllib in src/pyntara/config.py.
 
 ## Top-level files
 
@@ -49,11 +47,11 @@ src/pyntara/context.py — Context frozen dataclass.
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
 src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries.
 src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/system-metrics.md).
+src/pyntara/config_edit.py — Line-level config editing helpers (section Configuration editing).
 src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
 
 Not implemented yet (target modules, see docs/simplified-architecture.md):
 src/pyntara/secrets_store.py — Vault loading/decryption and controlled secret access API.
-src/pyntara/config_edit.py — Managed-block config editing helper.
 src/pyntara/systemd.py — Creation/update of systemd unit files and timers.
 src/pyntara/system_metrics.py — System Metrics generation, in-memory PDF encryption, queues, retries, and scheduling.
 
