@@ -71,6 +71,7 @@ package_name = "openssh-server"
 package_status_timeout_seconds = 30
 install_retries = 3
 service_unit_name = "ssh.service"
+socket_unit_name = "ssh.socket"
 start_check_attempts = 5
 start_check_retry_delay_seconds = 1
 sshd_config_path = "/etc/ssh/sshd_config"
@@ -263,6 +264,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3
     assert config.ssh_daemon_setup.service_unit_name == "ssh.service"
+    assert config.ssh_daemon_setup.socket_unit_name == "ssh.socket"
     assert config.ssh_daemon_setup.start_check_attempts == 5
     assert config.ssh_daemon_setup.start_check_retry_delay_seconds == 1
     assert config.ssh_daemon_setup.sshd_config_path == Path("/etc/ssh/sshd_config")
@@ -448,6 +450,7 @@ _BASE_CONFIG = (
     "package_status_timeout_seconds = 30\n"
     "install_retries = 3\n"
     'service_unit_name = "ssh.service"\n'
+    'socket_unit_name = "ssh.socket"\n'
     "start_check_attempts = 5\n"
     "start_check_retry_delay_seconds = 1\n"
     'sshd_config_path = "/etc/ssh/sshd_config"\n'
@@ -739,6 +742,14 @@ _BASE_CONFIG = (
         # ssh_daemon_setup service_unit_name is an empty string
         _BASE_CONFIG.replace(
             'service_unit_name = "ssh.service"', 'service_unit_name = ""'
+        ),
+        # ssh_daemon_setup socket_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'socket_unit_name = "ssh.socket"', "socket_unit_name = 1"
+        ),
+        # ssh_daemon_setup socket_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'socket_unit_name = "ssh.socket"', 'socket_unit_name = ""'
         ),
         # ssh_daemon_setup sshd_config_path is a number, not a string
         _BASE_CONFIG.replace(

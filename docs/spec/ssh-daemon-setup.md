@@ -10,11 +10,16 @@ The key pair lives in the repository under task_data/ssh_daemon_setup/: the priv
 
 ## Configuration ownership
 
-The task never rewrites sshd_config itself. The main configuration is patched through the drop-in at the configured sshd_config_dropin_path, rendered from the configured directives in order:
+The task never rewrites sshd_config itself. The main configuration is patched through the drop-in at the configured sshd_config_dropin_path:
 
-1. The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include means the rendered drop-in would be silently ignored, so the task fails with an explicit error instead of pretending the configuration is in place.
-2. The drop-in is written whenever the rendered content differs, so manual edits are reverted on the next run: the task owns the file.
-3. An empty directives list renders no content, and the task removes the drop-in, so the task can revoke its own settings.
+1. The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include means the drop-in would be silently ignored, so the task fails with an explicit error instead of pretending the configuration is in place.
+2. The directives are written through augeas (augtool, installed by the augeas-tools package of the cli_tools task). augeas parses the real syntax and updates only what differs: a directive that is already present with the same value is left untouched, a directive with a different value is updated, a directive that is no longer configured is removed, and the ownership comment is guaranteed. The drop-in is owned by the task: a manual edit is reverted on the next run.
+3. An empty directives list removes the drop-in, so the task can revoke its own settings.
+4. After a change the effective configuration is verified with sshd -T, which prints the result of the whole Include chain. A directive that a later file overrides, or a keyword the daemon does not know, is reported as an error instead of being silently accepted: the verification is independent of the OpenSSH version and of other files in the drop-in directory.
+
+## Listen port and the systemd socket
+
+Ubuntu activates the SSH daemon through the systemd socket unit socket_unit_name, and the socket then owns the listen port: sshd_config Port is ignored while the socket is enabled. The task disables the socket with systemctl disable --now, so the daemon listens on the port from the configuration. After a start or restart the task verifies with ss -tlnp that something listens on the configured Port, so a port that never came up is a task error, not a silent success.
 
 ## Key deployment
 
@@ -28,11 +33,11 @@ The task owns the key files: a file whose content differs from the repository co
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled and starts it when it is inactive, waiting up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the checks for the unit to report active. When the configuration changed while the service was already active, the task reloads the unit instead of restarting it: a reload never drops existing connections. A unit that stays inactive after the readiness loop or a failed reload is a task error.
+The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled and starts it when it is inactive, waiting up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the checks for the unit to report active. On an already active service, a change that affects the port (a Port change or a socket disable) is applied with a restart, because reload does not rebind the listen socket; any other change is applied with a reload, which never drops existing connections. A unit that stays inactive after the readiness loop or a failed reload or restart is a task error.
 
 ## Idempotency
 
-The target state is reached when the package is installed, sshd_config pulls the drop-in directory in, the drop-in matches the render, the keys are in place for root and every existing configured user and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the drop-in and reloads the active service, but never reinstalls the package and never changes the deployed keys beyond the content comparison.
+The target state is reached when the package is installed, sshd_config pulls the drop-in directory in, the drop-in matches the configured directives through augeas, the socket is disabled, the keys are in place for root and every existing configured user and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the drop-in and restarts the active service, but never reinstalls the package and never changes the deployed keys beyond the content comparison.
 
 ## Parameters
 
@@ -42,10 +47,11 @@ package_name is the package that provides the SSH server daemon
 package_status_timeout_seconds bounds the dpkg status query
 install_retries is the retry count of the package install; total attempts are retries plus one
 service_unit_name is the systemd unit of the SSH daemon
+socket_unit_name is the systemd socket unit of the SSH daemon, disabled so the configured port takes effect
 start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after a start
 sshd_config_path is the main daemon configuration, checked for the Include directive but never rewritten
-sshd_config_dropin_path is the drop-in file owned by the task
-dropin_file_mode is the file mode of the rendered drop-in
+sshd_config_dropin_path is the drop-in file owned by the task, written through augeas
+dropin_file_mode is the file mode of the drop-in
 private_key_file_name and public_key_file_name are the repository key file names under task_data/ssh_daemon_setup/
 private_key_file_mode and public_key_file_mode are the file modes of the deployed keys
 authorized_keys_file_mode is the file mode of the authorized_keys file

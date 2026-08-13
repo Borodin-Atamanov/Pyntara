@@ -402,6 +402,7 @@ class SshDaemonSetupConfig:
     package_status_timeout_seconds: int
     install_retries: int
     service_unit_name: str
+    socket_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: float
     sshd_config_path: Path
@@ -940,6 +941,9 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
     service_unit_name = _nonempty_string_field(
         raw.get("service_unit_name"), "ssh_daemon_setup.service_unit_name"
     )
+    socket_unit_name = _nonempty_string_field(
+        raw.get("socket_unit_name"), "ssh_daemon_setup.socket_unit_name"
+    )
     start_check_attempts = _int_field(
         raw.get("start_check_attempts"), "ssh_daemon_setup.start_check_attempts"
     )
@@ -991,6 +995,7 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         package_status_timeout_seconds=package_status_timeout_seconds,
         install_retries=install_retries,
         service_unit_name=service_unit_name,
+        socket_unit_name=socket_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         sshd_config_path=Path(sshd_config_path),

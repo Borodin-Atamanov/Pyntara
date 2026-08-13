@@ -4,25 +4,43 @@ The task installs the configured SSH server package, runs its systemd
 service and patches the daemon configuration through a drop-in file at
 the configured sshd_config_dropin_path, never through sshd_config
 itself: sshd_config is only checked for an Include directive that pulls
-the drop-in directory in, because a missing Include means the rendered
-drop-in would be silently ignored. The drop-in is rendered from the
-configured directives; an empty directives list removes the drop-in, so
-the task can revoke its own settings. The pre-generated key pair lives
-in task_data/ssh_daemon_setup/: the private key is encrypted with a
-strong pass phrase, so it is committed to the repository as is. The
-task copies both keys into the .ssh directory of root and of every
-configured user and guarantees the public key in authorized_keys
-without removing other keys, so passwordless login works while the
-private key stays encrypted at rest. A configured user that does not
-exist yet is skipped with a log line, so the task stays idempotent
-while the users_setup task runs later. The task owns the key files and
-the drop-in: both are rewritten whenever the content differs. The
-service is enabled and started when inactive; when the configuration
-changed while the service was active, the service is reloaded, which
-never drops existing connections. The task is idempotent: it skips when
-the package is installed, the drop-in matches the render, the keys are
-in place and the service is enabled and active; force mode rewrites the
-drop-in and reloads the service but never reinstalls the package.
+the drop-in directory in, because a missing Include means the drop-in
+would be silently ignored. Directives are written through augeas
+(augtool), which parses the real syntax and updates only what differs:
+a directive that is already present with the same value is left
+untouched, a directive with a different value is updated, a directive
+that is no longer configured is removed, and the ownership comment is
+guaranteed. An empty directives list removes the drop-in, so the task
+can revoke its own settings. After a change the effective configuration
+is verified with sshd -T, which prints the result of the whole Include
+chain, so a directive overridden by another file or a keyword the
+daemon does not know is reported as an error instead of being silently
+accepted.
+
+Ubuntu activates the daemon through the systemd socket unit
+socket_unit_name, and the socket then owns the listen port: sshd_config
+Port is ignored while the socket is enabled. The task disables the
+socket, so the daemon listens on the port from the configuration; after
+a start or restart the task verifies with ss that something listens on
+the configured port.
+
+The pre-generated key pair lives in task_data/ssh_daemon_setup/: the
+private key is encrypted with a strong pass phrase, so it is committed
+to the repository as is. The task copies both keys into the .ssh
+directory of root and of every configured user and guarantees the
+public key in authorized_keys without removing other keys, so
+passwordless login works while the private key stays encrypted at rest.
+A configured user that does not exist yet is skipped with a log line,
+so the task stays idempotent while the users_setup task runs later.
+The task owns the key files and the drop-in. The service is enabled
+and started when inactive; a change that affects the port (a port
+change or a socket disable) is applied with a restart, any other
+change on an active service with a reload, which never drops existing
+connections. The task is idempotent: it skips when the package is
+installed, the Include is present, the drop-in matches through augeas,
+the socket is disabled, the keys are in place and the service is
+enabled and active; force mode rewrites the drop-in and restarts the
+service but never reinstalls the package.
 """
 
 from __future__ import annotations
@@ -30,6 +48,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import pwd
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -52,21 +71,209 @@ from pyntara.utils import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SSH_DATA_DIR = REPO_ROOT / "task_data" / "ssh_daemon_setup"
 
+# The ownership comment of the drop-in, without the leading hash:
+# augeas stores and writes comment values without it.
+DROPIN_HEADER = "Managed by the Pyntara ssh_daemon_setup task."
 
-def _render_dropin(directives: tuple[SshDirective, ...]) -> str:
-    """Render the drop-in content for the configured directives.
+# One node line of an augtool print listing.
+_AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = "(?P<value>.*)"$')
 
-    An empty directives list renders an empty string, which the caller
-    interprets as "remove the drop-in". The header comment marks the
-    file as owned by the task, so a manual edit is reverted on the next
-    run.
+
+def _parse_augtool_print(
+    output: str, base: str
+) -> tuple[dict[str, str], str | None]:
+    """Parse an augtool print listing into (directives, first comment).
+
+    Every line has the form /files<path>/<node> = "<value>"; comment
+    nodes carry the # label and an optional [n] index. The first comment
+    is the ownership header, the rest are ignored.
+    """
+
+    directives: dict[str, str] = {}
+    comment: str | None = None
+    for line in output.splitlines():
+        line = line.strip()
+        if not line.startswith(base + "/"):
+            continue
+        match = _AUGTOOL_VALUE_RE.match(line)
+        if match is None:
+            continue
+        node = match.group("node")
+        label = node.rsplit("/", 1)[-1].split("[", 1)[0]
+        value = match.group("value")
+        if label.startswith("#"):
+            if comment is None:
+                comment = value
+        else:
+            directives[label] = value
+    return directives, comment
+
+
+def _read_dropin_state(
+    dropin_path: Path, timeout: float
+) -> tuple[dict[str, str], str | None]:
+    """Current directive map and ownership comment of the drop-in.
+
+    The tree comes from a single augtool print over a manual load entry,
+    so only the drop-in file is parsed; a missing file yields an empty
+    map and a None comment.
+    """
+
+    script = (
+        "set /augeas/load/sshd/lens Sshd.lns\n"
+        f"set /augeas/load/sshd/incl {dropin_path}\n"
+        "load\n"
+        f"print /files{dropin_path}\n"
+    )
+    result = run_command(
+        ["augtool", "--noautoload"],
+        input=script,
+        capture=True,
+        timeout=timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"augtool read failed: exit {result.returncode}: "
+            f"{result.stderr.strip()}"
+        )
+    return _parse_augtool_print(result.stdout, f"/files{dropin_path}")
+
+
+def _write_dropin(
+    dropin_path: Path,
+    directives: tuple[SshDirective, ...],
+    stale_names: list[str],
+    timeout: float,
+) -> None:
+    """Write the configured directives through augeas.
+
+    The ownership comment is set first, so augeas places it at the top
+    of a fresh file; every configured directive is then set to its value
+    and every stale directive is removed. augtool runs with
+    --noautoload and a manual load entry, so only the drop-in file is
+    touched.
+    """
+
+    dropin_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "set /augeas/load/sshd/lens Sshd.lns",
+        f"set /augeas/load/sshd/incl {dropin_path}",
+        "load",
+        f'set /files{dropin_path}/#comment "{DROPIN_HEADER}"',
+    ]
+    for directive in directives:
+        lines.append(
+            f'set /files{dropin_path}/{directive.name} "{directive.value}"'
+        )
+    for name in stale_names:
+        lines.append(f"rm /files{dropin_path}/{name}")
+    lines.append("save")
+    result = run_command(
+        ["augtool", "--noautoload"],
+        input="\n".join(lines) + "\n",
+        capture=True,
+        timeout=timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"augtool write failed: exit {result.returncode}: "
+            f"{result.stderr.strip()}"
+        )
+
+
+def _sync_dropin(
+    dropin_path: Path,
+    directives: tuple[SshDirective, ...],
+    mode: int,
+    force: bool,
+    timeout: float,
+) -> tuple[bool, bool]:
+    """Align the drop-in with the configured directives; return (changed, port_changed).
+
+    The current state is read through augeas and compared with the
+    desired map; a matching file is left untouched. A difference, a
+    missing ownership comment or force triggers a rewrite. port_changed
+    reports whether the Port directive differs, because a port change
+    needs a restart, not a reload. An empty directives list removes the
+    drop-in.
     """
 
     if not directives:
-        return ""
-    lines = ["# Managed by the Pyntara ssh_daemon_setup task."]
-    lines.extend(f"{directive.name} {directive.value}" for directive in directives)
-    return "\n".join(lines) + "\n"
+        existed = dropin_path.exists()
+        if existed:
+            _remove_dropin(dropin_path)
+        return existed, False
+    current, comment = _read_dropin_state(dropin_path, timeout)
+    desired = {directive.name: directive.value for directive in directives}
+    changed = force or current != desired or comment != DROPIN_HEADER
+    port_changed = current.get("Port") != desired.get("Port")
+    if not changed:
+        return False, False
+    stale_names = [name for name in current if name not in desired]
+    _write_dropin(dropin_path, directives, stale_names, timeout)
+    os.chmod(dropin_path, mode)
+    _apply_owner(dropin_path, 0, 0)
+    return True, port_changed
+
+
+def _verify_effective_config(
+    directives: tuple[SshDirective, ...], timeout: float
+) -> str | None:
+    """Error text when a configured directive is not effective; None when OK.
+
+    sshd -T prints the effective configuration after every file of the
+    Include chain is applied, so the check is independent of the version
+    and of other files in the drop-in directory: a directive that a
+    later file overrides, or a keyword the daemon does not know, is
+    reported as an error, never silently accepted.
+    """
+
+    try:
+        result = run_command(
+            ["sshd", "-T"], check=False, capture=True, timeout=timeout
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return f"cannot run sshd -T: {exc}"
+    if result.returncode != 0:
+        return f"sshd -T exited {result.returncode}: {result.stderr.strip()}"
+    effective: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        key, sep, value = line.partition(" ")
+        if sep:
+            effective[key.casefold()] = value.strip()
+    for directive in directives:
+        key = directive.name.casefold()
+        actual = effective.get(key)
+        if actual is None or actual.casefold() != directive.value.casefold():
+            return (
+                f"sshd -T reports {key} as {actual or 'unset'}, "
+                f"expected {directive.value}"
+            )
+    return None
+
+
+def _verify_listening_port(port: str, timeout: float) -> str | None:
+    """Error text when nothing listens on the port; None when OK.
+
+    The check runs after a start or restart, because the daemon binds
+    the configured port only when the systemd socket is disabled: the
+    socket owns the port otherwise.
+    """
+
+    try:
+        result = run_command(
+            ["ss", "-tlnp"], check=False, capture=True, timeout=timeout
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return f"cannot run ss: {exc}"
+    if result.returncode != 0:
+        return f"ss -tlnp exited {result.returncode}"
+    pattern = re.compile(rf":{re.escape(port)}(?:[ \t]|$)")
+    if not any(pattern.search(line) for line in result.stdout.splitlines()):
+        return f"no listener on port {port}"
+    return None
 
 
 def _read_text(path: Path) -> str | None:
@@ -216,15 +423,6 @@ def _deploy_keys(
     return changed
 
 
-def _write_dropin(dropin_path: Path, content: str, mode: int) -> None:
-    """Write the rendered drop-in with the configured mode, root-owned."""
-
-    dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    dropin_path.write_text(content, encoding="utf-8")
-    os.chmod(dropin_path, mode)
-    _apply_owner(dropin_path, 0, 0)
-
-
 def _remove_dropin(dropin_path: Path) -> None:
     """Remove the drop-in; a missing file is a no-op."""
 
@@ -289,11 +487,13 @@ def task(ctx: Context) -> TaskResult:
     """Install the SSH server, patch its config and deploy the keys.
 
     The goal is reached when the package is installed, sshd_config pulls
-    the drop-in directory in, the drop-in matches the render, the keys
-    are in place for root and every existing configured user and the
-    service is enabled and active; the task then returns changed=False.
-    Otherwise it installs the package, writes or removes the drop-in,
-    deploys the keys, enables the service and starts or reloads it.
+    the drop-in directory in, the drop-in matches the configured
+    directives, the socket is disabled, the keys are in place for root
+    and every existing configured user and the service is enabled and
+    active; the task then returns changed=False. Otherwise it installs
+    the package, syncs the drop-in through augeas, verifies the
+    effective configuration with sshd -T, disables the socket, deploys
+    the keys, enables the service and starts, reloads or restarts it.
     Every step is reported to stdout as single lines; any failure is
     returned as an error TaskResult, and the runner continues with the
     remaining tasks.
@@ -353,37 +553,35 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
 
-    target_dropin = _render_dropin(cfg.directives)
-    current_dropin = _read_text(cfg.sshd_config_dropin_path)
-    dropin_changed = force or current_dropin != target_dropin
+    try:
+        dropin_changed, port_changed = _sync_dropin(
+            cfg.sshd_config_dropin_path,
+            cfg.directives,
+            cfg.dropin_file_mode,
+            force,
+            timeout,
+        )
+    except RuntimeError as exc:
+        return TaskResult(success=False, changed=changed, error=str(exc))
     if dropin_changed:
-        if target_dropin == "":
-            _log(f"removing drop-in {cfg.sshd_config_dropin_path}")
-            try:
-                _remove_dropin(cfg.sshd_config_dropin_path)
-            except OSError as exc:
-                return TaskResult(
-                    success=False,
-                    changed=changed,
-                    error=f"cannot remove drop-in: {exc}",
-                )
-            _log("drop-in removed")
-        else:
-            _log(f"writing drop-in {cfg.sshd_config_dropin_path}")
-            try:
-                _write_dropin(
-                    cfg.sshd_config_dropin_path,
-                    target_dropin,
-                    cfg.dropin_file_mode,
-                )
-            except OSError as exc:
-                return TaskResult(
-                    success=False,
-                    changed=changed,
-                    error=f"cannot write drop-in: {exc}",
-                )
-            _log("drop-in written")
+        _log("drop-in synced through augeas")
         changed = True
+
+    if (dropin_changed or force) and cfg.directives:
+        verify = _verify_effective_config(cfg.directives, timeout)
+        if verify is not None:
+            return TaskResult(success=False, changed=changed, error=verify)
+        _log("effective configuration verified through sshd -T")
+
+    socket_enabled = service_is_enabled(cfg.socket_unit_name, timeout)
+    socket_active = service_is_active(cfg.socket_unit_name, timeout)
+    socket_needs_disable = socket_enabled or socket_active
+    if socket_enabled:
+        _log(f"checking socket {cfg.socket_unit_name}: enabled")
+    elif socket_active:
+        _log(f"checking socket {cfg.socket_unit_name}: active")
+    else:
+        _log(f"checking socket {cfg.socket_unit_name}: disabled")
 
     enabled = service_is_enabled(cfg.service_unit_name, timeout)
     active = service_is_active(cfg.service_unit_name, timeout)
@@ -392,10 +590,6 @@ def task(ctx: Context) -> TaskResult:
         f"{'enabled' if enabled else 'disabled'}"
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
-
-    if not force and not changed and enabled and active:
-        _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
 
     _log(f"deploying keys into {cfg.root_ssh_dir}")
     if _deploy_keys(
@@ -429,6 +623,34 @@ def task(ctx: Context) -> TaskResult:
             changed = True
         _log("user keys deployed")
 
+    if (
+        not force
+        and not changed
+        and not socket_needs_disable
+        and enabled
+        and active
+    ):
+        _log("target state already reached, skipping")
+        return TaskResult(success=True, changed=False, message="already configured")
+
+    socket_changed = False
+    if socket_needs_disable:
+        _log(f"disabling socket: systemctl disable --now {cfg.socket_unit_name}")
+        try:
+            run_command(
+                ["systemctl", "disable", "--now", cfg.socket_unit_name],
+                timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"systemctl disable socket failed: {exc}",
+            )
+        _log("socket disabled")
+        changed = True
+        socket_changed = True
+
     if not enabled:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
         try:
@@ -443,6 +665,15 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("service enabled")
         changed = True
+
+    port_value = next(
+        (
+            directive.value
+            for directive in cfg.directives
+            if directive.name.casefold() == "port"
+        ),
+        None,
+    )
 
     if not active:
         _log(f"starting service: systemctl start {cfg.service_unit_name}")
@@ -473,7 +704,31 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("service active")
         changed = True
-    elif force or dropin_changed:
+        if port_value is not None:
+            verify = _verify_listening_port(port_value, timeout)
+            if verify is not None:
+                return TaskResult(success=False, changed=changed, error=verify)
+            _log(f"listener on port {port_value} verified")
+    elif force or socket_changed or port_changed:
+        _log(f"restarting service: systemctl restart {cfg.service_unit_name}")
+        try:
+            run_command(
+                ["systemctl", "restart", cfg.service_unit_name], timeout=timeout
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"systemctl restart failed: {exc}",
+            )
+        _log("service restarted")
+        changed = True
+        if port_value is not None:
+            verify = _verify_listening_port(port_value, timeout)
+            if verify is not None:
+                return TaskResult(success=False, changed=changed, error=verify)
+            _log(f"listener on port {port_value} verified")
+    elif dropin_changed:
         _log(f"reloading service: systemctl reload {cfg.service_unit_name}")
         try:
             run_command(

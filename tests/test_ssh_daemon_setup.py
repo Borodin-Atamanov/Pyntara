@@ -3,7 +3,9 @@
 All external resources (subprocess, filesystem paths, user database) are
 mocked via monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md). The key files are fixtures, so the
-tests never read the repository keys.
+tests never read the repository keys. The augtool subprocess is faked
+with a small lens simulator that parses and writes the real drop-in
+file, so the augeas interaction is covered end to end.
 """
 
 from __future__ import annotations
@@ -26,7 +28,19 @@ PRIVATE_KEY_BYTES = (
 )
 PUBLIC_KEY_LINE = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake Pyntara_mesh"
 
-DROPIN_HEADER = "# Managed by the Pyntara ssh_daemon_setup task.\n"
+DROPIN_HEADER = "# Managed by the Pyntara ssh_daemon_setup task."
+
+DEFAULT_DIRECTIVES = (
+    SshDirective(name="Port", value="30222"),
+    SshDirective(name="PubkeyAuthentication", value="yes"),
+    SshDirective(name="PermitRootLogin", value="prohibit-password"),
+    SshDirective(name="PasswordAuthentication", value="no"),
+)
+
+SSHD_T_LINES = "".join(
+    f"{directive.name.lower()} {directive.value.lower()}\n"
+    for directive in DEFAULT_DIRECTIVES
+)
 
 
 class _FakePwRecord:
@@ -57,9 +71,7 @@ def _ctx(
     force: bool = False,
     skip_apt_update: bool = True,
     users: tuple[str, ...] = ("i", "j", "k"),
-    directives: tuple[SshDirective, ...] = (
-        SshDirective(name="PubkeyAuthentication", value="yes"),
-    ),
+    directives: tuple[SshDirective, ...] = DEFAULT_DIRECTIVES,
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -106,24 +118,127 @@ def _write_sshd_config(ctx: Context, *, include: bool = True) -> None:
     cfg.sshd_config_path.write_text(content, encoding="utf-8")
 
 
+def _write_dropin_as_desired(ctx: Context) -> None:
+    """Write the drop-in exactly as the task would render it."""
+
+    cfg = ctx.config.ssh_daemon_setup
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [DROPIN_HEADER]
+    lines.extend(f"{directive.name} {directive.value}" for directive in cfg.directives)
+    cfg.sshd_config_dropin_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _augtool_fake_run(command: list[str], input: str | None) -> _FakeProc:
+    """Simulate augtool --noautoload over the real drop-in file.
+
+    The fake implements the subset of augeas the task uses: a manual
+    load entry, load, print, set, rm and save. The tree is keyed by
+    augeas path and mirrors the real lens behavior for the flat
+    sshd_config format.
+    """
+
+    script = input or ""
+    incl: str | None = None
+    tree: dict[str, str] = {}
+    out_lines: list[str] = []
+    base = ""
+    for raw in script.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("set "):
+            parts = line.split(" ", 2)
+            path, value = parts[1], parts[2].strip('"')
+            if path.startswith("/augeas/load/"):
+                if path.endswith("/incl"):
+                    incl = value
+                    base = f"/files{incl}"
+                continue
+            if path.endswith("/#comment"):
+                existing = sorted(
+                    node for node in tree if node.startswith(base + "/#comment")
+                )
+                if existing:
+                    tree[existing[0]] = value
+                else:
+                    tree[f"{base}/#comment"] = value
+            else:
+                tree[path] = value
+        elif line.startswith("rm "):
+            path = line.split(" ", 1)[1]
+            for node in [
+                node for node in tree if node == path or node.startswith(path + "[")
+            ]:
+                del tree[node]
+            out_lines.append(f"rm : {path}")
+        elif line == "load":
+            tree = {}
+            if incl:
+                file_path = Path(incl)
+                if file_path.is_file():
+                    comment_count = 0
+                    for text in file_path.read_text(encoding="utf-8").splitlines():
+                        stripped = text.strip()
+                        if not stripped:
+                            continue
+                        if stripped.startswith("#"):
+                            comment_count += 1
+                            node = (
+                                f"{base}/#comment"
+                                if comment_count == 1
+                                else f"{base}/#comment[{comment_count}]"
+                            )
+                            tree[node] = stripped[1:].strip()
+                        else:
+                            key, sep, value = stripped.partition(" ")
+                            tree[f"{base}/{key}"] = value.strip() if sep else ""
+        elif line.startswith("print "):
+            path = line.split(" ", 1)[1]
+            out_lines.append(path)
+            for node, value in tree.items():
+                if node.startswith(path + "/"):
+                    out_lines.append(f'{node} = "{value}"')
+        elif line == "save":
+            if incl:
+                file_path = Path(incl)
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                content: list[str] = []
+                for node, value in tree.items():
+                    label = node.rsplit("/", 1)[-1].split("[", 1)[0]
+                    if label.startswith("#"):
+                        content.append(f"# {value}")
+                    else:
+                        content.append(f"{label} {value}")
+                file_path.write_text("\n".join(content) + "\n", encoding="utf-8")
+            out_lines.append("Saved 1 file(s)")
+    return _FakeProc(0, "\n".join(out_lines) + "\n")
+
+
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
     installed: bool = True,
     enabled: bool = True,
     active: bool = True,
+    socket_enabled: bool = False,
+    socket_active: bool = False,
     fail_install: int = 0,
     active_becomes: bool = True,
     reload_fails: bool = False,
+    sshd_t_output: str = SSHD_T_LINES,
+    ss_port_ok: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
     dpkg reports the package state, apt-get install fails the first
-    fail_install attempts and systemctl reports the enabled and active
-    state from the flags. With active_becomes, the service turns active
-    after the first start; without it, the readiness loop runs out.
-    With reload_fails, systemctl reload raises like an unsupported or
-    failed reload.
+    fail_install attempts, systemctl reports the enabled and active
+    states of the service and the socket from the flags, sshd -T
+    prints sshd_t_output, ss -tlnp reports the configured listener
+    unless ss_port_ok is False, and augtool is simulated over the real
+    drop-in file. With active_becomes, the service turns active after
+    the first start; without it, the readiness loop runs out. With
+    reload_fails, systemctl reload raises like an unsupported or failed
+    reload.
     """
 
     calls: list[list[str]] = []
@@ -132,6 +247,8 @@ def _install_fake(
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         nonlocal install_attempts, started
+        if command[0] == "augtool":
+            return _augtool_fake_run(command, kwargs.get("input"))
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg-query":
@@ -146,10 +263,18 @@ def _install_fake(
             return _FakeProc(0)
         if command[0] == "systemctl":
             if command[1] == "is-enabled":
+                if command[-1] == "ssh.socket":
+                    if socket_enabled:
+                        return _FakeProc(0, "enabled\n")
+                    return _FakeProc(1, "disabled\n")
                 if enabled:
                     return _FakeProc(0, "enabled\n")
                 return _FakeProc(1, "disabled\n")
             if command[1] == "is-active":
+                if command[-1] == "ssh.socket":
+                    if socket_active:
+                        return _FakeProc(0, "active\n")
+                    return _FakeProc(1, "inactive\n")
                 if active or (active_becomes and started):
                     return _FakeProc(0, "active\n")
                 return _FakeProc(1, "inactive\n")
@@ -158,6 +283,20 @@ def _install_fake(
             if command[1] == "reload" and reload_fails:
                 raise subprocess.CalledProcessError(5, command)
             return _FakeProc(0)
+        if command[0] == "sshd":
+            return _FakeProc(0, sshd_t_output)
+        if command[0] == "ss":
+            if ss_port_ok:
+                return _FakeProc(
+                    0,
+                    "LISTEN 0 4096 0.0.0.0:30222 0.0.0.0:* "
+                    'users:(("sshd",pid=1,fd=3))\n',
+                )
+            return _FakeProc(
+                0,
+                "LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* "
+                'users:(("sshd",pid=1,fd=3))\n',
+            )
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -175,29 +314,37 @@ def _install_users(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(ssh_daemon_setup, "pwd", _FakePwd(records))
 
 
-def test_already_configured_skips(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # The package is installed, the Include directive pulls the drop-in
-    # directory in, the drop-in matches the render, the keys are in place
-    # and the service is enabled and active: the task skips and runs only
-    # the status queries.
-    _install_fixtures(monkeypatch, tmp_path)
-    _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
-    _write_sshd_config(ctx)
+def _deploy_keys_directories(ctx: Context, tmp_path: Path) -> list[Path]:
+    """Pre-deploy the keys into root and every configured user .ssh dir."""
+
     cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "PubkeyAuthentication yes\n", encoding="utf-8"
+    directories = [cfg.root_ssh_dir]
+    directories.extend(
+        tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k")
     )
-    for ssh_dir in (cfg.root_ssh_dir, *[tmp_path / "home" / u / ".ssh" for u in ("i", "j", "k")]):
-        ssh_dir.mkdir(parents=True)
+    for ssh_dir in directories:
+        ssh_dir.mkdir(parents=True, exist_ok=True)
         (ssh_dir / "pyntara_mesh").write_bytes(PRIVATE_KEY_BYTES)
         (ssh_dir / "pyntara_mesh.pub").write_text(PUBLIC_KEY_LINE + "\n")
         (ssh_dir / "authorized_keys").write_text(
             PUBLIC_KEY_LINE + "\n", encoding="utf-8"
         )
+    return directories
+
+
+def test_already_configured_skips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The package is installed, the Include is present, the drop-in
+    # matches through augeas, the socket is disabled, the keys are in
+    # place and the service is enabled and active: the task skips and
+    # runs only the status queries.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _write_dropin_as_desired(ctx)
+    _deploy_keys_directories(ctx, tmp_path)
     calls = _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
@@ -205,7 +352,8 @@ def test_already_configured_skips(
     assert result.message == "already configured"
     assert not any(call[0] == "apt-get" for call in calls)
     assert not any(
-        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
+        call[0] == "systemctl"
+        and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
 
@@ -213,8 +361,9 @@ def test_already_configured_skips(
 def test_installs_package_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The package is missing: the task installs it and enables and starts
-    # the service.
+    # The package is missing: the task installs it, writes the drop-in
+    # through augeas, enables and starts the service and verifies the
+    # effective configuration and the listener.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
@@ -226,6 +375,16 @@ def test_installs_package_when_missing(
     assert ["apt-get", "install", "-y", "openssh-server"] in calls
     assert ["systemctl", "enable", "ssh.service"] in calls
     assert ["systemctl", "start", "ssh.service"] in calls
+    assert ["sshd", "-T"] in calls
+    assert ["ss", "-tlnp"] in calls
+    cfg = ctx.config.ssh_daemon_setup
+    assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
+        DROPIN_HEADER + "\n"
+        + "Port 30222\n"
+        + "PubkeyAuthentication yes\n"
+        + "PermitRootLogin prohibit-password\n"
+        + "PasswordAuthentication no\n"
+    )
     assert "openssh-server" in (result.message or "")
 
 
@@ -284,7 +443,7 @@ def test_apt_update_runs_unless_skipped(
 def test_writes_dropin_and_deploys_keys(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The task renders the drop-in, writes it and deploys the keys to
+    # The task writes the drop-in through augeas and deploys the keys to
     # root and to every existing user with the configured modes.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
@@ -296,10 +455,15 @@ def test_writes_dropin_and_deploys_keys(
     assert result.changed is True
     cfg = ctx.config.ssh_daemon_setup
     assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
-        DROPIN_HEADER + "PubkeyAuthentication yes\n"
+        DROPIN_HEADER + "\n"
+        + "Port 30222\n"
+        + "PubkeyAuthentication yes\n"
+        + "PermitRootLogin prohibit-password\n"
+        + "PasswordAuthentication no\n"
     )
     assert (cfg.sshd_config_dropin_path.stat().st_mode & 0o777) == 0o644
-    for ssh_dir in (cfg.root_ssh_dir, *[tmp_path / "home" / u / ".ssh" for u in ("i", "j", "k")]):
+    directories = _deploy_keys_directories(ctx, tmp_path)
+    for ssh_dir in directories:
         assert (ssh_dir / "pyntara_mesh").read_bytes() == PRIVATE_KEY_BYTES
         assert (ssh_dir / "pyntara_mesh.pub").read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n"
@@ -329,7 +493,11 @@ def test_authorized_keys_has_no_duplicates_on_rerun(
     assert second.success is True
     assert second.changed is False
     cfg = ctx.config.ssh_daemon_setup
-    for ssh_dir in (cfg.root_ssh_dir, *[tmp_path / "home" / u / ".ssh" for u in ("i", "j", "k")]):
+    directories = [cfg.root_ssh_dir]
+    directories.extend(
+        tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k")
+    )
+    for ssh_dir in directories:
         lines = (ssh_dir / "authorized_keys").read_text(encoding="utf-8").splitlines()
         assert lines.count(PUBLIC_KEY_LINE) == 1
 
@@ -358,7 +526,7 @@ def test_missing_include_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # sshd_config without an Include covering the drop-in directory means
-    # the rendered drop-in would be ignored: the task fails loudly.
+    # the drop-in would be ignored: the task fails loudly.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
@@ -420,24 +588,134 @@ def test_enable_start_and_wait(
     assert ["systemctl", "enable", "ssh.service"] in calls
     assert ["systemctl", "start", "ssh.service"] in calls
     assert ["systemctl", "reload", "ssh.service"] not in calls
+    assert ["systemctl", "restart", "ssh.service"] not in calls
 
 
-def test_reload_when_active_and_dropin_changed(
+def test_reload_when_active_and_non_port_changed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The service is already active but the drop-in changed: the task
-    # reloads the daemon instead of restarting it, so existing
-    # connections survive.
+    # The service is active and only a non-port directive changed: the
+    # task reloads the daemon, so existing connections survive.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
+    cfg = ctx.config.ssh_daemon_setup
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
+    cfg.sshd_config_dropin_path.write_text(
+        DROPIN_HEADER + "\n"
+        "Port 30222\n"
+        "PubkeyAuthentication yes\n"
+        "PermitRootLogin prohibit-password\n"
+        "PasswordAuthentication yes\n",
+        encoding="utf-8",
+    )
     calls = _install_fake(monkeypatch, active=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert ["systemctl", "reload", "ssh.service"] in calls
-    assert ["systemctl", "start", "ssh.service"] not in calls
+    assert ["systemctl", "restart", "ssh.service"] not in calls
+
+
+def test_port_change_restarts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The Port directive changed while the service is active: a restart
+    # is required, because reload does not rebind the listen socket.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    cfg = ctx.config.ssh_daemon_setup
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
+    cfg.sshd_config_dropin_path.write_text(
+        DROPIN_HEADER + "\n"
+        "Port 22\n"
+        "PubkeyAuthentication yes\n"
+        "PermitRootLogin prohibit-password\n"
+        "PasswordAuthentication no\n",
+        encoding="utf-8",
+    )
+    calls = _install_fake(monkeypatch, active=True)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["systemctl", "restart", "ssh.service"] in calls
+    assert ["systemctl", "reload", "ssh.service"] not in calls
+
+
+def test_socket_disabled_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The socket owns the listen port, so it must be disabled for the
+    # configured port to take effect; the running service is restarted
+    # afterwards, because it still holds the socket file descriptor.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _write_dropin_as_desired(ctx)
+    _deploy_keys_directories(ctx, tmp_path)
+    calls = _install_fake(
+        monkeypatch, socket_enabled=True, socket_active=True, active=True
+    )
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["systemctl", "disable", "--now", "ssh.socket"] in calls
+    assert ["systemctl", "restart", "ssh.service"] in calls
+
+
+def test_socket_untouched_when_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A disabled and inactive socket is part of the target state: the
+    # task skips without touching it.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _write_dropin_as_desired(ctx)
+    _deploy_keys_directories(ctx, tmp_path)
+    calls = _install_fake(monkeypatch)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert not any(
+        call[0] == "systemctl" and "disable" in call for call in calls
+    )
+
+
+def test_sshd_t_verification_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The effective configuration reported by sshd -T does not match a
+    # configured directive (for example overridden by another file):
+    # the task fails loudly instead of pretending the state is reached.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _install_fake(monkeypatch, sshd_t_output="port 22\n")
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is False
+    assert "sshd -T reports" in (result.error or "")
+
+
+def test_listener_missing_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # After a start nothing listens on the configured port: the task
+    # reports the failure instead of claiming success.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _install_fake(monkeypatch, active=False, ss_port_ok=False)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is False
+    assert "no listener on port" in (result.error or "")
 
 
 def test_reload_failure_is_an_error(
@@ -448,6 +726,18 @@ def test_reload_failure_is_an_error(
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
+    cfg = ctx.config.ssh_daemon_setup
+    # Only a non-port directive differs, so the task takes the reload
+    # path and the failed reload surfaces as an error.
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
+    cfg.sshd_config_dropin_path.write_text(
+        DROPIN_HEADER + "\n"
+        "Port 30222\n"
+        "PubkeyAuthentication yes\n"
+        "PermitRootLogin prohibit-password\n"
+        "PasswordAuthentication yes\n",
+        encoding="utf-8",
+    )
     _install_fake(monkeypatch, active=True, reload_fails=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
@@ -468,26 +758,58 @@ def test_service_never_becomes_active_is_an_error(
     assert "did not become active" in (result.error or "")
 
 
-def test_force_rewrites_dropin_and_reloads(
+def test_force_rewrites_dropin_and_restarts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Force mode rewrites the drop-in and reloads the active service even
-    # when everything matches; the installed package is never reinstalled.
+    # Force mode rewrites the drop-in and restarts the active service
+    # even when everything matches; the installed package is never
+    # reinstalled.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, force=True)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "PubkeyAuthentication yes\n", encoding="utf-8"
-    )
-    calls = _install_fake(monkeypatch)
+    _write_dropin_as_desired(ctx)
+    _deploy_keys_directories(ctx, tmp_path)
+    calls = _install_fake(monkeypatch, active=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["systemctl", "reload", "ssh.service"] in calls
+    assert ["systemctl", "restart", "ssh.service"] in calls
     assert not any(call[:2] == ["apt-get", "install"] for call in calls)
+
+
+def test_augtool_removes_stale_directive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A directive that is no longer configured is removed from the
+    # drop-in by augeas; the remaining file keeps the desired state.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    cfg = ctx.config.ssh_daemon_setup
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
+    cfg.sshd_config_dropin_path.write_text(
+        DROPIN_HEADER + "\n"
+        "Port 30222\n"
+        "PubkeyAuthentication yes\n"
+        "PermitRootLogin prohibit-password\n"
+        "PasswordAuthentication no\n"
+        "X11Forwarding yes\n",
+        encoding="utf-8",
+    )
+    _install_fake(monkeypatch, active=True)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    content = cfg.sshd_config_dropin_path.read_text(encoding="utf-8")
+    assert "X11Forwarding" not in content
+    assert content == (
+        DROPIN_HEADER + "\n"
+        + "Port 30222\n"
+        + "PubkeyAuthentication yes\n"
+        + "PermitRootLogin prohibit-password\n"
+        + "PasswordAuthentication no\n"
+    )
 
 
 def test_include_matches_relative_pattern(
