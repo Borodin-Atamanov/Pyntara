@@ -7,26 +7,25 @@ releases API (https://api.github.com/repos/{repo}/releases/latest); the
 package asset is chosen by the dpkg architecture and the distribution
 codename from /etc/os-release, with the generic asset of the release as
 the fallback, so a release without a build for this distribution still
-installs. The downloaded .deb is verified against the SHA512SUMS file of
-the same release before installation; the sum is always checked, because
-the package is fetched over an unauthenticated channel. The task owns
-the main configuration file at the configured config_path: it renders
-the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the
-file whenever the content differs, so manual edits are reverted on the
-next run. The config_path must match the --conf path of the package
-unit, otherwise the rendered values are ignored. The service is enabled
-and started or restarted immediately, and the task waits with the
-configured readiness loop for it to become active, because the forking
-service may take a moment to fork. The task is idempotent: it skips when
-the installed version equals the newest release tag, the configuration
-matches the rendered template and the service is enabled and active;
-force mode rewrites the configuration and restarts the service but never
-reinstalls a matching version.
+installs. The package is downloaded from the official GitHub release
+assets without a checksum verification: the source is trusted, and the
+extra check would add a failure point without protecting the install.
+The task owns the main configuration file at the configured config_path:
+it renders the template at task_data/i2pd_service_setup/i2pd.conf and
+rewrites the file whenever the content differs, so manual edits are
+reverted on the next run. The config_path must match the --conf path of
+the package unit, otherwise the rendered values are ignored. The service
+is enabled and started or restarted immediately, and the task waits with
+the configured readiness loop for it to become active, because the
+forking service may take a moment to fork. The task is idempotent: it
+skips when the installed version equals the newest release tag, the
+configuration matches the rendered template and the service is enabled
+and active; force mode rewrites the configuration and restarts the
+service but never reinstalls a matching version.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
@@ -213,73 +212,6 @@ def _download_asset(
         raise RuntimeError(f"cannot download {url}: {exc}") from None
 
 
-def _sha512_of(path: Path) -> str:
-    """The lowercase hex sha512 of a file, streamed in chunks."""
-
-    digest = hashlib.sha512()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _expected_sha512(
-    cfg: I2pdServiceSetupConfig, tag: str, name: str, timeout: float
-) -> str:
-    """The sha512 of the asset from the release SHA512SUMS file.
-
-    Raises RuntimeError when the checksum file cannot be fetched or has
-    no entry for the asset, so a missing sum never passes silently.
-    """
-
-    url = (
-        f"https://github.com/{cfg.github_repo}/releases/download/{tag}"
-        "/SHA512SUMS"
-    )
-    sums_path = cfg.download_dir / "SHA512SUMS"
-    try:
-        run_command(
-            [
-                "curl",
-                "--fail",
-                "--silent",
-                "--show-error",
-                "--output",
-                str(sums_path),
-                url,
-            ],
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"cannot fetch {url}: {exc}") from None
-    try:
-        text = sums_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise RuntimeError(f"cannot read {sums_path}: {exc}") from None
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and parts[1] == name:
-            return parts[0]
-    raise RuntimeError(f"SHA512SUMS has no entry for {name}")
-
-
-def _verify_checksum(
-    cfg: I2pdServiceSetupConfig, tag: str, name: str, timeout: float
-) -> None:
-    """Verify the downloaded package against the release checksum file.
-
-    The comparison is case-insensitive, because the release sums use
-    lowercase hex. Raises RuntimeError on any mismatch.
-    """
-
-    expected = _expected_sha512(cfg, tag, name, timeout)
-    actual = _sha512_of(cfg.download_dir / name)
-    if expected.casefold() != actual.casefold():
-        raise RuntimeError(
-            f"sha512 mismatch for {name}: expected {expected}, got {actual}"
-        )
-
-
 def _install_deb(
     download_dir: Path,
     name: str,
@@ -318,18 +250,17 @@ def _install_deb(
 
 
 def _cleanup_downloads(download_dir: Path, name: str) -> None:
-    """Remove the downloaded package and the checksum file.
+    """Remove the downloaded package.
 
-    The files are diagnostics for failed installs; after a successful
-    install they are stale and are removed so the download directory
-    never accumulates old versions.
+    The file is a diagnostic for a failed install; after a successful
+    install it is stale and is removed so the download directory never
+    accumulates old versions.
     """
 
-    for filename in (name, "SHA512SUMS"):
-        try:
-            (download_dir / filename).unlink()
-        except FileNotFoundError:
-            pass
+    try:
+        (download_dir / name).unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _read_config(config_path: Path) -> str | None:
@@ -374,10 +305,10 @@ def task(ctx: Context) -> TaskResult:
     The goal is reached when the installed version equals the newest
     release tag, the configuration file matches the rendered template
     and the service is enabled and active; the task then returns
-    changed=False. Otherwise it downloads the matching .deb asset,
-    verifies its sha512 against the release checksum file, installs it,
-    writes the configuration, enables the service, starts or restarts it
-    and waits for it to become active. Every step is reported to stdout:
+    changed=False. Otherwise it downloads the matching .deb asset from
+    the release, installs it, writes the configuration, enables the
+    service, starts or restarts it and waits for it to become active.
+    Every step is reported to stdout:
     measurements and decisions as single lines that include their
     result, long-running commands as a line before and a line after. Any
     failure is returned as an error TaskResult: the runner continues
@@ -466,12 +397,6 @@ def task(ctx: Context) -> TaskResult:
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))
         _log("package downloaded")
-        _log("verifying sha512 checksum against SHA512SUMS")
-        try:
-            _verify_checksum(cfg, tag, asset_name, timeout)
-        except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
-        _log("checksum verified")
         _log(f"installing package: apt-get install -y {asset_name}")
         ok, error = _install_deb(
             cfg.download_dir,

@@ -60,7 +60,7 @@ Spec — functional specification, what the system does and how. Design rational
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
 `docs/spec/system-metrics.md` — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
 `docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
-`docs/spec/i2pd-service.md` — i2pd service install from GitHub releases, version and asset selection, checksum verification
+`docs/spec/i2pd-service.md` — i2pd service install from GitHub releases, version and asset selection, download trust
 `docs/spec/users-and-host.md` — users i/j/k, hostname, passwords, ZRAM, swap, NTP, power
 `docs/spec/desktop-apps.md` — ImageMagick, FFmpeg, scrcpy, Kate, terminal, browsers
 

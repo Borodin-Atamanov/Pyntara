@@ -150,8 +150,8 @@ class I2pdServiceSetupConfig:
 
     The task installs the newest i2pd release from github_repo (owner/name)
     as a system service and owns the main configuration file. download_dir
-    is the temporary directory for the downloaded package and the checksum
-    file; service_unit_name is the systemd unit installed by the package;
+    is the temporary directory for the downloaded package;
+    service_unit_name is the systemd unit installed by the package;
     config_path is the main configuration file the task writes, and it must
     match the --conf path of the package unit, otherwise the changes are
     ignored; log_level is the i2pd verbosity from I2PD_LOG_LEVELS;

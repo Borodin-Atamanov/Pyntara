@@ -199,7 +199,7 @@ service_unit_name = "zram.service"
 # a system service and owns the main configuration file.
 # GitHub repository of i2pd, owner/name form used by the releases API.
 github_repo = "PurpleI2P/i2pd"
-# Directory for the downloaded package and checksum files.
+# Directory for the downloaded package file.
 download_dir = "/var/lib/pyntara/i2pd-download"
 # Name of the systemd service unit installed by the package.
 service_unit_name = "i2pd.service"

@@ -8,7 +8,6 @@ from a fixture, so the tests never read the repository template.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -129,8 +128,6 @@ def _install_fake(
     release_json: str = _release_json(),
     arch: str = "amd64",
     fail_install: int = 0,
-    checksum_wrong: bool = False,
-    checksum_asset_name: str = f"i2pd_{TAG}-1resolute1_amd64.deb",
     active_becomes: bool = True,
     missing_binary: bool = False,
 ) -> list[list[str]]:
@@ -138,14 +135,12 @@ def _install_fake(
 
     dpkg reports the architecture, i2pd --version the installed version
     (None means not installed), curl answers the release API and writes
-    the fixture package and checksum files, apt-get install fails the
-    first fail_install attempts, and systemctl reports the enabled and
-    active state from the flags. The checksum file names the asset that
-    the fake package download is expected to carry. With
-    active_becomes, the service turns active after the first start or
-    restart; without it, the readiness loop runs out. With
-    missing_binary, the i2pd call raises FileNotFoundError like a real
-    missing executable.
+    the fixture package file, apt-get install fails the first
+    fail_install attempts, and systemctl reports the enabled and active
+    state from the flags. With active_becomes, the service turns active
+    after the first start or restart; without it, the readiness loop
+    runs out. With missing_binary, the i2pd call raises
+    FileNotFoundError like a real missing executable.
     """
 
     calls: list[list[str]] = []
@@ -167,16 +162,7 @@ def _install_fake(
         if command[0] == "curl":
             if "--output" in command:
                 path = Path(command[command.index("--output") + 1])
-                if path.name == "SHA512SUMS":
-                    expected = hashlib.sha512(DEB_CONTENT).hexdigest()
-                    if checksum_wrong:
-                        expected = "0" * 128
-                    path.write_text(
-                        f"{expected}  {checksum_asset_name}\n",
-                        encoding="utf-8",
-                    )
-                else:
-                    path.write_bytes(DEB_CONTENT)
+                path.write_bytes(DEB_CONTENT)
                 return _FakeProc(0)
             return _FakeProc(0, release_json)
         if command[0] == "apt-get":
@@ -261,9 +247,8 @@ def test_installs_new_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # i2pd is not installed and the service is not enabled: the task
-    # downloads the codename-specific asset, verifies its checksum,
-    # installs it with apt, writes the configuration, enables and starts
-    # the service.
+    # downloads the codename-specific asset, installs it with apt, writes
+    # the configuration, enables and starts the service.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
@@ -281,9 +266,8 @@ def test_installs_new_release(
     assert config.read_text(encoding="utf-8") == (
         i2pd_service_setup._render_config(ctx.config.i2pd_service_setup)
     )
-    # The downloaded files are removed after the successful install.
+    # The downloaded file is removed after the successful install.
     assert not (ctx.config.i2pd_service_setup.download_dir / asset).exists()
-    assert not (ctx.config.i2pd_service_setup.download_dir / "SHA512SUMS").exists()
 
 
 def test_update_reinstalls_and_restarts(
@@ -300,22 +284,6 @@ def test_update_reinstalls_and_restarts(
     assert result.changed is True
     assert ["systemctl", "restart", "i2pd.service"] in calls
     assert ["systemctl", "start", "i2pd.service"] not in calls
-
-
-def test_checksum_mismatch_stops_install(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # The release checksum does not match the downloaded file: the install
-    # is aborted before apt runs.
-    _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
-    calls = _install_fake(monkeypatch, installed_version=None, checksum_wrong=True)
-    result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "sha512 mismatch" in (result.error or "")
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
 
 
 def test_install_gives_up_after_retries(
@@ -467,7 +435,6 @@ def test_generic_asset_fallback(
         enabled=False,
         active=False,
         release_json=release,
-        checksum_asset_name=f"i2pd_{TAG}-1_amd64.deb",
     )
     result = i2pd_service_setup.task(ctx)
     assert result.success is True

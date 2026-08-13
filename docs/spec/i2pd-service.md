@@ -22,9 +22,9 @@ a release without either asset for the architecture is reported as a task error
 
 The asset list comes from the release payload, so new codenames never need code changes: the exact name is looked up among the returned assets.
 
-## Checksum verification
+## Download trust
 
-The downloaded package is always verified against the SHA512SUMS file of the same release before installation. The checksum file is downloaded from https://github.com/{github_repo}/releases/download/{tag}/SHA512SUMS, the entry for the asset name is read and compared against the sha512 of the downloaded file. A missing checksum file, a missing entry or a mismatch aborts the install with a task error. The check is always on, because the package travels over an unauthenticated channel; the GPG signature of the sums file is not verified in this version.
+The package is downloaded from the official GitHub release assets of the configured repository. No checksum verification is performed: the source is trusted, and an extra check would add a failure point without protecting the install, because the checksum file travels over the same channel as the package. The download uses curl --fail and a nonzero exit is reported as a task error, so a failed transfer is never mistaken for a successful one.
 
 ## Configuration ownership
 
@@ -40,14 +40,14 @@ The package installs the unit with a dedicated system user and a data directory;
 
 ## Idempotency
 
-The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the configuration and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package and the checksum file are removed after a successful install, so the directory never accumulates old versions.
+The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the configuration and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
 ## Parameters
 
 All parameters live in config.toml under [i2pd_service_setup]:
 
 github_repo is the GitHub repository in owner/name form
-download_dir is the directory for the downloaded package and checksum files
+download_dir is the directory for the downloaded package file
 service_unit_name is the systemd unit installed by the package
 config_path is the main configuration file owned by the task
 log_level is the i2pd verbosity: debug, info, warn, error or none
