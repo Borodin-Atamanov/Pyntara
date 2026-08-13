@@ -1,0 +1,75 @@
+"""Configuration loading from config.toml.
+
+The loader is split into a package by config section: each *_table parser
+and its dataclass live in the module of the section (engine.py,
+cli_tools.py, ...), the shared field helpers and the vocabulary constants
+live in _fields.py, and loader.py assembles the whole Config. This file
+re-exports the public surface, so `from pyntara.config import ...` keeps
+working unchanged.
+
+The file at the repository root is the single source of truth for the
+Python part of the engine. A missing or invalid file stops the run: there
+are no defaults (architecture contract section 3). The composition root
+loads the config once and hands it to every task through Context.
+"""
+
+from __future__ import annotations
+
+from ._fields import (
+    I2PD_LOG_LEVELS,
+    MODES,
+    SEND_ORDERS,
+    YGGDRASIL_LISTEN_SCHEMES,
+    YGGDRASIL_PEER_SCHEMES,
+    ConfigError,
+)
+from .add_extra_repos import AddExtraReposConfig
+from .cli_tools import CliToolsConfig
+from .engine import EngineConfig
+from .i2pd_service_setup import I2pdServiceSetupConfig
+from .loader import Config, load_config
+from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
+from .swapfile_service_install import SwapfileServiceInstallConfig
+from .system_metrics_setup import (
+    CollectorModuleConfig,
+    SystemMetricsCollectorConfig,
+    SystemMetricsSetupConfig,
+)
+from .tasks import TaskConfig
+from .vault import LocalVaultSetupConfig, VaultEntry, VaultStructureConfig
+from .yggdrasil_service_setup import (
+    YggdrasilMulticastInterfaceConfig,
+    YggdrasilServiceSetupConfig,
+)
+from .zram_service import ZramServiceConfig
+from .zswap_service import ZswapServiceConfig
+
+__all__ = [
+    "I2PD_LOG_LEVELS",
+    "MODES",
+    "SEND_ORDERS",
+    "YGGDRASIL_LISTEN_SCHEMES",
+    "YGGDRASIL_PEER_SCHEMES",
+    "AddExtraReposConfig",
+    "CliToolsConfig",
+    "CollectorModuleConfig",
+    "Config",
+    "ConfigError",
+    "EngineConfig",
+    "I2pdServiceSetupConfig",
+    "LocalVaultSetupConfig",
+    "SshClientSetupConfig",
+    "SshDaemonSetupConfig",
+    "SshDirective",
+    "SwapfileServiceInstallConfig",
+    "SystemMetricsCollectorConfig",
+    "SystemMetricsSetupConfig",
+    "TaskConfig",
+    "VaultEntry",
+    "VaultStructureConfig",
+    "YggdrasilMulticastInterfaceConfig",
+    "YggdrasilServiceSetupConfig",
+    "ZramServiceConfig",
+    "ZswapServiceConfig",
+    "load_config",
+]

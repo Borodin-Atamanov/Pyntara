@@ -59,7 +59,7 @@ mandatory return-code checking
 All setup tasks must be idempotent.
 Re-runs must not break the system and must not overwrite already generated secrets.
 Plaintext secret storage is forbidden (including code and logs).
-External inputs (including config.toml) are validated by explicit checks in the loading code: config.py type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.
+External inputs (including config.toml) are validated by explicit checks in the loading code: the config/ package type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.
 Internal structures without external validation use frozen dataclasses.
 All package-install operations and other operations must have timeouts.
 Tasks must also have reasonable large timeouts configured.

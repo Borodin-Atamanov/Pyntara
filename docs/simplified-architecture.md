@@ -21,7 +21,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 2. task_catalog.py: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from config.toml.
 3. models.py: TaskResult dataclass (success, changed, skipped, message, error).
 4. context.py: Context frozen dataclass.
-5. config.py: loads and validates config.toml into a frozen Config dataclass; the composition root reads it and hands it to tasks through Context.
+5. config/: loads and validates config.toml into a frozen Config dataclass; the composition root reads it and hands it to tasks through Context.
 6. task_runner.py: loads task modules by name, runs them in order, collects results. A missing module is a skipped result, a broken module is a failed result; neither crashes the run, and the summary shows everything that was skipped or failed.
 7. tasks/<name>.py: one module per task, each exposing task(ctx) -> TaskResult.
 8. tests/: pytest for the engine, bash tests for inst.sh.

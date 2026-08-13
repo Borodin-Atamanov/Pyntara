@@ -10,7 +10,7 @@ replace_line_by_string edits text in memory: every line containing the needle or
 
 add_line_to_file ensures a line is present in a file: an exact line is kept, a fuzzy line containing it is normalized to the exact line, a line containing the comment sign is left untouched and the missing line is appended. It returns whether the file changed; a missing file is not created.
 
-The helpers fit files where one setting is one line and the line order does not matter: systemd unit files, fstab, hosts, key = value files. External tools complement them where a line edit cannot express the change: Augeas (augeas-tools, installed by cli_tools) where a format lens exists, comby where no lens exists but the structure is regular, dasel/yq/jq for JSON/YAML/TOML/XML. Structured formats are edited with their parsers, never with line edits: config.toml loads through tomllib in src/pyntara/config.py.
+The helpers fit files where one setting is one line and the line order does not matter: systemd unit files, fstab, hosts, key = value files. External tools complement them where a line edit cannot express the change: Augeas (augeas-tools, installed by cli_tools) where a format lens exists, comby where no lens exists but the structure is regular, dasel/yq/jq for JSON/YAML/TOML/XML. Structured formats are edited with their parsers, never with line edits: config.toml loads through tomllib in src/pyntara/config/.
 
 ## Top-level files
 
@@ -40,7 +40,7 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 
 src/pyntara/__init__.py — Package version and public exports.
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
-src/pyntara/config.py — Config.toml loading: Config frozen dataclass, load_config, ConfigError.
+src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from config.toml.
 src/pyntara/models.py — TaskResult dataclass.
 src/pyntara/context.py — Context frozen dataclass.

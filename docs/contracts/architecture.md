@@ -7,7 +7,7 @@ All new modules and tasks must follow this contract.
 
 inst.sh - bootloader
 pyntara.py (command entry and composition root)
-config.py (config.toml loading and validation, including the task catalog)
+config/ (config.toml loading and validation, including the task catalog)
 task_catalog.py (mode defaults, task selection validation, dependency resolution)
 context.py (Context construction)
 task_runner.py (task discovery and execution)
