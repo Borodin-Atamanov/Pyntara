@@ -469,11 +469,15 @@ def test_select_asset_prioritizes_codename() -> None:
     # codename only the generic asset matches; an unknown architecture
     # matches nothing.
     release = json.loads(_release_json())
-    specific, _ = i2pd_service_setup._select_asset(
+    specific_asset = i2pd_service_setup._select_asset(
         release, TAG, "resolute", "amd64"
     )
+    assert specific_asset is not None
+    specific, _ = specific_asset
     assert specific == f"i2pd_{TAG}-1resolute1_amd64.deb"
-    generic, _ = i2pd_service_setup._select_asset(release, TAG, None, "amd64")
+    generic_asset = i2pd_service_setup._select_asset(release, TAG, None, "amd64")
+    assert generic_asset is not None
+    generic, _ = generic_asset
     assert generic == f"i2pd_{TAG}-1_amd64.deb"
     assert (
         i2pd_service_setup._select_asset(release, TAG, "resolute", "s390x")

@@ -11,6 +11,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -74,7 +75,7 @@ def _install_fixtures(
     tmp_path: Path,
     *,
     current: dict[str, str] | None = None,
-) -> dict[str, object]:
+) -> ZswapFixtures:
     """Point the task at temporary fixtures; return the fixture paths.
 
     The parameter files live under a temporary sysfs mirror; the current
@@ -97,9 +98,16 @@ def _install_fixtures(
     return {"params_dir": params_dir, "template": template}
 
 
+class ZswapFixtures(TypedDict):
+    """Temporary sysfs mirror and template paths."""
+
+    params_dir: Path
+    template: Path
+
+
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
-    fixtures: dict[str, object],
+    fixtures: ZswapFixtures,
     *,
     enabled: bool,
     fail: Callable[[list[str]], bool] | None = None,

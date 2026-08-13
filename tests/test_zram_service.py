@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -72,6 +73,15 @@ def _target(tmp_path: Path) -> tuple[int, int]:
     )
 
 
+class ZramFixtures(TypedDict):
+    """Temporary sysfs mirror and template paths."""
+
+    sys_block: Path
+    hot_add: _FakeHotAdd
+    hot_remove: Path
+    template: Path
+
+
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -80,7 +90,7 @@ def _install_fixtures(
     cores: int = 2,
     with_cpuinfo: bool = True,
     read_interface: bool = True,
-) -> dict[str, object]:
+) -> ZramFixtures:
     """Point the task at temporary fixtures; return the fixture paths."""
 
     meminfo = tmp_path / "meminfo"
@@ -182,7 +192,7 @@ class _FakeHotAdd:
 
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
-    fixtures: dict[str, object],
+    fixtures: ZramFixtures,
     *,
     enabled: bool,
     active: set[str],

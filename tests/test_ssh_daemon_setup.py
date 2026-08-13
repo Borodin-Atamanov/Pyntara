@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -190,7 +191,7 @@ def _install_fake(
     install_attempts = 0
     started = False
 
-    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         nonlocal install_attempts, started
         if command[0] == "augtool":
             return augtool_fake_run(command, kwargs.get("input"))

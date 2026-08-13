@@ -13,6 +13,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from string import Template
+from typing import TypedDict
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -101,6 +102,20 @@ COLLECTOR_SERVICE_NAME = "system_metrics_collector.service"
 COLLECTOR_TIMER_NAME = "system_metrics_collector.timer"
 
 
+class SystemMetricsFixtures(TypedDict):
+    """Temporary deployment paths plus the config built for them."""
+
+    repo: Path
+    source_config: Path
+    venv_dir: Path
+    venv_python: Path
+    command_path: Path
+    spool_dir: Path
+    system_config: Path
+    systemd_dir: Path
+    config: Config
+
+
 def _ctx(
     tmp_path: Path, *, force: bool = False, config: Config | None = None
 ) -> Context:
@@ -120,7 +135,7 @@ def _install_fixtures(
     tmp_path: Path,
     *,
     venv_ok: bool = False,
-) -> dict[str, Path]:
+) -> SystemMetricsFixtures:
     """Point the task at temporary fixtures; return the fixture paths.
 
     The repository clone is a temporary directory holding config.toml and
@@ -205,7 +220,7 @@ def _install_fixtures(
     }
 
 
-def _expected_service_unit(fixtures: dict[str, Path]) -> str:
+def _expected_service_unit(fixtures: SystemMetricsFixtures) -> str:
     """The service unit the task must render for the given fixtures."""
 
     command = " ".join(
@@ -222,7 +237,7 @@ def _expected_service_unit(fixtures: dict[str, Path]) -> str:
     )
 
 
-def _expected_ingest_service_unit(fixtures: dict[str, Path]) -> str:
+def _expected_ingest_service_unit(fixtures: SystemMetricsFixtures) -> str:
     """The ingest service unit the task must render for the fixtures."""
 
     command = " ".join(
@@ -239,13 +254,13 @@ def _expected_ingest_service_unit(fixtures: dict[str, Path]) -> str:
     )
 
 
-def _expected_ingest_path_unit(fixtures: dict[str, Path]) -> str:
+def _expected_ingest_path_unit(fixtures: SystemMetricsFixtures) -> str:
     """The path unit the task must render for the given fixtures."""
 
     return Template(INGEST_PATH_TEMPLATE).substitute(spool_dir=fixtures["spool_dir"])
 
 
-def _expected_collector_service_unit(fixtures: dict[str, Path]) -> str:
+def _expected_collector_service_unit(fixtures: SystemMetricsFixtures) -> str:
     """The collector service unit the task must render for the fixtures."""
 
     command = " ".join(
@@ -262,7 +277,7 @@ def _expected_collector_service_unit(fixtures: dict[str, Path]) -> str:
     )
 
 
-def _expected_collector_timer_unit(fixtures: dict[str, Path]) -> str:
+def _expected_collector_timer_unit(fixtures: SystemMetricsFixtures) -> str:
     """The collector timer unit the task must render for the fixtures."""
 
     collector = fixtures["config"].system_metrics_setup.collector
@@ -273,7 +288,7 @@ def _expected_collector_timer_unit(fixtures: dict[str, Path]) -> str:
     )
 
 
-def _expected_command(fixtures: dict[str, Path]) -> str:
+def _expected_command(fixtures: SystemMetricsFixtures) -> str:
     """The commit command the task must render for the given fixtures."""
 
     return (
@@ -347,7 +362,7 @@ def _deploy_fixture(
     stale_path_unit: bool = False,
     uv_available: bool = True,
     fail: Callable[[list[str]], bool] | None = None,
-) -> tuple[dict[str, Path], list[list[str]]]:
+) -> tuple[SystemMetricsFixtures, list[list[str]]]:
     """Fixtures plus a fake; when deployed, all state matches the sources.
 
     stale_config leaves the system config unwritten and stale_path_unit

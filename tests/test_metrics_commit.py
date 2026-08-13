@@ -12,6 +12,7 @@ import os
 import string
 import time
 from pathlib import Path
+from typing import Any
 
 from support import make_config
 
@@ -28,7 +29,7 @@ OUTBOX = "main_outbox"
 TEMP = "temp"
 
 
-def _spool_config(tmp_path: Path, **kwargs: object) -> Config:
+def _spool_config(tmp_path: Path, **kwargs: Any) -> Config:
     """Config whose spool and metrics queue live in the temporary directory."""
 
     return make_config(

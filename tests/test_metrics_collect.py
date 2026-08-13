@@ -12,6 +12,7 @@ import fcntl
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -29,7 +30,7 @@ IPV6 = CollectorModuleConfig(
 HOSTNAME = CollectorModuleConfig(name="hostname", command=("hostname",))
 
 
-def _config(tmp_path: Path, **kwargs: object):
+def _config(tmp_path: Path, **kwargs: Any):
     """Config with a safe command path and lock path inside tmp_path."""
 
     return make_config(

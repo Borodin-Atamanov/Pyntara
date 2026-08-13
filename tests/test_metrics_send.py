@@ -13,6 +13,7 @@ import base64
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pykeepass import PyKeePass, create_database
@@ -27,7 +28,7 @@ AUTH_KEY = "shared-auth-key"
 VAULT_PASSWORD = "local-vault-password"
 
 
-def _send_config(tmp_path: Path, **kwargs: object) -> Config:
+def _send_config(tmp_path: Path, **kwargs: Any) -> Config:
     """Config whose queue, vault and password file live in the temporary dir."""
 
     return make_config(

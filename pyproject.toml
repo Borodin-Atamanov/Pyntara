@@ -45,6 +45,10 @@ build-backend = "hatchling.build"
 packages = ["src/pyntara"]
 
 [tool.mypy]
+# The developer guide's gate stays `mypy --strict src`; the bare `mypy`
+# invocation checks the tests as well, so a type regression in a test
+# helper is caught by default.
+files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
 # pykeepass ships no type stubs, so mypy cannot analyze it. Treating the

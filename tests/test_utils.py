@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -11,7 +12,7 @@ from pyntara.utils import run_command, service_is_active, service_is_enabled
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_run(
         command: list[str], **kwargs: object
@@ -27,7 +28,7 @@ def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_run_command_applies_explicit_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_run(
         command: list[str], **kwargs: object
@@ -43,7 +44,7 @@ def test_run_command_applies_explicit_timeout(monkeypatch: pytest.MonkeyPatch) -
 def test_run_command_streams_by_default_and_captures_on_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: list[dict[str, object]] = []
+    captured: list[dict[str, Any]] = []
 
     def fake_run(
         command: list[str], **kwargs: object
@@ -61,7 +62,7 @@ def test_run_command_streams_by_default_and_captures_on_request(
 def test_run_command_feeds_stdin_when_input_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_run(
         command: list[str], **kwargs: object
@@ -77,7 +78,7 @@ def test_run_command_feeds_stdin_when_input_given(
 def test_run_command_omits_input_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_run(
         command: list[str], **kwargs: object

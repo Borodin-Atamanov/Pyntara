@@ -10,6 +10,7 @@ ssh -G with a fixed effective-config output.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -104,7 +105,7 @@ def _install_fake(
 
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         if command[0] == "augtool":
             return augtool_fake_run(command, kwargs.get("input"))
         del kwargs

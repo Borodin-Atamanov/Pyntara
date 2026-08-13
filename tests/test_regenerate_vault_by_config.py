@@ -15,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 from pykeepass import PyKeePass, create_database
@@ -22,7 +23,7 @@ from pykeepass.exceptions import CredentialsError
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "secrets" / "regenerate_vault_by_config.py"
 
-DEFAULT_ENTRIES = [
+DEFAULT_ENTRIES: list[dict[str, Any]] = [
     {"title": "password_salt", "notes": "Primary salt for password derivation."},
     {"title": "pyntara_local_vault_password", "notes": "Password for the runtime secret vault."},
     {
@@ -74,7 +75,7 @@ def _isolate_environment(
     monkeypatch.setattr(gen, "getpass", _FakeGetpass())
 
 
-def _write_config(tmp_path: Path, entries: list[dict[str, str]]) -> Path:
+def _write_config(tmp_path: Path, entries: list[dict[str, Any]]) -> Path:
     """A minimal config.toml whose [vault_structure] carries the entries."""
 
     lines = ["[vault_structure]"]
@@ -93,7 +94,7 @@ def _prepare(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    entries: list[dict[str, str]] | None = None,
+    entries: list[dict[str, Any]] | None = None,
     env_password: str | None = VAULT_PASSWORD,
 ) -> None:
     """Point the script at a temp config and set the password source."""
