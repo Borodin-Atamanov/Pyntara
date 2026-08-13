@@ -37,6 +37,10 @@ tunnel_name = "ssh"
 # because the tunnel connects from the same machine.
 tunnel_host = "127.0.0.1"
 # Identity file of the tunnel destination, created by i2pd on the first
-# start. The task computes the .b32.i2p address from this file, so the
-# address survives restarts.
-tunnel_keys_path = "/etc/i2pd/ssh.dat"
+# start. The file lives in the i2pd data directory (/var/lib/i2pd), the
+# only place the i2pd process may write: the AppArmor profile grants
+# read-only access to /etc/i2pd, and i2pd resolves every keys path
+# against its data directory anyway, so the tunnels file carries only
+# the file name. The task computes the .b32.i2p address from this file,
+# so the address survives restarts.
+tunnel_keys_path = "/var/lib/i2pd/ssh.dat"

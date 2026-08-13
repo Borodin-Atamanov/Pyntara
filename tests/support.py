@@ -222,7 +222,7 @@ def make_config(
     i2pd_tunnels_config_path: Path = Path("/etc/i2pd/tunnels.conf"),
     i2pd_tunnel_name: str = "ssh",
     i2pd_tunnel_host: str = "127.0.0.1",
-    i2pd_tunnel_keys_path: Path = Path("/etc/i2pd/ssh.dat"),
+    i2pd_tunnel_keys_path: Path = Path("/var/lib/i2pd/ssh.dat"),
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",

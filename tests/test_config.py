@@ -82,7 +82,7 @@ start_check_retry_delay_seconds = 1
 tunnels_config_path = "/etc/i2pd/tunnels.conf"
 tunnel_name = "ssh"
 tunnel_host = "127.0.0.1"
-tunnel_keys_path = "/etc/i2pd/ssh.dat"
+tunnel_keys_path = "/var/lib/i2pd/ssh.dat"
 
 [yggdrasil_service_setup]
 github_repo = "yggdrasil-network/yggdrasil-go"
@@ -323,7 +323,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.tunnel_name == "ssh"
     assert config.i2pd_service_setup.tunnel_host == "127.0.0.1"
     assert config.i2pd_service_setup.tunnel_keys_path == Path(
-        "/etc/i2pd/ssh.dat"
+        "/var/lib/i2pd/ssh.dat"
     )
     assert (
         config.yggdrasil_service_setup.github_repo

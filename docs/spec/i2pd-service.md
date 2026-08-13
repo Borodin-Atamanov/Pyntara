@@ -40,7 +40,9 @@ The machine becomes reachable over I2P without a single manual step after the ru
 
 The tunnel forwards to the SSH daemon, and its port is not a parameter anywhere: the task reads the sshd Port directive from the ssh_daemon_setup configuration. The tunnel and the daemon therefore share one source of truth and can never diverge. The forward host is the loopback address, because the daemon runs on the same machine and the tunnel connects locally.
 
-The tunnel identity lives in the keys file at the configured tunnel_keys_path and is created by i2pd on the first start. A missing keys file is not an error, it is the first-run state: the task reports that the address appears after the first start, and the next run reports it. The identity is stable, so the address survives restarts and reconfigurations. The .b32.i2p address is derived from the identity file, not from the journal or the web console: the destination is the first base64 line of the keys file, and the address is the lowercase unpadded base32 of its SHA-256 hash with the .b32.i2p suffix. The task reads the keys file after the service became active and carries the address in its message.
+The tunnel identity lives in the keys file at the configured tunnel_keys_path and is created by i2pd on the first start. The file must live in the i2pd data directory, and only there: the AppArmor profile of the package grants the router write access to its data directory and read-only access to the configuration directory, and i2pd resolves every keys path from the tunnels file against the data directory anyway, so an absolute path in the tunnels file would point into a directory that does not exist. The tunnels file therefore carries only the file name, and the task reads the full configured path. A missing keys file is not an error, it is the first-run state: the task reports that the address appears after the first start, and the next run reports it. The identity is stable, so the address survives restarts and reconfigurations.
+
+The keys file is the binary PrivateKeys record i2pd writes: the first 387 bytes are the IdentityEx (256-byte encryption key, 128-byte signing key and a 3-byte certificate), and the address is the lowercase unpadded base32 of the SHA-256 hash of that IdentityEx with the .b32.i2p suffix. The certificate starts with the type byte; the KEY type means the signing and crypto key types follow in an extended block whose length is the big-endian uint16 at certificate offset 1, and the hash covers the identity plus that block. The task parses the certificate, computes the address and carries it in its message; a record without the KEY certificate yields no address and the message says the address is not available yet.
 
 ## Service lifecycle
 
@@ -68,6 +70,6 @@ start_check_attempts and start_check_retry_delay_seconds bound the readiness loo
 tunnels_config_path is the owned tunnels file with the SSH server tunnel
 tunnel_name is the section name of the tunnel in the tunnels file
 tunnel_host is the local address the tunnel forwards to; the tunnel port is not a parameter, it is read from the ssh_daemon_setup Port directive
-tunnel_keys_path is the identity file of the tunnel destination, created by i2pd on the first start
+tunnel_keys_path is the identity file of the tunnel destination in the i2pd data directory, created by i2pd on the first start; the tunnels file carries only its file name
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.

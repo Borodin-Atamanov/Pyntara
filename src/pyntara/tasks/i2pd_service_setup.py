@@ -19,10 +19,20 @@ also owns the tunnels file at tunnels_config_path with the SSH server
 tunnel: the main configuration names that file through tunconf, so i2pd
 reads exactly it wherever it is placed. The tunnel forwards to the local
 SSH daemon on the port read from the ssh_daemon_setup Port directive,
-never duplicated into the i2pd configuration. The tunnel identity lives
-in the keys file at tunnel_keys_path, created by i2pd on the first
-start; the task computes the .b32.i2p address from that file and reports
-it. The service
+never duplicated into the i2pd configuration.
+
+The tunnel identity lives in the keys file. i2pd resolves the keys path
+against its data directory (datadir), never as an absolute path, so the
+tunnels file carries only the file name and the task reads the full path
+in the configured data directory. The keys file is the binary PrivateKeys
+record: the first 387 bytes are the IdentityEx (encryption key, signing
+key and certificate), and the I2P address is the lowercase unpadded
+base32 of the SHA-256 hash of that IdentityEx. The task parses the
+certificate to learn the identity length, computes the address and
+reports it; on the first start the file does not exist yet, so the
+message says the address appears after the first start.
+
+The service
 is enabled and started or restarted immediately, and the task waits with
 the configured readiness loop for it to become active, because the
 forking service may take a moment to fork. The task is idempotent: it
@@ -71,9 +81,6 @@ TUNNELS_TEMPLATE_PATH = (
 )
 OS_RELEASE_PATH = Path("/etc/os-release")
 
-# i2pd prints its version as a dotted triple in the --version output.
-VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
-
 
 def _render_config(cfg: I2pdServiceSetupConfig) -> str:
     """Render the configuration template with the configured values.
@@ -99,7 +106,10 @@ def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
 
     The tunnel port is the sshd listen port read from the ssh_daemon_setup
     directives by the caller, so the tunnel always forwards to the daemon
-    that actually runs and the two can never diverge.
+    that actually runs and the two can never diverge. The keys value is
+    the file name only: i2pd resolves every keys path against its data
+    directory, never as an absolute path, so the full configured path
+    would point into a directory that does not exist.
     """
 
     template = Template(TUNNELS_TEMPLATE_PATH.read_text(encoding="utf-8"))
@@ -107,7 +117,7 @@ def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
         tunnel_name=cfg.tunnel_name,
         tunnel_host=cfg.tunnel_host,
         tunnel_port=ssh_port,
-        tunnel_keys_path=str(cfg.tunnel_keys_path),
+        tunnel_keys_path=Path(cfg.tunnel_keys_path).name,
     )
 
 
@@ -136,22 +146,47 @@ def _ssh_port_from_ssh_config(directives: tuple[SshDirective, ...]) -> int:
     )
 
 
+# i2pd prints its version as a dotted triple in the --version output.
+VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
+
+# The IdentityEx record of the i2pd PrivateKeys file (Identity.h):
+# publicKey[256] + signingKey[128] + certificate[3]. The certificate
+# starts with the type byte; type KEY means the signing and crypto key
+# types follow in an extended block, whose length is the big-endian
+# uint16 at certificate offset 1. The I2P address is the SHA-256 of the
+# whole IdentityEx (DEFAULT_IDENTITY_SIZE plus the extended block).
+I2PD_IDENTITY_SIZE = 387
+I2PD_CERTIFICATE_TYPE_KEY = 5
+
+
 def _b32_address(keys_path: Path) -> str | None:
     """The .b32.i2p address of the tunnel keys file, or None.
 
-    The i2pd keys file starts with the base64 destination; the I2P base32
-    address is the lowercase unpadded base32 of the SHA-256 hash of the
-    destination, followed by .b32.i2p. A missing file, an empty file or
-    undecodable content yields None, so the caller reports that the
-    address is not available yet instead of failing.
+    The keys file is the binary PrivateKeys record i2pd writes: its
+    first bytes are the IdentityEx, and the I2P address is the lowercase
+    unpadded base32 of the SHA-256 hash of that IdentityEx. The extended
+    block length comes from the certificate, so the hash covers exactly
+    the identity bytes. A missing file, a file too short or a record
+    without the KEY certificate yields None, so the caller reports that
+    the address is not available yet instead of failing.
     """
 
     try:
-        first_line = keys_path.read_text(encoding="utf-8").splitlines()[0].strip()
-        destination = base64.b64decode(first_line, validate=True)
-    except (OSError, IndexError, ValueError):
+        data = keys_path.read_bytes()
+    except OSError:
         return None
-    digest = hashlib.sha256(destination).digest()
+    if len(data) < I2PD_IDENTITY_SIZE:
+        return None
+    certificate_type = data[I2PD_IDENTITY_SIZE - 3]
+    extended_len = int.from_bytes(
+        data[I2PD_IDENTITY_SIZE - 2 : I2PD_IDENTITY_SIZE], "big"
+    )
+    if certificate_type != I2PD_CERTIFICATE_TYPE_KEY:
+        return None
+    identity_len = I2PD_IDENTITY_SIZE + extended_len
+    if len(data) < identity_len:
+        return None
+    digest = hashlib.sha256(data[:identity_len]).digest()
     encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
     return f"{encoded}.b32.i2p"
 

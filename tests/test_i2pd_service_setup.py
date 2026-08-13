@@ -8,6 +8,8 @@ from a fixture, so the tests never read the repository template.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -40,13 +42,35 @@ port = $tunnel_port
 keys = $tunnel_keys_path
 """
 
-# The base64 destination written into the fixture keys file and its
-# expected .b32.i2p address: a fixed vector independent of the task code.
-KEYS_DESTINATION_B64 = (
-    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v"
-    "MDEyMzQ1Njc4OTo7PD0+Pw=="
-)
-KEYS_B32_ADDRESS = "7xvltlhtoebwfpjgldg4tiu6r6ohk76ptaiwaoumir6ndwivceea.b32.i2p"
+# A fixture PrivateKeys record: the 387-byte IdentityEx (256-byte
+# encryption key, 128-byte signing key, 3-byte certificate) with a KEY
+# certificate carrying the 4-byte extended block of the signing and
+# crypto key types, followed by private material. The expected address
+# is the unpadded lowercase base32 of the SHA-256 of the IdentityEx,
+# computed independently in the test from the same parts.
+KEYS_IDENTITY_SIZE = 387
+KEYS_CERTIFICATE_TYPE_KEY = 5
+KEYS_EXTENDED_BYTES = b"\x00\x07\x00\x04"  # signing type 7, crypto type 4
+
+
+def _keys_file_bytes() -> bytes:
+    """The fixture PrivateKeys record for the tests."""
+
+    identity = bytearray(KEYS_IDENTITY_SIZE)
+    identity[KEYS_IDENTITY_SIZE - 3] = KEYS_CERTIFICATE_TYPE_KEY
+    identity[KEYS_IDENTITY_SIZE - 2] = 0
+    identity[KEYS_IDENTITY_SIZE - 1] = len(KEYS_EXTENDED_BYTES)
+    return bytes(identity) + KEYS_EXTENDED_BYTES + b"private material"
+
+
+def _keys_b32_address() -> str:
+    """The expected .b32.i2p address of the fixture keys record."""
+
+    identity_len = KEYS_IDENTITY_SIZE + len(KEYS_EXTENDED_BYTES)
+    digest = hashlib.sha256(_keys_file_bytes()[:identity_len]).digest()
+    encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
+    return f"{encoded}.b32.i2p"
+
 
 # The newest release tag; the tests treat the generic asset and the
 # codename-specific asset of this tag as available.
@@ -247,9 +271,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
         encoding="utf-8",
     )
     cfg.tunnel_keys_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.tunnel_keys_path.write_text(
-        f"{KEYS_DESTINATION_B64}\n", encoding="utf-8"
-    )
+    cfg.tunnel_keys_path.write_bytes(_keys_file_bytes())
 
 
 def test_already_configured_skips(
@@ -556,8 +578,10 @@ def test_render_config_bool_spelling() -> None:
 
 
 def test_render_tunnels_config_uses_ssh_port() -> None:
-    # The tunnels render carries the tunnel section, the forward host and
-    # the sshd port read from the ssh_daemon_setup directives.
+    # The tunnels render carries the tunnel section, the forward host, the
+    # sshd port read from the ssh_daemon_setup directives and the keys
+    # value as the file name only, because i2pd resolves every keys path
+    # against its data directory.
     ctx = _ctx(Path("/tmp"))
     config = i2pd_service_setup._render_tunnels_config(
         ctx.config.i2pd_service_setup, 30222
@@ -566,30 +590,39 @@ def test_render_tunnels_config_uses_ssh_port() -> None:
     assert f"host = {ctx.config.i2pd_service_setup.tunnel_host}\n" in config
     assert "port = 30222\n" in config
     assert (
-        f"keys = {ctx.config.i2pd_service_setup.tunnel_keys_path}\n"
+        f"keys = {ctx.config.i2pd_service_setup.tunnel_keys_path.name}\n"
         in config
     )
 
 
 def test_b32_address_from_keys(tmp_path: Path) -> None:
     # The .b32.i2p address is the unpadded lowercase base32 of the
-    # SHA-256 hash of the base64 destination in the keys file.
+    # SHA-256 hash of the IdentityEx record at the start of the keys
+    # file.
     keys = tmp_path / "ssh.dat"
-    keys.write_text(f"{KEYS_DESTINATION_B64}\n", encoding="utf-8")
-    assert i2pd_service_setup._b32_address(keys) == KEYS_B32_ADDRESS
+    keys.write_bytes(_keys_file_bytes())
+    assert i2pd_service_setup._b32_address(keys) == _keys_b32_address()
 
 
 def test_b32_address_missing_or_broken(tmp_path: Path) -> None:
-    # A missing, empty or undecodable keys file yields None instead of an
+    # A missing, too short or non-KEY keys file yields None instead of an
     # error, so the task reports that the address is not available yet.
     missing = tmp_path / "missing.dat"
     assert i2pd_service_setup._b32_address(missing) is None
     empty = tmp_path / "empty.dat"
     empty.write_text("", encoding="utf-8")
     assert i2pd_service_setup._b32_address(empty) is None
-    broken = tmp_path / "broken.dat"
-    broken.write_text("not base64 at all\n", encoding="utf-8")
-    assert i2pd_service_setup._b32_address(broken) is None
+    short = tmp_path / "short.dat"
+    short.write_bytes(b"x" * (KEYS_IDENTITY_SIZE - 1))
+    assert i2pd_service_setup._b32_address(short) is None
+    wrong_cert = tmp_path / "wrong-cert.dat"
+    data = bytearray(_keys_file_bytes())
+    data[KEYS_IDENTITY_SIZE - 3] = 0  # NULL certificate, not KEY
+    wrong_cert.write_bytes(bytes(data))
+    assert i2pd_service_setup._b32_address(wrong_cert) is None
+    truncated = tmp_path / "truncated.dat"
+    truncated.write_bytes(_keys_file_bytes()[: KEYS_IDENTITY_SIZE + 2])
+    assert i2pd_service_setup._b32_address(truncated) is None
 
 
 def test_first_run_message_without_keys_file(
@@ -623,7 +656,7 @@ def test_address_reported_when_keys_exist(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert KEYS_B32_ADDRESS in (result.message or "")
+    assert _keys_b32_address() in (result.message or "")
     assert ["systemctl", "restart", "i2pd.service"] in calls
 
 
