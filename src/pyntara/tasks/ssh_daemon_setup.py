@@ -45,7 +45,6 @@ service but never reinstalls the package.
 
 from __future__ import annotations
 
-import fnmatch
 import os
 import pwd
 import re
@@ -53,6 +52,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from pyntara.augeas import apply_owner, include_covers_dropin, sync_dropin
 from pyntara.config import SshDaemonSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -75,147 +75,8 @@ SSH_DATA_DIR = REPO_ROOT / "task_data" / "ssh_daemon_setup"
 # augeas stores and writes comment values without it.
 DROPIN_HEADER = "Managed by the Pyntara ssh_daemon_setup task."
 
-# One node line of an augtool print listing.
-_AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = "(?P<value>.*)"$')
-
-
-def _parse_augtool_print(
-    output: str, base: str
-) -> tuple[dict[str, str], str | None]:
-    """Parse an augtool print listing into (directives, first comment).
-
-    Every line has the form /files<path>/<node> = "<value>"; comment
-    nodes carry the # label and an optional [n] index. The first comment
-    is the ownership header, the rest are ignored.
-    """
-
-    directives: dict[str, str] = {}
-    comment: str | None = None
-    for line in output.splitlines():
-        line = line.strip()
-        if not line.startswith(base + "/"):
-            continue
-        match = _AUGTOOL_VALUE_RE.match(line)
-        if match is None:
-            continue
-        node = match.group("node")
-        label = node.rsplit("/", 1)[-1].split("[", 1)[0]
-        value = match.group("value")
-        if label.startswith("#"):
-            if comment is None:
-                comment = value
-        else:
-            directives[label] = value
-    return directives, comment
-
-
-def _read_dropin_state(
-    dropin_path: Path, timeout: float
-) -> tuple[dict[str, str], str | None]:
-    """Current directive map and ownership comment of the drop-in.
-
-    The tree comes from a single augtool print over a manual load entry,
-    so only the drop-in file is parsed; a missing file yields an empty
-    map and a None comment.
-    """
-
-    script = (
-        "set /augeas/load/sshd/lens Sshd.lns\n"
-        f"set /augeas/load/sshd/incl {dropin_path}\n"
-        "load\n"
-        f"print /files{dropin_path}\n"
-    )
-    result = run_command(
-        ["augtool", "--noautoload"],
-        input=script,
-        capture=True,
-        timeout=timeout,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"augtool read failed: exit {result.returncode}: "
-            f"{result.stderr.strip()}"
-        )
-    return _parse_augtool_print(result.stdout, f"/files{dropin_path}")
-
-
-def _write_dropin(
-    dropin_path: Path,
-    directives: tuple[SshDirective, ...],
-    stale_names: list[str],
-    timeout: float,
-) -> None:
-    """Write the configured directives through augeas.
-
-    The ownership comment is set first, so augeas places it at the top
-    of a fresh file; every configured directive is then set to its value
-    and every stale directive is removed. augtool runs with
-    --noautoload and a manual load entry, so only the drop-in file is
-    touched.
-    """
-
-    dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        "set /augeas/load/sshd/lens Sshd.lns",
-        f"set /augeas/load/sshd/incl {dropin_path}",
-        "load",
-        f'set /files{dropin_path}/#comment "{DROPIN_HEADER}"',
-    ]
-    for directive in directives:
-        lines.append(
-            f'set /files{dropin_path}/{directive.name} "{directive.value}"'
-        )
-    for name in stale_names:
-        lines.append(f"rm /files{dropin_path}/{name}")
-    lines.append("save")
-    result = run_command(
-        ["augtool", "--noautoload"],
-        input="\n".join(lines) + "\n",
-        capture=True,
-        timeout=timeout,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"augtool write failed: exit {result.returncode}: "
-            f"{result.stderr.strip()}"
-        )
-
-
-def _sync_dropin(
-    dropin_path: Path,
-    directives: tuple[SshDirective, ...],
-    mode: int,
-    force: bool,
-    timeout: float,
-) -> tuple[bool, bool]:
-    """Align the drop-in with the configured directives; return (changed, port_changed).
-
-    The current state is read through augeas and compared with the
-    desired map; a matching file is left untouched. A difference, a
-    missing ownership comment or force triggers a rewrite. port_changed
-    reports whether the Port directive differs, because a port change
-    needs a restart, not a reload. An empty directives list removes the
-    drop-in.
-    """
-
-    if not directives:
-        existed = dropin_path.exists()
-        if existed:
-            _remove_dropin(dropin_path)
-        return existed, False
-    current, comment = _read_dropin_state(dropin_path, timeout)
-    desired = {directive.name: directive.value for directive in directives}
-    changed = force or current != desired or comment != DROPIN_HEADER
-    port_changed = current.get("Port") != desired.get("Port")
-    if not changed:
-        return False, False
-    stale_names = [name for name in current if name not in desired]
-    _write_dropin(dropin_path, directives, stale_names, timeout)
-    os.chmod(dropin_path, mode)
-    _apply_owner(dropin_path, 0, 0)
-    return True, port_changed
+# augeas lens for the sshd_config syntax.
+SSHD_LENS = "Sshd.lns"
 
 
 def _verify_effective_config(
@@ -276,62 +137,6 @@ def _verify_listening_port(port: str, timeout: float) -> str | None:
     return None
 
 
-def _read_text(path: Path) -> str | None:
-    """Current content of a text file, or None when absent."""
-
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-def _include_covers_dropin(
-    config_path: Path, dropin_path: Path, timeout: float
-) -> bool:
-    """True when sshd_config pulls the drop-in directory in.
-
-    Every Include directive of sshd_config is matched against the
-    drop-in path with fnmatch, which understands the glob patterns
-    OpenSSH accepts; a relative pattern resolves against the directory
-    of sshd_config. A missing file, an unreadable file or a directive
-    that does not cover the drop-in all mean the rendered drop-in would
-    be ignored, so the task must fail loudly instead of pretending the
-    configuration is in place.
-    """
-
-    content = _read_text(config_path)
-    if content is None:
-        return False
-    base_dir = config_path.parent
-    for line in content.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        keyword, sep, pattern = stripped.partition(" ")
-        if not sep or keyword.casefold() != "include":
-            continue
-        pattern = pattern.strip()
-        if fnmatch.fnmatch(str(dropin_path), pattern):
-            return True
-        if not pattern.startswith("/"):
-            relative = base_dir / pattern
-            if fnmatch.fnmatch(str(dropin_path), str(relative)):
-                return True
-    return False
-
-
-def _apply_owner(path: Path, uid: int, gid: int) -> None:
-    """Set the file owner when the process runs as root.
-
-    The installer runs under sudo, so the ownership is applied on real
-    machines; non-root test runs skip the chown, because it would fail
-    without privileges.
-    """
-
-    if os.geteuid() == 0:
-        os.chown(path, uid, gid)
-
-
 def _write_bytes_if_different(
     path: Path, content: bytes, mode: int, uid: int, gid: int
 ) -> bool:
@@ -347,7 +152,7 @@ def _write_bytes_if_different(
         return False
     path.write_bytes(content)
     os.chmod(path, mode)
-    _apply_owner(path, uid, gid)
+    apply_owner(path, uid, gid)
     return True
 
 
@@ -370,7 +175,7 @@ def _ensure_authorized_key(
     with path.open("a", encoding="utf-8") as handle:
         handle.write(key_line + "\n")
     os.chmod(path, mode)
-    _apply_owner(path, uid, gid)
+    apply_owner(path, uid, gid)
     return True
 
 
@@ -395,7 +200,7 @@ def _deploy_keys(
     changed = False
     ssh_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(ssh_dir, cfg.ssh_dir_mode)
-    _apply_owner(ssh_dir, uid, gid)
+    apply_owner(ssh_dir, uid, gid)
     if _write_bytes_if_different(
         ssh_dir / cfg.private_key_file_name,
         private_bytes,
@@ -421,15 +226,6 @@ def _deploy_keys(
     ):
         changed = True
     return changed
-
-
-def _remove_dropin(dropin_path: Path) -> None:
-    """Remove the drop-in; a missing file is a no-op."""
-
-    try:
-        dropin_path.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _ensure_package(
@@ -537,8 +333,8 @@ def task(ctx: Context) -> TaskResult:
         _log("package installed")
         changed = True
 
-    include_ok = _include_covers_dropin(
-        cfg.sshd_config_path, cfg.sshd_config_dropin_path, timeout
+    include_ok = include_covers_dropin(
+        cfg.sshd_config_path, cfg.sshd_config_dropin_path
     )
     _log(
         f"checking Include directive in {cfg.sshd_config_path}: "
@@ -554,12 +350,19 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        dropin_changed, port_changed = _sync_dropin(
+        directives = tuple(
+            (directive.name, directive.value)
+            for directive in cfg.directives
+        )
+        dropin_changed, port_changed = sync_dropin(
             cfg.sshd_config_dropin_path,
-            cfg.directives,
+            directives,
             cfg.dropin_file_mode,
             force,
+            SSHD_LENS,
+            DROPIN_HEADER,
             timeout,
+            port_directive="Port",
         )
     except RuntimeError as exc:
         return TaskResult(success=False, changed=changed, error=str(exc))

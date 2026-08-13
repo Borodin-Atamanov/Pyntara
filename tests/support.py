@@ -19,6 +19,7 @@ from pyntara.config import (
     EngineConfig,
     I2pdServiceSetupConfig,
     LocalVaultSetupConfig,
+    SshClientSetupConfig,
     SshDaemonSetupConfig,
     SshDirective,
     SwapfileServiceInstallConfig,
@@ -40,6 +41,121 @@ class FakeProc:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+
+
+def augtool_fake_run(command: list[str], input_: str | None) -> FakeProc:
+    """Simulate augtool --noautoload over the real drop-in file.
+
+    The fake implements the subset of augeas the tasks use: a manual
+    load entry, load, print, set, rm and save. The tree is keyed by
+    augeas path without [index] suffixes; nested nodes (the Host block
+    of ssh_config) keep their parent-child paths, and save writes
+    indented lines for them. The lens is not needed, because the file
+    layout is derived from the indentation.
+    """
+
+    script = input_ or ""
+    incl: str | None = None
+    tree: dict[str, str] = {}
+    out_lines: list[str] = []
+    base = ""
+    last_top: str | None = None
+    for raw in script.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("set "):
+            parts = line.split(" ", 2)
+            path, value = parts[1], parts[2].strip('"')
+            if path.startswith("/augeas/load/"):
+                if path.endswith("/incl"):
+                    incl = value
+                    base = f"/files{incl}"
+                continue
+            path = path.replace("[last()]", "")
+            if path.endswith("/#comment"):
+                existing = sorted(
+                    node for node in tree if node.startswith(base + "/#comment")
+                )
+                if existing:
+                    tree[existing[0]] = value
+                else:
+                    tree[path] = value
+            else:
+                tree[path] = value
+        elif line.startswith("rm "):
+            path = line.split(" ", 1)[1]
+            for node in [
+                node
+                for node in tree
+                if node == path or node.startswith(path + "/")
+            ]:
+                del tree[node]
+            out_lines.append(f"rm : {path}")
+        elif line == "load":
+            tree = {}
+            last_top = None
+            if incl:
+                file_path = Path(incl)
+                if file_path.is_file():
+                    comment_count = 0
+                    for text in file_path.read_text(encoding="utf-8").splitlines():
+                        if not text.strip():
+                            continue
+                        indented = text != text.lstrip()
+                        stripped = text.strip()
+                        if stripped.startswith("#"):
+                            comment_count += 1
+                            node = (
+                                f"{base}/#comment"
+                                if comment_count == 1
+                                else f"{base}/#comment[{comment_count}]"
+                            )
+                            tree[node] = stripped[1:].strip()
+                            last_top = node
+                        else:
+                            key, sep, value = stripped.partition(" ")
+                            value = value.strip() if sep else ""
+                            if indented and last_top is not None:
+                                node = f"{last_top}/{key}"
+                            else:
+                                node = f"{base}/{key}"
+                                last_top = node
+                            tree[node] = value
+        elif line.startswith("print "):
+            path = line.split(" ", 1)[1]
+            out_lines.append(path)
+            for node, value in tree.items():
+                if node.startswith(path + "/"):
+                    out_lines.append(f'{node} = "{value}"')
+        elif line == "save":
+            if incl:
+                file_path = Path(incl)
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                content: list[str] = []
+                for node, value in tree.items():
+                    suffix = node[len(base):].lstrip("/")
+                    if "/" in suffix:
+                        continue
+                    label = suffix.split("[", 1)[0]
+                    if label.startswith("#"):
+                        content.append(f"# {value}")
+                        continue
+                    children = [
+                        (child, child_value)
+                        for child, child_value in tree.items()
+                        if child.startswith(node + "/")
+                    ]
+                    if children:
+                        content.append(f"{label} {value}")
+                        for child, child_value in children:
+                            child_label = child[len(node):].lstrip("/").split("[", 1)[0]
+                            content.append(f"\t{child_label} {child_value}")
+                    else:
+                        content.append(f"{label} {value}")
+                file_path.write_text("\n".join(content) + "\n", encoding="utf-8")
+            out_lines.append("Saved 1 file(s)")
+    return FakeProc(0, "\n".join(out_lines) + "\n")
 
 
 def make_config(
@@ -124,6 +240,14 @@ def make_config(
     ssh_daemon_directives: tuple[SshDirective, ...] = (
         SshDirective(name="PubkeyAuthentication", value="yes"),
     ),
+    ssh_client_ssh_config_path: Path = Path("/etc/ssh/ssh_config"),
+    ssh_client_ssh_config_dropin_path: Path = Path(
+        "/etc/ssh/ssh_config.d/pyntara.conf"
+    ),
+    ssh_client_dropin_file_mode: int = 0o644,
+    ssh_client_directives: tuple[SshDirective, ...] = (SshDirective(
+        name="AddressFamily", value="any"
+    ),),
     system_metrics_backoff_base_seconds: int = 2,
     system_metrics_backoff_multiplier: int = 2,
     system_metrics_backoff_max_seconds: int = 14400,
@@ -277,6 +401,12 @@ def make_config(
             root_ssh_dir=ssh_daemon_root_ssh_dir,
             users=ssh_daemon_users,
             directives=ssh_daemon_directives,
+        ),
+        ssh_client_setup=SshClientSetupConfig(
+            ssh_config_path=ssh_client_ssh_config_path,
+            ssh_config_dropin_path=ssh_client_ssh_config_dropin_path,
+            dropin_file_mode=ssh_client_dropin_file_mode,
+            directives=ssh_client_directives,
         ),
         system_metrics_setup=SystemMetricsSetupConfig(
             backoff_base_seconds=system_metrics_backoff_base_seconds,

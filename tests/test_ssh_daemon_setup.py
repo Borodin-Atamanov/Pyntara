@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import augtool_fake_run, make_config, make_context
 
 from pyntara.config import SshDirective
 from pyntara.context import Context
@@ -159,92 +159,6 @@ def _write_dropin_as_desired(ctx: Context) -> None:
     cfg.sshd_config_dropin_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _augtool_fake_run(command: list[str], input: str | None) -> _FakeProc:
-    """Simulate augtool --noautoload over the real drop-in file.
-
-    The fake implements the subset of augeas the task uses: a manual
-    load entry, load, print, set, rm and save. The tree is keyed by
-    augeas path and mirrors the real lens behavior for the flat
-    sshd_config format.
-    """
-
-    script = input or ""
-    incl: str | None = None
-    tree: dict[str, str] = {}
-    out_lines: list[str] = []
-    base = ""
-    for raw in script.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("set "):
-            parts = line.split(" ", 2)
-            path, value = parts[1], parts[2].strip('"')
-            if path.startswith("/augeas/load/"):
-                if path.endswith("/incl"):
-                    incl = value
-                    base = f"/files{incl}"
-                continue
-            if path.endswith("/#comment"):
-                existing = sorted(
-                    node for node in tree if node.startswith(base + "/#comment")
-                )
-                if existing:
-                    tree[existing[0]] = value
-                else:
-                    tree[f"{base}/#comment"] = value
-            else:
-                tree[path] = value
-        elif line.startswith("rm "):
-            path = line.split(" ", 1)[1]
-            for node in [
-                node for node in tree if node == path or node.startswith(path + "[")
-            ]:
-                del tree[node]
-            out_lines.append(f"rm : {path}")
-        elif line == "load":
-            tree = {}
-            if incl:
-                file_path = Path(incl)
-                if file_path.is_file():
-                    comment_count = 0
-                    for text in file_path.read_text(encoding="utf-8").splitlines():
-                        stripped = text.strip()
-                        if not stripped:
-                            continue
-                        if stripped.startswith("#"):
-                            comment_count += 1
-                            node = (
-                                f"{base}/#comment"
-                                if comment_count == 1
-                                else f"{base}/#comment[{comment_count}]"
-                            )
-                            tree[node] = stripped[1:].strip()
-                        else:
-                            key, sep, value = stripped.partition(" ")
-                            tree[f"{base}/{key}"] = value.strip() if sep else ""
-        elif line.startswith("print "):
-            path = line.split(" ", 1)[1]
-            out_lines.append(path)
-            for node, value in tree.items():
-                if node.startswith(path + "/"):
-                    out_lines.append(f'{node} = "{value}"')
-        elif line == "save":
-            if incl:
-                file_path = Path(incl)
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                content: list[str] = []
-                for node, value in tree.items():
-                    label = node.rsplit("/", 1)[-1].split("[", 1)[0]
-                    if label.startswith("#"):
-                        content.append(f"# {value}")
-                    else:
-                        content.append(f"{label} {value}")
-                file_path.write_text("\n".join(content) + "\n", encoding="utf-8")
-            out_lines.append("Saved 1 file(s)")
-    return _FakeProc(0, "\n".join(out_lines) + "\n")
-
-
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -279,7 +193,7 @@ def _install_fake(
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         nonlocal install_attempts, started
         if command[0] == "augtool":
-            return _augtool_fake_run(command, kwargs.get("input"))
+            return augtool_fake_run(command, kwargs.get("input"))
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg-query":

@@ -350,6 +350,67 @@ value = "yes"
 name = "AddressFamily"
 value = "any"
 
+[ssh_client_setup]
+# System-wide SSH client parameters (docs/spec/ssh-client-setup.md). The
+# task patches the client configuration through a drop-in, never through
+# ssh_config itself, which is only checked for an Include directive that
+# pulls the drop-in directory in. Directives are written through augeas
+# under the Host * block, so they apply to every connection; a directive
+# that is already present with the same value is left untouched, a
+# directive with a different value is updated, and a directive that is
+# no longer configured is removed.
+# Main SSH client configuration file, never rewritten by the task.
+ssh_config_path = "/etc/ssh/ssh_config"
+# Drop-in configuration file the task owns, written through augeas under
+# the Host * block.
+ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"
+# File mode of the rendered drop-in, as an octal string.
+dropin_file_mode = "0644"
+
+[[ssh_client_setup.directives]]
+name = "AddressFamily"
+value = "any"
+
+[[ssh_client_setup.directives]]
+name = "CheckHostIP"
+value = "no"
+
+[[ssh_client_setup.directives]]
+name = "Compression"
+value = "yes"
+
+[[ssh_client_setup.directives]]
+name = "ConnectionAttempts"
+value = "17"
+
+[[ssh_client_setup.directives]]
+name = "ConnectTimeout"
+value = "31"
+
+[[ssh_client_setup.directives]]
+name = "NumberOfPasswordPrompts"
+value = "5"
+
+[[ssh_client_setup.directives]]
+name = "PasswordAuthentication"
+value = "yes"
+
+[[ssh_client_setup.directives]]
+name = "TCPKeepAlive"
+value = "yes"
+
+[[ssh_client_setup.directives]]
+name = "ServerAliveInterval"
+value = "61"
+
+[[ssh_client_setup.directives]]
+name = "ServerAliveCountMax"
+value = "17"
+
+[[ssh_client_setup.directives]]
+name = "PreferredAuthentications"
+value = "publickey,password"
+
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The
 # deployed service reads this section through the same config loader as
@@ -675,6 +736,12 @@ modes = ["minimal", "server", "desktop"]
 name = "ssh_daemon_setup"
 description = "Install and configure SSH service with passwordless login keys."
 depends = ["users_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "ssh_client_setup"
+description = "Configure system-wide SSH client defaults through a drop-in."
+depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]

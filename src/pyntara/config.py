@@ -420,6 +420,25 @@ class SshDaemonSetupConfig:
 
 
 @dataclass(frozen=True)
+class SshClientSetupConfig:
+    """System-wide SSH client parameters for the ssh_client_setup task.
+
+    The client configuration is patched through the drop-in at
+    ssh_config_dropin_path, never through ssh_config_path itself, which
+    is only checked for an Include directive that pulls the drop-in
+    directory in. directives are the ssh_config keywords guaranteed by
+    the task, written through augeas under the Host block so they apply
+    to every connection; dropin_file_mode is the file mode of the
+    drop-in.
+    """
+
+    ssh_config_path: Path
+    ssh_config_dropin_path: Path
+    dropin_file_mode: int
+    directives: tuple[SshDirective, ...]
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     """One task entry from the [[tasks]] section of config.toml."""
 
@@ -441,6 +460,7 @@ class Config:
     zram_service: ZramServiceConfig
     i2pd_service_setup: I2pdServiceSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
+    ssh_client_setup: SshClientSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
@@ -1016,6 +1036,43 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         directives=_ssh_directives_field(
             raw.get("directives"), "ssh_daemon_setup.directives"
         ),
+    )
+
+
+def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
+    """Validate the [ssh_client_setup] table and build the config.
+
+    ssh_config_path and ssh_config_dropin_path are non-empty strings;
+    dropin_file_mode is an octal string; directives are validated by
+    _ssh_directives_field.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[ssh_client_setup] section is missing or not a table"
+        )
+    ssh_config_path = Path(
+        _nonempty_string_field(
+            raw.get("ssh_config_path"), "ssh_client_setup.ssh_config_path"
+        )
+    )
+    ssh_config_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("ssh_config_dropin_path"),
+            "ssh_client_setup.ssh_config_dropin_path",
+        )
+    )
+    dropin_file_mode = _octal_mode_field(
+        raw.get("dropin_file_mode"), "ssh_client_setup.dropin_file_mode"
+    )
+    directives = _ssh_directives_field(
+        raw.get("directives"), "ssh_client_setup.directives"
+    )
+    return SshClientSetupConfig(
+        ssh_config_path=ssh_config_path,
+        ssh_config_dropin_path=ssh_config_dropin_path,
+        dropin_file_mode=dropin_file_mode,
+        directives=directives,
     )
 
 
@@ -1643,6 +1700,7 @@ def load_config(path: Path) -> Config:
             data.get("i2pd_service_setup")
         ),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
+        ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

@@ -94,6 +94,19 @@ value = "yes"
 name = "PermitRootLogin"
 value = "prohibit-password"
 
+[ssh_client_setup]
+ssh_config_path = "/etc/ssh/ssh_config"
+ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"
+dropin_file_mode = "0644"
+
+[[ssh_client_setup.directives]]
+name = "AddressFamily"
+value = "any"
+
+[[ssh_client_setup.directives]]
+name = "CheckHostIP"
+value = "no"
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -284,6 +297,15 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         SshDirective(name="PubkeyAuthentication", value="yes"),
         SshDirective(name="PermitRootLogin", value="prohibit-password"),
     )
+    assert config.ssh_client_setup.ssh_config_path == Path("/etc/ssh/ssh_config")
+    assert config.ssh_client_setup.ssh_config_dropin_path == Path(
+        "/etc/ssh/ssh_config.d/pyntara.conf"
+    )
+    assert config.ssh_client_setup.dropin_file_mode == 0o644
+    assert config.ssh_client_setup.directives == (
+        SshDirective(name="AddressFamily", value="any"),
+        SshDirective(name="CheckHostIP", value="no"),
+    )
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400
@@ -467,6 +489,10 @@ _BASE_CONFIG = (
     '[[ssh_daemon_setup.directives]]\n'
     'name = "PubkeyAuthentication"\n'
     'value = "yes"\n'
+    "[ssh_client_setup]\n"
+    'ssh_config_path = "/etc/ssh/ssh_config"\n'
+    'ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"\n'
+    'dropin_file_mode = "0644"\n'
     "[system_metrics_setup]\n"
     "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
     "backoff_max_seconds = 14400\n"
