@@ -288,7 +288,8 @@ users = ["i", "j", "k"]
 # into the drop-in. Each entry is a keyword and its value; a directive
 # that is already present with the same value is left untouched, a
 # directive with a different value is updated, and a directive that is no
-# longer configured is removed.
+# longer configured is removed. Durations are whole seconds, so the
+# sshd -T comparison stays exact.
 [[ssh_daemon_setup.directives]]
 name = "Port"
 value = "30222"
@@ -304,6 +305,50 @@ value = "prohibit-password"
 [[ssh_daemon_setup.directives]]
 name = "PasswordAuthentication"
 value = "no"
+
+[[ssh_daemon_setup.directives]]
+name = "X11Forwarding"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "UseDNS"
+value = "no"
+
+[[ssh_daemon_setup.directives]]
+name = "PermitTunnel"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "MaxStartups"
+value = "11:30:151"
+
+[[ssh_daemon_setup.directives]]
+name = "LoginGraceTime"
+value = "360"
+
+[[ssh_daemon_setup.directives]]
+name = "GatewayPorts"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "Compression"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "ClientAliveInterval"
+value = "157"
+
+[[ssh_daemon_setup.directives]]
+name = "ClientAliveCountMax"
+value = "17"
+
+[[ssh_daemon_setup.directives]]
+name = "AllowTcpForwarding"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "AddressFamily"
+value = "any"
 
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The

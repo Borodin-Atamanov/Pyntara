@@ -35,12 +35,37 @@ DEFAULT_DIRECTIVES = (
     SshDirective(name="PubkeyAuthentication", value="yes"),
     SshDirective(name="PermitRootLogin", value="prohibit-password"),
     SshDirective(name="PasswordAuthentication", value="no"),
+    SshDirective(name="X11Forwarding", value="yes"),
+    SshDirective(name="UseDNS", value="no"),
+    SshDirective(name="PermitTunnel", value="yes"),
+    SshDirective(name="MaxStartups", value="11:30:151"),
+    SshDirective(name="LoginGraceTime", value="360"),
+    SshDirective(name="GatewayPorts", value="yes"),
+    SshDirective(name="Compression", value="yes"),
+    SshDirective(name="ClientAliveInterval", value="157"),
+    SshDirective(name="ClientAliveCountMax", value="17"),
+    SshDirective(name="AllowTcpForwarding", value="yes"),
+    SshDirective(name="AddressFamily", value="any"),
 )
 
 SSHD_T_LINES = "".join(
     f"{directive.name.lower()} {directive.value.lower()}\n"
     for directive in DEFAULT_DIRECTIVES
 )
+
+
+def _expected_dropin_content(*, overrides: dict[str, str] | None = None) -> str:
+    """The drop-in exactly as the task renders the default directives.
+
+    A directive in overrides replaces the default value, which lets a
+    test describe a single drift without restating the whole file.
+    """
+
+    lines = [DROPIN_HEADER]
+    for directive in DEFAULT_DIRECTIVES:
+        value = (overrides or {}).get(directive.name, directive.value)
+        lines.append(f"{directive.name} {value}")
+    return "\n".join(lines) + "\n"
 
 
 class _FakePwRecord:
@@ -385,11 +410,7 @@ def test_installs_package_when_missing(
     assert ["ss", "-tlnp"] in calls
     cfg = ctx.config.ssh_daemon_setup
     assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
-        DROPIN_HEADER + "\n"
-        + "Port 30222\n"
-        + "PubkeyAuthentication yes\n"
-        + "PermitRootLogin prohibit-password\n"
-        + "PasswordAuthentication no\n"
+        _expected_dropin_content()
     )
     assert "openssh-server" in (result.message or "")
 
@@ -461,11 +482,7 @@ def test_writes_dropin_and_deploys_keys(
     assert result.changed is True
     cfg = ctx.config.ssh_daemon_setup
     assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
-        DROPIN_HEADER + "\n"
-        + "Port 30222\n"
-        + "PubkeyAuthentication yes\n"
-        + "PermitRootLogin prohibit-password\n"
-        + "PasswordAuthentication no\n"
+        _expected_dropin_content()
     )
     assert (cfg.sshd_config_dropin_path.stat().st_mode & 0o777) == 0o644
     directories = _deploy_keys_directories(ctx, tmp_path)
@@ -611,11 +628,7 @@ def test_reload_when_active_and_non_port_changed(
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
     cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "\n"
-        "Port 30222\n"
-        "PubkeyAuthentication yes\n"
-        "PermitRootLogin prohibit-password\n"
-        "PasswordAuthentication yes\n",
+        _expected_dropin_content(overrides={"PasswordAuthentication": "yes"}),
         encoding="utf-8",
     )
     calls = _install_fake(monkeypatch, active=True)
@@ -638,11 +651,7 @@ def test_port_change_restarts(
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
     cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "\n"
-        "Port 22\n"
-        "PubkeyAuthentication yes\n"
-        "PermitRootLogin prohibit-password\n"
-        "PasswordAuthentication no\n",
+        _expected_dropin_content(overrides={"Port": "22"}),
         encoding="utf-8",
     )
     calls = _install_fake(monkeypatch, active=True)
@@ -739,11 +748,7 @@ def test_reload_failure_is_an_error(
     # path and the failed reload surfaces as an error.
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
     cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "\n"
-        "Port 30222\n"
-        "PubkeyAuthentication yes\n"
-        "PermitRootLogin prohibit-password\n"
-        "PasswordAuthentication yes\n",
+        _expected_dropin_content(overrides={"PasswordAuthentication": "yes"}),
         encoding="utf-8",
     )
     _install_fake(monkeypatch, active=True, reload_fails=True)
@@ -798,26 +803,15 @@ def test_augtool_removes_stale_directive(
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
     cfg.sshd_config_dropin_path.write_text(
-        DROPIN_HEADER + "\n"
-        "Port 30222\n"
-        "PubkeyAuthentication yes\n"
-        "PermitRootLogin prohibit-password\n"
-        "PasswordAuthentication no\n"
-        "X11Forwarding yes\n",
+        _expected_dropin_content() + "Banner /etc/issue.net\n",
         encoding="utf-8",
     )
     _install_fake(monkeypatch, active=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     content = cfg.sshd_config_dropin_path.read_text(encoding="utf-8")
-    assert "X11Forwarding" not in content
-    assert content == (
-        DROPIN_HEADER + "\n"
-        + "Port 30222\n"
-        + "PubkeyAuthentication yes\n"
-        + "PermitRootLogin prohibit-password\n"
-        + "PasswordAuthentication no\n"
-    )
+    assert "Banner" not in content
+    assert content == _expected_dropin_content()
 
 
 def test_include_matches_relative_pattern(
