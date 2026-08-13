@@ -57,6 +57,10 @@ def base_config() -> str:
         "install_retries = 3\n"
         "start_check_attempts = 5\n"
         "start_check_retry_delay_seconds = 1\n"
+        'tunnels_config_path = "/etc/i2pd/tunnels.conf"\n'
+        'tunnel_name = "ssh"\n'
+        'tunnel_host = "127.0.0.1"\n'
+        'tunnel_keys_path = "/etc/i2pd/ssh.dat"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'

@@ -25,3 +25,18 @@ install_retries = 3
 start_check_attempts = 5
 # Pause in seconds between two readiness checks.
 start_check_retry_delay_seconds = 1
+# Owned tunnels configuration file with the SSH server tunnel. The main
+# configuration names it through tunconf, so i2pd reads exactly this
+# file wherever it is placed. The tunnel port is not configured here: it
+# is read from the ssh_daemon_setup Port directive, so the tunnel and
+# the SSH daemon never diverge.
+tunnels_config_path = "/etc/i2pd/tunnels.conf"
+# Section name of the SSH server tunnel in tunnels.conf.
+tunnel_name = "ssh"
+# Local address the tunnel forwards to; the SSH daemon listens on it
+# because the tunnel connects from the same machine.
+tunnel_host = "127.0.0.1"
+# Identity file of the tunnel destination, created by i2pd on the first
+# start. The task computes the .b32.i2p address from this file, so the
+# address survives restarts.
+tunnel_keys_path = "/etc/i2pd/ssh.dat"

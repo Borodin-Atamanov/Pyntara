@@ -16,11 +16,14 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import i2pd_service_setup
 
 I2PD_TEMPLATE = """\
 loglevel = $log_level
+
+tunconf = $tunnels_config_path
 
 [http]
 enabled = $http_enabled
@@ -28,6 +31,22 @@ enabled = $http_enabled
 [socksproxy]
 enabled = $socks_proxy_enabled
 """
+
+TUNNELS_TEMPLATE = """\
+[$tunnel_name]
+type = server
+host = $tunnel_host
+port = $tunnel_port
+keys = $tunnel_keys_path
+"""
+
+# The base64 destination written into the fixture keys file and its
+# expected .b32.i2p address: a fixed vector independent of the task code.
+KEYS_DESTINATION_B64 = (
+    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v"
+    "MDEyMzQ1Njc4OTo7PD0+Pw=="
+)
+KEYS_B32_ADDRESS = "7xvltlhtoebwfpjgldg4tiu6r6ohk76ptaiwaoumir6ndwivceea.b32.i2p"
 
 # The newest release tag; the tests treat the generic asset and the
 # codename-specific asset of this tag as available.
@@ -77,9 +96,17 @@ def _ctx(
     retries: int = 3,
     check_attempts: int = 5,
     codename: str = "resolute",
+    ssh_port: str | None = "30222",
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context with a small safe config; the real file is never touched.
 
+    ssh_port is the sshd Port directive value; None omits the directive,
+    so the missing-port path can be exercised.
+    """
+
+    directives = [SshDirective(name="PubkeyAuthentication", value="yes")]
+    if ssh_port is not None:
+        directives.insert(0, SshDirective(name="Port", value=ssh_port))
     return make_context(
         install_mode="server",
         force_tasks=frozenset({"i2pd_service_setup"}) if force else frozenset(),
@@ -92,9 +119,12 @@ def _ctx(
             swapfile_path=tmp_path / "swapfile",
             i2pd_download_dir=tmp_path / "download",
             i2pd_config_path=tmp_path / "etc" / "i2pd" / "i2pd.conf",
+            i2pd_tunnels_config_path=tmp_path / "etc" / "i2pd" / "tunnels.conf",
+            i2pd_tunnel_keys_path=tmp_path / "etc" / "i2pd" / "ssh.dat",
             i2pd_install_retries=retries,
             i2pd_start_check_attempts=check_attempts,
             i2pd_start_check_retry_delay_seconds=0.0,
+            ssh_daemon_directives=tuple(directives),
         ),
     )
 
@@ -116,7 +146,18 @@ def _install_fixtures(
     template.parent.mkdir(parents=True)
     template.write_text(I2PD_TEMPLATE, encoding="utf-8")
     monkeypatch.setattr(i2pd_service_setup, "TEMPLATE_PATH", template)
-    return {"os_release": os_release, "template": template}
+    tunnels_template = (
+        tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf"
+    )
+    tunnels_template.write_text(TUNNELS_TEMPLATE, encoding="utf-8")
+    monkeypatch.setattr(
+        i2pd_service_setup, "TUNNELS_TEMPLATE_PATH", tunnels_template
+    )
+    return {
+        "os_release": os_release,
+        "template": template,
+        "tunnels_template": tunnels_template,
+    }
 
 
 def _install_fake(
@@ -189,25 +230,38 @@ def _install_fake(
     return calls
 
 
-def _write_config_as_rendered(ctx: Context) -> None:
-    """Write the rendered configuration into the fixture config path."""
+def _write_state_as_rendered(ctx: Context) -> None:
+    """Write both configs as rendered and the tunnel keys file."""
 
     cfg = ctx.config.i2pd_service_setup
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(
         i2pd_service_setup._render_config(cfg), encoding="utf-8"
     )
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
+        ctx.config.ssh_daemon_setup.directives
+    )
+    cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.tunnels_config_path.write_text(
+        i2pd_service_setup._render_tunnels_config(cfg, ssh_port),
+        encoding="utf-8",
+    )
+    cfg.tunnel_keys_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.tunnel_keys_path.write_text(
+        f"{KEYS_DESTINATION_B64}\n", encoding="utf-8"
+    )
 
 
 def test_already_configured_skips(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The installed version equals the newest release, the configuration
-    # matches the rendered template and the service is enabled and active:
-    # the task skips and runs only the status queries.
+    # The installed version equals the newest release, both configuration
+    # files match their renders, the tunnel keys file exists and the
+    # service is enabled and active: the task skips and runs only the
+    # status queries.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    _write_config_as_rendered(ctx)
+    _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version=TAG, enabled=True, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -277,7 +331,7 @@ def test_update_reinstalls_and_restarts(
     # restarts the running service.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    _write_config_as_rendered(ctx)
+    _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version="2.60.0", active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -357,7 +411,7 @@ def test_force_rewrites_config_and_restarts(
     # matching version is not reinstalled.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, force=True)
-    _write_config_as_rendered(ctx)
+    _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -486,11 +540,178 @@ def test_select_asset_prioritizes_codename() -> None:
 
 
 def test_render_config_bool_spelling() -> None:
-    # Booleans render as the lowercase true/false spelling i2pd accepts.
+    # Booleans render as the lowercase true/false spelling i2pd accepts;
+    # the main configuration names the owned tunnels file through tunconf.
     ctx = _ctx(Path("/tmp"))
     config = i2pd_service_setup._render_config(
         ctx.config.i2pd_service_setup
     )
     assert "loglevel = warn\n" in config
+    assert (
+        f"tunconf = {ctx.config.i2pd_service_setup.tunnels_config_path}\n"
+        in config
+    )
     assert "[http]\nenabled = false\n" in config
     assert "[socksproxy]\nenabled = true\n" in config
+
+
+def test_render_tunnels_config_uses_ssh_port() -> None:
+    # The tunnels render carries the tunnel section, the forward host and
+    # the sshd port read from the ssh_daemon_setup directives.
+    ctx = _ctx(Path("/tmp"))
+    config = i2pd_service_setup._render_tunnels_config(
+        ctx.config.i2pd_service_setup, 30222
+    )
+    assert "[ssh]\ntype = server\n" in config
+    assert f"host = {ctx.config.i2pd_service_setup.tunnel_host}\n" in config
+    assert "port = 30222\n" in config
+    assert (
+        f"keys = {ctx.config.i2pd_service_setup.tunnel_keys_path}\n"
+        in config
+    )
+
+
+def test_b32_address_from_keys(tmp_path: Path) -> None:
+    # The .b32.i2p address is the unpadded lowercase base32 of the
+    # SHA-256 hash of the base64 destination in the keys file.
+    keys = tmp_path / "ssh.dat"
+    keys.write_text(f"{KEYS_DESTINATION_B64}\n", encoding="utf-8")
+    assert i2pd_service_setup._b32_address(keys) == KEYS_B32_ADDRESS
+
+
+def test_b32_address_missing_or_broken(tmp_path: Path) -> None:
+    # A missing, empty or undecodable keys file yields None instead of an
+    # error, so the task reports that the address is not available yet.
+    missing = tmp_path / "missing.dat"
+    assert i2pd_service_setup._b32_address(missing) is None
+    empty = tmp_path / "empty.dat"
+    empty.write_text("", encoding="utf-8")
+    assert i2pd_service_setup._b32_address(empty) is None
+    broken = tmp_path / "broken.dat"
+    broken.write_text("not base64 at all\n", encoding="utf-8")
+    assert i2pd_service_setup._b32_address(broken) is None
+
+
+def test_first_run_message_without_keys_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # On the first run the keys file does not exist yet: the task writes
+    # the tunnels file, starts the service and reports that the address
+    # appears after the first start.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch, installed_version=None, enabled=False, active=False
+    )
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert "appears after the first start" in (result.message or "")
+    assert ctx.config.i2pd_service_setup.tunnels_config_path.is_file()
+    assert ["systemctl", "start", "i2pd.service"] in calls
+
+
+def test_address_reported_when_keys_exist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # With the keys file present, the task message carries the computed
+    # .b32.i2p address of the tunnel.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path, force=True)
+    _write_state_as_rendered(ctx)
+    calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert KEYS_B32_ADDRESS in (result.message or "")
+    assert ["systemctl", "restart", "i2pd.service"] in calls
+
+
+def test_missing_keys_file_restarts_even_when_configs_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Both configs match their renders but the keys file is absent (i2pd
+    # did not create it): the task restarts the service so i2pd
+    # regenerates the identity, and never reinstalls the matching
+    # version.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.i2pd_service_setup
+    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.config_path.write_text(
+        i2pd_service_setup._render_config(cfg), encoding="utf-8"
+    )
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
+        ctx.config.ssh_daemon_setup.directives
+    )
+    cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.tunnels_config_path.write_text(
+        i2pd_service_setup._render_tunnels_config(cfg, ssh_port),
+        encoding="utf-8",
+    )
+    calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["systemctl", "restart", "i2pd.service"] in calls
+    assert not any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
+    )
+
+
+def test_ssh_port_change_rewrites_tunnels_and_restarts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The sshd Port directive changed from the value the tunnels file was
+    # rendered with: the tunnels file is rewritten with the new port and
+    # the service restarted, without a reinstall.
+    _install_fixtures(monkeypatch, tmp_path)
+    _write_state_as_rendered(_ctx(tmp_path, ssh_port="30222"))
+    ctx = _ctx(tmp_path, ssh_port="30333")
+    calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    tunnels = ctx.config.i2pd_service_setup.tunnels_config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "port = 30333\n" in tunnels
+    assert ["systemctl", "restart", "i2pd.service"] in calls
+    assert not any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
+    )
+
+
+def test_missing_ssh_port_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The ssh_daemon_setup config has no Port directive: the tunnel
+    # cannot target a known port, so the task reports the error and
+    # touches nothing.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path, ssh_port=None)
+    calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is False
+    assert "no Port directive" in (result.error or "")
+    assert not any(
+        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
+        for call in calls
+    )
+
+
+def test_non_numeric_ssh_port_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The sshd Port directive is not a number: the task reports the error
+    # instead of rendering a broken tunnel.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path, ssh_port="abc")
+    calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is False
+    assert "not a number" in (result.error or "")
+    assert not any(
+        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
+        for call in calls
+    )

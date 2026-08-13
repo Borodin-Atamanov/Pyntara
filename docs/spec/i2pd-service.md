@@ -28,9 +28,19 @@ The package is downloaded from the official GitHub release assets of the configu
 
 ## Configuration ownership
 
-The task owns the main configuration file at the configured config_path. It renders the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The template renders only three values: loglevel from log_level and the [http] enabled and [socksproxy] enabled switches from http_enabled and socks_proxy_enabled. Every other option keeps the i2pd built-in default, so a package upgrade that gains new options never conflicts with this file, and dpkg never needs to resolve a conffile conflict during an update.
+The task owns the main configuration file at the configured config_path. It renders the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The template renders only the log level, the tunconf path to the owned tunnels file and the two proxy switches. Every other option keeps the i2pd built-in default, so a package upgrade that gains new options never conflicts with this file, and dpkg never needs to resolve a conffile conflict during an update.
 
 config_path must match the --conf path of the package unit, otherwise the rendered values are ignored. The deb package installs the unit with ExecStart i2pd --conf=/etc/i2pd/i2pd.conf, so the default config_path matches; the value stays configurable because the unit path is a package contract and may change.
+
+The task owns a second file, the tunnels configuration with the SSH server tunnel, described below.
+
+## SSH server tunnel
+
+The machine becomes reachable over I2P without a single manual step after the run: the task publishes an SSH server tunnel. I2P cannot reach a TCP service directly; a server tunnel publishes a local destination on the network and forwards every incoming I2P connection to a local address. The tunnels file lives at the configured tunnels_config_path, and the main configuration names that file through tunconf, so i2pd reads exactly the owned file regardless of where the package default points.
+
+The tunnel forwards to the SSH daemon, and its port is not a parameter anywhere: the task reads the sshd Port directive from the ssh_daemon_setup configuration. The tunnel and the daemon therefore share one source of truth and can never diverge. The forward host is the loopback address, because the daemon runs on the same machine and the tunnel connects locally.
+
+The tunnel identity lives in the keys file at the configured tunnel_keys_path and is created by i2pd on the first start. A missing keys file is not an error, it is the first-run state: the task reports that the address appears after the first start, and the next run reports it. The identity is stable, so the address survives restarts and reconfigurations. The .b32.i2p address is derived from the identity file, not from the journal or the web console: the destination is the first base64 line of the keys file, and the address is the lowercase unpadded base32 of its SHA-256 hash with the .b32.i2p suffix. The task reads the keys file after the service became active and carries the address in its message.
 
 ## Service lifecycle
 
@@ -40,7 +50,7 @@ The package installs the unit with a dedicated system user and a data directory;
 
 ## Idempotency
 
-The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the configuration and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
+The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template, the tunnels file matches its render, the tunnel keys file exists and the service is enabled and active; the task then skips with changed=False. A missing keys file keeps the task active: it restarts the service so i2pd regenerates the identity, and never reinstalls a matching version. Force mode rewrites the configurations and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
 ## Parameters
 
@@ -55,5 +65,9 @@ http_enabled enables the web console
 socks_proxy_enabled enables the SOCKS proxy
 install_retries is the retry count of the package install; total attempts are retries plus one
 start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after start or restart
+tunnels_config_path is the owned tunnels file with the SSH server tunnel
+tunnel_name is the section name of the tunnel in the tunnels file
+tunnel_host is the local address the tunnel forwards to; the tunnel port is not a parameter, it is read from the ssh_daemon_setup Port directive
+tunnel_keys_path is the identity file of the tunnel destination, created by i2pd on the first start
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.

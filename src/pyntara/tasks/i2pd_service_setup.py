@@ -14,18 +14,29 @@ The task owns the main configuration file at the configured config_path:
 it renders the template at task_data/i2pd_service_setup/i2pd.conf and
 rewrites the file whenever the content differs, so manual edits are
 reverted on the next run. The config_path must match the --conf path of
-the package unit, otherwise the rendered values are ignored. The service
+the package unit, otherwise the rendered values are ignored. The task
+also owns the tunnels file at tunnels_config_path with the SSH server
+tunnel: the main configuration names that file through tunconf, so i2pd
+reads exactly it wherever it is placed. The tunnel forwards to the local
+SSH daemon on the port read from the ssh_daemon_setup Port directive,
+never duplicated into the i2pd configuration. The tunnel identity lives
+in the keys file at tunnel_keys_path, created by i2pd on the first
+start; the task computes the .b32.i2p address from that file and reports
+it. The service
 is enabled and started or restarted immediately, and the task waits with
 the configured readiness loop for it to become active, because the
 forking service may take a moment to fork. The task is idempotent: it
 skips when the installed version equals the newest release tag, the
-configuration matches the rendered template and the service is enabled
-and active; force mode rewrites the configuration and restarts the
+configuration matches the rendered template, the tunnels file matches
+its render, the tunnel keys file exists and the service is enabled and
+active; force mode rewrites the configurations and restarts the
 service but never reinstalls a matching version.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import subprocess
@@ -33,7 +44,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import I2pdServiceSetupConfig
+from pyntara.config import I2pdServiceSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -55,6 +66,9 @@ from pyntara.utils import (
 # section 3); the repository layout path is fixed by the repo itself.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "i2pd_service_setup" / "i2pd.conf"
+TUNNELS_TEMPLATE_PATH = (
+    REPO_ROOT / "task_data" / "i2pd_service_setup" / "tunnels.conf"
+)
 OS_RELEASE_PATH = Path("/etc/os-release")
 
 # i2pd prints its version as a dotted triple in the --version output.
@@ -74,9 +88,72 @@ def _render_config(cfg: I2pdServiceSetupConfig) -> str:
     template = Template(TEMPLATE_PATH.read_text(encoding="utf-8"))
     return template.substitute(
         log_level=cfg.log_level,
+        tunnels_config_path=str(cfg.tunnels_config_path),
         http_enabled="true" if cfg.http_enabled else "false",
         socks_proxy_enabled="true" if cfg.socks_proxy_enabled else "false",
     )
+
+
+def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
+    """Render the tunnels template with the SSH server tunnel.
+
+    The tunnel port is the sshd listen port read from the ssh_daemon_setup
+    directives by the caller, so the tunnel always forwards to the daemon
+    that actually runs and the two can never diverge.
+    """
+
+    template = Template(TUNNELS_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return template.substitute(
+        tunnel_name=cfg.tunnel_name,
+        tunnel_host=cfg.tunnel_host,
+        tunnel_port=ssh_port,
+        tunnel_keys_path=str(cfg.tunnel_keys_path),
+    )
+
+
+def _ssh_port_from_ssh_config(directives: tuple[SshDirective, ...]) -> int:
+    """The sshd Port directive value used as the tunnel target port.
+
+    The tunnel forwards to the SSH daemon, so its port must equal the
+    sshd listen port; it is read from the ssh_daemon_setup directives
+    instead of being configured again, so the two can never diverge. A
+    missing or non-numeric Port is an error, because a tunnel to an
+    unknown port is useless.
+    """
+
+    for directive in directives:
+        if directive.name == "Port":
+            try:
+                return int(directive.value)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "ssh_daemon_setup Port directive is not a number: "
+                    f"{directive.value!r}"
+                ) from None
+    raise RuntimeError(
+        "ssh_daemon_setup has no Port directive, cannot create the "
+        "I2P SSH tunnel"
+    )
+
+
+def _b32_address(keys_path: Path) -> str | None:
+    """The .b32.i2p address of the tunnel keys file, or None.
+
+    The i2pd keys file starts with the base64 destination; the I2P base32
+    address is the lowercase unpadded base32 of the SHA-256 hash of the
+    destination, followed by .b32.i2p. A missing file, an empty file or
+    undecodable content yields None, so the caller reports that the
+    address is not available yet instead of failing.
+    """
+
+    try:
+        first_line = keys_path.read_text(encoding="utf-8").splitlines()[0].strip()
+        destination = base64.b64decode(first_line, validate=True)
+    except (OSError, IndexError, ValueError):
+        return None
+    digest = hashlib.sha256(destination).digest()
+    encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
+    return f"{encoded}.b32.i2p"
 
 
 def _release_tag(release: dict[str, object]) -> str:
@@ -280,6 +357,25 @@ def _write_config(cfg: I2pdServiceSetupConfig) -> None:
     ensure_root_owner(cfg.config_path)
 
 
+def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
+    """Current content of the tunnels configuration, or None when absent."""
+
+    try:
+        return tunnels_config_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _write_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> None:
+    """Write the rendered tunnels configuration into the configured path."""
+
+    cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.tunnels_config_path.write_text(
+        _render_tunnels_config(cfg, ssh_port), encoding="utf-8"
+    )
+    ensure_root_owner(cfg.tunnels_config_path)
+
+
 def _wait_active(
     service_name: str,
     attempts: int,
@@ -303,11 +399,15 @@ def task(ctx: Context) -> TaskResult:
     """Install the newest i2pd release and run it as a service; skip when done.
 
     The goal is reached when the installed version equals the newest
-    release tag, the configuration file matches the rendered template
-    and the service is enabled and active; the task then returns
+    release tag, the configuration file matches the rendered template,
+    the tunnels file matches its render, the tunnel keys file exists and
+    the service is enabled and active; the task then returns
     changed=False. Otherwise it downloads the matching .deb asset from
-    the release, installs it, writes the configuration, enables the
-    service, starts or restarts it and waits for it to become active.
+    the release, installs it, writes the configuration and the tunnels
+    file, enables the service, starts or restarts it and waits for it to
+    become active. The .b32.i2p address of the tunnel is read from the
+    keys file and reported; before the first start created the keys file
+    the message says the address appears after the first start.
     Every step is reported to stdout:
     measurements and decisions as single lines that include their
     result, long-running commands as a line before and a line after. Any
@@ -376,6 +476,25 @@ def task(ctx: Context) -> TaskResult:
     config_changed = force or installed_version != tag or (
         current_config != target_config
     )
+    try:
+        ssh_port = _ssh_port_from_ssh_config(
+            ctx.config.ssh_daemon_setup.directives
+        )
+    except RuntimeError as exc:
+        return TaskResult(success=False, error=str(exc))
+    _log(
+        f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
+    )
+
+    target_tunnels = _render_tunnels_config(cfg, ssh_port)
+    current_tunnels = _read_tunnels_config(cfg.tunnels_config_path)
+    tunnels_changed = force or current_tunnels != target_tunnels
+    keys_exist = cfg.tunnel_keys_path.is_file()
+    _log(
+        f"checking tunnel identity file {cfg.tunnel_keys_path}: "
+        f"{'present' if keys_exist else 'missing'}"
+    )
+
     enabled = service_is_enabled(cfg.service_unit_name, timeout)
     active = service_is_active(cfg.service_unit_name, timeout)
     _log(
@@ -385,7 +504,15 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
     needs_install = installed_version != tag
-    if not force and not needs_install and not config_changed and enabled and active:
+    if (
+        not force
+        and not needs_install
+        and not config_changed
+        and not tunnels_changed
+        and keys_exist
+        and enabled
+        and active
+    ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
 
@@ -432,6 +559,19 @@ def task(ctx: Context) -> TaskResult:
         _log("configuration written")
         changed = True
 
+    if tunnels_changed:
+        _log(f"writing tunnels configuration {cfg.tunnels_config_path}")
+        try:
+            _write_tunnels_config(cfg, ssh_port)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"cannot write tunnels configuration: {exc}",
+            )
+        _log("tunnels configuration written")
+        changed = True
+
     if not enabled:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
         try:
@@ -447,7 +587,14 @@ def task(ctx: Context) -> TaskResult:
         _log("service enabled")
         changed = True
 
-    if not active or needs_install or config_changed or force:
+    if (
+        not active
+        or needs_install
+        or config_changed
+        or tunnels_changed
+        or not keys_exist
+        or force
+    ):
         action = "restart" if active else "start"
         _log(
             f"{action}ing service: systemctl {action} {cfg.service_unit_name}"
@@ -484,10 +631,17 @@ def task(ctx: Context) -> TaskResult:
         _log("service active")
         changed = True
 
-    return TaskResult(
-        success=True,
-        changed=changed,
-        message=(
-            f"i2pd {tag} installed, service {cfg.service_unit_name} active"
-        ),
-    )
+    address = _b32_address(cfg.tunnel_keys_path)
+    if address:
+        _log(f"SSH tunnel address: {address}")
+        message = (
+            f"i2pd {tag} installed, service {cfg.service_unit_name} active, "
+            f"SSH tunnel address {address}"
+        )
+    else:
+        message = (
+            f"i2pd {tag} installed, service {cfg.service_unit_name} active, "
+            "SSH tunnel address appears after the first start"
+        )
+
+    return TaskResult(success=True, changed=changed, message=message)

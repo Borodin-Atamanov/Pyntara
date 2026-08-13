@@ -31,6 +31,16 @@ class I2pdServiceSetupConfig:
     plus one; start_check_attempts and start_check_retry_delay_seconds
     bound the loop that waits for the service to become active after a
     start, because a forking service may take a moment to fork.
+    tunnels_config_path is the owned tunnels file the task renders with
+    the SSH server tunnel and names from the main configuration through
+    tunconf, so i2pd reads exactly this file regardless of the package
+    default; tunnel_name is the section name of the tunnel;
+    tunnel_host is the local address the tunnel forwards to;
+    tunnel_keys_path is the identity file of the tunnel destination,
+    created by i2pd on the first start, from which the task computes the
+    .b32.i2p address. The tunnel port is not configured here: it is read
+    from the ssh_daemon_setup Port directive, so the tunnel and the SSH
+    daemon can never diverge.
     """
 
     github_repo: str
@@ -43,6 +53,10 @@ class I2pdServiceSetupConfig:
     install_retries: int
     start_check_attempts: int
     start_check_retry_delay_seconds: float
+    tunnels_config_path: Path
+    tunnel_name: str
+    tunnel_host: str
+    tunnel_keys_path: Path
 
 
 def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
@@ -53,7 +67,9 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     http_enabled and socks_proxy_enabled are strict booleans;
     install_retries and start_check_attempts are positive integers;
     start_check_retry_delay_seconds is positive, so the readiness loop
-    always waits between attempts.
+    always waits between attempts. tunnels_config_path and
+    tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
+    are non-empty strings.
     """
 
     if not isinstance(raw, dict):
@@ -108,6 +124,22 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         raise ConfigError(
             "i2pd_service_setup.start_check_retry_delay_seconds must be positive"
         )
+    tunnels_config_path = Path(
+        _nonempty_string_field(
+            raw.get("tunnels_config_path"), "i2pd_service_setup.tunnels_config_path"
+        )
+    )
+    tunnel_name = _nonempty_string_field(
+        raw.get("tunnel_name"), "i2pd_service_setup.tunnel_name"
+    )
+    tunnel_host = _nonempty_string_field(
+        raw.get("tunnel_host"), "i2pd_service_setup.tunnel_host"
+    )
+    tunnel_keys_path = Path(
+        _nonempty_string_field(
+            raw.get("tunnel_keys_path"), "i2pd_service_setup.tunnel_keys_path"
+        )
+    )
     return I2pdServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -119,4 +151,8 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        tunnels_config_path=tunnels_config_path,
+        tunnel_name=tunnel_name,
+        tunnel_host=tunnel_host,
+        tunnel_keys_path=tunnel_keys_path,
     )
