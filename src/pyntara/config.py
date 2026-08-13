@@ -872,6 +872,148 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     )
 
 
+def _ssh_directives_field(raw: object, name: str) -> tuple[SshDirective, ...]:
+    """Validate one directive array of the ssh daemon table.
+
+    A missing array means no directives: the drop-in is then removed
+    instead of rendered. Every directive is a table with a unique
+    non-empty keyword and a non-empty value string.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of tables")
+    directives: list[SshDirective] = []
+    seen_names: set[str] = set()
+    for index, directive_raw in enumerate(raw):
+        if not isinstance(directive_raw, dict):
+            raise ConfigError(f"{name} must be an array of tables")
+        directive_name = directive_raw.get("name")
+        if not isinstance(directive_name, str) or not directive_name:
+            raise ConfigError(
+                f"{name}[{index}] name must be a non-empty string"
+            )
+        if directive_name in seen_names:
+            raise ConfigError(
+                f"{name} directive names must be unique: {directive_name}"
+            )
+        seen_names.add(directive_name)
+        value = directive_raw.get("value")
+        if not isinstance(value, str) or not value:
+            raise ConfigError(
+                f"{name}[{index}] value must be a non-empty string"
+            )
+        directives.append(SshDirective(name=directive_name, value=value))
+    return tuple(directives)
+
+
+def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
+    """Validate the [ssh_daemon_setup] table and build the config.
+
+    package_name, service_unit_name, the key file names and the paths
+    are non-empty strings; the timeouts and retries are positive
+    integers; start_check_retry_delay_seconds is positive; the file
+    modes are octal strings; users is a non-empty array of unique
+    non-empty names; directives are validated by
+    _ssh_directives_field.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[ssh_daemon_setup] section is missing or not a table")
+    package_name = _nonempty_string_field(
+        raw.get("package_name"), "ssh_daemon_setup.package_name"
+    )
+    package_status_timeout_seconds = _int_field(
+        raw.get("package_status_timeout_seconds"),
+        "ssh_daemon_setup.package_status_timeout_seconds",
+    )
+    if package_status_timeout_seconds < 1:
+        raise ConfigError(
+            "ssh_daemon_setup.package_status_timeout_seconds must be positive"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "ssh_daemon_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("ssh_daemon_setup.install_retries must be positive")
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "ssh_daemon_setup.service_unit_name"
+    )
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"), "ssh_daemon_setup.start_check_attempts"
+    )
+    if start_check_attempts < 1:
+        raise ConfigError("ssh_daemon_setup.start_check_attempts must be positive")
+    start_check_retry_delay_seconds = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "ssh_daemon_setup.start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "ssh_daemon_setup.start_check_retry_delay_seconds must be positive"
+        )
+    sshd_config_path = Path(
+        _nonempty_string_field(
+            raw.get("sshd_config_path"), "ssh_daemon_setup.sshd_config_path"
+        )
+    )
+    sshd_config_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("sshd_config_dropin_path"),
+            "ssh_daemon_setup.sshd_config_dropin_path",
+        )
+    )
+    private_key_file_name = _nonempty_string_field(
+        raw.get("private_key_file_name"),
+        "ssh_daemon_setup.private_key_file_name",
+    )
+    public_key_file_name = _nonempty_string_field(
+        raw.get("public_key_file_name"), "ssh_daemon_setup.public_key_file_name"
+    )
+
+    def _file_mode_field(name: str) -> int:
+        """Parse one octal file mode string like "0700" into an int."""
+
+        return _octal_mode_field(raw.get(name), f"ssh_daemon_setup.{name}")
+
+    users_raw = raw.get("users")
+    if not isinstance(users_raw, list) or not users_raw:
+        raise ConfigError(
+            "ssh_daemon_setup.users must be a non-empty array of strings"
+        )
+    if not all(isinstance(user, str) and user for user in users_raw):
+        raise ConfigError("ssh_daemon_setup.users must be non-empty strings")
+    if len(set(users_raw)) != len(users_raw):
+        raise ConfigError("ssh_daemon_setup.users must not contain duplicates")
+    return SshDaemonSetupConfig(
+        package_name=package_name,
+        package_status_timeout_seconds=package_status_timeout_seconds,
+        install_retries=install_retries,
+        service_unit_name=service_unit_name,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        sshd_config_path=Path(sshd_config_path),
+        sshd_config_dropin_path=Path(sshd_config_dropin_path),
+        dropin_file_mode=_file_mode_field("dropin_file_mode"),
+        private_key_file_name=private_key_file_name,
+        public_key_file_name=public_key_file_name,
+        private_key_file_mode=_file_mode_field("private_key_file_mode"),
+        public_key_file_mode=_file_mode_field("public_key_file_mode"),
+        authorized_keys_file_mode=_file_mode_field("authorized_keys_file_mode"),
+        ssh_dir_mode=_file_mode_field("ssh_dir_mode"),
+        root_ssh_dir=Path(
+            _nonempty_string_field(
+                raw.get("root_ssh_dir"), "ssh_daemon_setup.root_ssh_dir"
+            )
+        ),
+        users=tuple(users_raw),
+        directives=_ssh_directives_field(
+            raw.get("directives"), "ssh_daemon_setup.directives"
+        ),
+    )
+
+
 def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """Validate the [system_metrics_setup] table and build the config.
 
@@ -1495,6 +1637,7 @@ def load_config(path: Path) -> Config:
         i2pd_service_setup=_i2pd_service_setup_table(
             data.get("i2pd_service_setup")
         ),
+        ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pyntara.config import ConfigError, load_config
+from pyntara.config import ConfigError, SshDirective, load_config
 
 VALID_TOML = """\
 [engine]
@@ -65,6 +65,33 @@ socks_proxy_enabled = true
 install_retries = 3
 start_check_attempts = 5
 start_check_retry_delay_seconds = 1
+
+[ssh_daemon_setup]
+package_name = "openssh-server"
+package_status_timeout_seconds = 30
+install_retries = 3
+service_unit_name = "ssh.service"
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1
+sshd_config_path = "/etc/ssh/sshd_config"
+sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"
+dropin_file_mode = "0644"
+private_key_file_name = "pyntara_mesh"
+public_key_file_name = "pyntara_mesh.pub"
+private_key_file_mode = "0600"
+public_key_file_mode = "0644"
+authorized_keys_file_mode = "0600"
+ssh_dir_mode = "0700"
+root_ssh_dir = "/root/.ssh"
+users = ["i", "j", "k"]
+
+[[ssh_daemon_setup.directives]]
+name = "PubkeyAuthentication"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "PermitRootLogin"
+value = "prohibit-password"
 
 [system_metrics_setup]
 backoff_base_seconds = 2
@@ -232,6 +259,29 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.install_retries == 3
     assert config.i2pd_service_setup.start_check_attempts == 5
     assert config.i2pd_service_setup.start_check_retry_delay_seconds == 1
+    assert config.ssh_daemon_setup.package_name == "openssh-server"
+    assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
+    assert config.ssh_daemon_setup.install_retries == 3
+    assert config.ssh_daemon_setup.service_unit_name == "ssh.service"
+    assert config.ssh_daemon_setup.start_check_attempts == 5
+    assert config.ssh_daemon_setup.start_check_retry_delay_seconds == 1
+    assert config.ssh_daemon_setup.sshd_config_path == Path("/etc/ssh/sshd_config")
+    assert config.ssh_daemon_setup.sshd_config_dropin_path == Path(
+        "/etc/ssh/sshd_config.d/pyntara.conf"
+    )
+    assert config.ssh_daemon_setup.dropin_file_mode == 0o644
+    assert config.ssh_daemon_setup.private_key_file_name == "pyntara_mesh"
+    assert config.ssh_daemon_setup.public_key_file_name == "pyntara_mesh.pub"
+    assert config.ssh_daemon_setup.private_key_file_mode == 0o600
+    assert config.ssh_daemon_setup.public_key_file_mode == 0o644
+    assert config.ssh_daemon_setup.authorized_keys_file_mode == 0o600
+    assert config.ssh_daemon_setup.ssh_dir_mode == 0o700
+    assert config.ssh_daemon_setup.root_ssh_dir == Path("/root/.ssh")
+    assert config.ssh_daemon_setup.users == ("i", "j", "k")
+    assert config.ssh_daemon_setup.directives == (
+        SshDirective(name="PubkeyAuthentication", value="yes"),
+        SshDirective(name="PermitRootLogin", value="prohibit-password"),
+    )
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400
@@ -393,6 +443,27 @@ _BASE_CONFIG = (
     "install_retries = 3\n"
     "start_check_attempts = 5\n"
     "start_check_retry_delay_seconds = 1\n"
+    "[ssh_daemon_setup]\n"
+    'package_name = "openssh-server"\n'
+    "package_status_timeout_seconds = 30\n"
+    "install_retries = 3\n"
+    'service_unit_name = "ssh.service"\n'
+    "start_check_attempts = 5\n"
+    "start_check_retry_delay_seconds = 1\n"
+    'sshd_config_path = "/etc/ssh/sshd_config"\n'
+    'sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"\n'
+    'dropin_file_mode = "0644"\n'
+    'private_key_file_name = "pyntara_mesh"\n'
+    'public_key_file_name = "pyntara_mesh.pub"\n'
+    'private_key_file_mode = "0600"\n'
+    'public_key_file_mode = "0644"\n'
+    'authorized_keys_file_mode = "0600"\n'
+    'ssh_dir_mode = "0700"\n'
+    'root_ssh_dir = "/root/.ssh"\n'
+    'users = ["i", "j", "k"]\n'
+    '[[ssh_daemon_setup.directives]]\n'
+    'name = "PubkeyAuthentication"\n'
+    'value = "yes"\n'
     "[system_metrics_setup]\n"
     "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
     "backoff_max_seconds = 14400\n"
@@ -647,6 +718,87 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "start_check_retry_delay_seconds = 1",
             "start_check_retry_delay_seconds = 0",
+        ),
+        # ssh_daemon_setup package_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'package_name = "openssh-server"', "package_name = 1"
+        ),
+        # ssh_daemon_setup package_name is an empty string
+        _BASE_CONFIG.replace(
+            'package_name = "openssh-server"', 'package_name = ""'
+        ),
+        # ssh_daemon_setup package_status_timeout_seconds is zero
+        _BASE_CONFIG.replace(
+            "package_status_timeout_seconds = 30",
+            "package_status_timeout_seconds = 0",
+        ),
+        # ssh_daemon_setup service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "ssh.service"', "service_unit_name = 1"
+        ),
+        # ssh_daemon_setup service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "ssh.service"', 'service_unit_name = ""'
+        ),
+        # ssh_daemon_setup sshd_config_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'sshd_config_path = "/etc/ssh/sshd_config"', "sshd_config_path = 1"
+        ),
+        # ssh_daemon_setup sshd_config_path is an empty string
+        _BASE_CONFIG.replace(
+            'sshd_config_path = "/etc/ssh/sshd_config"', 'sshd_config_path = ""'
+        ),
+        # ssh_daemon_setup sshd_config_dropin_path is an empty string
+        _BASE_CONFIG.replace(
+            'sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"',
+            'sshd_config_dropin_path = ""',
+        ),
+        # ssh_daemon_setup dropin_file_mode is not octal
+        _BASE_CONFIG.replace('dropin_file_mode = "0644"', 'dropin_file_mode = "zzzz"'),
+        # ssh_daemon_setup private_key_file_name is an empty string
+        _BASE_CONFIG.replace(
+            'private_key_file_name = "pyntara_mesh"', 'private_key_file_name = ""'
+        ),
+        # ssh_daemon_setup public_key_file_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'public_key_file_name = "pyntara_mesh.pub"', "public_key_file_name = 1"
+        ),
+        # ssh_daemon_setup private_key_file_mode is not four digits
+        _BASE_CONFIG.replace('private_key_file_mode = "0600"', 'private_key_file_mode = "600"'),
+        # ssh_daemon_setup public_key_file_mode is a number, not a string
+        _BASE_CONFIG.replace('public_key_file_mode = "0644"', "public_key_file_mode = 644"),
+        # ssh_daemon_setup authorized_keys_file_mode is not octal
+        _BASE_CONFIG.replace(
+            'authorized_keys_file_mode = "0600"', 'authorized_keys_file_mode = "nope"'
+        ),
+        # ssh_daemon_setup ssh_dir_mode is a number, not a string
+        _BASE_CONFIG.replace('ssh_dir_mode = "0700"', "ssh_dir_mode = 700"),
+        # ssh_daemon_setup root_ssh_dir is an empty string
+        _BASE_CONFIG.replace('root_ssh_dir = "/root/.ssh"', 'root_ssh_dir = ""'),
+        # ssh_daemon_setup users is a string, not an array
+        _BASE_CONFIG.replace('users = ["i", "j", "k"]', 'users = "i"'),
+        # ssh_daemon_setup users is an empty array
+        _BASE_CONFIG.replace('users = ["i", "j", "k"]', "users = []"),
+        # ssh_daemon_setup users contains a number, not strings
+        _BASE_CONFIG.replace('users = ["i", "j", "k"]', "users = [1]"),
+        # ssh_daemon_setup users contains an empty string
+        _BASE_CONFIG.replace('users = ["i", "j", "k"]', 'users = [""]'),
+        # ssh_daemon_setup users contains duplicates
+        _BASE_CONFIG.replace('users = ["i", "j", "k"]', 'users = ["i", "i"]'),
+        # ssh_daemon_setup directives is a string, not an array of tables
+        _BASE_CONFIG.replace(
+            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
+            'directives = "PubkeyAuthentication yes"\n',
+        ),
+        # ssh_daemon_setup directive name is an empty string
+        _BASE_CONFIG.replace(
+            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
+            '[[ssh_daemon_setup.directives]]\nname = ""\nvalue = "yes"\n',
+        ),
+        # ssh_daemon_setup directive value is an empty string
+        _BASE_CONFIG.replace(
+            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
+            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = ""\n',
         ),
         # system_metrics_setup backoff_base_seconds is a string
         _BASE_CONFIG.replace(
@@ -1102,6 +1254,34 @@ def test_load_config_deduplicates_components(tmp_path: Path) -> None:
     )
     config = load_config(config_path)
     assert config.add_extra_repos.components == ("universe", "multiverse")
+
+
+def test_load_config_rejects_duplicate_ssh_directive_names(tmp_path: Path) -> None:
+    # A directive keyword must be unique in the ssh_daemon_setup table:
+    # a duplicated keyword would render two lines for the same setting.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        _BASE_CONFIG
+        + '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="directive names must be unique"):
+        load_config(config_path)
+
+
+def test_load_config_accepts_empty_ssh_directives(tmp_path: Path) -> None:
+    # An empty directives list is valid: the drop-in is then removed by
+    # the task instead of rendered.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        _BASE_CONFIG.replace(
+            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
+            "",
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    assert config.ssh_daemon_setup.directives == ()
 
 
 def test_load_config_entry_title_must_exist_in_vault_structure(tmp_path: Path) -> None:

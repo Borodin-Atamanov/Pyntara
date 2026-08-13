@@ -221,6 +221,67 @@ start_check_attempts = 5
 # Pause in seconds between two readiness checks.
 start_check_retry_delay_seconds = 1
 
+[ssh_daemon_setup]
+# SSH server parameters (docs/spec/ssh-daemon-setup.md). The task
+# installs the openssh-server package, runs ssh.service and patches the
+# daemon configuration through a drop-in, never through sshd_config
+# itself. The pre-generated key pair lives in task_data/ssh_daemon_setup/:
+# the private key is encrypted with a strong pass phrase, so it is
+# committed to the repository as is; the task copies both files to root
+# and to every configured user and guarantees the public key in
+# authorized_keys. The directives list is the starting set and will grow
+# later without code changes.
+# Package that provides the SSH server daemon.
+package_name = "openssh-server"
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
+# Name of the systemd service unit of the SSH daemon.
+service_unit_name = "ssh.service"
+# Readiness loop after a start: attempts and pause between two is-active
+# checks. The reload path never waits, because the daemon stays up.
+start_check_attempts = 5
+# Pause in seconds between two readiness checks.
+start_check_retry_delay_seconds = 1
+# Main sshd configuration file. It is only checked for an Include
+# directive that pulls the drop-in directory in, never rewritten.
+sshd_config_path = "/etc/ssh/sshd_config"
+# Drop-in configuration file the task owns. The file is rendered from
+# the directives below and rewritten whenever the content differs; an
+# empty directives list removes the file.
+sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"
+# File mode of the rendered drop-in, as an octal string.
+dropin_file_mode = "0644"
+# Repository key file names under task_data/ssh_daemon_setup/.
+private_key_file_name = "pyntara_mesh"
+public_key_file_name = "pyntara_mesh.pub"
+# File modes of the deployed key files, as octal strings: the private
+# key stays readable only by its owner, the public key is world-readable.
+private_key_file_mode = "0600"
+public_key_file_mode = "0644"
+# File mode of the authorized_keys file, as an octal string.
+authorized_keys_file_mode = "0600"
+# File mode of the .ssh directories created for the users, as an octal
+# string.
+ssh_dir_mode = "0700"
+# Target .ssh directory of the root user.
+root_ssh_dir = "/root/.ssh"
+# Additional users whose .ssh directories receive the keys. A user that
+# does not exist yet is skipped with a log line, so the task stays
+# idempotent while users_setup runs later.
+users = ["i", "j", "k"]
+# sshd_config directives guaranteed by the task, rendered into the
+# drop-in in order. Each entry is a keyword and its value.
+[[ssh_daemon_setup.directives]]
+name = "PubkeyAuthentication"
+value = "yes"
+
+[[ssh_daemon_setup.directives]]
+name = "PermitRootLogin"
+value = "prohibit-password"
+
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The
 # deployed service reads this section through the same config loader as
@@ -543,9 +604,9 @@ depends = ["users_setup", "hostname"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "sshd_server_setup"
+name = "ssh_daemon_setup"
 description = "Install and configure SSH service with passwordless login keys."
-depends = ["local_vault_setup"]
+depends = ["users_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
