@@ -105,3 +105,22 @@ def ensure_root_owner(path: Path) -> None:
 
     if os.geteuid() == 0:
         os.chown(path, 0, 0)
+
+
+def backoff_delay(
+    failures: int, base_seconds: int, multiplier: int, max_seconds: int
+) -> int:
+    """The pause after failures consecutive failed cycles, in seconds.
+
+    The first failed cycle waits base_seconds, every further failure
+    multiplies the pause by the integer multiplier until max_seconds; all
+    values are whole seconds, so no rounding is needed. A call without
+    failures returns the base, so the helper is safe at any counter
+    value. The shared geometric backoff of the System Metrics retry loops
+    (docs/spec/system-metrics.md, sections Schedule and retry and Report
+    collector).
+    """
+
+    if failures < 1:
+        return base_seconds
+    return min(base_seconds * multiplier ** (failures - 1), max_seconds)

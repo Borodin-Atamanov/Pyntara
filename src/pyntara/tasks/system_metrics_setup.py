@@ -12,6 +12,11 @@ system_metrics.service drains the Google Drive channel queue; the ingest
 service system_metrics-ingest.service
 moves committed files from the spool into the queue and is started by the
 path unit system_metrics-ingest.path whenever a file appears in the spool.
+The report collector service system_metrics_collector.service gathers the
+network and system report and is started by the timer
+system_metrics_collector.timer after boot and at the configured daily
+time; all waiting happens inside the collector (docs/spec/system-metrics.md,
+section Report collector).
 All unit names, journal identifiers and the spool path come from config
 (architecture contract section 3). The task generates the thin
 commit_system_metrics command file from the command template with the
@@ -59,6 +64,18 @@ INGEST_SERVICE_TEMPLATE_PATH = (
 )
 INGEST_PATH_TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics-ingest.path"
+)
+COLLECTOR_SERVICE_TEMPLATE_PATH = (
+    REPO_ROOT
+    / "task_data"
+    / "system_metrics_setup"
+    / "system_metrics_collector.service"
+)
+COLLECTOR_TIMER_TEMPLATE_PATH = (
+    REPO_ROOT
+    / "task_data"
+    / "system_metrics_setup"
+    / "system_metrics_collector.timer"
 )
 COMMAND_TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "system_metrics_setup" / "commit_system_metrics.sh"
@@ -211,6 +228,47 @@ def _render_ingest_path_unit(spool_dir: Path) -> str:
     return template.substitute(spool_dir=spool_dir)
 
 
+def _render_collector_service_unit(
+    venv_python: Path, system_config_path: Path, journal_identifier: str
+) -> str:
+    """Render the collector oneshot unit with the ExecStart line substituted.
+
+    The service runs the venv python with the metrics_collect module and
+    the configured system config path as its only argument; the line is
+    fully expanded here, so the template carries no shell variables of
+    its own. The journal identifier comes from the config.
+    """
+
+    command = " ".join(
+        [str(venv_python), "-m", "pyntara.metrics_collect", str(system_config_path)]
+    )
+    template = Template(
+        COLLECTOR_SERVICE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    )
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
+    )
+
+
+def _render_collector_timer_unit(
+    boot_delay_seconds: int, daily_send_time: str, service_unit_name: str
+) -> str:
+    """Render the timer unit that starts the collector after boot and daily.
+
+    The collector does all waiting itself, so the timer only schedules
+    the start: OnBootSec comes from the config and OnCalendar from the
+    normalized daily time of the config (docs/spec/system-metrics.md,
+    section Report collector).
+    """
+
+    template = Template(COLLECTOR_TIMER_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return template.substitute(
+        boot_delay_seconds=boot_delay_seconds,
+        daily_send_time=daily_send_time,
+        service_unit_name=service_unit_name,
+    )
+
+
 def _render_commit_command(
     spool_dir: Path, journal_identifier: str, temp_prefix: str
 ) -> str:
@@ -339,6 +397,8 @@ def task(ctx: Context) -> TaskResult:
     service_name = metrics.service_unit_name
     ingest_service_name = metrics.ingest_service_unit_name
     ingest_path_name = metrics.ingest_path_unit_name
+    collector_service_name = metrics.collector.service_unit_name
+    collector_timer_name = metrics.collector.timer_unit_name
     spool_dir = metrics.spool_dir
     journal_identifier = metrics.service_journal_identifier
 
@@ -349,6 +409,14 @@ def task(ctx: Context) -> TaskResult:
         venv_python, system_config_path, journal_identifier
     )
     ingest_path_unit = _render_ingest_path_unit(spool_dir)
+    collector_service_unit = _render_collector_service_unit(
+        venv_python, system_config_path, metrics.collector.journal_identifier
+    )
+    collector_timer_unit = _render_collector_timer_unit(
+        metrics.collector.boot_delay_seconds,
+        metrics.collector.daily_send_time,
+        collector_service_name,
+    )
     command_content = _render_commit_command(
         spool_dir, metrics.commit_journal_identifier, metrics.spool_temp_prefix
     )
@@ -359,6 +427,10 @@ def task(ctx: Context) -> TaskResult:
     service_unit_ok = _unit_matches(service_name, service_unit)
     ingest_service_unit_ok = _unit_matches(ingest_service_name, ingest_service_unit)
     ingest_path_unit_ok = _unit_matches(ingest_path_name, ingest_path_unit)
+    collector_service_unit_ok = _unit_matches(
+        collector_service_name, collector_service_unit
+    )
+    collector_timer_unit_ok = _unit_matches(collector_timer_name, collector_timer_unit)
     service_enabled = service_is_enabled(service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
@@ -368,6 +440,11 @@ def task(ctx: Context) -> TaskResult:
     _log(
         f"checking spool watcher {ingest_path_name}: "
         f"{'enabled' if path_enabled else 'disabled'}"
+    )
+    timer_enabled = service_is_enabled(collector_timer_name, timeout)
+    _log(
+        f"checking collector timer {collector_timer_name}: "
+        f"{'enabled' if timer_enabled else 'disabled'}"
     )
     command_ok = _command_file_matches(
         command_path, command_content, metrics.command_file_mode
@@ -389,8 +466,11 @@ def task(ctx: Context) -> TaskResult:
         and service_unit_ok
         and ingest_service_unit_ok
         and ingest_path_unit_ok
+        and collector_service_unit_ok
+        and collector_timer_unit_ok
         and service_enabled
         and path_enabled
+        and timer_enabled
         and command_ok
         and spool_ok
     ):
@@ -423,8 +503,16 @@ def task(ctx: Context) -> TaskResult:
         (service_name, service_unit),
         (ingest_service_name, ingest_service_unit),
         (ingest_path_name, ingest_path_unit),
+        (collector_service_name, collector_service_unit),
+        (collector_timer_name, collector_timer_unit),
     )
-    unit_states = (service_unit_ok, ingest_service_unit_ok, ingest_path_unit_ok)
+    unit_states = (
+        service_unit_ok,
+        ingest_service_unit_ok,
+        ingest_path_unit_ok,
+        collector_service_unit_ok,
+        collector_timer_unit_ok,
+    )
     if not all(unit_states) or force:
         for name, content in units:
             if not force and _unit_matches(name, content):
@@ -446,12 +534,13 @@ def task(ctx: Context) -> TaskResult:
         and all(unit_states)
         and service_enabled
         and path_enabled
+        and timer_enabled
     ):
         try:
             _log("reloading systemd: systemctl daemon-reload")
             run_command(["systemctl", "daemon-reload"], timeout=timeout)
             _log("systemd reloaded")
-            for name in (service_name, ingest_path_name):
+            for name in (service_name, ingest_path_name, collector_timer_name):
                 if force or not service_is_enabled(name, timeout):
                     _log(f"enabling unit: systemctl enable {name}")
                     run_command(["systemctl", "enable", name], timeout=timeout)
@@ -475,6 +564,26 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"starting path unit: systemctl start {ingest_path_name}")
                     run_command(["systemctl", "start", ingest_path_name], timeout=timeout)
                     _log("path unit started")
+            timer_active = service_is_active(collector_timer_name, timeout)
+            if force or not collector_timer_unit_ok or not timer_active:
+                if timer_active:
+                    _log(
+                        f"restarting collector timer: systemctl restart "
+                        f"{collector_timer_name}"
+                    )
+                    run_command(
+                        ["systemctl", "restart", collector_timer_name], timeout=timeout
+                    )
+                    _log("collector timer restarted")
+                else:
+                    _log(
+                        f"starting collector timer: systemctl start "
+                        f"{collector_timer_name}"
+                    )
+                    run_command(
+                        ["systemctl", "start", collector_timer_name], timeout=timeout
+                    )
+                    _log("collector timer started")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False, changed=True, error=f"systemd setup failed: {exc}"

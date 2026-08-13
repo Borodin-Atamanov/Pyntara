@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from support import make_config
 
-from pyntara.metrics import _retry_delay, main
+from pyntara.metrics import main
+from pyntara.utils import backoff_delay
 
 
 def test_main_loops_with_base_pause(
@@ -71,13 +72,13 @@ def test_retry_delay_grows_geometrically_and_caps() -> None:
     # With the default base 2 and multiplier 2 the first failure waits 2
     # seconds, every further failure doubles the pause, and the ceiling
     # of 14400 seconds cuts the growth: 2 x 2^13 = 16384 exceeds it.
-    assert _retry_delay(1, 2, 2, 14400) == 2
-    assert _retry_delay(2, 2, 2, 14400) == 4
-    assert _retry_delay(3, 2, 2, 14400) == 8
-    assert _retry_delay(13, 2, 2, 14400) == 8192
-    assert _retry_delay(14, 2, 2, 14400) == 14400
+    assert backoff_delay(1, 2, 2, 14400) == 2
+    assert backoff_delay(2, 2, 2, 14400) == 4
+    assert backoff_delay(3, 2, 2, 14400) == 8
+    assert backoff_delay(13, 2, 2, 14400) == 8192
+    assert backoff_delay(14, 2, 2, 14400) == 14400
     # No failures is a safe degenerate case: the base is returned.
-    assert _retry_delay(0, 2, 2, 14400) == 2
+    assert backoff_delay(0, 2, 2, 14400) == 2
 
 
 def test_main_enters_retry_mode_and_grows_pauses(

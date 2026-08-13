@@ -94,3 +94,30 @@ Queue rules:
 The commit_system_metrics command is a thin generated bash script installed by the system_metrics_setup task. The task renders it from a template at the configured system_metrics_setup.command_path (default /usr/local/bin/commit_system_metrics) with the spool path, the journal identifier and the temporary prefix embedded from the system config, and sets the mode from system_metrics_setup.command_file_mode (default 0755). The command needs no config access and no root privileges, so any user can commit. It takes exactly one file argument, verifies that the file is regular and non-empty, copies it into the spool with mode 0600 and the commit time and publishes it atomically under the original name; every action and every error is mirrored into the system journal under the configured identifier (best effort, like the installer logging). A name collision is an explicit error. The command file is idempotent: the task skips when its content and mode match, rewrites it on change or in force mode, replaces a foreign file on command_path and fails on a directory there.
 
 Current stage: the spool, the thin commit command, the ingest service with its inotify path unit, the queue config, the directory structure, the dispatcher and the Google Drive channel sender are implemented. The service loop dispatches main_outbox entries into the google_script channel and drains it into the web app; sent entries accumulate in main_sent without a rotation policy for now. The Telegram channel and the encrypted PDF generation are the next stages. The retry mode of the Schedule and retry section is implemented: a cycle with send attempts and no successes switches the loop to the single-random-entry retry with the geometric backoff from config.toml; the daily 12:00 send and the once-a-day gate are not yet implemented.
+
+## Report collector
+
+The report collector is a producer of the System Metrics queue. The systemd timer system_metrics_collector.timer starts the oneshot service system_metrics_collector.service after boot and at the configured daily time; the service reads the single system config, runs the configured console commands, keeps their full output, waits up to the retry window for enough network modules to answer, writes the report as network.json into the system temp directory and commits it through the commit_system_metrics command. All waiting happens inside the service, never in systemd: boot_delay_seconds only sets the OnBootSec of the timer, and the daily time comes from daily_send_time of [system_metrics_setup.collector] in config.toml.
+
+The collector configuration lives in [system_metrics_setup.collector]:
+
+1. boot_delay_seconds — seconds after boot before the timer fires the collector service.
+2. daily_send_time — time of day of the daily run, "HH:MM" or "HH:MM:SS", normalized to "HH:MM:SS" for the OnCalendar directive.
+3. threshold_percent — the minimum share of the network modules, in percent from 0 to 100, that must have answered before the report is committed immediately.
+4. retry_base_seconds, retry_multiplier, retry_max_seconds — the geometric backoff of the retries: the first retry waits retry_base_seconds, every further retry multiplies the pause by retry_multiplier until retry_max_seconds, and a pause never exceeds the remaining window; the values are whole seconds and reuse the backoff_delay helper of the send loop.
+5. command_timeout_seconds — the per-command timeout; it also bounds one commit_system_metrics call.
+6. service_unit_name, timer_unit_name, journal_identifier — the unit file names and the journal identifier of the collector.
+7. lock_file_path — the flock lock path. The collector takes a non-blocking exclusive lock for the whole run, so a second instance (a boot run that overran into the daily run) exits without collecting or committing.
+8. report_file_name — the name of the committed report file, network.json by default.
+9. network_modules — the console commands whose full output forms the network section; the readiness percentage counts only these modules.
+10. system_modules — the console commands whose full output forms the system section; their status never affects the readiness.
+
+Every module is a name and a command as an argv array, never a shell line. A module reports ok when the command exited 0 with non-empty output, empty when it exited 0 with empty output, error otherwise (a nonzero exit, a missing executable or a timeout); the full output is kept as is in the report. Unconfigured sources are simply absent from the module lists: sources are added or removed in the config without code changes.
+
+Collection flow:
+
+1. The service collects every module of both lists and computes ready_percent = the share of ok modules among the network modules; an empty network module list is trivially ready at 100 percent.
+2. When ready_percent is at least threshold_percent, the report is committed immediately.
+3. Otherwise the collection is repeated after the geometric backoff until retry_max_seconds have passed since the first collection; when the window is exhausted, the report is committed as is, whatever the readiness. A threshold of 0 commits after the first collection, a threshold of 100 waits for every network module.
+
+The report is a JSON document: generated_at in the project datetime format YYYY-MM-DD-HH-MM-SS, ready_percent, and the network and system module results, each with name, status and the full output. The report is written under report_file_name into the system temp directory with mode 0600, committed through the commit_system_metrics command and the temporary file is removed; a failed commit is journaled at the System Metrics error priority and exits nonzero, so the systemd restart policy retries the collector. The queue keeps the name and the random suffix of the ingest, so daily reports with the same name coexist in the queue.

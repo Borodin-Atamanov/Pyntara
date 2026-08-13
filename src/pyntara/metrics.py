@@ -27,6 +27,7 @@ from pykeepass.exceptions import CredentialsError
 import pyntara.metrics_send
 from pyntara.config import Config, load_config
 from pyntara.logger import log_progress as _log
+from pyntara.utils import backoff_delay
 
 
 def _read_password(path: Path) -> str | None:
@@ -91,24 +92,6 @@ def open_runtime_vault(cfg: Config) -> PyKeePass | None:
         return None
 
 
-def _retry_delay(
-    failures: int, base_seconds: int, multiplier: int, max_seconds: int
-) -> int:
-    """The pause after failures consecutive failed cycles, in seconds.
-
-    The first failed cycle waits base_seconds, every further failure
-    multiplies the pause by the integer multiplier until max_seconds; all
-    values are whole seconds, so no rounding is needed
-    (docs/spec/system-metrics.md, section Schedule and retry). A call
-    without failures returns the base, so the helper is safe at any
-    counter value.
-    """
-
-    if failures < 1:
-        return base_seconds
-    return min(base_seconds * multiplier ** (failures - 1), max_seconds)
-
-
 def main() -> None:
     """Run the dispatch and send loop until the service stops.
 
@@ -140,7 +123,7 @@ def main() -> None:
             failed_cycles = 0
         else:
             failed_cycles += 1
-        pause = _retry_delay(
+        pause = backoff_delay(
             failed_cycles,
             metrics.backoff_base_seconds,
             metrics.backoff_multiplier,

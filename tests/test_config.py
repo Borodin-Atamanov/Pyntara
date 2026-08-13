@@ -87,6 +87,32 @@ google_script_timeout_seconds = 60
 google_script_key_entry_title = "google_script_key"
 google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
 
+[system_metrics_setup.collector]
+boot_delay_seconds = 30
+daily_send_time = "12:00:00"
+threshold_percent = 50
+retry_base_seconds = 2
+retry_multiplier = 2
+retry_max_seconds = 600
+command_timeout_seconds = 15
+service_unit_name = "system_metrics_collector.service"
+timer_unit_name = "system_metrics_collector.timer"
+journal_identifier = "system_metrics_collector"
+lock_file_path = "/run/pyntara/system_metrics_collector.lock"
+report_file_name = "network.json"
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv4"
+command = ["ip", "-4", "addr", "show", "scope", "global"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv6"
+command = ["ip", "-6", "addr", "show", "scope", "global"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "hostname"
+command = ["hostname"]
+
 [vault_structure]
 
 [[vault_structure.entries]]
@@ -230,6 +256,44 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         config.system_metrics_setup.google_script_deployment_url_regex
         == r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
     )
+    assert config.system_metrics_setup.collector.boot_delay_seconds == 30
+    assert config.system_metrics_setup.collector.daily_send_time == "12:00:00"
+    assert config.system_metrics_setup.collector.threshold_percent == 50
+    assert config.system_metrics_setup.collector.retry_base_seconds == 2
+    assert config.system_metrics_setup.collector.retry_multiplier == 2
+    assert config.system_metrics_setup.collector.retry_max_seconds == 600
+    assert config.system_metrics_setup.collector.command_timeout_seconds == 15
+    assert (
+        config.system_metrics_setup.collector.service_unit_name
+        == "system_metrics_collector.service"
+    )
+    assert (
+        config.system_metrics_setup.collector.timer_unit_name
+        == "system_metrics_collector.timer"
+    )
+    assert (
+        config.system_metrics_setup.collector.journal_identifier
+        == "system_metrics_collector"
+    )
+    assert config.system_metrics_setup.collector.lock_file_path == Path(
+        "/run/pyntara/system_metrics_collector.lock"
+    )
+    assert config.system_metrics_setup.collector.report_file_name == "network.json"
+    assert len(config.system_metrics_setup.collector.network_modules) == 2
+    assert config.system_metrics_setup.collector.network_modules[0].name == "ipv4"
+    assert config.system_metrics_setup.collector.network_modules[0].command == (
+        "ip",
+        "-4",
+        "addr",
+        "show",
+        "scope",
+        "global",
+    )
+    assert config.system_metrics_setup.collector.network_modules[1].name == "ipv6"
+    assert config.system_metrics_setup.collector.system_modules[0].name == "hostname"
+    assert config.system_metrics_setup.collector.system_modules[0].command == (
+        "hostname",
+    )
     assert config.local_vault_setup.source_vault_production == Path("secrets/production.vault")
     assert config.local_vault_setup.source_vault_default == Path("secrets/default.vault")
     assert config.local_vault_setup.local_vault_path == Path("/var/lib/pyntara/secrets/pyntara.vault")
@@ -318,6 +382,28 @@ _BASE_CONFIG = (
     "google_script_timeout_seconds = 60\n"
     'google_script_key_entry_title = "google_script_key"\n'
     "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
+    '[system_metrics_setup.collector]\n'
+    "boot_delay_seconds = 30\n"
+    'daily_send_time = "12:00:00"\n'
+    "threshold_percent = 50\n"
+    "retry_base_seconds = 2\n"
+    "retry_multiplier = 2\n"
+    "retry_max_seconds = 600\n"
+    "command_timeout_seconds = 15\n"
+    'service_unit_name = "system_metrics_collector.service"\n'
+    'timer_unit_name = "system_metrics_collector.timer"\n'
+    'journal_identifier = "system_metrics_collector"\n'
+    'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
+    'report_file_name = "network.json"\n'
+    '[[system_metrics_setup.collector.network_modules]]\n'
+    'name = "ipv4"\n'
+    'command = ["ip", "-4", "addr", "show", "scope", "global"]\n'
+    '[[system_metrics_setup.collector.network_modules]]\n'
+    'name = "ipv6"\n'
+    'command = ["ip", "-6", "addr", "show", "scope", "global"]\n'
+    '[[system_metrics_setup.collector.system_modules]]\n'
+    'name = "hostname"\n'
+    'command = ["hostname"]\n'
     '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
     'notes = "Primary salt."\n[[vault_structure.entries]]\n'
     'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -787,6 +873,124 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'modes = ["minimal"]', 'modes = ["minimal", "minimal"]'
         ),
+        # collector section is missing entirely
+        _BASE_CONFIG.replace(
+            "[system_metrics_setup.collector]\n", ""
+        ),
+        # collector boot_delay_seconds is a string, not an integer
+        _BASE_CONFIG.replace(
+            "boot_delay_seconds = 30", 'boot_delay_seconds = "30"'
+        ),
+        # collector boot_delay_seconds is negative
+        _BASE_CONFIG.replace(
+            "boot_delay_seconds = 30", "boot_delay_seconds = -1"
+        ),
+        # collector daily_send_time is a number, not a string
+        _BASE_CONFIG.replace(
+            'daily_send_time = "12:00:00"', "daily_send_time = 1200"
+        ),
+        # collector daily_send_time is not a time of day
+        _BASE_CONFIG.replace(
+            'daily_send_time = "12:00:00"', 'daily_send_time = "25:00:00"'
+        ),
+        # collector daily_send_time misses the minutes
+        _BASE_CONFIG.replace(
+            'daily_send_time = "12:00:00"', 'daily_send_time = "12"'
+        ),
+        # collector daily_send_time has four parts
+        _BASE_CONFIG.replace(
+            'daily_send_time = "12:00:00"', 'daily_send_time = "12:00:00:00"'
+        ),
+        # collector threshold_percent is a string, not an integer
+        _BASE_CONFIG.replace(
+            "threshold_percent = 50", 'threshold_percent = "50"'
+        ),
+        # collector threshold_percent is negative
+        _BASE_CONFIG.replace(
+            "threshold_percent = 50", "threshold_percent = -1"
+        ),
+        # collector threshold_percent is above 100
+        _BASE_CONFIG.replace(
+            "threshold_percent = 50", "threshold_percent = 101"
+        ),
+        # collector retry_base_seconds is a string, not an integer
+        _BASE_CONFIG.replace(
+            "retry_base_seconds = 2", 'retry_base_seconds = "2"'
+        ),
+        # collector retry_base_seconds is zero
+        _BASE_CONFIG.replace("retry_base_seconds = 2", "retry_base_seconds = 0"),
+        # collector retry_multiplier is one: no growth
+        _BASE_CONFIG.replace(
+            "retry_multiplier = 2", "retry_multiplier = 1"
+        ),
+        # collector retry_max_seconds is below the base
+        _BASE_CONFIG.replace(
+            "retry_max_seconds = 600", "retry_max_seconds = 1"
+        ),
+        # collector command_timeout_seconds is a string, not an integer
+        _BASE_CONFIG.replace(
+            "command_timeout_seconds = 15", 'command_timeout_seconds = "15"'
+        ),
+        # collector command_timeout_seconds is zero
+        _BASE_CONFIG.replace(
+            "command_timeout_seconds = 15", "command_timeout_seconds = 0"
+        ),
+        # collector service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "system_metrics_collector.service"',
+            'service_unit_name = ""',
+        ),
+        # collector timer_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'timer_unit_name = "system_metrics_collector.timer"',
+            "timer_unit_name = 1",
+        ),
+        # collector journal_identifier is an empty string
+        _BASE_CONFIG.replace(
+            'journal_identifier = "system_metrics_collector"',
+            'journal_identifier = ""',
+        ),
+        # collector lock_file_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'lock_file_path = "/run/pyntara/system_metrics_collector.lock"',
+            "lock_file_path = 1",
+        ),
+        # collector report_file_name is an empty string
+        _BASE_CONFIG.replace(
+            'report_file_name = "network.json"', 'report_file_name = ""'
+        ),
+        # collector network_modules is a string, not an array
+        _BASE_CONFIG.replace(
+            "[[system_metrics_setup.collector.network_modules]]",
+            'network_modules = "ip"',
+        ),
+        # collector network_modules module is not a table
+        _BASE_CONFIG.replace(
+            "[[system_metrics_setup.collector.network_modules]]",
+            "network_modules = [1]",
+        ),
+        # collector network_modules module name is an empty string
+        _BASE_CONFIG.replace(
+            'name = "ipv4"', 'name = ""'
+        ),
+        # collector network_modules module names are duplicated
+        _BASE_CONFIG.replace(
+            'name = "ipv6"', 'name = "ipv4"'
+        ),
+        # collector network_modules module command is an empty array
+        _BASE_CONFIG.replace(
+            'command = ["ip", "-4", "addr", "show", "scope", "global"]',
+            "command = []",
+        ),
+        # collector network_modules module command contains an empty string
+        _BASE_CONFIG.replace(
+            'command = ["ip", "-4", "addr", "show", "scope", "global"]',
+            'command = ["ip", ""]',
+        ),
+        # collector system_modules module command is missing
+        _BASE_CONFIG.replace(
+            'command = ["hostname"]', ""
+        ),
         # task modes contains a number, not strings
         _BASE_CONFIG.replace('modes = ["minimal"]', "modes = [1]"),
     ],
@@ -943,6 +1147,19 @@ def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
         "google_script_timeout_seconds = 60\n"
         'google_script_key_entry_title = "google_script_key"\n'
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
+        '[system_metrics_setup.collector]\n'
+        "boot_delay_seconds = 30\n"
+        'daily_send_time = "12:00:00"\n'
+        "threshold_percent = 50\n"
+        "retry_base_seconds = 2\n"
+        "retry_multiplier = 2\n"
+        "retry_max_seconds = 600\n"
+        "command_timeout_seconds = 15\n"
+        'service_unit_name = "system_metrics_collector.service"\n'
+        'timer_unit_name = "system_metrics_collector.timer"\n'
+        'journal_identifier = "system_metrics_collector"\n'
+        'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
+        'report_file_name = "network.json"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
@@ -1012,6 +1229,19 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
         "google_script_timeout_seconds = 60\n"
         'google_script_key_entry_title = "google_script_key"\n'
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
+        '[system_metrics_setup.collector]\n'
+        "boot_delay_seconds = 30\n"
+        'daily_send_time = "12:00:00"\n'
+        "threshold_percent = 50\n"
+        "retry_base_seconds = 2\n"
+        "retry_multiplier = 2\n"
+        "retry_max_seconds = 600\n"
+        "command_timeout_seconds = 15\n"
+        'service_unit_name = "system_metrics_collector.service"\n'
+        'timer_unit_name = "system_metrics_collector.timer"\n'
+        'journal_identifier = "system_metrics_collector"\n'
+        'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
+        'report_file_name = "network.json"\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

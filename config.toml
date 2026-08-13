@@ -300,6 +300,103 @@ google_script_key_entry_title = "google_script_key"
 # (single quotes) so the backslashes stay literal.
 google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
 
+[system_metrics_setup.collector]
+# Report collector parameters (docs/spec/system-metrics.md, section
+# Report collector). The collector is a producer of the System Metrics
+# queue: the systemd timer system_metrics_collector.timer starts the
+# oneshot service system_metrics_collector.service after boot and at the
+# configured daily time; the service runs the configured console
+# commands, keeps their full output, waits up to the retry window for
+# threshold_percent of the network modules to answer, writes the report
+# as report_file_name and commits it through the commit_system_metrics
+# command. All waiting happens inside the service, never in systemd:
+# boot_delay_seconds only sets the OnBootSec of the timer.
+# Seconds after boot before the timer fires the collector service.
+boot_delay_seconds = 30
+# Time of day of the daily collector run, "HH:MM" or "HH:MM:SS"; the
+# timer fires every day at this local time.
+daily_send_time = "12:00:00"
+# Minimum share of the configured network modules that must have
+# answered (status ok) before the report is committed immediately, in
+# percent from 0 to 100. Below this share the service retries with the
+# geometric backoff below until the retry window is exhausted, then
+# commits the report as is. 0 commits after the first collection, 100
+# waits for every network module.
+threshold_percent = 50
+# Retry window of the collector: the geometric backoff below repeats
+# collections until retry_max_seconds have passed since the first
+# collection. The first retry waits retry_base_seconds, every further
+# retry multiplies the pause by retry_multiplier until
+# retry_max_seconds; all values are whole seconds.
+retry_base_seconds = 2
+retry_multiplier = 2
+retry_max_seconds = 600
+# Seconds a single console command may run before it is killed; the
+# same timeout bounds one commit_system_metrics call.
+command_timeout_seconds = 15
+# Name of the oneshot collector service unit file.
+service_unit_name = "system_metrics_collector.service"
+# Name of the collector timer unit file.
+timer_unit_name = "system_metrics_collector.timer"
+# Journal identifier of the collector service.
+journal_identifier = "system_metrics_collector"
+# Path of the flock lock file. The collector takes a non-blocking
+# exclusive lock for the whole run, so two instances (a boot run that
+# overran into the daily run) never commit simultaneously; the second
+# instance exits.
+lock_file_path = "/run/pyntara/system_metrics_collector.lock"
+# Name of the committed report file. The report is written under this
+# name into the system temp directory and committed through the
+# commit_system_metrics command; the queue keeps the name and the random
+# suffix of the ingest, so daily reports with the same name coexist in
+# the queue.
+report_file_name = "network.json"
+
+# Network modules: console commands whose full output forms the network
+# section of the report. ready_percent counts only these modules, so the
+# collector waits only for addresses. A module reports ok when the
+# command exited 0 with non-empty output, empty when it exited 0 with
+# empty output, error otherwise (nonzero exit, missing command, timeout).
+# Commands are argv arrays, never shell lines. Unconfigured sources are
+# simply absent: add or remove modules here without code changes. Future
+# candidates, commented out until the services are installed:
+# [[system_metrics_setup.collector.network_modules]]
+# name = "tor_onion"
+# command = ["cat", "/var/lib/tor/hidden_service/hostname"]
+# [[system_metrics_setup.collector.network_modules]]
+# name = "yggdrasil"
+# command = ["yggdrasilctl", "getSelf"]
+# [[system_metrics_setup.collector.network_modules]]
+# name = "cloudflared"
+# command = ["cat", "/home/i/.cloudflared/config.yml"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv4"
+command = ["ip", "-4", "addr", "show", "scope", "global"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv6"
+command = ["ip", "-6", "addr", "show", "scope", "global"]
+
+# System modules: console commands whose full output forms the system
+# section of the report. Their status never affects ready_percent and
+# the waiting.
+[[system_metrics_setup.collector.system_modules]]
+name = "hostname"
+command = ["hostname"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "memory"
+command = ["free", "-h"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "cpu"
+command = ["lscpu"]
+
+[[system_metrics_setup.collector.system_modules]]
+name = "disk"
+command = ["df", "-h", "/"]
+
 # Vault structure: the single source of truth for the KeePass database
 # layout. Both secrets/default.vault and secrets/production.vault follow
 # this structure, and any tooling that creates or inspects them must read

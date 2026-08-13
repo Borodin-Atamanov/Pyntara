@@ -1,0 +1,10 @@
+[Unit]
+Description=System Metrics report collector timer
+
+[Timer]
+OnBootSec=$boot_delay_seconds
+OnCalendar=*-*-* $daily_send_time
+Unit=$service_unit_name
+
+[Install]
+WantedBy=timers.target

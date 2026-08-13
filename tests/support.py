@@ -14,10 +14,12 @@ from pathlib import Path
 from pyntara.config import (
     AddExtraReposConfig,
     CliToolsConfig,
+    CollectorModuleConfig,
     Config,
     EngineConfig,
     LocalVaultSetupConfig,
     SwapfileServiceInstallConfig,
+    SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
     TaskConfig,
     VaultEntry,
@@ -119,6 +121,28 @@ def make_config(
     system_metrics_google_script_deployment_url_regex: str = (
         r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
     ),
+    system_metrics_collector_boot_delay_seconds: int = 30,
+    system_metrics_collector_daily_send_time: str = "12:00:00",
+    system_metrics_collector_threshold_percent: int = 50,
+    system_metrics_collector_retry_base_seconds: int = 2,
+    system_metrics_collector_retry_multiplier: int = 2,
+    system_metrics_collector_retry_max_seconds: int = 600,
+    system_metrics_collector_command_timeout_seconds: int = 15,
+    system_metrics_collector_service_unit_name: str = (
+        "system_metrics_collector.service"
+    ),
+    system_metrics_collector_timer_unit_name: str = (
+        "system_metrics_collector.timer"
+    ),
+    system_metrics_collector_journal_identifier: str = (
+        "system_metrics_collector"
+    ),
+    system_metrics_collector_lock_file_path: Path = Path(
+        "/run/pyntara/system_metrics_collector.lock"
+    ),
+    system_metrics_collector_report_file_name: str = "network.json",
+    system_metrics_collector_network_modules: tuple[CollectorModuleConfig, ...] = (),
+    system_metrics_collector_system_modules: tuple[CollectorModuleConfig, ...] = (),
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -218,6 +242,22 @@ def make_config(
             google_script_key_entry_title=system_metrics_google_script_key_entry_title,
             google_script_deployment_url_regex=(
                 system_metrics_google_script_deployment_url_regex
+            ),
+            collector=SystemMetricsCollectorConfig(
+                boot_delay_seconds=system_metrics_collector_boot_delay_seconds,
+                daily_send_time=system_metrics_collector_daily_send_time,
+                threshold_percent=system_metrics_collector_threshold_percent,
+                retry_base_seconds=system_metrics_collector_retry_base_seconds,
+                retry_multiplier=system_metrics_collector_retry_multiplier,
+                retry_max_seconds=system_metrics_collector_retry_max_seconds,
+                command_timeout_seconds=system_metrics_collector_command_timeout_seconds,
+                service_unit_name=system_metrics_collector_service_unit_name,
+                timer_unit_name=system_metrics_collector_timer_unit_name,
+                journal_identifier=system_metrics_collector_journal_identifier,
+                lock_file_path=system_metrics_collector_lock_file_path,
+                report_file_name=system_metrics_collector_report_file_name,
+                network_modules=system_metrics_collector_network_modules,
+                system_modules=system_metrics_collector_system_modules,
             ),
         ),
         vault_structure=VaultStructureConfig(

@@ -219,6 +219,61 @@ class SystemMetricsSetupConfig:
     google_script_timeout_seconds: int
     google_script_key_entry_title: str
     google_script_deployment_url_regex: str
+    collector: SystemMetricsCollectorConfig
+
+
+@dataclass(frozen=True)
+class CollectorModuleConfig:
+    """One console command of the report collector.
+
+    name identifies the module in the report; command is the argv of the
+    command without a shell, so no command line is ever interpreted.
+    The collector runs the command, keeps its full output and classifies
+    the result as ok, empty or error
+    (docs/spec/system-metrics.md, section Report collector).
+    """
+
+    name: str
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SystemMetricsCollectorConfig:
+    """Report collector parameters from [system_metrics_setup.collector].
+
+    The collector is a producer of the System Metrics queue: the systemd
+    timer (timer_unit_name) starts the oneshot service
+    (service_unit_name) after boot and at daily_send_time every day; the
+    service runs the configured console commands, keeps their full
+    output, waits up to the retry window for threshold_percent of the
+    network modules to answer, writes the report as report_file_name and
+    commits it through the commit_system_metrics command. All waiting
+    happens inside the service: boot_delay_seconds only sets the OnBootSec
+    of the timer; retry_base_seconds, retry_multiplier and
+    retry_max_seconds are the geometric backoff of the retries, in whole
+    seconds; command_timeout_seconds bounds a single console command and
+    one commit call. journal_identifier is the journal identifier of the
+    collector service; lock_file_path is the flock lock that keeps a
+    second instance from committing; network_modules and system_modules
+    are the console commands whose full output forms the report, the
+    readiness percentage counting only the network modules
+    (docs/spec/system-metrics.md, section Report collector).
+    """
+
+    boot_delay_seconds: int
+    daily_send_time: str
+    threshold_percent: int
+    retry_base_seconds: int
+    retry_multiplier: int
+    retry_max_seconds: int
+    command_timeout_seconds: int
+    service_unit_name: str
+    timer_unit_name: str
+    journal_identifier: str
+    lock_file_path: Path
+    report_file_name: str
+    network_modules: tuple[CollectorModuleConfig, ...]
+    system_modules: tuple[CollectorModuleConfig, ...]
 
 
 @dataclass(frozen=True)
@@ -855,7 +910,189 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_timeout_seconds=google_script_timeout_seconds,
         google_script_key_entry_title=google_script_key_entry_title,
         google_script_deployment_url_regex=google_script_deployment_url_regex,
+        collector=_system_metrics_collector_table(raw.get("collector")),
     )
+
+
+def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig:
+    """Validate the [system_metrics_setup.collector] table and build the
+    config.
+
+    The section is mandatory. boot_delay_seconds is a non-negative
+    integer; daily_send_time is a time of day "HH:MM" or "HH:MM:SS"
+    normalized to "HH:MM:SS"; threshold_percent is an integer between 0
+    and 100; retry_base_seconds is positive, retry_multiplier is at
+    least 2 and retry_max_seconds is not below retry_base_seconds;
+    command_timeout_seconds is positive; the unit names, the journal
+    identifier, the report file name are non-empty strings and
+    lock_file_path is a non-empty string. The module arrays are
+    optional; every module is a table with a unique non-empty name and a
+    non-empty command array of non-empty strings.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[system_metrics_setup.collector] section is missing or not a table"
+        )
+    boot_delay_seconds = _int_field(
+        raw.get("boot_delay_seconds"),
+        "system_metrics_setup.collector.boot_delay_seconds",
+    )
+    if boot_delay_seconds < 0:
+        raise ConfigError(
+            "system_metrics_setup.collector.boot_delay_seconds must not be negative"
+        )
+    threshold_percent = _int_field(
+        raw.get("threshold_percent"),
+        "system_metrics_setup.collector.threshold_percent",
+    )
+    if not 0 <= threshold_percent <= 100:
+        raise ConfigError(
+            "system_metrics_setup.collector.threshold_percent must be between 0 and 100"
+        )
+    retry_base_seconds = _int_field(
+        raw.get("retry_base_seconds"),
+        "system_metrics_setup.collector.retry_base_seconds",
+    )
+    if retry_base_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_base_seconds must be positive"
+        )
+    retry_multiplier = _int_field(
+        raw.get("retry_multiplier"),
+        "system_metrics_setup.collector.retry_multiplier",
+    )
+    if retry_multiplier < 2:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_multiplier must be at least 2"
+        )
+    retry_max_seconds = _int_field(
+        raw.get("retry_max_seconds"),
+        "system_metrics_setup.collector.retry_max_seconds",
+    )
+    if retry_max_seconds < retry_base_seconds:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_max_seconds must be at least "
+            "retry_base_seconds"
+        )
+    command_timeout_seconds = _int_field(
+        raw.get("command_timeout_seconds"),
+        "system_metrics_setup.collector.command_timeout_seconds",
+    )
+    if command_timeout_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.collector.command_timeout_seconds must be positive"
+        )
+    return SystemMetricsCollectorConfig(
+        boot_delay_seconds=boot_delay_seconds,
+        daily_send_time=_daily_time_field(
+            raw.get("daily_send_time"),
+            "system_metrics_setup.collector.daily_send_time",
+        ),
+        threshold_percent=threshold_percent,
+        retry_base_seconds=retry_base_seconds,
+        retry_multiplier=retry_multiplier,
+        retry_max_seconds=retry_max_seconds,
+        command_timeout_seconds=command_timeout_seconds,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "system_metrics_setup.collector.service_unit_name",
+        ),
+        timer_unit_name=_nonempty_string_field(
+            raw.get("timer_unit_name"),
+            "system_metrics_setup.collector.timer_unit_name",
+        ),
+        journal_identifier=_nonempty_string_field(
+            raw.get("journal_identifier"),
+            "system_metrics_setup.collector.journal_identifier",
+        ),
+        lock_file_path=Path(
+            _nonempty_string_field(
+                raw.get("lock_file_path"),
+                "system_metrics_setup.collector.lock_file_path",
+            )
+        ),
+        report_file_name=_nonempty_string_field(
+            raw.get("report_file_name"),
+            "system_metrics_setup.collector.report_file_name",
+        ),
+        network_modules=_collector_modules_field(
+            raw.get("network_modules"),
+            "system_metrics_setup.collector.network_modules",
+        ),
+        system_modules=_collector_modules_field(
+            raw.get("system_modules"),
+            "system_metrics_setup.collector.system_modules",
+        ),
+    )
+
+
+def _daily_time_field(raw: object, name: str) -> str:
+    """Validate a time of day "HH:MM" or "HH:MM:SS"; return "HH:MM:SS".
+
+    The normalized form feeds the OnCalendar directive of the collector
+    timer directly, so the config may use the short form and the renderer
+    never has to guess the seconds.
+    """
+
+    if not isinstance(raw, str) or not raw:
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'")
+    parts = raw.split(":")
+    if len(parts) not in (2, 3):
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'")
+    try:
+        values = [int(part) for part in parts]
+    except ValueError:
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'") from None
+    hour, minute, second = (
+        values[0],
+        values[1],
+        values[2] if len(values) == 3 else 0,
+    )
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        raise ConfigError(f"{name} must be a valid time of day")
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
+
+
+def _collector_modules_field(
+    raw: object, name: str
+) -> tuple[CollectorModuleConfig, ...]:
+    """Validate one module array of the collector table.
+
+    A missing array means no modules of that kind: an empty network
+    module list is valid, because the readiness percentage is then 100
+    by construction and only the system modules are collected. Every
+    module is a table with a unique non-empty name and a non-empty
+    command array of non-empty strings; the command is never a shell
+    line.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of tables")
+    modules: list[CollectorModuleConfig] = []
+    seen_names: set[str] = set()
+    for index, module_raw in enumerate(raw):
+        if not isinstance(module_raw, dict):
+            raise ConfigError(f"{name} must be an array of tables")
+        module_name = module_raw.get("name")
+        if not isinstance(module_name, str) or not module_name:
+            raise ConfigError(f"{name}[{index}] name must be a non-empty string")
+        if module_name in seen_names:
+            raise ConfigError(f"{name} module names must be unique: {module_name}")
+        seen_names.add(module_name)
+        command = module_raw.get("command")
+        if not isinstance(command, list) or not command:
+            raise ConfigError(
+                f"{name}[{index}] command must be a non-empty array of strings"
+            )
+        if not all(isinstance(part, str) and part for part in command):
+            raise ConfigError(
+                f"{name}[{index}] command must be non-empty strings"
+            )
+        modules.append(CollectorModuleConfig(name=module_name, command=tuple(command)))
+    return tuple(modules)
 
 
 def _vault_structure_table(raw: object) -> VaultStructureConfig:

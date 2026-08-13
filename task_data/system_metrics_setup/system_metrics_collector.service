@@ -1,0 +1,9 @@
+[Unit]
+Description=System Metrics report collector
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
+Restart=on-failure
+$exec_lines

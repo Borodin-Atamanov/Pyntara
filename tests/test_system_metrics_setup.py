@@ -61,6 +61,31 @@ PathChanged=$spool_dir
 WantedBy=multi-user.target
 """
 
+COLLECTOR_SERVICE_TEMPLATE = """\
+[Unit]
+Description=System Metrics report collector
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
+Restart=on-failure
+$exec_lines
+"""
+
+COLLECTOR_TIMER_TEMPLATE = """\
+[Unit]
+Description=System Metrics report collector timer
+
+[Timer]
+OnBootSec=$boot_delay_seconds
+OnCalendar=*-*-* $daily_send_time
+Unit=$service_unit_name
+
+[Install]
+WantedBy=timers.target
+"""
+
 COMMAND_TEMPLATE = """\
 #!/usr/bin/env bash
 SPOOL_DIR='@SPOOL_DIR@'
@@ -71,6 +96,9 @@ TEMP_PREFIX='@TEMP_PREFIX@'
 SERVICE_JOURNAL_IDENTIFIER = "system_metrics"
 COMMIT_JOURNAL_IDENTIFIER = "commit_system_metrics"
 SPOOL_TEMP_PREFIX = ".commit-"
+COLLECTOR_JOURNAL_IDENTIFIER = "system_metrics_collector"
+COLLECTOR_SERVICE_NAME = "system_metrics_collector.service"
+COLLECTOR_TIMER_NAME = "system_metrics_collector.timer"
 
 
 def _ctx(
@@ -115,6 +143,14 @@ def _install_fixtures(
     ingest_service_template.write_text(INGEST_SERVICE_TEMPLATE, encoding="utf-8")
     ingest_path_template = task_data / "system_metrics-ingest.path"
     ingest_path_template.write_text(INGEST_PATH_TEMPLATE, encoding="utf-8")
+    collector_service_template = task_data / "system_metrics_collector.service"
+    collector_service_template.write_text(
+        COLLECTOR_SERVICE_TEMPLATE, encoding="utf-8"
+    )
+    collector_timer_template = task_data / "system_metrics_collector.timer"
+    collector_timer_template.write_text(
+        COLLECTOR_TIMER_TEMPLATE, encoding="utf-8"
+    )
     command_template = task_data / "commit_system_metrics.sh"
     command_template.write_text(COMMAND_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
@@ -134,6 +170,16 @@ def _install_fixtures(
     )
     monkeypatch.setattr(
         system_metrics_setup, "INGEST_PATH_TEMPLATE_PATH", ingest_path_template
+    )
+    monkeypatch.setattr(
+        system_metrics_setup,
+        "COLLECTOR_SERVICE_TEMPLATE_PATH",
+        collector_service_template,
+    )
+    monkeypatch.setattr(
+        system_metrics_setup,
+        "COLLECTOR_TIMER_TEMPLATE_PATH",
+        collector_timer_template,
     )
     monkeypatch.setattr(system_metrics_setup, "COMMAND_TEMPLATE_PATH", command_template)
     monkeypatch.setattr(system_metrics_setup, "SYSTEMD_UNIT_DIR", systemd_dir)
@@ -195,6 +241,34 @@ def _expected_ingest_path_unit(fixtures: dict[str, Path]) -> str:
     """The path unit the task must render for the given fixtures."""
 
     return Template(INGEST_PATH_TEMPLATE).substitute(spool_dir=fixtures["spool_dir"])
+
+
+def _expected_collector_service_unit(fixtures: dict[str, Path]) -> str:
+    """The collector service unit the task must render for the fixtures."""
+
+    command = " ".join(
+        [
+            str(fixtures["venv_python"]),
+            "-m",
+            "pyntara.metrics_collect",
+            str(fixtures["system_config"]),
+        ]
+    )
+    return Template(COLLECTOR_SERVICE_TEMPLATE).substitute(
+        exec_lines=f"ExecStart={command}",
+        journal_identifier=COLLECTOR_JOURNAL_IDENTIFIER,
+    )
+
+
+def _expected_collector_timer_unit(fixtures: dict[str, Path]) -> str:
+    """The collector timer unit the task must render for the fixtures."""
+
+    collector = fixtures["config"].system_metrics_setup.collector
+    return Template(COLLECTOR_TIMER_TEMPLATE).substitute(
+        boot_delay_seconds=collector.boot_delay_seconds,
+        daily_send_time=collector.daily_send_time,
+        service_unit_name=collector.service_unit_name,
+    )
 
 
 def _expected_command(fixtures: dict[str, Path]) -> str:
@@ -259,8 +333,10 @@ def _deploy_fixture(
     *,
     service_enabled: bool = False,
     path_enabled: bool = False,
+    timer_enabled: bool = False,
     service_active: bool = False,
     path_active: bool = False,
+    timer_active: bool = False,
     import_ok: bool = False,
     deployed: bool = False,
     command_ok: bool = True,
@@ -297,6 +373,14 @@ def _deploy_fixture(
                 _expected_ingest_service_unit(fixtures),
             ),
             ("system_metrics-ingest.path", _expected_ingest_path_unit(fixtures)),
+            (
+                "system_metrics_collector.service",
+                _expected_collector_service_unit(fixtures),
+            ),
+            (
+                "system_metrics_collector.timer",
+                _expected_collector_timer_unit(fixtures),
+            ),
         ):
             if stale_path_unit and name == "system_metrics-ingest.path":
                 continue
@@ -312,16 +396,21 @@ def _deploy_fixture(
             os.chmod(fixtures["spool_dir"], 0o1733)
     service_name = fixtures["config"].system_metrics_setup.service_unit_name
     path_name = fixtures["config"].system_metrics_setup.ingest_path_unit_name
+    timer_name = fixtures["config"].system_metrics_setup.collector.timer_unit_name
     enabled_names: set[str] = set()
     if service_enabled:
         enabled_names.add(service_name)
     if path_enabled:
         enabled_names.add(path_name)
+    if timer_enabled:
+        enabled_names.add(timer_name)
     active_names: set[str] = set()
     if service_active:
         active_names.add(service_name)
     if path_active:
         active_names.add(path_name)
+    if timer_active:
+        active_names.add(timer_name)
     calls = _install_fake(
         monkeypatch,
         enabled_names=enabled_names,
@@ -339,9 +428,9 @@ def test_deploys_service_ingest_and_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Nothing is deployed: the task creates the venv, installs the package
-    # from the clone, copies the config, writes the three units, enables
-    # and starts the service and the path unit, writes the commit command
-    # and creates the spool directory.
+    # from the clone, copies the config, writes the five units, enables
+    # and starts the service, the path unit and the collector timer,
+    # writes the commit command and creates the spool directory.
     fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
@@ -364,11 +453,19 @@ def test_deploys_service_ingest_and_command(
     assert (
         fixtures["systemd_dir"] / "system_metrics-ingest.path"
     ).read_text(encoding="utf-8") == _expected_ingest_path_unit(fixtures)
+    assert (
+        fixtures["systemd_dir"] / "system_metrics_collector.service"
+    ).read_text(encoding="utf-8") == _expected_collector_service_unit(fixtures)
+    assert (
+        fixtures["systemd_dir"] / "system_metrics_collector.timer"
+    ).read_text(encoding="utf-8") == _expected_collector_timer_unit(fixtures)
     assert ["systemctl", "daemon-reload"] in calls
     assert ["systemctl", "enable", "system_metrics.service"] in calls
     assert ["systemctl", "enable", "system_metrics-ingest.path"] in calls
+    assert ["systemctl", "enable", "system_metrics_collector.timer"] in calls
     assert ["systemctl", "start", "system_metrics.service"] in calls
     assert ["systemctl", "start", "system_metrics-ingest.path"] in calls
+    assert ["systemctl", "start", "system_metrics_collector.timer"] in calls
     assert fixtures["command_path"].read_text(encoding="utf-8") == _expected_command(
         fixtures
     )
@@ -392,6 +489,8 @@ def test_skips_when_already_configured(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
     )
@@ -419,6 +518,8 @@ def test_force_reinstalls_and_restarts(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
     )
@@ -475,6 +576,8 @@ def test_only_service_disabled_starts_it(
         path_enabled=True,
         service_active=False,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
     )
@@ -503,6 +606,8 @@ def test_config_change_restarts_running_service(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         stale_config=True,
@@ -531,6 +636,8 @@ def test_only_command_missing_writes_it(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         command_ok=False,
@@ -563,6 +670,8 @@ def test_command_stale_content_rewritten(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         command_ok=False,
@@ -592,6 +701,8 @@ def test_command_directory_fails(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         command_ok=False,
@@ -615,6 +726,8 @@ def test_only_spool_missing_creates_it(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         spool_ok=False,
@@ -643,6 +756,8 @@ def test_spool_wrong_mode_fixed(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         spool_ok=False,
@@ -667,6 +782,8 @@ def test_only_path_unit_disabled_enables_and_starts_it(
         path_enabled=False,
         service_active=True,
         path_active=False,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
     )
@@ -690,6 +807,8 @@ def test_path_unit_stale_restarted(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
         stale_path_unit=True,
@@ -715,6 +834,8 @@ def test_force_recreates_command_file(
         path_enabled=True,
         service_active=True,
         path_active=True,
+        timer_enabled=True,
+        timer_active=True,
         import_ok=True,
         deployed=True,
     )
