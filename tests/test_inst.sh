@@ -899,6 +899,48 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_fetch_source_reclones_corrupted_repo() {
+    # A repo whose object store is corrupted makes fetch fail; fetch_source
+    # must remove it and re-clone instead of failing the install.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local bin="$tmp/bin"
+    local calls="$tmp/git_calls"
+    local rm_calls="$tmp/rm_calls"
+    mkdir -p "$bin" "$tmp/repo/.git"
+    cat > "$bin/git" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$GIT_CALLS_FILE"
+if [[ "$1" == "-C" && "$3" == "fetch" ]]; then
+    exit 128
+fi
+exit 0
+EOF
+    chmod +x "$bin/git"
+    cat > "$bin/rm" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$RM_CALLS_FILE"
+/bin/rm -rf "$@"
+EOF
+    chmod +x "$bin/rm"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" GIT_CALLS_FILE="$calls" \
+        RM_CALLS_FILE="$rm_calls" PYNTARA_SOURCE_DIR="$tmp/repo" \
+        bash -c 'source "$1"; fetch_source' _ "$INSTALLER"
+    if ! grep -q -- "-rf $tmp/repo" "$rm_calls"; then
+        echo "corrupted clone not removed" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q "^clone --depth 1 -b main " "$calls"; then
+        echo "clone not called after removing corrupted clone" >&2
+        cat "$calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 inst_fetch_source_fetches_existing_repo() {
     # An existing repo with .git must fetch and reset, not re-clone.
     local tmp
@@ -1689,6 +1731,7 @@ run_test inst_uv_cache_dir_is_subdirectory_of_cache
 run_test inst_fetch_source_clones_when_dir_missing
 run_test inst_fetch_source_clones_empty_dir
 run_test inst_fetch_source_reclones_broken_dir
+run_test inst_fetch_source_reclones_corrupted_repo
 run_test inst_fetch_source_fetches_existing_repo
 run_test inst_setup_python_syncs_locked_when_lock_current
 run_test inst_setup_python_syncs_without_locked_when_lock_missing

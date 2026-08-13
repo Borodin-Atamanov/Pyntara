@@ -208,9 +208,17 @@ fetch_source() {
         log "Repository cloned to $SOURCE_DIR"
     else
         log "Updating existing repository at $SOURCE_DIR"
-        run_timed git -C "$SOURCE_DIR" fetch
-        run_timed git -C "$SOURCE_DIR" reset --hard "origin/$REPO_BRANCH"
-        log "Repository updated to origin/$REPO_BRANCH"
+        # A corrupted object store (empty or truncated .git objects) makes
+        # fetch fail with exit code 128, so re-clone instead of aborting.
+        if run_timed git -C "$SOURCE_DIR" fetch && run_timed git -C "$SOURCE_DIR" reset --hard "origin/$REPO_BRANCH"; then
+            log "Repository updated to origin/$REPO_BRANCH"
+        else
+            log "Repository update failed, removing broken clone at $SOURCE_DIR"
+            rm -rf "$SOURCE_DIR"
+            log "Cloning repository: $REPO_URL branch $REPO_BRANCH"
+            run_timed git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$SOURCE_DIR"
+            log "Repository cloned to $SOURCE_DIR"
+        fi
     fi
 }
 fi
