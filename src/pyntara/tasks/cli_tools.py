@@ -20,38 +20,12 @@ import subprocess
 
 from pyntara.context import Context
 from pyntara.models import TaskResult
-from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
-
-
-def _is_installed(package: str, timeout: float) -> bool:
-    """True when dpkg considers the package fully installed.
-
-    The status query distinguishes "install ok installed" from leftovers
-    like "deinstall ok config-files", so an uninstalled package is never
-    treated as installed. The timeout comes from config.toml.
-    """
-
-    result = run_command(
-        ["dpkg-query", "-W", "-f=${Status}", package],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return result.returncode == 0 and "install ok installed" in result.stdout
-
-
-def _install_once(package: str, timeout: float) -> tuple[bool, str]:
-    """Install one package; return (success, error_text)."""
-
-    try:
-        run_command(
-            ["apt-get", "install", "-y", package],
-            extra_env=APT_NONINTERACTIVE_ENV,
-            timeout=timeout,
-        )
-        return True, ""
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
+from pyntara.utils import (
+    APT_NONINTERACTIVE_ENV,
+    install_package_once,
+    package_is_installed,
+    run_command,
+)
 
 
 def _install_packages(
@@ -88,7 +62,7 @@ def _install_packages(
         ok = False
         error = ""
         for _ in range(retries + 1):
-            ok, error = _install_once(package, install_timeout)
+            ok, error = install_package_once(package, install_timeout)
             if ok:
                 break
         if ok:
@@ -115,7 +89,7 @@ def task(ctx: Context) -> TaskResult:
     missing = [
         package
         for package in cli.packages
-        if not _is_installed(package, cli.package_status_timeout_seconds)
+        if not package_is_installed(package, cli.package_status_timeout_seconds)
     ]
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")

@@ -31,12 +31,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from pyntara.config import Config, load_config
+from pyntara.config import CollectorModuleConfig, Config, load_config
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay
 
 
-def _run_module(module, timeout_seconds: int) -> dict[str, str]:
+def _run_module(
+    module: CollectorModuleConfig, timeout_seconds: int
+) -> dict[str, str]:
     """Run one configured command; return status and full output.
 
     A command that exits 0 with non-empty stdout is ok; one that exits 0
@@ -50,6 +52,7 @@ def _run_module(module, timeout_seconds: int) -> dict[str, str]:
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            check=False,
         )
     except FileNotFoundError:
         return {
@@ -71,7 +74,7 @@ def _run_module(module, timeout_seconds: int) -> dict[str, str]:
     return {"status": "ok", "output": output}
 
 
-def percent_ready(entries: list[dict[str, object]]) -> int:
+def percent_ready(entries: list[dict[str, str]]) -> int:
     """Share of ok modules among the entries, in percent.
 
     An empty module list is trivially ready: there is nothing to wait
@@ -136,8 +139,14 @@ def collect_until_ready(cfg: Config) -> dict[str, object]:
     while True:
         attempts += 1
         report = collect(cfg)
+        ready_percent = report["ready_percent"]
         remaining = deadline - time.monotonic()
-        if report["ready_percent"] >= collector.threshold_percent or remaining <= 0:
+        # ready_percent is always an int from collect; the isinstance check
+        # keeps mypy strict happy without changing the behavior.
+        if (
+            isinstance(ready_percent, int)
+            and ready_percent >= collector.threshold_percent
+        ) or remaining <= 0:
             return report
         pause = min(
             backoff_delay(
@@ -181,6 +190,7 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
             capture_output=True,
             text=True,
             timeout=collector.command_timeout_seconds,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(f"collecting report: commit failed: {exc}", priority=error_priority)
@@ -205,7 +215,9 @@ def _acquire_lock(path: Path) -> TextIO | None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(path, "a+", encoding="utf-8")
+        # The lock handle outlives this function, so the file cannot be
+        # scoped to a with block; the caller closes it.
+        handle = open(path, "a+", encoding="utf-8")  # noqa: SIM115
     except OSError as exc:
         _log(f"collecting report: cannot open lock {path}: {exc}", priority=3)
         raise SystemExit(1)

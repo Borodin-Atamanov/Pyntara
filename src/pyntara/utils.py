@@ -19,6 +19,99 @@ from pathlib import Path
 APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
 
 
+def package_is_installed(package: str, timeout: float) -> bool:
+    """True when dpkg considers the package fully installed.
+
+    The status query distinguishes "install ok installed" from leftovers
+    like "deinstall ok config-files", so an uninstalled package is never
+    treated as installed. The timeout comes from config.toml.
+    """
+
+    result = run_command(
+        ["dpkg-query", "-W", "-f=${Status}", package],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0 and "install ok installed" in result.stdout
+
+
+def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
+    """Install one package; return (success, error_text).
+
+    apt runs noninteractive through the shared environment so it never
+    asks questions. Any nonzero exit or timeout is a failure with the
+    exception text; the caller decides whether to retry.
+    """
+
+    try:
+        run_command(
+            ["apt-get", "install", "-y", package],
+            extra_env=APT_NONINTERACTIVE_ENV,
+            timeout=timeout,
+        )
+        return True, ""
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+
+
+def read_os_release(path: Path) -> dict[str, str]:
+    """Parse an os-release file into a dict of shell-style variables.
+
+    Every line has the form KEY="value" or KEY=value; surrounding quotes
+    are stripped, comments and blank lines skipped. The freedesktop spec
+    makes the file optional, so a missing file yields an empty dict;
+    other read errors raise OSError. Shared by tasks that must know the
+    distribution family or the release codename.
+    """
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+
+def os_family_is_debian(os_release: dict[str, str]) -> bool:
+    """True when the os-release ID or ID_LIKE names Debian or Ubuntu.
+
+    Debian-based distributions declare ID=debian or ID=ubuntu, and
+    derivatives declare ID_LIKE=debian. The check covers both fields, so
+    a derivative of a derivative such as ID_LIKE="ubuntu debian" still
+    resolves to Debian family.
+    """
+
+    fields = f"{os_release.get('ID', '')} {os_release.get('ID_LIKE', '')}"
+    tokens = {token.casefold() for token in fields.split()}
+    return bool(tokens & {"debian", "ubuntu"})
+
+
+def dpkg_architecture(timeout: float) -> str:
+    """The dpkg architecture of the target machine, e.g. amd64.
+
+    dpkg --print-architecture is the single source of the Debian
+    architecture name used by package asset names. Raises
+    CalledProcessError or TimeoutExpired when the query fails.
+    """
+
+    result = run_command(
+        ["dpkg", "--print-architecture"],
+        check=True,
+        capture=True,
+        timeout=timeout,
+    )
+    return result.stdout.strip()
+
+
 def run_command(
     command: Iterable[str],
     *,
@@ -123,4 +216,8 @@ def backoff_delay(
 
     if failures < 1:
         return base_seconds
-    return min(base_seconds * multiplier ** (failures - 1), max_seconds)
+    # int ** int resolves to Any in mypy strict, so the growth is widened
+    # explicitly; the exponent is never negative here, the widening keeps
+    # the integer arithmetic unchanged.
+    growth = int(multiplier ** (failures - 1))
+    return min(base_seconds * growth, max_seconds)

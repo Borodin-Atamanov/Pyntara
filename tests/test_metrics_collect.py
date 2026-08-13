@@ -386,7 +386,9 @@ def test_main_exits_when_lock_held(
     # collecting or committing.
     lock_path = tmp_path / "run" / "collector.lock"
     lock_path.parent.mkdir(parents=True)
-    handle = open(lock_path, "a+", encoding="utf-8")
+    # The lock handle lives until the finally block below, so the file
+    # cannot be scoped to a with block.
+    handle = open(lock_path, "a+", encoding="utf-8")  # noqa: SIM115
     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     try:
         calls = _fake_run(

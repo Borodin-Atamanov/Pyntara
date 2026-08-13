@@ -54,6 +54,18 @@ reset_busy_attempts = 5
 reset_busy_retry_delay_seconds = 0.5
 service_unit_name = "zram.service"
 
+[i2pd_service_setup]
+github_repo = "PurpleI2P/i2pd"
+download_dir = "/var/lib/pyntara/i2pd-download"
+service_unit_name = "i2pd.service"
+config_path = "/etc/i2pd/i2pd.conf"
+log_level = "warn"
+http_enabled = false
+socks_proxy_enabled = true
+install_retries = 3
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -208,6 +220,18 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.zram_service.service_unit_name == "zram.service"
     assert config.zram_service.reset_busy_attempts == 5
     assert config.zram_service.reset_busy_retry_delay_seconds == 0.5
+    assert config.i2pd_service_setup.github_repo == "PurpleI2P/i2pd"
+    assert config.i2pd_service_setup.download_dir == Path(
+        "/var/lib/pyntara/i2pd-download"
+    )
+    assert config.i2pd_service_setup.service_unit_name == "i2pd.service"
+    assert config.i2pd_service_setup.config_path == Path("/etc/i2pd/i2pd.conf")
+    assert config.i2pd_service_setup.log_level == "warn"
+    assert config.i2pd_service_setup.http_enabled is False
+    assert config.i2pd_service_setup.socks_proxy_enabled is True
+    assert config.i2pd_service_setup.install_retries == 3
+    assert config.i2pd_service_setup.start_check_attempts == 5
+    assert config.i2pd_service_setup.start_check_retry_delay_seconds == 1
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400
@@ -358,6 +382,17 @@ _BASE_CONFIG = (
     'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
     "reset_busy_retry_delay_seconds = 0.5\n"
     'service_unit_name = "zram.service"\n'
+    '[i2pd_service_setup]\n'
+    'github_repo = "PurpleI2P/i2pd"\n'
+    'download_dir = "/var/lib/pyntara/i2pd-download"\n'
+    'service_unit_name = "i2pd.service"\n'
+    'config_path = "/etc/i2pd/i2pd.conf"\n'
+    'log_level = "warn"\n'
+    "http_enabled = false\n"
+    "socks_proxy_enabled = true\n"
+    "install_retries = 3\n"
+    "start_check_attempts = 5\n"
+    "start_check_retry_delay_seconds = 1\n"
     "[system_metrics_setup]\n"
     "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
     "backoff_max_seconds = 14400\n"
@@ -558,6 +593,60 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "reset_busy_retry_delay_seconds = 0.5",
             "reset_busy_retry_delay_seconds = 0",
+        ),
+        # i2pd github_repo is a number, not a string
+        _BASE_CONFIG.replace(
+            'github_repo = "PurpleI2P/i2pd"', "github_repo = 1"
+        ),
+        # i2pd github_repo is an empty string
+        _BASE_CONFIG.replace(
+            'github_repo = "PurpleI2P/i2pd"', 'github_repo = ""'
+        ),
+        # i2pd download_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'download_dir = "/var/lib/pyntara/i2pd-download"', "download_dir = 1"
+        ),
+        # i2pd download_dir is an empty string
+        _BASE_CONFIG.replace(
+            'download_dir = "/var/lib/pyntara/i2pd-download"', 'download_dir = ""'
+        ),
+        # i2pd service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "i2pd.service"', "service_unit_name = 1"
+        ),
+        # i2pd config_path is an empty string
+        _BASE_CONFIG.replace(
+            'config_path = "/etc/i2pd/i2pd.conf"', 'config_path = ""'
+        ),
+        # i2pd log_level is not a known level
+        _BASE_CONFIG.replace('log_level = "warn"', 'log_level = "chatty"'),
+        # i2pd log_level is a number, not a string
+        _BASE_CONFIG.replace('log_level = "warn"', "log_level = 1"),
+        # i2pd http_enabled is an integer, not a boolean
+        _BASE_CONFIG.replace("http_enabled = false", "http_enabled = 0"),
+        # i2pd socks_proxy_enabled is a string, not a boolean
+        _BASE_CONFIG.replace(
+            "socks_proxy_enabled = true", 'socks_proxy_enabled = "true"'
+        ),
+        # i2pd install_retries is a string, not an integer
+        _BASE_CONFIG.replace("install_retries = 3", 'install_retries = "3"'),
+        # i2pd install_retries is zero
+        _BASE_CONFIG.replace("install_retries = 3", "install_retries = 0"),
+        # i2pd start_check_attempts is a string, not an integer
+        _BASE_CONFIG.replace(
+            "start_check_attempts = 5", 'start_check_attempts = "5"'
+        ),
+        # i2pd start_check_attempts is zero
+        _BASE_CONFIG.replace("start_check_attempts = 5", "start_check_attempts = 0"),
+        # i2pd start_check_retry_delay_seconds is a string, not a number
+        _BASE_CONFIG.replace(
+            "start_check_retry_delay_seconds = 1",
+            'start_check_retry_delay_seconds = "1"',
+        ),
+        # i2pd start_check_retry_delay_seconds is zero
+        _BASE_CONFIG.replace(
+            "start_check_retry_delay_seconds = 1",
+            "start_check_retry_delay_seconds = 0",
         ),
         # system_metrics_setup backoff_base_seconds is a string
         _BASE_CONFIG.replace(
@@ -1100,78 +1189,11 @@ def test_load_config_bool_not_accepted_as_retries(tmp_path: Path) -> None:
 
 def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
     # The catalog is mandatory: without it the engine cannot compute the
-    # task set (architecture contract section 3).
+    # task set (architecture contract section 3). The base config is used
+    # with its [[tasks]] section cut off.
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
-        "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
-        "task_start_delay_seconds = 0.5\n"
-        'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
-        '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
-        "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-        '[add_extra_repos]\ncomponents = ["universe"]\n'
-        'ubuntu_hosts = ["archive.ubuntu.com"]\n'
-        '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
-        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
-        'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
-        'service_unit_name = "swapfile.service"\n'
-        '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
-        "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
-        '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
-        "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
-        "reset_busy_retry_delay_seconds = 0.5\n"
-        'service_unit_name = "zram.service"\n'
-        "[system_metrics_setup]\n"
-        "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
-        "backoff_max_seconds = 14400\n"
-        'python_version = "3"\nerror_priority = 3\n'
-        'venv_dir = "/usr/local/lib/pyntara/venv"\n'
-        'system_config_path = "/etc/pyntara/config.toml"\n'
-        'command_path = "/usr/local/bin/commit_system_metrics"\n'
-        'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
-        'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
-        'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
-        'queue_file_suffix_length = 12\n'
-        'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
-        'command_file_mode = "0755"\n'
-        'service_unit_name = "system_metrics.service"\n'
-        'ingest_service_unit_name = "system_metrics-ingest.service"\n'
-        'ingest_path_unit_name = "system_metrics-ingest.path"\n'
-        'service_journal_identifier = "system_metrics"\n'
-        'commit_journal_identifier = "commit_system_metrics"\n'
-        'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-        'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
-        'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
-        "google_script_timeout_seconds = 60\n"
-        'google_script_key_entry_title = "google_script_key"\n'
-        "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
-        '[system_metrics_setup.collector]\n'
-        "boot_delay_seconds = 30\n"
-        'daily_send_time = "12:00:00"\n'
-        "threshold_percent = 50\n"
-        "retry_base_seconds = 2\n"
-        "retry_multiplier = 2\n"
-        "retry_max_seconds = 600\n"
-        "command_timeout_seconds = 15\n"
-        'service_unit_name = "system_metrics_collector.service"\n'
-        'timer_unit_name = "system_metrics_collector.timer"\n'
-        'journal_identifier = "system_metrics_collector"\n'
-        'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
-        'report_file_name = "network.json"\n'
-        '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
-        'notes = "Primary salt."\n[[vault_structure.entries]]\n'
-        'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
-        '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
-        'notes = "Google script credentials."\n'
-        '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
-        'source_vault_default = "secrets/default.vault"\n'
-        'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
-        'pass_file_path = "/etc/pyntara/pass"\n'
-        'vault_password_entry_title = "pyntara_local_vault_password"\n'
-        'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
-        'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n',
+        _BASE_CONFIG.split("[[tasks]]")[0],
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="\\[tasks\\]"):
@@ -1184,76 +1206,7 @@ def test_load_config_empty_tasks_raises(tmp_path: Path) -> None:
     # to the preceding table.
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        "tasks = []\n"
-        '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
-        "command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n"
-        "task_start_delay_seconds = 0.5\n"
-        'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
-        '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
-        "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-        '[add_extra_repos]\ncomponents = ["universe"]\n'
-        'ubuntu_hosts = ["archive.ubuntu.com"]\n'
-        '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
-        "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
-        'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
-        'service_unit_name = "swapfile.service"\n'
-        '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
-        "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
-        '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
-        "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
-        'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
-        "reset_busy_retry_delay_seconds = 0.5\n"
-        'service_unit_name = "zram.service"\n'
-        "[system_metrics_setup]\n"
-        "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
-        "backoff_max_seconds = 14400\n"
-        'python_version = "3"\nerror_priority = 3\n'
-        'venv_dir = "/usr/local/lib/pyntara/venv"\n'
-        'system_config_path = "/etc/pyntara/config.toml"\n'
-        'command_path = "/usr/local/bin/commit_system_metrics"\n'
-        'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
-        'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
-        'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
-        'queue_file_suffix_length = 12\n'
-        'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
-        'command_file_mode = "0755"\n'
-        'service_unit_name = "system_metrics.service"\n'
-        'ingest_service_unit_name = "system_metrics-ingest.service"\n'
-        'ingest_path_unit_name = "system_metrics-ingest.path"\n'
-        'service_journal_identifier = "system_metrics"\n'
-        'commit_journal_identifier = "commit_system_metrics"\n'
-        'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-        'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
-        'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
-        "google_script_timeout_seconds = 60\n"
-        'google_script_key_entry_title = "google_script_key"\n'
-        "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
-        '[system_metrics_setup.collector]\n'
-        "boot_delay_seconds = 30\n"
-        'daily_send_time = "12:00:00"\n'
-        "threshold_percent = 50\n"
-        "retry_base_seconds = 2\n"
-        "retry_multiplier = 2\n"
-        "retry_max_seconds = 600\n"
-        "command_timeout_seconds = 15\n"
-        'service_unit_name = "system_metrics_collector.service"\n'
-        'timer_unit_name = "system_metrics_collector.timer"\n'
-        'journal_identifier = "system_metrics_collector"\n'
-        'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
-        'report_file_name = "network.json"\n'
-        '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
-        'notes = "Primary salt."\n[[vault_structure.entries]]\n'
-        'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
-        '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
-        'notes = "Google script credentials."\n'
-        '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
-        'source_vault_default = "secrets/default.vault"\n'
-        'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
-        'pass_file_path = "/etc/pyntara/pass"\n'
-        'vault_password_entry_title = "pyntara_local_vault_password"\n'
-        'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
-        'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n',
+        "tasks = []\n" + _BASE_CONFIG.split("[[tasks]]")[0],
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="at least one task"):

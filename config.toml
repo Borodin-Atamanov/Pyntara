@@ -193,6 +193,34 @@ reset_busy_retry_delay_seconds = 0.5
 # Name of the systemd oneshot service unit that repeats the setup at boot.
 service_unit_name = "zram.service"
 
+[i2pd_service_setup]
+# i2pd anonymous network router parameters (docs/spec/i2pd-service.md).
+# The task installs the newest i2pd release from the GitHub repository as
+# a system service and owns the main configuration file.
+# GitHub repository of i2pd, owner/name form used by the releases API.
+github_repo = "PurpleI2P/i2pd"
+# Directory for the downloaded package and checksum files.
+download_dir = "/var/lib/pyntara/i2pd-download"
+# Name of the systemd service unit installed by the package.
+service_unit_name = "i2pd.service"
+# Main configuration file the task writes. It must match the --conf path
+# of the package unit, otherwise the rendered values are ignored.
+config_path = "/etc/i2pd/i2pd.conf"
+# i2pd log verbosity: debug, info, warn, error or none.
+log_level = "warn"
+# Whether the web console is enabled (http.enabled of i2pd.conf).
+http_enabled = false
+# Whether the SOCKS proxy is enabled (socksproxy.enabled of i2pd.conf).
+socks_proxy_enabled = true
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
+# Readiness loop of the forking service: attempts and pause between two
+# is-active checks after start or restart.
+start_check_attempts = 5
+# Pause in seconds between two readiness checks.
+start_check_retry_delay_seconds = 1
+
 [system_metrics_setup]
 # Runtime parameters of the long-running System Metrics service. The
 # deployed service reads this section through the same config loader as
@@ -555,4 +583,10 @@ name = "nextdns_setup_system_wide"
 description = "Per-user NextDNS account and system-wide DNS endpoint."
 depends = ["users_setup"]
 modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "i2pd_service_setup"
+description = "Install and configure the latest i2pd from GitHub releases as a system service."
+depends = ["add_extra_repos"]
+modes = ["server", "desktop"]
 

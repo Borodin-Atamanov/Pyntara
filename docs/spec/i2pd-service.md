@@ -1,0 +1,59 @@
+# i2pd service
+
+There is a dedicated i2pd installation task: i2pd_service_setup.
+
+The task installs the i2pd anonymous network router from the GitHub releases of the configured repository and runs it as a system service. The distribution package is never used, so the installed version is always the newest release instead of the version packaged for the distribution.
+
+## Version resolution
+
+The newest release tag comes from the GitHub releases API of the configured repository: the endpoint https://api.github.com/repos/{github_repo}/releases/latest returns the latest non-prerelease release, and tag_name is the version. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is reported as a task error.
+
+The installed version comes from i2pd --version: the first dotted version triple in the combined stdout and stderr output. A missing binary, a nonzero exit or a hung query reports the version as not installed, so the task reinstalls. When the installed version differs from the newest release tag, the task downloads and installs the new release; the rerun after a new upstream release therefore updates i2pd and restarts the service, which is the intended consequence of always running the newest version.
+
+## Operating system and architecture
+
+The distribution is read from /etc/os-release through the shared helpers in pyntara.utils: read_os_release parses the shell-style variables, os_family_is_debian checks ID and ID_LIKE for the debian or ubuntu family, and dpkg_architecture runs dpkg --print-architecture. The helpers are shared with future tasks that need the same facts.
+
+Only Debian-based distributions are supported: the release assets are deb packages, and a distribution outside the Debian family is reported as a task error before any download. The deb asset is chosen by the dpkg architecture and the VERSION_CODENAME of the os-release file:
+
+the codename-specific asset i2pd_{tag}-1{codename}1_{arch}.deb wins, because it is built against this distribution
+the generic asset i2pd_{tag}-1_{arch}.deb is the fallback, so a release without a build for this codename still installs
+a release without either asset for the architecture is reported as a task error
+
+The asset list comes from the release payload, so new codenames never need code changes: the exact name is looked up among the returned assets.
+
+## Checksum verification
+
+The downloaded package is always verified against the SHA512SUMS file of the same release before installation. The checksum file is downloaded from https://github.com/{github_repo}/releases/download/{tag}/SHA512SUMS, the entry for the asset name is read and compared against the sha512 of the downloaded file. A missing checksum file, a missing entry or a mismatch aborts the install with a task error. The check is always on, because the package travels over an unauthenticated channel; the GPG signature of the sums file is not verified in this version.
+
+## Configuration ownership
+
+The task owns the main configuration file at the configured config_path. It renders the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The template renders only three values: loglevel from log_level and the [http] enabled and [socksproxy] enabled switches from http_enabled and socks_proxy_enabled. Every other option keeps the i2pd built-in default, so a package upgrade that gains new options never conflicts with this file, and dpkg never needs to resolve a conffile conflict during an update.
+
+config_path must match the --conf path of the package unit, otherwise the rendered values are ignored. The deb package installs the unit with ExecStart i2pd --conf=/etc/i2pd/i2pd.conf, so the default config_path matches; the value stays configurable because the unit path is a package contract and may change.
+
+## Service lifecycle
+
+The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the package or the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error.
+
+The package installs the unit with a dedicated system user and a data directory; the first start generates the router keys under the data directory. The package also installs an AppArmor profile that confines the router to its data and config directories, so the task never touches those locations.
+
+## Idempotency
+
+The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template and the service is enabled and active; the task then skips with changed=False. Force mode rewrites the configuration and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package and the checksum file are removed after a successful install, so the directory never accumulates old versions.
+
+## Parameters
+
+All parameters live in config.toml under [i2pd_service_setup]:
+
+github_repo is the GitHub repository in owner/name form
+download_dir is the directory for the downloaded package and checksum files
+service_unit_name is the systemd unit installed by the package
+config_path is the main configuration file owned by the task
+log_level is the i2pd verbosity: debug, info, warn, error or none
+http_enabled enables the web console
+socks_proxy_enabled enables the SOCKS proxy
+install_retries is the retry count of the package install; total attempts are retries plus one
+start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after start or restart
+
+The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.
