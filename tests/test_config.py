@@ -66,6 +66,12 @@ install_retries = 3
 start_check_attempts = 5
 start_check_retry_delay_seconds = 1
 
+[yggdrasil_service_setup]
+github_repo = "yggdrasil-network/yggdrasil-go"
+download_dir = "/var/lib/pyntara/yggdrasil-download"
+service_unit_name = "yggdrasil.service"
+install_retries = 3
+
 [ssh_daemon_setup]
 package_name = "openssh-server"
 package_status_timeout_seconds = 30
@@ -273,6 +279,15 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.install_retries == 3
     assert config.i2pd_service_setup.start_check_attempts == 5
     assert config.i2pd_service_setup.start_check_retry_delay_seconds == 1
+    assert (
+        config.yggdrasil_service_setup.github_repo
+        == "yggdrasil-network/yggdrasil-go"
+    )
+    assert config.yggdrasil_service_setup.download_dir == Path(
+        "/var/lib/pyntara/yggdrasil-download"
+    )
+    assert config.yggdrasil_service_setup.service_unit_name == "yggdrasil.service"
+    assert config.yggdrasil_service_setup.install_retries == 3
     assert config.ssh_daemon_setup.package_name == "openssh-server"
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3
@@ -467,6 +482,11 @@ _BASE_CONFIG = (
     "install_retries = 3\n"
     "start_check_attempts = 5\n"
     "start_check_retry_delay_seconds = 1\n"
+    "[yggdrasil_service_setup]\n"
+    'github_repo = "yggdrasil-network/yggdrasil-go"\n'
+    'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'
+    'service_unit_name = "yggdrasil.service"\n'
+    "install_retries = 3\n"
     "[ssh_daemon_setup]\n"
     'package_name = "openssh-server"\n'
     "package_status_timeout_seconds = 30\n"
@@ -747,6 +767,42 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             "start_check_retry_delay_seconds = 1",
             "start_check_retry_delay_seconds = 0",
+        ),
+        # yggdrasil github_repo is a number, not a string
+        _BASE_CONFIG.replace(
+            'github_repo = "yggdrasil-network/yggdrasil-go"', "github_repo = 1"
+        ),
+        # yggdrasil github_repo is an empty string
+        _BASE_CONFIG.replace(
+            'github_repo = "yggdrasil-network/yggdrasil-go"', 'github_repo = ""'
+        ),
+        # yggdrasil download_dir is a number, not a string
+        _BASE_CONFIG.replace(
+            'download_dir = "/var/lib/pyntara/yggdrasil-download"',
+            "download_dir = 1",
+        ),
+        # yggdrasil download_dir is an empty string
+        _BASE_CONFIG.replace(
+            'download_dir = "/var/lib/pyntara/yggdrasil-download"',
+            'download_dir = ""',
+        ),
+        # yggdrasil service_unit_name is a number, not a string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "yggdrasil.service"', "service_unit_name = 1"
+        ),
+        # yggdrasil service_unit_name is an empty string
+        _BASE_CONFIG.replace(
+            'service_unit_name = "yggdrasil.service"', 'service_unit_name = ""'
+        ),
+        # yggdrasil install_retries is a string, not an integer
+        _BASE_CONFIG.replace(
+            'service_unit_name = "yggdrasil.service"\ninstall_retries = 3',
+            'service_unit_name = "yggdrasil.service"\ninstall_retries = "3"',
+        ),
+        # yggdrasil install_retries is zero
+        _BASE_CONFIG.replace(
+            'service_unit_name = "yggdrasil.service"\ninstall_retries = 3',
+            'service_unit_name = "yggdrasil.service"\ninstall_retries = 0',
         ),
         # ssh_daemon_setup package_name is a number, not a string
         _BASE_CONFIG.replace(

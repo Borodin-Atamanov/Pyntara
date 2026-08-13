@@ -28,6 +28,7 @@ from pyntara.config import (
     TaskConfig,
     VaultEntry,
     VaultStructureConfig,
+    YggdrasilServiceSetupConfig,
     ZramServiceConfig,
     ZswapServiceConfig,
 )
@@ -217,6 +218,10 @@ def make_config(
     i2pd_install_retries: int = 3,
     i2pd_start_check_attempts: int = 5,
     i2pd_start_check_retry_delay_seconds: float = 0.0,
+    yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
+    yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
+    yggdrasil_service_unit_name: str = "yggdrasil.service",
+    yggdrasil_install_retries: int = 3,
     ssh_daemon_package_name: str = "openssh-server",
     ssh_daemon_package_status_timeout_seconds: int = 30,
     ssh_daemon_install_retries: int = 3,
@@ -380,6 +385,12 @@ def make_config(
             install_retries=i2pd_install_retries,
             start_check_attempts=i2pd_start_check_attempts,
             start_check_retry_delay_seconds=i2pd_start_check_retry_delay_seconds,
+        ),
+        yggdrasil_service_setup=YggdrasilServiceSetupConfig(
+            github_repo=yggdrasil_github_repo,
+            download_dir=yggdrasil_download_dir,
+            service_unit_name=yggdrasil_service_unit_name,
+            install_retries=yggdrasil_install_retries,
         ),
         ssh_daemon_setup=SshDaemonSetupConfig(
             package_name=ssh_daemon_package_name,

@@ -176,6 +176,23 @@ class I2pdServiceSetupConfig:
 
 
 @dataclass(frozen=True)
+class YggdrasilServiceSetupConfig:
+    """Yggdrasil installation parameters for the yggdrasil_service_setup task.
+
+    The task installs the newest yggdrasil release from github_repo
+    (owner/name) as a system service. download_dir is the temporary
+    directory for the downloaded package; service_unit_name is the systemd
+    unit installed by the package; install_retries is the retry count of
+    the package install, so the total attempts are retries plus one.
+    """
+
+    github_repo: str
+    download_dir: Path
+    service_unit_name: str
+    install_retries: int
+
+
+@dataclass(frozen=True)
 class SystemMetricsSetupConfig:
     """Runtime parameters of the long-running System Metrics service.
 
@@ -459,6 +476,7 @@ class Config:
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
     i2pd_service_setup: I2pdServiceSetupConfig
+    yggdrasil_service_setup: YggdrasilServiceSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
@@ -890,6 +908,43 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+    )
+
+
+def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
+    """Validate the [yggdrasil_service_setup] table and build the config.
+
+    github_repo, download_dir and service_unit_name are non-empty strings;
+    install_retries is a positive integer.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[yggdrasil_service_setup] section is missing or not a table"
+        )
+    github_repo = _nonempty_string_field(
+        raw.get("github_repo"), "yggdrasil_service_setup.github_repo"
+    )
+    download_dir = Path(
+        _nonempty_string_field(
+            raw.get("download_dir"), "yggdrasil_service_setup.download_dir"
+        )
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "yggdrasil_service_setup.service_unit_name"
+    )
+    install_retries = _int_field(
+        raw.get("install_retries"), "yggdrasil_service_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.install_retries must be positive"
+        )
+    return YggdrasilServiceSetupConfig(
+        github_repo=github_repo,
+        download_dir=download_dir,
+        service_unit_name=service_unit_name,
+        install_retries=install_retries,
     )
 
 
@@ -1698,6 +1753,9 @@ def load_config(path: Path) -> Config:
         zram_service=_zram_service_table(data.get("zram_service")),
         i2pd_service_setup=_i2pd_service_setup_table(
             data.get("i2pd_service_setup")
+        ),
+        yggdrasil_service_setup=_yggdrasil_service_setup_table(
+            data.get("yggdrasil_service_setup")
         ),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
         ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),

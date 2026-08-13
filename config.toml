@@ -221,6 +221,22 @@ start_check_attempts = 5
 # Pause in seconds between two readiness checks.
 start_check_retry_delay_seconds = 1
 
+[yggdrasil_service_setup]
+# Yggdrasil network router parameters (docs/spec/yggdrasil-service.md).
+# The task installs the newest yggdrasil release from the GitHub
+# repository as a system service; the package owns the configuration and
+# the node keys.
+# GitHub repository of yggdrasil, owner/name form used by the releases
+# API.
+github_repo = "yggdrasil-network/yggdrasil-go"
+# Directory for the downloaded package file.
+download_dir = "/var/lib/pyntara/yggdrasil-download"
+# Name of the systemd service unit installed by the package.
+service_unit_name = "yggdrasil.service"
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
+
 [ssh_daemon_setup]
 # SSH server parameters (docs/spec/ssh-daemon-setup.md). The task
 # installs the openssh-server package, runs ssh.service and patches the
@@ -784,5 +800,11 @@ modes = ["minimal", "server", "desktop"]
 name = "i2pd_service_setup"
 description = "Install and configure the latest i2pd from GitHub releases as a system service."
 depends = ["add_extra_repos"]
+modes = ["server", "desktop"]
+
+[[tasks]]
+name = "yggdrasil_service_setup"
+description = "Install the latest yggdrasil from GitHub releases as a system service."
+depends = []
 modes = ["server", "desktop"]
 
