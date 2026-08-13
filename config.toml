@@ -224,8 +224,9 @@ start_check_retry_delay_seconds = 1
 [yggdrasil_service_setup]
 # Yggdrasil network router parameters (docs/spec/yggdrasil-service.md).
 # The task installs the newest yggdrasil release from the GitHub
-# repository as a system service; the package owns the configuration and
-# the node keys.
+# repository as a system service and owns the configuration and the node
+# key: the key lives in a separate PEM file referenced by PrivateKeyPath,
+# so config rewrites never change the node identity.
 # GitHub repository of yggdrasil, owner/name form used by the releases
 # API.
 github_repo = "yggdrasil-network/yggdrasil-go"
@@ -236,6 +237,53 @@ service_unit_name = "yggdrasil.service"
 # Retry attempts after a failed package install; total attempts are
 # retries plus one.
 install_retries = 3
+# Main configuration file the task writes. It must match the
+# DefaultConfigFile embedded in the package, otherwise the values are
+# ignored.
+config_path = "/etc/yggdrasil/yggdrasil.conf"
+# PEM file with the node private key, referenced by PrivateKeyPath. The
+# task extracts the key from the package-generated config once, so the
+# node identity survives config rewrites.
+private_key_path = "/etc/yggdrasil/private-key.pem"
+# File mode of the configuration file, octal string.
+config_file_mode = "0640"
+# File mode of the private key PEM file, octal string.
+private_key_file_mode = "0600"
+# TUN interface name; a fixed name instead of auto.
+if_name = "ygg"
+# TUN interface MTU; the yggdrasil range is 1280 to 65535.
+if_mtu = 65535
+# Admin socket URI used by yggdrasilctl.
+admin_listen = "unix:///var/run/yggdrasil/yggdrasil.sock"
+# Inbound listener URIs; [::] binds IPv4 and IPv6, port 0 picks a random
+# free port. wss, socks and sockstls are not supported as listeners.
+listen = ["tcp://[::]:0", "tls://[::]:0", "quic://[::]:0", "ws://[::]:0"]
+# Full peer list storage next to the config; the task saves the whole
+# downloaded list here for reference, but only the selected working
+# peers go into the configuration.
+peers_full_path = "/etc/yggdrasil/peers-full.txt"
+# Tarball of the official public-peers repository, the peer list source.
+peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"
+# How many peers are probed in one batch.
+peer_batch_size = 100
+# How many working peers to keep in the final configuration.
+peer_target_count = 6
+# How long to wait for a batch to connect before reading the journal.
+peer_probe_timeout_seconds = 30
+# How many batches to try before keeping the last one; 0 means the whole
+# list.
+peer_max_batches = 0
+# Fallback peer list used when the download fails. Pick 2-3 nearby nodes
+# from https://publicpeers.neilalexander.dev/ or the public-peers
+# repository.
+static_peers = []
+# Multicast peer discovery: regex of interface names, beacon (advertise
+# presence) and listen (connect to discovered neighbours). One block
+# matching every interface with both switches covers the local network.
+[[yggdrasil_service_setup.multicast_interfaces]]
+regex = ".*"
+beacon = true
+listen = true
 
 [ssh_daemon_setup]
 # SSH server parameters (docs/spec/ssh-daemon-setup.md). The task

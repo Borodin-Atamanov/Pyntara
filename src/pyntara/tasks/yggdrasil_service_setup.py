@@ -8,29 +8,59 @@ deb asset yggdrasil-{version}-{arch}.deb is chosen by the dpkg
 architecture, whose name matches the architecture part of the asset name.
 The package is downloaded from the official GitHub release assets without
 a checksum verification: the source is trusted, and the extra check would
-add a failure point without protecting the install. The package owns the
-configuration and the node keys: its postinst generates /etc/yggdrasil/
-yggdrasil.conf with a fresh key pair and enables and starts the service,
-so the task never writes the configuration and keeps the node identity
-across reinstalls. The apt index is not refreshed, because the package
-depends only on systemd, which is always installed. The task is
-idempotent: it skips when the installed version equals the newest release
-tag and the service is enabled and active; force mode restarts the
-service but never reinstalls a matching version.
+add a failure point without protecting the install.
+
+The task owns the configuration and the node identity. The package
+postinst generates /etc/yggdrasil/yggdrasil.conf with a fresh key pair;
+the task extracts the key once into a separate PEM file referenced by
+PrivateKeyPath, so rewriting the configuration never changes the node
+identity. The configuration is rendered as JSON from config.toml: the
+TUN interface name and MTU, the admin socket, the inbound listeners
+(tcp, tls, quic and ws on all stacks with random ports) and the multicast
+discovery blocks.
+
+The peer list comes from the official public-peers repository: the task
+downloads the repository tarball, parses every markdown file into URI
+strings, saves the full list next to the configuration for reference and
+probes the peers in batches. Each batch is written into the
+configuration, the service is restarted, and after the probe pause the
+task reads the yggdrasil journal for Connected lines to find which peers
+actually connected. When a batch reaches peer_target_count working peers,
+the task keeps the target count with the lowest ping from the admin
+socket and restarts the service with the final configuration. When no
+batch reaches the target, the last tried batch stays in the
+configuration and the task reports a warning. If the download fails, the
+configured static_peers are used, and a run with neither is an error,
+because a node without peers never joins the network.
+
+The apt index is not refreshed, because the package depends only on
+systemd. The task is idempotent: it skips when the installed version
+equals the newest release, the configuration exists with a non-empty
+peer list, the key file exists and the service is enabled and active;
+force mode reruns the whole peer selection.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import random
 import re
+import socket
 import subprocess
+import tarfile
+import tempfile
+import time
+import urllib.parse
 from pathlib import Path
 
+from pyntara.config import YggdrasilServiceSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     dpkg_architecture,
+    ensure_root_owner,
     install_package_once,
     run_command,
     service_is_active,
@@ -41,6 +71,18 @@ from pyntara.utils import (
 # version: 0.5.14; the release tag carries a leading v, the asset and the
 # version output do not.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
+
+# One peer URI inside a backtick line of the public-peers markdown files.
+PEER_URI_PATTERN = re.compile(
+    r"`((?:tcp|tls|quic|ws|wss|socks|sockstls|unix)://[^\s`]+)`"
+)
+
+# A Connected line of the yggdrasil journal:
+# Connected outbound: <ygg-address>@<ip:port>, source <local-addr>.
+CONNECTED_PATTERN = re.compile(
+    r"Connected (?:outbound|inbound): [0-9a-f]+@"
+    r"(\[[0-9a-f:]+\]:\d+|[0-9.]+:\d+)"
+)
 
 
 def _release_tag(release: dict[str, object]) -> str:
@@ -210,18 +252,341 @@ def _cleanup_downloads(download_dir: Path, name: str) -> None:
         pass
 
 
+def _render_config(
+    cfg: YggdrasilServiceSetupConfig, peers: list[str]
+) -> str:
+    """Render the yggdrasil configuration JSON with the given peers.
+
+    The key lives in the separate PEM file, so the rendered document
+    carries PrivateKeyPath instead of the key material. Keys are emitted
+    in a fixed order, so the rendered file, the idempotency comparison
+    and the written configuration share one representation.
+    """
+
+    data = {
+        "PrivateKeyPath": str(cfg.private_key_path),
+        "AdminListen": cfg.admin_listen,
+        "IfName": cfg.if_name,
+        "IfMTU": cfg.if_mtu,
+        "Listen": list(cfg.listen),
+        "MulticastInterfaces": [
+            {"Regex": entry.regex, "Beacon": entry.beacon, "Listen": entry.listen}
+            for entry in cfg.multicast_interfaces
+        ],
+        "Peers": list(peers),
+    }
+    return json.dumps(data, indent=2) + "\n"
+
+
+def _ensure_private_key(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
+    """Extract or generate the node private key into the PEM file.
+
+    When the key file exists, nothing happens: the identity is kept.
+    Otherwise the key is extracted from the existing package-generated
+    configuration with yggdrasil -useconffile -exportkey, or generated
+    through -genconf piped into -useconf -exportkey when the
+    configuration is absent. Raises RuntimeError when the export fails.
+    """
+
+    if cfg.private_key_path.is_file():
+        return
+    if cfg.config_path.is_file():
+        result = run_command(
+            [
+                "yggdrasil",
+                "-useconffile",
+                str(cfg.config_path),
+                "-exportkey",
+            ],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"cannot export private key: exit {result.returncode}")
+        key_text = result.stdout
+    else:
+        generated = run_command(
+            ["yggdrasil", "-genconf", "-json"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        if generated.returncode != 0:
+            raise RuntimeError(
+                f"cannot generate config: exit {generated.returncode}"
+            )
+        exported = run_command(
+            ["yggdrasil", "-useconf", "-exportkey"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+            input=generated.stdout,
+        )
+        if exported.returncode != 0:
+            raise RuntimeError(
+                f"cannot export private key: exit {exported.returncode}"
+            )
+        key_text = exported.stdout
+    cfg.private_key_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.private_key_path.write_text(key_text, encoding="utf-8")
+    os.chmod(cfg.private_key_path, cfg.private_key_file_mode)
+    ensure_root_owner(cfg.private_key_path)
+
+
+def _write_config(cfg: YggdrasilServiceSetupConfig, peers: list[str]) -> None:
+    """Write the rendered configuration into the configured path."""
+
+    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.config_path.write_text(_render_config(cfg, peers), encoding="utf-8")
+    os.chmod(cfg.config_path, cfg.config_file_mode)
+    ensure_root_owner(cfg.config_path)
+
+
+def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
+    """True when the current configuration exists with a non-empty Peers.
+
+    A missing file or unparsable JSON is False, so the task reconfigures
+    instead of skipping on a broken file.
+    """
+
+    try:
+        data = json.loads(cfg.config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    peers = data.get("Peers")
+    return isinstance(peers, list) and len(peers) > 0
+
+
+def _parse_md_peers(text: str) -> list[str]:
+    """The peer URIs inside a markdown file, deduplicated in order."""
+
+    return list(dict.fromkeys(PEER_URI_PATTERN.findall(text)))
+
+
+def _download_peers(cfg: YggdrasilServiceSetupConfig, timeout: float) -> list[str]:
+    """Download and parse the public-peers list; save it next to the config.
+
+    Downloads the repository tarball with curl, extracts every markdown
+    file and collects the backtick peer URIs. The full list is saved to
+    peers_full_path for reference, while the configuration only ever
+    carries the selected working peers. Raises RuntimeError when the
+    download fails or yields no peers.
+    """
+
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix="yggdrasil-peers-", suffix=".tar.gz")
+    os.close(tmp_fd)
+    try:
+        run_command(
+            [
+                "curl",
+                "--fail",
+                "--silent",
+                "--location",
+                "--show-error",
+                "--output",
+                tmp_name,
+                cfg.peers_tarball_url,
+            ],
+            timeout=timeout,
+        )
+        try:
+            with tarfile.open(tmp_name, "r:gz") as archive:
+                members = [
+                    member
+                    for member in archive.getmembers()
+                    if member.isfile() and member.name.endswith(".md")
+                ]
+                peers: list[str] = []
+                for member in members:
+                    file = archive.extractfile(member)
+                    if file is None:
+                        continue
+                    text = file.read().decode("utf-8", errors="replace")
+                    peers.extend(_parse_md_peers(text))
+        except (tarfile.TarError, OSError) as exc:
+            raise RuntimeError(f"cannot parse peers tarball: {exc}") from None
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"cannot download peers list: {exc}") from None
+    finally:
+        try:
+            Path(tmp_name).unlink()
+        except FileNotFoundError:
+            pass
+    peers = list(dict.fromkeys(peers))
+    if not peers:
+        raise RuntimeError("peers list is empty")
+    cfg.peers_full_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.peers_full_path.write_text("\n".join(peers) + "\n", encoding="utf-8")
+    return peers
+
+
+def _parse_ip_port(addr: str) -> tuple[str, int] | None:
+    """Split an ip:port or [ipv6]:port string into (ip, port)."""
+
+    if addr.startswith("["):
+        host, _, rest = addr[1:].partition("]")
+        try:
+            return (host, int(rest.lstrip(":")))
+        except ValueError:
+            return None
+    host, sep, port = addr.rpartition(":")
+    if not sep:
+        return None
+    try:
+        return (host, int(port))
+    except ValueError:
+        return None
+
+
+def _resolve_uri_addrs(uri: str) -> list[tuple[str, int]]:
+    """The (ip, port) pairs of a peer URI after DNS resolution.
+
+    A malformed URI, a missing port or an unresolvable host yields an
+    empty list, so such peers can never be marked as working. The whole
+    parse is guarded, because urllib may raise ValueError on unusual
+    hosts and socket may raise gaierror on unresolvable names.
+    """
+
+    try:
+        parsed = urllib.parse.urlparse(uri)
+        host = parsed.hostname
+        port = parsed.port
+        if not host or not port:
+            return []
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (ValueError, socket.gaierror):
+        return []
+    result: list[tuple[str, int]] = []
+    for info in infos:
+        sockaddr = info[4]
+        ip = str(sockaddr[0])
+        port = int(sockaddr[1])
+        if (ip, port) not in result:
+            result.append((ip, port))
+    return result
+
+
+def _journal_connected_addrs(
+    service_unit_name: str, probe_seconds: float, timeout: float
+) -> set[tuple[str, int]]:
+    """The (ip, port) pairs of Connected lines in the recent journal.
+
+    Reads the yggdrasil journal for the last probe window; a failed
+    journalctl call yields an empty set, so the batch is simply treated
+    as having connected nothing.
+    """
+
+    result = run_command(
+        [
+            "journalctl",
+            "-u",
+            service_unit_name,
+            "--since",
+            f"-{int(probe_seconds)}s",
+            "--no-pager",
+            "--output=short-iso",
+        ],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return set()
+    addrs: set[tuple[str, int]] = set()
+    for match in CONNECTED_PATTERN.finditer(result.stdout):
+        parsed = _parse_ip_port(match.group(1))
+        if parsed is not None:
+            addrs.add(parsed)
+    return addrs
+
+
+def _latencies_from_ctl(timeout: float) -> dict[tuple[str, int], float]:
+    """The peer (ip, port) to latency map from yggdrasilctl getPeers.
+
+    The admin socket reports the latency of each connected peer in
+    nanoseconds; only entries whose remote host parses as an IP are kept,
+    because a hostname cannot be matched against the journal addresses.
+    A failed call yields an empty map, so the selection falls back to the
+    batch order.
+    """
+
+    try:
+        result = run_command(
+            ["yggdrasilctl", "-json", "getPeers"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+    entries = data.get("peers") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    latencies: dict[tuple[str, int], float] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        remote = entry.get("remote")
+        if not isinstance(remote, str):
+            continue
+        ip_port = _resolve_uri_addrs(remote)
+        latency = entry.get("latency")
+        if not isinstance(latency, (int, float)) or not ip_port:
+            continue
+        for addr in ip_port:
+            latencies[addr] = float(latency)
+    return latencies
+
+
+def _pick_best_peers(
+    working: list[str],
+    latencies: dict[tuple[str, int], float],
+    target_count: int,
+) -> list[str]:
+    """The target_count working peers with the lowest ping.
+
+    Peers are sorted by the minimum latency over their resolved
+    addresses; peers without a latency keep the batch order at the end.
+    """
+
+    def key(uri: str) -> float:
+        addrs = _resolve_uri_addrs(uri)
+        values = [latencies[addr] for addr in addrs if addr in latencies]
+        return min(values) if values else float("inf")
+
+    return sorted(working, key=key)[:target_count]
+
+
+def _restart_service(service_name: str, timeout: float) -> None:
+    """Restart the service, or start it when it is not running."""
+
+    action = "restart" if service_is_active(service_name, timeout) else "start"
+    run_command(["systemctl", action, service_name], timeout=timeout)
+
+
 def task(ctx: Context) -> TaskResult:
-    """Install the newest yggdrasil release and run it as a service; skip when done.
+    """Install the newest yggdrasil release, configure it and pick working peers.
 
     The goal is reached when the installed version equals the newest
-    release tag and the service is enabled and active; the task then
-    returns changed=False. Otherwise it downloads the matching .deb asset
-    from the release, installs it, enables the service, starts or
-    restarts it and checks once that it became active. Every step is
-    reported to stdout: measurements and decisions as single lines that
-    include their result, long-running commands as a line before and a
-    line after. Any failure is returned as an error TaskResult: the
-    runner continues with the remaining tasks and never stops here.
+    release, the configuration exists with a non-empty peer list, the key
+    file exists and the service is enabled and active; the task then
+    returns changed=False. Otherwise it downloads and installs the
+    matching .deb asset, extracts the node key, downloads the public peer
+    list, probes it in batches and keeps the target number of working
+    peers with the lowest ping. Every step is reported to stdout:
+    measurements and decisions as single lines that include their result,
+    long-running commands as a line before and a line after. Any failure
+    is returned as an error TaskResult: the runner continues with the
+    remaining tasks and never stops here.
     """
 
     cfg = ctx.config.yggdrasil_service_setup
@@ -267,7 +632,16 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
     needs_install = installed_version != version
-    if not force and not needs_install and enabled and active:
+    key_exists = cfg.private_key_path.is_file()
+    config_ready = _config_has_peers(cfg)
+    if (
+        not force
+        and not needs_install
+        and enabled
+        and active
+        and key_exists
+        and config_ready
+    ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
 
@@ -299,6 +673,20 @@ def task(ctx: Context) -> TaskResult:
             )
         changed = True
 
+    _log(f"ensuring private key at {cfg.private_key_path}")
+    try:
+        _ensure_private_key(cfg, timeout)
+    except RuntimeError as exc:
+        return TaskResult(success=False, changed=changed, error=str(exc))
+    if cfg.private_key_path.is_file():
+        _log(f"private key ready: {cfg.private_key_path}")
+    else:
+        return TaskResult(
+            success=False,
+            changed=changed,
+            error=f"private key not created at {cfg.private_key_path}",
+        )
+
     if not enabled:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
         try:
@@ -314,38 +702,163 @@ def task(ctx: Context) -> TaskResult:
         _log("service enabled")
         changed = True
 
-    if not active or needs_install or force:
-        action = "restart" if active else "start"
-        _log(
-            f"{action}ing service: systemctl {action} {cfg.service_unit_name}"
-        )
-        try:
-            run_command(
-                ["systemctl", action, cfg.service_unit_name], timeout=timeout
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    _log(f"downloading peer list from {cfg.peers_tarball_url}")
+    downloaded: list[str] | None = None
+    try:
+        downloaded = _download_peers(cfg, timeout)
+    except RuntimeError as exc:
+        _log(f"peer list download failed, using static_peers: {exc}")
+    if downloaded is None:
+        if not cfg.static_peers:
             return TaskResult(
                 success=False,
                 changed=changed,
-                error=f"systemctl {action} failed: {exc}",
+                error=(
+                    "cannot download the peer list and static_peers is empty; "
+                    "a yggdrasil node without peers never joins the network"
+                ),
             )
-        _log(f"service {action}ed")
+        peers = list(cfg.static_peers)
+        _log(f"using {len(peers)} static peers")
+    else:
+        peers = downloaded
+        _log(f"peer list downloaded: {len(peers)} peers")
+        _log(f"saving full peer list to {cfg.peers_full_path}")
+        random.shuffle(peers)
+        _log("peer list shuffled")
+
+    def run_final_config(selected: list[str]) -> TaskResult:
+        _log(f"writing configuration {cfg.config_path} with {len(selected)} peers")
+        try:
+            _write_config(cfg, selected)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=f"cannot write configuration: {exc}",
+            )
+        _log("configuration written")
+        try:
+            _restart_service(cfg.service_unit_name, timeout)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=f"systemctl restart failed: {exc}",
+            )
         if not service_is_active(cfg.service_unit_name, timeout):
             return TaskResult(
                 success=False,
                 changed=True,
                 error=(
                     f"service {cfg.service_unit_name} did not become active "
-                    "after " + action
+                    "after restart"
                 ),
             )
         _log("service active")
-        changed = True
+        return TaskResult(
+            success=True,
+            changed=True,
+            message=(
+                f"yggdrasil {version} installed, {len(selected)} peers "
+                f"configured, service {cfg.service_unit_name} active"
+            ),
+        )
 
+    if downloaded is None:
+        return run_final_config(peers)
+
+    batch_size = cfg.peer_batch_size
+    total_batches = (len(peers) + batch_size - 1) // batch_size
+    if cfg.peer_max_batches > 0:
+        total_batches = min(total_batches, cfg.peer_max_batches)
+    _log(
+        f"probing peers in batches of {batch_size}, "
+        f"{total_batches} batch(es), target {cfg.peer_target_count} working"
+    )
+
+    last_batch: list[str] = []
+    for batch_index in range(total_batches):
+        batch = peers[
+            batch_index * batch_size : (batch_index + 1) * batch_size
+        ]
+        if not batch:
+            break
+        last_batch = batch
+        _log(
+            f"batch {batch_index + 1}/{total_batches}: probing "
+            f"{len(batch)} peers"
+        )
+        _log(f"writing configuration {cfg.config_path} with probe batch")
+        try:
+            _write_config(cfg, batch)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=f"cannot write configuration: {exc}",
+            )
+        _log("configuration written")
+        try:
+            _restart_service(cfg.service_unit_name, timeout)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=f"systemctl restart failed: {exc}",
+            )
+        _log(
+            f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
+        )
+        time.sleep(cfg.peer_probe_timeout_seconds)
+        connected = _journal_connected_addrs(
+            cfg.service_unit_name, cfg.peer_probe_timeout_seconds, timeout
+        )
+        _log(f"journal shows {len(connected)} connected peer address(es)")
+        working: list[str] = []
+        for uri in batch:
+            addrs = _resolve_uri_addrs(uri)
+            if any(addr in connected for addr in addrs):
+                working.append(uri)
+        _log(
+            f"batch {batch_index + 1}: {len(working)} of {len(batch)} "
+            f"peers connected"
+        )
+        if len(working) >= cfg.peer_target_count:
+            latencies = _latencies_from_ctl(timeout)
+            _log(f"read latencies for {len(latencies)} peer address(es)")
+            best_peers = _pick_best_peers(
+                working, latencies, cfg.peer_target_count
+            )
+            _log(
+                f"batch {batch_index + 1}: keeping {len(best_peers)} peers "
+                "with the lowest ping"
+            )
+            return run_final_config(best_peers)
+        _log(
+            f"batch {batch_index + 1} reached only {len(working)} working "
+            f"peers, trying the next batch"
+        )
+
+    _log(
+        "no batch reached the target; keeping the last tried batch "
+        f"({len(last_batch)} peers) in the configuration"
+    )
+    if not service_is_active(cfg.service_unit_name, timeout):
+        return TaskResult(
+            success=False,
+            changed=True,
+            error=(
+                f"service {cfg.service_unit_name} did not become active "
+                "after restart"
+            ),
+        )
     return TaskResult(
         success=True,
-        changed=changed,
+        changed=True,
         message=(
-            f"yggdrasil {version} installed, service {cfg.service_unit_name} active"
+            f"yggdrasil {version} installed, no batch reached "
+            f"{cfg.peer_target_count} working peers, keeping the last "
+            f"batch of {len(last_batch)} peers"
         ),
     )

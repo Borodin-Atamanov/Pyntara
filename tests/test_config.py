@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from pyntara.config import ConfigError, SshDirective, load_config
+from pyntara.config import (
+    ConfigError,
+    SshDirective,
+    YggdrasilMulticastInterfaceConfig,
+    load_config,
+)
 
 VALID_TOML = """\
 [engine]
@@ -71,6 +76,26 @@ github_repo = "yggdrasil-network/yggdrasil-go"
 download_dir = "/var/lib/pyntara/yggdrasil-download"
 service_unit_name = "yggdrasil.service"
 install_retries = 3
+config_path = "/etc/yggdrasil/yggdrasil.conf"
+private_key_path = "/etc/yggdrasil/private-key.pem"
+config_file_mode = "0640"
+private_key_file_mode = "0600"
+if_name = "ygg"
+if_mtu = 65535
+admin_listen = "unix:///var/run/yggdrasil/yggdrasil.sock"
+listen = ["tcp://[::]:0", "tls://[::]:0", "quic://[::]:0", "ws://[::]:0"]
+peers_full_path = "/etc/yggdrasil/peers-full.txt"
+peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"
+peer_batch_size = 100
+peer_target_count = 6
+peer_probe_timeout_seconds = 30
+peer_max_batches = 0
+static_peers = []
+
+[[yggdrasil_service_setup.multicast_interfaces]]
+regex = ".*"
+beacon = true
+listen = true
 
 [ssh_daemon_setup]
 package_name = "openssh-server"
@@ -288,6 +313,36 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.yggdrasil_service_setup.service_unit_name == "yggdrasil.service"
     assert config.yggdrasil_service_setup.install_retries == 3
+    assert config.yggdrasil_service_setup.config_path == Path(
+        "/etc/yggdrasil/yggdrasil.conf"
+    )
+    assert config.yggdrasil_service_setup.private_key_path == Path(
+        "/etc/yggdrasil/private-key.pem"
+    )
+    assert config.yggdrasil_service_setup.config_file_mode == 0o640
+    assert config.yggdrasil_service_setup.private_key_file_mode == 0o600
+    assert config.yggdrasil_service_setup.if_name == "ygg"
+    assert config.yggdrasil_service_setup.if_mtu == 65535
+    assert config.yggdrasil_service_setup.admin_listen == (
+        "unix:///var/run/yggdrasil/yggdrasil.sock"
+    )
+    assert config.yggdrasil_service_setup.listen == (
+        "tcp://[::]:0",
+        "tls://[::]:0",
+        "quic://[::]:0",
+        "ws://[::]:0",
+    )
+    assert config.yggdrasil_service_setup.multicast_interfaces == (
+        YggdrasilMulticastInterfaceConfig(regex=".*", beacon=True, listen=True),
+    )
+    assert config.yggdrasil_service_setup.peers_full_path == Path(
+        "/etc/yggdrasil/peers-full.txt"
+    )
+    assert config.yggdrasil_service_setup.peer_batch_size == 100
+    assert config.yggdrasil_service_setup.peer_target_count == 6
+    assert config.yggdrasil_service_setup.peer_probe_timeout_seconds == 30
+    assert config.yggdrasil_service_setup.peer_max_batches == 0
+    assert config.yggdrasil_service_setup.static_peers == ()
     assert config.ssh_daemon_setup.package_name == "openssh-server"
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3
@@ -487,6 +542,25 @@ _BASE_CONFIG = (
     'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'
     'service_unit_name = "yggdrasil.service"\n'
     "install_retries = 3\n"
+    'config_path = "/etc/yggdrasil/yggdrasil.conf"\n'
+    'private_key_path = "/etc/yggdrasil/private-key.pem"\n'
+    'config_file_mode = "0640"\n'
+    'private_key_file_mode = "0600"\n'
+    'if_name = "ygg"\n'
+    "if_mtu = 65535\n"
+    'admin_listen = "unix:///var/run/yggdrasil/yggdrasil.sock"\n'
+    'listen = ["tcp://[::]:0", "tls://[::]:0"]\n'
+    'peers_full_path = "/etc/yggdrasil/peers-full.txt"\n'
+    'peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"\n'
+    "peer_batch_size = 100\n"
+    "peer_target_count = 6\n"
+    "peer_probe_timeout_seconds = 30\n"
+    "peer_max_batches = 0\n"
+    "static_peers = []\n"
+    "[[yggdrasil_service_setup.multicast_interfaces]]\n"
+    'regex = ".*"\n'
+    "beacon = true\n"
+    "listen = true\n"
     "[ssh_daemon_setup]\n"
     'package_name = "openssh-server"\n'
     "package_status_timeout_seconds = 30\n"
@@ -803,6 +877,77 @@ _BASE_CONFIG = (
         _BASE_CONFIG.replace(
             'service_unit_name = "yggdrasil.service"\ninstall_retries = 3',
             'service_unit_name = "yggdrasil.service"\ninstall_retries = 0',
+        ),
+        # yggdrasil config_path is a number, not a string
+        _BASE_CONFIG.replace(
+            'config_path = "/etc/yggdrasil/yggdrasil.conf"', "config_path = 1"
+        ),
+        # yggdrasil private_key_path is an empty string
+        _BASE_CONFIG.replace(
+            'private_key_path = "/etc/yggdrasil/private-key.pem"',
+            'private_key_path = ""',
+        ),
+        # yggdrasil config_file_mode is not an octal string
+        _BASE_CONFIG.replace('config_file_mode = "0640"', 'config_file_mode = "640"'),
+        # yggdrasil private_key_file_mode is not octal
+        _BASE_CONFIG.replace(
+            'private_key_file_mode = "0600"', 'private_key_file_mode = "zzzz"'
+        ),
+        # yggdrasil if_name is a number, not a string
+        _BASE_CONFIG.replace('if_name = "ygg"', "if_name = 1"),
+        # yggdrasil if_mtu is below the yggdrasil range
+        _BASE_CONFIG.replace("if_mtu = 65535", "if_mtu = 1000"),
+        # yggdrasil if_mtu is above the yggdrasil range
+        _BASE_CONFIG.replace("if_mtu = 65535", "if_mtu = 70000"),
+        # yggdrasil if_mtu is a string, not an integer
+        _BASE_CONFIG.replace("if_mtu = 65535", 'if_mtu = "65535"'),
+        # yggdrasil admin_listen is an empty string
+        _BASE_CONFIG.replace(
+            'admin_listen = "unix:///var/run/yggdrasil/yggdrasil.sock"',
+            'admin_listen = ""',
+        ),
+        # yggdrasil listen is a string, not an array
+        _BASE_CONFIG.replace(
+            'listen = ["tcp://[::]:0", "tls://[::]:0"]', 'listen = "tcp://[::]:0"'
+        ),
+        # yggdrasil listen contains a wss scheme, which is not a listener
+        _BASE_CONFIG.replace(
+            'listen = ["tcp://[::]:0", "tls://[::]:0"]',
+            'listen = ["wss://[::]:0"]',
+        ),
+        # yggdrasil listen contains a socks scheme, which is outgoing only
+        _BASE_CONFIG.replace(
+            'listen = ["tcp://[::]:0", "tls://[::]:0"]',
+            'listen = ["socks://proxy:1080/1.2.3.4:1000"]',
+        ),
+        # yggdrasil multicast_interfaces is a string, not an array
+        _BASE_CONFIG.replace(
+            '[[yggdrasil_service_setup.multicast_interfaces]]\nregex = ".*"\nbeacon = true\nlisten = true\n',
+            'multicast_interfaces = ".*"\n',
+        ),
+        # yggdrasil multicast regex is an empty string
+        _BASE_CONFIG.replace('regex = ".*"', 'regex = ""'),
+        # yggdrasil multicast beacon is a string, not a boolean
+        _BASE_CONFIG.replace("beacon = true", 'beacon = "true"'),
+        # yggdrasil multicast listen is an integer, not a boolean
+        _BASE_CONFIG.replace("listen = true", "listen = 1"),
+        # yggdrasil peer_batch_size is zero
+        _BASE_CONFIG.replace("peer_batch_size = 100", "peer_batch_size = 0"),
+        # yggdrasil peer_target_count is a string, not an integer
+        _BASE_CONFIG.replace(
+            "peer_target_count = 6", 'peer_target_count = "6"'
+        ),
+        # yggdrasil peer_probe_timeout_seconds is zero
+        _BASE_CONFIG.replace(
+            "peer_probe_timeout_seconds = 30", "peer_probe_timeout_seconds = 0"
+        ),
+        # yggdrasil peer_max_batches is negative
+        _BASE_CONFIG.replace("peer_max_batches = 0", "peer_max_batches = -1"),
+        # yggdrasil static_peers is a string, not an array
+        _BASE_CONFIG.replace("static_peers = []", 'static_peers = "tcp://1.2.3.4:1000"'),
+        # yggdrasil static_peers contains an unknown scheme
+        _BASE_CONFIG.replace(
+            "static_peers = []", 'static_peers = ["carrierpigeon://1.2.3.4:1000"]'
         ),
         # ssh_daemon_setup package_name is a number, not a string
         _BASE_CONFIG.replace(

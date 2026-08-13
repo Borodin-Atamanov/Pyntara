@@ -26,7 +26,13 @@ dev = [
 # The suite runs in parallel across worker processes; xdist distributes the
 # tests at collection time. Each worker builds its own cheap-KDF template
 # vault once (tests/conftest.py), so vault tests stay fast in every worker.
-addopts = "-n auto"
+addopts = "-n auto -m 'not live'"
+# Live tests touch the real network and the real yggdrasil binary; they
+# run only on explicit request (pytest -m live) during development of the
+# yggdrasil task, never in the default suite or CI.
+markers = [
+    "live: network-dependent tests for the yggdrasil peer selection, run manually",
+]
 
 [project.scripts]
 pyntara = "pyntara.pyntara:main"

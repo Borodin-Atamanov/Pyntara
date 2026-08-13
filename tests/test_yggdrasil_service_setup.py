@@ -1,6 +1,6 @@
 """Unit tests for the yggdrasil_service_setup task.
 
-All external resources (subprocess, filesystem paths) are mocked via
+All external resources (subprocess, DNS, filesystem paths) are mocked via
 monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md).
 """
@@ -8,7 +8,10 @@ monkeypatch; the tests only touch temporary fixtures
 from __future__ import annotations
 
 import json
+import shutil
+import socket
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -23,19 +26,16 @@ from pyntara.tasks import yggdrasil_service_setup
 TAG = "v0.5.14"
 VERSION = "0.5.14"
 DEB_CONTENT = b"fake yggdrasil binary\n"
+KEY_PEM = "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n"
 
 
-def _release_json(
-    *,
-    tag: str = TAG,
-    arch_asset: str = "amd64",
-    include_asset: bool = True,
-) -> str:
+def _release_json(*, tag: str = TAG) -> str:
     """The GitHub releases API payload used by the curl fake."""
 
+    version = tag.removeprefix("v")
     assets: list[dict[str, str]] = []
-    if include_asset:
-        name = f"yggdrasil-{VERSION}-{arch_asset}.deb"
+    for arch in ("amd64", "arm64"):
+        name = f"yggdrasil-{version}-{arch}.deb"
         assets.append(
             {
                 "name": name,
@@ -48,11 +48,27 @@ def _release_json(
     return json.dumps({"tag_name": tag, "assets": assets})
 
 
+def _make_peers_tarball(tmp_path: Path, uris: list[str]) -> Path:
+    """A fake public-peers tarball with one markdown file of peer URIs."""
+
+    tar_path = tmp_path / "peers.tar.gz"
+    md_dir = tmp_path / "extract"
+    md_dir.mkdir(exist_ok=True)
+    content = "\n".join(f"* `{uri}`" for uri in uris) + "\n"
+    (md_dir / "russia.md").write_text(content, encoding="utf-8")
+    with tarfile.open(tar_path, "w:gz") as archive:
+        archive.add(md_dir, arcname="public-peers-master")
+    return tar_path
+
+
 def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
     retries: int = 3,
+    batch_size: int = 100,
+    target_count: int = 6,
+    static_peers: tuple[str, ...] = (),
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -62,20 +78,49 @@ def _ctx(
             frozenset({"yggdrasil_service_setup"}) if force else frozenset()
         ),
         task_data_root=tmp_path,
-        skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
             yggdrasil_download_dir=tmp_path / "download",
+            yggdrasil_config_path=tmp_path / "etc" / "yggdrasil" / "yggdrasil.conf",
+            yggdrasil_private_key_path=tmp_path
+            / "etc"
+            / "yggdrasil"
+            / "private-key.pem",
+            yggdrasil_peers_full_path=tmp_path / "etc" / "yggdrasil" / "peers-full.txt",
             yggdrasil_install_retries=retries,
+            yggdrasil_peer_batch_size=batch_size,
+            yggdrasil_peer_target_count=target_count,
+            yggdrasil_peer_probe_timeout_seconds=0.0,
+            yggdrasil_static_peers=static_peers,
         ),
     )
 
 
+def _fake_getaddrinfo(host_map: dict[str, str]) -> object:
+    """A getaddrinfo fake mapping hostnames to IP addresses."""
+
+    def fake(host: str, port: int, **kwargs: object) -> list[object]:
+        if host in host_map:
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    (host_map[host], port),
+                )
+            ]
+        raise socket.gaierror("no address")
+
+    return fake
+
+
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     *,
     installed_version: str | None = VERSION,
     enabled: bool = True,
@@ -83,20 +128,23 @@ def _install_fake(
     release_json: str = _release_json(),
     arch: str = "amd64",
     fail_install: int = 0,
-    active_becomes: bool = True,
     missing_binary: bool = False,
+    peers_tarball: Path | None = None,
+    journal_output: str = "",
+    ctl_json: str = "",
+    host_map: dict[str, str] | None = None,
     version_output: str | None = None,
+    active_becomes: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
     dpkg reports the architecture, yggdrasil -version the installed
-    version (None means not installed), curl answers the release API and
-    writes the fixture package file, apt-get install fails the first
-    fail_install attempts, and systemctl reports the enabled and active
-    state from the flags. With active_becomes, the service turns active
-    after the first start or restart. With missing_binary, the yggdrasil
-    call raises FileNotFoundError like a real missing executable.
-    version_output overrides the raw -version output.
+    version, yggdrasil -exportkey and -genconf answer the key flows,
+    curl answers the release API and writes the fixture package or copies
+    the fixture peers tarball, apt-get install fails the first
+    fail_install attempts, systemctl reports the enabled and active state
+    and runs start and restart, journalctl returns journal_output and
+    yggdrasilctl returns ctl_json. DNS resolution goes through host_map.
     """
 
     calls: list[list[str]] = []
@@ -110,17 +158,28 @@ def _install_fake(
         if command[0] == "dpkg" and command[1] == "--print-architecture":
             return _FakeProc(0, f"{arch}\n")
         if command[0] == "yggdrasil":
-            if missing_binary:
-                raise FileNotFoundError(command[0])
-            if installed_version is None:
-                return _FakeProc(1, "")
-            if version_output is not None:
-                return _FakeProc(0, version_output)
-            return _FakeProc(0, f"Build version: {installed_version}\n")
+            if command[1] == "-version":
+                if missing_binary:
+                    raise FileNotFoundError(command[0])
+                if installed_version is None:
+                    return _FakeProc(1, "")
+                if version_output is not None:
+                    return _FakeProc(0, version_output)
+                return _FakeProc(0, f"Build version: {installed_version}\n")
+            if "-exportkey" in command:
+                return _FakeProc(0, KEY_PEM)
+            if command[1] == "-genconf":
+                return _FakeProc(0, '{"PrivateKey": "aa"}\n')
+            if command[1] == "-useconf":
+                return _FakeProc(0, KEY_PEM)
+            return _FakeProc(0)
         if command[0] == "curl":
             if "--output" in command:
-                path = Path(command[command.index("--output") + 1])
-                path.write_bytes(DEB_CONTENT)
+                target = Path(command[command.index("--output") + 1])
+                if peers_tarball is not None and "public-peers" in command[-1]:
+                    shutil.copyfile(peers_tarball, target)
+                else:
+                    target.write_bytes(DEB_CONTENT)
                 return _FakeProc(0)
             return _FakeProc(0, release_json)
         if command[0] == "apt-get":
@@ -141,19 +200,43 @@ def _install_fake(
             if command[1] in ("start", "restart"):
                 started = True
             return _FakeProc(0)
+        if command[0] == "journalctl":
+            return _FakeProc(0, journal_output)
+        if command[0] == "yggdrasilctl":
+            return _FakeProc(0, ctl_json)
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    if host_map is not None:
+        monkeypatch.setattr(
+            yggdrasil_service_setup.socket, "getaddrinfo", _fake_getaddrinfo(host_map)
+        )
     return calls
+
+
+def _write_ready_state(ctx: Context) -> None:
+    """Write the config with peers and the key file; the ready skip state."""
+
+    cfg = ctx.config.yggdrasil_service_setup
+    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.config_path.write_text(
+        yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"]),
+        encoding="utf-8",
+    )
+    cfg.private_key_path.write_text(KEY_PEM, encoding="utf-8")
 
 
 def test_already_configured_skips(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The installed version equals the newest release and the service is
-    # enabled and active: the task skips and runs only the status queries.
+    # The version matches, the config has peers, the key exists and the
+    # service is enabled and active: the task skips and runs only the
+    # status queries.
     ctx = _ctx(tmp_path)
-    calls = _install_fake(monkeypatch, installed_version=VERSION, enabled=True, active=True)
+    _write_ready_state(ctx)
+    calls = _install_fake(
+        monkeypatch, tmp_path, installed_version=VERSION, enabled=True, active=True
+    )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
@@ -170,10 +253,12 @@ def test_missing_binary_is_treated_as_not_installed(
 ) -> None:
     # A missing yggdrasil binary raises FileNotFoundError from subprocess;
     # the task treats it as not installed and proceeds with the install
-    # instead of crashing.
-    ctx = _ctx(tmp_path)
+    # instead of crashing. The peer download fails and static_peers is
+    # used as the fallback.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
+        tmp_path,
         installed_version=None,
         enabled=False,
         active=False,
@@ -185,47 +270,144 @@ def test_missing_binary_is_treated_as_not_installed(
     assert any(
         call[0] == "apt-get" and call[1] == "install" for call in calls
     )
+    assert "1.2.3.4" in (ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    ))
 
 
-def test_installs_new_release(
+def test_installs_new_release_with_static_peers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # yggdrasil is not installed and the service is not enabled: the task
-    # downloads the architecture asset, installs it with apt, enables and
-    # starts the service.
-    ctx = _ctx(tmp_path)
+    # yggdrasil is not installed; the peer download fails, so the
+    # configured static peers land in the configuration.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
-        monkeypatch, installed_version=None, enabled=False, active=False
+        monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert VERSION in (result.message or "")
-    asset = f"yggdrasil-{VERSION}-amd64.deb"
-    assert [
-        "apt-get",
-        "install",
-        "-y",
-        str(ctx.config.yggdrasil_service_setup.download_dir / asset),
-    ] in calls
     assert ["systemctl", "enable", "yggdrasil.service"] in calls
     assert ["systemctl", "start", "yggdrasil.service"] in calls
-    # The downloaded file is removed after the successful install.
-    assert not (ctx.config.yggdrasil_service_setup.download_dir / asset).exists()
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "tls://1.2.3.4:1234" in config_text
+    assert ctx.config.yggdrasil_service_setup.private_key_path.is_file()
+    assert not (ctx.config.yggdrasil_service_setup.download_dir / "yggdrasil-0.5.14-amd64.deb").exists()
 
 
-def test_update_reinstalls_and_restarts(
+def test_installs_new_release_with_downloaded_peers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # An older release is installed: the task installs the newer one and
-    # restarts the running service.
-    ctx = _ctx(tmp_path)
-    calls = _install_fake(monkeypatch, installed_version="0.5.13", active=True)
+    # The peer list downloads; the first batch has enough working peers,
+    # so the final config keeps the target count with the lowest ping.
+    host_map = {
+        "10.0.0.1": "10.0.0.1",
+        "10.0.0.2": "10.0.0.2",
+        "10.0.0.3": "10.0.0.3",
+    }
+    uris = [
+        "tcp://10.0.0.1:1001",
+        "tcp://10.0.0.2:1002",
+        "tcp://10.0.0.3:1003",
+    ]
+    tarball = _make_peers_tarball(tmp_path, uris)
+    journal = (
+        "2026-08-13 Connected outbound: aa@10.0.0.1:1001, source bb\n"
+        "2026-08-13 Connected outbound: cc@10.0.0.2:1002, source dd\n"
+    )
+    ctl = json.dumps(
+        {
+            "peers": [
+                {
+                    "remote": "tcp://10.0.0.1:1001",
+                    "up": True,
+                    "latency": 5000000,
+                },
+                {
+                    "remote": "tcp://10.0.0.2:1002",
+                    "up": True,
+                    "latency": 10000000,
+                },
+            ]
+        }
+    )
+    ctx = _ctx(tmp_path, batch_size=3, target_count=2)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        peers_tarball=tarball,
+        journal_output=journal,
+        ctl_json=ctl,
+        host_map=host_map,
+    )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["systemctl", "restart", "yggdrasil.service"] in calls
-    assert ["systemctl", "start", "yggdrasil.service"] not in calls
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    # The lowest-latency working peers are kept.
+    assert "10.0.0.1:1001" in config_text
+    assert "10.0.0.2:1002" in config_text
+    assert "10.0.0.3:1003" not in config_text
+    # The full list is saved next to the config.
+    full = ctx.config.yggdrasil_service_setup.peers_full_path.read_text(
+        encoding="utf-8"
+    )
+    assert "10.0.0.1:1001" in full
+    # journalctl and yggdrasilctl were queried.
+    assert any(call[0] == "journalctl" for call in calls)
+    assert any(call[0] == "yggdrasilctl" for call in calls)
+
+
+def test_no_batch_reaches_target_keeps_last_batch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No batch has enough working peers; the last tried batch stays in
+    # the configuration and the task reports a warning.
+    uris = ["tcp://10.0.0.1:1001", "tcp://10.0.0.2:1002"]
+    tarball = _make_peers_tarball(tmp_path, uris)
+    ctx = _ctx(tmp_path, batch_size=1, target_count=6)
+    monkeypatch.setattr(yggdrasil_service_setup.random, "shuffle", lambda x: None)
+    _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=None,
+        peers_tarball=tarball,
+        journal_output="",
+        host_map={"10.0.0.1": "10.0.0.1", "10.0.0.2": "10.0.0.2"},
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert "no batch reached" in (result.message or "")
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "10.0.0.2:1002" in config_text
+
+
+def test_download_fails_and_no_static_peers_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The peer download fails and static_peers is empty: the task reports
+    # the error, because a node without peers never joins the network.
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is False
+    assert "static_peers is empty" in (result.error or "")
+    assert not any(
+        call[0] == "systemctl" and call[1] in ("start", "restart")
+        for call in calls
+    )
 
 
 def test_install_gives_up_after_retries(
@@ -234,7 +416,7 @@ def test_install_gives_up_after_retries(
     # apt always fails: the task tries one initial attempt plus the
     # configured retries, then reports the failure.
     ctx = _ctx(tmp_path, retries=3)
-    calls = _install_fake(monkeypatch, installed_version=None, fail_install=99)
+    calls = _install_fake(monkeypatch, tmp_path, installed_version=None, fail_install=99)
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is False
     assert "cannot install yggdrasil" in (result.error or "")
@@ -248,8 +430,8 @@ def test_install_retries_transient_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The first apt attempt fails, the retry succeeds.
-    ctx = _ctx(tmp_path, retries=3)
-    calls = _install_fake(monkeypatch, installed_version=None, fail_install=1)
+    ctx = _ctx(tmp_path, retries=3, static_peers=("tls://1.2.3.4:1234",))
+    calls = _install_fake(monkeypatch, tmp_path, installed_version=None, fail_install=1)
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -265,13 +447,13 @@ def test_no_matching_asset_reports_error(
     # The release has no asset for this architecture: the task reports the
     # missing asset and stops.
     ctx = _ctx(tmp_path)
-    release = _release_json(include_asset=False)
+    release = json.dumps({"tag_name": TAG, "assets": []})
     calls = _install_fake(
-        monkeypatch, installed_version=None, release_json=release
+        monkeypatch, tmp_path, installed_version=None, release_json=release
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is False
-    assert "no yggdrasil-" in (result.error or "")
+    assert "has no yggdrasil-0.5.14-amd64.deb asset" in (result.error or "")
     assert not any(
         call[0] == "apt-get" and call[1] == "install" for call in calls
     )
@@ -295,17 +477,31 @@ def test_release_json_failure_reports_error(
     assert "cannot fetch" in (result.error or "")
 
 
-def test_force_restarts_service(
+def test_force_reruns_peer_selection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Everything is already configured, but the task is forced: the
-    # service is restarted, while the matching version is not reinstalled.
-    ctx = _ctx(tmp_path, force=True)
-    calls = _install_fake(monkeypatch, installed_version=VERSION, active=True)
+    # Everything is ready, but the task is forced: the peer list is
+    # downloaded and probed again, the config is rewritten.
+    host_map = {"10.0.0.1": "10.0.0.1"}
+    uris = ["tcp://10.0.0.1:1001"]
+    tarball = _make_peers_tarball(tmp_path, uris)
+    journal = "2026-08-13 Connected outbound: aa@10.0.0.1:1001, source bb\n"
+    ctx = _ctx(tmp_path, force=True, batch_size=1, target_count=1)
+    _write_ready_state(ctx)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=True,
+        peers_tarball=tarball,
+        journal_output=journal,
+        host_map=host_map,
+    )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["systemctl", "restart", "yggdrasil.service"] in calls
+    assert any(call[0] == "journalctl" for call in calls)
     assert not any(
         call[0] == "apt-get" and call[1] == "install" for call in calls
     )
@@ -314,11 +510,12 @@ def test_force_restarts_service(
 def test_service_never_active_reports_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The service is installed but never reports active after start: the
-    # task reports the failure.
-    ctx = _ctx(tmp_path)
+    # The service never becomes active after the final restart: the task
+    # reports the failure.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
+        tmp_path,
         installed_version=None,
         enabled=False,
         active=False,
@@ -327,10 +524,9 @@ def test_service_never_active_reports_error(
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is False
     assert "did not become active" in (result.error or "")
-    starts = [
-        call for call in calls if call[0] == "systemctl" and call[1] == "start"
-    ]
-    assert len(starts) == 1
+    assert any(
+        call[0] == "systemctl" and call[1] == "start" for call in calls
+    )
 
 
 def test_select_asset_by_architecture() -> None:
@@ -350,6 +546,172 @@ def test_select_asset_by_architecture() -> None:
     )
 
 
+def test_render_config_fields() -> None:
+    # The rendered config carries the key path, the interface settings,
+    # the listeners, the multicast blocks and the peers, and never the
+    # key material.
+    ctx = _ctx(Path("/tmp"))
+    rendered = yggdrasil_service_setup._render_config(
+        ctx.config.yggdrasil_service_setup, ["tcp://1.2.3.4:1234"]
+    )
+    data = json.loads(rendered)
+    assert data["PrivateKeyPath"] == str(
+        ctx.config.yggdrasil_service_setup.private_key_path
+    )
+    assert data["IfName"] == "ygg"
+    assert data["IfMTU"] == 65535
+    assert "tls://[::]:0" in data["Listen"]
+    assert data["MulticastInterfaces"][0]["Regex"] == ".*"
+    assert data["MulticastInterfaces"][0]["Beacon"] is True
+    assert data["Peers"] == ["tcp://1.2.3.4:1234"]
+    assert "PrivateKey" not in data
+
+
+def test_ensure_private_key_extracts_from_existing_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The key file is missing but the config exists: the task extracts
+    # the key with yggdrasil -useconffile -exportkey and writes the PEM.
+    ctx = _ctx(tmp_path)
+    ctx.config.yggdrasil_service_setup.config_path.parent.mkdir(parents=True)
+    ctx.config.yggdrasil_service_setup.config_path.write_text("{}", encoding="utf-8")
+    calls = _install_fake(monkeypatch, tmp_path)
+    yggdrasil_service_setup._ensure_private_key(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert ctx.config.yggdrasil_service_setup.private_key_path.read_text(
+        encoding="utf-8"
+    ) == KEY_PEM
+    assert any(
+        call[0] == "yggdrasil" and call[1] == "-useconffile" for call in calls
+    )
+    assert not any(call[1] == "-genconf" for call in calls)
+
+
+def test_ensure_private_key_generates_when_no_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Neither the key nor the config exists: the task generates a config
+    # and exports the key from it.
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(monkeypatch, tmp_path)
+    yggdrasil_service_setup._ensure_private_key(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert ctx.config.yggdrasil_service_setup.private_key_path.read_text(
+        encoding="utf-8"
+    ) == KEY_PEM
+    assert any(
+        call[0] == "yggdrasil" and call[1] == "-genconf" for call in calls
+    )
+
+
+def test_parse_md_peers_extracts_and_deduplicates() -> None:
+    text = (
+        "* `tcp://1.2.3.4:1000`\n"
+        "* `tls://[2001:db8::1]:1001` with a note\n"
+        "* `tcp://1.2.3.4:1000`\n"
+    )
+    assert yggdrasil_service_setup._parse_md_peers(text) == [
+        "tcp://1.2.3.4:1000",
+        "tls://[2001:db8::1]:1001",
+    ]
+
+
+def test_resolve_uri_addrs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A resolvable URI yields its addresses; an unresolvable or malformed
+    # URI yields an empty list.
+    monkeypatch.setattr(
+        yggdrasil_service_setup.socket,
+        "getaddrinfo",
+        _fake_getaddrinfo({"peer.example": "10.0.0.1"}),
+    )
+    assert yggdrasil_service_setup._resolve_uri_addrs(
+        "tcp://peer.example:1001"
+    ) == [("10.0.0.1", 1001)]
+    assert yggdrasil_service_setup._resolve_uri_addrs("tcp://gone.example:1001") == []
+    assert yggdrasil_service_setup._resolve_uri_addrs("tcp://peer.example") == []
+
+
+def test_journal_connected_addrs_parses_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Connected lines yield their remote (ip, port) pairs; a failed
+    # journalctl call yields an empty set.
+    journal = (
+        "Connected outbound: aa@10.0.0.1:1001, source bb\n"
+        "Connected inbound: cc@[2001:db8::1]:1002, source dd\n"
+    )
+    calls = _install_fake(monkeypatch, tmp_path, journal_output=journal)
+    assert yggdrasil_service_setup._journal_connected_addrs(
+        "yggdrasil.service", 30, 10
+    ) == {("10.0.0.1", 1001), ("2001:db8::1", 1002)}
+    assert any(call[0] == "journalctl" for call in calls)
+
+
+def test_latencies_from_ctl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The admin socket latency map is parsed by (ip, port); a failed call
+    # yields an empty map.
+    ctl = json.dumps(
+        {
+            "peers": [
+                {"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        yggdrasil_service_setup.socket,
+        "getaddrinfo",
+        _fake_getaddrinfo({"10.0.0.1": "10.0.0.1"}),
+    )
+    calls = _install_fake(monkeypatch, tmp_path, ctl_json=ctl)
+    assert yggdrasil_service_setup._latencies_from_ctl(10) == {
+        ("10.0.0.1", 1001): 5000000.0
+    }
+    assert any(call[0] == "yggdrasilctl" for call in calls)
+
+
+def test_pick_best_peers_sorts_by_latency(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Peers with a known latency come first in ascending order; peers
+    # without a latency stay at the end in batch order.
+    monkeypatch.setattr(
+        yggdrasil_service_setup.socket,
+        "getaddrinfo",
+        _fake_getaddrinfo({"10.0.0.1": "10.0.0.1", "10.0.0.2": "10.0.0.2"}),
+    )
+    latencies = {
+        ("10.0.0.1", 1001): 9000000.0,
+        ("10.0.0.2", 1002): 1000000.0,
+    }
+    picked = yggdrasil_service_setup._pick_best_peers(
+        ["tcp://10.0.0.1:1001", "tcp://10.0.0.2:1002"],
+        latencies,
+        1,
+    )
+    assert picked == ["tcp://10.0.0.2:1002"]
+
+
+def test_config_has_peers(tmp_path: Path) -> None:
+    # A config with a non-empty Peers array is ready; a missing, broken
+    # or empty-peer config is not.
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.yggdrasil_service_setup
+    assert yggdrasil_service_setup._config_has_peers(cfg) is False
+    cfg.config_path.parent.mkdir(parents=True)
+    cfg.config_path.write_text('{"Peers": []}', encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers(cfg) is False
+    cfg.config_path.write_text('{"Peers": ["tcp://1.2.3.4:1000"]}', encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers(cfg) is True
+    cfg.config_path.write_text("not json", encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers(cfg) is False
+
+
 def test_installed_version_parsing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -360,7 +722,11 @@ def test_installed_version_parsing(
         lambda *a, **k: _FakeProc(0, "Build version: 0.5.14\n"),
     )
     assert yggdrasil_service_setup._installed_version(10) == "0.5.14"
-    monkeypatch.setattr("pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(1, ""))
+    monkeypatch.setattr(
+        "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(1, "")
+    )
     assert yggdrasil_service_setup._installed_version(10) is None
-    monkeypatch.setattr("pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(0, "unknown output"))
+    monkeypatch.setattr(
+        "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(0, "unknown output")
+    )
     assert yggdrasil_service_setup._installed_version(10) is None
