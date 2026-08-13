@@ -79,8 +79,11 @@ PEER_URI_PATTERN = re.compile(
 
 # A Connected line of the yggdrasil journal:
 # Connected outbound: <ygg-address>@<ip:port>, source <local-addr>.
+# The ygg-address is the full peer IPv6 address with colons, e.g.
+# 226:43e9:...:6ea6, and the remote part after the @ is the address of
+# the peer we dialed.
 CONNECTED_PATTERN = re.compile(
-    r"Connected (?:outbound|inbound): [0-9a-f]+@"
+    r"Connected (?:outbound|inbound): [0-9a-f:]+@"
     r"(\[[0-9a-f:]+\]:\d+|[0-9.]+:\d+)"
 )
 
@@ -360,10 +363,33 @@ def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
     return isinstance(peers, list) and len(peers) > 0
 
 
-def _parse_md_peers(text: str) -> list[str]:
-    """The peer URIs inside a markdown file, deduplicated in order."""
+def _is_parseable_peer_uri(uri: str) -> bool:
+    """True when the URI has a host and a port that urllib accepts.
 
-    return list(dict.fromkeys(PEER_URI_PATTERN.findall(text)))
+    The public-peers markdown files contain configuration templates
+    with placeholder hosts such as [proxyhost]:[proxyport] and
+    [username]:[password]@[proxyhost]; yggdrasil crashes on such a peer
+    at startup, so they are dropped at parse time.
+    """
+
+    try:
+        parsed = urllib.parse.urlparse(uri)
+    except ValueError:
+        return False
+    return bool(parsed.hostname and parsed.port)
+
+
+def _parse_md_peers(text: str) -> list[str]:
+    """The peer URIs inside a markdown file, deduplicated in order.
+
+    Template peers with placeholder hosts are dropped, because yggdrasil
+    aborts on them at startup and the whole node would never connect.
+    """
+
+    uris = PEER_URI_PATTERN.findall(text)
+    return list(
+        dict.fromkeys(uri for uri in uris if _is_parseable_peer_uri(uri))
+    )
 
 
 def _download_peers(cfg: YggdrasilServiceSetupConfig, timeout: float) -> list[str]:

@@ -38,7 +38,7 @@ The listeners accept inbound peerings. The configured default listens on tcp, tl
 
 Yggdrasil has no concept of bootstrap nodes: every peering is a full network connection, and a node without peers never joins the network. The task therefore always provisions a peer list.
 
-The full peer list comes from the official public-peers repository: the task downloads the configured tarball with curl, unpacks it into a temporary directory, parses every markdown file for backtick peer URIs and saves the deduplicated full list to peers_full_path next to the configuration for reference. Only the selected working peers ever enter the configuration.
+The full peer list comes from the official public-peers repository: the task downloads the configured tarball with curl, unpacks it into a temporary directory, parses every markdown file for backtick peer URIs and saves the deduplicated full list to peers_full_path next to the configuration for reference. Only the selected working peers ever enter the configuration. The markdown files also contain configuration templates with placeholder hosts such as [proxyhost]:[proxyport] and [username]:[password]@[proxyhost]; the task drops every URI whose host and port do not parse, because yggdrasil aborts on such a peer at startup and the whole node would never connect.
 
 The selection probes the list in batches:
 

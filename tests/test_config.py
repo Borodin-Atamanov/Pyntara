@@ -88,7 +88,7 @@ peers_full_path = "/etc/yggdrasil/peers-full.txt"
 peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"
 peer_batch_size = 100
 peer_target_count = 6
-peer_probe_timeout_seconds = 30
+peer_probe_timeout_seconds = 60
 peer_max_batches = 0
 static_peers = []
 
@@ -340,7 +340,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.yggdrasil_service_setup.peer_batch_size == 100
     assert config.yggdrasil_service_setup.peer_target_count == 6
-    assert config.yggdrasil_service_setup.peer_probe_timeout_seconds == 30
+    assert config.yggdrasil_service_setup.peer_probe_timeout_seconds == 60
     assert config.yggdrasil_service_setup.peer_max_batches == 0
     assert config.yggdrasil_service_setup.static_peers == ()
     assert config.ssh_daemon_setup.package_name == "openssh-server"
@@ -554,7 +554,7 @@ _BASE_CONFIG = (
     'peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"\n'
     "peer_batch_size = 100\n"
     "peer_target_count = 6\n"
-    "peer_probe_timeout_seconds = 30\n"
+    "peer_probe_timeout_seconds = 60\n"
     "peer_max_batches = 0\n"
     "static_peers = []\n"
     "[[yggdrasil_service_setup.multicast_interfaces]]\n"
@@ -939,7 +939,7 @@ _BASE_CONFIG = (
         ),
         # yggdrasil peer_probe_timeout_seconds is zero
         _BASE_CONFIG.replace(
-            "peer_probe_timeout_seconds = 30", "peer_probe_timeout_seconds = 0"
+            "peer_probe_timeout_seconds = 60", "peer_probe_timeout_seconds = 0"
         ),
         # yggdrasil peer_max_batches is negative
         _BASE_CONFIG.replace("peer_max_batches = 0", "peer_max_batches = -1"),

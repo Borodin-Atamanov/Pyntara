@@ -314,8 +314,12 @@ def test_installs_new_release_with_downloaded_peers(
     ]
     tarball = _make_peers_tarball(tmp_path, uris)
     journal = (
-        "2026-08-13 Connected outbound: aa@10.0.0.1:1001, source bb\n"
-        "2026-08-13 Connected outbound: cc@10.0.0.2:1002, source dd\n"
+        "2026-08-13 Connected outbound: "
+        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
+        "source 192.168.85.146:54588\n"
+        "2026-08-13 Connected outbound: "
+        "201:e165:5940:ce70:e2f:19c5:67b:812e@10.0.0.2:1002, "
+        "source [::]:36046\n"
     )
     ctl = json.dumps(
         {
@@ -485,7 +489,11 @@ def test_force_reruns_peer_selection(
     host_map = {"10.0.0.1": "10.0.0.1"}
     uris = ["tcp://10.0.0.1:1001"]
     tarball = _make_peers_tarball(tmp_path, uris)
-    journal = "2026-08-13 Connected outbound: aa@10.0.0.1:1001, source bb\n"
+    journal = (
+        "2026-08-13 Connected outbound: "
+        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
+        "source 192.168.85.146:54588\n"
+    )
     ctx = _ctx(tmp_path, force=True, batch_size=1, target_count=1)
     _write_ready_state(ctx)
     calls = _install_fake(
@@ -607,15 +615,36 @@ def test_ensure_private_key_generates_when_no_config(
 
 
 def test_parse_md_peers_extracts_and_deduplicates() -> None:
+    # Backtick URIs are extracted and deduplicated; template peers with
+    # placeholder hosts, which crash yggdrasil at startup, are dropped.
     text = (
         "* `tcp://1.2.3.4:1000`\n"
         "* `tls://[2001:db8::1]:1001` with a note\n"
         "* `tcp://1.2.3.4:1000`\n"
+        "* `sockstls://[proxyhost]:[proxyport]/[host]:[port]`\n"
+        "* `socks://[username]:[password]@[proxyhost]:[proxyport]/[host]:[port]`\n"
     )
     assert yggdrasil_service_setup._parse_md_peers(text) == [
         "tcp://1.2.3.4:1000",
         "tls://[2001:db8::1]:1001",
     ]
+
+
+def test_is_parseable_peer_uri() -> None:
+    # A real peer URI with a host and port is parseable; the template
+    # peers with placeholder hosts are not.
+    assert yggdrasil_service_setup._is_parseable_peer_uri(
+        "tcp://peer.example:1001"
+    )
+    assert yggdrasil_service_setup._is_parseable_peer_uri(
+        "tls://[2001:db8::1]:1001"
+    )
+    assert not yggdrasil_service_setup._is_parseable_peer_uri(
+        "sockstls://[proxyhost]:[proxyport]/[host]:[port]"
+    )
+    assert not yggdrasil_service_setup._is_parseable_peer_uri(
+        "socks://[username]:[password]@[proxyhost]:[proxyport]/[host]:[port]"
+    )
 
 
 def test_resolve_uri_addrs(
@@ -641,8 +670,12 @@ def test_journal_connected_addrs_parses_lines(
     # Connected lines yield their remote (ip, port) pairs; a failed
     # journalctl call yields an empty set.
     journal = (
-        "Connected outbound: aa@10.0.0.1:1001, source bb\n"
-        "Connected inbound: cc@[2001:db8::1]:1002, source dd\n"
+        "Connected outbound: "
+        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
+        "source 192.168.85.146:54588\n"
+        "Connected inbound: "
+        "201:e165:5940:ce70:e2f:19c5:67b:812e@[2001:db8::1]:1002, "
+        "source [::]:36046\n"
     )
     calls = _install_fake(monkeypatch, tmp_path, journal_output=journal)
     assert yggdrasil_service_setup._journal_connected_addrs(

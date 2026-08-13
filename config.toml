@@ -269,7 +269,10 @@ peer_batch_size = 100
 # How many working peers to keep in the final configuration.
 peer_target_count = 6
 # How long to wait for a batch to connect before reading the journal.
-peer_probe_timeout_seconds = 30
+# The connections arrive in a wave some 30-35 seconds after the restart,
+# because the dials to the batch run with a bounded parallelism and the
+# dead peers eat their timeout; 60 seconds leaves a safe margin.
+peer_probe_timeout_seconds = 60
 # How many batches to try before keeping the last one; 0 means the whole
 # list.
 peer_max_batches = 0
