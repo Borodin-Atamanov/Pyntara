@@ -44,6 +44,22 @@ The tunnel identity lives in the keys file at the configured tunnel_keys_path an
 
 The keys file is the binary PrivateKeys record i2pd writes: the first 387 bytes are the IdentityEx (256-byte encryption key, 128-byte signing key and a 3-byte certificate), and the address is the lowercase unpadded base32 of the SHA-256 hash of that IdentityEx with the .b32.i2p suffix. The certificate starts with the type byte; the KEY type means the signing and crypto key types follow in an extended block whose length is the big-endian uint16 at certificate offset 1, and the hash covers the identity plus that block. The task parses the certificate, computes the address and carries it in its message; a record without the KEY certificate yields no address and the message says the address is not available yet.
 
+## Connecting over I2P
+
+An SSH client reaches the tunnel through the local SOCKS proxy of i2pd, which the task enables. The proxy listens on 127.0.0.1:4447 by default, and the client routes the connection through it with a ProxyCommand:
+
+ssh -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:4447 %h %p" <user>@<base32>.b32.i2p
+
+The placeholders are the configured sshd Port directive, the user whose authorized_keys holds the deployed key, and the tunnel address from the task message. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
+
+Host <alias>
+HostName <base32>.b32.i2p
+User <user>
+Port 30222
+ProxyCommand nc -X 5 -x 127.0.0.1:4447 %h %p
+
+The client must offer the deployed key; on the target machine the key is loaded once with ssh-add and the agent keeps it for the session. The connection is noticeably slower than the cleartext one, because the traffic crosses the I2P network in both directions, so the client timeouts from ssh_client_setup apply.
+
 ## Service lifecycle
 
 The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the package or the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error.
