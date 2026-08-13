@@ -132,6 +132,7 @@ def _install_fake(
     checksum_wrong: bool = False,
     checksum_asset_name: str = f"i2pd_{TAG}-1resolute1_amd64.deb",
     active_becomes: bool = True,
+    missing_binary: bool = False,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -142,7 +143,9 @@ def _install_fake(
     active state from the flags. The checksum file names the asset that
     the fake package download is expected to carry. With
     active_becomes, the service turns active after the first start or
-    restart; without it, the readiness loop runs out.
+    restart; without it, the readiness loop runs out. With
+    missing_binary, the i2pd call raises FileNotFoundError like a real
+    missing executable.
     """
 
     calls: list[list[str]] = []
@@ -156,6 +159,8 @@ def _install_fake(
         if command[0] == "dpkg" and command[1] == "--print-architecture":
             return _FakeProc(0, f"{arch}\n")
         if command[0] == "i2pd":
+            if missing_binary:
+                raise FileNotFoundError(command[0])
             if installed_version is None:
                 return _FakeProc(1, "")
             return _FakeProc(0, f"i2pd version {installed_version}\n")
@@ -226,6 +231,29 @@ def test_already_configured_skips(
     assert not any(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
+    )
+
+
+def test_missing_binary_is_treated_as_not_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A missing i2pd binary raises FileNotFoundError from subprocess; the
+    # task treats it as not installed and proceeds with the install
+    # instead of crashing.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        missing_binary=True,
+    )
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
     )
 
 

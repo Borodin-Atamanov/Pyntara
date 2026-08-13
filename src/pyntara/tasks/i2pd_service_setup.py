@@ -163,10 +163,11 @@ def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
 def _installed_version(timeout: float) -> str | None:
     """The installed i2pd version from i2pd --version, or None.
 
-    A missing binary or a nonzero exit means i2pd is not installed; a
-    binary that hangs is reported as not installed so the task
-    reinstalls it. The version triple is searched in stdout and stderr,
-    because the exact output format may change.
+    A missing binary, a nonzero exit or a hang means i2pd is not
+    installed: the task treats the version as absent and reinstalls it.
+    The missing executable raises FileNotFoundError (an OSError), which
+    subprocess raises regardless of check; the version triple is searched
+    in stdout and stderr, because the exact output format may change.
     """
 
     try:
@@ -176,7 +177,7 @@ def _installed_version(timeout: float) -> str | None:
             capture=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
         return None
     if result.returncode != 0:
         return None
