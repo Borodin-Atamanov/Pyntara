@@ -212,6 +212,7 @@ class ProquintTests:
     "output,expected",
     [
         ("enabled\n", True),
+        ("enabled-runtime\n", True),
         ("disabled\n", False),
         ("", False),
     ],
@@ -219,11 +220,12 @@ class ProquintTests:
 def test_service_is_enabled_matches_only_enabled(
     monkeypatch: pytest.MonkeyPatch, output: str, expected: bool
 ) -> None:
-    # Only the exact "enabled" state means the service starts at boot.
+    # The exact "enabled" and "enabled-runtime" states mean the service
+    # starts at boot; every other state does not.
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         assert command == ["systemctl", "is-enabled", "svc.service"]
         assert kwargs["check"] is False
-        return _FakeProc(0 if output == "enabled\n" else 1, output)
+        return _FakeProc(0 if output in ("enabled\n", "enabled-runtime\n") else 1, output)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     assert service_is_enabled("svc.service", timeout=5) is expected

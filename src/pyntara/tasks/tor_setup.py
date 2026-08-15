@@ -131,18 +131,29 @@ def _ensure_torrc_include(cfg: TorSetupConfig) -> tuple[bool, str | None]:
     return changed, None
 
 
-def _verify_config(timeout: float) -> str | None:
+def _verify_config(cfg: TorSetupConfig, timeout: float) -> str | None:
     """Error text when the tor configuration is invalid; None when OK.
 
     tor --verify-config parses the whole configuration, the main file
     and every included file, and exits nonzero on an invalid option or
-    a conflicting value, so the check is independent of the Tor version
-    and of the files the task does not own.
+    a conflicting value. The check runs as the Tor system user, because
+    Tor validates the ownership of every HiddenServiceDir against the
+    process user and would reject the directory owned by the daemon
+    user when run as root. The messages of Tor go to stdout, so the
+    error text joins stdout and stderr; without it a failed check would
+    report an empty reason.
     """
 
     try:
         result = run_command(
-            ["tor", "--verify-config"],
+            [
+                "runuser",
+                "-u",
+                cfg.tor_user,
+                "--",
+                "tor",
+                "--verify-config",
+            ],
             check=False,
             capture=True,
             timeout=timeout,
@@ -150,9 +161,9 @@ def _verify_config(timeout: float) -> str | None:
     except (subprocess.TimeoutExpired, OSError) as exc:
         return f"cannot run tor --verify-config: {exc}"
     if result.returncode != 0:
+        combined = f"{result.stdout}\n{result.stderr}".strip()
         return (
-            f"tor --verify-config exited {result.returncode}: "
-            f"{result.stderr.strip()}"
+            f"tor --verify-config exited {result.returncode}: {combined}"
         )
     return None
 
@@ -356,7 +367,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     if config_changed or include_changed or force:
-        verify = _verify_config(timeout)
+        verify = _verify_config(cfg, timeout)
         if verify is not None:
             return TaskResult(success=False, changed=changed, error=verify)
         _log("configuration verified through tor --verify-config")

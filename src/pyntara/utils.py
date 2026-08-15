@@ -171,8 +171,10 @@ def run_command(
 def service_is_enabled(name: str, timeout: float) -> bool:
     """True when the systemd service is enabled for boot.
 
-    systemctl is-enabled reports the boot state; "enabled" is the only
-    state that means the service starts at boot, every other output
+    systemctl is-enabled reports the boot state; "enabled" is the
+    ordinary persistent state and "enabled-runtime" the state of a unit
+    enabled only for the current boot (for example by a systemd
+    generator), both mean the service starts at boot, every other output
     (disabled, masked, not-found) is False.
     """
 
@@ -182,7 +184,10 @@ def service_is_enabled(name: str, timeout: float) -> bool:
         capture=True,
         timeout=timeout,
     )
-    return result.returncode == 0 and result.stdout.strip() == "enabled"
+    return result.returncode == 0 and result.stdout.strip() in (
+        "enabled",
+        "enabled-runtime",
+    )
 
 
 def service_is_active(name: str, timeout: float) -> bool:

@@ -133,10 +133,14 @@ def _install_fake(
             if not torrc.is_file():
                 torrc.write_text("Log notice syslog\n", encoding="utf-8")
             return _FakeProc(0)
-        if command[0] == "tor":
+        if command[0] == "runuser":
+            # The verification runs as the Tor system user, because Tor
+            # rejects a HiddenServiceDir owned by the daemon user when
+            # run as root.
             if verify_ok:
                 return _FakeProc(0, "Configuration valid\n")
-            return _FakeProc(1, "", "Unknown option 'nope'\n")
+            # Tor reports configuration errors on stdout, not stderr.
+            return _FakeProc(1, "Reading config failed--see warnings above.\n", "")
         if command[0] == "systemctl":
             if command[1] == "is-enabled":
                 if enabled:
@@ -203,7 +207,7 @@ def test_already_configured_skips(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
-    assert not any(call[0] == "tor" for call in calls)
+    assert not any(call[0] == "runuser" for call in calls)
 
 
 def test_installs_and_starts(
@@ -220,7 +224,7 @@ def test_installs_and_starts(
     assert result.changed is True
     assert ADDRESS in (result.message or "")
     assert ["apt-get", "install", "-y", "tor"] in calls
-    assert ["tor", "--verify-config"] in calls
+    assert ["runuser", "-u", "debian-tor", "--", "tor", "--verify-config"] in calls
     assert ["systemctl", "enable", "tor@default.service"] in calls
     assert ["systemctl", "start", "tor@default.service"] in calls
     cfg = ctx.config.tor_setup
@@ -263,7 +267,7 @@ def test_dropin_rewritten_when_missing_and_restarts(
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["tor", "--verify-config"] in calls
+    assert ["runuser", "-u", "debian-tor", "--", "tor", "--verify-config"] in calls
     assert ["systemctl", "restart", "tor@default.service"] in calls
     assert ["systemctl", "start", "tor@default.service"] not in calls
 
@@ -272,12 +276,14 @@ def test_verify_config_failure_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # tor --verify-config reports an invalid configuration: the task
-    # fails instead of silently accepting a broken drop-in.
+    # fails instead of silently accepting a broken drop-in, and the
+    # message carries the Tor output from stdout.
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, ctx, verify_ok=False)
     result = tor_setup.task(ctx)
     assert result.success is False
     assert "tor --verify-config" in (result.error or "")
+    assert "Reading config failed" in (result.error or "")
     assert not any(
         call[0] == "systemctl" and call[1] in ("start", "restart")
         for call in calls
