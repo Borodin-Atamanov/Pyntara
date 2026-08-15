@@ -19,6 +19,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara import __version__
 from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_setup
@@ -305,13 +306,15 @@ def _install_fake(
     active_names: set[str],
     import_ok: bool,
     uv_available: bool = True,
+    venv_version: str = __version__,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> list[list[str]]:
     """Install subprocess and uv fakes; return the recorded command calls.
 
     systemctl is-enabled and is-active answer from the given name sets,
-    the venv python import answers from import_ok, and uv commands
-    succeed unless matched by fail.
+    the venv python import answers from import_ok with the venv_version
+    as the printed pyntara version, and uv commands succeed unless
+    matched by fail.
     """
 
     calls: list[list[str]] = []
@@ -331,7 +334,7 @@ def _install_fake(
             return _FakeProc(1, "inactive")
         if command[0].endswith("/python") and command[1] == "-c":
             if import_ok:
-                return _FakeProc(0)
+                return _FakeProc(0, f"{venv_version}\n")
             return _FakeProc(1)
         return _FakeProc(0)
 
@@ -356,6 +359,7 @@ def _deploy_fixture(
     timer_active: bool = False,
     import_ok: bool = False,
     deployed: bool = False,
+    venv_version: str = __version__,
     command_ok: bool = True,
     spool_ok: bool = True,
     stale_config: bool = False,
@@ -434,6 +438,7 @@ def _deploy_fixture(
         active_names=active_names,
         import_ok=import_ok,
         uv_available=uv_available,
+        venv_version=venv_version,
         fail=fail,
     )
     return fixtures, calls
@@ -553,6 +558,71 @@ def test_force_reinstalls_and_restarts(
     assert ["systemctl", "restart", "system_metrics.service"] in calls
     assert ["systemctl", "restart", "system_metrics-ingest.path"] in calls
     assert not any(call == ["systemctl", "start", "system_metrics.service"] for call in calls)
+
+
+def test_venv_package_version_returns_trimmed_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The installed version is read from the venv python output and the
+    # trailing newline is trimmed.
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    _install_fake(
+        monkeypatch,
+        enabled_names=set(),
+        active_names=set(),
+        import_ok=True,
+        venv_version="0.1.6",
+    )
+    assert system_metrics_setup._venv_package_version(venv_python, 5) == "0.1.6"
+
+
+def test_venv_package_version_returns_none_on_import_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A venv whose import fails reports no version.
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    _install_fake(
+        monkeypatch,
+        enabled_names=set(),
+        active_names=set(),
+        import_ok=False,
+    )
+    assert system_metrics_setup._venv_package_version(venv_python, 5) is None
+
+
+def test_stale_venv_is_updated_and_service_restarted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The venv runs an old pyntara version while everything else is
+    # deployed: the task reinstalls the package with --reinstall and
+    # restarts the long-running service, so the new code takes effect
+    # without a reboot.
+    fixtures, calls = _deploy_fixture(
+        monkeypatch,
+        tmp_path,
+        service_enabled=True,
+        path_enabled=True,
+        timer_enabled=True,
+        service_active=True,
+        path_active=True,
+        timer_active=True,
+        import_ok=True,
+        deployed=True,
+        venv_version="0.0.1",
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert result.changed is True
+    assert any(
+        call[0] == "uv" and call[1] == "pip" and call[2] == "install"
+        and "--reinstall" in call
+        for call in calls
+    )
+    assert ["systemctl", "restart", "system_metrics.service"] in calls
 
 
 def test_uv_missing_fails(

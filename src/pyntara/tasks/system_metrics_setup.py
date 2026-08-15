@@ -5,6 +5,9 @@ services on the target machine: a dedicated virtual environment is created
 at the configured venv_dir with uv and the package is installed into it
 from the repository clone (REPO_ROOT), so deployed services import the
 same code base the installer uses and never need the clone afterwards.
+The venv is refreshed whenever its installed pyntara version differs
+from the repository version, so deployed services run the current code
+after every installer run.
 The single system config is copied to the configured system_config_path,
 so the deployed service reads its parameters with the same loader as the
 installer (architecture contract section 3). The long-running service
@@ -39,6 +42,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara import __version__
 from pyntara.config.loader import render_config_source
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -48,6 +52,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    trim_whitespace,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
@@ -84,26 +89,34 @@ COMMAND_TEMPLATE_PATH = (
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 
 
-def _venv_import_ok(venv_python: Path, timeout: float) -> bool:
-    """True when the venv python exists and imports the pyntara package.
+def _venv_package_version(venv_python: Path, timeout: float) -> str | None:
+    """The pyntara version installed in the venv, or None.
 
-    The import check is the proof that the package is installed in the
-    venv; it runs with capture so a broken import stays quiet and only the
-    return code is inspected.
+    The import is the proof that the package is installed in the venv;
+    the version proves that the installed code matches the repository
+    clone. The check runs with capture so a broken import stays quiet;
+    the printed version ends with a newline, so the output is trimmed
+    through the shared helper.
     """
 
     if not venv_python.is_file():
-        return False
+        return None
     try:
         result = run_command(
-            [str(venv_python), "-c", "import pyntara"],
+            [
+                str(venv_python),
+                "-c",
+                "import pyntara; print(pyntara.__version__)",
+            ],
             check=False,
             capture=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return False
-    return result.returncode == 0
+        return None
+    if result.returncode != 0:
+        return None
+    return trim_whitespace(result.stdout) or None
 
 
 def _uv_path() -> str | None:
@@ -118,20 +131,24 @@ def _ensure_venv(
     timeout: float,
     venv_dir: Path,
     python_version: str,
+    venv_up_to_date: bool,
 ) -> tuple[bool, str | None]:
-    """Ensure the venv exists with pyntara installed; (changed, error).
+    """Ensure the venv runs the repository pyntara version; (changed, error).
 
-    A venv is working when its python imports pyntara. Without force an
-    existing working venv is left untouched. Otherwise the venv is
-    created when missing with the configured python version and the
-    package is installed from the repository clone; force adds
-    --reinstall so the running code is refreshed even when the installed
-    version did not change.
+    A venv is up to date when its python imports pyntara and reports the
+    repository version. Without force an up-to-date venv is left
+    untouched; a stale or broken venv is updated even without force,
+    because the deployed services must run the current code. The venv is
+    created when missing with the configured python version; the package
+    is installed from the repository clone with --reinstall when the
+    update refreshes an existing venv, so uv replaces the installed code
+    even when the package metadata did not change.
     """
 
     venv_python = venv_dir / "bin" / "python"
-    if _venv_import_ok(venv_python, timeout) and not force:
+    if venv_up_to_date and not force:
         return False, None
+    created = False
     if not venv_dir.is_dir():
         _log(f"creating venv: uv venv {venv_dir}")
         try:
@@ -142,8 +159,9 @@ def _ensure_venv(
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"cannot create venv: {exc}"
         _log("venv created")
+        created = True
     install = [uv, "pip", "install"]
-    if force:
+    if force or (not venv_up_to_date and not created):
         install.append("--reinstall")
     install += ["--python", str(venv_python), str(REPO_ROOT)]
     _log(f"installing pyntara into the venv from {REPO_ROOT}")
@@ -375,7 +393,8 @@ def _ensure_spool_dir(spool_dir: Path, mode: int) -> None:
 def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
-    The goal is reached when the venv imports pyntara, the system config,
+    The goal is reached when the venv runs the repository pyntara version,
+    the system config,
     the three unit files and the generated command file match their
     sources, the service and the path unit are enabled and the spool
     directory is in place; the task then returns changed=False. Otherwise
@@ -424,8 +443,14 @@ def task(ctx: Context) -> TaskResult:
         spool_dir, metrics.commit_journal_identifier, metrics.spool_temp_prefix
     )
 
-    venv_ok = _venv_import_ok(venv_python, timeout)
-    _log(f"checking venv {venv_python}: {'ok' if venv_ok else 'missing or broken'}")
+    venv_python = venv_dir / "bin" / "python"
+    venv_version = _venv_package_version(venv_python, timeout)
+    venv_ok = venv_version == __version__
+    _log(
+        f"checking venv {venv_python}: "
+        f"{'ok' if venv_ok else 'missing or stale'} "
+        f"(venv {venv_version or 'none'}, repository {__version__})"
+    )
     config_ok = _system_config_matches(system_config_path)
     service_unit_ok = _unit_matches(service_name, service_unit)
     ingest_service_unit_ok = _unit_matches(ingest_service_name, ingest_service_unit)
@@ -485,7 +510,7 @@ def task(ctx: Context) -> TaskResult:
     if uv is None:
         return TaskResult(success=False, error="uv executable not found on PATH")
     venv_changed, error = _ensure_venv(
-        uv, force, timeout, venv_dir, metrics.python_version
+        uv, force, timeout, venv_dir, metrics.python_version, venv_ok
     )
     if error is not None:
         return TaskResult(success=False, error=error)
@@ -532,7 +557,7 @@ def task(ctx: Context) -> TaskResult:
             _log(f"unit {name} written")
             changed = True
 
-    if force or not (
+    if force or venv_changed or not (
         config_ok
         and all(unit_states)
         and service_enabled
