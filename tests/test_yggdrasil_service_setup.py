@@ -95,6 +95,11 @@ def _ctx(
             yggdrasil_peer_target_count=target_count,
             yggdrasil_peer_probe_timeout_seconds=0.0,
             yggdrasil_static_peers=static_peers,
+            yggdrasil_address_file_path=tmp_path
+            / "var"
+            / "lib"
+            / "pyntara"
+            / "yggdrasil_self_address",
         ),
     )
 
@@ -215,7 +220,7 @@ def _install_fake(
 
 
 def _write_ready_state(ctx: Context) -> None:
-    """Write the config with peers and the key file; the ready skip state."""
+    """Write the config with peers, the key and the saved address file."""
 
     cfg = ctx.config.yggdrasil_service_setup
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,6 +229,11 @@ def _write_ready_state(ctx: Context) -> None:
         encoding="utf-8",
     )
     cfg.private_key_path.write_text(KEY_PEM, encoding="utf-8")
+    cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.address_file_path.write_text("201:dead:beef::1\n", encoding="utf-8")
+
+
+SELF_ADDRESS = "201:1234:5678:9abc:def0:1234:5678:9abc"
 
 
 def test_already_configured_skips(
@@ -295,6 +305,84 @@ def test_installs_new_release_with_static_peers(
     assert "tls://1.2.3.4:1234" in config_text
     assert ctx.config.yggdrasil_service_setup.private_key_path.is_file()
     assert not (ctx.config.yggdrasil_service_setup.download_dir / "yggdrasil-0.5.14-amd64.deb").exists()
+
+
+def test_saves_self_address_after_provisioning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # After the final restart the task saves the node self address from
+    # the admin socket into the configured file, the fallback of the
+    # deployed address command.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        ctl_json=json.dumps({"self": SELF_ADDRESS}),
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert (
+        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+            encoding="utf-8"
+        ).strip()
+        == SELF_ADDRESS
+    )
+    assert any(call[0] == "yggdrasilctl" and call[1] == "getSelf" for call in calls)
+
+
+def test_self_address_save_failure_does_not_fail_task(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The admin socket query does not parse: the task stays successful
+    # and the address file is not written, so the save is best-effort.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    _install_fake(
+        monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert not ctx.config.yggdrasil_service_setup.address_file_path.exists()
+
+
+def test_skip_requires_address_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Everything is ready except the saved address file: the task does
+    # not skip, runs the provisioning and writes the address file.
+    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    cfg = ctx.config.yggdrasil_service_setup
+    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.config_path.write_text(
+        yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"]),
+        encoding="utf-8",
+    )
+    cfg.private_key_path.write_text(KEY_PEM, encoding="utf-8")
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=True,
+        ctl_json=json.dumps({"self": SELF_ADDRESS}),
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.message != "already configured"
+    assert (
+        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+            encoding="utf-8"
+        ).strip()
+        == SELF_ADDRESS
+    )
+    assert not any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
+    )
 
 
 def test_installs_new_release_with_downloaded_peers(

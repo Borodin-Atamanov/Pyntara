@@ -49,5 +49,6 @@ tunnel_keys_path = "/var/lib/i2pd/ssh.dat"
 # deployed address command reads this file as the fallback when the
 # live keys file cannot be decoded (docs/spec/i2pd-service.md).
 address_file_path = "/var/lib/pyntara/i2pd_ssh_address"
-# File mode of the saved address file, as an octal string.
-address_file_mode = "0600"
+# File mode of the saved address file, as an octal string. The address
+# is not secret, so the file is readable by every user.
+address_file_mode = "0644"

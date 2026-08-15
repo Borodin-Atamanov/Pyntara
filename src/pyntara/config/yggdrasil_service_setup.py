@@ -52,7 +52,10 @@ class YggdrasilServiceSetupConfig:
     peer_target_count the number of working peers to keep,
     peer_probe_timeout_seconds the wait per batch and peer_max_batches
     the batch cap (0 means the whole list); static_peers is the fallback
-    list used when the download fails.
+    list used when the download fails. address_file_path is the saved
+    self address file the task writes once the node is provisioned and
+    address_file_mode its file mode; the address is not secret, so the
+    file is readable by every user.
     """
 
     github_repo: str
@@ -75,6 +78,8 @@ class YggdrasilServiceSetupConfig:
     peer_probe_timeout_seconds: float
     peer_max_batches: int
     static_peers: tuple[str, ...]
+    address_file_path: Path
+    address_file_mode: int
 
 
 def _yggdrasil_uri_list_field(
@@ -147,11 +152,12 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     private_key_path, if_name, admin_listen and peers_tarball_url are
     non-empty strings; install_retries, if_mtu, peer_batch_size and
     peer_target_count are positive integers; if_mtu stays within the
-    yggdrasil range; config_file_mode and private_key_file_mode are
-    octal strings; listen and static_peers are URI arrays with the
-    allowed schemes; multicast_interfaces is the multicast block array;
-    peer_probe_timeout_seconds is positive and peer_max_batches is
-    non-negative.
+    yggdrasil range; config_file_mode, private_key_file_mode and
+    address_file_mode are octal strings; listen and static_peers are URI
+    arrays with the allowed schemes; multicast_interfaces is the
+    multicast block array; peer_probe_timeout_seconds is positive and
+    peer_max_batches is non-negative; address_file_path is a non-empty
+    string.
     """
 
     if not isinstance(raw, dict):
@@ -253,6 +259,14 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         "yggdrasil_service_setup.static_peers",
         YGGDRASIL_PEER_SCHEMES,
     )
+    address_file_path = Path(
+        _nonempty_string_field(
+            raw.get("address_file_path"), "yggdrasil_service_setup.address_file_path"
+        )
+    )
+    address_file_mode = _octal_mode_field(
+        raw.get("address_file_mode"), "yggdrasil_service_setup.address_file_mode"
+    )
     return YggdrasilServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -274,4 +288,6 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         peer_probe_timeout_seconds=peer_probe_timeout_seconds,
         peer_max_batches=peer_max_batches,
         static_peers=static_peers,
+        address_file_path=address_file_path,
+        address_file_mode=address_file_mode,
     )

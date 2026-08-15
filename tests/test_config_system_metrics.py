@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config
+from config_helpers import assert_config_error, base_config, write_config
+
+from pyntara.config import load_config
 
 
 @pytest.mark.parametrize(
@@ -366,3 +368,43 @@ from config_helpers import assert_config_error, base_config
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
     assert_config_error(tmp_path, content)
+
+
+def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
+    # The i2pd and yggdrasil network modules run the address commands of
+    # the dedicated venv; both parse as modules with their argv commands.
+    content = base_config().replace(
+        "[[system_metrics_setup.collector.system_modules]]",
+        '[[system_metrics_setup.collector.network_modules]]\n'
+        'name = "i2pd"\n'
+        'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
+        '"pyntara.i2pd_address", "/var/lib/i2pd/ssh.dat", '
+        '"/var/lib/pyntara/i2pd_ssh_address"]\n'
+        '[[system_metrics_setup.collector.network_modules]]\n'
+        'name = "yggdrasil"\n'
+        'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
+        '"pyntara.yggdrasil_address", "/var/lib/pyntara/yggdrasil_self_address"]\n'
+        "[[system_metrics_setup.collector.system_modules]]",
+    )
+    config = load_config(write_config(tmp_path, content))
+    modules = config.system_metrics_setup.collector.network_modules
+    assert [module.name for module in modules] == [
+        "ipv4",
+        "ipv6",
+        "i2pd",
+        "yggdrasil",
+    ]
+    by_name = {module.name: module for module in modules}
+    assert by_name["i2pd"].command == (
+        "/usr/local/lib/pyntara/venv/bin/python",
+        "-m",
+        "pyntara.i2pd_address",
+        "/var/lib/i2pd/ssh.dat",
+        "/var/lib/pyntara/i2pd_ssh_address",
+    )
+    assert by_name["yggdrasil"].command == (
+        "/usr/local/lib/pyntara/venv/bin/python",
+        "-m",
+        "pyntara.yggdrasil_address",
+        "/var/lib/pyntara/yggdrasil_self_address",
+    )

@@ -84,7 +84,7 @@ tunnel_name = "ssh"
 tunnel_host = "127.0.0.1"
 tunnel_keys_path = "/var/lib/i2pd/ssh.dat"
 address_file_path = "/var/lib/pyntara/i2pd_ssh_address"
-address_file_mode = "0600"
+address_file_mode = "0644"
 
 [yggdrasil_service_setup]
 github_repo = "yggdrasil-network/yggdrasil-go"
@@ -106,6 +106,8 @@ peer_target_count = 6
 peer_probe_timeout_seconds = 30
 peer_max_batches = 0
 static_peers = []
+address_file_path = "/var/lib/pyntara/yggdrasil_self_address"
+address_file_mode = "0644"
 
 [[yggdrasil_service_setup.multicast_interfaces]]
 regex = ".*"
@@ -330,7 +332,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.address_file_path == Path(
         "/var/lib/pyntara/i2pd_ssh_address"
     )
-    assert config.i2pd_service_setup.address_file_mode == 0o600
+    assert config.i2pd_service_setup.address_file_mode == 0o644
     assert (
         config.yggdrasil_service_setup.github_repo
         == "yggdrasil-network/yggdrasil-go"
@@ -370,6 +372,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.yggdrasil_service_setup.peer_probe_timeout_seconds == 30
     assert config.yggdrasil_service_setup.peer_max_batches == 0
     assert config.yggdrasil_service_setup.static_peers == ()
+    assert config.yggdrasil_service_setup.address_file_path == Path(
+        "/var/lib/pyntara/yggdrasil_self_address"
+    )
+    assert config.yggdrasil_service_setup.address_file_mode == 0o644
     assert config.ssh_daemon_setup.package_name == "openssh-server"
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3

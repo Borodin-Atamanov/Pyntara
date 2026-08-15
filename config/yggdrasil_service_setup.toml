@@ -57,6 +57,14 @@ peer_max_batches = 0
 # from https://publicpeers.neilalexander.dev/ or the public-peers
 # repository.
 static_peers = []
+# Path of the saved node self address file. The task writes the address
+# reported by the admin socket here once the node is provisioned, and
+# the deployed address command reads this file as the fallback when the
+# live query fails (docs/spec/yggdrasil-service.md).
+address_file_path = "/var/lib/pyntara/yggdrasil_self_address"
+# File mode of the saved address file, as an octal string. The address
+# is not secret, so the file is readable by every user.
+address_file_mode = "0644"
 # Multicast peer discovery: regex of interface names, beacon (advertise
 # presence) and listen (connect to discovered neighbours). One block
 # matching every interface with both switches covers the local network.

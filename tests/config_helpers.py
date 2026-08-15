@@ -62,7 +62,7 @@ def base_config() -> str:
         'tunnel_host = "127.0.0.1"\n'
         'tunnel_keys_path = "/var/lib/i2pd/ssh.dat"\n'
         'address_file_path = "/var/lib/pyntara/i2pd_ssh_address"\n'
-        'address_file_mode = "0600"\n'
+        'address_file_mode = "0644"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'
@@ -83,6 +83,8 @@ def base_config() -> str:
         "peer_probe_timeout_seconds = 30\n"
         "peer_max_batches = 0\n"
         "static_peers = []\n"
+        'address_file_path = "/var/lib/pyntara/yggdrasil_self_address"\n'
+        'address_file_mode = "0644"\n'
         "[[yggdrasil_service_setup.multicast_interfaces]]\n"
         'regex = ".*"\n'
         "beacon = true\n"

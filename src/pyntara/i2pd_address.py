@@ -3,12 +3,12 @@
 The command decodes the live i2pd keys file of the SSH tunnel and prints
 the .b32.i2p address on stdout. When the keys file is missing or broken,
 the saved address file written by the i2pd_service_setup task is the
-fallback; when neither source yields an address, the command exits
-nonzero with an explanation on stderr. The stdout stays a single address
-line, so the System Metrics collector can use the command as a module
-(docs/spec/i2pd-service.md). The command takes the keys path and the
-saved address file path as positional arguments and needs no config
-access.
+fallback: the address is printed first and the reason on the following
+stdout line, so a collector that takes the stdout keeps the error
+instead of losing it. When neither source yields an address, the command
+exits nonzero with an explanation on stderr. The command takes the keys
+path and the saved address file path as positional arguments and needs
+no config access (docs/spec/i2pd-service.md).
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ def main(argv: list[str]) -> int:
     The keys file is the primary source; the saved address file is the
     fallback, because the identity may have been recreated between two
     provisioning runs without the task noticing. When the fallback is
-    used, a note goes to stderr so a manual call shows the source while
-    the stdout stays clean for the collector.
+    used, the reason goes to the following stdout line so the collector
+    keeps it; a total failure prints the reason on stderr and exits
+    nonzero.
     """
 
     if len(argv) != 3:
@@ -41,12 +42,11 @@ def main(argv: list[str]) -> int:
     except OSError:
         saved = ""
     if saved:
+        print(saved)
         print(
             "address read from the saved file, the keys file is missing "
-            "or broken",
-            file=sys.stderr,
+            "or broken"
         )
-        print(saved)
         return 0
     print("I2P tunnel address is not available", file=sys.stderr)
     return 1

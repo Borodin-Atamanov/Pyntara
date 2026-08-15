@@ -50,13 +50,19 @@ The selection probes the list in batches:
 
 The apt index is not refreshed before the install: the package depends only on systemd, which is always installed. When the peer list download fails, the configured static_peers are used; a run where the download fails and static_peers is empty is a task error, because the node would be useless without any peers.
 
+## Determining the address on the target system
+
+The node self address is available on the target system through a shared parser and a command. The JSON parsing of the admin socket output lives in the pyntara.yggdrasil module and is imported by the task and the command, never copied.
+
+After the final restart the task saves the address reported by yggdrasilctl getSelf into the configured address_file_path with the mode address_file_mode. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The save is best-effort: a failed query or an unparsable output leaves the file untouched and never fails the task. The saved file is the fallback: the deployed command venv/bin/python -m pyntara.yggdrasil_address ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) asks the admin socket first and prints the self address on stdout, and when the live query fails reads the saved file instead. When the fallback is used, the reason goes to the following stdout line, so a System Metrics collector module that takes the stdout keeps the error instead of losing it. When neither source yields an address, the command exits nonzero with the reason and the raw yggdrasilctl output on stderr, which the collector joins into the module output. The command needs no config access.
+
 ## Service lifecycle
 
 The service unit comes from the package; the task never renders or writes it. The package postinst enables the unit; the task enables it when it is not enabled, then restarts it for every probe batch and after the final configuration. After the final restart the task checks once that the unit reports active, because the simple service either starts or fails immediately; a unit that stays inactive is a task error. The package also installs the yggdrasil-default-config.service unit; the task does not manage it.
 
 ## Idempotency
 
-The target state is reached when the installed version equals the newest release version, the configuration exists with a non-empty Peers list, the key file exists and the service is enabled and active; the task then skips with changed=False. Force mode reruns the whole peer selection (download, shuffle, batches) and rewrites the configuration, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
+The target state is reached when the installed version equals the newest release version, the configuration exists with a non-empty Peers list, the key file exists, the saved address file exists and the service is enabled and active; the task then skips with changed=False. A missing address file keeps the task active, so the fallback of the deployed address command is guaranteed to exist after provisioning. Force mode reruns the whole peer selection (download, shuffle, batches) and rewrites the configuration, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
 ## Parameters
 
@@ -81,5 +87,7 @@ peer_target_count is the number of working peers to keep in the final configurat
 peer_probe_timeout_seconds is the wait per batch before reading the journal
 peer_max_batches is the batch cap; 0 means the whole list
 static_peers is the fallback peer list used when the download fails
+address_file_path is the saved self address file the task writes after the final restart; the deployed address command reads it as the fallback when the live admin socket query fails
+address_file_mode is the file mode of the saved address file, as an octal string; the address is not secret, so the file is readable by every user (0644 by default)
 
 The task belongs to the server and desktop modes and has no dependencies: it does not touch the apt index, so add_extra_repos is not required.

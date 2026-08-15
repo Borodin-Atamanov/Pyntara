@@ -52,6 +52,8 @@ System Metrics additionally includes:
 clipboard text (inside encrypted PDF)
 startup network information: attempts to detect addresses/channels (Cloudflare, Yggdrasil, IPv6, etc.), machine's own addresses, and connection availability status
 
+The default collector configuration adds two anonymous network modules to the report: i2pd, whose command prints the .b32.i2p tunnel address through the deployed address command, and yggdrasil, whose command prints the node self address from the admin socket. Both read the live source at collection time and fall back to the saved address files written by the provisioning tasks; when the fallback is used, the reason appears in the module output, and when the live source fails completely the raw utility output lands in the module output, so errors are reported as they are and never silently dropped.
+
 ## Installation log
 
 Installation log (full install + messages) is sent to System Metrics as a separate file.

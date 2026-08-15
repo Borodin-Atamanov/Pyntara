@@ -64,7 +64,7 @@ The client must offer the deployed key; on the target machine the key is loaded 
 
 The .b32.i2p address is available on the target system through a shared decoder and a command, so the address can be reported without repeating the binary parsing logic. The decoder lives in the pyntara.i2pd module and is imported by the task, never copied.
 
-The task saves the computed address into the configured address_file_path with the mode address_file_mode once the identity exists, and rewrites the file whenever the address differs. The saved file is the fallback: the deployed command venv/bin/python -m pyntara.i2pd_address KEYS_PATH ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) decodes the live keys file first and prints the address on stdout, and when the keys file is missing or broken reads the saved file instead, because the identity may have been recreated between two provisioning runs. When the fallback is used, a note goes to stderr while the stdout stays a single address line, so a System Metrics collector module can consume the command output directly. When neither source yields an address, the command exits nonzero with an explanation on stderr. The command needs no config access.
+The task saves the computed address into the configured address_file_path with the mode address_file_mode once the identity exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The saved file is the fallback: the deployed command venv/bin/python -m pyntara.i2pd_address KEYS_PATH ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) decodes the live keys file first and prints the address on stdout, and when the keys file is missing or broken reads the saved file instead, because the identity may have been recreated between two provisioning runs. When the fallback is used, the reason goes to the following stdout line, so a System Metrics collector module that takes the stdout keeps the error instead of losing it. When neither source yields an address, the command exits nonzero with an explanation on stderr, which the collector joins into the module output. The command needs no config access.
 
 ## Service lifecycle
 
@@ -94,6 +94,6 @@ tunnel_name is the section name of the tunnel in the tunnels file
 tunnel_host is the local address the tunnel forwards to; the tunnel port is not a parameter, it is read from the ssh_daemon_setup Port directive
 tunnel_keys_path is the identity file of the tunnel destination in the i2pd data directory, created by i2pd on the first start; the tunnels file carries only its file name
 address_file_path is the saved address file the task writes once the identity exists; the deployed address command reads it as the fallback when the keys file cannot be decoded
-address_file_mode is the file mode of the saved address file, as an octal string
+address_file_mode is the file mode of the saved address file, as an octal string; the address is not secret, so the file is readable by every user (0644 by default)
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.

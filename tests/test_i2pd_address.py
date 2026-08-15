@@ -33,15 +33,17 @@ def test_address_falls_back_to_saved_file(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     # The keys file is missing but the saved address file exists: the
-    # command prints the saved address and notes the fallback on stderr,
-    # so the stdout stays clean for the collector.
+    # command prints the saved address and the reason on the following
+    # stdout line, so a collector that takes the stdout keeps the error
+    # instead of losing it.
     keys = tmp_path / "missing.dat"
     saved = tmp_path / "saved"
     saved.write_text(f"{i2pd_keys_b32_address()}\n", encoding="utf-8")
     assert i2pd_address.main(["i2pd_address", str(keys), str(saved)]) == 0
     captured = capsys.readouterr()
-    assert captured.out.strip() == i2pd_keys_b32_address()
-    assert "saved" in captured.err
+    assert captured.out.splitlines()[0] == i2pd_keys_b32_address()
+    assert "saved file" in captured.out
+    assert captured.err == ""
 
 
 def test_address_unavailable(

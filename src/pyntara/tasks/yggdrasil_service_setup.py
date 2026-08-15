@@ -34,10 +34,13 @@ configured static_peers are used, and a run with neither is an error,
 because a node without peers never joins the network.
 
 The apt index is not refreshed, because the package depends only on
-systemd. The task is idempotent: it skips when the installed version
-equals the newest release, the configuration exists with a non-empty
-peer list, the key file exists and the service is enabled and active;
-force mode reruns the whole peer selection.
+systemd. After the final restart the task saves the node self address
+from the admin socket into the configured address file, the fallback of
+the deployed address command when the live query fails. The task is
+idempotent: it skips when the installed version equals the newest
+release, the configuration exists with a non-empty peer list, the key
+file exists, the saved address file exists and the service is enabled
+and active; force mode reruns the whole peer selection.
 """
 
 from __future__ import annotations
@@ -66,6 +69,7 @@ from pyntara.utils import (
     service_is_active,
     service_is_enabled,
 )
+from pyntara.yggdrasil import self_address_from_output
 
 # The yggdrasil version string from yggdrasil -version, e.g. Build
 # version: 0.5.14; the release tag carries a leading v, the asset and the
@@ -599,20 +603,62 @@ def _restart_service(service_name: str, timeout: float) -> None:
     run_command(["systemctl", action, service_name], timeout=timeout)
 
 
+def _save_self_address(
+    cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> bool:
+    """Save the node self address into the configured file; True when saved.
+
+    The saved file is the fallback of the deployed address command when
+    the live admin socket query fails at collection time. The save is
+    best-effort: a failed query or an unparsable payload leaves the file
+    untouched and returns False, never failing the task, so the address
+    file is not a failure point of the provisioning.
+    """
+
+    try:
+        result = run_command(
+            ["yggdrasilctl", "getSelf"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        _log("yggdrasilctl getSelf unavailable, address file not written")
+        return False
+    if result.returncode != 0:
+        _log(
+            "yggdrasilctl getSelf exited "
+            f"{result.returncode}, address file not written"
+        )
+        return False
+    address = self_address_from_output(result.stdout)
+    if address is None:
+        _log("yggdrasilctl getSelf output has no self address")
+        return False
+    cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
+    cfg.address_file_path.chmod(cfg.address_file_mode)
+    ensure_root_owner(cfg.address_file_path)
+    _log(f"saving self address to {cfg.address_file_path}: {address}")
+    return True
+
+
 def task(ctx: Context) -> TaskResult:
     """Install the newest yggdrasil release, configure it and pick working peers.
 
     The goal is reached when the installed version equals the newest
     release, the configuration exists with a non-empty peer list, the key
-    file exists and the service is enabled and active; the task then
-    returns changed=False. Otherwise it downloads and installs the
-    matching .deb asset, extracts the node key, downloads the public peer
-    list, probes it in batches and keeps the target number of working
-    peers with the lowest ping. Every step is reported to stdout:
-    measurements and decisions as single lines that include their result,
-    long-running commands as a line before and a line after. Any failure
-    is returned as an error TaskResult: the runner continues with the
-    remaining tasks and never stops here.
+    file exists, the saved self address file exists and the service is
+    enabled and active; the task then returns changed=False. Otherwise it
+    downloads and installs the matching .deb asset, extracts the node key,
+    downloads the public peer list, probes it in batches and keeps the
+    target number of working peers with the lowest ping, then saves the
+    node self address from the admin socket into the configured file as
+    the fallback of the deployed address command. Every step is reported
+    to stdout: measurements and decisions as single lines that include
+    their result, long-running commands as a line before and a line after.
+    Any failure is returned as an error TaskResult: the runner continues
+    with the remaining tasks and never stops here.
     """
 
     cfg = ctx.config.yggdrasil_service_setup
@@ -660,6 +706,11 @@ def task(ctx: Context) -> TaskResult:
     needs_install = installed_version != version
     key_exists = cfg.private_key_path.is_file()
     config_ready = _config_has_peers(cfg)
+    address_file_exists = cfg.address_file_path.is_file()
+    _log(
+        f"checking saved address file {cfg.address_file_path}: "
+        f"{'present' if address_file_exists else 'missing'}"
+    )
     if (
         not force
         and not needs_install
@@ -667,6 +718,7 @@ def task(ctx: Context) -> TaskResult:
         and active
         and key_exists
         and config_ready
+        and address_file_exists
     ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
@@ -782,6 +834,7 @@ def task(ctx: Context) -> TaskResult:
                 ),
             )
         _log("service active")
+        _save_self_address(cfg, timeout)
         return TaskResult(
             success=True,
             changed=True,
@@ -879,6 +932,7 @@ def task(ctx: Context) -> TaskResult:
                 "after restart"
             ),
         )
+    _save_self_address(cfg, timeout)
     return TaskResult(
         success=True,
         changed=True,
