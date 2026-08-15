@@ -127,6 +127,12 @@ depends = []
 modes = ["server", "desktop"]
 
 [[tasks]]
+name = "tor_setup"
+description = "Install Tor and publish the SSH service as an onion service."
+depends = ["add_extra_repos"]
+modes = ["server", "desktop"]
+
+[[tasks]]
 name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]

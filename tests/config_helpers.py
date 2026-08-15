@@ -89,6 +89,23 @@ def base_config() -> str:
         'regex = ".*"\n'
         "beacon = true\n"
         "listen = true\n"
+        "[tor_setup]\n"
+        'package_name = "tor"\n'
+        'service_unit_name = "tor.service"\n'
+        'config_path = "/etc/tor/torrc"\n'
+        'config_file_mode = "0640"\n'
+        'hidden_service_dir = "/var/lib/tor/ssh"\n'
+        'hidden_service_dir_mode = "0700"\n'
+        'tor_user = "debian-tor"\n'
+        "socks_port = 9050\n"
+        "onion_ssh_port = 22\n"
+        "num_introduction_points = 6\n"
+        'log_level = "notice"\n'
+        "install_retries = 3\n"
+        "start_check_attempts = 5\n"
+        "start_check_retry_delay_seconds = 1\n"
+        'address_file_path = "/var/lib/pyntara/tor_ssh_address"\n'
+        'address_file_mode = "0644"\n'
         "[ssh_daemon_setup]\n"
         'package_name = "openssh-server"\n'
         "package_status_timeout_seconds = 30\n"

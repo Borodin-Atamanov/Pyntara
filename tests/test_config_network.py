@@ -264,6 +264,92 @@ from pyntara.config import load_config
             '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
             '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = ""\n',
         ),
+        # tor_setup package_name is a number, not a string
+        base_config().replace('package_name = "tor"', "package_name = 1"),
+        # tor_setup package_name is an empty string
+        base_config().replace('package_name = "tor"', 'package_name = ""'),
+        # tor_setup service_unit_name is a number, not a string
+        base_config().replace(
+            'service_unit_name = "tor.service"', "service_unit_name = 1"
+        ),
+        # tor_setup service_unit_name is an empty string
+        base_config().replace(
+            'service_unit_name = "tor.service"', 'service_unit_name = ""'
+        ),
+        # tor_setup config_path is a number, not a string
+        base_config().replace('config_path = "/etc/tor/torrc"', "config_path = 1"),
+        # tor_setup config_path is an empty string
+        base_config().replace('config_path = "/etc/tor/torrc"', 'config_path = ""'),
+        # tor_setup config_file_mode is not octal
+        base_config().replace(
+            'config_path = "/etc/tor/torrc"\nconfig_file_mode = "0640"',
+            'config_path = "/etc/tor/torrc"\nconfig_file_mode = "640"',
+        ),
+        # tor_setup hidden_service_dir is an empty string
+        base_config().replace(
+            'hidden_service_dir = "/var/lib/tor/ssh"', 'hidden_service_dir = ""'
+        ),
+        # tor_setup hidden_service_dir_mode is not octal
+        base_config().replace(
+            'hidden_service_dir_mode = "0700"', 'hidden_service_dir_mode = "700"'
+        ),
+        # tor_setup tor_user is a number, not a string
+        base_config().replace('tor_user = "debian-tor"', "tor_user = 1"),
+        # tor_setup tor_user is an empty string
+        base_config().replace('tor_user = "debian-tor"', 'tor_user = ""'),
+        # tor_setup socks_port is a string, not an integer
+        base_config().replace("socks_port = 9050", 'socks_port = "9050"'),
+        # tor_setup socks_port is below the port range
+        base_config().replace("socks_port = 9050", "socks_port = 0"),
+        # tor_setup socks_port is above the port range
+        base_config().replace("socks_port = 9050", "socks_port = 70000"),
+        # tor_setup onion_ssh_port is zero
+        base_config().replace("onion_ssh_port = 22", "onion_ssh_port = 0"),
+        # tor_setup onion_ssh_port is a string, not an integer
+        base_config().replace("onion_ssh_port = 22", 'onion_ssh_port = "22"'),
+        # tor_setup num_introduction_points is zero
+        base_config().replace(
+            "num_introduction_points = 6", "num_introduction_points = 0"
+        ),
+        # tor_setup log_level is not a known level
+        base_config().replace('log_level = "notice"', 'log_level = "chatty"'),
+        # tor_setup log_level is a number, not a string
+        base_config().replace('log_level = "notice"', "log_level = 1"),
+        # tor_setup install_retries is a string, not an integer
+        base_config().replace(
+            'num_introduction_points = 6\nlog_level = "notice"\ninstall_retries = 3',
+            'num_introduction_points = 6\nlog_level = "notice"\ninstall_retries = "3"',
+        ),
+        # tor_setup install_retries is zero
+        base_config().replace(
+            'num_introduction_points = 6\nlog_level = "notice"\ninstall_retries = 3',
+            'num_introduction_points = 6\nlog_level = "notice"\ninstall_retries = 0',
+        ),
+        # tor_setup start_check_attempts is zero
+        base_config().replace(
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 5',
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 0',
+        ),
+        # tor_setup start_check_retry_delay_seconds is zero
+        base_config().replace(
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 5\nstart_check_retry_delay_seconds = 1',
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 5\nstart_check_retry_delay_seconds = 0',
+        ),
+        # tor_setup start_check_retry_delay_seconds is a string
+        base_config().replace(
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 5\nstart_check_retry_delay_seconds = 1',
+            'log_level = "notice"\ninstall_retries = 3\nstart_check_attempts = 5\nstart_check_retry_delay_seconds = "1"',
+        ),
+        # tor_setup address_file_path is an empty string
+        base_config().replace(
+            'address_file_path = "/var/lib/pyntara/tor_ssh_address"',
+            'address_file_path = ""',
+        ),
+        # tor_setup address_file_mode is not octal
+        base_config().replace(
+            'address_file_path = "/var/lib/pyntara/tor_ssh_address"\naddress_file_mode = "0644"',
+            'address_file_path = "/var/lib/pyntara/tor_ssh_address"\naddress_file_mode = 644',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:

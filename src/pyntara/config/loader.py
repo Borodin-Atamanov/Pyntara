@@ -26,6 +26,7 @@ from .system_metrics_setup import (
     _system_metrics_setup_table,
 )
 from .tasks import TaskConfig, _tasks_table
+from .tor_setup import TorSetupConfig, _tor_setup_table
 from .vault import (
     LocalVaultSetupConfig,
     VaultStructureConfig,
@@ -52,6 +53,7 @@ class Config:
     zram_service: ZramServiceConfig
     i2pd_service_setup: I2pdServiceSetupConfig
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
+    tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
@@ -126,6 +128,7 @@ def load_config(path: Path) -> Config:
         yggdrasil_service_setup=_yggdrasil_service_setup_table(
             data.get("yggdrasil_service_setup")
         ),
+        tor_setup=_tor_setup_table(data.get("tor_setup")),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
         ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
         system_metrics_setup=system_metrics_setup,

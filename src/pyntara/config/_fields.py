@@ -27,6 +27,11 @@ SEND_ORDERS: tuple[str, ...] = ("oldest_first", "newest_first")
 # are the log levels i2pd accepts in its configuration file.
 I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
 
+# Allowed values of tor_setup.log_level. The vocabulary is part of the
+# config contract and therefore validated here, like MODES; the values are
+# the log levels tor accepts in its configuration file.
+TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
+
 # URI schemes yggdrasil accepts in Listen: wss is not a listener (the
 # source rejects it), socks and sockstls are outgoing-only.
 YGGDRASIL_LISTEN_SCHEMES: tuple[str, ...] = ("tcp", "tls", "quic", "ws", "unix")

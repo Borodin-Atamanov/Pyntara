@@ -19,6 +19,7 @@ from ._fields import (
     I2PD_LOG_LEVELS,
     MODES,
     SEND_ORDERS,
+    TOR_LOG_LEVELS,
     YGGDRASIL_LISTEN_SCHEMES,
     YGGDRASIL_PEER_SCHEMES,
     ConfigError,
@@ -36,6 +37,7 @@ from .system_metrics_setup import (
     SystemMetricsSetupConfig,
 )
 from .tasks import TaskConfig
+from .tor_setup import TorSetupConfig
 from .vault import LocalVaultSetupConfig, VaultEntry, VaultStructureConfig
 from .yggdrasil_service_setup import (
     YggdrasilMulticastInterfaceConfig,
@@ -48,6 +50,7 @@ __all__ = [
     "I2PD_LOG_LEVELS",
     "MODES",
     "SEND_ORDERS",
+    "TOR_LOG_LEVELS",
     "YGGDRASIL_LISTEN_SCHEMES",
     "YGGDRASIL_PEER_SCHEMES",
     "AddExtraReposConfig",
@@ -65,6 +68,7 @@ __all__ = [
     "SystemMetricsCollectorConfig",
     "SystemMetricsSetupConfig",
     "TaskConfig",
+    "TorSetupConfig",
     "VaultEntry",
     "VaultStructureConfig",
     "YggdrasilMulticastInterfaceConfig",

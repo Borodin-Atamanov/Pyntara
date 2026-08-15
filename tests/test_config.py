@@ -114,6 +114,24 @@ regex = ".*"
 beacon = true
 listen = true
 
+[tor_setup]
+package_name = "tor"
+service_unit_name = "tor.service"
+config_path = "/etc/tor/torrc"
+config_file_mode = "0640"
+hidden_service_dir = "/var/lib/tor/ssh"
+hidden_service_dir_mode = "0700"
+tor_user = "debian-tor"
+socks_port = 9050
+onion_ssh_port = 22
+num_introduction_points = 6
+log_level = "notice"
+install_retries = 3
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1
+address_file_path = "/var/lib/pyntara/tor_ssh_address"
+address_file_mode = "0644"
+
 [ssh_daemon_setup]
 package_name = "openssh-server"
 package_status_timeout_seconds = 30
@@ -376,6 +394,24 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/var/lib/pyntara/yggdrasil_self_address"
     )
     assert config.yggdrasil_service_setup.address_file_mode == 0o644
+    assert config.tor_setup.package_name == "tor"
+    assert config.tor_setup.service_unit_name == "tor.service"
+    assert config.tor_setup.config_path == Path("/etc/tor/torrc")
+    assert config.tor_setup.config_file_mode == 0o640
+    assert config.tor_setup.hidden_service_dir == Path("/var/lib/tor/ssh")
+    assert config.tor_setup.hidden_service_dir_mode == 0o700
+    assert config.tor_setup.tor_user == "debian-tor"
+    assert config.tor_setup.socks_port == 9050
+    assert config.tor_setup.onion_ssh_port == 22
+    assert config.tor_setup.num_introduction_points == 6
+    assert config.tor_setup.log_level == "notice"
+    assert config.tor_setup.install_retries == 3
+    assert config.tor_setup.start_check_attempts == 5
+    assert config.tor_setup.start_check_retry_delay_seconds == 1
+    assert config.tor_setup.address_file_path == Path(
+        "/var/lib/pyntara/tor_ssh_address"
+    )
+    assert config.tor_setup.address_file_mode == 0o644
     assert config.ssh_daemon_setup.package_name == "openssh-server"
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3

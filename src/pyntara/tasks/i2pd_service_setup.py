@@ -55,11 +55,12 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import I2pdServiceSetupConfig, SshDirective
+from pyntara.config import I2pdServiceSetupConfig
 from pyntara.context import Context
 from pyntara.i2pd import b32_address
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     dpkg_architecture,
@@ -120,31 +121,6 @@ def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
         tunnel_host=cfg.tunnel_host,
         tunnel_port=ssh_port,
         tunnel_keys_path=Path(cfg.tunnel_keys_path).name,
-    )
-
-
-def _ssh_port_from_ssh_config(directives: tuple[SshDirective, ...]) -> int:
-    """The sshd Port directive value used as the tunnel target port.
-
-    The tunnel forwards to the SSH daemon, so its port must equal the
-    sshd listen port; it is read from the ssh_daemon_setup directives
-    instead of being configured again, so the two can never diverge. A
-    missing or non-numeric Port is an error, because a tunnel to an
-    unknown port is useless.
-    """
-
-    for directive in directives:
-        if directive.name == "Port":
-            try:
-                return int(directive.value)
-            except ValueError:
-                raise RuntimeError(
-                    "ssh_daemon_setup Port directive is not a number: "
-                    f"{directive.value!r}"
-                ) from None
-    raise RuntimeError(
-        "ssh_daemon_setup has no Port directive, cannot create the "
-        "I2P SSH tunnel"
     )
 
 

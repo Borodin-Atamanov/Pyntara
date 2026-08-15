@@ -1,0 +1,55 @@
+[tor_setup]
+# Tor onion service parameters (docs/spec/tor-service.md).
+# The task installs Tor from the Ubuntu archive, renders the owned
+# configuration and publishes an SSH onion service: the machine becomes
+# reachable over Tor without a single manual step. The local SSH port is
+# not configured here: it is read from the ssh_daemon_setup Port
+# directive, so the forward and the SSH daemon never diverge.
+# Package that provides the Tor daemon.
+package_name = "tor"
+# Name of the systemd service unit installed by the package.
+service_unit_name = "tor.service"
+# Main configuration file the task owns and renders; a manual edit is
+# reverted on the next run.
+config_path = "/etc/tor/torrc"
+# File mode of the configuration file, octal string.
+config_file_mode = "0640"
+# Directory of the SSH onion service identity. It must live inside
+# /var/lib/tor: the AppArmor profile of the package confines Tor to its
+# data directory. The task creates the directory but never recreates
+# the identity: the keys inside keep the onion address stable.
+hidden_service_dir = "/var/lib/tor/ssh"
+# File mode of the hidden service directory; Tor refuses to serve an
+# onion service from a world-readable directory.
+hidden_service_dir_mode = "0700"
+# System user the Tor service runs as; the hidden service directory
+# must be owned by it so Tor can write the keys and the hostname file.
+tor_user = "debian-tor"
+# Port of the SOCKS proxy bound to the loopback interface; a client
+# routes its SSH connection through it to reach the onion address.
+socks_port = 9050
+# Virtual port of the onion service: the port a client connects to on
+# the .onion address. Port 22 lets a client omit -p.
+onion_ssh_port = 22
+# Number of introduction points of the onion service; more points keep
+# the service reachable while some of them are under attack, at the
+# cost of more keepalive traffic.
+num_introduction_points = 6
+# Tor log verbosity: debug, info, notice, warn or err.
+log_level = "notice"
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
+# Readiness loop of the forking service: attempts and pause between two
+# is-active checks after start or restart.
+start_check_attempts = 5
+# Pause in seconds between two readiness checks.
+start_check_retry_delay_seconds = 1
+# Path of the saved onion address file. The task writes the address
+# from the hidden service hostname file here once it exists, and the
+# deployed address command reads this file as the fallback when the
+# live hostname file cannot be read (docs/spec/tor-service.md).
+address_file_path = "/var/lib/pyntara/tor_ssh_address"
+# File mode of the saved address file, as an octal string. The address
+# is not secret, so the file is readable by every user.
+address_file_mode = "0644"
