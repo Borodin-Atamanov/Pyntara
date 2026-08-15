@@ -331,7 +331,10 @@ def test_saves_self_address_after_provisioning(
         ).strip()
         == SELF_ADDRESS
     )
-    assert any(call[0] == "yggdrasilctl" and call[1] == "getSelf" for call in calls)
+    assert any(
+        call[0] == "yggdrasilctl" and call[1] == "-json" and call[2] == "getSelf"
+        for call in calls
+    )
 
 
 def test_self_address_save_failure_does_not_fail_task(

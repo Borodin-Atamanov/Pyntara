@@ -26,7 +26,7 @@ def _fake_run(returncode: int, stdout: str = "", stderr: str = "") -> object:
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
-        assert command == ["yggdrasilctl", "getSelf"]
+        assert command == ["yggdrasilctl", "-json", "getSelf"]
         return _FakeProc(returncode, stdout, stderr)
 
     return fake_run

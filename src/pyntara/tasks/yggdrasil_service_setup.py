@@ -617,7 +617,7 @@ def _save_self_address(
 
     try:
         result = run_command(
-            ["yggdrasilctl", "getSelf"],
+            ["yggdrasilctl", "-json", "getSelf"],
             check=False,
             capture=True,
             timeout=timeout,

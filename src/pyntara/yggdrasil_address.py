@@ -31,7 +31,7 @@ def _live_self_address() -> tuple[str | None, str]:
 
     try:
         result = subprocess.run(
-            ["yggdrasilctl", "getSelf"],
+            ["yggdrasilctl", "-json", "getSelf"],
             capture_output=True,
             text=True,
             check=False,
