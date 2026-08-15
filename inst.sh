@@ -193,7 +193,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.1.1"
+PYNTARA_VERSION="0.1.2"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f fetch_source &>/dev/null; then
@@ -269,7 +269,6 @@ run_pyntara() {
         return 1
     fi
     local rc=0
-    log "Pyntara installer version $PYNTARA_VERSION"
     log "Starting Pyntara from $SOURCE_DIR"
     if ( cd "$SOURCE_DIR" && run_timed uv run pyntara "$@" ); then
         rc=0
@@ -459,6 +458,7 @@ main() {
     check_root
     ensure_fhs_dirs
     log "Install log started: $LOG_FILE"
+    log "Pyntara installer version $PYNTARA_VERSION"
     install_dependencies
     install_uv
     fetch_source
@@ -475,7 +475,7 @@ main() {
     # PYNTARA_TASKS with dependencies.
     prompt_install_mode
     run_pyntara "$@"
-    log "Bootstrap finished"
+    log "Bootstrap finished, pyntara installer version $PYNTARA_VERSION"
 }
 fi
 

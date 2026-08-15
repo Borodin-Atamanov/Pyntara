@@ -358,9 +358,10 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 }
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
-    # main must call check_root, ensure_fhs_dirs, log, install_dependencies,
-    # install_uv, fetch_source, setup_python, then run_pyntara. Mocks are
-    # declared before source so the guard keeps them.
+    # main must call check_root, ensure_fhs_dirs, log (install log started),
+    # log (installer version), install_dependencies, install_uv, fetch_source,
+    # setup_python, then run_pyntara and the final log. Mocks are declared
+    # before source so the guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
     local flags="$tmp/flags"
@@ -381,7 +382,7 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
