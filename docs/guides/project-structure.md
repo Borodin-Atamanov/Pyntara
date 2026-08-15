@@ -17,6 +17,7 @@ The helpers fit files where one setting is one line and the line order does not 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.
 README.md — Quick start, installation modes, and links to detailed docs.
 config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.
+hooks/pre-commit — Version bump hook: bumps the patch version before every commit (docs/guides/developer-guide.md, section Version bumping).
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
@@ -39,6 +40,7 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 ## src/pyntara/
 
 src/pyntara/__init__.py — Package version and public exports.
+src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py and inst.sh through config_edit.replace_line_by_string. Consumed by hooks/pre-commit.
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
 src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.

@@ -191,6 +191,10 @@ REPO_URL="${PYNTARA_REPO_URL:-https://github.com/Borodin-Atamanov/Pyntara.git}"
 REPO_BRANCH="${PYNTARA_REPO_BRANCH:-main}"
 SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
+# Installer version, bumped together with src/pyntara/__init__.py by the
+# pre-commit hook (hooks/pre-commit). The value is informational.
+PYNTARA_VERSION="0.1.1"
+
 # Guard so the test harness can inject a mock via source (bootstrap contract section 10).
 if ! declare -f fetch_source &>/dev/null; then
 fetch_source() {
@@ -265,6 +269,7 @@ run_pyntara() {
         return 1
     fi
     local rc=0
+    log "Pyntara installer version $PYNTARA_VERSION"
     log "Starting Pyntara from $SOURCE_DIR"
     if ( cd "$SOURCE_DIR" && run_timed uv run pyntara "$@" ); then
         rc=0

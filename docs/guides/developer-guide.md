@@ -34,3 +34,11 @@ Pushing to repository without these checks is not allowed.
 Before commit, run the full test suite and fix all failures until green.
 After finishing changes, integrate them into main.
 Any change that breaks architecture guarantees must update docs/contracts/architecture.md and corresponding tests in the same pull request.
+
+## Version bumping
+
+The pre-commit hook (hooks/pre-commit) bumps the patch version before every commit, so the version in src/pyntara/__init__.py and the PYNTARA_VERSION line of inst.sh grows with each commit. The hook is best-effort: a failure prints a warning and never blocks the commit, so a commit may go through without a version bump. The hook is local to a clone; enable it once with:
+
+git config core.hooksPath hooks
+
+The bash test suite tests/test_pre_commit_hook.sh covers the hook on a temporary git repository; run it with bash tests/test_pre_commit_hook.sh alongside bash tests/test_inst.sh.

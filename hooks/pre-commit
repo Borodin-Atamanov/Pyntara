@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Bump the pyntara version before every commit.
+# Best-effort by design: any failure prints a warning to stderr and the
+# hook still exits 0, so a broken bump never blocks a commit. The version
+# grows by one patch step on each successful run; the single version
+# source is src/pyntara/__init__.py, and the PYNTARA_VERSION line of
+# inst.sh is kept in sync by the same module (src/pyntara/bump_version.py).
+set -u
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$repo_root" ]]; then
+    echo "pyntara pre-commit: not a git repository, skipping version bump" >&2
+    exit 0
+fi
+
+if ! PYTHONPATH="$repo_root/src" python3 -m pyntara.bump_version --root "$repo_root" >/dev/null 2>&1; then
+    echo "pyntara pre-commit: version bump failed, committing without it" >&2
+    exit 0
+fi
+
+git add "$repo_root/src/pyntara/__init__.py" "$repo_root/inst.sh"
+exit 0
