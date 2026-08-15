@@ -125,3 +125,9 @@ name = "yggdrasil_service_setup"
 description = "Install the latest yggdrasil from GitHub releases as a system service."
 depends = []
 modes = ["server", "desktop"]
+
+[[tasks]]
+name = "system_metrics_initial_collect"
+description = "Run the system metrics collector once to send the network report right after provisioning."
+depends = ["system_metrics_setup"]
+modes = ["minimal", "server", "desktop"]
