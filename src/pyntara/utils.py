@@ -235,3 +235,117 @@ def backoff_delay(
     # the integer arithmetic unchanged.
     growth = int(multiplier ** (failures - 1))
     return min(base_seconds * growth, max_seconds)
+
+
+# Proquint encoding of arbitrary bytes into pronounceable words
+# (draft-rayner-proquint). The alphabet is a fixed protocol contract of
+# the format, not configuration: it lives only here, inside the code.
+CONSONANTS = "bdfghjklmnprstvz"
+VOWELS = "aiou"
+CONSONANT_INDEX = {char: index for index, char in enumerate(CONSONANTS)}
+VOWEL_INDEX = {char: index for index, char in enumerate(VOWELS)}
+PROQUINT_LETTERS = frozenset(CONSONANTS + VOWELS)
+TRAILING_MARKER = "-"
+
+
+def _proquint_encode_word(word: int) -> str:
+    """Encode one 16-bit word as a five-letter proquint syllable.
+
+    The bit layout of draft-rayner-proquint: consonant on bits 15-12,
+    vowel on 11-10, consonant on 9-6, vowel on 5-4, consonant on 3-0,
+    all big-endian.
+    """
+
+    return (
+        CONSONANTS[(word >> 12) & 0xF]
+        + VOWELS[(word >> 10) & 0x3]
+        + CONSONANTS[(word >> 6) & 0xF]
+        + VOWELS[(word >> 4) & 0x3]
+        + CONSONANTS[word & 0xF]
+    )
+
+
+def proquint_encode(data: bytes, separator: str = "-") -> str:
+    """Encode arbitrary bytes into a pronounceable proquint string.
+
+    Each 16-bit big-endian word becomes one five-letter syllable; the
+    syllables are joined with separator. Odd-length data is padded with a
+    trailing zero byte and marked with a single trailing dash that is not
+    part of the separator. Empty data encodes to an empty string. The
+    separator must be a string without any proquint alphabet letters, or
+    ValueError is raised: such a separator would shift word boundaries
+    and make the result undecodable.
+
+    Example: b'\x7f\x00\x00\x01' encodes to "lusab-babad", the
+    canonical draft-rayner-proquint example for 127.0.0.1.
+    """
+
+    if not isinstance(data, bytes):
+        raise TypeError("proquint data must be bytes")
+    if not isinstance(separator, str):
+        raise TypeError("proquint separator must be a string")
+    if not separator.isascii() or (set(separator) & PROQUINT_LETTERS):
+        raise ValueError("proquint separator must not contain alphabet letters")
+    if not data:
+        return ""
+    padded = data + b"\x00" if len(data) % 2 else data
+    trailing = len(data) % 2 == 1
+    words = [
+        int.from_bytes(padded[index : index + 2], "big")
+        for index in range(0, len(padded), 2)
+    ]
+    encoded = separator.join(_proquint_encode_word(word) for word in words)
+    return encoded + TRAILING_MARKER if trailing else encoded
+
+
+def proquint_decode(s: str) -> bytes | None:
+    """Decode a proquint string back into bytes, or None on any error.
+
+    The string is case-insensitive. Surrounding whitespace is trimmed
+    first so a copied line ending in a newline still decodes. A single
+    trailing dash marks odd-length data and is consumed together with the
+    padding zero byte; without it, the padding byte is kept, so the
+    format cannot distinguish even data ending in a zero from padded odd
+    data without the marker. Non-alphabet characters are ignored as
+    separators. A string that filters down to nothing decodes to None
+    unless it was empty after trimming (then it is b''). The result of
+    decoding is None when the filtered length is not a multiple of five
+    or a syllable position holds the wrong letter kind.
+
+    Example: "lusab-babad" decodes to b'\x7f\x00\x00\x01'.
+    """
+
+    if not isinstance(s, str):
+        raise TypeError("proquint input must be a string")
+    trimmed = s.strip()
+    if not trimmed:
+        return b""
+    has_trailing = trimmed.endswith(TRAILING_MARKER)
+    body = trimmed[:-1] if has_trailing else trimmed
+    filtered = "".join(char for char in body.lower() if char in PROQUINT_LETTERS)
+    if not filtered or len(filtered) % 5:
+        return None
+    words: list[int] = []
+    for start in range(0, len(filtered), 5):
+        chunk = filtered[start : start + 5]
+        if (
+            chunk[0] not in CONSONANT_INDEX
+            or chunk[1] not in VOWEL_INDEX
+            or chunk[2] not in CONSONANT_INDEX
+            or chunk[3] not in VOWEL_INDEX
+            or chunk[4] not in CONSONANT_INDEX
+        ):
+            return None
+        words.append(
+            (CONSONANT_INDEX[chunk[0]] << 12)
+            | (VOWEL_INDEX[chunk[1]] << 10)
+            | (CONSONANT_INDEX[chunk[2]] << 6)
+            | (VOWEL_INDEX[chunk[3]] << 4)
+            | CONSONANT_INDEX[chunk[4]]
+        )
+    raw = b"".join(word.to_bytes(2, "big") for word in words)
+    if has_trailing:
+        if not raw or raw[-1] != 0:
+            return None
+        return raw[:-1]
+    return raw
