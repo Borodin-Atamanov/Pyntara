@@ -119,7 +119,7 @@ def test_run_module_classifies_ok_empty_error(
     ok_module = CollectorModuleConfig(name="ok", command=("ok",))
     assert metrics_collect._run_module(ok_module, 15) == {
         "status": "ok",
-        "output": "address 10.0.0.1\n",
+        "output": "address 10.0.0.1",
     }
     empty_module = CollectorModuleConfig(name="empty", command=("empty",))
     assert metrics_collect._run_module(empty_module, 15) == {
@@ -129,7 +129,7 @@ def test_run_module_classifies_ok_empty_error(
     bad_module = CollectorModuleConfig(name="bad", command=("bad",))
     assert metrics_collect._run_module(bad_module, 15) == {
         "status": "error",
-        "output": "stdout\nstderr\n",
+        "output": "stdout\nstderr",
     }
 
 
@@ -161,6 +161,58 @@ def test_run_module_reports_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     result = metrics_collect._run_module(module, 15)
     assert result["status"] == "error"
     assert "timed out" in result["output"]
+
+
+def test_run_module_trims_whitespace_only_output_to_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A module that printed only whitespace carries no information: its
+    # output is trimmed to empty and the status is empty, not ok.
+    _fake_run(
+        monkeypatch,
+        {("blank",): _FakeProc(0, "  \n\t\n  ")},
+    )
+    module = CollectorModuleConfig(name="blank", command=("blank",))
+    assert metrics_collect._run_module(module, 15) == {
+        "status": "empty",
+        "output": "",
+    }
+
+
+def test_run_module_preserves_internal_newlines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Multi-line output keeps its internal newlines while the leading and
+    # trailing whitespace of the whole text is removed.
+    _fake_run(
+        monkeypatch,
+        {
+            ("lines",): _FakeProc(
+                0, "  \nfirst line\nsecond line\n\n  "
+            )
+        },
+    )
+    module = CollectorModuleConfig(name="lines", command=("lines",))
+    assert metrics_collect._run_module(module, 15) == {
+        "status": "ok",
+        "output": "first line\nsecond line",
+    }
+
+
+def test_run_module_trims_joined_error_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The error branch trims the joined stdout plus stderr once: the raw
+    # utility output keeps its internal shape, only the edges are cleaned.
+    _fake_run(
+        monkeypatch,
+        {("bad",): _FakeProc(1, "line one\n\n", "\nline two\n")},
+    )
+    module = CollectorModuleConfig(name="bad", command=("bad",))
+    assert metrics_collect._run_module(module, 15) == {
+        "status": "error",
+        "output": "line one\n\nline two",
+    }
 
 
 def test_percent_ready_counts_only_ok() -> None:
@@ -197,11 +249,11 @@ def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
     report = metrics_collect.collect(cfg)
     assert report["ready_percent"] == 50
     assert report["network"] == [
-        {"name": "ipv4", "status": "ok", "output": "inet 10.0.0.1\n"},
+        {"name": "ipv4", "status": "ok", "output": "inet 10.0.0.1"},
         {"name": "ipv6", "status": "empty", "output": ""},
     ]
     assert report["system"] == [
-        {"name": "hostname", "status": "ok", "output": "myhost\n"}
+        {"name": "hostname", "status": "ok", "output": "myhost"}
     ]
     assert isinstance(report["generated_at"], str)
     assert len(report["generated_at"]) == 19

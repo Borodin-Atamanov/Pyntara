@@ -8,7 +8,12 @@ from typing import Any
 import pytest
 from support import FakeProc as _FakeProc
 
-from pyntara.utils import run_command, service_is_active, service_is_enabled
+from pyntara.utils import (
+    run_command,
+    service_is_active,
+    service_is_enabled,
+    trim_whitespace,
+)
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -133,4 +138,21 @@ def test_service_is_active_matches_only_active(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     assert service_is_active("svc.service", timeout=5) is expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("", ""),
+        ("   \n\t\n  ", ""),
+        ("  text  ", "text"),
+        ("\n\t text \n", "text"),
+        ("line one\nline two\n", "line one\nline two"),
+        ("  \nfirst\n\nlast\n  ", "first\n\nlast"),
+    ],
+)
+def test_trim_whitespace_removes_edges_only(text: str, expected: str) -> None:
+    # Leading and trailing whitespace is removed; everything between the
+    # edges, including internal newlines, is preserved.
+    assert trim_whitespace(text) == expected
 

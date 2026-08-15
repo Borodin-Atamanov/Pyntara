@@ -112,6 +112,20 @@ def dpkg_architecture(timeout: float) -> str:
     return result.stdout.strip()
 
 
+def trim_whitespace(text: str) -> str:
+    """Remove the leading and trailing whitespace of a text.
+
+    Whitespace is spaces, tabs, newlines and carriage returns; everything
+    between the edges is preserved, so multi-line output keeps its
+    internal structure. The collector trims every module output with this
+    helper before it enters the report: console commands, config files and
+    user data all end their lines with a newline that must not reach the
+    telemetry (docs/spec/system-metrics.md, section Report collector).
+    """
+
+    return text.strip()
+
+
 def run_command(
     command: Iterable[str],
     *,

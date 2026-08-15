@@ -33,17 +33,21 @@ from typing import TextIO
 
 from pyntara.config import CollectorModuleConfig, Config, load_config
 from pyntara.logger import log_progress as _log
-from pyntara.utils import backoff_delay
+from pyntara.utils import backoff_delay, trim_whitespace
 
 
 def _run_module(
     module: CollectorModuleConfig, timeout_seconds: int
 ) -> dict[str, str]:
-    """Run one configured command; return status and full output.
+    """Run one configured command; return status and trimmed output.
 
     A command that exits 0 with non-empty stdout is ok; one that exits 0
     with empty stdout is empty; anything else (nonzero exit, a missing
-    executable, a timeout) is error, with the captured output kept.
+    executable, a timeout) is error, with the captured output kept. The
+    output of every branch is trimmed of leading and trailing whitespace
+    before it enters the report, so the trailing newline of every console
+    command never reaches the telemetry; a whitespace-only output is
+    empty, because it carries no information.
     """
 
     try:
@@ -64,10 +68,11 @@ def _run_module(
             "status": "error",
             "output": f"timed out after {timeout_seconds} seconds",
         }
-    output = result.stdout
+    output = trim_whitespace(result.stdout)
     if result.returncode != 0:
         if result.stderr:
-            output = f"{output.rstrip()}\n{result.stderr}" if output else result.stderr
+            output = f"{output}\n{result.stderr}" if output else result.stderr
+        output = trim_whitespace(output)
         return {"status": "error", "output": output}
     if not output:
         return {"status": "empty", "output": ""}

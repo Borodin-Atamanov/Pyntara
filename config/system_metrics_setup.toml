@@ -162,13 +162,18 @@ report_file_name = "network.json"
 # collector waits only for addresses. A module reports ok when the
 # command exited 0 with non-empty output, empty when it exited 0 with
 # empty output, error otherwise (nonzero exit, missing command, timeout).
-# Commands are argv arrays, never shell lines. Unconfigured sources are
-# simply absent: add or remove modules here without code changes. The
-# i2pd and yggdrasil modules run the address commands of the dedicated
-# venv (system_metrics_setup.venv_dir): each prints the live address and
-# falls back to the saved address file written by the provisioning task,
-# with the reason in the output when the fallback is used. Future
-# candidates, commented out until the services are installed:
+# The output of every module is trimmed of leading and trailing
+# whitespace before it enters the report: the trailing newline of every
+# console command and any stray whitespace never reach the telemetry,
+# while internal newlines are preserved; whitespace-only output is
+# empty. Commands are argv arrays, never shell lines. Unconfigured
+# sources are simply absent: add or remove modules here without code
+# changes. The i2pd and yggdrasil modules run the address commands of
+# the dedicated venv (system_metrics_setup.venv_dir): each prints the
+# live address and falls back to the saved address file written by the
+# provisioning task, with the reason in the output when the fallback is
+# used. Future candidates, commented out until the services are
+# installed:
 # [[system_metrics_setup.collector.network_modules]]
 # name = "tor_onion"
 # command = ["cat", "/var/lib/tor/hidden_service/hostname"]
