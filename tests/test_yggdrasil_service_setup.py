@@ -320,7 +320,7 @@ def test_saves_self_address_after_provisioning(
         installed_version=None,
         enabled=False,
         active=False,
-        ctl_json=json.dumps({"self": SELF_ADDRESS}),
+        ctl_json=json.dumps({"address": SELF_ADDRESS}),
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
@@ -371,7 +371,7 @@ def test_skip_requires_address_file(
         installed_version=VERSION,
         enabled=True,
         active=True,
-        ctl_json=json.dumps({"self": SELF_ADDRESS}),
+        ctl_json=json.dumps({"address": SELF_ADDRESS}),
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True

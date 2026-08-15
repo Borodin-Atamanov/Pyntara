@@ -40,7 +40,7 @@ def test_address_from_live_ctl(
     monkeypatch.setattr(
         yggdrasil_address.subprocess,
         "run",
-        _fake_run(0, json.dumps({"self": SELF_ADDRESS, "subnet": "201::/64"})),
+        _fake_run(0, json.dumps({"address": SELF_ADDRESS, "subnet": "201::/64"})),
     )
     saved = tmp_path / "saved"
     assert yggdrasil_address.main(["yggdrasil_address", str(saved)]) == 0

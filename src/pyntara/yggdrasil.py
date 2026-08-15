@@ -12,19 +12,19 @@ import json
 
 
 def self_address_from_output(output: str) -> str | None:
-    """The yggdrasil self address from a yggdrasilctl getSelf output, or None.
+    """The yggdrasil self address from a yggdrasilctl -json getSelf output.
 
-    The admin socket reports the node state as JSON with the self field
-    carrying the address. An unparsable payload or a missing or
-    non-string self field yields None, so the caller falls back to the
-    saved address file instead of failing.
+    The admin socket reports the node state as JSON with the address
+    field carrying the node address. An unparsable payload or a missing
+    or non-string address field yields None, so the caller falls back
+    to the saved address file instead of failing.
     """
 
     try:
         data = json.loads(output)
     except json.JSONDecodeError:
         return None
-    address = data.get("self") if isinstance(data, dict) else None
+    address = data.get("address") if isinstance(data, dict) else None
     if not isinstance(address, str) or not address:
         return None
     return address
