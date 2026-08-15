@@ -70,7 +70,7 @@ Spec — functional specification, what the system does and how. Design rational
 Guides — how to work with the project:
 `docs/guides/project-structure.md` — repository layout, file responsibilities, config editing tools
 `docs/guides/project-rules.md` — code conventions: output policy, datetime format, engineering standards
-`docs/guides/developer-guide.md` — quick start, testing, CI, commit workflow
+`docs/guides/developer-guide.md` — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow
 
 Architecture decisions:
 `docs/simplified-architecture.md` — approved simplification rationale, resilience rule
