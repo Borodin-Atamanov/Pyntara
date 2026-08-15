@@ -7,14 +7,22 @@ carries the current stable series and receives upstream security
 updates through the regular apt upgrade, so the always-newest mechanic
 of the i2pd and yggdrasil tasks would add complexity without a benefit.
 
-The task owns the main configuration file at the configured config_path
-and rewrites it whenever the rendered content differs, so manual edits
-are reverted on the next run. The configuration is rendered from
-config.toml: the SOCKS proxy bound to the loopback interface, the log
-level and the SSH onion service. The service forwards to the local SSH
-daemon on the port read from the ssh_daemon_setup Port directive,
-never duplicated into the tor configuration, so the two can never
-diverge; the virtual port clients connect to is configured.
+The task never rewrites the main configuration file at the configured
+torrc_path: it only guarantees the configured %include line through
+the shared add_line_to_file helper, which appends the line when it is
+absent and leaves every other line untouched, so unrelated content and
+comments of the file survive. The owned settings are rendered into the
+drop-in at torrc_dropin_path and rewritten whenever the rendered
+content differs, so manual edits of the drop-in are reverted on the
+next run. The rendered options: the SOCKS proxy bound to the loopback
+interface, the log level and the SSH onion service. The service
+forwards to the local SSH daemon on the port read from the
+ssh_daemon_setup Port directive, never duplicated into the tor
+configuration, so the two can never diverge; the virtual port clients
+connect to is configured. After a change of the drop-in or the include
+line the task verifies the whole configuration with tor --verify-config,
+so a directive the running Tor does not know is reported as an error
+instead of being silently accepted.
 
 The onion service identity lives in the hidden service directory. The
 task creates the directory inside the Tor data directory, where the
@@ -35,11 +43,11 @@ starts it when it is inactive or restarts it when it is active and the
 configuration or the package changed, and waits with the configured
 readiness loop for the unit to report active, because the forking
 service may take a moment to fork. The task is idempotent: it skips
-when the package is installed, the configuration matches the render,
-the hidden service directory exists, the saved address file matches
-the current address and the service is enabled and active; force mode
-rewrites the configuration and restarts the service but never
-reinstalls the package.
+when the package is installed, the %include line is present in the
+main configuration, the drop-in matches the render, the hidden service
+directory exists, the saved address file matches the current address
+and the service is enabled and active; force mode rewrites the drop-in
+and restarts the service but never reinstalls the package.
 """
 
 from __future__ import annotations
@@ -52,6 +60,7 @@ from pathlib import Path
 
 from pyntara.augeas import apply_owner
 from pyntara.config import TorSetupConfig
+from pyntara.config_edit import add_line_to_file
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -68,13 +77,15 @@ from pyntara.utils import (
 
 
 def _render_config(cfg: TorSetupConfig, ssh_port: int) -> str:
-    """Render the configuration file with the configured values.
+    """Render the drop-in file with the configured values.
 
     The render starts with the ownership comment, so a manual edit is
     easy to spot. The forward target of the onion service is the sshd
     listen port read from the ssh_daemon_setup directives by the
     caller, so the service always forwards to the daemon that actually
-    runs. The order of the lines is fixed, because the idempotency
+    runs. HiddenServiceDir precedes the per-service options, because
+    they apply to the service using the most recent HiddenServiceDir.
+    The order of the lines is fixed, because the idempotency
     comparison is textual.
     """
 
@@ -83,31 +94,79 @@ def _render_config(cfg: TorSetupConfig, ssh_port: int) -> str:
             "# Managed by the Pyntara tor_setup task.",
             f"SocksPort 127.0.0.1:{cfg.socks_port}",
             f"Log {cfg.log_level} syslog",
-            "HiddenServiceVersion 3",
-            f"NumIntroductionPoints {cfg.num_introduction_points}",
             f"HiddenServiceDir {cfg.hidden_service_dir}",
+            "HiddenServiceVersion 3",
+            f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}",
             f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:{ssh_port}",
             "",
         ]
     )
 
 
-def _read_config(config_path: Path) -> str | None:
-    """Current content of the configuration file, or None when absent."""
+def _ensure_torrc_include(cfg: TorSetupConfig) -> tuple[bool, str | None]:
+    """Guarantee the %include line in the main configuration.
+
+    The shared add_line_to_file helper appends the line when it is
+    absent and leaves every other line untouched, so the main file is
+    never rewritten as a whole. A missing main file is an error: the
+    drop-in would then be silently ignored, and the helper would not
+    create the file. Returns (changed, error).
+    """
+
+    if not cfg.torrc_path.is_file():
+        return False, f"{cfg.torrc_path} is missing"
+    include_line = f"%include {cfg.torrc_include_glob}"
+    try:
+        changed = add_line_to_file(cfg.torrc_path, include_line)
+    except OSError as exc:
+        return False, f"cannot update {cfg.torrc_path}: {exc}"
+    return changed, None
+
+
+def _verify_config(timeout: float) -> str | None:
+    """Error text when the tor configuration is invalid; None when OK.
+
+    tor --verify-config parses the whole configuration, the main file
+    and every included file, and exits nonzero on an invalid option or
+    a conflicting value, so the check is independent of the Tor version
+    and of the files the task does not own.
+    """
 
     try:
-        return config_path.read_text(encoding="utf-8")
+        result = run_command(
+            ["tor", "--verify-config"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return f"cannot run tor --verify-config: {exc}"
+    if result.returncode != 0:
+        return (
+            f"tor --verify-config exited {result.returncode}: "
+            f"{result.stderr.strip()}"
+        )
+    return None
+
+
+def _read_dropin(dropin_path: Path) -> str | None:
+    """Current content of the drop-in file, or None when absent."""
+
+    try:
+        return dropin_path.read_text(encoding="utf-8")
     except OSError:
         return None
 
 
-def _write_config(cfg: TorSetupConfig, ssh_port: int) -> None:
-    """Write the rendered configuration into the configured path."""
+def _write_dropin(cfg: TorSetupConfig, ssh_port: int) -> None:
+    """Write the rendered drop-in into the configured path."""
 
-    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(_render_config(cfg, ssh_port), encoding="utf-8")
-    os.chmod(cfg.config_path, cfg.config_file_mode)
-    ensure_root_owner(cfg.config_path)
+    cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.torrc_dropin_path.write_text(
+        _render_config(cfg, ssh_port), encoding="utf-8"
+    )
+    os.chmod(cfg.torrc_dropin_path, cfg.dropin_file_mode)
+    ensure_root_owner(cfg.torrc_dropin_path)
 
 
 def _ensure_hidden_service_dir(cfg: TorSetupConfig) -> None:
@@ -169,14 +228,16 @@ def _saved_address_matches(address_file_path: Path, address: str | None) -> bool
 def task(ctx: Context) -> TaskResult:
     """Install Tor and publish the SSH onion service; skip when done.
 
-    The goal is reached when the package is installed, the configuration
-    matches the rendered content, the hidden service directory exists,
-    the saved address file matches the current address and the service
-    is enabled and active; the task then returns changed=False.
-    Otherwise it installs the package, writes the configuration, prepares
-    the hidden service directory, enables the service, starts or
-    restarts it and waits for it to become active. The onion address is
-    read from the hostname file and reported; before the first start
+    The goal is reached when the package is installed, the %include line
+    is present in the main configuration, the drop-in matches the
+    rendered content, the hidden service directory exists, the saved
+    address file matches the current address and the service is enabled
+    and active; the task then returns changed=False. Otherwise it
+    installs the package, guarantees the %include line, writes the
+    drop-in, verifies the configuration with tor --verify-config,
+    prepares the hidden service directory, enables the service, starts
+    or restarts it and waits for it to become active. The onion address
+    is read from the hostname file and reported; before the first start
     created the file the message says the address appears after the
     first start. Every step is reported to stdout: measurements and
     decisions as single lines that include their result, long-running
@@ -205,8 +266,16 @@ def task(ctx: Context) -> TaskResult:
         f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
     )
 
+    include_changed, include_error = _ensure_torrc_include(cfg)
+    if include_error is not None:
+        return TaskResult(success=False, error=include_error)
+    _log(
+        f"checking %include line in {cfg.torrc_path}: "
+        f"{'present' if not include_changed else 'added'}"
+    )
+
     target_config = _render_config(cfg, ssh_port)
-    current_config = _read_config(cfg.config_path)
+    current_config = _read_dropin(cfg.torrc_dropin_path)
     config_changed = force or current_config != target_config
 
     dir_exists = cfg.hidden_service_dir.is_dir()
@@ -231,6 +300,7 @@ def task(ctx: Context) -> TaskResult:
     if (
         not force
         and installed
+        and not include_changed
         and not config_changed
         and dir_exists
         and enabled
@@ -257,18 +327,28 @@ def task(ctx: Context) -> TaskResult:
         _log("package installed")
         changed = True
 
+    if include_changed:
+        _log(f"adding %include line to {cfg.torrc_path}")
+        changed = True
+
     if config_changed:
-        _log(f"writing configuration {cfg.config_path}")
+        _log(f"writing drop-in {cfg.torrc_dropin_path}")
         try:
-            _write_config(cfg, ssh_port)
+            _write_dropin(cfg, ssh_port)
         except OSError as exc:
             return TaskResult(
                 success=False,
                 changed=changed,
-                error=f"cannot write configuration: {exc}",
+                error=f"cannot write drop-in: {exc}",
             )
-        _log("configuration written")
+        _log("drop-in written")
         changed = True
+
+    if config_changed or include_changed or force:
+        verify = _verify_config(timeout)
+        if verify is not None:
+            return TaskResult(success=False, changed=changed, error=verify)
+        _log("configuration verified through tor --verify-config")
 
     _log(f"preparing hidden service directory {cfg.hidden_service_dir}")
     try:
@@ -299,6 +379,7 @@ def task(ctx: Context) -> TaskResult:
     if (
         not active
         or config_changed
+        or include_changed
         or address is None
         or force
     ):

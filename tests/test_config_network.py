@@ -276,14 +276,36 @@ from pyntara.config import load_config
         base_config().replace(
             'service_unit_name = "tor.service"', 'service_unit_name = ""'
         ),
-        # tor_setup config_path is a number, not a string
-        base_config().replace('config_path = "/etc/tor/torrc"', "config_path = 1"),
-        # tor_setup config_path is an empty string
-        base_config().replace('config_path = "/etc/tor/torrc"', 'config_path = ""'),
-        # tor_setup config_file_mode is not octal
+        # tor_setup torrc_path is a number, not a string
+        base_config().replace('torrc_path = "/etc/tor/torrc"', "torrc_path = 1"),
+        # tor_setup torrc_path is an empty string
         base_config().replace(
-            'config_path = "/etc/tor/torrc"\nconfig_file_mode = "0640"',
-            'config_path = "/etc/tor/torrc"\nconfig_file_mode = "640"',
+            'torrc_path = "/etc/tor/torrc"', 'torrc_path = ""'
+        ),
+        # tor_setup torrc_dropin_path is a number, not a string
+        base_config().replace(
+            'torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"',
+            "torrc_dropin_path = 1",
+        ),
+        # tor_setup torrc_dropin_path is an empty string
+        base_config().replace(
+            'torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"',
+            'torrc_dropin_path = ""',
+        ),
+        # tor_setup torrc_include_glob is a number, not a string
+        base_config().replace(
+            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"',
+            "torrc_include_glob = 1",
+        ),
+        # tor_setup torrc_include_glob is an empty string
+        base_config().replace(
+            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"',
+            'torrc_include_glob = ""',
+        ),
+        # tor_setup dropin_file_mode is not octal
+        base_config().replace(
+            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"\ndropin_file_mode = "0640"',
+            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"\ndropin_file_mode = "640"',
         ),
         # tor_setup hidden_service_dir is an empty string
         base_config().replace(

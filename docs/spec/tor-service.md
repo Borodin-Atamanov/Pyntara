@@ -10,16 +10,18 @@ The package comes from the Ubuntu archive (universe, enabled by add_extra_repos)
 
 ## Configuration ownership
 
-The task owns the main configuration file at the configured config_path. It renders the content from the configured values and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
+The task never rewrites the main configuration file at the configured torrc_path: it only guarantees the %include line named by torrc_include_glob through the shared add_line_to_file helper (config_edit.py), which appends the line when it is absent and leaves every other line untouched, so unrelated content and comments of the file survive. The %include directive of torrc imports configuration from files or directories; files of an included directory are read in lexical order, dot files and subdirectories are ignored. The task's own settings are rendered into the drop-in at torrc_dropin_path, which the task owns and rewrites whenever the rendered content differs, so manual edits of the drop-in are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
 
 1. SocksPort 127.0.0.1:{socks_port} — the SOCKS proxy, bound to the loopback interface only. A client routes its SSH connection through this proxy to reach the onion address.
 2. Log {log_level} syslog — the verbosity, written to syslog so the journal shows the Tor diagnostics.
-3. HiddenServiceVersion 3 — the onion service protocol version.
-4. NumIntroductionPoints {num_introduction_points} — how many introduction points the service maintains; more points keep the service reachable while some of them are under attack, at the cost of more keepalive traffic.
-5. HiddenServiceDir {hidden_service_dir} — the directory of the service identity.
+3. HiddenServiceDir {hidden_service_dir} — the directory of the service identity. The per-service options that follow apply to the service using the most recent HiddenServiceDir.
+4. HiddenServiceVersion 3 — the onion service protocol version.
+5. HiddenServiceNumIntroductionPoints {num_introduction_points} — how many introduction points the service maintains; more points keep the service reachable while some of them are under attack, at the cost of more keepalive traffic.
 6. HiddenServicePort {onion_ssh_port} 127.0.0.1:{ssh_port} — the virtual port clients connect to, forwarding to the local SSH daemon.
 
 The local ssh port is not a parameter anywhere: the task reads the sshd Port directive from the ssh_daemon_setup configuration through the shared reader in pyntara.ssh, the same helper the i2pd task uses. The service and the daemon therefore share one source of truth and can never diverge. The forward host is the loopback address, because the daemon runs on the same machine and the service connects locally. The virtual port is a separate entity owned by this task: it defines what a client connects to on the .onion address, not where the daemon listens, so Port 22 is not a duplication.
+
+After a change of the drop-in or the include line the task verifies the whole configuration with tor --verify-config, which parses the main file and every included file and exits nonzero on an invalid option or a conflicting value. The check is independent of the Tor version and of the files the task does not own, so a directive the running Tor does not know is reported as an error instead of being silently accepted.
 
 ## Identity and the hidden service directory
 
@@ -39,7 +41,7 @@ The service unit comes from the package; the task never renders or writes it. Th
 
 ## Idempotency
 
-The target state is reached when the package is installed, the configuration file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then skips with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode rewrites the configuration, restarts the service and rewrites the address file, but never reinstalls the package.
+The target state is reached when the package is installed, the %include line is present in the main configuration, the drop-in file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then skips with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode rewrites the drop-in, verifies the configuration, restarts the service and rewrites the address file, but never reinstalls the package and never touches the main configuration beyond the guaranteed %include line.
 
 ## Parameters
 
@@ -47,8 +49,10 @@ All parameters live in the config/ directory under [tor_setup]:
 
 package_name is the package that provides the Tor daemon
 service_unit_name is the systemd unit installed by the package
-config_path is the owned configuration file, rendered by the task
-config_file_mode is the file mode of the configuration
+torrc_path is the main configuration file, never rewritten: the task only guarantees the %include line in it
+torrc_dropin_path is the owned drop-in file with the task settings, rendered by the task
+torrc_include_glob is the %include glob guaranteed in torrc_path; it must cover the drop-in file
+dropin_file_mode is the file mode of the drop-in
 hidden_service_dir is the directory of the onion service identity, inside the Tor data directory
 hidden_service_dir_mode is the file mode of the directory; Tor refuses a world-readable directory
 tor_user is the system user the service runs as, the owner of the hidden service directory

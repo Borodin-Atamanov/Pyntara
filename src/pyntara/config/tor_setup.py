@@ -20,12 +20,15 @@ class TorSetupConfig:
     """Tor installation parameters for the tor_setup task.
 
     The task installs package_name from the Ubuntu archive and runs
-    service_unit_name as a system service. The task owns the main
-    configuration file at config_path (written with config_file_mode)
-    and renders it from the configured values: the log level log_level,
-    the SOCKS proxy port socks_port and the onion service that forwards
-    to the local SSH daemon. hidden_service_dir is the directory of the
-    onion service identity, created by the task with
+    service_unit_name as a system service. The task never rewrites the
+    main configuration file at torrc_path: it only guarantees the
+    %include line named by torrc_include_glob through the shared
+    add_line_to_file helper, so unrelated content of the file survives.
+    The owned settings are rendered into the drop-in at
+    torrc_dropin_path (written with dropin_file_mode): the log level
+    log_level, the SOCKS proxy port socks_port and the onion service
+    that forwards to the local SSH daemon. hidden_service_dir is the
+    directory of the onion service identity, created by the task with
     hidden_service_dir_mode and owned by tor_user, so Tor can write the
     keys and the hostname file; the identity must never be recreated,
     otherwise the address changes. onion_ssh_port is the virtual port
@@ -44,8 +47,10 @@ class TorSetupConfig:
 
     package_name: str
     service_unit_name: str
-    config_path: Path
-    config_file_mode: int
+    torrc_path: Path
+    torrc_dropin_path: Path
+    torrc_include_glob: str
+    dropin_file_mode: int
     hidden_service_dir: Path
     hidden_service_dir_mode: int
     tor_user: str
@@ -63,9 +68,10 @@ class TorSetupConfig:
 def _tor_setup_table(raw: object) -> TorSetupConfig:
     """Validate the [tor_setup] table and build the config.
 
-    package_name, service_unit_name, config_path, hidden_service_dir and
-    tor_user are non-empty strings; config_file_mode, hidden_service_dir_mode
-    and address_file_mode are octal strings; log_level is one of the
+    package_name, service_unit_name, torrc_path, torrc_dropin_path,
+    torrc_include_glob, hidden_service_dir and tor_user are non-empty
+    strings; dropin_file_mode, hidden_service_dir_mode and
+    address_file_mode are octal strings; log_level is one of the
     TOR_LOG_LEVELS values; socks_port and onion_ssh_port are port numbers
     between 1 and 65535; num_introduction_points, install_retries and
     start_check_attempts are positive integers;
@@ -82,11 +88,19 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
     service_unit_name = _nonempty_string_field(
         raw.get("service_unit_name"), "tor_setup.service_unit_name"
     )
-    config_path = Path(
-        _nonempty_string_field(raw.get("config_path"), "tor_setup.config_path")
+    torrc_path = Path(
+        _nonempty_string_field(raw.get("torrc_path"), "tor_setup.torrc_path")
     )
-    config_file_mode = _octal_mode_field(
-        raw.get("config_file_mode"), "tor_setup.config_file_mode"
+    torrc_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("torrc_dropin_path"), "tor_setup.torrc_dropin_path"
+        )
+    )
+    torrc_include_glob = _nonempty_string_field(
+        raw.get("torrc_include_glob"), "tor_setup.torrc_include_glob"
+    )
+    dropin_file_mode = _octal_mode_field(
+        raw.get("dropin_file_mode"), "tor_setup.dropin_file_mode"
     )
     hidden_service_dir = Path(
         _nonempty_string_field(
@@ -156,8 +170,10 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
     return TorSetupConfig(
         package_name=package_name,
         service_unit_name=service_unit_name,
-        config_path=config_path,
-        config_file_mode=config_file_mode,
+        torrc_path=torrc_path,
+        torrc_dropin_path=torrc_dropin_path,
+        torrc_include_glob=torrc_include_glob,
+        dropin_file_mode=dropin_file_mode,
         hidden_service_dir=hidden_service_dir,
         hidden_service_dir_mode=hidden_service_dir_mode,
         tor_user=tor_user,

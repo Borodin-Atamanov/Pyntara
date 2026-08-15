@@ -53,7 +53,9 @@ def _ctx(
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
-            tor_config_path=tmp_path / "etc" / "tor" / "torrc",
+            tor_torrc_path=tmp_path / "etc" / "tor" / "torrc",
+            tor_torrc_dropin_path=tmp_path / "etc" / "tor" / "torrc.d" / "pyntara.conf",
+            tor_torrc_include_glob=str(tmp_path / "etc" / "tor" / "torrc.d" / "*.conf"),
             tor_hidden_service_dir=tmp_path / "var" / "lib" / "tor" / "ssh",
             tor_address_file_path=tmp_path / "var" / "lib" / "pyntara" / "tor_ssh_address",
             tor_install_retries=retries,
@@ -62,6 +64,17 @@ def _ctx(
             ssh_daemon_directives=tuple(directives),
         ),
     )
+
+
+def _write_torrc(ctx: Context, *, include: bool = False) -> None:
+    """Write the main torrc fixture; optionally with the include line."""
+
+    cfg = ctx.config.tor_setup
+    cfg.torrc_path.parent.mkdir(parents=True, exist_ok=True)
+    content = "Log notice syslog\n"
+    if include:
+        content += f"%include {cfg.torrc_include_glob}\n"
+    cfg.torrc_path.write_text(content, encoding="utf-8")
 
 
 def _install_fake(
@@ -75,16 +88,18 @@ def _install_fake(
     active_becomes: bool = True,
     write_hostname: bool = True,
     tor_user_exists: bool = True,
+    verify_ok: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
     dpkg-query reports the package state, apt-get install fails the
-    first fail_install attempts, and systemctl reports the enabled and
-    active state from the flags. With active_becomes, the service turns
-    active after the first start or restart; without it, the readiness
-    loop runs out. With write_hostname, the first start writes the
-    hidden service hostname file like a real Tor daemon. With
-    tor_user_exists False, pwd.getpwnam raises KeyError.
+    first fail_install attempts, tor --verify-config reports the given
+    result, and systemctl reports the enabled and active state from the
+    flags. With active_becomes, the service turns active after the first
+    start or restart; without it, the readiness loop runs out. With
+    write_hostname, the first start writes the hidden service hostname
+    file like a real Tor daemon. With tor_user_exists False,
+    pwd.getpwnam raises KeyError.
     """
 
     calls: list[list[str]] = []
@@ -112,6 +127,10 @@ def _install_fake(
             if install_attempts <= fail_install:
                 raise subprocess.CalledProcessError(100, command)
             return _FakeProc(0)
+        if command[0] == "tor":
+            if verify_ok:
+                return _FakeProc(0, "Configuration valid\n")
+            return _FakeProc(1, "", "Unknown option 'nope'\n")
         if command[0] == "systemctl":
             if command[1] == "is-enabled":
                 if enabled:
@@ -137,14 +156,16 @@ def _install_fake(
 
 
 def _write_state_as_rendered(ctx: Context) -> None:
-    """Write the config as rendered, the hostname and the saved address."""
+    """Write the drop-in as rendered, the include line, the hostname and
+    the saved address."""
 
     cfg = ctx.config.tor_setup
     ssh_port = tor_setup.ssh_port_from_directives(
         ctx.config.ssh_daemon_setup.directives
     )
-    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(
+    _write_torrc(ctx, include=True)
+    cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.torrc_dropin_path.write_text(
         tor_setup._render_config(cfg, ssh_port), encoding="utf-8"
     )
     cfg.hidden_service_dir.mkdir(parents=True, exist_ok=True)
@@ -158,10 +179,10 @@ def _write_state_as_rendered(ctx: Context) -> None:
 def test_already_configured_skips(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The package is installed, the configuration matches its render, the
-    # hidden service directory exists, the saved address file matches
-    # and the service is enabled and active: the task skips and runs only
-    # the status queries.
+    # The package is installed, the include line is present, the drop-in
+    # matches its render, the hidden service directory exists, the saved
+    # address file matches and the service is enabled and active: the
+    # task skips and runs only the status queries.
     ctx = _ctx(tmp_path)
     _write_state_as_rendered(ctx)
     calls = _install_fake(
@@ -176,47 +197,101 @@ def test_already_configured_skips(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
+    assert not any(call[0] == "tor" for call in calls)
 
 
 def test_installs_and_starts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Tor is not installed and the service is not enabled: the task
-    # installs the package, writes the configuration, prepares the hidden
-    # service directory, enables and starts the service, then saves the
-    # address from the hostname file.
+    # installs the package, adds the include line, writes the drop-in,
+    # verifies the configuration, prepares the hidden service directory,
+    # enables and starts the service, then saves the address.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert ADDRESS in (result.message or "")
     assert ["apt-get", "install", "-y", "tor"] in calls
+    assert ["tor", "--verify-config"] in calls
     assert ["systemctl", "enable", "tor.service"] in calls
     assert ["systemctl", "start", "tor.service"] in calls
     cfg = ctx.config.tor_setup
-    assert cfg.config_path.is_file()
+    assert cfg.torrc_dropin_path.is_file()
+    assert f"%include {cfg.torrc_include_glob}" in cfg.torrc_path.read_text(
+        encoding="utf-8"
+    )
     assert cfg.hidden_service_dir.is_dir()
     assert cfg.address_file_path.read_text(encoding="utf-8").strip() == ADDRESS
 
 
-def test_config_rewritten_when_missing_and_restarts(
+def test_include_line_is_not_duplicated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The package is installed and the service is active but the
-    # configuration file is absent: the task writes it and restarts the
-    # running service.
+    # The include line is already present: the task leaves the main torrc
+    # untouched and does not append a duplicate line.
+    ctx = _ctx(tmp_path)
+    _write_torrc(ctx, include=True)
+    before = ctx.config.tor_setup.torrc_path.read_text(encoding="utf-8")
+    _install_fake(monkeypatch, ctx)
+    result = tor_setup.task(ctx)
+    assert result.success is True
+    assert before.count("%include") == 1
+    assert ctx.config.tor_setup.torrc_path.read_text(
+        encoding="utf-8"
+    ).count("%include") == 1
+
+
+def test_dropin_rewritten_when_missing_and_restarts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The package is installed and the service is active but the drop-in
+    # is absent: the task writes it, verifies and restarts the running
+    # service.
     ctx = _ctx(tmp_path)
     _write_state_as_rendered(ctx)
-    ctx.config.tor_setup.config_path.unlink()
+    ctx.config.tor_setup.torrc_dropin_path.unlink()
     calls = _install_fake(
         monkeypatch, ctx, installed=True, enabled=True, active=True
     )
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
+    assert ["tor", "--verify-config"] in calls
     assert ["systemctl", "restart", "tor.service"] in calls
     assert ["systemctl", "start", "tor.service"] not in calls
+
+
+def test_verify_config_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # tor --verify-config reports an invalid configuration: the task
+    # fails instead of silently accepting a broken drop-in.
+    ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
+    calls = _install_fake(monkeypatch, ctx, verify_ok=False)
+    result = tor_setup.task(ctx)
+    assert result.success is False
+    assert "tor --verify-config" in (result.error or "")
+    assert not any(
+        call[0] == "systemctl" and call[1] in ("start", "restart")
+        for call in calls
+    )
+
+
+def test_missing_main_torrc_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The main configuration file is absent: the include line cannot be
+    # guaranteed, so the task fails instead of pretending the drop-in is
+    # connected.
+    ctx = _ctx(tmp_path)
+    _install_fake(monkeypatch, ctx)
+    result = tor_setup.task(ctx)
+    assert result.success is False
+    assert "is missing" in (result.error or "")
 
 
 def test_install_gives_up_after_retries(
@@ -225,6 +300,7 @@ def test_install_gives_up_after_retries(
     # apt always fails: the task tries one initial attempt plus the
     # configured retries, then reports the failure.
     ctx = _ctx(tmp_path, retries=3)
+    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx, fail_install=99)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -240,6 +316,7 @@ def test_install_retries_transient_failure(
 ) -> None:
     # The first apt attempt fails, the retry succeeds.
     ctx = _ctx(tmp_path, retries=3)
+    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx, fail_install=1)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -256,6 +333,7 @@ def test_no_apt_update_without_skip_flag(
     # The task never refreshes the apt index: add_extra_repos already
     # refreshed it in the same run, so apt-get update never appears.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -269,6 +347,7 @@ def test_first_start_reports_address_appears_later(
     # reports that the address appears after the first start and writes
     # no address file.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, write_hostname=False)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -283,6 +362,7 @@ def test_hidden_service_dir_gets_configured_mode(
     # The task creates the hidden service directory with the configured
     # mode, so Tor accepts the onion service.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -298,6 +378,7 @@ def test_missing_tor_user_is_an_error(
     # The configured Tor system user does not exist: the task fails
     # instead of leaving a directory Tor cannot write.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, tor_user_exists=False)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -310,6 +391,7 @@ def test_service_that_stays_inactive_is_an_error(
     # The service never reports active within the readiness loop: the
     # task reports the failure instead of a silent success.
     ctx = _ctx(tmp_path)
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, active_becomes=False)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -322,6 +404,7 @@ def test_missing_ssh_port_directive_is_an_error(
     # ssh_daemon_setup has no Port directive: the forward target is
     # unknown, so the task fails explicitly.
     ctx = _ctx(tmp_path, ssh_port=None)
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -334,6 +417,7 @@ def test_non_numeric_ssh_port_is_an_error(
     # The sshd Port directive is not a number: the forward target is
     # invalid, so the task fails explicitly.
     ctx = _ctx(tmp_path, ssh_port="abc")
+    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -361,8 +445,9 @@ def test_force_mode_restarts_and_rewrites(
 def test_render_config_uses_ssh_port_and_virtual_port(
     tmp_path: Path,
 ) -> None:
-    # The rendered configuration forwards the virtual port to the local
-    # sshd port read from the ssh_daemon_setup directives.
+    # The rendered drop-in forwards the virtual port to the local sshd
+    # port read from the ssh_daemon_setup directives, and the per-service
+    # options follow HiddenServiceDir.
     ctx = _ctx(tmp_path)
     cfg = ctx.config.tor_setup
     ssh_port = tor_setup.ssh_port_from_directives(
@@ -372,7 +457,14 @@ def test_render_config_uses_ssh_port_and_virtual_port(
     assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
     assert f"HiddenServiceDir {cfg.hidden_service_dir}" in rendered
     assert (
+        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}"
+        in rendered
+    )
+    assert (
         f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:{ssh_port}"
         in rendered
+    )
+    assert rendered.index("HiddenServiceDir") < rendered.index(
+        "HiddenServicePort"
     )
     assert rendered.endswith("\n")

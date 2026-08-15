@@ -117,8 +117,10 @@ listen = true
 [tor_setup]
 package_name = "tor"
 service_unit_name = "tor.service"
-config_path = "/etc/tor/torrc"
-config_file_mode = "0640"
+torrc_path = "/etc/tor/torrc"
+torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"
+torrc_include_glob = "/etc/tor/torrc.d/*.conf"
+dropin_file_mode = "0640"
 hidden_service_dir = "/var/lib/tor/ssh"
 hidden_service_dir_mode = "0700"
 tor_user = "debian-tor"
@@ -396,8 +398,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.yggdrasil_service_setup.address_file_mode == 0o644
     assert config.tor_setup.package_name == "tor"
     assert config.tor_setup.service_unit_name == "tor.service"
-    assert config.tor_setup.config_path == Path("/etc/tor/torrc")
-    assert config.tor_setup.config_file_mode == 0o640
+    assert config.tor_setup.torrc_path == Path("/etc/tor/torrc")
+    assert config.tor_setup.torrc_dropin_path == Path(
+        "/etc/tor/torrc.d/pyntara.conf"
+    )
+    assert config.tor_setup.torrc_include_glob == "/etc/tor/torrc.d/*.conf"
+    assert config.tor_setup.dropin_file_mode == 0o640
     assert config.tor_setup.hidden_service_dir == Path("/var/lib/tor/ssh")
     assert config.tor_setup.hidden_service_dir_mode == 0o700
     assert config.tor_setup.tor_user == "debian-tor"

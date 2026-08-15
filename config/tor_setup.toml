@@ -1,19 +1,30 @@
 [tor_setup]
 # Tor onion service parameters (docs/spec/tor-service.md).
-# The task installs Tor from the Ubuntu archive, renders the owned
-# configuration and publishes an SSH onion service: the machine becomes
-# reachable over Tor without a single manual step. The local SSH port is
-# not configured here: it is read from the ssh_daemon_setup Port
-# directive, so the forward and the SSH daemon never diverge.
+# The task installs Tor from the Ubuntu archive, writes its owned
+# settings into a drop-in file and publishes an SSH onion service: the
+# machine becomes reachable over Tor without a single manual step. The
+# local SSH port is not configured here: it is read from the
+# ssh_daemon_setup Port directive, so the forward and the SSH daemon
+# never diverge.
 # Package that provides the Tor daemon.
 package_name = "tor"
 # Name of the systemd service unit installed by the package.
 service_unit_name = "tor.service"
-# Main configuration file the task owns and renders; a manual edit is
-# reverted on the next run.
-config_path = "/etc/tor/torrc"
-# File mode of the configuration file, octal string.
-config_file_mode = "0640"
+# Main Tor configuration file. The task never rewrites it: it only
+# guarantees the %include line below through the shared
+# add_line_to_file helper, so unrelated content of the file survives.
+torrc_path = "/etc/tor/torrc"
+# Owned drop-in file with the task settings, connected to the main
+# configuration through the %include line. The task rewrites this file
+# whenever the rendered content differs, so manual edits are reverted
+# on the next run.
+torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"
+# The %include glob the task guarantees in torrc_path; it must cover
+# the drop-in file. Files of the included directory are read in lexical
+# order; dot files and subdirectories are ignored.
+torrc_include_glob = "/etc/tor/torrc.d/*.conf"
+# File mode of the drop-in file, octal string.
+dropin_file_mode = "0640"
 # Directory of the SSH onion service identity. It must live inside
 # /var/lib/tor: the AppArmor profile of the package confines Tor to its
 # data directory. The task creates the directory but never recreates
