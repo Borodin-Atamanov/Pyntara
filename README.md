@@ -74,3 +74,6 @@ Guides — how to work with the project:
 
 Architecture decisions:
 `docs/simplified-architecture.md` — approved simplification rationale, resilience rule
+
+Plans:
+`docs/TODO.md` — planned future work, ideas for new tasks
