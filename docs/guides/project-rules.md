@@ -67,6 +67,8 @@ All processes started from Python must provide return code used for correctness 
 
 Behavioral values must live in the config/ directory by default, never as constants inside task modules: this includes paths, file modes, unit file names, journal identifiers, queue and spool directory names. A module constant is allowed only for a fixed machine contract that is not configuration (system OS paths, repository layout paths, kernel sysfs interfaces) and only with explicit user approval recorded in docs/contracts/architecture.md. The same value or the same logic must never be duplicated across modules: shared values and helpers are defined once in a common module and imported.
 
+All text that crosses an external boundary must be passed through the shared trim_whitespace helper (pyntara.utils) before it is stored or reported, whenever trimming cannot damage the content: output captured from console commands, values read from files, and user data must never carry trailing newlines or stray edge whitespace into telemetry reports, logs or persisted values, while internal whitespace is preserved. Do not trim binary payloads: the rule applies to text.
+
 ## 5. Documentation and comment style
 
 When creating code and configurations, add comments in simple English.
