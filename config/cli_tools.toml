@@ -13,7 +13,6 @@ package_success_threshold_percent = 70
 packages = [
     # shell completion
     "bash-completion", # bash-completion: programmable completion for the bash shell
-    "complete-alias", # complete-alias: tab completion for shell aliases
     "hstr", # better history in console
 
     # file operations
