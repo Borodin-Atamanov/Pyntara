@@ -83,6 +83,8 @@ tunnels_config_path = "/etc/i2pd/tunnels.conf"
 tunnel_name = "ssh"
 tunnel_host = "127.0.0.1"
 tunnel_keys_path = "/var/lib/i2pd/ssh.dat"
+address_file_path = "/var/lib/pyntara/i2pd_ssh_address"
+address_file_mode = "0600"
 
 [yggdrasil_service_setup]
 github_repo = "yggdrasil-network/yggdrasil-go"
@@ -325,6 +327,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.tunnel_keys_path == Path(
         "/var/lib/i2pd/ssh.dat"
     )
+    assert config.i2pd_service_setup.address_file_path == Path(
+        "/var/lib/pyntara/i2pd_ssh_address"
+    )
+    assert config.i2pd_service_setup.address_file_mode == 0o600
     assert (
         config.yggdrasil_service_setup.github_repo
         == "yggdrasil-network/yggdrasil-go"

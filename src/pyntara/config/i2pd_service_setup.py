@@ -11,6 +11,7 @@ from ._fields import (
     _float_field,
     _int_field,
     _nonempty_string_field,
+    _octal_mode_field,
 )
 
 
@@ -38,9 +39,12 @@ class I2pdServiceSetupConfig:
     tunnel_host is the local address the tunnel forwards to;
     tunnel_keys_path is the identity file of the tunnel destination,
     created by i2pd on the first start, from which the task computes the
-    .b32.i2p address. The tunnel port is not configured here: it is read
-    from the ssh_daemon_setup Port directive, so the tunnel and the SSH
-    daemon can never diverge.
+    .b32.i2p address. The task saves the computed address into
+    address_file_path with the mode address_file_mode, so the deployed
+    address command can fall back to the saved value when the keys file
+    cannot be decoded. The tunnel port is not configured here: it is
+    read from the ssh_daemon_setup Port directive, so the tunnel and the
+    SSH daemon can never diverge.
     """
 
     github_repo: str
@@ -57,6 +61,8 @@ class I2pdServiceSetupConfig:
     tunnel_name: str
     tunnel_host: str
     tunnel_keys_path: Path
+    address_file_path: Path
+    address_file_mode: int
 
 
 def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
@@ -69,7 +75,8 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     start_check_retry_delay_seconds is positive, so the readiness loop
     always waits between attempts. tunnels_config_path and
     tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
-    are non-empty strings.
+    are non-empty strings; address_file_path is a non-empty string and
+    address_file_mode is an octal mode string.
     """
 
     if not isinstance(raw, dict):
@@ -140,6 +147,14 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
             raw.get("tunnel_keys_path"), "i2pd_service_setup.tunnel_keys_path"
         )
     )
+    address_file_path = Path(
+        _nonempty_string_field(
+            raw.get("address_file_path"), "i2pd_service_setup.address_file_path"
+        )
+    )
+    address_file_mode = _octal_mode_field(
+        raw.get("address_file_mode"), "i2pd_service_setup.address_file_mode"
+    )
     return I2pdServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -155,4 +170,6 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         tunnel_name=tunnel_name,
         tunnel_host=tunnel_host,
         tunnel_keys_path=tunnel_keys_path,
+        address_file_path=address_file_path,
+        address_file_mode=address_file_mode,
     )

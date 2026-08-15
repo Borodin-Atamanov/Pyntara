@@ -30,7 +30,10 @@ key and certificate), and the I2P address is the lowercase unpadded
 base32 of the SHA-256 hash of that IdentityEx. The task parses the
 certificate to learn the identity length, computes the address and
 reports it; on the first start the file does not exist yet, so the
-message says the address appears after the first start.
+message says the address appears after the first start. Once the address
+is known, the task saves it into the configured address_file_path with
+the configured mode, so the deployed address command can fall back to
+the saved value when the keys file cannot be decoded.
 
 The service
 is enabled and started or restarted immediately, and the task waits with
@@ -45,8 +48,6 @@ service but never reinstalls a matching version.
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import re
 import subprocess
@@ -56,6 +57,7 @@ from string import Template
 
 from pyntara.config import I2pdServiceSetupConfig, SshDirective
 from pyntara.context import Context
+from pyntara.i2pd import b32_address
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -135,7 +137,7 @@ def _ssh_port_from_ssh_config(directives: tuple[SshDirective, ...]) -> int:
         if directive.name == "Port":
             try:
                 return int(directive.value)
-            except ValueError as exc:
+            except ValueError:
                 raise RuntimeError(
                     "ssh_daemon_setup Port directive is not a number: "
                     f"{directive.value!r}"
@@ -148,47 +150,6 @@ def _ssh_port_from_ssh_config(directives: tuple[SshDirective, ...]) -> int:
 
 # i2pd prints its version as a dotted triple in the --version output.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
-
-# The IdentityEx record of the i2pd PrivateKeys file (Identity.h):
-# publicKey[256] + signingKey[128] + certificate[3]. The certificate
-# starts with the type byte; type KEY means the signing and crypto key
-# types follow in an extended block, whose length is the big-endian
-# uint16 at certificate offset 1. The I2P address is the SHA-256 of the
-# whole IdentityEx (DEFAULT_IDENTITY_SIZE plus the extended block).
-I2PD_IDENTITY_SIZE = 387
-I2PD_CERTIFICATE_TYPE_KEY = 5
-
-
-def _b32_address(keys_path: Path) -> str | None:
-    """The .b32.i2p address of the tunnel keys file, or None.
-
-    The keys file is the binary PrivateKeys record i2pd writes: its
-    first bytes are the IdentityEx, and the I2P address is the lowercase
-    unpadded base32 of the SHA-256 hash of that IdentityEx. The extended
-    block length comes from the certificate, so the hash covers exactly
-    the identity bytes. A missing file, a file too short or a record
-    without the KEY certificate yields None, so the caller reports that
-    the address is not available yet instead of failing.
-    """
-
-    try:
-        data = keys_path.read_bytes()
-    except OSError:
-        return None
-    if len(data) < I2PD_IDENTITY_SIZE:
-        return None
-    certificate_type = data[I2PD_IDENTITY_SIZE - 3]
-    extended_len = int.from_bytes(
-        data[I2PD_IDENTITY_SIZE - 2 : I2PD_IDENTITY_SIZE], "big"
-    )
-    if certificate_type != I2PD_CERTIFICATE_TYPE_KEY:
-        return None
-    identity_len = I2PD_IDENTITY_SIZE + extended_len
-    if len(data) < identity_len:
-        return None
-    digest = hashlib.sha256(data[:identity_len]).digest()
-    encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
-    return f"{encoded}.b32.i2p"
 
 
 def _release_tag(release: dict[str, object]) -> str:
@@ -430,6 +391,23 @@ def _wait_active(
     return False
 
 
+def _saved_address_matches(address_file_path: Path, address: str | None) -> bool:
+    """True when the saved address file carries exactly the address.
+
+    A missing address never matches, so the task stays active until the
+    identity exists and the file is written; a missing or unreadable
+    file is treated as not matching, so the task writes it.
+    """
+
+    if address is None:
+        return False
+    try:
+        saved = address_file_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return saved == address
+
+
 def task(ctx: Context) -> TaskResult:
     """Install the newest i2pd release and run it as a service; skip when done.
 
@@ -525,9 +503,14 @@ def task(ctx: Context) -> TaskResult:
     current_tunnels = _read_tunnels_config(cfg.tunnels_config_path)
     tunnels_changed = force or current_tunnels != target_tunnels
     keys_exist = cfg.tunnel_keys_path.is_file()
+    address = b32_address(cfg.tunnel_keys_path)
     _log(
         f"checking tunnel identity file {cfg.tunnel_keys_path}: "
         f"{'present' if keys_exist else 'missing'}"
+    )
+    _log(
+        f"checking saved address file {cfg.address_file_path}: "
+        f"{'matches' if _saved_address_matches(cfg.address_file_path, address) else 'missing or stale'}"
     )
 
     enabled = service_is_enabled(cfg.service_unit_name, timeout)
@@ -547,6 +530,7 @@ def task(ctx: Context) -> TaskResult:
         and keys_exist
         and enabled
         and active
+        and _saved_address_matches(cfg.address_file_path, address)
     ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
@@ -666,7 +650,22 @@ def task(ctx: Context) -> TaskResult:
         _log("service active")
         changed = True
 
-    address = _b32_address(cfg.tunnel_keys_path)
+    address = b32_address(cfg.tunnel_keys_path)
+    if address and not _saved_address_matches(cfg.address_file_path, address):
+        try:
+            cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
+            cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
+            cfg.address_file_path.chmod(cfg.address_file_mode)
+            ensure_root_owner(cfg.address_file_path)
+        except OSError as exc:
+            return TaskResult(
+                success=False,
+                changed=changed,
+                error=f"cannot write tunnel address file: {exc}",
+            )
+        _log(f"writing tunnel address file {cfg.address_file_path}: {address}")
+        changed = True
+
     if address:
         _log(f"SSH tunnel address: {address}")
         message = (

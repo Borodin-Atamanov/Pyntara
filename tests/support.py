@@ -9,6 +9,8 @@ mirrors, disk usage) stay in their own test modules.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from pathlib import Path
 
 from pyntara.config import (
@@ -223,6 +225,8 @@ def make_config(
     i2pd_tunnel_name: str = "ssh",
     i2pd_tunnel_host: str = "127.0.0.1",
     i2pd_tunnel_keys_path: Path = Path("/var/lib/i2pd/ssh.dat"),
+    i2pd_address_file_path: Path = Path("/var/lib/pyntara/i2pd_ssh_address"),
+    i2pd_address_file_mode: int = 0o600,
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",
@@ -422,6 +426,8 @@ def make_config(
             tunnel_name=i2pd_tunnel_name,
             tunnel_host=i2pd_tunnel_host,
             tunnel_keys_path=i2pd_tunnel_keys_path,
+            address_file_path=i2pd_address_file_path,
+            address_file_mode=i2pd_address_file_mode,
         ),
         yggdrasil_service_setup=YggdrasilServiceSetupConfig(
             github_repo=yggdrasil_github_repo,
@@ -566,3 +572,34 @@ def make_context(
         skip_apt_update=skip_apt_update,
         config=config if config is not None else make_config(task_data_root=task_data_root),
     )
+
+
+# Fixture PrivateKeys record shared by the i2pd tests (the decoder, the
+# address command and the task): the 387-byte IdentityEx (256-byte
+# encryption key, 128-byte signing key, 3-byte certificate) with a KEY
+# certificate carrying the 4-byte extended block of the signing and
+# crypto key types, followed by private material. The expected address
+# is the unpadded lowercase base32 of the SHA-256 of the IdentityEx,
+# computed independently from the same parts.
+I2PD_KEYS_IDENTITY_SIZE = 387
+I2PD_KEYS_CERTIFICATE_TYPE_KEY = 5
+I2PD_KEYS_EXTENDED_BYTES = b"\x00\x07\x00\x04"  # signing type 7, crypto type 4
+
+
+def i2pd_keys_file_bytes() -> bytes:
+    """The fixture PrivateKeys record for the i2pd tests."""
+
+    identity = bytearray(I2PD_KEYS_IDENTITY_SIZE)
+    identity[I2PD_KEYS_IDENTITY_SIZE - 3] = I2PD_KEYS_CERTIFICATE_TYPE_KEY
+    identity[I2PD_KEYS_IDENTITY_SIZE - 2] = 0
+    identity[I2PD_KEYS_IDENTITY_SIZE - 1] = len(I2PD_KEYS_EXTENDED_BYTES)
+    return bytes(identity) + I2PD_KEYS_EXTENDED_BYTES + b"private material"
+
+
+def i2pd_keys_b32_address() -> str:
+    """The expected .b32.i2p address of the fixture keys record."""
+
+    identity_len = I2PD_KEYS_IDENTITY_SIZE + len(I2PD_KEYS_EXTENDED_BYTES)
+    digest = hashlib.sha256(i2pd_keys_file_bytes()[:identity_len]).digest()
+    encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
+    return f"{encoded}.b32.i2p"

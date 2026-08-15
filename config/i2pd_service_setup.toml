@@ -44,3 +44,10 @@ tunnel_host = "127.0.0.1"
 # the file name. The task computes the .b32.i2p address from this file,
 # so the address survives restarts.
 tunnel_keys_path = "/var/lib/i2pd/ssh.dat"
+# Path of the saved SSH tunnel address file. The task writes the
+# computed .b32.i2p address here once the identity exists, and the
+# deployed address command reads this file as the fallback when the
+# live keys file cannot be decoded (docs/spec/i2pd-service.md).
+address_file_path = "/var/lib/pyntara/i2pd_ssh_address"
+# File mode of the saved address file, as an octal string.
+address_file_mode = "0600"

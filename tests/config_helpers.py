@@ -61,6 +61,8 @@ def base_config() -> str:
         'tunnel_name = "ssh"\n'
         'tunnel_host = "127.0.0.1"\n'
         'tunnel_keys_path = "/var/lib/i2pd/ssh.dat"\n'
+        'address_file_path = "/var/lib/pyntara/i2pd_ssh_address"\n'
+        'address_file_mode = "0600"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'

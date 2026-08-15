@@ -60,6 +60,12 @@ ProxyCommand nc -X 5 -x 127.0.0.1:4447 %h %p
 
 The client must offer the deployed key; on the target machine the key is loaded once with ssh-add and the agent keeps it for the session. The connection is noticeably slower than the cleartext one, because the traffic crosses the I2P network in both directions, so the client timeouts from ssh_client_setup apply.
 
+## Determining the address on the target system
+
+The .b32.i2p address is available on the target system through a shared decoder and a command, so the address can be reported without repeating the binary parsing logic. The decoder lives in the pyntara.i2pd module and is imported by the task, never copied.
+
+The task saves the computed address into the configured address_file_path with the mode address_file_mode once the identity exists, and rewrites the file whenever the address differs. The saved file is the fallback: the deployed command venv/bin/python -m pyntara.i2pd_address KEYS_PATH ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) decodes the live keys file first and prints the address on stdout, and when the keys file is missing or broken reads the saved file instead, because the identity may have been recreated between two provisioning runs. When the fallback is used, a note goes to stderr while the stdout stays a single address line, so a System Metrics collector module can consume the command output directly. When neither source yields an address, the command exits nonzero with an explanation on stderr. The command needs no config access.
+
 ## Service lifecycle
 
 The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the package or the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error.
@@ -68,7 +74,7 @@ The package installs the unit with a dedicated system user and a data directory;
 
 ## Idempotency
 
-The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template, the tunnels file matches its render, the tunnel keys file exists and the service is enabled and active; the task then skips with changed=False. A missing keys file keeps the task active: it restarts the service so i2pd regenerates the identity, and never reinstalls a matching version. Force mode rewrites the configurations and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
+The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template, the tunnels file matches its render, the tunnel keys file exists, the saved address file matches the current address and the service is enabled and active; the task then skips with changed=False. A missing keys file keeps the task active: it restarts the service so i2pd regenerates the identity, and never reinstalls a matching version. A missing or stale address file also keeps the task active: it writes the file and never reinstalls or restarts a matching, active installation. Force mode rewrites the configurations and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
 ## Parameters
 
@@ -87,5 +93,7 @@ tunnels_config_path is the owned tunnels file with the SSH server tunnel
 tunnel_name is the section name of the tunnel in the tunnels file
 tunnel_host is the local address the tunnel forwards to; the tunnel port is not a parameter, it is read from the ssh_daemon_setup Port directive
 tunnel_keys_path is the identity file of the tunnel destination in the i2pd data directory, created by i2pd on the first start; the tunnels file carries only its file name
+address_file_path is the saved address file the task writes once the identity exists; the deployed address command reads it as the fallback when the keys file cannot be decoded
+address_file_mode is the file mode of the saved address file, as an octal string
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.
