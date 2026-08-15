@@ -168,15 +168,13 @@ report_file_name = "network.json"
 # while internal newlines are preserved; whitespace-only output is
 # empty. Commands are argv arrays, never shell lines. Unconfigured
 # sources are simply absent: add or remove modules here without code
-# changes. The i2pd and yggdrasil modules run the address commands of
-# the dedicated venv (system_metrics_setup.venv_dir): each prints the
-# live address and falls back to the saved address file written by the
-# provisioning task, with the reason in the output when the fallback is
-# used. Future candidates, commented out until the services are
-# installed:
-# [[system_metrics_setup.collector.network_modules]]
-# name = "tor_onion"
-# command = ["cat", "/var/lib/tor/hidden_service/hostname"]
+# changes. The i2pd, yggdrasil and tor_onion modules run the address
+# commands of the dedicated venv (system_metrics_setup.venv_dir): each
+# prints the live address and falls back to the saved address file
+# written by the provisioning task, with the reason in the output when
+# the fallback is used. The tor_onion command takes the hidden service
+# directory and the saved address file. Future candidates, commented
+# out until the services are installed:
 # [[system_metrics_setup.collector.network_modules]]
 # name = "cloudflared"
 # command = ["cat", "/home/i/.cloudflared/config.yml"]
@@ -196,6 +194,10 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.i2pd_address
 [[system_metrics_setup.collector.network_modules]]
 name = "yggdrasil"
 command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_address", "/var/lib/pyntara/yggdrasil_self_address"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "tor_onion"
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address", "/var/lib/tor/ssh", "/var/lib/pyntara/tor_ssh_address"]
 
 # System modules: console commands whose full output forms the system
 # section of the report. Their status never affects ready_percent and
