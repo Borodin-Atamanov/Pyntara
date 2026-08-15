@@ -126,6 +126,12 @@ def _install_fake(
             install_attempts += 1
             if install_attempts <= fail_install:
                 raise subprocess.CalledProcessError(100, command)
+            # The package postinst creates the main torrc file, like the
+            # real tor package on the target system.
+            torrc = ctx.config.tor_setup.torrc_path
+            torrc.parent.mkdir(parents=True, exist_ok=True)
+            if not torrc.is_file():
+                torrc.write_text("Log notice syslog\n", encoding="utf-8")
             return _FakeProc(0)
         if command[0] == "tor":
             if verify_ok:
@@ -208,7 +214,6 @@ def test_installs_and_starts(
     # verifies the configuration, prepares the hidden service directory,
     # enables and starts the service, then saves the address.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -230,15 +235,14 @@ def test_installs_and_starts(
 def test_include_line_is_not_duplicated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The include line is already present: the task leaves the main torrc
-    # untouched and does not append a duplicate line.
+    # The target state is reached with the include line already present:
+    # the task skips and the main torrc keeps exactly one %include line.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx, include=True)
-    before = ctx.config.tor_setup.torrc_path.read_text(encoding="utf-8")
-    _install_fake(monkeypatch, ctx)
+    _write_state_as_rendered(ctx)
+    _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
     result = tor_setup.task(ctx)
     assert result.success is True
-    assert before.count("%include") == 1
+    assert result.changed is False
     assert ctx.config.tor_setup.torrc_path.read_text(
         encoding="utf-8"
     ).count("%include") == 1
@@ -270,7 +274,6 @@ def test_verify_config_failure_is_an_error(
     # tor --verify-config reports an invalid configuration: the task
     # fails instead of silently accepting a broken drop-in.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx, verify_ok=False)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -284,11 +287,11 @@ def test_verify_config_failure_is_an_error(
 def test_missing_main_torrc_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The main configuration file is absent: the include line cannot be
-    # guaranteed, so the task fails instead of pretending the drop-in is
-    # connected.
+    # The package is installed but the main configuration file is absent:
+    # the include line cannot be guaranteed, so the task fails instead of
+    # pretending the drop-in is connected.
     ctx = _ctx(tmp_path)
-    _install_fake(monkeypatch, ctx)
+    _install_fake(monkeypatch, ctx, installed=True)
     result = tor_setup.task(ctx)
     assert result.success is False
     assert "is missing" in (result.error or "")
@@ -300,7 +303,6 @@ def test_install_gives_up_after_retries(
     # apt always fails: the task tries one initial attempt plus the
     # configured retries, then reports the failure.
     ctx = _ctx(tmp_path, retries=3)
-    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx, fail_install=99)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -316,7 +318,6 @@ def test_install_retries_transient_failure(
 ) -> None:
     # The first apt attempt fails, the retry succeeds.
     ctx = _ctx(tmp_path, retries=3)
-    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx, fail_install=1)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -333,7 +334,6 @@ def test_no_apt_update_without_skip_flag(
     # The task never refreshes the apt index: add_extra_repos already
     # refreshed it in the same run, so apt-get update never appears.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     calls = _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -347,7 +347,6 @@ def test_first_start_reports_address_appears_later(
     # reports that the address appears after the first start and writes
     # no address file.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, write_hostname=False)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -362,7 +361,6 @@ def test_hidden_service_dir_gets_configured_mode(
     # The task creates the hidden service directory with the configured
     # mode, so Tor accepts the onion service.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
@@ -378,7 +376,6 @@ def test_missing_tor_user_is_an_error(
     # The configured Tor system user does not exist: the task fails
     # instead of leaving a directory Tor cannot write.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, tor_user_exists=False)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -391,7 +388,6 @@ def test_service_that_stays_inactive_is_an_error(
     # The service never reports active within the readiness loop: the
     # task reports the failure instead of a silent success.
     ctx = _ctx(tmp_path)
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx, active_becomes=False)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -404,7 +400,6 @@ def test_missing_ssh_port_directive_is_an_error(
     # ssh_daemon_setup has no Port directive: the forward target is
     # unknown, so the task fails explicitly.
     ctx = _ctx(tmp_path, ssh_port=None)
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is False
@@ -417,7 +412,6 @@ def test_non_numeric_ssh_port_is_an_error(
     # The sshd Port directive is not a number: the forward target is
     # invalid, so the task fails explicitly.
     ctx = _ctx(tmp_path, ssh_port="abc")
-    _write_torrc(ctx)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is False

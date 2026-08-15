@@ -266,9 +266,29 @@ def task(ctx: Context) -> TaskResult:
         f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
     )
 
+    changed = False
+    if not installed:
+        _log(f"installing package {cfg.package_name}")
+        ok = False
+        error = ""
+        for _ in range(cfg.install_retries + 1):
+            ok, error = install_package_once(cfg.package_name, timeout)
+            if ok:
+                break
+        if not ok:
+            return TaskResult(
+                success=False,
+                error=f"cannot install {cfg.package_name}: {error}",
+            )
+        _log("package installed")
+        changed = True
+
+    # The package postinst creates /etc/tor/torrc, so the %include line
+    # is guaranteed only after the install; a still missing main file is
+    # an error, because the drop-in would be silently ignored.
     include_changed, include_error = _ensure_torrc_include(cfg)
     if include_error is not None:
-        return TaskResult(success=False, error=include_error)
+        return TaskResult(success=False, changed=changed, error=include_error)
     _log(
         f"checking %include line in {cfg.torrc_path}: "
         f"{'present' if not include_changed else 'added'}"
@@ -309,23 +329,6 @@ def task(ctx: Context) -> TaskResult:
     ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
-
-    changed = False
-    if not installed:
-        _log(f"installing package {cfg.package_name}")
-        ok = False
-        error = ""
-        for _ in range(cfg.install_retries + 1):
-            ok, error = install_package_once(cfg.package_name, timeout)
-            if ok:
-                break
-        if not ok:
-            return TaskResult(
-                success=False,
-                error=f"cannot install {cfg.package_name}: {error}",
-            )
-        _log("package installed")
-        changed = True
 
     if include_changed:
         _log(f"adding %include line to {cfg.torrc_path}")
