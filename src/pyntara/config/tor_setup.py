@@ -20,36 +20,41 @@ class TorSetupConfig:
     """Tor installation parameters for the tor_setup task.
 
     The task installs package_name from the Ubuntu archive and runs
-    service_unit_name as a system service. The task never rewrites the
-    main configuration file at torrc_path: it only guarantees the
-    %include line named by torrc_include_glob through the shared
-    add_line_to_file helper, so unrelated content of the file survives.
-    The owned settings are rendered into the drop-in at
-    torrc_dropin_path (written with dropin_file_mode): the log level
-    log_level, the SOCKS proxy port socks_port and the onion service
-    that forwards to the local SSH daemon. hidden_service_dir is the
-    directory of the onion service identity, created by the task with
-    hidden_service_dir_mode and owned by tor_user, so Tor can write the
-    keys and the hostname file; the identity must never be recreated,
-    otherwise the address changes. onion_ssh_port is the virtual port
-    clients connect to; the local port is not configured here, it is
-    read from the ssh_daemon_setup Port directive, so the forward and
-    the SSH daemon never diverge. num_introduction_points is the
-    number of introduction points of the service. install_retries is
-    the retry count of the package install, so the total attempts are
-    retries plus one; start_check_attempts and
-    start_check_retry_delay_seconds bound the loop that waits for the
-    service to become active after a start. address_file_path is the
-    saved onion address file the task writes once the hostname file
-    exists and address_file_mode its mode; the address is not secret,
-    so the file is readable by every user.
+    service_unit_name as a system service. The Ubuntu package uses the
+    multi-instance design: service_unit_name is the daemon instance
+    tor@default.service, not the empty master unit tor.service. The
+    task never rewrites the main configuration file at torrc_path: it
+    only guarantees the %include line named by torrc_include_path
+    through the shared add_line_to_file helper, so unrelated content of
+    the file survives. The included value is a plain file path directly
+    in the /etc/tor directory: the AppArmor profile of the package
+    allows reading /etc/tor/* but not its subdirectories, and a plain
+    path avoids the directory listing a glob would need. The owned
+    settings are rendered into the drop-in at torrc_dropin_path
+    (written with dropin_file_mode): the log level log_level, the SOCKS
+    proxy port socks_port and the onion service that forwards to the
+    local SSH daemon. hidden_service_dir is the directory of the onion
+    service identity, created by the task with hidden_service_dir_mode
+    and owned by tor_user, so Tor can write the keys and the hostname
+    file; the identity must never be recreated, otherwise the address
+    changes. onion_ssh_port is the virtual port clients connect to; the
+    local port is not configured here, it is read from the
+    ssh_daemon_setup Port directive, so the forward and the SSH daemon
+    never diverge. num_introduction_points is the number of introduction
+    points of the service. install_retries is the retry count of the
+    package install, so the total attempts are retries plus one;
+    start_check_attempts and start_check_retry_delay_seconds bound the
+    loop that waits for the service to become active after a start.
+    address_file_path is the saved onion address file the task writes
+    once the hostname file exists and address_file_mode its mode; the
+    address is not secret, so the file is readable by every user.
     """
 
     package_name: str
     service_unit_name: str
     torrc_path: Path
     torrc_dropin_path: Path
-    torrc_include_glob: str
+    torrc_include_path: str
     dropin_file_mode: int
     hidden_service_dir: Path
     hidden_service_dir_mode: int
@@ -69,7 +74,7 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
     """Validate the [tor_setup] table and build the config.
 
     package_name, service_unit_name, torrc_path, torrc_dropin_path,
-    torrc_include_glob, hidden_service_dir and tor_user are non-empty
+    torrc_include_path, hidden_service_dir and tor_user are non-empty
     strings; dropin_file_mode, hidden_service_dir_mode and
     address_file_mode are octal strings; log_level is one of the
     TOR_LOG_LEVELS values; socks_port and onion_ssh_port are port numbers
@@ -96,8 +101,8 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
             raw.get("torrc_dropin_path"), "tor_setup.torrc_dropin_path"
         )
     )
-    torrc_include_glob = _nonempty_string_field(
-        raw.get("torrc_include_glob"), "tor_setup.torrc_include_glob"
+    torrc_include_path = _nonempty_string_field(
+        raw.get("torrc_include_path"), "tor_setup.torrc_include_path"
     )
     dropin_file_mode = _octal_mode_field(
         raw.get("dropin_file_mode"), "tor_setup.dropin_file_mode"
@@ -172,7 +177,7 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         service_unit_name=service_unit_name,
         torrc_path=torrc_path,
         torrc_dropin_path=torrc_dropin_path,
-        torrc_include_glob=torrc_include_glob,
+        torrc_include_path=torrc_include_path,
         dropin_file_mode=dropin_file_mode,
         hidden_service_dir=hidden_service_dir,
         hidden_service_dir_mode=hidden_service_dir_mode,

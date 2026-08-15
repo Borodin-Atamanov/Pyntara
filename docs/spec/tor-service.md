@@ -10,7 +10,7 @@ The package comes from the Ubuntu archive (universe, enabled by add_extra_repos)
 
 ## Configuration ownership
 
-The task never rewrites the main configuration file at the configured torrc_path: it only guarantees the %include line named by torrc_include_glob through the shared add_line_to_file helper (config_edit.py), which appends the line when it is absent and leaves every other line untouched, so unrelated content and comments of the file survive. The package postinst creates /etc/tor/torrc, so the line is guaranteed after the install; a still missing main file is an error, because the drop-in would be silently ignored. The %include directive of torrc imports configuration from files or directories; files of an included directory are read in lexical order, dot files and subdirectories are ignored. The task's own settings are rendered into the drop-in at torrc_dropin_path, which the task owns and rewrites whenever the rendered content differs, so manual edits of the drop-in are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
+The task never rewrites the main configuration file at the configured torrc_path: it only guarantees the %include line named by torrc_include_path through the shared add_line_to_file helper (config_edit.py), which appends the line when it is absent and leaves every other line untouched, so unrelated content and comments of the file survive. The included value is a plain file path directly in the /etc/tor directory: the AppArmor profile of the package allows reading /etc/tor/* but not its subdirectories, and a plain path avoids the directory listing a glob would need. The package postinst creates /etc/tor/torrc, so the line is guaranteed after the install; a still missing main file is an error, because the drop-in would be silently ignored. The task's own settings are rendered into the drop-in at torrc_dropin_path, which the task owns and rewrites whenever the rendered content differs, so manual edits of the drop-in are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
 
 1. SocksPort 127.0.0.1:{socks_port} — the SOCKS proxy, bound to the loopback interface only. A client routes its SSH connection through this proxy to reach the onion address.
 2. Log {log_level} syslog — the verbosity, written to syslog so the journal shows the Tor diagnostics.
@@ -37,7 +37,7 @@ The task saves the address into the configured address_file_path with the mode a
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error. A missing hostname file keeps the task active: it restarts the service so Tor regenerates the identity.
+The service unit comes from the package; the task never renders or writes it. The Ubuntu package uses the multi-instance design: the daemon runs in the configured instance unit (tor@default.service), while the master unit tor.service is an empty oneshot that always reports active, so the task manages the instance unit and never the master. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error. A missing hostname file keeps the task active: it restarts the service so Tor regenerates the identity.
 
 ## Idempotency
 
@@ -48,11 +48,11 @@ The target state is reached when the package is installed, the %include line is 
 All parameters live in the config/ directory under [tor_setup]:
 
 package_name is the package that provides the Tor daemon
-service_unit_name is the systemd unit installed by the package
+service_unit_name is the systemd unit of the Tor daemon instance (tor@default.service), not the empty master unit tor.service
 torrc_path is the main configuration file, never rewritten: the task only guarantees the %include line in it
-torrc_dropin_path is the owned drop-in file with the task settings, rendered by the task
-torrc_include_glob is the %include glob guaranteed in torrc_path; it must cover the drop-in file
-dropin_file_mode is the file mode of the drop-in
+torrc_dropin_path is the owned drop-in file with the task settings, rendered by the task, directly in /etc/tor
+torrc_include_path is the %include value guaranteed in torrc_path; a plain file path naming the drop-in
+dropin_file_mode is the file mode of the drop-in, readable by the Tor daemon user (0644 by default)
 hidden_service_dir is the directory of the onion service identity, inside the Tor data directory
 hidden_service_dir_mode is the file mode of the directory; Tor refuses a world-readable directory
 tor_user is the system user the service runs as, the owner of the hidden service directory

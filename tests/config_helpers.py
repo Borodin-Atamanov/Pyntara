@@ -91,11 +91,11 @@ def base_config() -> str:
         "listen = true\n"
         "[tor_setup]\n"
         'package_name = "tor"\n'
-        'service_unit_name = "tor.service"\n'
+        'service_unit_name = "tor@default.service"\n'
         'torrc_path = "/etc/tor/torrc"\n'
-        'torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"\n'
-        'torrc_include_glob = "/etc/tor/torrc.d/*.conf"\n'
-        'dropin_file_mode = "0640"\n'
+        'torrc_dropin_path = "/etc/tor/pyntara.conf"\n'
+        'torrc_include_path = "/etc/tor/pyntara.conf"\n'
+        'dropin_file_mode = "0644"\n'
         'hidden_service_dir = "/var/lib/tor/ssh"\n'
         'hidden_service_dir_mode = "0700"\n'
         'tor_user = "debian-tor"\n'

@@ -270,11 +270,11 @@ from pyntara.config import load_config
         base_config().replace('package_name = "tor"', 'package_name = ""'),
         # tor_setup service_unit_name is a number, not a string
         base_config().replace(
-            'service_unit_name = "tor.service"', "service_unit_name = 1"
+            'service_unit_name = "tor@default.service"', "service_unit_name = 1"
         ),
         # tor_setup service_unit_name is an empty string
         base_config().replace(
-            'service_unit_name = "tor.service"', 'service_unit_name = ""'
+            'service_unit_name = "tor@default.service"', 'service_unit_name = ""'
         ),
         # tor_setup torrc_path is a number, not a string
         base_config().replace('torrc_path = "/etc/tor/torrc"', "torrc_path = 1"),
@@ -284,28 +284,28 @@ from pyntara.config import load_config
         ),
         # tor_setup torrc_dropin_path is a number, not a string
         base_config().replace(
-            'torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"',
+            'torrc_dropin_path = "/etc/tor/pyntara.conf"',
             "torrc_dropin_path = 1",
         ),
         # tor_setup torrc_dropin_path is an empty string
         base_config().replace(
-            'torrc_dropin_path = "/etc/tor/torrc.d/pyntara.conf"',
+            'torrc_dropin_path = "/etc/tor/pyntara.conf"',
             'torrc_dropin_path = ""',
         ),
-        # tor_setup torrc_include_glob is a number, not a string
+        # tor_setup torrc_include_path is a number, not a string
         base_config().replace(
-            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"',
-            "torrc_include_glob = 1",
+            'torrc_include_path = "/etc/tor/pyntara.conf"',
+            "torrc_include_path = 1",
         ),
-        # tor_setup torrc_include_glob is an empty string
+        # tor_setup torrc_include_path is an empty string
         base_config().replace(
-            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"',
-            'torrc_include_glob = ""',
+            'torrc_include_path = "/etc/tor/pyntara.conf"',
+            'torrc_include_path = ""',
         ),
         # tor_setup dropin_file_mode is not octal
         base_config().replace(
-            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"\ndropin_file_mode = "0640"',
-            'torrc_include_glob = "/etc/tor/torrc.d/*.conf"\ndropin_file_mode = "640"',
+            'torrc_include_path = "/etc/tor/pyntara.conf"\ndropin_file_mode = "0644"',
+            'torrc_include_path = "/etc/tor/pyntara.conf"\ndropin_file_mode = "640"',
         ),
         # tor_setup hidden_service_dir is an empty string
         base_config().replace(

@@ -54,8 +54,8 @@ def _ctx(
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
             tor_torrc_path=tmp_path / "etc" / "tor" / "torrc",
-            tor_torrc_dropin_path=tmp_path / "etc" / "tor" / "torrc.d" / "pyntara.conf",
-            tor_torrc_include_glob=str(tmp_path / "etc" / "tor" / "torrc.d" / "*.conf"),
+            tor_torrc_dropin_path=tmp_path / "etc" / "tor" / "pyntara.conf",
+            tor_torrc_include_path=str(tmp_path / "etc" / "tor" / "pyntara.conf"),
             tor_hidden_service_dir=tmp_path / "var" / "lib" / "tor" / "ssh",
             tor_address_file_path=tmp_path / "var" / "lib" / "pyntara" / "tor_ssh_address",
             tor_install_retries=retries,
@@ -73,7 +73,7 @@ def _write_torrc(ctx: Context, *, include: bool = False) -> None:
     cfg.torrc_path.parent.mkdir(parents=True, exist_ok=True)
     content = "Log notice syslog\n"
     if include:
-        content += f"%include {cfg.torrc_include_glob}\n"
+        content += f"%include {cfg.torrc_include_path}\n"
     cfg.torrc_path.write_text(content, encoding="utf-8")
 
 
@@ -221,11 +221,11 @@ def test_installs_and_starts(
     assert ADDRESS in (result.message or "")
     assert ["apt-get", "install", "-y", "tor"] in calls
     assert ["tor", "--verify-config"] in calls
-    assert ["systemctl", "enable", "tor.service"] in calls
-    assert ["systemctl", "start", "tor.service"] in calls
+    assert ["systemctl", "enable", "tor@default.service"] in calls
+    assert ["systemctl", "start", "tor@default.service"] in calls
     cfg = ctx.config.tor_setup
     assert cfg.torrc_dropin_path.is_file()
-    assert f"%include {cfg.torrc_include_glob}" in cfg.torrc_path.read_text(
+    assert f"%include {cfg.torrc_include_path}" in cfg.torrc_path.read_text(
         encoding="utf-8"
     )
     assert cfg.hidden_service_dir.is_dir()
@@ -264,8 +264,8 @@ def test_dropin_rewritten_when_missing_and_restarts(
     assert result.success is True
     assert result.changed is True
     assert ["tor", "--verify-config"] in calls
-    assert ["systemctl", "restart", "tor.service"] in calls
-    assert ["systemctl", "start", "tor.service"] not in calls
+    assert ["systemctl", "restart", "tor@default.service"] in calls
+    assert ["systemctl", "start", "tor@default.service"] not in calls
 
 
 def test_verify_config_failure_is_an_error(
@@ -432,7 +432,7 @@ def test_force_mode_restarts_and_rewrites(
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["systemctl", "restart", "tor.service"] in calls
+    assert ["systemctl", "restart", "tor@default.service"] in calls
     assert not any(call[0] == "apt-get" for call in calls)
 
 

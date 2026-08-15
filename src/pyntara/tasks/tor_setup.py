@@ -11,18 +11,22 @@ The task never rewrites the main configuration file at the configured
 torrc_path: it only guarantees the configured %include line through
 the shared add_line_to_file helper, which appends the line when it is
 absent and leaves every other line untouched, so unrelated content and
-comments of the file survive. The owned settings are rendered into the
-drop-in at torrc_dropin_path and rewritten whenever the rendered
-content differs, so manual edits of the drop-in are reverted on the
-next run. The rendered options: the SOCKS proxy bound to the loopback
-interface, the log level and the SSH onion service. The service
-forwards to the local SSH daemon on the port read from the
-ssh_daemon_setup Port directive, never duplicated into the tor
-configuration, so the two can never diverge; the virtual port clients
-connect to is configured. After a change of the drop-in or the include
-line the task verifies the whole configuration with tor --verify-config,
-so a directive the running Tor does not know is reported as an error
-instead of being silently accepted.
+comments of the file survive. The included value is a plain file path
+directly in the /etc/tor directory: the AppArmor profile of the
+package allows reading /etc/tor/* but not its subdirectories, and a
+plain path avoids the directory listing a glob would need. The owned
+settings are rendered into the drop-in at torrc_dropin_path and
+rewritten whenever the rendered content differs, so manual edits of
+the drop-in are reverted on the next run. The rendered options: the
+SOCKS proxy bound to the loopback interface, the log level and the
+SSH onion service. The service forwards to the local SSH daemon on
+the port read from the ssh_daemon_setup Port directive, never
+duplicated into the tor configuration, so the two can never diverge;
+the virtual port clients connect to is configured. After a change of
+the drop-in or the include line the task verifies the whole
+configuration with tor --verify-config, so a directive the running
+Tor does not know is reported as an error instead of being silently
+accepted.
 
 The onion service identity lives in the hidden service directory. The
 task creates the directory inside the Tor data directory, where the
@@ -38,8 +42,12 @@ deployed address command can fall back to the saved value when the
 hostname file cannot be read.
 
 The service unit comes from the package; the task never renders or
-writes it. The task enables the unit when it is not enabled, then
-starts it when it is inactive or restarts it when it is active and the
+writes it. The Ubuntu package uses the multi-instance design: the
+daemon runs in the configured instance unit (tor@default.service),
+while the master unit tor.service is an empty oneshot that always
+reports active, so the task manages the instance unit and never the
+master. The task enables the unit when it is not enabled, then starts
+it when it is inactive or restarts it when it is active and the
 configuration or the package changed, and waits with the configured
 readiness loop for the unit to report active, because the forking
 service may take a moment to fork. The task is idempotent: it skips
@@ -115,7 +123,7 @@ def _ensure_torrc_include(cfg: TorSetupConfig) -> tuple[bool, str | None]:
 
     if not cfg.torrc_path.is_file():
         return False, f"{cfg.torrc_path} is missing"
-    include_line = f"%include {cfg.torrc_include_glob}"
+    include_line = f"%include {cfg.torrc_include_path}"
     try:
         changed = add_line_to_file(cfg.torrc_path, include_line)
     except OSError as exc:
