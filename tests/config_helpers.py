@@ -140,7 +140,11 @@ def base_config() -> str:
         'dropin_file_name = "pyntara.conf"\n'
         'dropin_file_mode = "0644"\n'
         'dns_over_tls = "opportunistic"\n'
-        'fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]\n'
+        "fallback_dns = [\n"
+        '    "1.1.1.1",\n'
+        '    "8.8.8.8",\n'
+        '    "9.9.9.9",\n'
+        "]\n"
         "manage_networkmanager = true\n"
         "error_priority = 3\n"
         "command_timeout_seconds = 60\n"

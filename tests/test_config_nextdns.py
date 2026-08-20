@@ -18,7 +18,7 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     assert section.dropin_file_name == "pyntara.conf"
     assert section.dropin_file_mode == 0o644
     assert section.dns_over_tls == "opportunistic"
-    assert section.fallback_dns == ("1.1.1.1", "1.0.0.1", "9.9.9.9")
+    assert section.fallback_dns == ("1.1.1.1", "8.8.8.8", "9.9.9.9")
     assert section.manage_networkmanager is True
     assert section.error_priority == 3
     assert section.command_timeout_seconds == 60
@@ -35,7 +35,11 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             'dropin_file_name = "pyntara.conf"\n'
             'dropin_file_mode = "0644"\n'
             'dns_over_tls = "opportunistic"\n'
-            'fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]\n'
+            "fallback_dns = [\n"
+            '    "1.1.1.1",\n'
+            '    "8.8.8.8",\n'
+            '    "9.9.9.9",\n'
+            "]\n"
             "manage_networkmanager = true\n"
             "error_priority = 3\n"
             "command_timeout_seconds = 60\n",
@@ -56,11 +60,21 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
         lambda c: c.replace('dns_over_tls = "opportunistic"', 'dns_over_tls = "always"'),
         # fallback_dns is empty
         lambda c: c.replace(
-            'fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]', "fallback_dns = []"
+            "fallback_dns = [\n"
+            '    "1.1.1.1",\n'
+            '    "8.8.8.8",\n'
+            '    "9.9.9.9",\n'
+            "]",
+            "fallback_dns = []",
         ),
         # fallback_dns has a non-string
         lambda c: c.replace(
-            'fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]', "fallback_dns = [1]"
+            "fallback_dns = [\n"
+            '    "1.1.1.1",\n'
+            '    "8.8.8.8",\n'
+            '    "9.9.9.9",\n'
+            "]",
+            "fallback_dns = [1]",
         ),
         # manage_networkmanager is a string, not a boolean
         lambda c: c.replace(

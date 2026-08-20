@@ -26,7 +26,27 @@ dns_over_tls = "opportunistic"
 # Global DNS servers used when no per-link server applies. The list is
 # the machine-wide resolver: every query that NextDNS cannot answer (for
 # example when its network is unreachable) falls back to these servers.
-fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9", "2606:4700:4700::1111", "2620:fe::fe"]
+# The set covers seven independent providers, each with a large and
+# reliable network: Cloudflare, Google, Quad9, Cisco OpenDNS, AdGuard,
+# CleanBrowsing and Verisign, with IPv4 and the main IPv6 anycast
+# addresses, so a NextDNS outage never leaves the machine without
+# resolution and no single provider becomes a point of failure.
+fallback_dns = [
+    "1.1.1.1",
+    "1.0.0.1",
+    "8.8.8.8",
+    "8.8.4.4",
+    "9.9.9.9",
+    "149.112.112.112",
+    "208.67.222.222",
+    "208.67.220.220",
+    "94.140.14.14",
+    "94.140.15.15",
+    "185.228.168.9",
+    "64.6.64.6",
+    "2606:4700:4700::1111",
+    "2001:4860:4860::8888",
+]
 # When true, the task tells NetworkManager to ignore DNS servers from
 # DHCP on every connection, so the global NextDNS servers above actually
 # serve the machine instead of being shadowed by per-link DNS. The task

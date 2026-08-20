@@ -7,12 +7,14 @@ named by nextdns_setup_system_wide.vault_group_title, the endpoint
 formulas live in pyntara.nextdns. A drop-in in the resolved.conf.d
 directory carries the DNS= entries with the TLS server name, the
 FallbackDNS= servers that keep the machine online when NextDNS is
-unreachable, DNSOverTLS= and Domains=~. The drop-in is edited through the
-shared line helper, never rewritten: only the lines that are missing or
-differ are changed, everything else in the file survives. When
-manage_networkmanager is set, NetworkManager is told to ignore the DNS
-servers it receives from DHCP, so the global NextDNS servers are actually
-used instead of being shadowed by per-link DNS.
+unreachable, DNSOverTLS= and Domains=~. The drop-in is merged, never
+rewritten wholesale: the managed directives (DNS, FallbackDNS,
+DNSOverTLS, Domains) are replaced by their key, every other line in the
+file survives, so a profile change swaps the old DNS= line instead of
+stacking a second one. When manage_networkmanager is set, NetworkManager
+is told to ignore the DNS servers it receives from DHCP, so the global
+NextDNS servers are actually used instead of being shadowed by per-link
+DNS.
 
 The task verifies that the machine really resolves through the chosen
 profile the way NextDNS recommends: resolvectl status must list the
@@ -34,7 +36,6 @@ import subprocess
 from pathlib import Path
 
 from pyntara.config import NextdnsSetupSystemWideConfig
-from pyntara.config_edit import add_line_to_file
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -53,19 +54,18 @@ def _dropin_path(cfg: NextdnsSetupSystemWideConfig) -> Path:
     return cfg.resolved_conf_dir / cfg.dropin_file_name
 
 
-def _dropin_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
-    """The exact drop-in lines for a profile, in order.
+def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
+    """The directive lines of the drop-in for a profile, in order.
 
     DNS= lists the DoT servers with the TLS name, FallbackDNS= the
     servers that answer when NextDNS is unreachable, DNSOverTLS= the
     configured mode and Domains=~ routes every query through the global
-    resolver. The lines are single-directive lines, so the shared line
-    helper edits them one by one.
+    resolver. Every line is a single directive with a unique key, so the
+    merge in _write_dropin can replace the whole directive value instead
+    of stacking duplicate keys.
     """
 
     return (
-        DROPIN_HEADER,
-        RESOLVE_SECTION,
         f"DNS={' '.join(resolve_servers(profile_id))}",
         f"FallbackDNS={' '.join(cfg.fallback_dns)}",
         f"DNSOverTLS={cfg.dns_over_tls}",
@@ -73,12 +73,20 @@ def _dropin_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[s
     )
 
 
-def _dropin_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
-    """True when the drop-in already carries every expected line.
+# Directive keys the task owns inside its drop-in: a line with one of these
+# keys is replaced, every other line (comments, Cache=, foreign settings)
+# is preserved by the merge.
+MANAGED_DIRECTIVE_KEYS: frozenset[str] = frozenset(
+    {"DNS", "FallbackDNS", "DNSOverTLS", "Domains"}
+)
 
-    The line-level comparison treats an existing line as present when it
-    equals the expected line; a commented or differing line is not a
-    match. A missing file is never a match, so an absent drop-in is
+
+def _dropin_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
+    """True when the drop-in already carries every expected directive.
+
+    The comparison checks the managed directive lines only: a line that
+    equals the expected value is present, a differing or commented line is
+    not a match. A missing file is never a match, so an absent drop-in is
     always written.
     """
 
@@ -86,19 +94,21 @@ def _dropin_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
     if not dropin.is_file():
         return False
     content = dropin.read_text(encoding="utf-8")
-    expected = _dropin_lines(cfg, profile_id)
+    expected = _directive_lines(cfg, profile_id)
     return all(line in content.splitlines() for line in expected)
 
 
 def _write_dropin(
     cfg: NextdnsSetupSystemWideConfig, profile_id: str
 ) -> tuple[bool, str]:
-    """Write the drop-in lines that are missing or differ; return (changed, error).
+    """Merge the managed directives into the drop-in; return (changed, error).
 
     The directory is created when absent, the [Resolve] header and the
-    header comment are ensured, then every directive line is added with
-    the shared line helper, which appends only what is missing and
-    normalizes a fuzzy line to the exact value. The file mode and the
+    header comment are ensured, then every managed directive is replaced
+    by its key and the missing ones are appended. Foreign lines (comments
+    and settings the task does not own) are preserved as they are, so the
+    task never rewrites a file wholesale; a profile change replaces the
+    old DNS= line instead of stacking a second one. The file mode and the
     root ownership are applied afterwards. An empty profile ID never
     reaches the drop-in: it is rejected here, so the machine never gets a
     broken resolver configuration.
@@ -109,10 +119,39 @@ def _write_dropin(
         return False, "no NextDNS profile selected"
     try:
         dropin.parent.mkdir(parents=True, exist_ok=True)
-        if not dropin.exists():
-            dropin.write_text("", encoding="utf-8")
-        for line in _dropin_lines(cfg, profile_id):
-            add_line_to_file(dropin, line)
+        existing = (
+            dropin.read_text(encoding="utf-8").splitlines()
+            if dropin.exists()
+            else []
+        )
+        kept: list[str] = []
+        has_header = False
+        has_section = False
+        for line in existing:
+            stripped = line.strip()
+            if stripped == DROPIN_HEADER:
+                has_header = True
+                kept.append(line)
+                continue
+            if stripped == RESOLVE_SECTION:
+                has_section = True
+                kept.append(line)
+                continue
+            if stripped.startswith("#"):
+                kept.append(line)
+                continue
+            key = stripped.split("=", 1)[0].strip()
+            if key in MANAGED_DIRECTIVE_KEYS:
+                continue
+            kept.append(line)
+        merged: list[str] = []
+        if not has_header:
+            merged.append(DROPIN_HEADER)
+        if not has_section:
+            merged.append(RESOLVE_SECTION)
+        merged.extend(_directive_lines(cfg, profile_id))
+        merged.extend(kept)
+        dropin.write_text("\n".join(merged) + "\n", encoding="utf-8")
         os.chmod(dropin, cfg.dropin_file_mode)
         if os.geteuid() == 0:
             os.chown(dropin, 0, 0)
@@ -415,4 +454,12 @@ def task(ctx: Context) -> TaskResult:
         )
 
     _log(f"NextDNS profile {profile_id} active: {detail}")
-    return TaskResult(success=True, changed=True, message=f"NextDNS profile {profile_id}")
+    return TaskResult(
+        success=True,
+        changed=True,
+        message=(
+            f"System DNS resolves through the NextDNS profile {profile_id} "
+            f"over DNS-over-TLS; {len(cfg.fallback_dns)} fallback servers "
+            "keep the machine online when NextDNS is unreachable"
+        ),
+    )

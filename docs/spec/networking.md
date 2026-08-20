@@ -25,14 +25,16 @@ single implementation imported by the task.
 Configuration: the task writes a drop-in into
 nextdns_setup_system_wide.resolved_conf_dir with the DNS= entries
 (address#endpoint), FallbackDNS=, DNSOverTLS= and Domains=~. The drop-in
-is edited line by line through the shared config_edit helper: only
-missing or differing lines are written, everything else in the file
-survives. DNSOverTLS is opportunistic, so the machine keeps working on
-networks that block or lack TLS DNS. When manage_networkmanager is set,
-the task tells NetworkManager to ignore DHCP-issued DNS on every
-connection (ipv4.ignore-auto-dns and ipv6.ignore-auto-dns), because
-per-link DNS would otherwise shadow the global NextDNS servers; the task
-checks that nmcli exists before touching NetworkManager.
+is merged, never rewritten wholesale: the managed directives (DNS,
+FallbackDNS, DNSOverTLS, Domains) are replaced by their key, every other
+line in the file survives, so a profile change swaps the old DNS= line
+instead of stacking a second one. DNSOverTLS is opportunistic, so the
+machine keeps working on networks that block or lack TLS DNS. When
+manage_networkmanager is set, the task tells NetworkManager to ignore
+DHCP-issued DNS on every connection (ipv4.ignore-auto-dns and
+ipv6.ignore-auto-dns), because per-link DNS would otherwise shadow the
+global NextDNS servers; the task checks that nmcli exists before touching
+NetworkManager.
 
 Verification: the task proves that the machine actually resolves through
 the profile the way NextDNS recommends. resolvectl status must list the
@@ -43,9 +45,11 @@ disabled again and systemd-resolved is restarted, so the machine returns
 to its previous resolver configuration.
 
 Fallback DNS: the servers of nextdns_setup_system_wide.fallback_dns
-answer when NextDNS itself is unreachable. The configured set covers two
-independent providers with IPv4 and IPv6, so the machine never loses
-resolution.
+answer when NextDNS itself is unreachable. The configured set covers
+seven independent providers (Cloudflare, Google, Quad9, Cisco OpenDNS,
+AdGuard, CleanBrowsing and Verisign) with IPv4 and the main IPv6 anycast
+addresses, so a NextDNS outage never leaves the machine without
+resolution and no single provider becomes a point of failure.
 
 ## Local proxy server
 

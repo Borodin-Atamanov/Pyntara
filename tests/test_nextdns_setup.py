@@ -263,3 +263,63 @@ def test_dropin_merges_without_touching_other_lines(
     assert "DNS=" in content
     assert "DNSOverTLS=opportunistic" in content
     assert "Domains=~." in content
+
+
+def test_profile_change_replaces_dns_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When the hostname changes and the profile choice moves to another
+    # profile, the DNS= directive is replaced, not stacked: a stale
+    # profile must never keep serving the machine.
+    _install_vault(tmp_path)
+    ctx = _ctx(tmp_path)
+    dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
+    dropin.parent.mkdir(parents=True)
+
+    import socket
+
+    from pyntara.nextdns import resolve_servers, select_profile_id
+
+    monkeypatch.setattr(socket, "gethostname", lambda: "host-0")
+    old_profile = select_profile_id("host-0", PROFILE_IDS)
+    dropin.write_text(
+        "# Managed by the Pyntara nextdns_setup_system_wide task.\n"
+        "[Resolve]\n"
+        f"DNS={' '.join(resolve_servers(old_profile))}\n"
+        "FallbackDNS=1.1.1.1 9.9.9.9\n"
+        "DNSOverTLS=opportunistic\n"
+        "Domains=~.\n"
+        "Cache=no-negative\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(socket, "gethostname", lambda: "host-1")
+    new_profile = select_profile_id("host-1", PROFILE_IDS)
+    assert new_profile != old_profile
+
+    _install_subprocess(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    content = dropin.read_text(encoding="utf-8")
+    dns_lines = [
+        line for line in content.splitlines() if line.startswith("DNS=")
+    ]
+    assert len(dns_lines) == 1
+    assert new_profile in dns_lines[0]
+    assert old_profile not in dns_lines[0]
+    assert "Cache=no-negative" in content
+
+
+def test_message_names_the_active_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The result message names the profile and the fallback count, so the
+    # run report shows what the machine actually resolves through.
+    _install_vault(tmp_path)
+    ctx = _ctx(tmp_path)
+    _install_subprocess(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.message is not None
+    assert "NextDNS profile" in result.message
+    assert "fallback" in result.message
