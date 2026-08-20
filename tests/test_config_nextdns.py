@@ -17,6 +17,15 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     assert section.resolved_conf_dir == Path("/etc/systemd/resolved.conf.d")
     assert section.dropin_file_name == "pyntara.conf"
     assert section.dropin_file_mode == 0o644
+    assert section.resolve_section == "[Resolve]"
+    assert section.dropin_header == (
+        "# Managed by the Pyntara nextdns_setup_system_wide task."
+    )
+    assert section.domains_directive == "~."
+    assert section.ipv4_servers == ("45.90.28.0", "45.90.30.0")
+    assert section.ipv6_prefixes == ("2a07:a8c0", "2a07:a8c1")
+    assert section.dot_endpoint_format == "{profile_id}.dns.nextdns.io"
+    assert section.verification_url == "https://test.nextdns.io/"
     assert section.dns_over_tls == "opportunistic"
     assert section.fallback_dns == ("1.1.1.1", "8.8.8.8", "9.9.9.9")
     assert section.manage_networkmanager is True
@@ -34,6 +43,13 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
             'dropin_file_name = "pyntara.conf"\n'
             'dropin_file_mode = "0644"\n'
+            'resolve_section = "[Resolve]"\n'
+            'dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."\n'
+            'domains_directive = "~."\n'
+            'ipv4_servers = ["45.90.28.0", "45.90.30.0"]\n'
+            'ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]\n'
+            'dot_endpoint_format = "{profile_id}.dns.nextdns.io"\n'
+            'verification_url = "https://test.nextdns.io/"\n'
             'dns_over_tls = "opportunistic"\n'
             "fallback_dns = [\n"
             '    "1.1.1.1",\n'
@@ -56,6 +72,41 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
         lambda c: c.replace('dropin_file_name = "pyntara.conf"', 'dropin_file_name = ""'),
         # dropin_file_mode is not an octal string
         lambda c: c.replace('dropin_file_mode = "0644"', 'dropin_file_mode = "999"'),
+        # resolve_section is empty
+        lambda c: c.replace('resolve_section = "[Resolve]"', 'resolve_section = ""'),
+        # dropin_header is empty
+        lambda c: c.replace(
+            'dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."',
+            'dropin_header = ""',
+        ),
+        # domains_directive is empty
+        lambda c: c.replace('domains_directive = "~."', 'domains_directive = ""'),
+        # ipv4_servers is empty
+        lambda c: c.replace(
+            'ipv4_servers = ["45.90.28.0", "45.90.30.0"]', "ipv4_servers = []"
+        ),
+        # ipv4_servers has a non-string
+        lambda c: c.replace(
+            'ipv4_servers = ["45.90.28.0", "45.90.30.0"]', "ipv4_servers = [1]"
+        ),
+        # ipv6_prefixes is empty
+        lambda c: c.replace(
+            'ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]', "ipv6_prefixes = []"
+        ),
+        # dot_endpoint_format lacks the placeholder
+        lambda c: c.replace(
+            'dot_endpoint_format = "{profile_id}.dns.nextdns.io"',
+            'dot_endpoint_format = "dns.nextdns.io"',
+        ),
+        # dot_endpoint_format is empty
+        lambda c: c.replace(
+            'dot_endpoint_format = "{profile_id}.dns.nextdns.io"',
+            'dot_endpoint_format = ""',
+        ),
+        # verification_url is empty
+        lambda c: c.replace(
+            'verification_url = "https://test.nextdns.io/"', 'verification_url = ""'
+        ),
         # dns_over_tls is not in the vocabulary
         lambda c: c.replace('dns_over_tls = "opportunistic"', 'dns_over_tls = "always"'),
         # fallback_dns is empty

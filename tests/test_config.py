@@ -180,6 +180,13 @@ vault_group_title = "NextDNS"
 resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 dropin_file_name = "pyntara.conf"
 dropin_file_mode = "0644"
+resolve_section = "[Resolve]"
+dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."
+domains_directive = "~."
+ipv4_servers = ["45.90.28.0", "45.90.30.0"]
+ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]
+dot_endpoint_format = "{profile_id}.dns.nextdns.io"
+verification_url = "https://test.nextdns.io/"
 dns_over_tls = "opportunistic"
 fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]
 manage_networkmanager = true
@@ -240,6 +247,14 @@ command = ["ip", "-4", "addr", "show", "scope", "global"]
 [[system_metrics_setup.collector.network_modules]]
 name = "ipv6"
 command = ["ip", "-6", "addr", "show", "scope", "global"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv4_link"
+command = ["ip", "-4", "addr", "show", "scope", "link"]
+
+[[system_metrics_setup.collector.network_modules]]
+name = "ipv6_link"
+command = ["ip", "-6", "addr", "show", "scope", "link"]
 
 [[system_metrics_setup.collector.system_modules]]
 name = "hostname"
@@ -462,6 +477,36 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         SshDirective(name="AddressFamily", value="any"),
         SshDirective(name="CheckHostIP", value="no"),
     )
+    assert config.nextdns_setup_system_wide.vault_group_title == "NextDNS"
+    assert config.nextdns_setup_system_wide.resolved_conf_dir == Path(
+        "/etc/systemd/resolved.conf.d"
+    )
+    assert config.nextdns_setup_system_wide.dropin_file_name == "pyntara.conf"
+    assert config.nextdns_setup_system_wide.dropin_file_mode == 0o644
+    assert config.nextdns_setup_system_wide.resolve_section == "[Resolve]"
+    assert (
+        config.nextdns_setup_system_wide.dropin_header
+        == "# Managed by the Pyntara nextdns_setup_system_wide task."
+    )
+    assert config.nextdns_setup_system_wide.domains_directive == "~."
+    assert config.nextdns_setup_system_wide.ipv4_servers == (
+        "45.90.28.0",
+        "45.90.30.0",
+    )
+    assert config.nextdns_setup_system_wide.ipv6_prefixes == (
+        "2a07:a8c0",
+        "2a07:a8c1",
+    )
+    assert (
+        config.nextdns_setup_system_wide.dot_endpoint_format
+        == "{profile_id}.dns.nextdns.io"
+    )
+    assert (
+        config.nextdns_setup_system_wide.verification_url
+        == "https://test.nextdns.io/"
+    )
+    assert config.nextdns_setup_system_wide.dns_over_tls == "opportunistic"
+    assert config.nextdns_setup_system_wide.manage_networkmanager is True
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400
@@ -533,7 +578,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/run/pyntara/system_metrics_collector.lock"
     )
     assert config.system_metrics_setup.collector.report_file_name == "network.json"
-    assert len(config.system_metrics_setup.collector.network_modules) == 2
+    assert len(config.system_metrics_setup.collector.network_modules) == 4
     assert config.system_metrics_setup.collector.network_modules[0].name == "ipv4"
     assert config.system_metrics_setup.collector.network_modules[0].command == (
         "ip",
@@ -544,6 +589,36 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "global",
     )
     assert config.system_metrics_setup.collector.network_modules[1].name == "ipv6"
+    assert config.system_metrics_setup.collector.network_modules[1].command == (
+        "ip",
+        "-6",
+        "addr",
+        "show",
+        "scope",
+        "global",
+    )
+    assert (
+        config.system_metrics_setup.collector.network_modules[2].name == "ipv4_link"
+    )
+    assert config.system_metrics_setup.collector.network_modules[2].command == (
+        "ip",
+        "-4",
+        "addr",
+        "show",
+        "scope",
+        "link",
+    )
+    assert (
+        config.system_metrics_setup.collector.network_modules[3].name == "ipv6_link"
+    )
+    assert config.system_metrics_setup.collector.network_modules[3].command == (
+        "ip",
+        "-6",
+        "addr",
+        "show",
+        "scope",
+        "link",
+    )
     assert config.system_metrics_setup.collector.system_modules[0].name == "hostname"
     assert config.system_metrics_setup.collector.system_modules[0].command == (
         "hostname",

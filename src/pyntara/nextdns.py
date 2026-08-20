@@ -9,8 +9,14 @@ fixed by the NextDNS service (docs/spec/networking.md): the DoT endpoint
 is <id>.dns.nextdns.io, the id-specific IPv6 addresses embed the profile
 ID bytes, and the IPv4 anycast addresses 45.90.28.0 and 45.90.30.0 carry
 the profile only through the TLS server name, never through the address.
-The module is the single implementation of these formulas; the task and
-the tests import them, never copy them.
+The service values (IPv4 servers, IPv6 prefixes, the DoT endpoint format
+and the verification URL) live in the [nextdns_setup_system_wide] config
+table (architecture contract section 3) and are passed into the pure
+functions below, so no behavioral value is hardcoded here; only the
+profile ID shape (six lowercase hex digits) is a format invariant of the
+service and stays in code as an approved exception. The module is the
+single implementation of these formulas; the task and the tests import
+them, never copy them.
 """
 
 from __future__ import annotations
@@ -18,19 +24,10 @@ from __future__ import annotations
 import hashlib
 import re
 
-# A NextDNS profile ID is exactly six lowercase hex digits.
+# A NextDNS profile ID is exactly six lowercase hex digits. The shape is
+# a format invariant of the NextDNS service, approved as a code exception
+# in the architecture contract (section 3).
 PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")
-
-# The two IPv4 anycast addresses of the NextDNS service; the profile is
-# carried by the TLS server name (#<id>.dns.nextdns.io), not by the address.
-NEXTDNS_IPV4_SERVERS: tuple[str, ...] = ("45.90.28.0", "45.90.30.0")
-
-# The two IPv6 anycast prefixes of the NextDNS service; the profile ID is
-# embedded in the last three bytes of the address.
-NEXTDNS_IPV6_PREFIXES: tuple[str, ...] = ("2a07:a8c0", "2a07:a8c1")
-
-# The DoT endpoint pattern: <id>.dns.nextdns.io.
-DOT_ENDPOINT_FORMAT = "{profile_id}.dns.nextdns.io"
 
 
 def profile_id_is_valid(profile_id: str) -> bool:
@@ -59,49 +56,57 @@ def select_profile_id(hostname: str, profile_ids: tuple[str, ...]) -> str | None
     return chosen
 
 
-def dot_endpoint(profile_id: str) -> str:
+def dot_endpoint(profile_id: str, endpoint_format: str) -> str:
     """The DNS-over-TLS endpoint name of a profile.
 
-    The endpoint is <id>.dns.nextdns.io; it is the TLS server name of the
-    DoT connection, the identifier that tells NextDNS which profile
-    answers. A malformed profile ID is a programming error and raises.
+    The endpoint format comes from the config and carries the {profile_id}
+    placeholder, so the result is <id>.dns.nextdns.io; it is the TLS
+    server name of the DoT connection, the identifier that tells NextDNS
+    which profile answers. A malformed profile ID is a programming error
+    and raises.
     """
 
     if not profile_id_is_valid(profile_id):
         raise ValueError(f"invalid NextDNS profile ID: {profile_id!r}")
-    return DOT_ENDPOINT_FORMAT.format(profile_id=profile_id)
+    return endpoint_format.format(profile_id=profile_id)
 
 
-def ipv6_addresses(profile_id: str) -> tuple[str, ...]:
-    """The id-specific IPv6 addresses of a profile.
+def ipv6_addresses(profile_id: str, prefixes: tuple[str, ...]) -> tuple[str, ...]:
+    """The id-specific IPv6 addresses of a profile under the given prefixes.
 
-    Each of the two prefixes carries the profile ID in the last three
-    bytes, split as the first byte and the two remaining bytes:
-    2a07:a8c0::<b1>:<b2b3>. The addresses are the same values that the
-    NextDNS account page lists and that the accounts CSV carries in the
-    notes; they let a client reach the profile over IPv6 without a TLS
-    name, although the DoT configuration still sends the endpoint name.
+    Each prefix carries the profile ID in the last three bytes, split as
+    the first byte and the two remaining bytes: 2a07:a8c0::<b1>:<b2b3>.
+    The addresses are the same values that the NextDNS account page lists
+    and that the accounts CSV carries in the notes; they let a client
+    reach the profile over IPv6 without a TLS name, although the DoT
+    configuration still sends the endpoint name.
     """
 
     if not profile_id_is_valid(profile_id):
         raise ValueError(f"invalid NextDNS profile ID: {profile_id!r}")
     high, middle, low = (int(profile_id[index : index + 2], 16) for index in (0, 2, 4))
     return tuple(
-        f"{prefix}::{high:x}:{middle * 256 + low:x}" for prefix in NEXTDNS_IPV6_PREFIXES
+        f"{prefix}::{high:x}:{middle * 256 + low:x}" for prefix in prefixes
     )
 
 
-def resolve_servers(profile_id: str) -> tuple[str, ...]:
+def resolve_servers(
+    profile_id: str,
+    ipv4_servers: tuple[str, ...],
+    ipv6_prefixes: tuple[str, ...],
+    endpoint_format: str,
+) -> tuple[str, ...]:
     """The systemd-resolved DNS= entries of a profile.
 
     Every entry carries the TLS server name after the hash, so
     systemd-resolved connects to the NextDNS anycast address and identifies
-    the profile through the endpoint name: the two IPv4 addresses and the
-    two id-specific IPv6 addresses. The entries are the DoT configuration
+    the profile through the endpoint name: the IPv4 servers and the
+    id-specific IPv6 addresses. The entries are the DoT configuration
     that resolved.conf.d drop-ins carry.
     """
 
-    endpoint = dot_endpoint(profile_id)
+    endpoint = dot_endpoint(profile_id, endpoint_format)
     return tuple(
-        f"{server}#{endpoint}" for server in (*NEXTDNS_IPV4_SERVERS, *ipv6_addresses(profile_id))
+        f"{server}#{endpoint}"
+        for server in (*ipv4_servers, *ipv6_addresses(profile_id, ipv6_prefixes))
     )

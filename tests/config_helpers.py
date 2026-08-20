@@ -139,6 +139,13 @@ def base_config() -> str:
         'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
         'dropin_file_name = "pyntara.conf"\n'
         'dropin_file_mode = "0644"\n'
+        'resolve_section = "[Resolve]"\n'
+        'dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."\n'
+        'domains_directive = "~."\n'
+        'ipv4_servers = ["45.90.28.0", "45.90.30.0"]\n'
+        'ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]\n'
+        'dot_endpoint_format = "{profile_id}.dns.nextdns.io"\n'
+        'verification_url = "https://test.nextdns.io/"\n'
         'dns_over_tls = "opportunistic"\n'
         "fallback_dns = [\n"
         '    "1.1.1.1",\n'

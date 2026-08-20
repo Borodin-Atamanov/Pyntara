@@ -14,17 +14,22 @@ same hostname always resolves through the same account and hostnames
 spread evenly over the pool. The hostname is the machine hostname
 reported by the kernel, set by the hostname task.
 
-Endpoints (fixed by the NextDNS service): the DNS-over-TLS endpoint is
-<id>.dns.nextdns.io; the IPv4 anycast addresses 45.90.28.0 and 45.90.30.0
-carry the profile only through the TLS server name, never through the
-address; the id-specific IPv6 addresses are 2a07:a8c0::<b1>:<b2b3> and
-2a07:a8c1::<b1>:<b2b3>, where b1 is the first byte of the profile ID and
-b2b3 the two remaining bytes. The formulas live in pyntara.nextdns, the
-single implementation imported by the task.
+Endpoints (fixed by the NextDNS service, values in the
+nextdns_setup_system_wide config table): the DNS-over-TLS endpoint is
+<id>.dns.nextdns.io (dot_endpoint_format with the {profile_id}
+placeholder); the IPv4 anycast addresses (ipv4_servers) carry the profile
+only through the TLS server name, never through the address; the
+id-specific IPv6 addresses are <prefix>::<b1>:<b2b3> under every
+configured ipv6_prefixes entry, where b1 is the first byte of the profile
+ID and b2b3 the two remaining bytes. The formulas live in pyntara.nextdns
+as pure functions that take the configured values, the single
+implementation imported by the task.
 
 Configuration: the task writes a drop-in into
-nextdns_setup_system_wide.resolved_conf_dir with the DNS= entries
-(address#endpoint), FallbackDNS=, DNSOverTLS= and Domains=~. The drop-in
+nextdns_setup_system_wide.resolved_conf_dir (the file dropin_file_name,
+the section header resolve_section and the ownership comment
+dropin_header) with the DNS= entries (address#endpoint), FallbackDNS=,
+DNSOverTLS= and the Domains directive (domains_directive). The drop-in
 is merged, never rewritten wholesale: the managed directives (DNS,
 FallbackDNS, DNSOverTLS, Domains) are replaced by their key, every other
 line in the file survives, so a profile change swaps the old DNS= line
@@ -38,13 +43,12 @@ NetworkManager.
 
 Verification: the task proves that the machine actually resolves through
 the profile the way NextDNS recommends. resolvectl status must list the
-configured servers and a query to test.nextdns.io must return a JSON body
-with status ok, which is the NextDNS-recommended check. On a failed
-verification the drop-in is removed, the NetworkManager flags are
-disabled again and systemd-resolved is restarted, so the machine returns
-to its previous resolver configuration.
-
-Fallback DNS: the servers of nextdns_setup_system_wide.fallback_dns
+configured servers and a query to nextdns_setup_system_wide.verification_url
+must return a JSON body with status ok, which is the
+NextDNS-recommended check. On a failed verification the drop-in is
+removed, the NetworkManager flags are disabled again and
+systemd-resolved is restarted, so the machine returns to its previous
+resolver configuration.
 answer when NextDNS itself is unreachable. The configured set covers
 seven independent providers (Cloudflare, Google, Quad9, Cisco OpenDNS,
 AdGuard, CleanBrowsing and Verisign) with IPv4 and the main IPv6 anycast

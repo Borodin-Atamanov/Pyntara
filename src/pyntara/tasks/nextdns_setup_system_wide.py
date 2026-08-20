@@ -54,13 +54,10 @@ from pyntara.utils import run_command
 # Module-level path constant is monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide):
 # the source vault paths of local_vault_setup are resolved against the
-# repository root, so the clone can live anywhere on the machine.
+# repository root, so the clone can live anywhere on the machine. It is
+# an approved repository layout path exception (architecture contract
+# section 3).
 REPO_ROOT = Path(__file__).resolve().parents[3]
-
-# The Resolve section header of systemd-resolved drop-ins.
-RESOLVE_SECTION = "[Resolve]"
-# The header comment that marks the drop-in as owned by this task.
-DROPIN_HEADER = "# Managed by the Pyntara nextdns_setup_system_wide task."
 
 
 def _dropin_path(cfg: NextdnsSetupSystemWideConfig) -> Path:
@@ -74,17 +71,24 @@ def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tupl
 
     DNS= lists the DoT servers with the TLS name, FallbackDNS= the
     servers that answer when NextDNS is unreachable, DNSOverTLS= the
-    configured mode and Domains=~ routes every query through the global
-    resolver. Every line is a single directive with a unique key, so the
-    shared merge replaces the whole directive value instead of stacking
-    duplicate keys.
+    configured mode and the Domains directive routes every query through
+    the global resolver. Every line is a single directive with a unique
+    key, so the shared merge replaces the whole directive value instead
+    of stacking duplicate keys. The values come from the config: the
+    endpoint addresses and the dot format from nextdns_setup_system_wide.
     """
 
+    servers = resolve_servers(
+        profile_id,
+        cfg.ipv4_servers,
+        cfg.ipv6_prefixes,
+        cfg.dot_endpoint_format,
+    )
     return (
-        f"DNS={' '.join(resolve_servers(profile_id))}",
+        f"DNS={' '.join(servers)}",
         f"FallbackDNS={' '.join(cfg.fallback_dns)}",
         f"DNSOverTLS={cfg.dns_over_tls}",
-        "Domains=~.",
+        f"Domains={cfg.domains_directive}",
     )
 
 
@@ -127,8 +131,8 @@ def _write_dropin(
         sync_directives_by_key(
             dropin,
             _directive_lines(cfg, profile_id),
-            DROPIN_HEADER,
-            RESOLVE_SECTION,
+            cfg.dropin_header,
+            cfg.resolve_section,
         )
         os.chmod(dropin, cfg.dropin_file_mode)
         if os.geteuid() == 0:
@@ -269,22 +273,30 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig, timeout: float) -> tuple[bo
 
     try:
         result = run_command(
-            ["curl", "--fail", "--silent", "--show-error", "--max-time", str(timeout), "https://test.nextdns.io/"],
+            [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                str(timeout),
+                cfg.verification_url,
+            ],
             check=False,
             capture=True,
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"test.nextdns.io unreachable: {exc}"
+        return False, f"verification endpoint unreachable: {exc}"
     if result.returncode != 0:
-        return False, f"test.nextdns.io exited {result.returncode}"
+        return False, f"verification endpoint exited {result.returncode}"
     try:
         body = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return False, "test.nextdns.io did not return JSON"
+        return False, "verification endpoint did not return JSON"
     status = body.get("status")
     if status != "ok":
-        return False, f"test.nextdns.io reported status {status!r}"
+        return False, f"verification endpoint reported status {status!r}"
     profile = body.get("profile")
     return True, f"status ok, profile {profile!r}"
 

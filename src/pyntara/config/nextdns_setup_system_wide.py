@@ -28,11 +28,17 @@ class NextdnsSetupSystemWideConfig:
     vault_group_title names the vault subgroup that carries the NextDNS
     profile accounts (the [vault_structure] groups). The task writes a
     drop-in into resolved_conf_dir with the name dropin_file_name and the
-    mode dropin_file_mode. dns_over_tls is the DNSOverTLS mode of
-    systemd-resolved, fallback_dns the servers that answer when NextDNS is
-    unreachable. manage_networkmanager tells the task to clear per-link
-    DNS in NetworkManager so the global NextDNS servers are actually used.
-    error_priority is the syslog priority of a serious failure,
+    mode dropin_file_mode; resolve_section and dropin_header are the
+    section header and the ownership comment of the drop-in, and
+    domains_directive the Domains value that routes every query through
+    the global resolver. ipv4_servers, ipv6_prefixes, dot_endpoint_format
+    and verification_url are the NextDNS service contract: the anycast
+    addresses, the DoT endpoint pattern with the {profile_id} placeholder
+    and the verification endpoint. dns_over_tls is the DNSOverTLS mode of
+    systemd-resolved, fallback_dns the servers that answer when NextDNS
+    is unreachable. manage_networkmanager tells the task to clear per-link
+    DNS in NetworkManager so the global NextDNS servers are actually
+    used. error_priority is the syslog priority of a serious failure,
     command_timeout_seconds the ceiling of a verification command.
     """
 
@@ -40,6 +46,13 @@ class NextdnsSetupSystemWideConfig:
     resolved_conf_dir: Path
     dropin_file_name: str
     dropin_file_mode: int
+    resolve_section: str
+    dropin_header: str
+    domains_directive: str
+    ipv4_servers: tuple[str, ...]
+    ipv6_prefixes: tuple[str, ...]
+    dot_endpoint_format: str
+    verification_url: str
     dns_over_tls: str
     fallback_dns: tuple[str, ...]
     manage_networkmanager: bool
@@ -53,9 +66,11 @@ def _nextdns_setup_system_wide_table(
     """Validate the [nextdns_setup_system_wide] table and build the config.
 
     Every value is required and typed: the vault group title, the drop-in
-    directory and file name are non-empty strings, the drop-in mode is an
-    octal string, dns_over_tls is one of the DNSOverTLS vocabulary,
-    fallback_dns is a non-empty array of non-empty strings,
+    directory, file name and the section/header strings are non-empty,
+    the drop-in mode is an octal string, ipv4_servers, ipv6_prefixes and
+    fallback_dns are non-empty arrays of non-empty strings,
+    dot_endpoint_format must carry the {profile_id} placeholder, dns
+    _over_tls is one of the DNSOverTLS vocabulary,
     manage_networkmanager is a boolean, the priority and timeout are
     integers within their ranges.
     """
@@ -76,6 +91,48 @@ def _nextdns_setup_system_wide_table(
     dropin_file_mode = _octal_mode_field(
         raw.get("dropin_file_mode"), "nextdns_setup_system_wide.dropin_file_mode"
     )
+    resolve_section = _nonempty_string_field(
+        raw.get("resolve_section"), "nextdns_setup_system_wide.resolve_section"
+    )
+    dropin_header = _nonempty_string_field(
+        raw.get("dropin_header"), "nextdns_setup_system_wide.dropin_header"
+    )
+    domains_directive = _nonempty_string_field(
+        raw.get("domains_directive"), "nextdns_setup_system_wide.domains_directive"
+    )
+
+    def _string_list_field(name: str) -> tuple[str, ...]:
+        """Validate a non-empty array of non-empty strings."""
+
+        raw_value = raw.get(name)
+        if not isinstance(raw_value, list) or not raw_value:
+            raise ConfigError(
+                f"nextdns_setup_system_wide.{name} must be a non-empty "
+                "array of strings"
+            )
+        values: list[str] = []
+        for server in raw_value:
+            if not isinstance(server, str) or not server.strip():
+                raise ConfigError(
+                    f"nextdns_setup_system_wide.{name} must be non-empty strings"
+                )
+            values.append(server.strip())
+        return tuple(values)
+
+    ipv4_servers = _string_list_field("ipv4_servers")
+    ipv6_prefixes = _string_list_field("ipv6_prefixes")
+    dot_endpoint_format = _nonempty_string_field(
+        raw.get("dot_endpoint_format"),
+        "nextdns_setup_system_wide.dot_endpoint_format",
+    )
+    if "{profile_id}" not in dot_endpoint_format:
+        raise ConfigError(
+            "nextdns_setup_system_wide.dot_endpoint_format must contain "
+            "the {profile_id} placeholder"
+        )
+    verification_url = _nonempty_string_field(
+        raw.get("verification_url"), "nextdns_setup_system_wide.verification_url"
+    )
     dns_over_tls = _nonempty_string_field(
         raw.get("dns_over_tls"), "nextdns_setup_system_wide.dns_over_tls"
     )
@@ -84,19 +141,7 @@ def _nextdns_setup_system_wide_table(
             f"nextdns_setup_system_wide.dns_over_tls must be one of "
             f"{', '.join(DNS_OVER_TLS_VALUES)}"
         )
-    fallback_dns_raw = raw.get("fallback_dns")
-    if not isinstance(fallback_dns_raw, list) or not fallback_dns_raw:
-        raise ConfigError(
-            "nextdns_setup_system_wide.fallback_dns must be a non-empty "
-            "array of strings"
-        )
-    fallback_dns: list[str] = []
-    for server in fallback_dns_raw:
-        if not isinstance(server, str) or not server.strip():
-            raise ConfigError(
-                "nextdns_setup_system_wide.fallback_dns must be non-empty strings"
-            )
-        fallback_dns.append(server.strip())
+    fallback_dns = _string_list_field("fallback_dns")
     manage_networkmanager = raw.get("manage_networkmanager")
     if not isinstance(manage_networkmanager, bool):
         raise ConfigError(
@@ -122,8 +167,15 @@ def _nextdns_setup_system_wide_table(
         resolved_conf_dir=Path(resolved_conf_dir),
         dropin_file_name=dropin_file_name,
         dropin_file_mode=dropin_file_mode,
+        resolve_section=resolve_section,
+        dropin_header=dropin_header,
+        domains_directive=domains_directive,
+        ipv4_servers=ipv4_servers,
+        ipv6_prefixes=ipv6_prefixes,
+        dot_endpoint_format=dot_endpoint_format,
+        verification_url=verification_url,
         dns_over_tls=dns_over_tls,
-        fallback_dns=tuple(fallback_dns),
+        fallback_dns=fallback_dns,
         manage_networkmanager=manage_networkmanager,
         error_priority=error_priority,
         command_timeout_seconds=command_timeout_seconds,

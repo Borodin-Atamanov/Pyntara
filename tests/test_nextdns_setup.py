@@ -165,14 +165,25 @@ def test_skip_when_already_configured(
 
     from pyntara.nextdns import resolve_servers, select_profile_id
 
+    cfg = ctx.config.nextdns_setup_system_wide
     profile_id = select_profile_id(socket.gethostname(), PROFILE_IDS)
     lines = [
-        "# Managed by the Pyntara nextdns_setup_system_wide task.",
-        "[Resolve]",
-        f"DNS={' '.join(resolve_servers(profile_id))}",
+        cfg.dropin_header,
+        cfg.resolve_section,
+        (
+            "DNS="
+            + " ".join(
+                resolve_servers(
+                    profile_id,
+                    cfg.ipv4_servers,
+                    cfg.ipv6_prefixes,
+                    cfg.dot_endpoint_format,
+                )
+            )
+        ),
         "FallbackDNS=1.1.1.1 9.9.9.9",
         "DNSOverTLS=opportunistic",
-        "Domains=~.",
+        f"Domains={cfg.domains_directive}",
     ]
     dropin.write_text("\n".join(lines) + "\n", encoding="utf-8")
     calls = _install_subprocess(monkeypatch)
@@ -293,15 +304,25 @@ def test_profile_change_replaces_dns_line(
 
     from pyntara.nextdns import resolve_servers, select_profile_id
 
+    cfg = ctx.config.nextdns_setup_system_wide
     monkeypatch.setattr(socket, "gethostname", lambda: "host-0")
     old_profile = select_profile_id("host-0", PROFILE_IDS)
     dropin.write_text(
-        "# Managed by the Pyntara nextdns_setup_system_wide task.\n"
-        "[Resolve]\n"
-        f"DNS={' '.join(resolve_servers(old_profile))}\n"
+        f"{cfg.dropin_header}\n"
+        f"{cfg.resolve_section}\n"
+        "DNS="
+        + " ".join(
+            resolve_servers(
+                old_profile,
+                cfg.ipv4_servers,
+                cfg.ipv6_prefixes,
+                cfg.dot_endpoint_format,
+            )
+        )
+        + "\n"
         "FallbackDNS=1.1.1.1 9.9.9.9\n"
         "DNSOverTLS=opportunistic\n"
-        "Domains=~.\n"
+        f"Domains={cfg.domains_directive}\n"
         "Cache=no-negative\n",
         encoding="utf-8",
     )

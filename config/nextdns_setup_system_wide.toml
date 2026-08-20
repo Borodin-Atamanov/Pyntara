@@ -19,6 +19,24 @@ resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 dropin_file_name = "pyntara.conf"
 # File mode of the rendered drop-in, as an octal string.
 dropin_file_mode = "0644"
+# Section header of the resolved.conf drop-in.
+resolve_section = "[Resolve]"
+# Header comment that marks the drop-in as owned by this task.
+dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."
+# Domains directive that routes every query through the global resolver.
+domains_directive = "~."
+# IPv4 anycast addresses of the NextDNS service. The profile is carried by
+# the TLS server name (the DoT endpoint), never by the address.
+ipv4_servers = ["45.90.28.0", "45.90.30.0"]
+# IPv6 anycast prefixes of the NextDNS service. The profile ID is embedded
+# in the last three bytes of each address: <prefix>::<b1>:<b2b3>.
+ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]
+# DoT endpoint pattern of the NextDNS service; {profile_id} is replaced
+# with the 6-hex profile ID, producing <id>.dns.nextdns.io.
+dot_endpoint_format = "{profile_id}.dns.nextdns.io"
+# Verification endpoint that reports the active NextDNS profile as JSON;
+# the task checks it after applying the configuration.
+verification_url = "https://test.nextdns.io/"
 # systemd-resolved DNSOverTLS mode: yes, opportunistic or no. opportunistic
 # tries TLS and falls back to plain DNS for the same server, so the
 # machine keeps working on networks where TLS DNS is blocked.
