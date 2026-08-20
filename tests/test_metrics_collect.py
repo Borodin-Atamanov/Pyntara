@@ -27,6 +27,12 @@ IPV4 = CollectorModuleConfig(
 IPV6 = CollectorModuleConfig(
     name="ipv6", command=("ip", "-6", "addr", "show", "scope", "global")
 )
+IPV4_LINK = CollectorModuleConfig(
+    name="ipv4_link", command=("ip", "-4", "addr", "show", "scope", "link")
+)
+IPV6_LINK = CollectorModuleConfig(
+    name="ipv6_link", command=("ip", "-6", "addr", "show", "scope", "link")
+)
 HOSTNAME = CollectorModuleConfig(name="hostname", command=("hostname",))
 
 
@@ -230,7 +236,9 @@ def test_percent_ready_counts_only_ok() -> None:
 
 def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
     # The report carries the generation time, the readiness percentage and
-    # the full module results in the network and system sections.
+    # the full module results in the network and system sections. The
+    # global and link scope modules sit side by side, so the report
+    # carries both the routed and the link-local addresses of the machine.
     _fake_run(
         monkeypatch,
         {
@@ -238,12 +246,16 @@ def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
                 0, "inet 10.0.0.1\n"
             ),
             ("ip", "-6", "addr", "show", "scope", "global"): _FakeProc(0, ""),
+            ("ip", "-4", "addr", "show", "scope", "link"): _FakeProc(
+                0, "inet 169.254.0.42\n"
+            ),
+            ("ip", "-6", "addr", "show", "scope", "link"): _FakeProc(0, ""),
             ("hostname",): _FakeProc(0, "myhost\n"),
         },
     )
     cfg = _config(
         Path("/tmp"),
-        system_metrics_collector_network_modules=(IPV4, IPV6),
+        system_metrics_collector_network_modules=(IPV4, IPV6, IPV4_LINK, IPV6_LINK),
         system_metrics_collector_system_modules=(HOSTNAME,),
     )
     report = metrics_collect.collect(cfg)
@@ -251,6 +263,8 @@ def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
     assert report["network"] == [
         {"name": "ipv4", "status": "ok", "output": "inet 10.0.0.1"},
         {"name": "ipv6", "status": "empty", "output": ""},
+        {"name": "ipv4_link", "status": "ok", "output": "inet 169.254.0.42"},
+        {"name": "ipv6_link", "status": "empty", "output": ""},
     ]
     assert report["system"] == [
         {"name": "hostname", "status": "ok", "output": "myhost"}

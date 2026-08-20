@@ -52,6 +52,8 @@ System Metrics additionally includes:
 clipboard text (inside encrypted PDF)
 startup network information: attempts to detect addresses/channels (Cloudflare, Yggdrasil, IPv6, etc.), machine's own addresses, and connection availability status
 
+The default collector configuration adds four address modules to the network section: ipv4 and ipv6 print the global scope of the address tables, which covers the private subnets of local networks (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) and the public IPv6 addresses; ipv4_link and ipv6_link print the link scope (IPv4 169.254.0.0/16 and IPv6 fe80::/10), which every interface of a connected network carries. Together the four modules put every address of the machine in its local and global networks into the report, so the operator sees the current network state of the target machine from any network it joins.
+
 The default collector configuration adds three anonymous network modules to the report: i2pd, whose command prints the .b32.i2p tunnel address through the deployed address command, yggdrasil, whose command prints the node self address from the admin socket, and tor_onion, whose command prints the SSH onion address from the hidden service hostname file. All three read the live source at collection time and fall back to the saved address files written by the provisioning tasks; when the fallback is used, the reason appears in the module output, and when the live source fails completely the raw utility output lands in the module output, so errors are reported as they are and never silently dropped. The onion address is derived from the key in the hidden service directory, which the provisioning task never recreates, so the address is stable between reports.
 
 ## Installation log
