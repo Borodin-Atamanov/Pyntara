@@ -28,18 +28,22 @@ implementation imported by the task.
 Configuration: the task writes a drop-in into
 nextdns_setup_system_wide.resolved_conf_dir (the file dropin_file_name,
 the section header resolve_section and the ownership comment
-dropin_header) with the DNS= entries (address#endpoint), FallbackDNS=,
-DNSOverTLS= and the Domains directive (domains_directive). The drop-in
-is merged, never rewritten wholesale: the managed directives (DNS,
-FallbackDNS, DNSOverTLS, Domains) are replaced by their key, every other
-line in the file survives, so a profile change swaps the old DNS= line
-instead of stacking a second one. DNSOverTLS is opportunistic, so the
-machine keeps working on networks that block or lack TLS DNS. When
-manage_networkmanager is set, the task tells NetworkManager to ignore
-DHCP-issued DNS on every connection (ipv4.ignore-auto-dns and
-ipv6.ignore-auto-dns), because per-link DNS would otherwise shadow the
-global NextDNS servers; the task checks that nmcli exists before touching
-NetworkManager.
+dropin_header) with the directives whose keys come from directive_keys:
+the first lists the DoT servers (address#endpoint), the second the
+FallbackDNS servers, the third the DNSOverTLS mode and the fourth the
+Domains value (domains_directive). The drop-in is merged, never rewritten
+wholesale: a line whose key equals one of directive_keys is replaced by
+the merge, every other line in the file survives, so a profile change
+swaps the old DNS= line instead of stacking a second one. DNSOverTLS is
+opportunistic, so the machine keeps working on networks that block or
+lack TLS DNS. When manage_networkmanager is set, the task tells
+NetworkManager to ignore DHCP-issued DNS on every connection
+(ipv4.ignore-auto-dns and ipv6.ignore-auto-dns), because per-link DNS
+would otherwise shadow the global NextDNS servers; the task checks that
+nmcli exists before touching NetworkManager. All commands (the
+NetworkManager check, list and modify templates, the resolver restart,
+the state query and the verification query) come from the
+nextdns_setup_system_wide config table.
 
 Verification: the task proves that the machine actually resolves through
 the profile the way NextDNS recommends. resolvectl status must list the

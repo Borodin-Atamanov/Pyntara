@@ -69,13 +69,14 @@ def _dropin_path(cfg: NextdnsSetupSystemWideConfig) -> Path:
 def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
     """The directive lines of the drop-in for a profile, in order.
 
-    DNS= lists the DoT servers with the TLS name, FallbackDNS= the
-    servers that answer when NextDNS is unreachable, DNSOverTLS= the
-    configured mode and the Domains directive routes every query through
-    the global resolver. Every line is a single directive with a unique
-    key, so the shared merge replaces the whole directive value instead
-    of stacking duplicate keys. The values come from the config: the
-    endpoint addresses and the dot format from nextdns_setup_system_wide.
+    The first directive lists the DoT servers with the TLS name, the
+    second the servers that answer when NextDNS is unreachable, the third
+    the DNSOverTLS mode and the fourth the Domains value that routes every
+    query through the global resolver. Every line is a single directive
+    whose key comes from cfg.directive_keys, so the shared merge replaces
+    the whole directive value instead of stacking duplicate keys. The
+    values come from the config: the endpoint addresses and the dot
+    format from nextdns_setup_system_wide.
     """
 
     servers = resolve_servers(
@@ -84,11 +85,12 @@ def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tupl
         cfg.ipv6_prefixes,
         cfg.dot_endpoint_format,
     )
+    dns_key, fallback_key, tls_key, domains_key = cfg.directive_keys
     return (
-        f"DNS={' '.join(servers)}",
-        f"FallbackDNS={' '.join(cfg.fallback_dns)}",
-        f"DNSOverTLS={cfg.dns_over_tls}",
-        f"Domains={cfg.domains_directive}",
+        f"{dns_key}={' '.join(servers)}",
+        f"{fallback_key}={' '.join(cfg.fallback_dns)}",
+        f"{tls_key}={cfg.dns_over_tls}",
+        f"{domains_key}={cfg.domains_directive}",
     )
 
 
@@ -142,34 +144,39 @@ def _write_dropin(
         return False, f"cannot write the drop-in {dropin}: {exc}"
 
 
-def _nmcli_present(timeout: float) -> bool:
-    """True when the nmcli command is available.
+def _nmcli_present(cfg: NextdnsSetupSystemWideConfig) -> bool:
+    """True when NetworkManager is available.
 
-    Kubuntu ships NetworkManager, but the check keeps the task safe on a
-    system without it: the global resolved configuration then stands
-    alone and per-link DNS is left as is.
+    The check command comes from the config; Kubuntu ships
+    NetworkManager, but the check keeps the task safe on a system without
+    it: the global resolved configuration then stands alone and per-link
+    DNS is left as is.
     """
 
     result = run_command(
-        ["nmcli", "--version"], check=False, capture=True, timeout=timeout
+        cfg.nmcli_check_command,
+        check=False,
+        capture=True,
+        timeout=cfg.command_timeout_seconds,
     )
     return result.returncode == 0
 
 
-def _nm_connections(timeout: float) -> list[str]:
+def _nm_connections(cfg: NextdnsSetupSystemWideConfig) -> list[str]:
     """Names of every NetworkManager connection profile.
 
     A connection profile is the unit that carries ipv4.ignore-auto-dns
     and ipv6.ignore-auto-dns; the task sets the flags on all of them, so
     no DHCP-issued per-link DNS shadows the global NextDNS servers. The
-    name is the first colon-separated field of every line.
+    name is the first colon-separated field of every line of the list
+    command output, which comes from the config.
     """
 
     result = run_command(
-        ["nmcli", "-t", "-f", "NAME", "connection", "show"],
+        cfg.nmcli_list_command,
         check=False,
         capture=True,
-        timeout=timeout,
+        timeout=cfg.command_timeout_seconds,
     )
     if result.returncode != 0:
         return []
@@ -184,27 +191,23 @@ def _nm_set_dns_flags(cfg: NextdnsSetupSystemWideConfig, enabled: bool) -> bool:
     or fully restored. The task never touches other NetworkManager
     settings. A single failed connection does not fail the whole task:
     the others are still configured and the failure is reported through
-    the return value.
+    the return value. The modify command template comes from the config
+    and carries the {connection} and {value} placeholders.
     """
 
     timeout = cfg.command_timeout_seconds
-    if not _nmcli_present(timeout):
+    if not _nmcli_present(cfg):
         _log("NetworkManager not present, leaving per-link DNS untouched")
         return True
     value = "true" if enabled else "false"
     ok = True
-    for name in _nm_connections(timeout):
+    for name in _nm_connections(cfg):
+        command = [
+            part.replace("{connection}", name).replace("{value}", value)
+            for part in cfg.nmcli_modify_command
+        ]
         result = run_command(
-            [
-                "nmcli",
-                "connection",
-                "modify",
-                name,
-                "ipv4.ignore-auto-dns",
-                value,
-                "ipv6.ignore-auto-dns",
-                value,
-            ],
+            command,
             check=False,
             capture=True,
             timeout=timeout,
@@ -219,37 +222,42 @@ def _nm_set_dns_flags(cfg: NextdnsSetupSystemWideConfig, enabled: bool) -> bool:
     if ok:
         _log(
             f"NetworkManager: ignore-auto-dns {'enabled' if enabled else 'disabled'} "
-            f"on {len(_nm_connections(timeout))} connections"
+            f"on {len(_nm_connections(cfg))} connections"
         )
     return ok
 
 
-def _restart_resolved(timeout: float) -> str | None:
+def _restart_resolved(cfg: NextdnsSetupSystemWideConfig) -> str | None:
     """Restart systemd-resolved; error text on failure, None on success.
 
     The restart applies the drop-in immediately, so the verification that
-    follows tests the state the machine actually uses.
+    follows tests the state the machine actually uses. The command comes
+    from the config.
     """
 
     try:
         run_command(
-            ["systemctl", "restart", "systemd-resolved"], timeout=timeout
+            cfg.restart_resolved_command, timeout=cfg.command_timeout_seconds
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return f"cannot restart systemd-resolved: {exc}"
     return None
 
 
-def _resolved_servers(cfg: NextdnsSetupSystemWideConfig, timeout: float) -> tuple[bool, list[str]]:
+def _resolved_servers(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, list[str]]:
     """(ok, server lines) of the active resolver state.
 
-    The lines are the DNS server entries of resolvectl status, the state
-    the machine actually resolves through; an empty result or a nonzero
-    exit means the resolver state cannot be read.
+    The lines are the DNS server entries of the resolvectl status output
+    (the command comes from the config), the state the machine actually
+    resolves through; an empty result or a nonzero exit means the
+    resolver state cannot be read.
     """
 
     result = run_command(
-        ["resolvectl", "status"], check=False, capture=True, timeout=timeout
+        cfg.resolvectl_status_command,
+        check=False,
+        capture=True,
+        timeout=cfg.command_timeout_seconds,
     )
     if result.returncode != 0:
         return False, []
@@ -261,27 +269,27 @@ def _resolved_servers(cfg: NextdnsSetupSystemWideConfig, timeout: float) -> tupl
     return bool(lines), lines
 
 
-def _test_nextdns(cfg: NextdnsSetupSystemWideConfig, timeout: float) -> tuple[bool, str]:
-    """(ok, detail) of the test.nextdns.io check.
+def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
+    """(ok, detail) of the verification endpoint check.
 
     The endpoint is the NextDNS-recommended verification: it reports the
     state the query came through and the profile that answered. A JSON
     body with status ok proves the machine resolves through a NextDNS
-    profile; a nonzero curl exit, a non-JSON body or any other status
-    means the check failed, with the detail describing why.
+    profile; a nonzero exit, a non-JSON body or any other status means the
+    check failed, with the detail describing why. The command template
+    comes from the config and carries the {url} and {timeout} placeholders.
     """
 
+    timeout = cfg.command_timeout_seconds
+    command = [
+        part.replace("{url}", cfg.verification_url).replace(
+            "{timeout}", str(timeout)
+        )
+        for part in cfg.verification_command
+    ]
     try:
         result = run_command(
-            [
-                "curl",
-                "--fail",
-                "--silent",
-                "--show-error",
-                "--max-time",
-                str(timeout),
-                cfg.verification_url,
-            ],
+            command,
             check=False,
             capture=True,
             timeout=timeout,
@@ -312,11 +320,10 @@ def _verify(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
     profile.
     """
 
-    timeout = cfg.command_timeout_seconds
-    ok, _ = _resolved_servers(cfg, timeout)
+    ok, _ = _resolved_servers(cfg)
     if not ok:
         return False, "resolvectl status shows no DNS servers"
-    status_ok, detail = _test_nextdns(cfg, timeout)
+    status_ok, detail = _test_nextdns(cfg)
     if not status_ok:
         return False, detail
     return True, "resolver answers through the NextDNS profile"
@@ -342,7 +349,7 @@ def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
             "revert: cannot restore the NetworkManager DNS flags",
             priority=cfg.error_priority,
         )
-    error = _restart_resolved(cfg.command_timeout_seconds)
+    error = _restart_resolved(cfg)
     if error:
         _log(f"revert: {error}", priority=cfg.error_priority)
 
@@ -384,7 +391,6 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
-    timeout = cfg.command_timeout_seconds
     force = "nextdns_setup_system_wide" in ctx.force_tasks
 
     kp = _open_profile_vault(ctx)
@@ -436,7 +442,7 @@ def task(ctx: Context) -> TaskResult:
     if changed:
         _log(f"drop-in {dropin} written for profile {profile_id}")
 
-    restart_error = _restart_resolved(timeout)
+    restart_error = _restart_resolved(cfg)
     if restart_error:
         _revert(cfg)
         return TaskResult(success=False, changed=False, error=restart_error)

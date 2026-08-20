@@ -38,8 +38,15 @@ class NextdnsSetupSystemWideConfig:
     systemd-resolved, fallback_dns the servers that answer when NextDNS
     is unreachable. manage_networkmanager tells the task to clear per-link
     DNS in NetworkManager so the global NextDNS servers are actually
-    used. error_priority is the syslog priority of a serious failure,
-    command_timeout_seconds the ceiling of a verification command.
+    used. directive_keys are the drop-in directive keys the task owns;
+    nmcli_check_command, nmcli_list_command and nmcli_modify_command the
+    NetworkManager commands (the modify command carries the {connection}
+    and {value} placeholders), restart_resolved_command the resolver
+    restart, resolvectl_status_command the state query and
+    verification_command the endpoint query (with the {url} and
+    {timeout} placeholders). error_priority is the syslog priority of a
+    serious failure, command_timeout_seconds the ceiling of a
+    verification command.
     """
 
     vault_group_title: str
@@ -55,6 +62,13 @@ class NextdnsSetupSystemWideConfig:
     verification_url: str
     dns_over_tls: str
     fallback_dns: tuple[str, ...]
+    directive_keys: tuple[str, ...]
+    nmcli_check_command: tuple[str, ...]
+    nmcli_list_command: tuple[str, ...]
+    nmcli_modify_command: tuple[str, ...]
+    restart_resolved_command: tuple[str, ...]
+    resolvectl_status_command: tuple[str, ...]
+    verification_command: tuple[str, ...]
     manage_networkmanager: bool
     error_priority: int
     command_timeout_seconds: int
@@ -67,10 +81,12 @@ def _nextdns_setup_system_wide_table(
 
     Every value is required and typed: the vault group title, the drop-in
     directory, file name and the section/header strings are non-empty,
-    the drop-in mode is an octal string, ipv4_servers, ipv6_prefixes and
-    fallback_dns are non-empty arrays of non-empty strings,
-    dot_endpoint_format must carry the {profile_id} placeholder, dns
-    _over_tls is one of the DNSOverTLS vocabulary,
+    the drop-in mode is an octal string, ipv4_servers, ipv6_prefixes,
+    fallback_dns, directive_keys and every command array are non-empty
+    arrays of non-empty strings, dot_endpoint_format must carry the
+    {profile_id} placeholder, nmcli_modify_command the {connection} and
+    {value} placeholders, verification_command the {url} and {timeout}
+    placeholders, dns_over_tls is one of the DNSOverTLS vocabulary,
     manage_networkmanager is a boolean, the priority and timeout are
     integers within their ranges.
     """
@@ -142,6 +158,23 @@ def _nextdns_setup_system_wide_table(
             f"{', '.join(DNS_OVER_TLS_VALUES)}"
         )
     fallback_dns = _string_list_field("fallback_dns")
+    directive_keys = _string_list_field("directive_keys")
+    nmcli_check_command = _string_list_field("nmcli_check_command")
+    nmcli_list_command = _string_list_field("nmcli_list_command")
+    nmcli_modify_command = _string_list_field("nmcli_modify_command")
+    if "{connection}" not in nmcli_modify_command or "{value}" not in nmcli_modify_command:
+        raise ConfigError(
+            "nextdns_setup_system_wide.nmcli_modify_command must contain "
+            "the {connection} and {value} placeholders"
+        )
+    restart_resolved_command = _string_list_field("restart_resolved_command")
+    resolvectl_status_command = _string_list_field("resolvectl_status_command")
+    verification_command = _string_list_field("verification_command")
+    if "{url}" not in verification_command or "{timeout}" not in verification_command:
+        raise ConfigError(
+            "nextdns_setup_system_wide.verification_command must contain "
+            "the {url} and {timeout} placeholders"
+        )
     manage_networkmanager = raw.get("manage_networkmanager")
     if not isinstance(manage_networkmanager, bool):
         raise ConfigError(
@@ -176,6 +209,13 @@ def _nextdns_setup_system_wide_table(
         verification_url=verification_url,
         dns_over_tls=dns_over_tls,
         fallback_dns=fallback_dns,
+        directive_keys=directive_keys,
+        nmcli_check_command=nmcli_check_command,
+        nmcli_list_command=nmcli_list_command,
+        nmcli_modify_command=nmcli_modify_command,
+        restart_resolved_command=restart_resolved_command,
+        resolvectl_status_command=resolvectl_status_command,
+        verification_command=verification_command,
         manage_networkmanager=manage_networkmanager,
         error_priority=error_priority,
         command_timeout_seconds=command_timeout_seconds,

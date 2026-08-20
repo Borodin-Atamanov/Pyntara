@@ -70,6 +70,29 @@ fallback_dns = [
 # serve the machine instead of being shadowed by per-link DNS. The task
 # checks that nmcli exists before touching NetworkManager.
 manage_networkmanager = true
+# Names of the drop-in directive keys the task owns: a line whose key
+# equals one of these is replaced by the merge, every other line survives.
+directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]
+# Command that checks whether NetworkManager is present; a zero exit means
+# it is. The first token is the executable.
+nmcli_check_command = ["nmcli", "--version"]
+# Command that lists every NetworkManager connection profile name; the
+# first colon-separated field of every output line is the connection name.
+nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
+# Command template that sets the ignore-auto-dns flags on one connection.
+# The {connection} placeholder is replaced with the connection name and
+# {value} with true or false; the command runs with the same value for
+# ipv4.ignore-auto-dns and ipv6.ignore-auto-dns.
+nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
+# Command that restarts systemd-resolved so the drop-in takes effect.
+restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
+# Command that prints the active resolver state; the server lines carry
+# the DNS directive and the verification checks them.
+resolvectl_status_command = ["resolvectl", "status"]
+# Command that queries the verification endpoint. The {url} placeholder is
+# replaced with verification_url and {timeout} with the command timeout in
+# seconds; the output is a JSON body with a status field.
+verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Seconds a verification command may run before it is killed.

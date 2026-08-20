@@ -28,6 +28,41 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     assert section.verification_url == "https://test.nextdns.io/"
     assert section.dns_over_tls == "opportunistic"
     assert section.fallback_dns == ("1.1.1.1", "8.8.8.8", "9.9.9.9")
+    assert section.directive_keys == ("DNS", "FallbackDNS", "DNSOverTLS", "Domains")
+    assert section.nmcli_check_command == ("nmcli", "--version")
+    assert section.nmcli_list_command == (
+        "nmcli",
+        "-t",
+        "-f",
+        "NAME",
+        "connection",
+        "show",
+    )
+    assert section.nmcli_modify_command == (
+        "nmcli",
+        "connection",
+        "modify",
+        "{connection}",
+        "ipv4.ignore-auto-dns",
+        "{value}",
+        "ipv6.ignore-auto-dns",
+        "{value}",
+    )
+    assert section.restart_resolved_command == (
+        "systemctl",
+        "restart",
+        "systemd-resolved",
+    )
+    assert section.resolvectl_status_command == ("resolvectl", "status")
+    assert section.verification_command == (
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        "{timeout}",
+        "{url}",
+    )
     assert section.manage_networkmanager is True
     assert section.error_priority == 3
     assert section.command_timeout_seconds == 60
@@ -56,6 +91,13 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             '    "8.8.8.8",\n'
             '    "9.9.9.9",\n'
             "]\n"
+            'directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]\n'
+            'nmcli_check_command = ["nmcli", "--version"]\n'
+            'nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]\n'
+            'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
+            'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
+            'resolvectl_status_command = ["resolvectl", "status"]\n'
+            'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
             "manage_networkmanager = true\n"
             "error_priority = 3\n"
             "command_timeout_seconds = 60\n",
@@ -126,6 +168,26 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             '    "9.9.9.9",\n'
             "]",
             "fallback_dns = [1]",
+        ),
+        # directive_keys is empty
+        lambda c: c.replace(
+            'directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]',
+            "directive_keys = []",
+        ),
+        # nmcli_modify_command lacks the {connection} placeholder
+        lambda c: c.replace(
+            'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]',
+            'nmcli_modify_command = ["nmcli", "connection", "modify", "fixed"]',
+        ),
+        # verification_command lacks the {url} placeholder
+        lambda c: c.replace(
+            'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]',
+            'verification_command = ["curl", "--silent"]',
+        ),
+        # restart_resolved_command is empty
+        lambda c: c.replace(
+            'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]',
+            "restart_resolved_command = []",
         ),
         # manage_networkmanager is a string, not a boolean
         lambda c: c.replace(

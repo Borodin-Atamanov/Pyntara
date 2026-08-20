@@ -152,6 +152,13 @@ def base_config() -> str:
         '    "8.8.8.8",\n'
         '    "9.9.9.9",\n'
         "]\n"
+        'directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]\n'
+        'nmcli_check_command = ["nmcli", "--version"]\n'
+        'nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]\n'
+        'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
+        'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
+        'resolvectl_status_command = ["resolvectl", "status"]\n'
+        'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
         "manage_networkmanager = true\n"
         "error_priority = 3\n"
         "command_timeout_seconds = 60\n"
