@@ -21,6 +21,7 @@ from pyntara.config import (
     EngineConfig,
     I2pdServiceSetupConfig,
     LocalVaultSetupConfig,
+    NextdnsSetupSystemWideConfig,
     SshClientSetupConfig,
     SshDaemonSetupConfig,
     SshDirective,
@@ -376,6 +377,21 @@ def make_config(
     local_vault_pass_dir_mode: int = 0o700,
     local_vault_pass_file_mode: int = 0o400,
     local_vault_error_priority: int = 3,
+    nextdns_vault_group_title: str = "NextDNS",
+    nextdns_resolved_conf_dir: Path = Path("/etc/systemd/resolved.conf.d"),
+    nextdns_dropin_file_name: str = "pyntara.conf",
+    nextdns_dropin_file_mode: int = 0o644,
+    nextdns_dns_over_tls: str = "opportunistic",
+    nextdns_fallback_dns: tuple[str, ...] = (
+        "1.1.1.1",
+        "1.0.0.1",
+        "9.9.9.9",
+        "2606:4700:4700::1111",
+        "2620:fe::fe",
+    ),
+    nextdns_manage_networkmanager: bool = True,
+    nextdns_error_priority: int = 3,
+    nextdns_command_timeout_seconds: int = 60,
     vault_entries: tuple[tuple[str, str], ...] = (
         ("password_salt", "Salt for deterministic password derivation."),
         ("pyntara_local_vault_password", "Password for the runtime secret vault."),
@@ -577,6 +593,17 @@ def make_config(
                 VaultEntry(title=title, notes=notes)
                 for title, notes in vault_entries
             )
+        ),
+        nextdns_setup_system_wide=NextdnsSetupSystemWideConfig(
+            vault_group_title=nextdns_vault_group_title,
+            resolved_conf_dir=nextdns_resolved_conf_dir,
+            dropin_file_name=nextdns_dropin_file_name,
+            dropin_file_mode=nextdns_dropin_file_mode,
+            dns_over_tls=nextdns_dns_over_tls,
+            fallback_dns=nextdns_fallback_dns,
+            manage_networkmanager=nextdns_manage_networkmanager,
+            error_priority=nextdns_error_priority,
+            command_timeout_seconds=nextdns_command_timeout_seconds,
         ),
         local_vault_setup=LocalVaultSetupConfig(
             source_vault_production=local_vault_source_production,

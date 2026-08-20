@@ -32,6 +32,11 @@ I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
 # the log levels tor accepts in its configuration file.
 TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
 
+# Allowed values of nextdns_setup_system_wide.dns_over_tls. The vocabulary
+# is part of the config contract and therefore validated here, like MODES;
+# the values are the DNSOverTLS modes systemd-resolved accepts.
+DNS_OVER_TLS_VALUES: tuple[str, ...] = ("yes", "opportunistic", "no")
+
 # URI schemes yggdrasil accepts in Listen: wss is not a listener (the
 # source rejects it), socks and sockstls are outgoing-only.
 YGGDRASIL_LISTEN_SCHEMES: tuple[str, ...] = ("tcp", "tls", "quic", "ws", "unix")

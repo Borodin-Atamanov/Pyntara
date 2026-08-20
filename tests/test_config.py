@@ -175,6 +175,17 @@ value = "any"
 name = "CheckHostIP"
 value = "no"
 
+[nextdns_setup_system_wide]
+vault_group_title = "NextDNS"
+resolved_conf_dir = "/etc/systemd/resolved.conf.d"
+dropin_file_name = "pyntara.conf"
+dropin_file_mode = "0644"
+dns_over_tls = "opportunistic"
+fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]
+manage_networkmanager = true
+error_priority = 3
+command_timeout_seconds = 60
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2

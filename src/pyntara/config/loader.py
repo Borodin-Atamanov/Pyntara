@@ -11,6 +11,10 @@ from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
 from .cli_tools import CliToolsConfig, _cli_tools_table
 from .engine import EngineConfig, _engine_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
+from .nextdns_setup_system_wide import (
+    NextdnsSetupSystemWideConfig,
+    _nextdns_setup_system_wide_table,
+)
 from .ssh import (
     SshClientSetupConfig,
     SshDaemonSetupConfig,
@@ -56,6 +60,7 @@ class Config:
     tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
+    nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
@@ -131,6 +136,9 @@ def load_config(path: Path) -> Config:
         tor_setup=_tor_setup_table(data.get("tor_setup")),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
         ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
+        nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
+            data.get("nextdns_setup_system_wide")
+        ),
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

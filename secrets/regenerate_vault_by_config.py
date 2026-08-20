@@ -84,7 +84,6 @@ from pyntara.config.loader import render_config_source
 VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
 
 CONFIG_PATH = REPO_ROOT / "config"
-
 EXIT_OK = 0
 EXIT_ERROR = 1
 
@@ -175,6 +174,61 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
             fields[name] = value
         entries.append(fields)
     return entries
+
+
+def load_vault_groups(config_path: Path) -> list[dict[str, str]]:
+    """Read the [vault_structure] groups array of config.toml.
+
+    A group is a table with a unique non-empty title and a non-empty notes
+    field, validated the same way as an entry. The groups describe data
+    subgroups (NextDNS accounts) that the tooling creates but never fills
+    or deletes.
+    """
+
+    if not config_path.exists():
+        raise ScriptError(f"config file not found: {config_path}")
+    try:
+        data = tomllib.loads(render_config_source(config_path))
+    except ConfigError as exc:
+        raise ScriptError(str(exc)) from None
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ScriptError(f"cannot read config file {config_path}: {exc}") from exc
+    table = data.get("vault_structure")
+    if not isinstance(table, dict):
+        raise ScriptError("[vault_structure] section is missing or not a table")
+    groups_raw = table.get("groups")
+    if groups_raw is None:
+        return []
+    if not isinstance(groups_raw, list):
+        raise ScriptError("[vault_structure] groups must be an array of tables")
+    groups: list[dict[str, str]] = []
+    seen_titles: set[str] = set()
+    for index, group_raw in enumerate(groups_raw):
+        if not isinstance(group_raw, dict):
+            raise ScriptError(f"[vault_structure] group {index + 1} must be a table")
+        unknown = sorted(name for name in group_raw if name not in VAULT_FIELD_NAMES)
+        if unknown:
+            raise ScriptError(
+                f"[vault_structure] group {index + 1} names unknown field(s) "
+                f"{', '.join(unknown)}; expected one of "
+                f"{', '.join(VAULT_FIELD_NAMES)}"
+            )
+        title = group_raw.get("title")
+        if not isinstance(title, str) or not title:
+            raise ScriptError(
+                f"[vault_structure] group {index + 1}: title must be a "
+                "non-empty string"
+            )
+        if title in seen_titles:
+            raise ScriptError(f"[vault_structure] duplicate group title: {title}")
+        seen_titles.add(title)
+        notes = group_raw.get("notes")
+        if not isinstance(notes, str) or not notes:
+            raise ScriptError(
+                f"[vault_structure] group {title}: notes must be a non-empty string"
+            )
+        groups.append({"title": title, "notes": notes})
+    return groups
 
 
 def resolve_password(vault_path: Path, environ: Mapping[str, str]) -> str | None:
@@ -270,6 +324,36 @@ def _add_entry(kp: PyKeePass, fields: dict[str, str]) -> None:
     )
 
 
+def _add_group(kp: PyKeePass, group: dict[str, str]) -> None:
+    """Create one data subgroup named by the config.
+
+    The group is created under the root with the configured title and
+    notes. It is never filled: the entries inside are data maintained
+    directly in the vault databases, so a regeneration cannot lose or
+    invent accounts.
+    """
+
+    kp.add_group(kp.root_group, group["title"], notes=group["notes"])
+
+
+def _ensure_group(
+    kp: PyKeePass, group: dict[str, str], vault_path: Path
+) -> bool:
+    """Create the configured subgroup when it is missing; True when created.
+
+    The title is the identity of the group, so an existing group with the
+    same title is kept untouched, including its entries.
+    """
+
+    title = group["title"]
+    if kp.find_groups(name=title, first=True) is not None:
+        print(f"group {title!r}: present, keeping")
+        return False
+    _add_group(kp, group)
+    print(f"group {title!r}: created")
+    return True
+
+
 def _report_empty_entries(entries: list[dict[str, str]]) -> None:
     """List the entries without a password value; they need manual filling."""
 
@@ -282,9 +366,17 @@ def _report_empty_entries(entries: list[dict[str, str]]) -> None:
 
 
 def _recreate(
-    vault_path: Path, entries: list[dict[str, str]], password: str
+    vault_path: Path,
+    entries: list[dict[str, str]],
+    groups: list[dict[str, str]],
+    password: str,
 ) -> int:
-    """Create or recreate the vault from the config entries."""
+    """Create or recreate the vault from the config entries.
+
+    The root entries come first, then the configured subgroups are created
+    empty, because the accounts inside are data maintained directly in the
+    vault databases.
+    """
 
     tmp_path = _temp_path(vault_path)
     try:
@@ -292,6 +384,8 @@ def _recreate(
         for fields in entries:
             print(f"adding entry: {fields['title']}")
             _add_entry(kp, fields)
+        for group in groups:
+            _add_group(kp, group)
         _save_and_swap(kp, tmp_path, vault_path, password)
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -301,9 +395,17 @@ def _recreate(
 
 
 def _update(
-    vault_path: Path, entries: list[dict[str, str]], password: str
+    vault_path: Path,
+    entries: list[dict[str, str]],
+    groups: list[dict[str, str]],
+    password: str,
 ) -> int:
-    """Add the entries missing from the root group; keep everything else."""
+    """Add the entries and groups missing; keep everything else.
+
+    Entries missing from the root group are added, the configured
+    subgroups are created when absent. The entries inside an existing
+    subgroup are never touched, so the accounts survive the update.
+    """
 
     try:
         kp = PyKeePass(str(vault_path), password=password)
@@ -334,6 +436,8 @@ def _update(
                 "group per the flat structure"
             )
         missing.append(fields)
+    for group in groups:
+        _ensure_group(kp, group, vault_path)
     if not missing:
         print("state: the vault already matches the structure, no changes")
         return EXIT_OK
@@ -362,7 +466,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"vault: {vault_path}")
     try:
         entries = load_vault_entries(CONFIG_PATH)
-        print(f"config: {CONFIG_PATH}, {len(entries)} entries in [vault_structure]")
+        groups = load_vault_groups(CONFIG_PATH)
+        print(
+            f"config: {CONFIG_PATH}, {len(entries)} entries, "
+            f"{len(groups)} groups in [vault_structure]"
+        )
         password = resolve_password(vault_path, os.environ)
         if password is None:
             raise ScriptError(
@@ -371,15 +479,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         if not vault_path.exists():
             print("state: the vault file is absent, recreating from the config")
-            return _recreate(vault_path, entries, password)
+            return _recreate(vault_path, entries, groups, password)
         if vault_path.stat().st_size == 0:
             print("state: the vault file is empty, recreating from the config")
-            return _recreate(vault_path, entries, password)
+            return _recreate(vault_path, entries, groups, password)
         if args.overwrite:
             print("state: --overwrite given, recreating from the config")
-            return _recreate(vault_path, entries, password)
+            return _recreate(vault_path, entries, groups, password)
         print("state: the vault file exists, updating missing entries")
-        return _update(vault_path, entries, password)
+        return _update(vault_path, entries, groups, password)
     except ScriptError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR

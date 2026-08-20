@@ -7,6 +7,14 @@
 # the vault. The keys of every entry map one-to-one to the KeePass entry
 # field names; the notes field of every entry explains what is stored
 # there, who consumes it and why.
+#
+# One optional subgroup is part of the structure: NextDNS. It carries the
+# per-profile NextDNS accounts, one entry per profile, the username field
+# holding the 6-hex profile ID and the title pairing the ID with a
+# proquint name. The subgroup is data, not structure: the regeneration
+# tooling creates the group but never fills or deletes its entries, so
+# the accounts survive every regenration run. Consumed by the
+# nextdns_setup_system_wide task, which picks one profile per machine.
 [vault_structure]
 
 [[vault_structure.entries]]
@@ -16,3 +24,7 @@ notes = "Password that protects the runtime secret vault at /var/lib/pyntara/sec
 [[vault_structure.entries]]
 title = "google_script_key"
 notes = "Credentials of the System Metrics Google Drive web app. The username field carries the Apps Script project script ID, the url field carries the web app deployment endpoint (from which the deployment ID is derived), the password field carries the shared auth key that the deployed script mirrors into its ALLOWED_KEYS list. Consumed by the Google script deploy helper and by the System Metrics client. The default vault carries well-known test values mirroring its well-known vault password."
+
+[[vault_structure.groups]]
+title = "NextDNS"
+notes = "NextDNS profile accounts, one entry per profile. The username field holds the 6-hex profile ID, the title pairs the ID with a proquint name, other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the accounts survive every vault regeneration. Consumed by the nextdns_setup_system_wide task, which derives one profile per machine hostname."

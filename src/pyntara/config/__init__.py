@@ -16,6 +16,7 @@ loads the config once and hands it to every task through Context.
 from __future__ import annotations
 
 from ._fields import (
+    DNS_OVER_TLS_VALUES,
     I2PD_LOG_LEVELS,
     MODES,
     SEND_ORDERS,
@@ -29,6 +30,7 @@ from .cli_tools import CliToolsConfig
 from .engine import EngineConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .loader import Config, load_config
+from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
@@ -47,6 +49,7 @@ from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
 __all__ = [
+    "DNS_OVER_TLS_VALUES",
     "I2PD_LOG_LEVELS",
     "MODES",
     "SEND_ORDERS",
@@ -61,6 +64,7 @@ __all__ = [
     "EngineConfig",
     "I2pdServiceSetupConfig",
     "LocalVaultSetupConfig",
+    "NextdnsSetupSystemWideConfig",
     "SshClientSetupConfig",
     "SshDaemonSetupConfig",
     "SshDirective",

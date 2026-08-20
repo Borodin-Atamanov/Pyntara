@@ -134,6 +134,16 @@ def base_config() -> str:
         'ssh_config_path = "/etc/ssh/ssh_config"\n'
         'ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"\n'
         'dropin_file_mode = "0644"\n'
+        "[nextdns_setup_system_wide]\n"
+        'vault_group_title = "NextDNS"\n'
+        'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
+        'dropin_file_name = "pyntara.conf"\n'
+        'dropin_file_mode = "0644"\n'
+        'dns_over_tls = "opportunistic"\n'
+        'fallback_dns = ["1.1.1.1", "1.0.0.1", "9.9.9.9"]\n'
+        "manage_networkmanager = true\n"
+        "error_priority = 3\n"
+        "command_timeout_seconds = 60\n"
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

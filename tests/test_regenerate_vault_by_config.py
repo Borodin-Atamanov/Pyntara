@@ -32,6 +32,10 @@ DEFAULT_ENTRIES: list[dict[str, Any]] = [
     },
 ]
 
+DEFAULT_GROUPS: list[dict[str, Any]] = [
+    {"title": "NextDNS", "notes": "NextDNS profile accounts."},
+]
+
 VAULT_PASSWORD = "vault-secret"
 
 
@@ -75,10 +79,19 @@ def _isolate_environment(
     monkeypatch.setattr(gen, "getpass", _FakeGetpass())
 
 
-def _write_config(tmp_path: Path, entries: list[dict[str, Any]]) -> Path:
+def _write_config(
+    tmp_path: Path,
+    entries: list[dict[str, Any]],
+    groups: list[dict[str, Any]] | None = None,
+) -> Path:
     """A minimal config.toml whose [vault_structure] carries the entries."""
 
     lines = ["[vault_structure]"]
+    for group in groups or []:
+        lines.append("")
+        lines.append("[[vault_structure.groups]]")
+        for name, value in group.items():
+            lines.append(f"{name} = {json.dumps(value)}")
     for entry in entries:
         lines.append("")
         lines.append("[[vault_structure.entries]]")
@@ -95,12 +108,15 @@ def _prepare(
     monkeypatch: pytest.MonkeyPatch,
     *,
     entries: list[dict[str, Any]] | None = None,
+    groups: list[dict[str, Any]] | None = None,
     env_password: str | None = VAULT_PASSWORD,
 ) -> None:
     """Point the script at a temp config and set the password source."""
 
     config_path = _write_config(
-        tmp_path, entries if entries is not None else DEFAULT_ENTRIES
+        tmp_path,
+        entries if entries is not None else DEFAULT_ENTRIES,
+        groups if groups is not None else DEFAULT_GROUPS,
     )
     monkeypatch.setattr(gen, "CONFIG_PATH", config_path)
     if env_password is not None:
@@ -470,3 +486,73 @@ def test_help_without_arguments(
     # With no arguments the script prints its usage help and exits cleanly.
     assert gen.main([]) == gen.EXIT_OK
     assert "usage" in capsys.readouterr().out.lower()
+
+
+def test_creates_configured_group(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A configured subgroup is created empty on a fresh vault.
+    _prepare(gen, tmp_path, monkeypatch)
+    vault_path = tmp_path / "default.vault"
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group = kp.find_groups(name="NextDNS", first=True)
+    assert group is not None
+    assert group.notes == "NextDNS profile accounts."
+    assert len(group.entries) == 0
+
+
+def test_update_creates_missing_group_and_keeps_entries(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An update adds the configured subgroup when absent; an existing
+    # subgroup with its entries is never touched.
+    _prepare(gen, tmp_path, monkeypatch)
+    vault_path = tmp_path / "vault.kdbx"
+    create_database(str(vault_path), password=VAULT_PASSWORD)
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group = kp.add_group(kp.root_group, "NextDNS", notes="old notes")
+    kp.add_entry(group, "aaaaaa profile", "aaaaaa", "")
+    kp.save()
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp2 = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group2 = kp2.find_groups(name="NextDNS", first=True)
+    assert group2 is not None
+    assert group2.notes == "old notes"
+    assert [entry.username for entry in group2.entries] == ["aaaaaa"]
+
+
+def test_overwrite_recreates_group_empty(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # --overwrite discards the database and rebuilds the configured group
+    # empty, because the accounts are data, not structure.
+    _prepare(gen, tmp_path, monkeypatch)
+    vault_path = tmp_path / "vault.kdbx"
+    create_database(str(vault_path), password="old-password")
+    kp = PyKeePass(str(vault_path), password="old-password")
+    group = kp.add_group(kp.root_group, "NextDNS")
+    kp.add_entry(group, "aaaaaa profile", "", "aaaaaa")
+    kp.save()
+    assert gen.main([str(vault_path), "--overwrite"]) == gen.EXIT_OK
+    kp2 = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group2 = kp2.find_groups(name="NextDNS", first=True)
+    assert group2 is not None
+    assert len(group2.entries) == 0
+
+
+def test_duplicate_group_title_in_config_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _prepare(
+        gen,
+        tmp_path,
+        monkeypatch,
+        groups=[
+            {"title": "NextDNS", "notes": "first"},
+            {"title": "NextDNS", "notes": "second"},
+        ],
+    )
+    vault_path = tmp_path / "default.vault"
+    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
+    assert not vault_path.exists()
