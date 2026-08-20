@@ -41,6 +41,11 @@ PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the t
 PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that cli_tools and add_extra_repos run before package operations. Omit it in real runs so the index stays fresh; set it for test or offline runs.
 PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
 
+Approved fixed machine contracts (recorded user approvals):
+
+1. REPO_ROOT of every task module (Path(__file__).resolve().parents[3]): the repository clone location. It is a repository layout path and is monkeypatched by the tests (docs/guides/developer-guide.md); the source vault paths of local_vault_setup are resolved against it.
+2. The NextDNS service endpoint addresses used by nextdns_setup_system_wide: the IPv4 anycast servers 45.90.28.0 and 45.90.30.0, the IPv6 prefixes 2a07:a8c0 and 2a07:a8c1, the DoT endpoint pattern <id>.dns.nextdns.io and the verification endpoint https://test.nextdns.io/. They are an external API contract of the NextDNS service, not a behavior of the installer, so they live in pyntara.nextdns (docs/spec/networking.md) and are covered by the module tests.
+
 ## 4. Context contract
 
 Context in context.py is a frozen dataclass. It is the only carrier for cross-cutting runtime dependencies:

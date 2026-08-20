@@ -120,3 +120,95 @@ def test_add_line_to_file_missing_file_is_not_created(tmp_path: Path) -> None:
     path = tmp_path / "config.conf"
     assert add_line_to_file(path, "b = 2") is False
     assert not path.exists()
+
+
+def test_sync_directives_creates_file_with_header_section_and_directives(
+    tmp_path: Path,
+) -> None:
+    # A missing file is created with the header, the section and the
+    # directives in order.
+    from pyntara.config_edit import sync_directives_by_key
+
+    path = tmp_path / "dropin.conf"
+    assert (
+        sync_directives_by_key(
+            path,
+            ("DNS=1.1.1.1", "DNSOverTLS=yes"),
+            "# managed",
+            "[Resolve]",
+        )
+        is True
+    )
+    assert path.read_text(encoding="utf-8") == (
+        "# managed\n[Resolve]\nDNS=1.1.1.1\nDNSOverTLS=yes\n"
+    )
+
+
+def test_sync_directives_replaces_by_key_and_keeps_foreign_lines(
+    tmp_path: Path,
+) -> None:
+    # A directive with the same key is replaced, a foreign line and a
+    # commented line survive, and a missing directive is appended.
+    from pyntara.config_edit import sync_directives_by_key
+
+    path = tmp_path / "dropin.conf"
+    path.write_text(
+        "# managed\n[Resolve]\nDNS=old\nFallbackDNS=9.9.9.9\nCache=no\n",
+        encoding="utf-8",
+    )
+    assert (
+        sync_directives_by_key(
+            path,
+            ("DNS=1.1.1.1", "DNSOverTLS=yes"),
+            "# managed",
+            "[Resolve]",
+        )
+        is True
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "DNS=1.1.1.1\n" in content
+    assert "DNS=old\n" not in content
+    assert "FallbackDNS=9.9.9.9\n" in content
+    assert "Cache=no\n" in content
+    assert "DNSOverTLS=yes\n" in content
+
+
+def test_sync_directives_does_not_clobber_similar_keys(tmp_path: Path) -> None:
+    # Replacing DNS= must never touch FallbackDNS=, even though the key
+    # FallbackDNS contains the substring DNS: the merge compares the full
+    # key before the equals sign.
+    from pyntara.config_edit import sync_directives_by_key
+
+    path = tmp_path / "dropin.conf"
+    path.write_text(
+        "# managed\n[Resolve]\nFallbackDNS=9.9.9.9\nDNS=old\n",
+        encoding="utf-8",
+    )
+    sync_directives_by_key(
+        path,
+        ("DNS=1.1.1.1",),
+        "# managed",
+        "[Resolve]",
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "FallbackDNS=9.9.9.9\n" in content
+    assert "DNS=1.1.1.1\n" in content
+    assert "DNS=old\n" not in content
+
+
+def test_sync_directives_returns_false_when_unchanged(tmp_path: Path) -> None:
+    # A file that already matches the directives is not rewritten.
+    from pyntara.config_edit import sync_directives_by_key
+
+    path = tmp_path / "dropin.conf"
+    path.write_text(
+        "# managed\n[Resolve]\nDNS=1.1.1.1\n", encoding="utf-8"
+    )
+    before = path.read_bytes()
+    assert (
+        sync_directives_by_key(
+            path, ("DNS=1.1.1.1",), "# managed", "[Resolve]"
+        )
+        is False
+    )
+    assert path.read_bytes() == before

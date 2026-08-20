@@ -35,16 +35,20 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 from pathlib import Path
 
 from pykeepass import PyKeePass
 
+from pyntara import metrics
 from pyntara.config import NextdnsSetupSystemWideConfig
+from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.nextdns import resolve_servers, select_profile_id
+from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import run_command
 
 # Module-level path constant is monkeypatched by the tests, which run
@@ -72,8 +76,8 @@ def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tupl
     servers that answer when NextDNS is unreachable, DNSOverTLS= the
     configured mode and Domains=~ routes every query through the global
     resolver. Every line is a single directive with a unique key, so the
-    merge in _write_dropin can replace the whole directive value instead
-    of stacking duplicate keys.
+    shared merge replaces the whole directive value instead of stacking
+    duplicate keys.
     """
 
     return (
@@ -82,14 +86,6 @@ def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tupl
         f"DNSOverTLS={cfg.dns_over_tls}",
         "Domains=~.",
     )
-
-
-# Directive keys the task owns inside its drop-in: a line with one of these
-# keys is replaced, every other line (comments, Cache=, foreign settings)
-# is preserved by the merge.
-MANAGED_DIRECTIVE_KEYS: frozenset[str] = frozenset(
-    {"DNS", "FallbackDNS", "DNSOverTLS", "Domains"}
-)
 
 
 def _dropin_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
@@ -114,13 +110,11 @@ def _write_dropin(
 ) -> tuple[bool, str]:
     """Merge the managed directives into the drop-in; return (changed, error).
 
-    The directory is created when absent, the [Resolve] header and the
-    header comment are ensured, then every managed directive is replaced
-    by its key and the missing ones are appended. Foreign lines (comments
-    and settings the task does not own) are preserved as they are, so the
-    task never rewrites a file wholesale; a profile change replaces the
-    old DNS= line instead of stacking a second one. The file mode and the
-    root ownership are applied afterwards. An empty profile ID never
+    The shared directive merge creates the directory, ensures the [Resolve]
+    section and the header comment, replaces the managed directives by
+    their key and preserves every foreign line, so a profile change swaps
+    the old DNS= line instead of stacking a second one. The file mode and
+    the root ownership are applied afterwards. An empty profile ID never
     reaches the drop-in: it is rejected here, so the machine never gets a
     broken resolver configuration.
     """
@@ -130,39 +124,12 @@ def _write_dropin(
         return False, "no NextDNS profile selected"
     try:
         dropin.parent.mkdir(parents=True, exist_ok=True)
-        existing = (
-            dropin.read_text(encoding="utf-8").splitlines()
-            if dropin.exists()
-            else []
+        sync_directives_by_key(
+            dropin,
+            _directive_lines(cfg, profile_id),
+            DROPIN_HEADER,
+            RESOLVE_SECTION,
         )
-        kept: list[str] = []
-        has_header = False
-        has_section = False
-        for line in existing:
-            stripped = line.strip()
-            if stripped == DROPIN_HEADER:
-                has_header = True
-                kept.append(line)
-                continue
-            if stripped == RESOLVE_SECTION:
-                has_section = True
-                kept.append(line)
-                continue
-            if stripped.startswith("#"):
-                kept.append(line)
-                continue
-            key = stripped.split("=", 1)[0].strip()
-            if key in MANAGED_DIRECTIVE_KEYS:
-                continue
-            kept.append(line)
-        merged: list[str] = []
-        if not has_header:
-            merged.append(DROPIN_HEADER)
-        if not has_section:
-            merged.append(RESOLVE_SECTION)
-        merged.extend(_directive_lines(cfg, profile_id))
-        merged.extend(kept)
-        dropin.write_text("\n".join(merged) + "\n", encoding="utf-8")
         os.chmod(dropin, cfg.dropin_file_mode)
         if os.geteuid() == 0:
             os.chown(dropin, 0, 0)
@@ -373,22 +340,15 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
 
     The source vaults of the fresh clone are the primary source: the
     production vault is tried first, then the default vault, both with
-    the run password, exactly like the local_vault_setup task opens them
-    (docs/spec/secrets-model.md). The runtime vault is only the fallback
-    for a run without a vault password, because it is a copy made once
-    by local_vault_setup and may be stale: the source vaults always carry
-    the current profile group, the runtime copy may predate it.
+    the run password, through the shared open_source_vault of the
+    local_vault_setup task (docs/spec/secrets-model.md). The runtime
+    vault is only the fallback for a run without a vault password,
+    because it is a copy made once by local_vault_setup and may be stale:
+    the source vaults always carry the current profile group, the runtime
+    copy may predate it.
     """
 
-    from pyntara import metrics
-    from pyntara.tasks.local_vault_setup import (
-        _open_source_vault,
-        _resolve_source_vault,
-    )
-
-    source = _open_source_vault(
-        *_resolve_source_vault(ctx.config.local_vault_setup), ctx.vault_password
-    )
+    source = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
     if source is not None:
         return source[0]
     _log("source vaults unavailable, trying the runtime vault")
@@ -414,8 +374,6 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.nextdns_setup_system_wide
     timeout = cfg.command_timeout_seconds
     force = "nextdns_setup_system_wide" in ctx.force_tasks
-
-    import socket
 
     kp = _open_profile_vault(ctx)
     if kp is None:

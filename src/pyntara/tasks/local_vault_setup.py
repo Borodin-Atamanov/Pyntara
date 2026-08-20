@@ -80,6 +80,22 @@ def _open_source_vault(
     return None
 
 
+def open_source_vault(
+    cfg: LocalVaultSetupConfig, password: str | None
+) -> tuple[PyKeePass, Path] | None:
+    """Open the first source vault for a config and a run password, or None.
+
+    The public entry point to the source vault resolution: the paths come
+    from the config, the password from the run, and the production vault
+    wins over the default vault. Other tasks that must read secrets from
+    the fresh clone (nextdns_setup_system_wide) import this function
+    instead of reimplementing the source selection
+    (docs/guides/project-rules.md section 4).
+    """
+
+    return _open_source_vault(*_resolve_source_vault(cfg), password)
+
+
 def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str | None:
     """Runtime vault password from the source vault entry, or None.
 

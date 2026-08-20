@@ -71,3 +71,63 @@ def add_line_to_file(path: Path, line: str, comments_sign: str = "#") -> bool:
     if changed:
         path.write_text(new_text, encoding="utf-8")
     return changed
+
+
+def sync_directives_by_key(
+    path: Path,
+    directives: tuple[str, ...],
+    header: str,
+    section: str,
+) -> bool:
+    """Merge single-directive lines into a config file; return changed.
+
+    Every directive is a line of the form KEY=value. A line whose key
+    equals the key of a directive is replaced by the directive, a missing
+    directive is appended after the header and the section, and every
+    other line (comments and settings the caller does not own) survives
+    untouched. The header and the section are ensured at the top of the
+    file when absent. The key is the part before the first equals sign,
+    so a directive never touches a line with a different key: replacing
+    DNS= cannot clobber FallbackDNS=. This is the shared implementation
+    for tasks that own a subset of directives inside a foreign config
+    file (docs/guides/project-rules.md section 4); a missing file is
+    created with the header, the section and the directives.
+    """
+
+    lines = (
+        path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    )
+    wanted_keys = {line.split("=", 1)[0].strip() for line in directives}
+    kept: list[str] = []
+    has_header = False
+    has_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == header:
+            has_header = True
+            kept.append(line)
+            continue
+        if stripped == section:
+            has_section = True
+            kept.append(line)
+            continue
+        if stripped.startswith("#"):
+            kept.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in wanted_keys:
+            continue
+        kept.append(line)
+    merged: list[str] = []
+    if not has_header:
+        merged.append(header)
+    if not has_section:
+        merged.append(section)
+    merged.extend(directives)
+    merged.extend(kept)
+    if path.exists():
+        current = path.read_text(encoding="utf-8").splitlines()
+        if sorted(current) == sorted(merged):
+            return False
+    path.write_text("\n".join(merged) + "\n", encoding="utf-8")
+    return True
