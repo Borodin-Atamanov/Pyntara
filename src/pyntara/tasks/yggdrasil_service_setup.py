@@ -711,6 +711,15 @@ def task(ctx: Context) -> TaskResult:
         f"checking saved address file {cfg.address_file_path}: "
         f"{'present' if address_file_exists else 'missing'}"
     )
+    # The node is healthy only when the service is active and the admin
+    # socket reports at least one connected peer. A config with peers is
+    # not enough: the peers may have gone stale, so the task must not
+    # treat a dead node as already configured.
+    has_connections = bool(_latencies_from_ctl(timeout))
+    _log(
+        "checking live connections: "
+        f"{'present' if has_connections else 'none'}"
+    )
     if (
         not force
         and not needs_install
@@ -719,6 +728,7 @@ def task(ctx: Context) -> TaskResult:
         and key_exists
         and config_ready
         and address_file_exists
+        and has_connections
     ):
         _log("target state already reached, skipping")
         return TaskResult(success=True, changed=False, message="already configured")
@@ -779,6 +789,67 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("service enabled")
         changed = True
+
+    # Outside force mode, when the configuration already carries peers
+    # and the saved address file exists, the task never re-selects peers,
+    # rewrites the configuration or touches the address file: it only
+    # brings the service up with the existing config and waits for
+    # connections. Re-selecting peers is reserved for force mode and for
+    # a first run where no peer config exists yet.
+    if (
+        not force
+        and not needs_install
+        and key_exists
+        and config_ready
+        and address_file_exists
+    ):
+        if not active:
+            _log(
+                f"starting service {cfg.service_unit_name} with the "
+                "existing configuration"
+            )
+            try:
+                run_command(
+                    ["systemctl", "start", cfg.service_unit_name], timeout=timeout
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                return TaskResult(
+                    success=False,
+                    changed=True,
+                    error=f"systemctl start failed: {exc}",
+                )
+            changed = True
+        _log(
+            f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
+        )
+        time.sleep(cfg.peer_probe_timeout_seconds)
+        if not service_is_active(cfg.service_unit_name, timeout):
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=(
+                    f"service {cfg.service_unit_name} did not become active "
+                    "after start"
+                ),
+            )
+        if not _latencies_from_ctl(timeout):
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=(
+                    f"service {cfg.service_unit_name} is active but has no "
+                    "connections; rerun in force mode to re-select peers"
+                ),
+            )
+        _log("service active with live connections")
+        return TaskResult(
+            success=True,
+            changed=True,
+            message=(
+                f"yggdrasil {version} running with live connections "
+                "from the existing configuration"
+            ),
+        )
 
     _log(f"downloading peer list from {cfg.peers_tarball_url}")
     downloaded: list[str] | None = None

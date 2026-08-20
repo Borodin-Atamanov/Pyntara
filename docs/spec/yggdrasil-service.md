@@ -36,7 +36,7 @@ The listeners accept inbound peerings. The configured default listens on tcp, tl
 
 ## Peer selection
 
-Yggdrasil has no concept of bootstrap nodes: every peering is a full network connection, and a node without peers never joins the network. The task therefore always provisions a peer list.
+Yggdrasil has no concept of bootstrap nodes: every peering is a full network connection, and a node without peers never joins the network. The task therefore always provisions a peer list. The selection runs only in force mode or on a first run where the configuration has no peers yet; outside force mode a configuration that already carries peers is kept as is and the task only brings the service up with it (see Idempotency).
 
 The full peer list comes from the official public-peers repository: the task downloads the configured tarball with curl, unpacks it into a temporary directory, parses every markdown file for backtick peer URIs and saves the deduplicated full list to peers_full_path next to the configuration for reference. Only the selected working peers ever enter the configuration. The markdown files also contain configuration templates with placeholder hosts such as [proxyhost]:[proxyport] and [username]:[password]@[proxyhost]; the task drops every URI whose host and port do not parse, because yggdrasil aborts on such a peer at startup and the whole node would never connect.
 
@@ -62,7 +62,9 @@ The service unit comes from the package; the task never renders or writes it. Th
 
 ## Idempotency
 
-The target state is reached when the installed version equals the newest release version, the configuration exists with a non-empty Peers list, the key file exists, the saved address file exists and the service is enabled and active; the task then skips with changed=False. A missing address file keeps the task active, so the fallback of the deployed address command is guaranteed to exist after provisioning. Force mode reruns the whole peer selection (download, shuffle, batches) and rewrites the configuration, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
+The target state is reached when the installed version equals the newest release version, the configuration exists with a non-empty Peers list, the key file exists, the saved address file exists, the service is enabled and active and the admin socket reports at least one live connection; the task then skips with changed=False. A config with peers is not enough on its own: the peers may have gone stale, so a node without live connections is never treated as already configured.
+
+Outside force mode, when the configuration already carries peers and the saved address file exists, the task never re-selects peers, rewrites the configuration or touches the address file: it only brings the service up with the existing config and waits peer_probe_timeout_seconds for connections. When the service then reports live connections, the task succeeds with changed=True and the configuration and the address file are left untouched. When the service stays inactive or reports no connections, the task fails with a message that a force rerun is needed to re-select peers. Re-selecting peers (download, shuffle, batches), rewriting the configuration and saving the address file is reserved for force mode and for a first run where no peer config exists yet. Force mode reruns the whole peer selection and rewrites the configuration, but never reinstalls a matching version. A missing address file keeps the task active, so the fallback of the deployed address command is guaranteed to exist after provisioning. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
 ## Parameters
 

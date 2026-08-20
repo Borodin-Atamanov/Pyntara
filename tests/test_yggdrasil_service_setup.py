@@ -137,6 +137,8 @@ def _install_fake(
     peers_tarball: Path | None = None,
     journal_output: str = "",
     ctl_json: str = "",
+    ctl_peers_json: str = "",
+    peers_after_start: bool = False,
     host_map: dict[str, str] | None = None,
     version_output: str | None = None,
     active_becomes: bool = True,
@@ -148,8 +150,10 @@ def _install_fake(
     curl answers the release API and writes the fixture package or copies
     the fixture peers tarball, apt-get install fails the first
     fail_install attempts, systemctl reports the enabled and active state
-    and runs start and restart, journalctl returns journal_output and
-    yggdrasilctl returns ctl_json. DNS resolution goes through host_map.
+    and runs start and restart, journalctl returns journal_output,
+    yggdrasilctl getSelf returns ctl_json and yggdrasilctl getPeers
+    returns ctl_peers_json (empty until the service is started when
+    peers_after_start is set). DNS resolution goes through host_map.
     """
 
     calls: list[list[str]] = []
@@ -208,6 +212,10 @@ def _install_fake(
         if command[0] == "journalctl":
             return _FakeProc(0, journal_output)
         if command[0] == "yggdrasilctl":
+            if command[1] == "-json" and command[2] == "getPeers":
+                if peers_after_start and not started:
+                    return _FakeProc(0, "")
+                return _FakeProc(0, ctl_peers_json)
             return _FakeProc(0, ctl_json)
         return _FakeProc(0)
 
@@ -239,13 +247,26 @@ SELF_ADDRESS = "201:1234:5678:9abc:def0:1234:5678:9abc"
 def test_already_configured_skips(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The version matches, the config has peers, the key exists and the
-    # service is enabled and active: the task skips and runs only the
-    # status queries.
+    # The version matches, the config has peers, the key exists, the
+    # service is enabled and active and the admin socket reports a live
+    # connection: the task skips and runs only the status queries.
     ctx = _ctx(tmp_path)
     _write_ready_state(ctx)
+    ctl = json.dumps(
+        {
+            "peers": [
+                {"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}
+            ]
+        }
+    )
     calls = _install_fake(
-        monkeypatch, tmp_path, installed_version=VERSION, enabled=True, active=True
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=True,
+        ctl_peers_json=ctl,
+        host_map={"10.0.0.1": "10.0.0.1"},
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
@@ -256,6 +277,73 @@ def test_already_configured_skips(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
+
+
+def test_active_service_without_connections_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The service is active and the config has peers, but the admin
+    # socket reports no connections: the task does not re-select peers
+    # and reports that a force rerun is needed.
+    ctx = _ctx(tmp_path)
+    _write_ready_state(ctx)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=True,
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is False
+    assert "no connections" in (result.error or "")
+    # No peer list download, no config rewrite.
+    assert not any(
+        call[0] == "curl" and "public-peers" in call[-1] for call in calls
+    )
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "1.2.3.4" in config_text
+
+
+def test_inactive_service_with_ready_state_starts_without_peer_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The service is inactive but the config already has peers: the task
+    # starts the service with the existing config, waits for connections
+    # and does not re-select peers or rewrite the config.
+    ctx = _ctx(tmp_path)
+    _write_ready_state(ctx)
+    ctl_peers = json.dumps(
+        {
+            "peers": [
+                {"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}
+            ]
+        }
+    )
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=False,
+        ctl_peers_json=ctl_peers,
+        peers_after_start=True,
+        host_map={"10.0.0.1": "10.0.0.1"},
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["systemctl", "start", "yggdrasil.service"] in calls
+    # No peer list download, no config rewrite.
+    assert not any(
+        call[0] == "curl" and "public-peers" in call[-1] for call in calls
+    )
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "1.2.3.4" in config_text
 
 
 def test_missing_binary_is_treated_as_not_installed(
@@ -437,7 +525,7 @@ def test_installs_new_release_with_downloaded_peers(
         active=False,
         peers_tarball=tarball,
         journal_output=journal,
-        ctl_json=ctl,
+        ctl_peers_json=ctl,
         host_map=host_map,
     )
     result = yggdrasil_service_setup.task(ctx)
@@ -792,7 +880,7 @@ def test_latencies_from_ctl(
         "getaddrinfo",
         _fake_getaddrinfo({"10.0.0.1": "10.0.0.1"}),
     )
-    calls = _install_fake(monkeypatch, tmp_path, ctl_json=ctl)
+    calls = _install_fake(monkeypatch, tmp_path, ctl_peers_json=ctl)
     assert yggdrasil_service_setup._latencies_from_ctl(10) == {
         ("10.0.0.1", 1001): 5000000.0
     }
