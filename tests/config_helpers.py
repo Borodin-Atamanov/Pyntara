@@ -158,7 +158,7 @@ def base_config() -> str:
         'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
         'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
         'resolvectl_status_command = ["resolvectl", "status"]\n'
-        'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
+        'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
         "manage_networkmanager = true\n"
         "error_priority = 3\n"
         "command_timeout_seconds = 60\n"

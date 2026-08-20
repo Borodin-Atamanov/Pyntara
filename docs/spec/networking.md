@@ -49,10 +49,11 @@ Verification: the task proves that the machine actually resolves through
 the profile the way NextDNS recommends. resolvectl status must list the
 configured servers and a query to nextdns_setup_system_wide.verification_url
 must return a JSON body with status ok, which is the
-NextDNS-recommended check. On a failed verification the drop-in is
-removed, the NetworkManager flags are disabled again and
-systemd-resolved is restarted, so the machine returns to its previous
-resolver configuration.
+NextDNS-recommended check. The endpoint answers with a redirect to a
+per-query subdomain, so the verification command follows redirects. On a
+failed verification the drop-in is removed, the NetworkManager flags are
+disabled again and systemd-resolved is restarted, so the machine returns
+to its previous resolver configuration.
 answer when NextDNS itself is unreachable. The configured set covers
 seven independent providers (Cloudflare, Google, Quad9, Cisco OpenDNS,
 AdGuard, CleanBrowsing and Verisign) with IPv4 and the main IPv6 anycast

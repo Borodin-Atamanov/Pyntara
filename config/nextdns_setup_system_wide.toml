@@ -91,8 +91,9 @@ restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
 # Command that queries the verification endpoint. The {url} placeholder is
 # replaced with verification_url and {timeout} with the command timeout in
-# seconds; the output is a JSON body with a status field.
-verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
+# seconds; the endpoint answers with a redirect to a per-query subdomain,
+# so --location follows it; the output is a JSON body with a status field.
+verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Seconds a verification command may run before it is killed.

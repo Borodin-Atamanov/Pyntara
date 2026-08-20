@@ -97,6 +97,7 @@ def _install_subprocess(
     nm_present: bool = True,
     resolvectl_ok: bool = True,
     test_nextdns_ok: bool = True,
+    test_nextdns_output: str | None = None,
 ) -> list[list[str]]:
     """Replace run_command with a recorder; return the recorded calls."""
 
@@ -119,7 +120,12 @@ def _install_subprocess(
             return _FakeProc(1, "")
         if command[0] == "curl":
             if test_nextdns_ok:
-                return _FakeProc(0, TEST_NEXTDNS_OK)
+                output = (
+                    TEST_NEXTDNS_OK
+                    if test_nextdns_output is None
+                    else test_nextdns_output
+                )
+                return _FakeProc(0, output)
             return _FakeProc(7, "")
         return _FakeProc(0)
 
@@ -208,6 +214,39 @@ def test_verification_failure_reverts(
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     assert not dropin.exists()
     # The revert sets ignore-auto-dns back to false on every connection.
+    assert any(
+        call[0] == "nmcli" and call[1] == "connection" and "false" in call
+        for call in calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "excerpt"),
+    [
+        ("", "<empty body>"),
+        ("<html>blocked</html>", "<html>blocked</html>"),
+    ],
+)
+def test_non_json_verification_body_reports_excerpt_and_reverts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    excerpt: str,
+) -> None:
+    # A successful curl that returns a non-JSON body (the regression
+    # test.nextdns.io exposed: a 302 with an empty body) fails the
+    # verification, names the body excerpt and reverts the drop-in.
+    _install_source_vault(tmp_path, monkeypatch)
+    ctx = _ctx(tmp_path)
+    calls = _install_subprocess(
+        monkeypatch, test_nextdns_ok=True, test_nextdns_output=body
+    )
+    result = task_module.task(ctx)
+    assert result.success is False
+    assert "did not return JSON" in (result.error or "")
+    assert excerpt in (result.error or "")
+    dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
+    assert not dropin.exists()
     assert any(
         call[0] == "nmcli" and call[1] == "connection" and "false" in call
         for call in calls

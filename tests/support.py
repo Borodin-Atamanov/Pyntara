@@ -431,6 +431,7 @@ def make_config(
     nextdns_resolvectl_status_command: tuple[str, ...] = ("resolvectl", "status"),
     nextdns_verification_command: tuple[str, ...] = (
         "curl",
+        "--location",
         "--fail",
         "--silent",
         "--show-error",

@@ -273,11 +273,14 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
     """(ok, detail) of the verification endpoint check.
 
     The endpoint is the NextDNS-recommended verification: it reports the
-    state the query came through and the profile that answered. A JSON
-    body with status ok proves the machine resolves through a NextDNS
-    profile; a nonzero exit, a non-JSON body or any other status means the
-    check failed, with the detail describing why. The command template
-    comes from the config and carries the {url} and {timeout} placeholders.
+    state the query came through and the profile that answered. It
+    answers with a redirect to a per-query subdomain, so the command
+    follows redirects (the config carries --location). A JSON body with
+    status ok proves the machine resolves through a NextDNS profile; a
+    nonzero exit, a non-JSON body or any other status means the check
+    failed, with the detail describing why and an excerpt of a non-JSON
+    body, so the failure is diagnosable. The command template comes from
+    the config and carries the {url} and {timeout} placeholders.
     """
 
     timeout = cfg.command_timeout_seconds
@@ -301,7 +304,8 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
     try:
         body = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return False, "verification endpoint did not return JSON"
+        excerpt = result.stdout.strip()[:120] or "<empty body>"
+        return False, f"verification endpoint did not return JSON: {excerpt!r}"
     status = body.get("status")
     if status != "ok":
         return False, f"verification endpoint reported status {status!r}"

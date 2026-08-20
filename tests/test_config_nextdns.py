@@ -56,6 +56,7 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     assert section.resolvectl_status_command == ("resolvectl", "status")
     assert section.verification_command == (
         "curl",
+        "--location",
         "--fail",
         "--silent",
         "--show-error",
@@ -97,7 +98,7 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
             'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
             'resolvectl_status_command = ["resolvectl", "status"]\n'
-            'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
+            'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
             "manage_networkmanager = true\n"
             "error_priority = 3\n"
             "command_timeout_seconds = 60\n",
@@ -181,7 +182,7 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
         ),
         # verification_command lacks the {url} placeholder
         lambda c: c.replace(
-            'verification_command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]',
+            'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]',
             'verification_command = ["curl", "--silent"]',
         ),
         # restart_resolved_command is empty
