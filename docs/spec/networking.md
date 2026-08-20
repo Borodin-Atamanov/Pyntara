@@ -54,6 +54,13 @@ per-query subdomain, so the verification command follows redirects. On a
 failed verification the drop-in is removed, the NetworkManager flags are
 disabled again and systemd-resolved is restarted, so the machine returns
 to its previous resolver configuration.
+
+Telemetry: after a successful verification the task records the applied
+profile ID in the file nextdns_setup_system_wide.profile_id_file_path
+(mode profile_id_file_mode). The file is removed on revert, so its
+presence means the profile is applied and verified. The System Metrics
+collector reads it into network.json through the nextdns module
+(docs/spec/system-metrics.md, section Collected data).
 answer when NextDNS itself is unreachable. The configured set covers
 seven independent providers (Cloudflare, Google, Quad9, Cisco OpenDNS,
 AdGuard, CleanBrowsing and Verisign) with IPv4 and the main IPv6 anycast

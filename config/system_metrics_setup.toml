@@ -179,8 +179,10 @@ report_file_name = "network.json"
 # falls back to the saved address file written by the provisioning
 # task, with the reason in the output when the fallback is used. The
 # tor_onion command takes the hidden service directory and the saved
-# address file. Future candidates, commented out until the services are
-# installed:
+# address file. The nextdns module prints the applied NextDNS profile
+# ID from the file the nextdns_setup_system_wide task writes after a
+# successful verification. Future candidates, commented out until the
+# services are installed:
 # [[system_metrics_setup.collector.network_modules]]
 # name = "cloudflared"
 # command = ["cat", "/home/i/.cloudflared/config.yml"]
@@ -212,6 +214,15 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_ad
 [[system_metrics_setup.collector.network_modules]]
 name = "tor_onion"
 command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address", "/var/lib/tor/ssh", "/var/lib/pyntara/tor_ssh_address"]
+
+# The nextdns module prints the applied NextDNS profile ID from the file
+# the nextdns_setup_system_wide task writes after a successful
+# verification. The path must match nextdns_setup_system_wide.profile_id_file_path
+# in config/nextdns_setup_system_wide.toml; the collector test guards the
+# two config files against drifting apart.
+[[system_metrics_setup.collector.network_modules]]
+name = "nextdns"
+command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 
 # System modules: console commands whose full output forms the system
 # section of the report. Their status never affects ready_percent and

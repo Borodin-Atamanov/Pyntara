@@ -19,6 +19,14 @@ resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 dropin_file_name = "pyntara.conf"
 # File mode of the rendered drop-in, as an octal string.
 dropin_file_mode = "0644"
+# Path of the file that records the applied NextDNS profile ID. The task
+# writes the 6-hex ID here after a successful verification and removes it
+# on revert, so the file's presence means the profile is applied and
+# verified; the System Metrics collector reads it into network.json
+# (docs/spec/system-metrics.md, section Collected data).
+profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
+# File mode of the recorded profile ID file, as an octal string.
+profile_id_file_mode = "0644"
 # Section header of the resolved.conf drop-in.
 resolve_section = "[Resolve]"
 # Header comment that marks the drop-in as owned by this task.

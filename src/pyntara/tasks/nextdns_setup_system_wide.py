@@ -19,8 +19,10 @@ DNS.
 The task verifies that the machine really resolves through the chosen
 profile the way NextDNS recommends: resolvectl status must list the
 configured servers and a query to test.nextdns.io must report the
-profile (docs/spec/networking.md, section Verification). On a failed
-verification the drop-in and the NetworkManager changes are reverted, so
+profile (docs/spec/networking.md, section Verification). On a successful
+verification the applied profile ID is recorded in the profile ID file
+for the System Metrics collector; on a failed verification the drop-in,
+the profile ID file and the NetworkManager changes are reverted, so
 the machine never keeps a half-applied DNS configuration. The profiles
 come from the source vaults of the fresh clone, opened with the run
 password the way local_vault_setup opens them; the runtime vault is only
@@ -64,6 +66,50 @@ def _dropin_path(cfg: NextdnsSetupSystemWideConfig) -> Path:
     """The full drop-in path of the task."""
 
     return cfg.resolved_conf_dir / cfg.dropin_file_name
+
+
+def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
+    """Record the applied profile ID for the System Metrics collector.
+
+    The file is written only after a successful verification, so its
+    presence means the profile is applied and verified. The mode and the
+    root ownership are applied like the drop-in; a failed write is
+    journaled and reported, so the task fails loudly instead of silently
+    losing the telemetry source.
+    """
+
+    path = cfg.profile_id_file_path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{profile_id}\n", encoding="utf-8")
+        os.chmod(path, cfg.profile_id_file_mode)
+        if os.geteuid() == 0:
+            os.chown(path, 0, 0)
+        return True
+    except OSError as exc:
+        _log(
+            f"cannot write the profile ID file {path}: {exc}",
+            priority=cfg.error_priority,
+        )
+        return False
+
+
+def _remove_profile_id_file(cfg: NextdnsSetupSystemWideConfig) -> None:
+    """Remove the recorded profile ID file, if present.
+
+    The file is removed together with the drop-in on revert, so a reverted
+    machine never reports a profile that is no longer applied. A failed
+    removal is journaled but cannot stop the run.
+    """
+
+    path = cfg.profile_id_file_path
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        _log(
+            f"revert: cannot remove the profile ID file {path}: {exc}",
+            priority=cfg.error_priority,
+        )
 
 
 def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
@@ -348,6 +394,7 @@ def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
         _log(f"reverted: removed the drop-in {dropin}")
     except OSError as exc:
         _log(f"revert: cannot remove {dropin}: {exc}", priority=cfg.error_priority)
+    _remove_profile_id_file(cfg)
     if cfg.manage_networkmanager and not _nm_set_dns_flags(cfg, False):
         _log(
             "revert: cannot restore the NetworkManager DNS flags",
@@ -467,6 +514,14 @@ def task(ctx: Context) -> TaskResult:
             success=False,
             changed=False,
             error=f"NextDNS verification failed: {detail}",
+        )
+
+    if not _write_profile_id_file(cfg, profile_id):
+        _revert(cfg)
+        return TaskResult(
+            success=False,
+            changed=False,
+            error="cannot record the applied NextDNS profile ID",
         )
 
     _log(f"NextDNS profile {profile_id} active: {detail}")

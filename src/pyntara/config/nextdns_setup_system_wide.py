@@ -31,7 +31,10 @@ class NextdnsSetupSystemWideConfig:
     mode dropin_file_mode; resolve_section and dropin_header are the
     section header and the ownership comment of the drop-in, and
     domains_directive the Domains value that routes every query through
-    the global resolver. ipv4_servers, ipv6_prefixes, dot_endpoint_format
+    the global resolver. profile_id_file_path and profile_id_file_mode
+    are the path and mode of the file that records the applied profile
+    ID for the System Metrics collector. ipv4_servers, ipv6_prefixes,
+    dot_endpoint_format
     and verification_url are the NextDNS service contract: the anycast
     addresses, the DoT endpoint pattern with the {profile_id} placeholder
     and the verification endpoint. dns_over_tls is the DNSOverTLS mode of
@@ -53,6 +56,8 @@ class NextdnsSetupSystemWideConfig:
     resolved_conf_dir: Path
     dropin_file_name: str
     dropin_file_mode: int
+    profile_id_file_path: Path
+    profile_id_file_mode: int
     resolve_section: str
     dropin_header: str
     domains_directive: str
@@ -81,7 +86,9 @@ def _nextdns_setup_system_wide_table(
 
     Every value is required and typed: the vault group title, the drop-in
     directory, file name and the section/header strings are non-empty,
-    the drop-in mode is an octal string, ipv4_servers, ipv6_prefixes,
+    the drop-in mode is an octal string, profile_id_file_path is a
+    non-empty string and profile_id_file_mode an octal string,
+    ipv4_servers, ipv6_prefixes,
     fallback_dns, directive_keys and every command array are non-empty
     arrays of non-empty strings, dot_endpoint_format must carry the
     {profile_id} placeholder, nmcli_modify_command the {connection} and
@@ -106,6 +113,14 @@ def _nextdns_setup_system_wide_table(
     )
     dropin_file_mode = _octal_mode_field(
         raw.get("dropin_file_mode"), "nextdns_setup_system_wide.dropin_file_mode"
+    )
+    profile_id_file_path = _nonempty_string_field(
+        raw.get("profile_id_file_path"),
+        "nextdns_setup_system_wide.profile_id_file_path",
+    )
+    profile_id_file_mode = _octal_mode_field(
+        raw.get("profile_id_file_mode"),
+        "nextdns_setup_system_wide.profile_id_file_mode",
     )
     resolve_section = _nonempty_string_field(
         raw.get("resolve_section"), "nextdns_setup_system_wide.resolve_section"
@@ -200,6 +215,8 @@ def _nextdns_setup_system_wide_table(
         resolved_conf_dir=Path(resolved_conf_dir),
         dropin_file_name=dropin_file_name,
         dropin_file_mode=dropin_file_mode,
+        profile_id_file_path=Path(profile_id_file_path),
+        profile_id_file_mode=profile_id_file_mode,
         resolve_section=resolve_section,
         dropin_header=dropin_header,
         domains_directive=domains_directive,

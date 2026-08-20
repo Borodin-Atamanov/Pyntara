@@ -17,6 +17,10 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     assert section.resolved_conf_dir == Path("/etc/systemd/resolved.conf.d")
     assert section.dropin_file_name == "pyntara.conf"
     assert section.dropin_file_mode == 0o644
+    assert section.profile_id_file_path == Path(
+        "/var/lib/pyntara/nextdns_profile_id"
+    )
+    assert section.profile_id_file_mode == 0o644
     assert section.resolve_section == "[Resolve]"
     assert section.dropin_header == (
         "# Managed by the Pyntara nextdns_setup_system_wide task."
@@ -79,6 +83,8 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
             'dropin_file_name = "pyntara.conf"\n'
             'dropin_file_mode = "0644"\n'
+            'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
+            'profile_id_file_mode = "0644"\n'
             'resolve_section = "[Resolve]"\n'
             'dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."\n'
             'domains_directive = "~."\n'

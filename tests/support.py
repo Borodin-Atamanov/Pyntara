@@ -381,6 +381,8 @@ def make_config(
     nextdns_resolved_conf_dir: Path = Path("/etc/systemd/resolved.conf.d"),
     nextdns_dropin_file_name: str = "pyntara.conf",
     nextdns_dropin_file_mode: int = 0o644,
+    nextdns_profile_id_file_path: Path = Path("/var/lib/pyntara/nextdns_profile_id"),
+    nextdns_profile_id_file_mode: int = 0o644,
     nextdns_resolve_section: str = "[Resolve]",
     nextdns_dropin_header: str = (
         "# Managed by the Pyntara nextdns_setup_system_wide task."
@@ -649,6 +651,8 @@ def make_config(
             resolved_conf_dir=nextdns_resolved_conf_dir,
             dropin_file_name=nextdns_dropin_file_name,
             dropin_file_mode=nextdns_dropin_file_mode,
+            profile_id_file_path=nextdns_profile_id_file_path,
+            profile_id_file_mode=nextdns_profile_id_file_mode,
             resolve_section=nextdns_resolve_section,
             dropin_header=nextdns_dropin_header,
             domains_directive=nextdns_domains_directive,

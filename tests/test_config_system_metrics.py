@@ -390,6 +390,9 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
         '"pyntara.tor_address", "/var/lib/tor/ssh", '
         '"/var/lib/pyntara/tor_ssh_address"]\n'
+        '[[system_metrics_setup.collector.network_modules]]\n'
+        'name = "nextdns"\n'
+        'command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]\n'
         "[[system_metrics_setup.collector.system_modules]]",
     )
     config = load_config(write_config(tmp_path, content))
@@ -400,6 +403,7 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "i2pd",
         "yggdrasil",
         "tor_onion",
+        "nextdns",
     ]
     by_name = {module.name: module for module in modules}
     assert by_name["i2pd"].command == (
@@ -421,4 +425,26 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "pyntara.tor_address",
         "/var/lib/tor/ssh",
         "/var/lib/pyntara/tor_ssh_address",
+    )
+    assert by_name["nextdns"].command == (
+        "cat",
+        "/var/lib/pyntara/nextdns_profile_id",
+    )
+
+
+def test_nextdns_module_path_matches_nextdns_config() -> None:
+    # The nextdns collector module reads the profile ID file whose path
+    # lives in the [nextdns_setup_system_wide] table. The two config
+    # files must not drift apart: the module command path must equal the
+    # configured profile_id_file_path, so a rename in one file is caught
+    # here instead of silently breaking the telemetry.
+    repo_root = Path(__file__).resolve().parents[1]
+    config = load_config(repo_root / "config")
+    modules = config.system_metrics_setup.collector.network_modules
+    nextdns_module = next(
+        module for module in modules if module.name == "nextdns"
+    )
+    assert nextdns_module.command == (
+        "cat",
+        str(config.nextdns_setup_system_wide.profile_id_file_path),
     )

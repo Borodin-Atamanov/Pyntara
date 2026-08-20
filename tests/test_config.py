@@ -180,6 +180,8 @@ vault_group_title = "NextDNS"
 resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 dropin_file_name = "pyntara.conf"
 dropin_file_mode = "0644"
+profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
+profile_id_file_mode = "0644"
 resolve_section = "[Resolve]"
 dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."
 domains_directive = "~."
@@ -490,6 +492,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.nextdns_setup_system_wide.dropin_file_name == "pyntara.conf"
     assert config.nextdns_setup_system_wide.dropin_file_mode == 0o644
+    assert config.nextdns_setup_system_wide.profile_id_file_path == Path(
+        "/var/lib/pyntara/nextdns_profile_id"
+    )
+    assert config.nextdns_setup_system_wide.profile_id_file_mode == 0o644
     assert config.nextdns_setup_system_wide.resolve_section == "[Resolve]"
     assert (
         config.nextdns_setup_system_wide.dropin_header

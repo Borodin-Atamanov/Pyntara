@@ -58,6 +58,8 @@ def _ctx(tmp_path: Path, *, force: bool = False, manage_nm: bool = True):
             nextdns_resolved_conf_dir=tmp_path / "etc" / "systemd" / "resolved.conf.d",
             nextdns_dropin_file_name="pyntara.conf",
             nextdns_dropin_file_mode=0o644,
+            nextdns_profile_id_file_path=tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id",
+            nextdns_profile_id_file_mode=0o644,
             nextdns_dns_over_tls="opportunistic",
             nextdns_fallback_dns=("1.1.1.1", "9.9.9.9"),
             nextdns_manage_networkmanager=manage_nm,
@@ -156,6 +158,11 @@ def test_configures_resolver_and_verifies(
         for call in calls
     )
     assert any(call[0] == "curl" for call in calls)
+    # The applied profile ID is recorded for the System Metrics collector.
+    profile_file = (
+        tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
+    )
+    assert profile_file.read_text(encoding="utf-8").strip() in PROFILE_IDS
 
 
 def test_skip_when_already_configured(
@@ -213,6 +220,11 @@ def test_verification_failure_reverts(
     assert result.success is False
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     assert not dropin.exists()
+    # The recorded profile ID file is removed together with the drop-in.
+    profile_file = (
+        tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
+    )
+    assert not profile_file.exists()
     # The revert sets ignore-auto-dns back to false on every connection.
     assert any(
         call[0] == "nmcli" and call[1] == "connection" and "false" in call
