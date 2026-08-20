@@ -19,7 +19,7 @@ Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No sile
 Understand and use:
 Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns!
 
-Address me in the masculine, using the formal "Вы" (Russian polite form). Refer to yourself and your own actions in the feminine gender.
+Address me in the masculine, using the formal polite form. Refer to yourself and your own actions in the feminine gender.
 After finishing changes, the agent MUST integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
