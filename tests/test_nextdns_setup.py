@@ -39,10 +39,17 @@ TEST_NEXTDNS_OK = json.dumps(
 
 
 def _ctx(tmp_path: Path, *, force: bool = False, manage_nm: bool = True):
-    """Context with the task config rooted in the temporary directory."""
+    """Context with the task config rooted in the temporary directory.
+
+    vault_password carries the run password that opens the source vault;
+    the source vault paths live under the temporary repository root, so
+    the task reads the profiles through the same source resolution as
+    local_vault_setup.
+    """
 
     return make_context(
         install_mode="server",
+        vault_password=VAULT_PASSWORD,
         force_tasks=frozenset({"nextdns_setup_system_wide"}) if force else frozenset(),
         task_data_root=tmp_path,
         config=make_config(
@@ -56,16 +63,24 @@ def _ctx(tmp_path: Path, *, force: bool = False, manage_nm: bool = True):
             nextdns_manage_networkmanager=manage_nm,
             nextdns_error_priority=3,
             nextdns_command_timeout_seconds=60,
-            local_vault_path=tmp_path / "secrets" / "pyntara.vault",
-            local_vault_pass_file_path=tmp_path / "etc" / "pass",
+            local_vault_source_production=Path("secrets/production.vault"),
+            local_vault_source_default=Path("secrets/default.vault"),
         ),
     )
 
 
-def _install_vault(tmp_path: Path) -> None:
-    """Create a real runtime vault with a NextDNS group and five profiles."""
+def _install_source_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Create a production source vault with a NextDNS group and five profiles.
 
-    vault = tmp_path / "secrets" / "pyntara.vault"
+    The vault lives at the temporary repository root under secrets/, the
+    same relative path the config names; the task resolves it through
+    REPO_ROOT, so the monkeypatched module REPO_ROOT must point at the
+    temporary root before the task runs.
+    """
+
+    vault = tmp_path / "secrets" / "production.vault"
     vault.parent.mkdir(parents=True)
     create_database(str(vault), password=VAULT_PASSWORD)
     kp = PyKeePass(str(vault), password=VAULT_PASSWORD)
@@ -73,9 +88,7 @@ def _install_vault(tmp_path: Path) -> None:
     for profile_id in PROFILE_IDS:
         kp.add_entry(group, f"{profile_id} profile", profile_id, "")
     kp.save()
-    pass_file = tmp_path / "etc" / "pass"
-    pass_file.parent.mkdir(parents=True)
-    pass_file.write_text(VAULT_PASSWORD, encoding="utf-8")
+    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
 
 
 def _install_subprocess(
@@ -119,7 +132,7 @@ def test_configures_resolver_and_verifies(
 ) -> None:
     # The task writes the drop-in, restarts the resolver, disables per-link
     # DNS and verifies through test.nextdns.io.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)
@@ -144,7 +157,7 @@ def test_skip_when_already_configured(
 ) -> None:
     # An already-matching drop-in plus a working verification means the
     # task skips without changing anything.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     dropin.parent.mkdir(parents=True)
@@ -176,7 +189,7 @@ def test_verification_failure_reverts(
     # When test.nextdns.io does not answer, the drop-in is removed and the
     # NetworkManager flags are restored, so the machine keeps its previous
     # resolver configuration.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     calls = _install_subprocess(monkeypatch, test_nextdns_ok=False)
     result = task_module.task(ctx)
@@ -193,13 +206,12 @@ def test_verification_failure_reverts(
 def test_missing_group_fails_without_touching_dns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A vault without the NextDNS group fails the task and never writes
-    # the drop-in.
-    vault = tmp_path / "secrets" / "pyntara.vault"
+    # A source vault without the NextDNS group fails the task and never
+    # writes the drop-in.
+    vault = tmp_path / "secrets" / "production.vault"
     vault.parent.mkdir(parents=True)
     create_database(str(vault), password=VAULT_PASSWORD)
-    (tmp_path / "etc" / "pass").parent.mkdir(parents=True)
-    (tmp_path / "etc" / "pass").write_text(VAULT_PASSWORD, encoding="utf-8")
+    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)
@@ -214,14 +226,13 @@ def test_empty_group_fails_without_touching_dns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An empty NextDNS group fails the task instead of picking nothing.
-    vault = tmp_path / "secrets" / "pyntara.vault"
+    vault = tmp_path / "secrets" / "production.vault"
     vault.parent.mkdir(parents=True)
     create_database(str(vault), password=VAULT_PASSWORD)
     kp = PyKeePass(str(vault), password=VAULT_PASSWORD)
     kp.add_group(kp.root_group, "NextDNS", notes="empty")
     kp.save()
-    (tmp_path / "etc" / "pass").parent.mkdir(parents=True)
-    (tmp_path / "etc" / "pass").write_text(VAULT_PASSWORD, encoding="utf-8")
+    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
     assert result.success is False
@@ -231,12 +242,14 @@ def test_empty_group_fails_without_touching_dns(
 def test_vault_unavailable_fails_without_touching_dns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A missing vault fails the task before anything is written.
+    # A missing source vault and an unavailable runtime vault fail the
+    # task before anything is written.
+    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is False
-    assert "runtime vault" in (result.error or "")
+    assert "cannot open a vault" in (result.error or "")
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     assert not dropin.exists()
     assert not any(call[0] == "nmcli" for call in calls)
@@ -247,7 +260,7 @@ def test_dropin_merges_without_touching_other_lines(
 ) -> None:
     # A pre-existing drop-in with a foreign line keeps the foreign line
     # and gains the missing directives, instead of being overwritten.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     dropin.parent.mkdir(parents=True)
@@ -271,7 +284,7 @@ def test_profile_change_replaces_dns_line(
     # When the hostname changes and the profile choice moves to another
     # profile, the DNS= directive is replaced, not stacked: a stale
     # profile must never keep serving the machine.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     dropin = tmp_path / "etc" / "systemd" / "resolved.conf.d" / "pyntara.conf"
     dropin.parent.mkdir(parents=True)
@@ -315,7 +328,7 @@ def test_message_names_the_active_profile(
 ) -> None:
     # The result message names the profile and the fallback count, so the
     # run report shows what the machine actually resolves through.
-    _install_vault(tmp_path)
+    _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     _install_subprocess(monkeypatch)
     result = task_module.task(ctx)

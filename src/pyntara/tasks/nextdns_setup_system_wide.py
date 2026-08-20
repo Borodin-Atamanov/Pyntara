@@ -21,11 +21,14 @@ profile the way NextDNS recommends: resolvectl status must list the
 configured servers and a query to test.nextdns.io must report the
 profile (docs/spec/networking.md, section Verification). On a failed
 verification the drop-in and the NetworkManager changes are reverted, so
-the machine never keeps a half-applied DNS configuration. The task is
-idempotent: it skips when the drop-in already matches and the resolver
-already answers through the profile; force mode rewrites the drop-in and
-reapplies the NetworkManager changes, but the profile choice from the
-hostname never changes.
+the machine never keeps a half-applied DNS configuration. The profiles
+come from the source vaults of the fresh clone, opened with the run
+password the way local_vault_setup opens them; the runtime vault is only
+a fallback, because the copy may be stale and predate the profile group.
+The task is idempotent: it skips when the drop-in already matches and
+the resolver already answers through the profile; force mode rewrites
+the drop-in and reapplies the NetworkManager changes, but the profile
+choice from the hostname never changes.
 """
 
 from __future__ import annotations
@@ -35,12 +38,20 @@ import os
 import subprocess
 from pathlib import Path
 
+from pykeepass import PyKeePass
+
 from pyntara.config import NextdnsSetupSystemWideConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.nextdns import resolve_servers, select_profile_id
 from pyntara.utils import run_command
+
+# Module-level path constant is monkeypatched by the tests, which run
+# against temporary fixtures instead of the real system (developer guide):
+# the source vault paths of local_vault_setup are resolved against the
+# repository root, so the clone can live anywhere on the machine.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # The Resolve section header of systemd-resolved drop-ins.
 RESOLVE_SECTION = "[Resolve]"
@@ -357,20 +368,47 @@ def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
         _log(f"revert: {error}", priority=cfg.error_priority)
 
 
+def _open_profile_vault(ctx: Context) -> PyKeePass | None:
+    """The vault that carries the NextDNS profiles, or None.
+
+    The source vaults of the fresh clone are the primary source: the
+    production vault is tried first, then the default vault, both with
+    the run password, exactly like the local_vault_setup task opens them
+    (docs/spec/secrets-model.md). The runtime vault is only the fallback
+    for a run without a vault password, because it is a copy made once
+    by local_vault_setup and may be stale: the source vaults always carry
+    the current profile group, the runtime copy may predate it.
+    """
+
+    from pyntara import metrics
+    from pyntara.tasks.local_vault_setup import (
+        _open_source_vault,
+        _resolve_source_vault,
+    )
+
+    source = _open_source_vault(
+        *_resolve_source_vault(ctx.config.local_vault_setup), ctx.vault_password
+    )
+    if source is not None:
+        return source[0]
+    _log("source vaults unavailable, trying the runtime vault")
+    return metrics.open_runtime_vault(ctx.config)
+
+
 def task(ctx: Context) -> TaskResult:
     """Configure the resolver through a NextDNS profile; skip when done.
 
-    The vault is opened through the shared runtime-vault opener of the
-    System Metrics service (pyntara.metrics.open_runtime_vault), the
-    profile group is read from the vault, the profile is derived from the
-    hostname and the drop-in is aligned. After the resolver restarts the
-    task verifies that the machine resolves through the profile and, on a
-    failed verification, reverts every change. A missing profile group or
-    an empty profile pool is a serious failure journaled at
-    error_priority: the machine DNS is never touched then. The task is
-    idempotent: it skips when the drop-in matches and the verification
-    passes; force mode rewrites the drop-in and reapplies the
-    NetworkManager flags.
+    The vault is opened from the source vaults of the fresh clone with the
+    run password, the way local_vault_setup opens them; the runtime vault
+    is only the fallback. The profile group is read from the vault, the
+    profile is derived from the hostname and the drop-in is aligned.
+    After the resolver restarts the task verifies that the machine
+    resolves through the profile and, on a failed verification, reverts
+    every change. A missing profile group or an empty profile pool is a
+    serious failure journaled at error_priority: the machine DNS is never
+    touched then. The task is idempotent: it skips when the drop-in
+    matches and the verification passes; force mode rewrites the drop-in
+    and reapplies the NetworkManager flags.
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
@@ -379,14 +417,12 @@ def task(ctx: Context) -> TaskResult:
 
     import socket
 
-    from pyntara import metrics
-
-    kp = metrics.open_runtime_vault(ctx.config)
+    kp = _open_profile_vault(ctx)
     if kp is None:
         return TaskResult(
             success=False,
             changed=False,
-            error="cannot open the runtime vault: the NextDNS profile cannot be read",
+            error="cannot open a vault with the NextDNS profiles",
         )
     group = kp.find_groups(name=cfg.vault_group_title, first=True)
     if group is None:
