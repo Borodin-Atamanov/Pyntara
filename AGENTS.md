@@ -12,8 +12,6 @@ Read AGENTS.md — the mandatory rules for any AI agent.
 Read README.md — the project overview and the full documentation index. Use it to find the right document.
 Read the specific document needed for the task (contract, spec, or guide).
 
-Mandatory rules
-
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity: ask or fail loudly.
 
 Understand and use:
@@ -31,7 +29,6 @@ Code comments and response text: substantive only, no stylistic embellishment.
 When I say "plan", first draft a detailed implementation plan and write it out. State every decision you make and every assumption you rely on. Define what the tests will verify. List the implementation stages. If the plan is too large and complex, select the first part of it for implementation. Find weak points in the plan; critique the plan as a whole and each item individually. Determine how to improve it. Based on the improvements, create a NEW plan. Present the improved detailed plan to me for approval. Number the plan items continuously.
 Use the MECE principle (Mutually Exclusive, Collectively Exhaustive).
 Do not withhold implementation details: state which decisions you are making before implementing them.
-
 
 This is a single-developer project: all the code is written by you, the AI agentess, under the guidance of a human (me).
 </project_instructions>
