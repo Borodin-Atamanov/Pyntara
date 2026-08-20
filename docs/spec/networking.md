@@ -1,5 +1,12 @@
 # Network features, proxy, and access
 
+## dnscrypt-proxy system-wide resolver
+
+Task: dnscrypt_setup. The machine resolves every DNS query through a
+local dnscrypt-proxy service, which listens on all interfaces and
+resolves through its encrypted servers with a large set of plain DNS
+fallback servers. The full design lives in docs/spec/dnscrypt-setup.md.
+
 ## NextDNS system-wide resolver
 
 Task: nextdns_setup_system_wide. The machine resolves through one NextDNS

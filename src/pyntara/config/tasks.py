@@ -23,7 +23,9 @@ def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
     The catalog is non-empty; names are unique Python identifiers; every
     dependency names a task listed earlier in the file, which also rules out
     dependency cycles and keeps default task sets ordered; modes are known
-    install modes without duplicates.
+    install modes without duplicates. An empty modes list is allowed: the
+    task stays in the catalog but belongs to no install mode, so it never
+    runs in a default task set and only runs when selected explicitly.
     """
 
     if not isinstance(raw, list):
@@ -56,8 +58,8 @@ def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
                     f"[tasks] task {name}: dependency {dep!r} must be listed earlier"
                 )
         modes_raw = entry.get("modes")
-        if not isinstance(modes_raw, list) or not modes_raw:
-            raise ConfigError(f"[tasks] task {name}: modes must be a non-empty array")
+        if not isinstance(modes_raw, list):
+            raise ConfigError(f"[tasks] task {name}: modes must be an array")
         if not all(isinstance(mode, str) for mode in modes_raw):
             raise ConfigError(f"[tasks] task {name}: modes must be strings")
         for mode in modes_raw:

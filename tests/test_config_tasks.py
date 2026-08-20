@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config
+from config_helpers import assert_config_error, base_config, write_config
+
+from pyntara.config import load_config
 
 
 @pytest.mark.parametrize(
@@ -27,8 +29,6 @@ from config_helpers import assert_config_error, base_config
         base_config().replace("depends = []", 'depends = ["later"]'),
         # task modes is a string, not an array
         base_config().replace('modes = ["minimal"]', 'modes = "minimal"'),
-        # task modes is an empty array
-        base_config().replace('modes = ["minimal"]', "modes = []"),
         # task modes contains an unknown install mode
         base_config().replace('modes = ["minimal"]', 'modes = ["fancy"]'),
         # task modes contains a duplicate
@@ -72,3 +72,17 @@ def test_load_config_rejects_duplicate_task_names(tmp_path: Path) -> None:
         "depends = []\nmodes = [\"minimal\"]\n",
         match="duplicate task name",
     )
+
+
+def test_load_config_accepts_empty_modes(tmp_path: Path) -> None:
+    # An empty modes list keeps the task in the catalog but in no install
+    # mode, so it never runs in a default task set and only runs when
+    # selected explicitly.
+    config = load_config(
+        write_config(
+            tmp_path,
+            base_config().replace('modes = ["minimal"]', "modes = []"),
+        )
+    )
+    task = next(t for t in config.tasks if t.name == "users")
+    assert task.modes == ()

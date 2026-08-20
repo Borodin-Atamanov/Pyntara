@@ -9,6 +9,7 @@ from pathlib import Path
 from ._fields import ConfigError
 from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
 from .cli_tools import CliToolsConfig, _cli_tools_table
+from .dnscrypt_setup import DnscryptSetupConfig, _dnscrypt_setup_table
 from .engine import EngineConfig, _engine_table
 from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
@@ -52,6 +53,7 @@ class Config:
 
     engine: EngineConfig
     cli_tools: CliToolsConfig
+    dnscrypt_setup: DnscryptSetupConfig
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
     swapfile_service_install: SwapfileServiceInstallConfig
@@ -123,6 +125,7 @@ def load_config(path: Path) -> Config:
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
+        dnscrypt_setup=_dnscrypt_setup_table(data.get("dnscrypt_setup")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
         swapfile_service_install=_swapfile_service_install_table(

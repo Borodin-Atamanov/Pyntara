@@ -109,10 +109,16 @@ depends = ["add_extra_repos"]
 modes = ["server", "desktop"]
 
 [[tasks]]
+name = "dnscrypt_setup"
+description = "Run dnscrypt-proxy as the system-wide DNS resolver with fallback servers."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "nextdns_setup_system_wide"
 description = "Per-user NextDNS account and system-wide DNS endpoint."
 depends = ["local_vault_setup", "hostname"]
-modes = ["minimal", "server", "desktop"]
+modes = []
 
 [[tasks]]
 name = "i2pd_service_setup"

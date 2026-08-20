@@ -27,6 +27,7 @@ VALID_TOML = """\
 task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
 command_timeout_seconds = 1800
+error_priority = 3
 process_check_timeout_seconds = 5
 task_start_delay_seconds = 0.5
 desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]
@@ -36,6 +37,38 @@ packages = ["mc", "htop"]
 package_status_timeout_seconds = 30
 package_install_retries = 3
 package_success_threshold_percent = 70
+
+[dnscrypt_setup]
+package_name = "dnscrypt-proxy"
+config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
+service_unit_name = "dnscrypt-proxy.service"
+socket_unit_name = "dnscrypt-proxy.socket"
+socket_dropin_dir = "/etc/systemd/system/dnscrypt-proxy.socket.d"
+socket_dropin_file_name = "pyntara.conf"
+socket_dropin_file_mode = "0644"
+socket_section = "[Socket]"
+socket_dropin_header = "# Managed by the Pyntara dnscrypt_setup task."
+listen_address = "0.0.0.0:53053"
+fallback_resolvers = ["1.1.1.1", "8.8.8.8"]
+resolved_conf_dir = "/etc/systemd/resolved.conf.d"
+dropin_file_name = "dnscrypt.conf"
+dropin_file_mode = "0644"
+resolve_section = "[Resolve]"
+dropin_header = "# Managed by the Pyntara dnscrypt_setup task."
+dns_directive = "DNS=127.0.0.1:53053"
+domains_directive = "~."
+directive_keys = ["DNS", "Domains"]
+manage_networkmanager = true
+nmcli_check_command = ["nmcli", "--version"]
+nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
+nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
+daemon_reload_command = ["systemctl", "daemon-reload"]
+restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
+resolvectl_status_command = ["resolvectl", "status"]
+verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]
+install_retries = 3
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1.0
 
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]

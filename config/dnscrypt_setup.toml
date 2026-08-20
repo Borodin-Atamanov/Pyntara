@@ -1,0 +1,140 @@
+[dnscrypt_setup]
+# System-wide dnscrypt-proxy configuration (docs/spec/dnscrypt-setup.md).
+# The task installs dnscrypt-proxy from the Ubuntu archive, runs it as a
+# system service and points every system DNS query at it. The proxy
+# listens on listen_address (all interfaces, so machines on the network
+# can use it too) through the package's systemd socket activation; the
+# socket unit address is changed through a systemd drop-in. The proxy
+# resolves through the encrypted servers of its sources and falls back
+# to fallback_resolvers, the plain DNS servers below, whenever the
+# encrypted servers are unreachable, so the machine never loses
+# resolution. systemd-resolved is pointed at the local address of the
+# proxy through a drop-in, so every system query goes through it.
+# Package name in the Ubuntu archive.
+package_name = "dnscrypt-proxy"
+# Main configuration file the package ships and the task edits in place.
+config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
+# systemd units of the package: the service and the listening socket.
+service_unit_name = "dnscrypt-proxy.service"
+socket_unit_name = "dnscrypt-proxy.socket"
+# Directory and file name of the systemd drop-in that changes the socket
+# listen address; the drop-in resets the package ListenStream and
+# ListenDatagram and sets them to listen_address.
+socket_dropin_dir = "/etc/systemd/system/dnscrypt-proxy.socket.d"
+socket_dropin_file_name = "pyntara.conf"
+socket_dropin_file_mode = "0644"
+# Section header and ownership comment of the socket drop-in.
+socket_section = "[Socket]"
+socket_dropin_header = "# Managed by the Pyntara dnscrypt_setup task."
+# Address the proxy listens on: all interfaces, non-standard port, so
+# machines on the network can use it and no privileged port is needed.
+listen_address = "0.0.0.0:53053"
+# Plain DNS servers the proxy uses when its encrypted servers are
+# unreachable. The set covers many independent providers with IPv4 and
+# IPv6 anycast addresses, so a single provider outage never leaves the
+# machine without resolution.
+fallback_resolvers = [
+    "8.8.8.8",
+    "8.8.4.4",
+    "1.1.1.1",
+    "1.0.0.1",
+    "9.9.9.9",
+    "149.112.112.112",
+    "208.67.222.222",
+    "208.67.220.220",
+    "64.6.64.6",
+    "64.6.65.6",
+    "94.140.14.14",
+    "94.140.15.15",
+    "185.228.168.9",
+    "185.228.169.9",
+    "84.200.69.80",
+    "84.200.70.40",
+    "1.1.1.2",
+    "1.0.0.2",
+    "223.5.5.5",
+    "223.6.6.6",
+    "119.29.29.29",
+    "182.254.116.116",
+    "8.26.56.26",
+    "8.20.247.20",
+    "77.88.8.8",
+    "77.88.8.1",
+    "2001:4860:4860::8888",
+    "2001:4860:4860::8844",
+    "2606:4700:4700::1111",
+    "2606:4700:4700::1001",
+    "2620:fe::fe",
+    "2620:fe::9",
+    "2620:119:35::35",
+    "2620:119:53::53",
+    "2620:74:1b::1:1",
+    "2620:74:1c::2:2",
+    "2a10:50c0::ad1:ff",
+    "2a10:50c0::ad2:ff",
+    "2a0d:2a00:1::",
+    "2a0d:2a00:2::",
+    "2001:1608:10:25::1c04:b12f",
+    "2001:1608:10:25::9249:d69b",
+    "2606:4700:4700::1112",
+    "2606:4700:4700::1002",
+    "2400:3200::1",
+    "2400:3200:baba::1",
+    "2402:4e00::",
+    "2a02:6b8::feed:0ff",
+    "2a02:6b8:0:1::feed:0ff",
+]
+# Directory of systemd-resolved drop-in configuration files.
+resolved_conf_dir = "/etc/systemd/resolved.conf.d"
+# Drop-in file name the task owns inside resolved_conf_dir.
+dropin_file_name = "dnscrypt.conf"
+# File mode of the rendered resolved drop-in, as an octal string.
+dropin_file_mode = "0644"
+# Section header of the resolved drop-in.
+resolve_section = "[Resolve]"
+# Header comment that marks the resolved drop-in as owned by this task.
+dropin_header = "# Managed by the Pyntara dnscrypt_setup task."
+# DNS directive that points systemd-resolved at the local address of the
+# proxy; the proxy listens on all interfaces, so 127.0.0.1 reaches it.
+dns_directive = "DNS=127.0.0.1:53053"
+# Domains directive that routes every query through the global resolver.
+domains_directive = "~."
+# Names of the resolved drop-in directive keys the task owns: a line
+# whose key equals one of these is replaced by the merge, every other
+# line survives.
+directive_keys = ["DNS", "Domains"]
+# When true, the task tells NetworkManager to ignore DNS servers from
+# DHCP on every connection, so the global proxy actually serves the
+# machine instead of being shadowed by per-link DNS. The task checks
+# that nmcli exists before touching NetworkManager.
+manage_networkmanager = true
+# Command that checks whether NetworkManager is present; a zero exit
+# means it is. The first token is the executable.
+nmcli_check_command = ["nmcli", "--version"]
+# Command that lists every NetworkManager connection profile name; the
+# first colon-separated field of every output line is the connection name.
+nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
+# Command template that sets the ignore-auto-dns flags on one connection.
+# The {connection} placeholder is replaced with the connection name and
+# {value} with true or false; the command runs with the same value for
+# ipv4.ignore-auto-dns and ipv6.ignore-auto-dns.
+nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
+# Command that reloads systemd so the socket drop-in takes effect.
+daemon_reload_command = ["systemctl", "daemon-reload"]
+# Command that restarts systemd-resolved so the drop-in takes effect.
+restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
+# Command that prints the active resolver state; the server lines carry
+# the DNS directive and the verification checks them.
+resolvectl_status_command = ["resolvectl", "status"]
+# Command that queries a domain through the local proxy. The {timeout}
+# placeholder is replaced with the command timeout in seconds; a nonzero
+# exit or an empty answer means the proxy does not resolve.
+verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]
+# Retry count of the package install, so the total attempts are retries
+# plus one.
+install_retries = 3
+# Attempts and pause of the loop that waits for the service to become
+# active after a start, because the socket-activated service may take a
+# moment to come up.
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1.0

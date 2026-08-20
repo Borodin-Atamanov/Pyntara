@@ -131,3 +131,58 @@ def sync_directives_by_key(
             return False
     path.write_text("\n".join(merged) + "\n", encoding="utf-8")
     return True
+
+
+def sync_toml_root_directive(path: Path, directive: str, anchor: str) -> bool:
+    """Ensure a root-table TOML directive is present; return changed.
+
+    A line whose key equals the directive key is replaced by the
+    directive, so an existing value is updated in place. A missing
+    directive is inserted after the anchor line, keeping it in the root
+    table: appending at the end would place it inside the last [section]
+    of the file, which TOML would parse as a member of that table. The
+    anchor is a root-table line (for example a server_names line) that
+    always precedes the first [section]; when the anchor is absent the
+    directive is inserted before the first [section] header, or at the
+    end when the file has no section at all. Commented lines are left
+    untouched. A missing file is not created.
+    """
+
+    if not path.is_file():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    key = directive.split("=", 1)[0].strip()
+    replaced = False
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            result.append(line)
+            continue
+        if stripped.split("=", 1)[0].strip() == key:
+            result.append(directive)
+            replaced = True
+        else:
+            result.append(line)
+    if not replaced:
+        inserted = False
+        merged: list[str] = []
+        for line in result:
+            merged.append(line)
+            if line.strip() == anchor:
+                merged.append(directive)
+                inserted = True
+        if not inserted:
+            for index, line in enumerate(merged):
+                if line.strip().startswith("["):
+                    merged.insert(index, directive)
+                    inserted = True
+                    break
+        if not inserted:
+            merged.append(directive)
+        result = merged
+    new_text = "\n".join(result) + "\n"
+    if new_text == path.read_text(encoding="utf-8"):
+        return False
+    path.write_text(new_text, encoding="utf-8")
+    return True

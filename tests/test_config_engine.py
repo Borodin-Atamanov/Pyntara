@@ -123,7 +123,7 @@ def test_load_config_bool_not_accepted_as_timeout(tmp_path: Path) -> None:
     assert_config_error(
         tmp_path,
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = true\n'
-        'command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n'
+        'command_timeout_seconds = 1800\nerror_priority = 3\nprocess_check_timeout_seconds = 5\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\npackage_install_retries = 3\n',
     )
 
@@ -133,6 +133,23 @@ def test_load_config_bool_not_accepted_as_retries(tmp_path: Path) -> None:
     assert_config_error(
         tmp_path,
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
-        'command_timeout_seconds = 1800\nprocess_check_timeout_seconds = 5\n'
+        'command_timeout_seconds = 1800\nerror_priority = 3\nprocess_check_timeout_seconds = 5\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\npackage_install_retries = true\n',
     )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # error_priority is a string, not an integer
+        base_config().replace("error_priority = 3", 'error_priority = "3"'),
+        # error_priority is above 7
+        base_config().replace("error_priority = 3", "error_priority = 8"),
+        # error_priority is below 0
+        base_config().replace("error_priority = 3", "error_priority = -1"),
+    ],
+)
+def test_load_config_error_priority_invalid_raises(
+    tmp_path: Path, content: str
+) -> None:
+    assert_config_error(tmp_path, content, match="error_priority")

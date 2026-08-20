@@ -27,6 +27,7 @@ from ._fields import (
 )
 from .add_extra_repos import AddExtraReposConfig
 from .cli_tools import CliToolsConfig
+from .dnscrypt_setup import DnscryptSetupConfig
 from .engine import EngineConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
@@ -62,6 +63,7 @@ __all__ = [
     "CollectorModuleConfig",
     "Config",
     "ConfigError",
+    "DnscryptSetupConfig",
     "EngineConfig",
     "HostnameConfig",
     "I2pdServiceSetupConfig",
