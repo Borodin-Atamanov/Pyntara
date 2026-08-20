@@ -41,6 +41,10 @@ package_success_threshold_percent = 70
 components = ["universe", "restricted", "multiverse"]
 ubuntu_hosts = ["archive.ubuntu.com", "security.ubuntu.com"]
 
+[hostname]
+hostname_file = "/etc/hostname"
+set_hostname_command = ["hostnamectl", "set-hostname"]
+
 [swapfile_service_install]
 swapfile_path = "/swapfile"
 ram_multiplier = 2
@@ -342,6 +346,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",
         "security.ubuntu.com",
+    )
+    assert config.hostname.hostname_file == "/etc/hostname"
+    assert config.hostname.set_hostname_command == (
+        "hostnamectl",
+        "set-hostname",
     )
     assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
     assert config.swapfile_service_install.ram_multiplier == 2

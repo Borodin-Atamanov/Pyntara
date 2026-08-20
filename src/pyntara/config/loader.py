@@ -10,6 +10,7 @@ from ._fields import ConfigError
 from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
 from .cli_tools import CliToolsConfig, _cli_tools_table
 from .engine import EngineConfig, _engine_table
+from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
 from .nextdns_setup_system_wide import (
     NextdnsSetupSystemWideConfig,
@@ -52,6 +53,7 @@ class Config:
     engine: EngineConfig
     cli_tools: CliToolsConfig
     add_extra_repos: AddExtraReposConfig
+    hostname: HostnameConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
@@ -122,6 +124,7 @@ def load_config(path: Path) -> Config:
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
+        hostname=_hostname_table(data.get("hostname")),
         swapfile_service_install=_swapfile_service_install_table(
             data.get("swapfile_service_install")
         ),

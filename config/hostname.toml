@@ -1,0 +1,10 @@
+# Hostname task configuration.
+# The hostname task generates a random proquint hostname, writes it into
+# hostname_file and applies it to the running kernel through
+# set_hostname_command, so socket.gethostname() returns the new name for
+# the dependent tasks (nextdns_setup_system_wide, passwords).
+[hostname]
+# Path of the file that holds the hostname.
+hostname_file = "/etc/hostname"
+# Command that applies the hostname to the running kernel.
+set_hostname_command = ["hostnamectl", "set-hostname"]

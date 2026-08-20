@@ -19,6 +19,7 @@ from pyntara.config import (
     CollectorModuleConfig,
     Config,
     EngineConfig,
+    HostnameConfig,
     I2pdServiceSetupConfig,
     LocalVaultSetupConfig,
     NextdnsSetupSystemWideConfig,
@@ -191,6 +192,11 @@ def make_config(
         "security.ubuntu.com",
         "ports.ubuntu.com",
         "old-releases.ubuntu.com",
+    ),
+    hostname_file: Path = Path("/etc/hostname"),
+    hostname_set_hostname_command: tuple[str, ...] = (
+        "hostnamectl",
+        "set-hostname",
     ),
     swapfile_path: Path = Path("/swapfile"),
     swapfile_ram_multiplier: float = 2.0,
@@ -472,6 +478,10 @@ def make_config(
         add_extra_repos=AddExtraReposConfig(
             components=add_extra_repos_components,
             ubuntu_hosts=add_extra_repos_ubuntu_hosts,
+        ),
+        hostname=HostnameConfig(
+            hostname_file=str(hostname_file),
+            set_hostname_command=hostname_set_hostname_command,
         ),
         swapfile_service_install=SwapfileServiceInstallConfig(
             swapfile_path=swapfile_path,

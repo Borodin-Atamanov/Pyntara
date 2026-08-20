@@ -28,6 +28,7 @@ from ._fields import (
 from .add_extra_repos import AddExtraReposConfig
 from .cli_tools import CliToolsConfig
 from .engine import EngineConfig
+from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .loader import Config, load_config
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
@@ -62,6 +63,7 @@ __all__ = [
     "Config",
     "ConfigError",
     "EngineConfig",
+    "HostnameConfig",
     "I2pdServiceSetupConfig",
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",

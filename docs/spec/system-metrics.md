@@ -27,7 +27,7 @@ PDF encryption password is generated during Pyntara initialization from:
 KeePass salt (decrypted with admin password during installation)
 hostname
 
-Hostname is generated randomly: 9 characters (as one of the tasks).
+Hostname is generated randomly as a proquint word pair (docs/spec/users-and-host.md, section Hostname).
 
 Unencrypted PDF versions must never be saved to disk (in-memory generation only).
 

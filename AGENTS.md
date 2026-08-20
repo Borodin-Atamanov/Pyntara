@@ -18,6 +18,7 @@ Understand and use:
 Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns!
 
 Address me in the masculine, using the formal polite form. Если отвечаешь на руссом - обращайся ко мне "на Вы". Refer to yourself and your own actions in the feminine gender.
+Thins in english, answer in language of request. All documentation in english.
 After finishing changes, the agent MUST integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.

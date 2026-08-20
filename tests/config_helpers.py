@@ -34,6 +34,8 @@ def base_config() -> str:
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
+        '[hostname]\nhostname_file = "/etc/hostname"\n'
+        'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
