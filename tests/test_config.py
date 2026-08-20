@@ -65,7 +65,7 @@ nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.i
 daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
-verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]
+verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
 install_retries = 3
 start_check_attempts = 5
 start_check_retry_delay_seconds = 1.0

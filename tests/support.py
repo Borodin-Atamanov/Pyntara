@@ -547,8 +547,6 @@ def make_config(
                 "resolvectl",
                 "query",
                 "--cache=no",
-                "--timeout",
-                "{timeout}",
                 "example.com",
             ),
             install_retries=dnscrypt_install_retries,

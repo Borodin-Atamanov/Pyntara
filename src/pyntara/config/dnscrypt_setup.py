@@ -44,8 +44,8 @@ class DnscryptSetupConfig:
     {connection} and {value} placeholders), daemon_reload_command reloads
     systemd so the socket drop-in takes effect, restart_resolved_command
     restarts the resolver, resolvectl_status_command queries the resolver
-    state and verification_command queries a domain through the proxy
-    (with the {timeout} placeholder). install_retries is the retry count
+    state and verification_command queries a domain through the proxy.
+    install_retries is the retry count
     of the package install; start_check_attempts and
     start_check_retry_delay_seconds bound the loop that waits for the
     service to become active.
@@ -93,8 +93,8 @@ def _dnscrypt_setup_table(raw: object) -> DnscryptSetupConfig:
     comment are non-empty strings; the drop-in modes are octal strings;
     fallback_resolvers, directive_keys and every command array are
     non-empty arrays of non-empty strings; nmcli_modify_command must carry
-    the {connection} and {value} placeholders and verification_command the
-    {timeout} placeholder; manage_networkmanager is a boolean;
+    the {connection} and {value} placeholders; manage_networkmanager is a
+    boolean;
     install_retries and start_check_attempts are positive integers and
     start_check_retry_delay_seconds is positive.
     """
@@ -193,11 +193,6 @@ def _dnscrypt_setup_table(raw: object) -> DnscryptSetupConfig:
     restart_resolved_command = _string_list_field("restart_resolved_command")
     resolvectl_status_command = _string_list_field("resolvectl_status_command")
     verification_command = _string_list_field("verification_command")
-    if "{timeout}" not in verification_command:
-        raise ConfigError(
-            "dnscrypt_setup.verification_command must contain the "
-            "{timeout} placeholder"
-        )
     install_retries = _int_field(
         raw.get("install_retries"), "dnscrypt_setup.install_retries"
     )

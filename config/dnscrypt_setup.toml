@@ -126,10 +126,10 @@ restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 # Command that prints the active resolver state; the server lines carry
 # the DNS directive and the verification checks them.
 resolvectl_status_command = ["resolvectl", "status"]
-# Command that queries a domain through the local proxy. The {timeout}
-# placeholder is replaced with the command timeout in seconds; a nonzero
-# exit or an empty answer means the proxy does not resolve.
-verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]
+# Command that queries a domain through the local proxy. A nonzero exit
+# or an empty answer means the proxy does not resolve. The command is
+# bounded by the engine command timeout through run_command.
+verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
 # Retry count of the package install, so the total attempts are retries
 # plus one.
 install_retries = 3

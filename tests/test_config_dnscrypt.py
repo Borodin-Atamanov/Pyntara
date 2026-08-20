@@ -69,8 +69,6 @@ def test_load_config_dnscrypt_section_parses(tmp_path: Path) -> None:
         "resolvectl",
         "query",
         "--cache=no",
-        "--timeout",
-        "{timeout}",
         "example.com",
     )
     assert section.install_retries == 3
@@ -110,7 +108,7 @@ def test_load_config_dnscrypt_section_parses(tmp_path: Path) -> None:
             'daemon_reload_command = ["systemctl", "daemon-reload"]\n'
             'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
             'resolvectl_status_command = ["resolvectl", "status"]\n'
-            'verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]\n'
+            'verification_command = ["resolvectl", "query", "--cache=no", "example.com"]\n'
             "install_retries = 3\n"
             "start_check_attempts = 5\n"
             "start_check_retry_delay_seconds = 1.0\n",
@@ -155,11 +153,6 @@ def test_load_config_dnscrypt_section_parses(tmp_path: Path) -> None:
         lambda c: c.replace(
             'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]',
             'nmcli_modify_command = ["nmcli", "connection", "modify", "x", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]',
-        ),
-        # verification_command lacks the {timeout} placeholder
-        lambda c: c.replace(
-            'verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]',
-            'verification_command = ["resolvectl", "query", "example.com"]',
         ),
         # install_retries is zero
         lambda c: c.replace("install_retries = 3", "install_retries = 0"),

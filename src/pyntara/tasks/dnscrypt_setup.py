@@ -315,29 +315,37 @@ def _verify(cfg: DnscryptSetupConfig, timeout: float) -> tuple[bool, str]:
     The verification is the point of the task: not that the config files
     look right, but that the proxy actually resolves. The service must be
     active and a query through the local resolver must succeed, so the
-    machine really resolves through the proxy.
+    machine really resolves through the proxy. The query is retried with
+    the readiness loop parameters, because right after a restart the proxy
+    may report active while it is still loading its server sources and is
+    not yet able to answer; a query that succeeds on a later attempt is a
+    pass.
     """
 
     if not service_is_active(cfg.service_unit_name, timeout):
         return False, f"{cfg.service_unit_name} is not active"
-    command = [
-        part.replace("{timeout}", str(timeout))
-        for part in cfg.verification_command
-    ]
-    try:
-        result = run_command(
-            command,
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"verification query failed: {exc}"
-    if result.returncode != 0:
-        return False, f"verification query exited {result.returncode}"
-    if not result.stdout.strip():
-        return False, "verification query returned no answer"
-    return True, "proxy resolves a real DNS query"
+    command = list(cfg.verification_command)
+    for attempt in range(cfg.start_check_attempts):
+        if attempt:
+            time.sleep(cfg.start_check_retry_delay_seconds)
+        try:
+            result = run_command(
+                command,
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            last_error = f"verification query failed: {exc}"
+            continue
+        if result.returncode != 0:
+            last_error = f"verification query exited {result.returncode}"
+            continue
+        if not result.stdout.strip():
+            last_error = "verification query returned no answer"
+            continue
+        return True, "proxy resolves a real DNS query"
+    return False, last_error
 
 
 def task(ctx: Context) -> TaskResult:
@@ -406,6 +414,11 @@ def task(ctx: Context) -> TaskResult:
     if reload_error:
         return TaskResult(success=False, changed=False, error=reload_error)
 
+    # The socket drop-in changed the listen address, so an already-active
+    # socket must be restarted for the new address to take effect: systemd
+    # keeps the old socket file descriptors until the unit is restarted.
+    # The service is restarted too when it is active, so it reconnects to
+    # the restarted socket.
     for unit in (cfg.socket_unit_name, cfg.service_unit_name):
         if not service_is_enabled(unit, timeout):
             run_command(
@@ -413,7 +426,13 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
             _log(f"enabled {unit}")
-        if not service_is_active(unit, timeout):
+        if service_is_active(unit, timeout):
+            run_command(
+                ["systemctl", "restart", unit],
+                timeout=timeout,
+            )
+            _log(f"restarted {unit}")
+        else:
             run_command(
                 ["systemctl", "start", unit],
                 timeout=timeout,

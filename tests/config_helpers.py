@@ -59,7 +59,7 @@ def base_config() -> str:
         'daemon_reload_command = ["systemctl", "daemon-reload"]\n'
         'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
         'resolvectl_status_command = ["resolvectl", "status"]\n'
-        'verification_command = ["resolvectl", "query", "--cache=no", "--timeout", "{timeout}", "example.com"]\n'
+        'verification_command = ["resolvectl", "query", "--cache=no", "example.com"]\n'
         "install_retries = 3\n"
         "start_check_attempts = 5\n"
         "start_check_retry_delay_seconds = 1.0\n"
