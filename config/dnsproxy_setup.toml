@@ -29,32 +29,78 @@ fallback_resolvers = [
 ]
 # Bootstrap resolvers dnsproxy uses to resolve the hostnames of the
 # encrypted upstream servers before contacting them. The list holds the
-# anchor IP of every provider once, without repeating protocol forms.
-# Each anchor IP can be reached over several protocols; the access form
-# is selected by scheme and port, not by address:
-#   plain DNS        IP:53
-#   DNS-over-TLS     tls://IP              (port 853)
-#   DNS-over-HTTPS   https://IP/dns-query  (port 443)
-#   DNS-over-QUIC    quic://IP             (port 853, where supported)
-# A network may block any single protocol or port, so the intended
-# resilient setup repeats every IP in the schemes above and dnsproxy
-# tries all entries in parallel, using the first one that answers.
-# Note that the bare IP entries below only exercise plain DNS on port
-# 53; adding the tls:// and https:// forms of the same IP is what
-# actually bypasses a blocked port 53.
+# documented anchor addresses (IPv4 and IPv6) of each provider, bare,
+# without protocol forms. Each address is reachable over several
+# protocols; the access form is chosen by scheme and port, not by
+# address: plain DNS IP:53, DNS-over-TLS tls://IP on port 853,
+# DNS-over-HTTPS https://IP/dns-query on port 443, DNS-over-QUIC
+# quic://IP on port 853, DNSCrypt via its server stamp. Protocols per
+# provider below are those documented on the provider's official pages.
+# dnsproxy tries all bootstrap entries in parallel and uses the first
+# one that answers, so a blocked protocol or port does not stop
+# resolution. Bare IP entries exercise plain DNS on port 53; the tls://
+# and https:// forms of the same IP are what bypass a blocked port 53.
 bootstrap_resolvers = [
-  "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
-  "94.140.14.14", "94.140.15.15", "45.90.28.0", "45.90.30.0", "208.67.222.222", "208.67.220.220",
-  "193.110.81.0", "185.252.24.0", "76.76.2.0", "76.76.10.0", "194.242.2.2", "185.228.168.9",
-  "185.228.169.9", "149.112.121.10", "149.112.121.20", "86.54.119.1", "185.43.135.1", "193.17.47.1",
-  "77.88.8.8", "77.88.8.1", "185.71.138.138", "185.71.138.139", "185.222.222.222", "45.11.45.11",
-  "223.5.5.5", "223.6.6.6", "1.12.12.12", "120.53.53.53", "176.9.93.198", "176.9.1.117",
-  "80.67.169.40", "174.138.29.175", "91.239.100.100", "89.233.43.71", "104.26.14.30", "104.26.15.30",
-  "45.86.125.58", "45.86.125.59", "83.220.169.155", "194.0.5.3", "194.0.5.64", "103.2.57.5",
-  "185.95.218.42", "185.95.218.43", "185.194.94.71", "146.255.56.98", "158.64.1.29", "130.59.31.248",
-  "130.59.31.251", "91.198.156.20", "198.54.117.10", "198.54.117.11", "194.169.169.169", "217.0.43.114",
-  "217.0.43.66", "8.26.56.26", "8.20.247.20", "185.111.188.46", "94.130.180.225", "78.47.64.161",
-  "94.198.41.235",
+  # Cloudflare: plain, DoT, DoH. IPv4 1.1.1.1, 1.0.0.1. IPv6 2606:4700:4700::1111, 2606:4700:4700::1001.
+  "1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001",
+  # Google: plain, DoT, DoH. IPv4 8.8.8.8, 8.8.4.4. IPv6 2001:4860:4860::8888, 2001:4860:4860::8844.
+  "8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844",
+  # Quad9: plain, DoT, DoH, DNSCrypt. IPv4 9.9.9.9, 149.112.112.112. IPv6 2620:fe::fe, 2620:fe::9.
+  "9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9",
+  # AdGuard DNS: plain, DoT, DoH, DoQ, DNSCrypt. IPv4 94.140.14.14, 94.140.15.15. IPv6 2a10:50c0::ad1:ff, 2a10:50c0::ad2:ff.
+  "94.140.14.14", "94.140.15.15", "2a10:50c0::ad1:ff", "2a10:50c0::ad2:ff",
+  # NextDNS: plain, DoT, DoH, DoQ (UDP 8853). IPv4 45.90.28.0, 45.90.30.0. IPv6 2a07:a8c0::, 2a07:a8c1::.
+  "45.90.28.0", "45.90.30.0", "2a07:a8c0::", "2a07:a8c1::",
+  # Control D: plain, DoT, DoH, DoQ. DoH path varies by profile. IPv4 76.76.2.0, 76.76.10.0. IPv6 2606:1a40::0, 2606:1a40:1::0.
+  "76.76.2.0", "76.76.10.0", "2606:1a40::0", "2606:1a40:1::0",
+  # Mullvad: DoT, DoH. Plain 53 only for bootstrapping hostnames. IPv4 194.242.2.2. IPv6 2a07:e340::2.
+  "194.242.2.2", "2a07:e340::2",
+  # CleanBrowsing: plain, DoT, DoH. Security profile. IPv4 185.228.168.9, 185.228.169.9. IPv6 2a0d:2a00:1::2, 2a0d:2a00:2::2.
+  "185.228.168.9", "185.228.169.9", "2a0d:2a00:1::2", "2a0d:2a00:2::2",
+  # Cisco OpenDNS: plain documented; DoT and DoH also answer on these IPs. IPv4 208.67.222.222, 208.67.220.220.
+  "208.67.222.222", "208.67.220.220",
+  # CIRA Canadian Shield: plain, DoT, DoH. Private profile. IPv4 149.112.121.10, 149.112.122.10. IPv6 2620:10a:80bb::10, 2620:10a:80bc::10.
+  "149.112.121.10", "149.112.122.10", "2620:10a:80bb::10", "2620:10a:80bc::10",
+  # DNS4EU: plain, DoT, DoH. Protective profile. IPv4 86.54.11.1, 86.54.11.201. IPv6 2a13:1001::86:54:11:1, 2a13:1001::86:54:11:201.
+  "86.54.11.1", "86.54.11.201", "2a13:1001::86:54:11:1", "2a13:1001::86:54:11:201",
+  # CZ.NIC ODVR: plain, DoT, DoH. IPv4 193.17.47.1, 185.43.135.1. IPv6 2001:148f:ffff::1, 2001:148f:fffe::1.
+  "193.17.47.1", "185.43.135.1", "2001:148f:ffff::1", "2001:148f:fffe::1",
+  # Yandex: plain, DoT, DoH. Basic profile. IPv4 77.88.8.8, 77.88.8.1. IPv6 2a02:6b8::feed:0ff, 2a02:6b8:0:1::feed:0ff.
+  "77.88.8.8", "77.88.8.1", "2a02:6b8::feed:0ff", "2a02:6b8:0:1::feed:0ff",
+  # Wikimedia DNS: DoT, DoH. No plain DNS. IPv4 185.71.138.138. IPv6 2001:67c:930::1.
+  "185.71.138.138", "2001:67c:930::1",
+  # dns.sb: plain, DoT, DoH. IPv4 185.222.222.222, 45.11.45.11. IPv6 2a09::, 2a11::.
+  "185.222.222.222", "45.11.45.11", "2a09::", "2a11::",
+  # AliDNS: plain, DoT, DoH. IPv4 223.5.5.5, 223.6.6.6. IPv6 2400:3200::1, 2400:3200:baba::1.
+  "223.5.5.5", "223.6.6.6", "2400:3200::1", "2400:3200:baba::1",
+  # dnsforge.de: plain, DoT, DoH, DoQ. IPv4 176.9.93.198, 176.9.1.117. IPv6 2a01:4f8:151:34aa::198, 2a01:4f8:141:316d::117.
+  "176.9.93.198", "176.9.1.117", "2a01:4f8:151:34aa::198", "2a01:4f8:141:316d::117",
+  # FDN: plain, DoT, DoH. IPv4 80.67.169.12, 80.67.169.40. IPv6 2001:910:800::12, 2001:910:800::40.
+  "80.67.169.12", "80.67.169.40", "2001:910:800::12", "2001:910:800::40",
+  # Tiarap: plain, DoT, DoH, DoQ, DNSCrypt. IPv4 174.138.29.175, 174.138.21.128. IPv6 2400:6180:0:d0::5f73:4001, 2400:6180:0:d0::5f6e:4001.
+  "174.138.29.175", "174.138.21.128", "2400:6180:0:d0::5f73:4001", "2400:6180:0:d0::5f6e:4001",
+  # UncensoredDNS: DoT, DoH, DoQ. No plain DNS since 2022. IPv4 91.239.100.100, 89.233.43.71. IPv6 2001:67c:28a4::, 2a01:3a0:53:53::.
+  "91.239.100.100", "89.233.43.71", "2001:67c:28a4::", "2a01:3a0:53:53::",
+  # dnsHome.de: plain, DoT, DoH, DoQ, DNSCrypt (8443). IPv4 45.86.125.58, 45.86.125.59. IPv6 2a0c:8901::53, 2a0c:8902::53.
+  "45.86.125.58", "45.86.125.59", "2a0c:8901::53", "2a0c:8902::53",
+  # DNS4all: plain, DoT, DoH, DoQ. IPv4 194.0.5.3. IPv6 2001:678:8::3.
+  "194.0.5.3", "2001:678:8::3",
+  # Digitale Gesellschaft: DoT, DoH. IPv4 185.95.218.42, 185.95.218.43. IPv6 2a05:fc84::42, 2a05:fc84::43.
+  "185.95.218.42", "185.95.218.43", "2a05:fc84::42", "2a05:fc84::43",
+  # Applied Privacy: DoT, DoH. DoH path /query, no plain DNS. IPv4 146.255.56.98. IPv6 2a02:1b8:10:234::2.
+  "146.255.56.98", "2a02:1b8:10:234::2",
+  # RESTENA: DoT, DoH. IPv4 158.64.1.29. IPv6 2001:a18:1::29.
+  "158.64.1.29", "2001:a18:1::29",
+  # NIC.LV: plain, DoT, DoH. IPv4 91.198.156.20. IPv6 2001:678:84::0.
+  "91.198.156.20", "2001:678:84::0",
+  # Surfshark: plain, DoH. IPv4 194.169.169.169. IPv6 2a09:a707:169::.
+  "194.169.169.169", "2a09:a707:169::",
+  # Comodo Dome Shield: plain. IPv4 8.26.56.26, 8.20.247.20.
+  "8.26.56.26", "8.20.247.20",
+  # dnsforfamily: plain, DoT, DoH, DNSCrypt. IPv4 94.130.180.225, 78.47.64.161. IPv6 2a01:4f8:1c0c:40db::1, 2a01:4f8:1c17:4df8::1.
+  "94.130.180.225", "78.47.64.161", "2a01:4f8:1c0c:40db::1", "2a01:4f8:1c17:4df8::1",
+  # CryptoStorm: DNSCrypt. Austria node. IPv4 94.198.41.235. IPv6 2001:ac8:29:a1::53.
+  "94.198.41.235", "2001:ac8:29:a1::53",
 ]
 query_log_path = "/var/log/pyntara/dnsproxy.log"
 query_log_mode = "0600"
