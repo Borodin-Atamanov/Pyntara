@@ -10,7 +10,7 @@ tls://{profile_id}.dns.nextdns.io
 quic://{profile_id}.dns.nextdns.io
 ```
 
-The task uses dnsproxy load balancing. No order is required between DoH, DoT and DoQ. The fallback resolver group is a copy of the bootstrap addresses in the same protocol forms, and is passed to dnsproxy as the fallback list. Fallback is used when the primary upstream group is unavailable.
+The task uses dnsproxy load balancing. No order is required between DoH, DoT and DoQ. The fallback resolver group is a copy of the bootstrap addresses in the same protocol forms, and is passed to dnsproxy as the fallback list. Fallback is used when the primary upstream group is unavailable. When the `append_provider_dns` flag is enabled, the addresses discovered from the current network are appended to the end of both the fallback and the bootstrap resolver groups in plain UDP port 53 form only.
 
 ## Cache and logging
 Caching is enabled by default and is an explicit configuration value. Every request is written to the configured single query log file through dnsproxy verbose output. The file is root-owned and uses the configured mode. Log rotation is outside this task.
@@ -34,6 +34,8 @@ A matching installed binary, service unit, query log setup, resolver drop-in, en
 
 ## Runtime DNS discovery
 The task module exposes `discover_dns_servers(cfg, timeout)` for other tasks that need DNS addresses from current network state. It always invokes both `resolvectl dns` and `nmcli -t -f IP4.DNS,IP6.DNS device show`; it does not read files or change system state. Outputs from both commands are combined, duplicate and loopback addresses are removed, valid addresses are normalized and sorted into separate IPv4 and IPv6 tuples. A failure of one command does not discard results from the other; diagnostics are returned with the address groups. The function only discovers addresses and does not test DNS reachability.
+
+The task itself calls discovery during installation when `append_provider_dns` is enabled. Every discovered IPv4 and IPv6 address is appended to the end of the fallback and the bootstrap resolver groups as a bare address for plain UDP on port 53; no encrypted protocol forms are generated for provider addresses. An empty discovery leaves the configured pool unchanged. When the flag is disabled, the discovery commands are not run at all. Because the discovered addresses are baked into the rendered unit, a changed provider DNS on a later run rewrites the unit and restarts the service.
 
 ## Limitations
 Unit tests mock external processes, filesystem paths and network behavior. They do not prove external DNS availability in every network, fallback reachability for every configured server or systemd behavior on every distribution. The target system must be checked after installation.

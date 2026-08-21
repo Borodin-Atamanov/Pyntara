@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +56,9 @@ def test_discover_dns_servers_keeps_one_source_when_other_fails(monkeypatch: Any
 
 def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> None:
     config = make_config()
-    command = task_module._command(config.dnsproxy_setup, "39284e")
+    command = task_module._command(
+        config.dnsproxy_setup, "39284e", task_module.DiscoveredDnsServers((), (), ())
+    )
     assert "--listen=0.0.0.0" in command
     assert "--listen=::" in command
     assert "--upstream=https://dns.nextdns.io/39284e" in command
@@ -77,7 +80,9 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
 
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
     config = make_config()
-    command = task_module._command(config.dnsproxy_setup, "39284e")
+    command = task_module._command(
+        config.dnsproxy_setup, "39284e", task_module.DiscoveredDnsServers((), (), ())
+    )
     for form in (
         "--bootstrap=1.1.1.1",
         "--bootstrap=tls://1.1.1.1:853",
@@ -101,9 +106,58 @@ def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
     assert min(bootstrap_indices) > last_other
 
 
-def test_task_writes_root_service_and_resolver_configuration(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_command_appends_provider_dns_plain_forms_to_fallback_end() -> None:
+    config = make_config()
+    discovered = task_module.DiscoveredDnsServers(
+        ("192.168.1.1",), ("2001:db8::1",), ()
+    )
+    command = task_module._command(config.dnsproxy_setup, "39284e", discovered)
+    fallback_indices = [
+        index for index, arg in enumerate(command) if arg.startswith("--fallback=")
+    ]
+    provider_forms = [command[index] for index in fallback_indices[-2:]]
+    assert provider_forms == ["--fallback=192.168.1.1", "--fallback=[2001:db8::1]"]
+    assert not any(arg.startswith("--fallback=tls://192.168.1.1") for arg in command)
+    assert not any(arg.startswith("--fallback=https://192.168.1.1") for arg in command)
+    assert not any(arg.startswith("--fallback=quic://192.168.1.1") for arg in command)
+
+
+def test_command_appends_provider_dns_plain_forms_to_bootstrap_end() -> None:
+    config = make_config()
+    discovered = task_module.DiscoveredDnsServers(
+        ("192.168.1.1",), ("2001:db8::1",), ()
+    )
+    command = task_module._command(config.dnsproxy_setup, "39284e", discovered)
+    bootstrap_indices = [
+        index for index, arg in enumerate(command) if arg.startswith("--bootstrap=")
+    ]
+    provider_forms = [command[index] for index in bootstrap_indices[-2:]]
+    assert provider_forms == ["--bootstrap=192.168.1.1", "--bootstrap=[2001:db8::1]"]
+    assert not any(arg.startswith("--bootstrap=tls://192.168.1.1") for arg in command)
+
+
+def test_command_with_empty_discovery_keeps_configured_pool_only() -> None:
+    config = make_config()
+    command = task_module._command(
+        config.dnsproxy_setup,
+        "39284e",
+        task_module.DiscoveredDnsServers((), (), ()),
+    )
+    assert sum(arg.startswith("--fallback=") for arg in command) == 8
+    assert sum(arg.startswith("--bootstrap=") for arg in command) == 8
+
+
+def _run_task(
+    tmp_path: Path,
+    monkeypatch: Any,
+    *,
+    append_provider_dns: bool = True,
+    provider_dns: bool = False,
+) -> tuple[Any, Path, list[list[str]], Any]:
+    '''Run the dnsproxy task with a uniform command mock and return the
+    result, the rendered service path, the recorded commands and the
+    built config. provider_dns makes the discovery commands return a
+    provider IPv4 and IPv6 resolver pair.'''
     install_vault(tmp_path, monkeypatch)
     service_path = tmp_path / "dnsproxy.service"
     config = make_config(
@@ -113,6 +167,12 @@ def test_task_writes_root_service_and_resolver_configuration(
         dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
+    )
+    config = replace(
+        config,
+        dnsproxy_setup=replace(
+            config.dnsproxy_setup, append_provider_dns=append_provider_dns
+        ),
     )
     context = make_context(vault_password=PASSWORD, config=config)
     monkeypatch.setattr(
@@ -138,12 +198,24 @@ def test_task_writes_root_service_and_resolver_configuration(
     monkeypatch.setattr(task_module, "service_is_active", lambda *_: False)
     monkeypatch.setattr(task_module, "_wait_active", lambda *_: True)
     calls: list[list[str]] = []
-    monkeypatch.setattr(
-        task_module,
-        "run_command",
-        lambda command, **kwargs: calls.append(command) or FakeProc(0, ""),
-    )
+
+    def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        calls.append(command)
+        if provider_dns and command == ["resolvectl", "dns"]:
+            return FakeProc(0, "Global:\nLink 2 (eth0): 192.168.1.1 2001:db8::2\n")
+        if provider_dns and command[0] == "nmcli":
+            return FakeProc(0, "IP4.DNS[1]:192.168.1.1\nIP6.DNS[1]:2001:db8::1\n")
+        return FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
     result = task_module.task(context)
+    return result, service_path, calls, config
+
+
+def test_task_writes_root_service_and_resolver_configuration(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, service_path, calls, config = _run_task(tmp_path, monkeypatch)
     assert result.success is True
     assert service_path.read_text(encoding="utf-8").startswith("[Unit]")
     assert all(directive in (
@@ -151,6 +223,32 @@ def test_task_writes_root_service_and_resolver_configuration(
         / config.dnsproxy_setup.resolved_dropin_file_name
     ).read_text(encoding="utf-8") for directive in config.dnsproxy_setup.resolved_dns_directives)
     assert any(command[:2] == ["systemctl", "enable"] for command in calls)
+
+
+def test_task_appends_discovered_provider_dns_to_service_unit(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, service_path, _, _ = _run_task(tmp_path, monkeypatch, provider_dns=True)
+    assert result.success is True
+    unit = service_path.read_text(encoding="utf-8")
+    assert "--fallback=192.168.1.1" in unit
+    assert "--bootstrap=192.168.1.1" in unit
+    assert "--fallback=[2001:db8::1]" in unit
+    assert "--bootstrap=[2001:db8::1]" in unit
+    assert "--fallback=tls://192.168.1.1:853" not in unit
+
+
+def test_task_skips_provider_dns_discovery_when_disabled(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, service_path, calls, _ = _run_task(
+        tmp_path, monkeypatch, append_provider_dns=False
+    )
+    assert result.success is True
+    assert not any(command == ["resolvectl", "dns"] for command in calls)
+    unit = service_path.read_text(encoding="utf-8")
+    assert "--fallback=192.168.1.1" not in unit
+    assert "--bootstrap=192.168.1.1" not in unit
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:

@@ -192,6 +192,7 @@ def base_config() -> str:
         'doq_host_format = "quic://{profile_id}.dns.nextdns.io"\n'
         'upstream_mode = "load_balance"\ncache_enabled = true\n'
         'bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]\n'
+        'append_provider_dns = true\n'
         'query_log_path = "/var/log/pyntara/dnsproxy.log"\nquery_log_mode = "0600"\n'
         'service_restart_seconds = 2.0\ninstall_retries = 3\n'
         'start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n'

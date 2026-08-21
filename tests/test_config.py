@@ -328,6 +328,7 @@ doq_host_format = "quic://{profile_id}.dns.nextdns.io"
 upstream_mode = "load_balance"
 cache_enabled = true
 bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]
+append_provider_dns = true
 query_log_path = "/var/log/pyntara/dnsproxy.log"
 query_log_mode = "0600"
 service_restart_seconds = 2.0
@@ -410,6 +411,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "archive.ubuntu.com",
         "security.ubuntu.com",
     )
+    assert config.dnsproxy_setup.append_provider_dns is True
     assert config.hostname.hostname_file == "/etc/hostname"
     assert config.hostname.set_hostname_command == (
         "hostnamectl",

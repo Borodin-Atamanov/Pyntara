@@ -14,6 +14,11 @@ dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
 upstream_mode = "load_balance"
 cache_enabled = true
+# When true, the task reads the current network provider DNS (resolvectl
+# and nmcli) and appends every discovered address to the end of both the
+# bootstrap and the fallback resolver groups in plain UDP port 53 form
+# only. An empty discovery leaves the configured pool unchanged.
+append_provider_dns = true
 # Bootstrap resolvers dnsproxy uses to resolve the hostnames of the
 # encrypted upstream servers before contacting them. The list holds the
 # documented anchor addresses (IPv4 and IPv6) of each provider, bare,
@@ -160,10 +165,10 @@ bootstrap_resolvers = [
 # ]
 query_log_path = "/var/log/pyntara/dnsproxy.log"
 query_log_mode = "0600"
-service_restart_seconds = 2.0
+service_restart_seconds = 7.0
 install_retries = 3
 start_check_attempts = 5
-start_check_retry_delay_seconds = 1.0
+start_check_retry_delay_seconds = 3.0
 resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 resolved_dropin_file_name = "pyntara-dnsproxy.conf"
 resolved_dropin_file_mode = "0644"

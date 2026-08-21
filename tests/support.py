@@ -539,6 +539,7 @@ def make_config(
             upstream_mode="load_balance",
             cache_enabled=True,
             bootstrap_resolvers=("1.1.1.1", "2606:4700:4700::1111"),
+            append_provider_dns=True,
             query_log_path=dnsproxy_query_log_path,
             query_log_mode=0o600,
             service_restart_seconds=2.0,

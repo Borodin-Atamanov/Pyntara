@@ -34,6 +34,7 @@ class DnsproxySetupConfig:
     upstream_mode: str
     cache_enabled: bool
     bootstrap_resolvers: tuple[str, ...]
+    append_provider_dns: bool
     query_log_path: Path
     query_log_mode: int
     service_restart_seconds: float
@@ -120,6 +121,9 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     if not isinstance(cache_enabled, bool):
         raise ConfigError("dnsproxy_setup.cache_enabled must be a boolean")
     bootstrap_resolvers = _string_list(raw, "bootstrap_resolvers")
+    append_provider_dns = raw.get("append_provider_dns")
+    if not isinstance(append_provider_dns, bool):
+        raise ConfigError("dnsproxy_setup.append_provider_dns must be a boolean")
     query_log_path = Path(
         _nonempty_string_field(
             raw.get("query_log_path"), "dnsproxy_setup.query_log_path"
@@ -213,6 +217,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         upstream_mode=upstream_mode,
         cache_enabled=cache_enabled,
         bootstrap_resolvers=bootstrap_resolvers,
+        append_provider_dns=append_provider_dns,
         query_log_path=query_log_path,
         query_log_mode=query_log_mode,
         service_restart_seconds=service_restart_seconds,
