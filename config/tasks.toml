@@ -117,8 +117,8 @@ modes = ["minimal", "server", "desktop"]
 [[tasks]]
 name = "nextdns_setup_system_wide"
 description = "Per-user NextDNS account and system-wide DNS endpoint."
-depends = ["local_vault_setup", "hostname"]
-modes = []
+depends = ["local_vault_setup", "hostname", "dnscrypt_setup"]
+modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "i2pd_service_setup"

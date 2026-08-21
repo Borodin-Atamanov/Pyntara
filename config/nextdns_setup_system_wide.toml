@@ -1,24 +1,20 @@
 [nextdns_setup_system_wide]
-# System-wide NextDNS configuration (docs/spec/networking.md). The task
-# picks one NextDNS profile per machine from the vault group named below,
-# deterministically from the hostname, and configures systemd-resolved to
-# resolve through that profile with DNS-over-TLS. The profile is selected
-# by sha256(hostname) modulo the number of profiles in the group, so the
-# same hostname always gets the same profile. The task writes a drop-in
-# into the resolved.conf.d directory: it only adds the directives that
-# are missing and updates the ones whose value differs, never rewriting
-# the file wholesale. DNSOverTLS=opportunistic keeps the machine online
-# even where TLS DNS is blocked or unavailable; the FallbackDNS servers
-# below answer whenever NextDNS itself is unreachable, so the machine
-# never loses resolution.
+# System-wide NextDNS configuration through dnscrypt-proxy
+# (docs/spec/networking.md). The task picks one NextDNS profile per
+# machine from the vault group named below, deterministically from the
+# hostname, and configures dnscrypt-proxy to resolve through that
+# profile over all available encrypted protocols (DoH, DoT, DoQ). The
+# profile is selected by sha256(hostname) modulo the number of profiles
+# in the group, so the same hostname always gets the same profile. The
+# task writes [static] entries into the dnscrypt-proxy configuration
+# file and sets server_names to use them; the proxy tries every protocol
+# and keeps the fastest. The fallback servers already configured in
+# dnscrypt-proxy (by the dnscrypt_setup task) answer whenever NextDNS
+# itself is unreachable, so the machine never loses resolution.
 # Title of the vault subgroup that carries the NextDNS profile accounts.
 vault_group_title = "NextDNS"
-# Directory of systemd-resolved drop-in configuration files.
-resolved_conf_dir = "/etc/systemd/resolved.conf.d"
-# Drop-in file name the task owns inside resolved_conf_dir.
-dropin_file_name = "pyntara.conf"
-# File mode of the rendered drop-in, as an octal string.
-dropin_file_mode = "0644"
+# Path of the dnscrypt-proxy configuration file the task edits in place.
+dnscrypt_config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
 # Path of the file that records the applied NextDNS profile ID. The task
 # writes the 6-hex ID here after a successful verification and removes it
 # on revert, so the file's presence means the profile is applied and
@@ -27,76 +23,23 @@ dropin_file_mode = "0644"
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 # File mode of the recorded profile ID file, as an octal string.
 profile_id_file_mode = "0644"
-# Section header of the resolved.conf drop-in.
-resolve_section = "[Resolve]"
-# Header comment that marks the drop-in as owned by this task.
-dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."
-# Domains directive that routes every query through the global resolver.
-domains_directive = "~."
-# IPv4 anycast addresses of the NextDNS service. The profile is carried by
-# the TLS server name (the DoT endpoint), never by the address.
-ipv4_servers = ["45.90.28.0", "45.90.30.0"]
-# IPv6 anycast prefixes of the NextDNS service. The profile ID is embedded
-# in the last three bytes of each address: <prefix>::<b1>:<b2b3>.
-ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]
-# DoT endpoint pattern of the NextDNS service; {profile_id} is replaced
-# with the 6-hex profile ID, producing <id>.dns.nextdns.io.
-dot_endpoint_format = "{profile_id}.dns.nextdns.io"
+# DoH endpoint pattern of the NextDNS service; {profile_id} is replaced
+# with the 6-hex profile ID, producing https://dns.nextdns.io/<id>.
+doh_url_format = "https://dns.nextdns.io/{profile_id}"
+# DoT endpoint pattern; {profile_id} is replaced, producing
+# <id>.dns.nextdns.io:853.
+dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"
+# DoQ endpoint pattern; {profile_id} is replaced, producing
+# quic://<id>.dns.nextdns.io:853.
+doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"
+# Server name prefix for the [static] entries; the task creates three
+# entries named <prefix>-doh, <prefix>-dot and <prefix>-doq.
+static_name_prefix = "nextdns-profile"
 # Verification endpoint that reports the active NextDNS profile as JSON;
 # the task checks it after applying the configuration.
 verification_url = "https://test.nextdns.io/"
-# systemd-resolved DNSOverTLS mode: yes, opportunistic or no. opportunistic
-# tries TLS and falls back to plain DNS for the same server, so the
-# machine keeps working on networks where TLS DNS is blocked.
-dns_over_tls = "opportunistic"
-# Global DNS servers used when no per-link server applies. The list is
-# the machine-wide resolver: every query that NextDNS cannot answer (for
-# example when its network is unreachable) falls back to these servers.
-# The set covers seven independent providers, each with a large and
-# reliable network: Cloudflare, Google, Quad9, Cisco OpenDNS, AdGuard,
-# CleanBrowsing and Verisign, with IPv4 and the main IPv6 anycast
-# addresses, so a NextDNS outage never leaves the machine without
-# resolution and no single provider becomes a point of failure.
-fallback_dns = [
-    "1.1.1.1",
-    "1.0.0.1",
-    "8.8.8.8",
-    "8.8.4.4",
-    "9.9.9.9",
-    "149.112.112.112",
-    "208.67.222.222",
-    "208.67.220.220",
-    "94.140.14.14",
-    "94.140.15.15",
-    "185.228.168.9",
-    "64.6.64.6",
-    "2606:4700:4700::1111",
-    "2001:4860:4860::8888",
-]
-# When true, the task tells NetworkManager to ignore DNS servers from
-# DHCP on every connection, so the global NextDNS servers above actually
-# serve the machine instead of being shadowed by per-link DNS. The task
-# checks that nmcli exists before touching NetworkManager.
-manage_networkmanager = true
-# Names of the drop-in directive keys the task owns: a line whose key
-# equals one of these is replaced by the merge, every other line survives.
-directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]
-# Command that checks whether NetworkManager is present; a zero exit means
-# it is. The first token is the executable.
-nmcli_check_command = ["nmcli", "--version"]
-# Command that lists every NetworkManager connection profile name; the
-# first colon-separated field of every output line is the connection name.
-nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
-# Command template that sets the ignore-auto-dns flags on one connection.
-# The {connection} placeholder is replaced with the connection name and
-# {value} with true or false; the command runs with the same value for
-# ipv4.ignore-auto-dns and ipv6.ignore-auto-dns.
-nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
-# Command that restarts systemd-resolved so the drop-in takes effect.
-restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
-# Command that prints the active resolver state; the server lines carry
-# the DNS directive and the verification checks them.
-resolvectl_status_command = ["resolvectl", "status"]
+# Command that restarts dnscrypt-proxy so the configuration takes effect.
+restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]
 # Command that queries the verification endpoint. The {url} placeholder is
 # replaced with verification_url and {timeout} with the command timeout in
 # seconds; the endpoint answers with a redirect to a per-query subdomain,

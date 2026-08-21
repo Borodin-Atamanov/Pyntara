@@ -1,40 +1,36 @@
-"""Task nextdns_setup_system_wide: configure the machine resolver through NextDNS.
+"""Task nextdns_setup_system_wide: configure dnscrypt-proxy for a NextDNS profile.
 
 The task picks one NextDNS profile per machine, deterministically from
-the hostname, and configures systemd-resolved to resolve through that
-profile over DNS-over-TLS: the profile comes from the vault subgroup
-named by nextdns_setup_system_wide.vault_group_title, the endpoint
-formulas live in pyntara.nextdns. A drop-in in the resolved.conf.d
-directory carries the DNS= entries with the TLS server name, the
-FallbackDNS= servers that keep the machine online when NextDNS is
-unreachable, DNSOverTLS= and Domains=~. The drop-in is merged, never
-rewritten wholesale: the managed directives (DNS, FallbackDNS,
-DNSOverTLS, Domains) are replaced by their key, every other line in the
-file survives, so a profile change swaps the old DNS= line instead of
-stacking a second one. When manage_networkmanager is set, NetworkManager
-is told to ignore the DNS servers it receives from DHCP, so the global
-NextDNS servers are actually used instead of being shadowed by per-link
-DNS.
+the hostname, and configures dnscrypt-proxy to resolve through that
+profile over all available encrypted protocols: DNS-over-HTTPS (DoH),
+DNS-over-TLS (DoT) and DNS-over-QUIC (DoQ). The profile comes from the
+vault subgroup named by nextdns_setup_system_wide.vault_group_title, the
+endpoint formulas live in the config. The task writes [static] entries
+into the dnscrypt-proxy configuration file and sets server_names to use
+them, so the proxy tries every protocol and keeps the fastest. The
+fallback servers already configured in dnscrypt-proxy (by the
+dnscrypt_setup task) answer whenever NextDNS itself is unreachable, so
+the machine never loses resolution.
 
 The task verifies that the machine really resolves through the chosen
-profile the way NextDNS recommends: resolvectl status must list the
-configured servers and a query to test.nextdns.io must report the
-profile (docs/spec/networking.md, section Verification). On a successful
-verification the applied profile ID is recorded in the profile ID file
-for the System Metrics collector; on a failed verification the drop-in,
-the profile ID file and the NetworkManager changes are reverted, so
-the machine never keeps a half-applied DNS configuration. The profiles
+profile the way NextDNS recommends: a query to test.nextdns.io must
+report the profile (docs/spec/networking.md, section Verification). On a
+successful verification the applied profile ID is recorded in the
+profile ID file for the System Metrics collector; on a failed
+verification the [static] entries and the server_names line are reverted,
+so the machine never keeps a half-applied configuration. The profiles
 come from the source vaults of the fresh clone, opened with the run
 password the way local_vault_setup opens them; the runtime vault is only
 a fallback, because the copy may be stale and predate the profile group.
-The task is idempotent: it skips when the drop-in already matches and
-the resolver already answers through the profile; force mode rewrites
-the drop-in and reapplies the NetworkManager changes, but the profile
-choice from the hostname never changes.
+The task is idempotent: it skips when the [static] entries and
+server_names already match and the resolver already answers through the
+profile; force mode rewrites the entries and restarts the proxy, but the
+profile choice from the hostname never changes.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import socket
@@ -45,11 +41,10 @@ from pykeepass import PyKeePass
 
 from pyntara import metrics
 from pyntara.config import NextdnsSetupSystemWideConfig
-from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.nextdns import resolve_servers, select_profile_id
+from pyntara.nextdns import select_profile_id
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import run_command
 
@@ -62,10 +57,99 @@ from pyntara.utils import run_command
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _dropin_path(cfg: NextdnsSetupSystemWideConfig) -> Path:
-    """The full drop-in path of the task."""
+def _static_entry_names(cfg: NextdnsSetupSystemWideConfig) -> tuple[str, str, str]:
+    """The three [static] entry names for the profile: DoH, DoT, DoQ."""
 
-    return cfg.resolved_conf_dir / cfg.dropin_file_name
+    p = cfg.static_name_prefix
+    return f"{p}-doh", f"{p}-dot", f"{p}-doq"
+
+
+def _doh_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
+    """The DoH DNS stamp for a profile.
+
+    The stamp encodes the DoH URL https://dns.nextdns.io/<profile_id>
+    as a DoH stamp (protocol 0x02) with no certificate hash, so
+    dnscrypt-proxy uses the public CA system to verify the TLS
+    certificate.
+    """
+
+    url = cfg.doh_url_format.format(profile_id=profile_id)
+    rest = url.removeprefix("https://")
+    if "/" in rest:
+        host, path = rest.split("/", 1)
+        path = f"/{path}"
+    else:
+        host = rest
+        path = "/"
+    host_bytes = host.encode("utf-8")
+    path_bytes = path.encode("utf-8")
+    stamp_bin = (
+        bytes([0x02])
+        + b"\x00" * 8
+        + bytes([len(host_bytes)])
+        + host_bytes
+        + bytes([len(path_bytes)])
+        + path_bytes
+    )
+    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
+    return f"sdns://{stamp_b64}"
+
+
+def _dot_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
+    """The DoT DNS stamp for a profile.
+
+    The stamp encodes the DoT endpoint <profile_id>.dns.nextdns.io:853
+    as a DoT stamp (protocol 0x06) with no certificate hash.
+    """
+
+    host = cfg.dot_stamp_host_format.format(profile_id=profile_id)
+    host_bytes = host.encode("utf-8")
+    stamp_bin = (
+        bytes([0x06]) + b"\x00" * 8 + bytes([len(host_bytes)]) + host_bytes
+    )
+    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
+    return f"sdns://{stamp_b64}"
+
+
+def _doq_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
+    """The DoQ DNS stamp for a profile.
+
+    The stamp encodes the DoQ endpoint quic://<profile_id>.dns.nextdns.io:853
+    as a DoQ stamp (protocol 0x0A) with no certificate hash.
+    """
+
+    host = cfg.doq_stamp_host_format.format(profile_id=profile_id)
+    host_bytes = host.encode("utf-8")
+    stamp_bin = (
+        bytes([0x0A]) + b"\x00" * 8 + bytes([len(host_bytes)]) + host_bytes
+    )
+    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
+    return f"sdns://{stamp_b64}"
+
+
+def _static_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
+    """The [static] section lines for a profile over all three protocols.
+
+    Returns the TOML lines that define three [static] entries (DoH, DoT,
+    DoQ). The server_names line is separate.
+    """
+
+    doh_name, dot_name, doq_name = _static_entry_names(cfg)
+    return (
+        f"[static.'{doh_name}']",
+        f"stamp = '{_doh_stamp(profile_id, cfg)}'",
+        f"[static.'{dot_name}']",
+        f"stamp = '{_dot_stamp(profile_id, cfg)}'",
+        f"[static.'{doq_name}']",
+        f"stamp = '{_doq_stamp(profile_id, cfg)}'",
+    )
+
+
+def _server_names_line(cfg: NextdnsSetupSystemWideConfig) -> str:
+    """The server_names line that selects all three protocol entries."""
+
+    doh, dot, doq = _static_entry_names(cfg)
+    return f"server_names = ['{doh}', '{dot}', '{doq}']"
 
 
 def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
@@ -73,9 +157,9 @@ def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -
 
     The file is written only after a successful verification, so its
     presence means the profile is applied and verified. The mode and the
-    root ownership are applied like the drop-in; a failed write is
-    journaled and reported, so the task fails loudly instead of silently
-    losing the telemetry source.
+    root ownership are applied; a failed write is journaled and reported,
+    so the task fails loudly instead of silently losing the telemetry
+    source.
     """
 
     path = cfg.profile_id_file_path
@@ -97,9 +181,9 @@ def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -
 def _remove_profile_id_file(cfg: NextdnsSetupSystemWideConfig) -> None:
     """Remove the recorded profile ID file, if present.
 
-    The file is removed together with the drop-in on revert, so a reverted
-    machine never reports a profile that is no longer applied. A failed
-    removal is journaled but cannot stop the run.
+    The file is removed together with the [static] entries on revert, so
+    a reverted machine never reports a profile that is no longer applied.
+    A failed removal is journaled but cannot stop the run.
     """
 
     path = cfg.profile_id_file_path
@@ -112,207 +196,86 @@ def _remove_profile_id_file(cfg: NextdnsSetupSystemWideConfig) -> None:
         )
 
 
-def _directive_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
-    """The directive lines of the drop-in for a profile, in order.
+def _config_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
+    """True when the dnscrypt-proxy config already carries the entries.
 
-    The first directive lists the DoT servers with the TLS name, the
-    second the servers that answer when NextDNS is unreachable, the third
-    the DNSOverTLS mode and the fourth the Domains value that routes every
-    query through the global resolver. Every line is a single directive
-    whose key comes from cfg.directive_keys, so the shared merge replaces
-    the whole directive value instead of stacking duplicate keys. The
-    values come from the config: the endpoint addresses and the dot
-    format from nextdns_setup_system_wide.
+    The comparison checks that every [static] line and the server_names
+    line are present in the file. A missing file is never a match.
     """
 
-    servers = resolve_servers(
-        profile_id,
-        cfg.ipv4_servers,
-        cfg.ipv6_prefixes,
-        cfg.dot_endpoint_format,
-    )
-    dns_key, fallback_key, tls_key, domains_key = cfg.directive_keys
-    return (
-        f"{dns_key}={' '.join(servers)}",
-        f"{fallback_key}={' '.join(cfg.fallback_dns)}",
-        f"{tls_key}={cfg.dns_over_tls}",
-        f"{domains_key}={cfg.domains_directive}",
-    )
-
-
-def _dropin_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
-    """True when the drop-in already carries every expected directive.
-
-    The comparison checks the managed directive lines only: a line that
-    equals the expected value is present, a differing or commented line is
-    not a match. A missing file is never a match, so an absent drop-in is
-    always written.
-    """
-
-    dropin = _dropin_path(cfg)
-    if not dropin.is_file():
+    if not cfg.dnscrypt_config_path.is_file():
         return False
-    content = dropin.read_text(encoding="utf-8")
-    expected = _directive_lines(cfg, profile_id)
-    return all(line in content.splitlines() for line in expected)
+    content = cfg.dnscrypt_config_path.read_text(encoding="utf-8")
+    expected = (*_static_lines(cfg, profile_id), _server_names_line(cfg))
+    return all(line in content for line in expected)
 
 
-def _write_dropin(
+def _write_dnscrypt_config(
     cfg: NextdnsSetupSystemWideConfig, profile_id: str
 ) -> tuple[bool, str]:
-    """Merge the managed directives into the drop-in; return (changed, error).
+    """Write the [static] entries and server_names into the config.
 
-    The shared directive merge creates the directory, ensures the [Resolve]
-    section and the header comment, replaces the managed directives by
-    their key and preserves every foreign line, so a profile change swaps
-    the old DNS= line instead of stacking a second one. The file mode and
-    the root ownership are applied afterwards. An empty profile ID never
-    reaches the drop-in: it is rejected here, so the machine never gets a
-    broken resolver configuration.
+    Existing [static] entries owned by this task and the old server_names
+    line are removed, then the new entries are appended. Returns
+    (changed, error).
     """
 
-    dropin = _dropin_path(cfg)
-    if not profile_id:
-        return False, "no NextDNS profile selected"
+    path = cfg.dnscrypt_config_path
+    if not path.is_file():
+        return False, f"{path} is missing"
     try:
-        dropin.parent.mkdir(parents=True, exist_ok=True)
-        sync_directives_by_key(
-            dropin,
-            _directive_lines(cfg, profile_id),
-            cfg.dropin_header,
-            cfg.resolve_section,
-        )
-        os.chmod(dropin, cfg.dropin_file_mode)
-        if os.geteuid() == 0:
-            os.chown(dropin, 0, 0)
-        return True, ""
+        content = path.read_text(encoding="utf-8")
     except OSError as exc:
-        return False, f"cannot write the drop-in {dropin}: {exc}"
+        return False, f"cannot read {path}: {exc}"
+
+    doh_name, dot_name, doq_name = _static_entry_names(cfg)
+    owned_names = {doh_name, dot_name, doq_name}
+    lines = content.splitlines()
+    result: list[str] = []
+    skip_static = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[static."):
+            name = stripped[len("[static.'"):].rstrip("']")
+            if name in owned_names:
+                skip_static = True
+                continue
+            skip_static = False
+        if skip_static:
+            if stripped.startswith("[") and not stripped.startswith("[static."):
+                skip_static = False
+                result.append(line)
+            continue
+        if stripped.startswith("server_names"):
+            continue
+        result.append(line)
+
+    new_lines = list(_static_lines(cfg, profile_id))
+    result.extend(new_lines)
+    result.append(_server_names_line(cfg))
+
+    new_content = "\n".join(result) + "\n"
+    if new_content == content:
+        return False, ""
+
+    try:
+        path.write_text(new_content, encoding="utf-8")
+    except OSError as exc:
+        return False, f"cannot write {path}: {exc}"
+    return True, ""
 
 
-def _nmcli_present(cfg: NextdnsSetupSystemWideConfig) -> bool:
-    """True when NetworkManager is available.
-
-    The check command comes from the config; Kubuntu ships
-    NetworkManager, but the check keeps the task safe on a system without
-    it: the global resolved configuration then stands alone and per-link
-    DNS is left as is.
-    """
-
-    result = run_command(
-        cfg.nmcli_check_command,
-        check=False,
-        capture=True,
-        timeout=cfg.command_timeout_seconds,
-    )
-    return result.returncode == 0
-
-
-def _nm_connections(cfg: NextdnsSetupSystemWideConfig) -> list[str]:
-    """Names of every NetworkManager connection profile.
-
-    A connection profile is the unit that carries ipv4.ignore-auto-dns
-    and ipv6.ignore-auto-dns; the task sets the flags on all of them, so
-    no DHCP-issued per-link DNS shadows the global NextDNS servers. The
-    name is the first colon-separated field of every line of the list
-    command output, which comes from the config.
-    """
-
-    result = run_command(
-        cfg.nmcli_list_command,
-        check=False,
-        capture=True,
-        timeout=cfg.command_timeout_seconds,
-    )
-    if result.returncode != 0:
-        return []
-    return [line.split(":", 1)[0] for line in result.stdout.splitlines() if line]
-
-
-def _nm_set_dns_flags(cfg: NextdnsSetupSystemWideConfig, enabled: bool) -> bool:
-    """Set the ignore-auto-dns flags on every NM connection; True on success.
-
-    Both the IPv4 and the IPv6 flag are set to the same value on every
-    connection profile, so per-link DNS from DHCP is either fully ignored
-    or fully restored. The task never touches other NetworkManager
-    settings. A single failed connection does not fail the whole task:
-    the others are still configured and the failure is reported through
-    the return value. The modify command template comes from the config
-    and carries the {connection} and {value} placeholders.
-    """
-
-    timeout = cfg.command_timeout_seconds
-    if not _nmcli_present(cfg):
-        _log("NetworkManager not present, leaving per-link DNS untouched")
-        return True
-    value = "true" if enabled else "false"
-    ok = True
-    for name in _nm_connections(cfg):
-        command = [
-            part.replace("{connection}", name).replace("{value}", value)
-            for part in cfg.nmcli_modify_command
-        ]
-        result = run_command(
-            command,
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            ok = False
-            _log(
-                f"NetworkManager: cannot set ignore-auto-dns on connection "
-                f"{name!r}: {result.stderr.strip()}",
-                priority=cfg.error_priority,
-            )
-    if ok:
-        _log(
-            f"NetworkManager: ignore-auto-dns {'enabled' if enabled else 'disabled'} "
-            f"on {len(_nm_connections(cfg))} connections"
-        )
-    return ok
-
-
-def _restart_resolved(cfg: NextdnsSetupSystemWideConfig) -> str | None:
-    """Restart systemd-resolved; error text on failure, None on success.
-
-    The restart applies the drop-in immediately, so the verification that
-    follows tests the state the machine actually uses. The command comes
-    from the config.
-    """
+def _restart_proxy(cfg: NextdnsSetupSystemWideConfig) -> str | None:
+    """Restart dnscrypt-proxy; error text on failure, None on success."""
 
     try:
         run_command(
-            cfg.restart_resolved_command, timeout=cfg.command_timeout_seconds
+            list(cfg.restart_proxy_command),
+            timeout=cfg.command_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return f"cannot restart systemd-resolved: {exc}"
+        return f"cannot restart dnscrypt-proxy: {exc}"
     return None
-
-
-def _resolved_servers(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, list[str]]:
-    """(ok, server lines) of the active resolver state.
-
-    The lines are the DNS server entries of the resolvectl status output
-    (the command comes from the config), the state the machine actually
-    resolves through; an empty result or a nonzero exit means the
-    resolver state cannot be read.
-    """
-
-    result = run_command(
-        cfg.resolvectl_status_command,
-        check=False,
-        capture=True,
-        timeout=cfg.command_timeout_seconds,
-    )
-    if result.returncode != 0:
-        return False, []
-    lines = [
-        line.strip()
-        for line in result.stdout.splitlines()
-        if ":" in line and "DNS" in line
-    ]
-    return bool(lines), lines
 
 
 def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
@@ -322,11 +285,7 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
     state the query came through and the profile that answered. It
     answers with a redirect to a per-query subdomain, so the command
     follows redirects (the config carries --location). A JSON body with
-    status ok proves the machine resolves through a NextDNS profile; a
-    nonzero exit, a non-JSON body or any other status means the check
-    failed, with the detail describing why and an excerpt of a non-JSON
-    body, so the failure is diagnosable. The command template comes from
-    the config and carries the {url} and {timeout} placeholders.
+    status ok proves the machine resolves through a NextDNS profile.
     """
 
     timeout = cfg.command_timeout_seconds
@@ -359,48 +318,57 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
     return True, f"status ok, profile {profile!r}"
 
 
-def _verify(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
-    """(ok, detail) of the running resolver through the chosen profile.
-
-    The verification is the point of the task: not that the config files
-    look right, but that the machine actually resolves through NextDNS.
-    resolvectl status must list the configured servers and the
-    test.nextdns.io check must report status ok, the way NextDNS
-    recommends. The two checks together prove both the transport and the
-    profile.
-    """
-
-    ok, _ = _resolved_servers(cfg)
-    if not ok:
-        return False, "resolvectl status shows no DNS servers"
-    status_ok, detail = _test_nextdns(cfg)
-    if not status_ok:
-        return False, detail
-    return True, "resolver answers through the NextDNS profile"
-
-
 def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
-    """Undo the drop-in and the NetworkManager changes.
+    """Undo the [static] entries and the server_names line.
 
-    The drop-in is removed, the ignore-auto-dns flags that the task
-    enabled are disabled again and systemd-resolved is restarted, so the
-    machine returns to its previous resolver configuration. Every step is
-    journaled; a failed step is reported but cannot stop the run.
+    The entries owned by this task are removed from the configuration
+    file and dnscrypt-proxy is restarted, so the machine returns to its
+    previous resolver configuration. Every step is journaled; a failed
+    step is reported but cannot stop the run.
     """
 
-    dropin = _dropin_path(cfg)
+    path = cfg.dnscrypt_config_path
+    if not path.is_file():
+        return
     try:
-        dropin.unlink(missing_ok=True)
-        _log(f"reverted: removed the drop-in {dropin}")
+        content = path.read_text(encoding="utf-8")
     except OSError as exc:
-        _log(f"revert: cannot remove {dropin}: {exc}", priority=cfg.error_priority)
-    _remove_profile_id_file(cfg)
-    if cfg.manage_networkmanager and not _nm_set_dns_flags(cfg, False):
+        _log(f"revert: cannot read {path}: {exc}", priority=cfg.error_priority)
+        return
+
+    doh_name, dot_name, doq_name = _static_entry_names(cfg)
+    owned_names = {doh_name, dot_name, doq_name}
+    lines = content.splitlines()
+    result: list[str] = []
+    skip_static = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[static."):
+            name = stripped[len("[static.'"):].rstrip("']")
+            if name in owned_names:
+                skip_static = True
+                continue
+            skip_static = False
+        if skip_static:
+            if stripped.startswith("[") and not stripped.startswith("[static."):
+                skip_static = False
+                result.append(line)
+            continue
+        if stripped.startswith("server_names"):
+            continue
+        result.append(line)
+
+    new_content = "\n".join(result) + "\n"
+    try:
+        path.write_text(new_content, encoding="utf-8")
+        _log("reverted: removed the NextDNS [static] entries")
+    except OSError as exc:
         _log(
-            "revert: cannot restore the NetworkManager DNS flags",
+            f"revert: cannot write {path}: {exc}",
             priority=cfg.error_priority,
         )
-    error = _restart_resolved(cfg)
+    _remove_profile_id_file(cfg)
+    error = _restart_proxy(cfg)
     if error:
         _log(f"revert: {error}", priority=cfg.error_priority)
 
@@ -413,9 +381,7 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
     the run password, through the shared open_source_vault of the
     local_vault_setup task (docs/spec/secrets-model.md). The runtime
     vault is only the fallback for a run without a vault password,
-    because it is a copy made once by local_vault_setup and may be stale:
-    the source vaults always carry the current profile group, the runtime
-    copy may predate it.
+    because it is a copy made once by local_vault_setup and may be stale.
     """
 
     source = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
@@ -426,19 +392,20 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
 
 
 def task(ctx: Context) -> TaskResult:
-    """Configure the resolver through a NextDNS profile; skip when done.
+    """Configure dnscrypt-proxy for a NextDNS profile; skip when done.
 
     The vault is opened from the source vaults of the fresh clone with the
     run password, the way local_vault_setup opens them; the runtime vault
     is only the fallback. The profile group is read from the vault, the
-    profile is derived from the hostname and the drop-in is aligned.
-    After the resolver restarts the task verifies that the machine
-    resolves through the profile and, on a failed verification, reverts
-    every change. A missing profile group or an empty profile pool is a
-    serious failure journaled at error_priority: the machine DNS is never
-    touched then. The task is idempotent: it skips when the drop-in
-    matches and the verification passes; force mode rewrites the drop-in
-    and reapplies the NetworkManager flags.
+    profile is derived from the hostname and the [static] entries are
+    written into the dnscrypt-proxy configuration. After the proxy
+    restarts the task verifies that the machine resolves through the
+    profile and, on a failed verification, reverts every change. A
+    missing profile group or an empty profile pool is a serious failure
+    journaled at error_priority: the proxy configuration is never touched
+    then. The task is idempotent: it skips when the [static] entries
+    match and the verification passes; force mode rewrites the entries
+    and restarts the proxy.
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
@@ -482,31 +449,24 @@ def task(ctx: Context) -> TaskResult:
             error="cannot derive a NextDNS profile from the hostname",
         )
 
-    dropin = _dropin_path(cfg)
-    if _dropin_matches(cfg, profile_id) and not force:
-        _log("drop-in already matches, skipping")
+    if _config_matches(cfg, profile_id) and not force:
+        _log("dnscrypt-proxy already configured for the NextDNS profile, skipping")
         return TaskResult(success=True, changed=False, skipped=True)
 
-    changed, error = _write_dropin(cfg, profile_id)
+    changed, error = _write_dnscrypt_config(cfg, profile_id)
     if error:
         return TaskResult(success=False, changed=False, error=error)
     if changed:
-        _log(f"drop-in {dropin} written for profile {profile_id}")
+        _log(
+            f"dnscrypt-proxy configuration written for NextDNS profile {profile_id}"
+        )
 
-    restart_error = _restart_resolved(cfg)
+    restart_error = _restart_proxy(cfg)
     if restart_error:
         _revert(cfg)
         return TaskResult(success=False, changed=False, error=restart_error)
 
-    if cfg.manage_networkmanager and not _nm_set_dns_flags(cfg, True):
-        _revert(cfg)
-        return TaskResult(
-            success=False,
-            changed=False,
-            error="cannot apply the NetworkManager DNS flags",
-        )
-
-    ok, detail = _verify(cfg)
+    ok, detail = _test_nextdns(cfg)
     if not ok:
         _log(f"verification failed: {detail}", priority=cfg.error_priority)
         _revert(cfg)
@@ -530,7 +490,7 @@ def task(ctx: Context) -> TaskResult:
         changed=True,
         message=(
             f"System DNS resolves through the NextDNS profile {profile_id} "
-            f"over DNS-over-TLS; {len(cfg.fallback_dns)} fallback servers "
+            "over DoH, DoT and DoQ through dnscrypt-proxy; fallback servers "
             "keep the machine online when NextDNS is unreachable"
         ),
     )

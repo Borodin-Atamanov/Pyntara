@@ -169,32 +169,16 @@ def base_config() -> str:
         'dropin_file_mode = "0644"\n'
         "[nextdns_setup_system_wide]\n"
         'vault_group_title = "NextDNS"\n'
-        'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
-        'dropin_file_name = "pyntara.conf"\n'
-        'dropin_file_mode = "0644"\n'
+        'dnscrypt_config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
         'profile_id_file_mode = "0644"\n'
-        'resolve_section = "[Resolve]"\n'
-        'dropin_header = "# Managed by the Pyntara nextdns_setup_system_wide task."\n'
-        'domains_directive = "~."\n'
-        'ipv4_servers = ["45.90.28.0", "45.90.30.0"]\n'
-        'ipv6_prefixes = ["2a07:a8c0", "2a07:a8c1"]\n'
-        'dot_endpoint_format = "{profile_id}.dns.nextdns.io"\n'
+        'doh_url_format = "https://dns.nextdns.io/{profile_id}"\n'
+        'dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"\n'
+        'doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"\n'
+        'static_name_prefix = "nextdns-profile"\n'
         'verification_url = "https://test.nextdns.io/"\n'
-        'dns_over_tls = "opportunistic"\n'
-        "fallback_dns = [\n"
-        '    "1.1.1.1",\n'
-        '    "8.8.8.8",\n'
-        '    "9.9.9.9",\n'
-        "]\n"
-        'directive_keys = ["DNS", "FallbackDNS", "DNSOverTLS", "Domains"]\n'
-        'nmcli_check_command = ["nmcli", "--version"]\n'
-        'nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]\n'
-        'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
-        'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
-        'resolvectl_status_command = ["resolvectl", "status"]\n'
+        'restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]\n'
         'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
-        "manage_networkmanager = true\n"
         "error_priority = 3\n"
         "command_timeout_seconds = 60\n"
         "[system_metrics_setup]\n"
