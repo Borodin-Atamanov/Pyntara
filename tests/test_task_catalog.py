@@ -68,6 +68,15 @@ def test_resolve_cli_tools_pulls_add_extra_repos() -> None:
     ]
 
 
+def test_resolve_dnsproxy_pulls_the_nextdns_profile_task() -> None:
+    # dnsproxy reads the NextDNS profile from the file that
+    # nextdns_setup_system_wide writes, so selecting dnsproxy alone must
+    # enable that task first.
+    result = task_catalog.resolve(["dnsproxy_setup"], TASKS)
+    assert "nextdns_setup_system_wide" in result
+    assert result.index("nextdns_setup_system_wide") < result.index("dnsproxy_setup")
+
+
 def test_resolve_adds_transitive_dependencies() -> None:
     # Selecting c must pull in its transitive dependency a through b.
     assert task_catalog.resolve(["c"], SYNTHETIC_TASKS) == ["a", "b", "c"]

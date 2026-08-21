@@ -320,8 +320,6 @@ service_unit_path = "/etc/systemd/system/dnsproxy.service"
 service_template_path = "task_data/dnsproxy_setup/dnsproxy.service"
 listen_addresses = ["0.0.0.0", "::"]
 listen_port = 53053
-conflicting_package_name = "dnscrypt-proxy"
-conflicting_service_units = ["dnscrypt-proxy.service", "dnscrypt-proxy.socket"]
 doh_url_format = "https://dns.nextdns.io/{profile_id}"
 dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
@@ -344,14 +342,20 @@ resolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]
 resolved_domains_directive = "Domains=~."
 manage_networkmanager = true
 nmcli_check_command = ["nmcli", "--version"]
-nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
+nmcli_active_list_command = ["nmcli", "-t", "-f", "NAME,UUID,DEVICE", "connection", "show", "--active"]
+nmcli_dns_state_command = ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns", "connection", "show", "{connection}"]
 nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
 daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
 resolvectl_dns_command = ["resolvectl", "dns"]
 nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
-verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
+verification_domain = "example.com"
+verification_command = ["resolvectl", "query", "--cache=no", "{domain}"]
+ss_tcp_listen_command = ["ss", "-lntp"]
+ss_udp_listen_command = ["ss", "-lunp"]
+kill_command = ["kill"]
+service_log_command = ["journalctl", "-u", "{unit}", "--no-pager", "-n", "20"]
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"
 
@@ -412,6 +416,25 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "security.ubuntu.com",
     )
     assert config.dnsproxy_setup.append_provider_dns is True
+    assert config.dnsproxy_setup.verification_domain == "example.com"
+    assert config.dnsproxy_setup.nmcli_active_list_command == (
+        "nmcli",
+        "-t",
+        "-f",
+        "NAME,UUID,DEVICE",
+        "connection",
+        "show",
+        "--active",
+    )
+    assert config.dnsproxy_setup.kill_command == ("kill",)
+    assert config.dnsproxy_setup.service_log_command == (
+        "journalctl",
+        "-u",
+        "{unit}",
+        "--no-pager",
+        "-n",
+        "20",
+    )
     assert config.hostname.hostname_file == "/etc/hostname"
     assert config.hostname.set_hostname_command == (
         "hostnamectl",

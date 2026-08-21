@@ -26,8 +26,6 @@ class DnsproxySetupConfig:
     service_template_path: Path
     listen_addresses: tuple[str, ...]
     listen_port: int
-    conflicting_package_name: str
-    conflicting_service_units: tuple[str, ...]
     doh_url_format: str
     dot_host_format: str
     doq_host_format: str
@@ -50,7 +48,8 @@ class DnsproxySetupConfig:
     resolved_domains_directive: str
     manage_networkmanager: bool
     nmcli_check_command: tuple[str, ...]
-    nmcli_list_command: tuple[str, ...]
+    nmcli_active_list_command: tuple[str, ...]
+    nmcli_dns_state_command: tuple[str, ...]
     nmcli_modify_command: tuple[str, ...]
     daemon_reload_command: tuple[str, ...]
     restart_resolved_command: tuple[str, ...]
@@ -58,6 +57,11 @@ class DnsproxySetupConfig:
     resolvectl_dns_command: tuple[str, ...]
     nmcli_dns_command: tuple[str, ...]
     verification_command: tuple[str, ...]
+    verification_domain: str
+    ss_tcp_listen_command: tuple[str, ...]
+    ss_udp_listen_command: tuple[str, ...]
+    kill_command: tuple[str, ...]
+    service_log_command: tuple[str, ...]
     profile_id_file_path: Path
     profile_id_file_mode: int
 
@@ -99,10 +103,6 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         )
     )
     listen_addresses = _string_list(raw, "listen_addresses")
-    conflicting_package_name = _nonempty_string_field(
-        raw.get("conflicting_package_name"), "dnsproxy_setup.conflicting_package_name"
-    )
-    conflicting_service_units = _string_list(raw, "conflicting_service_units")
     listen_port = _int_field(raw.get("listen_port"), "dnsproxy_setup.listen_port")
     if not 1 <= listen_port <= 65535:
         raise ConfigError("dnsproxy_setup.listen_port must be between 1 and 65535")
@@ -182,7 +182,8 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         _string_list(raw, name)
         for name in (
             "nmcli_check_command",
-            "nmcli_list_command",
+            "nmcli_active_list_command",
+            "nmcli_dns_state_command",
             "nmcli_modify_command",
             "daemon_reload_command",
             "restart_resolved_command",
@@ -190,7 +191,14 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
             "resolvectl_dns_command",
             "nmcli_dns_command",
             "verification_command",
+            "ss_tcp_listen_command",
+            "ss_udp_listen_command",
+            "kill_command",
+            "service_log_command",
         )
+    )
+    verification_domain = _nonempty_string_field(
+        raw.get("verification_domain"), "dnsproxy_setup.verification_domain"
     )
     profile_id_file_path = Path(
         _nonempty_string_field(
@@ -209,8 +217,6 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         service_template_path=service_template_path,
         listen_addresses=listen_addresses,
         listen_port=listen_port,
-        conflicting_package_name=conflicting_package_name,
-        conflicting_service_units=conflicting_service_units,
         doh_url_format=endpoint_values[0],
         dot_host_format=endpoint_values[1],
         doq_host_format=endpoint_values[2],
@@ -233,14 +239,20 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         resolved_domains_directive=resolved_domains_directive,
         manage_networkmanager=manage_networkmanager,
         nmcli_check_command=commands[0],
-        nmcli_list_command=commands[1],
-        nmcli_modify_command=commands[2],
-        daemon_reload_command=commands[3],
-        restart_resolved_command=commands[4],
-        resolvectl_status_command=commands[5],
-        resolvectl_dns_command=commands[6],
-        nmcli_dns_command=commands[7],
-        verification_command=commands[8],
+        nmcli_active_list_command=commands[1],
+        nmcli_dns_state_command=commands[2],
+        nmcli_modify_command=commands[3],
+        daemon_reload_command=commands[4],
+        restart_resolved_command=commands[5],
+        resolvectl_status_command=commands[6],
+        resolvectl_dns_command=commands[7],
+        nmcli_dns_command=commands[8],
+        verification_command=commands[9],
+        ss_tcp_listen_command=commands[10],
+        ss_udp_listen_command=commands[11],
+        kill_command=commands[12],
+        service_log_command=commands[13],
+        verification_domain=verification_domain,
         profile_id_file_path=profile_id_file_path,
         profile_id_file_mode=profile_id_file_mode,
     )

@@ -4,21 +4,23 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import shutil
+import socket
+import struct
 import subprocess
 import tarfile
+import time
 from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara import metrics
 from pyntara.config import DnsproxySetupConfig
 from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
+from pyntara.logger import log_progress
 from pyntara.models import TaskResult
-from pyntara.nextdns_profile import select_profile_from_vault
-from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import (
     dpkg_architecture,
     ensure_root_owner,
@@ -30,6 +32,7 @@ from pyntara.utils import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OS_RELEASE_PATH = Path("/etc/os-release")
 VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
+PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\Z")
 
 class DiscoveredDnsServers(NamedTuple):
     '''Validated DNS addresses found from the current network state.'''
@@ -263,7 +266,6 @@ def _command(
         (
             "--upstream-mode=" + cfg.upstream_mode,
             "--output=" + str(cfg.query_log_path),
-            "--verbose",
         )
     )
     if cfg.cache_enabled:
@@ -284,31 +286,293 @@ def _render_service(
     )
 
 
-def _write_profile_id(cfg: DnsproxySetupConfig, profile_id: str) -> None:
-    cfg.profile_id_file_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.profile_id_file_path.write_text(f"{profile_id}\n", encoding="utf-8")
-    cfg.profile_id_file_path.chmod(cfg.profile_id_file_mode)
-    ensure_root_owner(cfg.profile_id_file_path)
+def _read_profile_id(cfg: DnsproxySetupConfig) -> str | None:
+    '''The NextDNS profile id recorded by nextdns_setup_system_wide.
 
+    The profile id file is the shared single source of truth written by
+    the nextdns_setup_system_wide task; dnsproxy never opens the vault
+    itself, so both tasks always agree on the profile. A missing or
+    malformed file returns None and the task stops before any change.
+    '''
 
-def _profile_id(ctx: Context) -> str | None:
-    opened = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
-    kp = opened[0] if opened is not None else metrics.open_runtime_vault(ctx.config)
-    if kp is None:
+    try:
+        value = cfg.profile_id_file_path.read_text(encoding="utf-8").strip()
+    except OSError:
         return None
-    return select_profile_from_vault(
-        kp, ctx.config.nextdns_setup_system_wide.vault_group_title
-    )
+    if PROFILE_ID_PATTERN.fullmatch(value) is None:
+        return None
+    return value
 
 
-def _remove_conflicting_dnscrypt(cfg: DnsproxySetupConfig, timeout: float) -> None:
-    for unit in cfg.conflicting_service_units:
-        run_command(["systemctl", "disable", "--now", unit], check=False, timeout=timeout)
-    run_command(
-        ["apt-get", "remove", "--purge", "-y", cfg.conflicting_package_name],
-        check=False,
-        timeout=timeout,
+def _listening_pids(cfg: DnsproxySetupConfig, timeout: float) -> set[int]:
+    '''PIDs of processes listening on the configured resolver port.
+
+    The TCP and the UDP listen states are scanned through ss. A line
+    belongs to the port when its local address ends with the configured
+    port; every pid token in that line is collected. A failing ss
+    command yields an empty set, so a missing tool cannot stop the run.
+    '''
+
+    pids: set[int] = set()
+    for command in (cfg.ss_tcp_listen_command, cfg.ss_udp_listen_command):
+        try:
+            result = run_command(
+                list(command), check=False, capture=True, timeout=timeout
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) < 5:
+                continue
+            if fields[3].split(":")[-1] != str(cfg.listen_port):
+                continue
+            for match in re.finditer(r"pid=(\d+)", line):
+                pids.add(int(match.group(1)))
+    return pids
+
+
+def _free_listen_port(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
+    '''Stop whatever listens on the resolver port; error text or None.
+
+    The port belongs to dnsproxy; a leftover process from an earlier
+    test run or a broken deployment would block a fresh start. Every
+    process listening on the port is stopped and the user is told what
+    was stopped. A port that stays occupied after the stop is an error.
+    '''
+
+    pids = _listening_pids(cfg, timeout)
+    if not pids:
+        return None
+    ordered = sorted(pids)
+    log_progress(
+        f"port {cfg.listen_port} is occupied by PID(s) "
+        f"{', '.join(str(pid) for pid in ordered)}; stopping them"
     )
+    for pid in ordered:
+        run_command([*cfg.kill_command, str(pid)], check=False, timeout=timeout)
+    remaining = _listening_pids(cfg, timeout)
+    if remaining:
+        return (
+            f"port {cfg.listen_port} is still occupied by PID(s) "
+            f"{', '.join(str(pid) for pid in sorted(remaining))} after the stop"
+        )
+    log_progress(f"stopped the process(es) holding port {cfg.listen_port}")
+    return None
+
+
+def _dns_probe_answers(cfg: DnsproxySetupConfig, timeout: float) -> bool:
+    '''True when dnsproxy on the local port answers a direct A query.
+
+    The probe sends one plain DNS query for the verification domain to
+    the local listener over UDP and requires a matching response with an
+    answer section. It runs before the resolver cutover, so a dnsproxy
+    that is up but cannot resolve is caught while the system still uses
+    its previous DNS. Only the standard library is used, so no extra
+    package is needed on the target.
+    '''
+
+    ident = int.from_bytes(os.urandom(2), "big")
+    header = struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0)
+    question = b"".join(
+        struct.pack(">B", len(label)) + label
+        for label in cfg.verification_domain.rstrip(".").encode("ascii").split(b".")
+    )
+    query = header + question + struct.pack(">BHH", 0, 1, 1)
+    for _ in range(cfg.start_check_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(cfg.start_check_retry_delay_seconds)
+                sock.sendto(query, ("127.0.0.1", cfg.listen_port))
+                data, _ = sock.recvfrom(4096)
+        except OSError:
+            time.sleep(cfg.start_check_retry_delay_seconds)
+            continue
+        if len(data) < 12:
+            time.sleep(cfg.start_check_retry_delay_seconds)
+            continue
+        response_id, flags, _, answer_count = struct.unpack(">HHHH", data[:8])
+        if (
+            response_id == ident
+            and (flags & 0x8000)
+            and (flags & 0x000F) == 0
+            and answer_count > 0
+        ):
+            return True
+        time.sleep(cfg.start_check_retry_delay_seconds)
+    return False
+
+
+def _disable_auto_dns_active(
+    cfg: DnsproxySetupConfig, timeout: float
+) -> list[str]:
+    '''Ignore auto DNS on active connections; the changed UUIDs.
+
+    NetworkManager is queried for the active connections by UUID, so a
+    profile name repeated in the catalog cannot redirect the change to
+    the wrong profile. The loopback connection is skipped. Every active
+    connection that does not already ignore auto DNS is modified and its
+    UUID recorded for the revert. A missing nmcli changes nothing.
+    '''
+
+    check = run_command(list(cfg.nmcli_check_command), check=False, timeout=timeout)
+    if check.returncode != 0:
+        return []
+    listing = run_command(
+        list(cfg.nmcli_active_list_command), capture=True, timeout=timeout
+    ).stdout.splitlines()
+    changed: list[str] = []
+    for line in listing:
+        fields = line.split(":")
+        if len(fields) < 2 or not fields[1] or fields[0] == "lo":
+            continue
+        uuid = fields[1]
+        state = run_command(
+            [
+                part.replace("{connection}", uuid)
+                for part in cfg.nmcli_dns_state_command
+            ],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        values = {
+            part.split(":", 1)[-1].strip()
+            for part in state.stdout.splitlines()
+            if part.strip()
+        }
+        if values == {"yes"}:
+            continue
+        command = [
+            part.replace("{connection}", uuid).replace("{value}", "true")
+            for part in cfg.nmcli_modify_command
+        ]
+        run_command(command, timeout=timeout)
+        changed.append(uuid)
+    return changed
+
+
+def _restore_auto_dns(
+    cfg: DnsproxySetupConfig, uuids: list[str], timeout: float
+) -> None:
+    for uuid in uuids:
+        command = [
+            part.replace("{connection}", uuid).replace("{value}", "false")
+            for part in cfg.nmcli_modify_command
+        ]
+        run_command(command, check=False, timeout=timeout)
+
+
+def _verify_system(
+    cfg: DnsproxySetupConfig, discovered: DiscoveredDnsServers, timeout: float
+) -> str | None:
+    '''Error text when the system does not resolve through dnsproxy.
+
+    The functional check queries the verification domain through
+    systemd-resolved. The routing check then asserts that none of the
+    provider DNS addresses discovered before the cutover still appears
+    on a per-link scope: if one does, per-link DNS takes precedence and
+    the system would bypass dnsproxy despite a successful lookup.
+    '''
+
+    command = [
+        part.replace("{domain}", cfg.verification_domain)
+        for part in cfg.verification_command
+    ]
+    result = run_command(command, check=False, capture=True, timeout=timeout)
+    if result.returncode != 0:
+        excerpt = (result.stdout + result.stderr).strip()[:200] or "<no output>"
+        return f"system DNS verification failed: {excerpt}"
+    if cfg.append_provider_dns and (discovered.ipv4 or discovered.ipv6):
+        state = run_command(
+            list(cfg.resolvectl_dns_command),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        if state.returncode != 0:
+            return (
+                "cannot read per-link DNS state: resolvectl exited "
+                f"{state.returncode}"
+            )
+        leftover = [
+            address
+            for address in (*discovered.ipv4, *discovered.ipv6)
+            if address in state.stdout
+        ]
+        if leftover:
+            return (
+                "per-link DNS still lists provider resolver(s) "
+                f"{', '.join(leftover)}; the system would bypass dnsproxy"
+            )
+    return None
+
+
+def _service_log(cfg: DnsproxySetupConfig, timeout: float) -> str:
+    '''The last service journal lines, for a failed start diagnosis.'''
+
+    command = [
+        part.replace("{unit}", cfg.service_unit_name)
+        for part in cfg.service_log_command
+    ]
+    try:
+        result = run_command(command, check=False, capture=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (result.stdout + result.stderr).strip()[-400:]
+
+
+def _revert(
+    cfg: DnsproxySetupConfig,
+    dropin_changed: bool,
+    uuids: list[str],
+    timeout: float,
+    error_priority: int,
+) -> None:
+    '''Undo the resolver cutover; never raises.
+
+    The drop-in is removed when this run wrote it, the modified
+    NetworkManager connections return to their previous auto DNS
+    handling, systemd-resolved is restarted and the dnsproxy service is
+    stopped. Every step is journaled; a failed step is reported but
+    cannot stop the revert.
+    '''
+
+    if dropin_changed:
+        path = cfg.resolved_conf_dir / cfg.resolved_dropin_file_name
+        try:
+            path.unlink()
+            log_progress("reverted: removed the resolver drop-in")
+        except OSError as exc:
+            log_progress(
+                f"revert: cannot remove {path}: {exc}", priority=error_priority
+            )
+    if uuids:
+        try:
+            _restore_auto_dns(cfg, uuids, timeout)
+            log_progress("reverted: restored NetworkManager auto DNS handling")
+        except (OSError, subprocess.SubprocessError) as exc:
+            log_progress(
+                f"revert: cannot restore NetworkManager: {exc}",
+                priority=error_priority,
+            )
+    try:
+        run_command(list(cfg.restart_resolved_command), timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log_progress(
+            f"revert: cannot restart systemd-resolved: {exc}",
+            priority=error_priority,
+        )
+    try:
+        run_command(
+            ["systemctl", "stop", cfg.service_unit_name],
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log_progress(f"revert: cannot stop dnsproxy: {exc}", priority=error_priority)
 
 
 def _write_resolver_dropin(cfg: DnsproxySetupConfig) -> bool:
@@ -326,8 +590,6 @@ def _write_resolver_dropin(cfg: DnsproxySetupConfig) -> bool:
 
 
 def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
-    import time
-
     for _ in range(cfg.start_check_attempts):
         time.sleep(cfg.start_check_retry_delay_seconds)
         if service_is_active(cfg.service_unit_name, timeout):
@@ -338,9 +600,17 @@ def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
 def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    profile_id = _profile_id(ctx)
+    error_priority = ctx.config.engine.error_priority
+    profile_id = _read_profile_id(cfg)
     if profile_id is None:
-        return TaskResult(success=False, error="cannot select a NextDNS profile")
+        return TaskResult(
+            success=False,
+            error=(
+                "cannot read the NextDNS profile id from "
+                f"{cfg.profile_id_file_path}; nextdns_setup_system_wide "
+                "must run first"
+            ),
+        )
     try:
         release = _release_json(cfg.github_repo, timeout)
         tag = str(release["tag_name"])
@@ -357,6 +627,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=str(exc))
     installed = _installed_version(cfg.binary_path, timeout)
     changed = False
+    dropin_changed = False
+    auto_dns_uuids: list[str] = []
+    cut_over = False
     try:
         if installed != target_version:
             staged = _download_binary(cfg, asset_url, asset_name, timeout)
@@ -384,46 +657,68 @@ def task(ctx: Context) -> TaskResult:
             ensure_root_owner(service_path)
             run_command(list(cfg.daemon_reload_command), timeout=timeout)
             changed = True
-        _remove_conflicting_dnscrypt(cfg, timeout)
-        if not service_is_enabled(cfg.service_unit_name, timeout):
-            run_command(["systemctl", "enable", cfg.service_unit_name], timeout=timeout)
-            changed = True
         active = service_is_active(cfg.service_unit_name, timeout)
+        if not active:
+            error = _free_listen_port(cfg, timeout)
+            if error is not None:
+                return TaskResult(success=False, changed=changed, error=error)
+        if not service_is_enabled(cfg.service_unit_name, timeout):
+            run_command(
+                ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
+            )
+            changed = True
         if not active or changed or ctx.force_tasks.intersection({"dnsproxy_setup"}):
             run_command(
                 ["systemctl", "restart" if active else "start", cfg.service_unit_name],
                 timeout=timeout,
             )
             if not _wait_active(cfg, timeout):
+                excerpt = _service_log(cfg, timeout)
+                detail = f"; service log: {excerpt}" if excerpt else ""
+                run_command(
+                    ["systemctl", "stop", cfg.service_unit_name],
+                    check=False,
+                    timeout=timeout,
+                )
                 return TaskResult(
                     success=False,
                     changed=True,
-                    error="dnsproxy service did not become active",
+                    error="dnsproxy service did not become active" + detail,
+                )
+            if not _dns_probe_answers(cfg, timeout):
+                run_command(
+                    ["systemctl", "stop", cfg.service_unit_name],
+                    check=False,
+                    timeout=timeout,
+                )
+                return TaskResult(
+                    success=False,
+                    changed=True,
+                    error=(
+                        "dnsproxy started but does not answer direct DNS "
+                        "queries; the system resolver was not changed"
+                    ),
                 )
             changed = True
         if _write_resolver_dropin(cfg):
-            run_command(list(cfg.restart_resolved_command), timeout=timeout)
+            dropin_changed = True
             changed = True
+        cut_over = True
+        if dropin_changed:
+            run_command(list(cfg.restart_resolved_command), timeout=timeout)
         if cfg.manage_networkmanager:
-            check = run_command(
-                list(cfg.nmcli_check_command), check=False, timeout=timeout
+            auto_dns_uuids = _disable_auto_dns_active(cfg, timeout)
+        verify_error = _verify_system(cfg, discovered, timeout)
+        if verify_error is not None:
+            _revert(cfg, dropin_changed, auto_dns_uuids, timeout, error_priority)
+            return TaskResult(
+                success=False,
+                changed=True,
+                error=f"dnsproxy setup failed: {verify_error}; changes reverted",
             )
-            if check.returncode == 0:
-                connections = run_command(
-                    list(cfg.nmcli_list_command), capture=True, timeout=timeout
-                ).stdout.splitlines()
-                for connection in connections:
-                    if connection.strip():
-                        command = [
-                            part.replace("{connection}", connection).replace(
-                                "{value}", "true"
-                            )
-                            for part in cfg.nmcli_modify_command
-                        ]
-                        run_command(command, timeout=timeout)
-        run_command(list(cfg.verification_command), timeout=timeout)
-        _write_profile_id(cfg, profile_id)
     except (OSError, subprocess.SubprocessError, tarfile.TarError, RuntimeError) as exc:
+        if cut_over:
+            _revert(cfg, dropin_changed, auto_dns_uuids, timeout, error_priority)
         return TaskResult(
             success=False, changed=changed, error=f"dnsproxy setup failed: {exc}"
         )

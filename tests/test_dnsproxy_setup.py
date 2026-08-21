@@ -4,23 +4,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from pykeepass import PyKeePass, create_database
 from support import FakeProc, make_config, make_context
 
 from pyntara.tasks import dnsproxy_setup as task_module
 
 PASSWORD = "password"
-
-
-def install_vault(tmp_path: Path, monkeypatch: Any) -> None:
-    path = tmp_path / "secrets" / "production.vault"
-    path.parent.mkdir()
-    create_database(str(path), password=PASSWORD)
-    vault = PyKeePass(str(path), password=PASSWORD)
-    group = vault.add_group(vault.root_group, "NextDNS")
-    vault.add_entry(group, "profile", "39284e", "")
-    vault.save()
-    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
 
 
 def test_discover_dns_servers_combines_and_sorts_both_command_outputs(monkeypatch: Any) -> None:
@@ -76,6 +64,7 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
         assert form in command
     assert "--output=/var/log/pyntara/dnsproxy.log" in command
     assert "--upstream-mode=load_balance" in command
+    assert "--verbose" not in command
 
 
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
@@ -153,12 +142,21 @@ def _run_task(
     *,
     append_provider_dns: bool = True,
     provider_dns: bool = False,
+    probe: bool = True,
+    occupied_port: bool = False,
+    stubborn_port: bool = False,
+    routing_leftover: bool = False,
+    nmcli_active: str = "",
 ) -> tuple[Any, Path, list[list[str]], Any]:
     '''Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path, the recorded commands and the
     built config. provider_dns makes the discovery commands return a
-    provider IPv4 and IPv6 resolver pair.'''
-    install_vault(tmp_path, monkeypatch)
+    provider IPv4 and IPv6 resolver pair. occupied_port makes the port
+    scan report one listener on the first pass, stubborn_port keeps the
+    listener after the kill, routing_leftover keeps the provider address
+    in the post-cutover per-link state, and nmcli_active supplies the
+    active connection listing. probe controls the pre-cutover dnsproxy
+    answer check.'''
     service_path = tmp_path / "dnsproxy.service"
     config = make_config(
         task_data_root=tmp_path,
@@ -174,6 +172,7 @@ def _run_task(
             config.dnsproxy_setup, append_provider_dns=append_provider_dns
         ),
     )
+    (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
     context = make_context(vault_password=PASSWORD, config=config)
     monkeypatch.setattr(
         task_module,
@@ -197,12 +196,32 @@ def _run_task(
     monkeypatch.setattr(task_module, "service_is_enabled", lambda *_: False)
     monkeypatch.setattr(task_module, "service_is_active", lambda *_: False)
     monkeypatch.setattr(task_module, "_wait_active", lambda *_: True)
+    monkeypatch.setattr(task_module, "_dns_probe_answers", lambda *_: probe)
     calls: list[list[str]] = []
+    state = {"ss": 0, "routedns": 0}
+    active_list_command = list(config.dnsproxy_setup.nmcli_active_list_command)
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        command = list(command)
         calls.append(command)
+        if command[:2] in (["ss", "-lntp"], ["ss", "-lunp"]):
+            if occupied_port or stubborn_port:
+                state["ss"] += 1
+                if stubborn_port or state["ss"] <= 2:
+                    return FakeProc(
+                        0,
+                        "LISTEN 0 4096 *:53053 *:* users:((\"dnsproxy\",pid=12345,fd=9))\n",
+                    )
+            return FakeProc(0, "")
+        if command == active_list_command:
+            return FakeProc(0, nmcli_active)
+        if command[:4] == ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns"]:
+            return FakeProc(0, "ipv4.ignore-auto-dns:no\nipv6.ignore-auto-dns:no\n")
         if provider_dns and command == ["resolvectl", "dns"]:
-            return FakeProc(0, "Global:\nLink 2 (eth0): 192.168.1.1 2001:db8::2\n")
+            state["routedns"] += 1
+            if routing_leftover or state["routedns"] == 1:
+                return FakeProc(0, "Global:\nLink 2 (eth0): 192.168.1.1 2001:db8::2\n")
+            return FakeProc(0, "Global:\nLink 2 (eth0):\n")
         if provider_dns and command[0] == "nmcli":
             return FakeProc(0, "IP4.DNS[1]:192.168.1.1\nIP6.DNS[1]:2001:db8::1\n")
         return FakeProc(0, "")
@@ -249,6 +268,101 @@ def test_task_skips_provider_dns_discovery_when_disabled(
     unit = service_path.read_text(encoding="utf-8")
     assert "--fallback=192.168.1.1" not in unit
     assert "--bootstrap=192.168.1.1" not in unit
+
+
+def test_task_fails_early_without_the_nextdns_profile_file(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    service_path = tmp_path / "dnsproxy.service"
+    config = make_config(
+        task_data_root=tmp_path,
+        dnsproxy_service_unit_path=service_path,
+        dnsproxy_binary_path=tmp_path / "dnsproxy",
+        dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
+        dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
+        dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
+    )
+    context = make_context(vault_password=PASSWORD, config=config)
+    result = task_module.task(context)
+    assert result.success is False
+    assert "nextdns_setup_system_wide" in (result.error or "")
+    assert not service_path.exists()
+
+
+def test_task_kills_the_process_listening_on_the_port(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, calls, _ = _run_task(tmp_path, monkeypatch, occupied_port=True)
+    assert result.success is True
+    assert ["kill", "12345"] in calls
+    assert any(command[:2] == ["systemctl", "start"] for command in calls)
+
+
+def test_task_fails_when_the_port_stays_occupied(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, calls, config = _run_task(tmp_path, monkeypatch, stubborn_port=True)
+    assert result.success is False
+    assert "still occupied" in (result.error or "")
+    assert ["kill", "12345"] in calls
+    assert not any(command[:2] == ["systemctl", "start"] for command in calls)
+    dropin = (
+        config.dnsproxy_setup.resolved_conf_dir
+        / config.dnsproxy_setup.resolved_dropin_file_name
+    )
+    assert not dropin.exists()
+
+
+def test_task_does_not_change_the_resolver_when_the_probe_fails(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, calls, config = _run_task(tmp_path, monkeypatch, probe=False)
+    assert result.success is False
+    assert "does not answer direct DNS" in (result.error or "")
+    assert ["systemctl", "stop", "dnsproxy.service"] in calls
+    dropin = (
+        config.dnsproxy_setup.resolved_conf_dir
+        / config.dnsproxy_setup.resolved_dropin_file_name
+    )
+    assert not dropin.exists()
+
+
+def test_task_disables_auto_dns_on_active_connections_by_uuid(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    active = (
+        "Ataman6a:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:wlp0\n"
+        "lo:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:lo\n"
+        "ygg:cccccccc-cccc-cccc-cccc-cccccccccccc:tun\n"
+    )
+    result, _, calls, _ = _run_task(tmp_path, monkeypatch, nmcli_active=active)
+    assert result.success is True
+    modifies = [
+        command
+        for command in calls
+        if command[:3] == ["nmcli", "connection", "modify"]
+    ]
+    modified_uuids = {command[3] for command in modifies}
+    assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in modified_uuids
+    assert "cccccccc-cccc-cccc-cccc-cccccccccccc" in modified_uuids
+    assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" not in modified_uuids
+    assert all("true" in command for command in modifies)
+
+
+def test_task_reverts_when_the_system_would_bypass_dnsproxy(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, calls, config = _run_task(
+        tmp_path, monkeypatch, provider_dns=True, routing_leftover=True
+    )
+    assert result.success is False
+    assert "reverted" in (result.error or "")
+    dropin = (
+        config.dnsproxy_setup.resolved_conf_dir
+        / config.dnsproxy_setup.resolved_dropin_file_name
+    )
+    assert not dropin.exists()
+    assert ["systemctl", "stop", "dnsproxy.service"] in calls
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:

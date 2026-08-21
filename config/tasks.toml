@@ -108,6 +108,7 @@ description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]
 modes = ["server", "desktop"]
 
+# this task is deprecated and will be deleted
 [[tasks]]
 name = "dnscrypt_setup"
 description = "Run dnscrypt-proxy as the system-wide DNS resolver with fallback servers."
@@ -123,7 +124,7 @@ modes = []
 [[tasks]]
 name = "dnsproxy_setup"
 description = "Run dnsproxy as the system-wide DNS resolver with NextDNS and fallback servers."
-depends = ["local_vault_setup", "hostname"]
+depends = ["local_vault_setup", "hostname", "nextdns_setup_system_wide"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
