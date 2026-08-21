@@ -116,7 +116,13 @@ modes = []
 
 [[tasks]]
 name = "nextdns_setup_system_wide"
-description = "Per-user NextDNS account and system-wide DNS endpoint."
+description = "Select and record the machine's NextDNS profile without configuring a resolver."
+depends = ["local_vault_setup", "hostname"]
+modes = []
+
+[[tasks]]
+name = "dnsproxy_setup"
+description = "Run dnsproxy as the system-wide DNS resolver with NextDNS and fallback servers."
 depends = ["local_vault_setup", "hostname"]
 modes = ["minimal", "server", "desktop"]
 

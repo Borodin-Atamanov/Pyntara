@@ -128,11 +128,8 @@ def test_configures_proxy_and_verifies(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    content = config_path.read_text(encoding="utf-8")
-    assert "[forwarding]" in content
-    assert "forwarding = 'https://dns.nextdns.io/" in content
-    assert any(call[0] == "systemctl" and "restart" in call for call in calls)
-    assert any(call[0] == "curl" for call in calls)
+    assert config_path.read_text(encoding="utf-8").startswith("[sources]")
+    assert not any(call[0] in ("systemctl", "curl") for call in calls)
     profile_file = tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
     assert profile_file.read_text(encoding="utf-8").strip() in PROFILE_IDS
 
@@ -145,27 +142,16 @@ def test_skip_when_already_configured(
     config_path = ctx.config.nextdns_setup_system_wide.dnscrypt_config_path
     _write_dnscrypt_config(config_path)
 
-    import socket
-
-    from pyntara.nextdns import select_profile_id
-
-    cfg = ctx.config.nextdns_setup_system_wide
-    profile_id = select_profile_id(socket.gethostname(), PROFILE_IDS)
-
-    from pyntara.tasks.nextdns_setup_system_wide import _forwarding_section
-
-    existing = config_path.read_text(encoding="utf-8")
-    config_path.write_text(
-        existing + "\n" + _forwarding_section(cfg, profile_id) + "\n",
-        encoding="utf-8",
-    )
+    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    profile_file.parent.mkdir(parents=True, exist_ok=True)
+    profile_file.write_text("938263\n", encoding="utf-8")
 
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert result.skipped is True
-    assert not any("systemctl" in call for call in calls)
+    assert not calls
 
 
 def test_verification_failure_reverts(
@@ -175,13 +161,11 @@ def test_verification_failure_reverts(
     ctx = _ctx(tmp_path)
     config_path = ctx.config.nextdns_setup_system_wide.dnscrypt_config_path
     _write_dnscrypt_config(config_path)
-    _install_subprocess(monkeypatch, test_nextdns_ok=False)
+    calls = _install_subprocess(monkeypatch, test_nextdns_ok=False)
     result = task_module.task(ctx)
-    assert result.success is False
-    content = config_path.read_text(encoding="utf-8")
-    assert "[forwarding]" not in content
-    profile_file = tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
-    assert not profile_file.exists()
+    assert result.success is True
+    assert result.changed is True
+    assert not any(call[0] in ("systemctl", "curl") for call in calls)
 
 
 @pytest.mark.parametrize(
@@ -205,11 +189,9 @@ def test_non_json_verification_body_reports_excerpt_and_reverts(
         monkeypatch, test_nextdns_ok=True, test_nextdns_output=body
     )
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "did not return JSON" in (result.error or "")
-    assert excerpt in (result.error or "")
-    content = config_path.read_text(encoding="utf-8")
-    assert "[forwarding]" not in content
+    assert result.success is True
+    assert result.error is None
+    assert excerpt not in (result.message or "")
 
 
 def test_missing_group_fails_without_touching_config(
@@ -255,8 +237,8 @@ def test_missing_config_file_fails(
     _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "missing" in (result.error or "")
+    assert result.success is True
+    assert result.changed is True
 
 
 def test_force_mode_rewrites_config(
@@ -270,7 +252,7 @@ def test_force_mode_rewrites_config(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert any(call[0] == "systemctl" and "restart" in call for call in calls)
+    assert not any(call[0] == "systemctl" for call in calls)
 
 
 def test_message_names_the_active_profile(
@@ -285,4 +267,4 @@ def test_message_names_the_active_profile(
     assert result.success is True
     assert result.message is not None
     assert "NextDNS profile" in result.message
-    assert "fallback" in result.message
+    assert "dnsproxy_setup" in result.message

@@ -309,6 +309,46 @@ notes = "Telegram bot token for System Metrics."
 title = "google_script_key"
 notes = "Google Drive web app credentials for System Metrics."
 
+[dnsproxy_setup]
+github_repo = "AdguardTeam/dnsproxy"
+download_dir = "/tmp/dnsproxy"
+binary_path = "/usr/local/bin/dnsproxy"
+service_unit_name = "dnsproxy.service"
+service_unit_path = "/etc/systemd/system/dnsproxy.service"
+service_template_path = "task_data/dnsproxy_setup/dnsproxy.service"
+listen_address = "127.0.0.1"
+listen_port = 53053
+doh_url_format = "https://dns.nextdns.io/{profile_id}"
+dot_host_format = "tls://{profile_id}.dns.nextdns.io"
+doq_host_format = "quic://{profile_id}.dns.nextdns.io"
+upstream_mode = "load_balance"
+cache_enabled = true
+fallback_resolvers = ["1.1.1.1"]
+bootstrap_resolvers = ["1.1.1.1:53"]
+query_log_path = "/var/log/pyntara/dnsproxy.log"
+query_log_mode = "0600"
+service_restart_seconds = 2.0
+install_retries = 3
+start_check_attempts = 5
+start_check_retry_delay_seconds = 1.0
+resolved_conf_dir = "/etc/systemd/resolved.conf.d"
+resolved_dropin_file_name = "pyntara-dnsproxy.conf"
+resolved_dropin_file_mode = "0644"
+resolved_dropin_header = "# Managed by the Pyntara dnsproxy_setup task."
+resolved_section = "[Resolve]"
+resolved_dns_directive = "DNS=127.0.0.1:53053"
+resolved_domains_directive = "Domains=~."
+manage_networkmanager = true
+nmcli_check_command = ["nmcli", "--version"]
+nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]
+nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
+daemon_reload_command = ["systemctl", "daemon-reload"]
+restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
+resolvectl_status_command = ["resolvectl", "status"]
+verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
+profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
+profile_id_file_mode = "0644"
+
 [local_vault_setup]
 source_vault_production = "secrets/production.vault"
 source_vault_default = "secrets/default.vault"

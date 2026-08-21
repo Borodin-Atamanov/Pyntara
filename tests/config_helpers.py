@@ -178,6 +178,36 @@ def base_config() -> str:
         'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
         "error_priority = 3\n"
         "command_timeout_seconds = 60\n"
+        "[dnsproxy_setup]\n"
+        'github_repo = "AdguardTeam/dnsproxy"\n'
+        'download_dir = "/tmp/dnsproxy"\n'
+        'binary_path = "/usr/local/bin/dnsproxy"\n'
+        'service_unit_name = "dnsproxy.service"\n'
+        'service_unit_path = "/etc/systemd/system/dnsproxy.service"\n'
+        'service_template_path = "task_data/dnsproxy_setup/dnsproxy.service"\n'
+        'listen_address = "127.0.0.1"\nlisten_port = 53053\n'
+        'doh_url_format = "https://dns.nextdns.io/{profile_id}"\n'
+        'dot_host_format = "tls://{profile_id}.dns.nextdns.io"\n'
+        'doq_host_format = "quic://{profile_id}.dns.nextdns.io"\n'
+        'upstream_mode = "load_balance"\ncache_enabled = true\n'
+        'fallback_resolvers = ["1.1.1.1", "8.8.8.8"]\n'
+        'bootstrap_resolvers = ["1.1.1.1:53"]\n'
+        'query_log_path = "/var/log/pyntara/dnsproxy.log"\nquery_log_mode = "0600"\n'
+        'service_restart_seconds = 2.0\ninstall_retries = 3\n'
+        'start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n'
+        'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
+        'resolved_dropin_file_name = "pyntara-dnsproxy.conf"\nresolved_dropin_file_mode = "0644"\n'
+        'resolved_dropin_header = "# Managed by the Pyntara dnsproxy_setup task."\n'
+        'resolved_section = "[Resolve]"\nresolved_dns_directive = "DNS=127.0.0.1:53053"\n'
+        'resolved_domains_directive = "Domains=~."\nmanage_networkmanager = true\n'
+        'nmcli_check_command = ["nmcli", "--version"]\n'
+        'nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]\n'
+        'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
+        'daemon_reload_command = ["systemctl", "daemon-reload"]\n'
+        'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
+        'resolvectl_status_command = ["resolvectl", "status"]\n'
+        'verification_command = ["resolvectl", "query", "--cache=no", "example.com"]\n'
+        'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\nprofile_id_file_mode = "0644"\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

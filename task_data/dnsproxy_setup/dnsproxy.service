@@ -1,0 +1,14 @@
+[Unit]
+Description=Pyntara dnsproxy system resolver
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=${exec_start}
+Restart=on-failure
+RestartSec=${service_restart_seconds}
+
+[Install]
+WantedBy=multi-user.target

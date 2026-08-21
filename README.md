@@ -61,6 +61,7 @@ Spec — functional specification, what the system does and how. Design rational
 `docs/spec/system-metrics.md` — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
 `docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
 `docs/spec/dnscrypt-setup.md` — dnscrypt-proxy system-wide resolver, socket activation, fallback servers
+`docs/spec/dnsproxy-setup.md` — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
 `docs/spec/i2pd-service.md` — i2pd service install from GitHub releases, version and asset selection, download trust
 `docs/spec/yggdrasil-service.md` — yggdrasil service install from GitHub releases, version and asset selection, download trust
 `docs/spec/tor-service.md` — Tor install from the Ubuntu archive, SSH onion service, address file and client side

@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import subprocess
 from pathlib import Path
 
@@ -41,7 +40,7 @@ from pyntara.config import NextdnsSetupSystemWideConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.nextdns import select_profile_id
+from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import run_command
 
@@ -316,8 +315,6 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
-    force = "nextdns_setup_system_wide" in ctx.force_tasks
-
     kp = _open_profile_vault(ctx)
     if kp is None:
         return TaskResult(
@@ -325,79 +322,31 @@ def task(ctx: Context) -> TaskResult:
             changed=False,
             error="cannot open a vault with the NextDNS profiles",
         )
-    group = kp.find_groups(name=cfg.vault_group_title, first=True)
-    if group is None:
-        return TaskResult(
-            success=False,
-            changed=False,
-            error=f"vault group {cfg.vault_group_title!r} not found",
-        )
-    profile_ids = tuple(
-        sorted(
-            (
-                entry.username
-                for entry in group.entries
-                if entry.username and entry.username.strip()
-            ),
-            key=str.casefold,
-        )
-    )
-    if not profile_ids:
-        return TaskResult(
-            success=False,
-            changed=False,
-            error=f"vault group {cfg.vault_group_title!r} has no profiles",
-        )
-    profile_id = select_profile_id(socket.gethostname(), profile_ids)
+    profile_id = select_profile_from_vault(kp, cfg.vault_group_title)
     if profile_id is None:
         return TaskResult(
             success=False,
             changed=False,
-            error="cannot derive a NextDNS profile from the hostname",
+            error=(
+                f"cannot derive a NextDNS profile from vault group "
+                f"{cfg.vault_group_title!r} and hostname"
+            ),
         )
 
-    if _config_matches(cfg, profile_id) and not force:
-        _log("dnscrypt-proxy already configured for the NextDNS profile, skipping")
+    try:
+        existing = cfg.profile_id_file_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        existing = ""
+    if existing == profile_id and "nextdns_setup_system_wide" not in ctx.force_tasks:
         return TaskResult(success=True, changed=False, skipped=True)
 
-    changed, error = _write_dnscrypt_config(cfg, profile_id)
-    if error:
-        return TaskResult(success=False, changed=False, error=error)
-    if changed:
-        _log(
-            f"dnscrypt-proxy configuration written for NextDNS profile {profile_id}"
-        )
-
-    restart_error = _restart_proxy(cfg)
-    if restart_error:
-        _revert(cfg)
-        return TaskResult(success=False, changed=False, error=restart_error)
-
-    ok, detail = _test_nextdns(cfg)
-    if not ok:
-        _log(f"verification failed: {detail}", priority=cfg.error_priority)
-        _revert(cfg)
-        return TaskResult(
-            success=False,
-            changed=False,
-            error=f"NextDNS verification failed: {detail}",
-        )
-
     if not _write_profile_id_file(cfg, profile_id):
-        _revert(cfg)
-        return TaskResult(
-            success=False,
-            changed=False,
-            error="cannot record the applied NextDNS profile ID",
-        )
-
-    _log(f"NextDNS profile {profile_id} active: {detail}")
+        return TaskResult(success=False, error="cannot record the NextDNS profile ID")
     return TaskResult(
         success=True,
         changed=True,
         message=(
-            f"System DNS forwards through the NextDNS profile {profile_id} "
-            "over DNS-over-HTTPS through dnscrypt-proxy; fallback servers "
-            "keep the machine online when NextDNS is unreachable"
+            f"Selected NextDNS profile {profile_id}; resolver configuration "
+            "is owned by dnsproxy_setup"
         ),
     )
