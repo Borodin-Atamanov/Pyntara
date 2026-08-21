@@ -27,7 +27,35 @@ fallback_resolvers = [
   "2606:4700:4700::1002", "2400:3200::1", "2400:3200:baba::1", "2402:4e00::", "2a02:6b8::feed:0ff",
   "2a02:6b8:0:1::feed:0ff"
 ]
-bootstrap_resolvers = ["94.140.14.14:53", "1.1.1.1:53"]
+# Bootstrap resolvers dnsproxy uses to resolve the hostnames of the
+# encrypted upstream servers before contacting them. The list holds the
+# anchor IP of every provider once, without repeating protocol forms.
+# Each anchor IP can be reached over several protocols; the access form
+# is selected by scheme and port, not by address:
+#   plain DNS        IP:53
+#   DNS-over-TLS     tls://IP              (port 853)
+#   DNS-over-HTTPS   https://IP/dns-query  (port 443)
+#   DNS-over-QUIC    quic://IP             (port 853, where supported)
+# A network may block any single protocol or port, so the intended
+# resilient setup repeats every IP in the schemes above and dnsproxy
+# tries all entries in parallel, using the first one that answers.
+# Note that the bare IP entries below only exercise plain DNS on port
+# 53; adding the tls:// and https:// forms of the same IP is what
+# actually bypasses a blocked port 53.
+bootstrap_resolvers = [
+  "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
+  "94.140.14.14", "94.140.15.15", "45.90.28.0", "45.90.30.0", "208.67.222.222", "208.67.220.220",
+  "193.110.81.0", "185.252.24.0", "76.76.2.0", "76.76.10.0", "194.242.2.2", "185.228.168.9",
+  "185.228.169.9", "149.112.121.10", "149.112.121.20", "86.54.119.1", "185.43.135.1", "193.17.47.1",
+  "77.88.8.8", "77.88.8.1", "185.71.138.138", "185.71.138.139", "185.222.222.222", "45.11.45.11",
+  "223.5.5.5", "223.6.6.6", "1.12.12.12", "120.53.53.53", "176.9.93.198", "176.9.1.117",
+  "80.67.169.40", "174.138.29.175", "91.239.100.100", "89.233.43.71", "104.26.14.30", "104.26.15.30",
+  "45.86.125.58", "45.86.125.59", "83.220.169.155", "194.0.5.3", "194.0.5.64", "103.2.57.5",
+  "185.95.218.42", "185.95.218.43", "185.194.94.71", "146.255.56.98", "158.64.1.29", "130.59.31.248",
+  "130.59.31.251", "91.198.156.20", "198.54.117.10", "198.54.117.11", "194.169.169.169", "217.0.43.114",
+  "217.0.43.66", "8.26.56.26", "8.20.247.20", "185.111.188.46", "94.130.180.225", "78.47.64.161",
+  "94.198.41.235",
+]
 query_log_path = "/var/log/pyntara/dnsproxy.log"
 query_log_mode = "0600"
 service_restart_seconds = 2.0
