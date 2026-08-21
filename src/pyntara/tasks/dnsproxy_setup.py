@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import shutil
@@ -9,6 +10,7 @@ import subprocess
 import tarfile
 from pathlib import Path
 from string import Template
+from typing import NamedTuple
 
 from pyntara import metrics
 from pyntara.config import DnsproxySetupConfig
@@ -28,6 +30,69 @@ from pyntara.utils import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OS_RELEASE_PATH = Path("/etc/os-release")
 VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
+
+class DiscoveredDnsServers(NamedTuple):
+    '''Validated DNS addresses found from the current network state.'''
+
+    ipv4: tuple[str, ...]
+    ipv6: tuple[str, ...]
+    errors: tuple[str, ...]
+
+
+def _add_valid_dns_tokens(
+    tokens: list[str], addresses_v4: set[str], addresses_v6: set[str]
+) -> None:
+    for token in tokens:
+        try:
+            address = ipaddress.ip_address(token.strip("[](),"))
+        except ValueError:
+            continue
+        if address.is_loopback or address.is_unspecified:
+            continue
+        if address.version == 4:
+            addresses_v4.add(str(address))
+        else:
+            addresses_v6.add(str(address))
+
+
+def discover_dns_servers(
+    cfg: DnsproxySetupConfig, timeout: float
+) -> DiscoveredDnsServers:
+    '''Discover DNS from both configured resolvectl and nmcli commands.
+
+    Both commands are always called and their current-state outputs are combined.
+    Duplicate addresses are removed, valid IPv4 and IPv6 addresses are sorted,
+    and command diagnostics are returned. No files are read, system state is not
+    changed, and DNS reachability is not tested.
+    '''
+    addresses_v4: set[str] = set()
+    addresses_v6: set[str] = set()
+    errors: list[str] = []
+    commands = (
+        ("resolvectl", cfg.resolvectl_dns_command),
+        ("nmcli", cfg.nmcli_dns_command),
+    )
+    for name, command in commands:
+        try:
+            result = run_command(command, check=False, capture=True, timeout=timeout)
+            if result.returncode != 0:
+                errors.append(f"{name} exited with {result.returncode}")
+            if name == "resolvectl":
+                for line in result.stdout.splitlines():
+                    _add_valid_dns_tokens(
+                        line.split(":", 1)[-1].split(), addresses_v4, addresses_v6
+                    )
+            else:
+                for line in result.stdout.splitlines():
+                    match = re.match(r"IP[46]\.DNS(?:\[\d+\])?:(.*)$", line)
+                    if match:
+                        _add_valid_dns_tokens(match.group(1).split(), addresses_v4, addresses_v6)
+
+        except (OSError, subprocess.SubprocessError) as exc:
+            errors.append(f"{name} failed: {exc}")
+    return DiscoveredDnsServers(
+        tuple(sorted(addresses_v4)), tuple(sorted(addresses_v6)), tuple(errors)
+    )
 
 
 def _release_json(repo: str, timeout: float) -> dict[str, object]:
@@ -135,11 +200,9 @@ def _upstreams(cfg: DnsproxySetupConfig, profile_id: str) -> tuple[str, ...]:
 
 
 def _command(cfg: DnsproxySetupConfig, profile_id: str) -> list[str]:
-    command = [
-        str(cfg.binary_path),
-        "--listen=" + cfg.listen_address,
-        "--port=" + str(cfg.listen_port),
-    ]
+    command = [str(cfg.binary_path), "--port=" + str(cfg.listen_port)]
+    for address in cfg.listen_addresses:
+        command.append("--listen=" + address)
     for upstream in _upstreams(cfg, profile_id):
         command.append("--upstream=" + upstream)
     for fallback in cfg.fallback_resolvers:
@@ -184,12 +247,22 @@ def _profile_id(ctx: Context) -> str | None:
     )
 
 
+def _remove_conflicting_dnscrypt(cfg: DnsproxySetupConfig, timeout: float) -> None:
+    for unit in cfg.conflicting_service_units:
+        run_command(["systemctl", "disable", "--now", unit], check=False, timeout=timeout)
+    run_command(
+        ["apt-get", "remove", "--purge", "-y", cfg.conflicting_package_name],
+        check=False,
+        timeout=timeout,
+    )
+
+
 def _write_resolver_dropin(cfg: DnsproxySetupConfig) -> bool:
     path = cfg.resolved_conf_dir / cfg.resolved_dropin_file_name
     path.parent.mkdir(parents=True, exist_ok=True)
     changed = sync_directives_by_key(
         path,
-        (cfg.resolved_dns_directive, cfg.resolved_domains_directive),
+        (*cfg.resolved_dns_directives, cfg.resolved_domains_directive),
         cfg.resolved_dropin_header,
         cfg.resolved_section,
     )
@@ -252,6 +325,7 @@ def task(ctx: Context) -> TaskResult:
             ensure_root_owner(service_path)
             run_command(list(cfg.daemon_reload_command), timeout=timeout)
             changed = True
+        _remove_conflicting_dnscrypt(cfg, timeout)
         if not service_is_enabled(cfg.service_unit_name, timeout):
             run_command(["systemctl", "enable", cfg.service_unit_name], timeout=timeout)
             changed = True

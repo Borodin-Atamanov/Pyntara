@@ -65,6 +65,8 @@ nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.i
 daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
+resolvectl_dns_command = ["resolvectl", "dns"]
+nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
 verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
 install_retries = 3
 start_check_attempts = 5
@@ -316,8 +318,10 @@ binary_path = "/usr/local/bin/dnsproxy"
 service_unit_name = "dnsproxy.service"
 service_unit_path = "/etc/systemd/system/dnsproxy.service"
 service_template_path = "task_data/dnsproxy_setup/dnsproxy.service"
-listen_address = "127.0.0.1"
+listen_addresses = ["0.0.0.0", "::"]
 listen_port = 53053
+conflicting_package_name = "dnscrypt-proxy"
+conflicting_service_units = ["dnscrypt-proxy.service", "dnscrypt-proxy.socket"]
 doh_url_format = "https://dns.nextdns.io/{profile_id}"
 dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
@@ -336,7 +340,7 @@ resolved_dropin_file_name = "pyntara-dnsproxy.conf"
 resolved_dropin_file_mode = "0644"
 resolved_dropin_header = "# Managed by the Pyntara dnsproxy_setup task."
 resolved_section = "[Resolve]"
-resolved_dns_directive = "DNS=127.0.0.1:53053"
+resolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]
 resolved_domains_directive = "Domains=~."
 manage_networkmanager = true
 nmcli_check_command = ["nmcli", "--version"]
@@ -345,6 +349,8 @@ nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.i
 daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
+resolvectl_dns_command = ["resolvectl", "dns"]
+nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
 verification_command = ["resolvectl", "query", "--cache=no", "example.com"]
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"
