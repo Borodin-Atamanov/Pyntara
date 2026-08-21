@@ -407,14 +407,17 @@ def _dns_probe_answers(cfg: DnsproxySetupConfig, timeout: float) -> bool:
 
 def _disable_auto_dns_active(
     cfg: DnsproxySetupConfig, timeout: float
-) -> list[str]:
-    '''Ignore auto DNS on active connections; the changed UUIDs.
+) -> list[tuple[str, str]]:
+    '''Ignore auto DNS on active connections; the changed (UUID, device) pairs.
 
     NetworkManager is queried for the active connections by UUID, so a
     profile name repeated in the catalog cannot redirect the change to
     the wrong profile. The loopback connection is skipped. Every active
-    connection that does not already ignore auto DNS is modified and its
-    UUID recorded for the revert. A missing nmcli changes nothing.
+    connection that does not already ignore auto DNS is modified and
+    reapplied to its running device, because a profile-only change keeps
+    the DHCP-provided DNS on the per-link scope until the connection is
+    reapplied. The changed pairs are returned for the revert. A missing
+    nmcli changes nothing.
     '''
 
     check = run_command(list(cfg.nmcli_check_command), check=False, timeout=timeout)
@@ -423,12 +426,13 @@ def _disable_auto_dns_active(
     listing = run_command(
         list(cfg.nmcli_active_list_command), capture=True, timeout=timeout
     ).stdout.splitlines()
-    changed: list[str] = []
+    changed: list[tuple[str, str]] = []
     for line in listing:
         fields = line.split(":")
         if len(fields) < 2 or not fields[1] or fields[0] == "lo":
             continue
         uuid = fields[1]
+        device = fields[2] if len(fields) > 2 else ""
         state = run_command(
             [
                 part.replace("{connection}", uuid)
@@ -450,19 +454,36 @@ def _disable_auto_dns_active(
             for part in cfg.nmcli_modify_command
         ]
         run_command(command, timeout=timeout)
-        changed.append(uuid)
+        if device:
+            run_command(
+                [
+                    part.replace("{device}", device)
+                    for part in cfg.nmcli_reapply_command
+                ],
+                timeout=timeout,
+            )
+        changed.append((uuid, device))
     return changed
 
 
 def _restore_auto_dns(
-    cfg: DnsproxySetupConfig, uuids: list[str], timeout: float
+    cfg: DnsproxySetupConfig, changed: list[tuple[str, str]], timeout: float
 ) -> None:
-    for uuid in uuids:
+    for uuid, device in changed:
         command = [
             part.replace("{connection}", uuid).replace("{value}", "false")
             for part in cfg.nmcli_modify_command
         ]
         run_command(command, check=False, timeout=timeout)
+        if device:
+            run_command(
+                [
+                    part.replace("{device}", device)
+                    for part in cfg.nmcli_reapply_command
+                ],
+                check=False,
+                timeout=timeout,
+            )
 
 
 def _verify_system(
@@ -527,7 +548,7 @@ def _service_log(cfg: DnsproxySetupConfig, timeout: float) -> str:
 def _revert(
     cfg: DnsproxySetupConfig,
     dropin_changed: bool,
-    uuids: list[str],
+    auto_dns_changed: list[tuple[str, str]],
     timeout: float,
     error_priority: int,
 ) -> None:
@@ -549,9 +570,9 @@ def _revert(
             log_progress(
                 f"revert: cannot remove {path}: {exc}", priority=error_priority
             )
-    if uuids:
+    if auto_dns_changed:
         try:
-            _restore_auto_dns(cfg, uuids, timeout)
+            _restore_auto_dns(cfg, auto_dns_changed, timeout)
             log_progress("reverted: restored NetworkManager auto DNS handling")
         except (OSError, subprocess.SubprocessError) as exc:
             log_progress(
@@ -628,7 +649,7 @@ def task(ctx: Context) -> TaskResult:
     installed = _installed_version(cfg.binary_path, timeout)
     changed = False
     dropin_changed = False
-    auto_dns_uuids: list[str] = []
+    auto_dns_changed: list[tuple[str, str]] = []
     cut_over = False
     try:
         if installed != target_version:
@@ -707,7 +728,7 @@ def task(ctx: Context) -> TaskResult:
         if dropin_changed:
             run_command(list(cfg.restart_resolved_command), timeout=timeout)
         if cfg.manage_networkmanager:
-            auto_dns_uuids = _disable_auto_dns_active(cfg, timeout)
+            auto_dns_changed = _disable_auto_dns_active(cfg, timeout)
         verify_error = _verify_system(cfg, discovered, timeout)
         if verify_error is not None:
             detail = (
@@ -726,7 +747,7 @@ def task(ctx: Context) -> TaskResult:
             )
     except (OSError, subprocess.SubprocessError, tarfile.TarError, RuntimeError) as exc:
         if cut_over:
-            _revert(cfg, dropin_changed, auto_dns_uuids, timeout, error_priority)
+            _revert(cfg, dropin_changed, auto_dns_changed, timeout, error_priority)
         return TaskResult(
             success=False, changed=changed, error=f"dnsproxy setup failed: {exc}"
         )

@@ -347,6 +347,14 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     assert "cccccccc-cccc-cccc-cccc-cccccccccccc" in modified_uuids
     assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" not in modified_uuids
     assert all("true" in command for command in modifies)
+    reapplies = [
+        command
+        for command in calls
+        if command[:3] == ["nmcli", "device", "reapply"]
+    ]
+    assert ["nmcli", "device", "reapply", "wlp0"] in reapplies
+    assert ["nmcli", "device", "reapply", "tun"] in reapplies
+    assert not any(command[-1] == "lo" for command in reapplies)
 
 
 def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(

@@ -204,6 +204,7 @@ def base_config() -> str:
         'nmcli_active_list_command = ["nmcli", "-t", "-f", "NAME,UUID,DEVICE", "connection", "show", "--active"]\n'
         'nmcli_dns_state_command = ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns", "connection", "show", "{connection}"]\n'
         'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
+        'nmcli_reapply_command = ["nmcli", "device", "reapply", "{device}"]\n'
         'daemon_reload_command = ["systemctl", "daemon-reload"]\n'
         'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
         'resolvectl_status_command = ["resolvectl", "status"]\n'

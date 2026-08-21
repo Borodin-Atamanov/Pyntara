@@ -572,6 +572,7 @@ def make_config(
                 "{connection}",
             ),
             nmcli_modify_command=("nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"),
+            nmcli_reapply_command=("nmcli", "device", "reapply", "{device}"),
             daemon_reload_command=("systemctl", "daemon-reload"),
             restart_resolved_command=("systemctl", "restart", "systemd-resolved"),
             resolvectl_status_command=("resolvectl", "status"),

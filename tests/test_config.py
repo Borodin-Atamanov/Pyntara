@@ -345,6 +345,7 @@ nmcli_check_command = ["nmcli", "--version"]
 nmcli_active_list_command = ["nmcli", "-t", "-f", "NAME,UUID,DEVICE", "connection", "show", "--active"]
 nmcli_dns_state_command = ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns", "connection", "show", "{connection}"]
 nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
+nmcli_reapply_command = ["nmcli", "device", "reapply", "{device}"]
 daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
@@ -425,6 +426,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "connection",
         "show",
         "--active",
+    )
+    assert config.dnsproxy_setup.nmcli_reapply_command == (
+        "nmcli",
+        "device",
+        "reapply",
+        "{device}",
     )
     assert config.dnsproxy_setup.kill_command == ("kill",)
     assert config.dnsproxy_setup.service_log_command == (

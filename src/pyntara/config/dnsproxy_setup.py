@@ -51,6 +51,7 @@ class DnsproxySetupConfig:
     nmcli_active_list_command: tuple[str, ...]
     nmcli_dns_state_command: tuple[str, ...]
     nmcli_modify_command: tuple[str, ...]
+    nmcli_reapply_command: tuple[str, ...]
     daemon_reload_command: tuple[str, ...]
     restart_resolved_command: tuple[str, ...]
     resolvectl_status_command: tuple[str, ...]
@@ -185,6 +186,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
             "nmcli_active_list_command",
             "nmcli_dns_state_command",
             "nmcli_modify_command",
+            "nmcli_reapply_command",
             "daemon_reload_command",
             "restart_resolved_command",
             "resolvectl_status_command",
@@ -242,16 +244,17 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         nmcli_active_list_command=commands[1],
         nmcli_dns_state_command=commands[2],
         nmcli_modify_command=commands[3],
-        daemon_reload_command=commands[4],
-        restart_resolved_command=commands[5],
-        resolvectl_status_command=commands[6],
-        resolvectl_dns_command=commands[7],
-        nmcli_dns_command=commands[8],
-        verification_command=commands[9],
-        ss_tcp_listen_command=commands[10],
-        ss_udp_listen_command=commands[11],
-        kill_command=commands[12],
-        service_log_command=commands[13],
+        nmcli_reapply_command=commands[4],
+        daemon_reload_command=commands[5],
+        restart_resolved_command=commands[6],
+        resolvectl_status_command=commands[7],
+        resolvectl_dns_command=commands[8],
+        nmcli_dns_command=commands[9],
+        verification_command=commands[10],
+        ss_tcp_listen_command=commands[11],
+        ss_udp_listen_command=commands[12],
+        kill_command=commands[13],
+        service_log_command=commands[14],
         verification_domain=verification_domain,
         profile_id_file_path=profile_id_file_path,
         profile_id_file_mode=profile_id_file_mode,
