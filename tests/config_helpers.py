@@ -191,7 +191,6 @@ def base_config() -> str:
         'dot_host_format = "tls://{profile_id}.dns.nextdns.io"\n'
         'doq_host_format = "quic://{profile_id}.dns.nextdns.io"\n'
         'upstream_mode = "load_balance"\ncache_enabled = true\n'
-        'fallback_resolvers = ["1.1.1.1", "8.8.8.8"]\n'
         'bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]\n'
         'query_log_path = "/var/log/pyntara/dnsproxy.log"\nquery_log_mode = "0600"\n'
         'service_restart_seconds = 2.0\ninstall_retries = 3\n'

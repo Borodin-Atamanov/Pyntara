@@ -10,7 +10,7 @@ tls://{profile_id}.dns.nextdns.io
 quic://{profile_id}.dns.nextdns.io
 ```
 
-The task uses dnsproxy load balancing. No order is required between DoH, DoT and DoQ. The configured fallback resolver list is passed separately to dnsproxy. Fallback is used when the primary upstream group is unavailable.
+The task uses dnsproxy load balancing. No order is required between DoH, DoT and DoQ. The fallback resolver group is a copy of the bootstrap addresses in the same protocol forms, and is passed to dnsproxy as the fallback list. Fallback is used when the primary upstream group is unavailable.
 
 ## Cache and logging
 Caching is enabled by default and is an explicit configuration value. Every request is written to the configured single query log file through dnsproxy verbose output. The file is root-owned and uses the configured mode. Log rotation is outside this task.

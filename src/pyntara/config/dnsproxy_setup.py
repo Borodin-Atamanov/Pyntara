@@ -33,7 +33,6 @@ class DnsproxySetupConfig:
     doq_host_format: str
     upstream_mode: str
     cache_enabled: bool
-    fallback_resolvers: tuple[str, ...]
     bootstrap_resolvers: tuple[str, ...]
     query_log_path: Path
     query_log_mode: int
@@ -120,7 +119,6 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     cache_enabled = raw.get("cache_enabled")
     if not isinstance(cache_enabled, bool):
         raise ConfigError("dnsproxy_setup.cache_enabled must be a boolean")
-    fallback_resolvers = _string_list(raw, "fallback_resolvers")
     bootstrap_resolvers = _string_list(raw, "bootstrap_resolvers")
     query_log_path = Path(
         _nonempty_string_field(
@@ -214,7 +212,6 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         doq_host_format=endpoint_values[2],
         upstream_mode=upstream_mode,
         cache_enabled=cache_enabled,
-        fallback_resolvers=fallback_resolvers,
         bootstrap_resolvers=bootstrap_resolvers,
         query_log_path=query_log_path,
         query_log_mode=query_log_mode,

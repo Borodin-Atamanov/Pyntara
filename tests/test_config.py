@@ -327,7 +327,6 @@ dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
 upstream_mode = "load_balance"
 cache_enabled = true
-fallback_resolvers = ["1.1.1.1"]
 bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]
 query_log_path = "/var/log/pyntara/dnsproxy.log"
 query_log_mode = "0600"

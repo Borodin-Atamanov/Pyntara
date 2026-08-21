@@ -62,7 +62,15 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
     assert "--upstream=tls://39284e.dns.nextdns.io" in command
     assert "--upstream=quic://39284e.dns.nextdns.io" in command
     assert "--cache" in command
-    assert "--fallback=1.1.1.1" in command
+    for form in (
+        "--fallback=1.1.1.1",
+        "--fallback=tls://1.1.1.1:853",
+        "--fallback=https://1.1.1.1:443/dns-query",
+        "--fallback=quic://1.1.1.1:853",
+        "--fallback=[2606:4700:4700::1111]",
+        "--fallback=tls://[2606:4700:4700::1111]:853",
+    ):
+        assert form in command
     assert "--output=/var/log/pyntara/dnsproxy.log" in command
     assert "--upstream-mode=load_balance" in command
 
