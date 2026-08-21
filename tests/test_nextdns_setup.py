@@ -10,6 +10,7 @@ through the shared FakeProc.
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from pykeepass import PyKeePass, create_database
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks import nextdns_setup_system_wide as task_module
 
 VAULT_PASSWORD = "local-vault-password"
@@ -142,9 +144,20 @@ def test_skip_when_already_configured(
     config_path = ctx.config.nextdns_setup_system_wide.dnscrypt_config_path
     _write_dnscrypt_config(config_path)
 
+    # The selected profile depends on the machine hostname, so the test
+    # pins the hostname and records exactly the profile the task derives
+    # for it; the file then matches and the task skips.
+    monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
+    vault = PyKeePass(
+        str(tmp_path / "secrets" / "production.vault"), password=VAULT_PASSWORD
+    )
+    selected = select_profile_from_vault(
+        vault, ctx.config.nextdns_setup_system_wide.vault_group_title
+    )
+
     profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
     profile_file.parent.mkdir(parents=True, exist_ok=True)
-    profile_file.write_text("938263\n", encoding="utf-8")
+    profile_file.write_text(f"{selected}\n", encoding="utf-8")
 
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)

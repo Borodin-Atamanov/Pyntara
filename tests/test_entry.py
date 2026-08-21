@@ -40,6 +40,15 @@ def _test_config(notice_timeout: int = 7) -> Config:
     )
 
 
+def _default_run_set(mode: str) -> list[str]:
+    """Resolved default run set for a mode: mode defaults plus catalog
+    dependencies, in run order."""
+
+    return task_catalog.resolve(
+        task_catalog.default_tasks(mode, REAL_TASKS), REAL_TASKS
+    )
+
+
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "PYNTARA_INSTALL_MODE",
@@ -177,14 +186,15 @@ def test_run_pauses_on_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_skips_not_implemented_default_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # All task modules are mocked as not implemented: every default task is
-    # reported as skipped and the command exits zero because nothing failed.
+    # All task modules are mocked as not implemented: every task of the
+    # default run set is reported as skipped and the command exits zero
+    # because nothing failed.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    for name in task_catalog.default_tasks("minimal", REAL_TASKS):
+    for name in _default_run_set("minimal"):
         assert f"[skip] {name}" in result.output
 
 
@@ -208,7 +218,7 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     assert "[done] cli_tools" in result.output
     assert "[skip] add_extra_repos" in result.output
-    expected = len(task_catalog.default_tasks("minimal", REAL_TASKS))
+    expected = len(_default_run_set("minimal"))
     assert (
         f"Finished 1 of {expected} tasks, skipped {expected - 1}"
         in result.output
@@ -225,6 +235,29 @@ def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert "Tasks: add_extra_repos cli_tools" in result.output
+
+
+def test_run_default_run_set_resolves_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mode defaults are resolved like an explicit selection: dnsproxy_setup
+    # belongs to the minimal defaults and depends on
+    # nextdns_setup_system_wide, which belongs to no mode. The dependency
+    # must appear in the default run set before dnsproxy_setup, so the
+    # profile id file exists before dnsproxy runs.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    run_set = _default_run_set("minimal")
+    assert f"Tasks: {' '.join(run_set)}" in result.output
+    assert run_set.index("nextdns_setup_system_wide") < run_set.index(
+        "dnsproxy_setup"
+    )
 
 
 def test_run_warns_and_continues_on_unknown_force_tasks(
@@ -292,7 +325,7 @@ def test_run_force_all_reports_the_full_run_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The keyword all forces every task of the run set, not every catalog
-    # task: the Force line lists exactly the minimal defaults.
+    # task: the Force line lists exactly the resolved minimal run set.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "all")
@@ -306,7 +339,7 @@ def test_run_force_all_reports_the_full_run_set(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    expected = " ".join(sorted(_default_run_set("minimal")))
     assert f"Force: {expected}" in result.output
 
 
@@ -327,7 +360,7 @@ def test_run_force_all_is_case_insensitive(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    expected = " ".join(sorted(_default_run_set("minimal")))
     assert f"Force: {expected}" in result.output
 
 
@@ -350,7 +383,7 @@ def test_run_force_all_still_reports_invalid_names(
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "invalid task names in PYNTARA_FORCE_TASKS: nope" in result.output
-    expected = " ".join(sorted(task_catalog.default_tasks("minimal", REAL_TASKS)))
+    expected = " ".join(sorted(_default_run_set("minimal")))
     assert f"Force: {expected}" in result.output
 
 
@@ -420,7 +453,7 @@ def test_run_force_all_reaches_context_as_run_set(
 ) -> None:
     # all expands to exactly the resolved run set: forced and selected are
     # the same set, so every selected task reruns.
-    expected = frozenset(task_catalog.default_tasks("minimal", REAL_TASKS))
+    expected = frozenset(_default_run_set("minimal"))
     assert _captured_force_tasks(monkeypatch, "all") == expected
 
 
@@ -438,7 +471,7 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    expected = len(task_catalog.default_tasks("minimal", REAL_TASKS))
+    expected = len(_default_run_set("minimal"))
     assert f"All {expected} tasks finished" in result.output
 
 

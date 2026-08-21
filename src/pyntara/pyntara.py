@@ -218,17 +218,20 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 def _resolve_task_names(
     mode: str, notice_timeout: int, tasks: tuple[TaskConfig, ...]
 ) -> list[str]:
-    """Task set from PYNTARA_TASKS, or the mode defaults.
+    """Task set from PYNTARA_TASKS, or the resolved mode defaults.
 
     PYNTARA_TASKS is a space-separated list of task names; dependencies are
     resolved transitively. Unknown names are not fatal: an error notice is
     shown, the run pauses so the user can interrupt, then the run continues
-    without the unknown names.
+    without the unknown names. The mode defaults are resolved the same way:
+    a task that belongs to the mode pulls its catalog dependencies into the
+    run set even when those dependencies belong to no mode themselves.
     """
 
     selection = _env("PYNTARA_TASKS")
     if selection is None:
-        return task_catalog.default_tasks(mode, tasks)
+        defaults = task_catalog.default_tasks(mode, tasks)
+        return task_catalog.resolve(defaults, tasks)
     names = selection.split()
     unknown = task_catalog.unknown_tasks(names, tasks)
     if unknown:
