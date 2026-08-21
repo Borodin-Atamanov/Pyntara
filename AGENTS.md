@@ -15,7 +15,7 @@ Read the specific document needed for the task (contract, spec, or guide).
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity: ask or fail loudly.
 
 Understand and use:
-Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns!
+Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns! Не выдумывай! Не ври!
 
 Address me in the masculine, using the formal polite form. Если отвечаешь на руссом - обращайся ко мне "на Вы". Refer to yourself and your own actions in the feminine gender.
 Thins in english, answer in language of request. All documentation in english.
