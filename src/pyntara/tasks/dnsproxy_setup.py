@@ -199,6 +199,33 @@ def _upstreams(cfg: DnsproxySetupConfig, profile_id: str) -> tuple[str, ...]:
     )
 
 
+def _bootstrap_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
+    '''Protocol forms of each bootstrap address, one argument per protocol.
+
+    Every address yields four bootstrap forms: plain DNS on port 53, DoT on
+    853, DoH on 443 and DoQ on 853. IPv6 hosts are enclosed in square
+    brackets. DNSCrypt is not generated because a bare IP is not enough for
+    it and the pool carries no stamps.
+    '''
+    forms: list[str] = []
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError as exc:
+            raise RuntimeError(f"invalid bootstrap address {address!r}: {exc}") from exc
+        host = f"[{ip}]" if ip.version == 6 else str(ip)
+        plain = host if ip.version == 6 else address
+        forms.extend(
+            (
+                plain,
+                f"tls://{host}:853",
+                f"https://{host}:443/dns-query",
+                f"quic://{host}:853",
+            )
+        )
+    return tuple(forms)
+
+
 def _command(cfg: DnsproxySetupConfig, profile_id: str) -> list[str]:
     command = [str(cfg.binary_path), "--port=" + str(cfg.listen_port)]
     for address in cfg.listen_addresses:
@@ -207,8 +234,6 @@ def _command(cfg: DnsproxySetupConfig, profile_id: str) -> list[str]:
         command.append("--upstream=" + upstream)
     for fallback in cfg.fallback_resolvers:
         command.append("--fallback=" + fallback)
-    for bootstrap in cfg.bootstrap_resolvers:
-        command.append("--bootstrap=" + bootstrap)
     command.extend(
         (
             "--upstream-mode=" + cfg.upstream_mode,
@@ -218,6 +243,8 @@ def _command(cfg: DnsproxySetupConfig, profile_id: str) -> list[str]:
     )
     if cfg.cache_enabled:
         command.append("--cache")
+    for bootstrap in _bootstrap_forms(cfg.bootstrap_resolvers):
+        command.append("--bootstrap=" + bootstrap)
     return command
 
 

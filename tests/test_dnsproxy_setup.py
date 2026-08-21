@@ -67,6 +67,32 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
     assert "--upstream-mode=load_balance" in command
 
 
+def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
+    config = make_config()
+    command = task_module._command(config.dnsproxy_setup, "39284e")
+    for form in (
+        "--bootstrap=1.1.1.1",
+        "--bootstrap=tls://1.1.1.1:853",
+        "--bootstrap=https://1.1.1.1:443/dns-query",
+        "--bootstrap=quic://1.1.1.1:853",
+        "--bootstrap=[2606:4700:4700::1111]",
+        "--bootstrap=tls://[2606:4700:4700::1111]:853",
+        "--bootstrap=https://[2606:4700:4700::1111]:443/dns-query",
+        "--bootstrap=quic://[2606:4700:4700::1111]:853",
+    ):
+        assert form in command
+    bootstrap_indices = [
+        index for index, arg in enumerate(command) if arg.startswith("--bootstrap=")
+    ]
+    last_other = max(
+        index
+        for index, arg in enumerate(command)
+        if not arg.startswith("--bootstrap=")
+    )
+    assert bootstrap_indices
+    assert min(bootstrap_indices) > last_other
+
+
 def test_task_writes_root_service_and_resolver_configuration(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
