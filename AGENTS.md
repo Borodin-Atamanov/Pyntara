@@ -23,7 +23,7 @@ After finishing changes, the agent MUST integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
 Use descriptive naming: functions, variables, methods, and task names must explain what they do, so the name alone conveys the purpose.
-No decorative formatting: no pseudographics, border characters, decorative or filler separator lines (dashes, equals signs, underscores, asterisks), ASCII diagrams, or Markdown tables unless explicitly requested. Convey structure and relationships in text.
+Strict no decorative formatting: no pseudographics, border characters, decorative or filler separator lines (dashes, equals signs, underscores, asterisks), ASCII diagrams, or Markdown tables unless explicitly requested. Convey structure and relationships in text.
 Minimal formatting: use Arabic numerals only as list markers, never bullets, dashes, or asterisks. Maximum 2-3 nesting levels with minimal indentation.
 Before submitting, check the output for decorative elements and remove them. When in doubt, remove the symbol: an unnecessary character adds no meaning.
 Code comments and response text: substantive only, no stylistic embellishment.
