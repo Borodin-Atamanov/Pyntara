@@ -1,36 +1,33 @@
 """Task nextdns_setup_system_wide: configure dnscrypt-proxy for a NextDNS profile.
 
 The task picks one NextDNS profile per machine, deterministically from
-the hostname, and configures dnscrypt-proxy to resolve through that
-profile over all available encrypted protocols: DNS-over-HTTPS (DoH),
-DNS-over-TLS (DoT) and DNS-over-QUIC (DoQ). The profile comes from the
+the hostname, and configures dnscrypt-proxy to forward all queries
+through that profile over DNS-over-HTTPS. The profile comes from the
 vault subgroup named by nextdns_setup_system_wide.vault_group_title, the
-endpoint formulas live in the config. The task writes [static] entries
-into the dnscrypt-proxy configuration file and sets server_names to use
-them, so the proxy tries every protocol and keeps the fastest. The
-fallback servers already configured in dnscrypt-proxy (by the
-dnscrypt_setup task) answer whenever NextDNS itself is unreachable, so
-the machine never loses resolution.
+endpoint URL lives in the config. The task writes a [forwarding] section
+into the dnscrypt-proxy configuration file, so every query goes through
+the NextDNS profile. The fallback servers already configured in
+dnscrypt-proxy (by the dnscrypt_setup task) answer whenever NextDNS
+itself is unreachable, so the machine never loses resolution.
 
 The task verifies that the machine really resolves through the chosen
 profile the way NextDNS recommends: a query to test.nextdns.io must
 report the profile (docs/spec/networking.md, section Verification). On a
 successful verification the applied profile ID is recorded in the
 profile ID file for the System Metrics collector; on a failed
-verification the [static] entries and the server_names line are reverted,
-so the machine never keeps a half-applied configuration. The profiles
-come from the source vaults of the fresh clone, opened with the run
-password the way local_vault_setup opens them; the runtime vault is only
-a fallback, because the copy may be stale and predate the profile group.
-The task is idempotent: it skips when the [static] entries and
-server_names already match and the resolver already answers through the
-profile; force mode rewrites the entries and restarts the proxy, but the
-profile choice from the hostname never changes.
+verification the [forwarding] section is removed, so the machine never
+keeps a half-applied configuration. The profiles come from the source
+vaults of the fresh clone, opened with the run password the way
+local_vault_setup opens them; the runtime vault is only a fallback,
+because the copy may be stale and predate the profile group. The task is
+idempotent: it skips when the [forwarding] section already matches and
+the resolver already answers through the profile; force mode rewrites
+the section and restarts the proxy, but the profile choice from the
+hostname never changes.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import socket
@@ -57,99 +54,23 @@ from pyntara.utils import run_command
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _static_entry_names(cfg: NextdnsSetupSystemWideConfig) -> tuple[str, str, str]:
-    """The three [static] entry names for the profile: DoH, DoT, DoQ."""
+def _forwarding_url(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> str:
+    """The DoH forwarding URL for a profile."""
 
-    p = cfg.static_name_prefix
-    return f"{p}-doh", f"{p}-dot", f"{p}-doq"
+    return cfg.doh_url_format.format(profile_id=profile_id)
 
 
-def _doh_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
-    """The DoH DNS stamp for a profile.
+def _forwarding_section(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> str:
+    """The [forwarding] TOML section that routes all queries through NextDNS.
 
-    The stamp encodes the DoH URL https://dns.nextdns.io/<profile_id>
-    as a DoH stamp (protocol 0x02) with no certificate hash, so
-    dnscrypt-proxy uses the public CA system to verify the TLS
-    certificate.
+    The section forces every query through the NextDNS DoH endpoint for
+    the chosen profile. The fallback_resolvers configured by
+    dnscrypt_setup answer when NextDNS is unreachable, because forwarding
+    falls back to the regular resolver path on failure.
     """
 
-    url = cfg.doh_url_format.format(profile_id=profile_id)
-    rest = url.removeprefix("https://")
-    if "/" in rest:
-        host, path = rest.split("/", 1)
-        path = f"/{path}"
-    else:
-        host = rest
-        path = "/"
-    host_bytes = host.encode("utf-8")
-    path_bytes = path.encode("utf-8")
-    stamp_bin = (
-        bytes([0x02])
-        + b"\x00" * 8
-        + bytes([len(host_bytes)])
-        + host_bytes
-        + bytes([len(path_bytes)])
-        + path_bytes
-    )
-    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
-    return f"sdns://{stamp_b64}"
-
-
-def _dot_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
-    """The DoT DNS stamp for a profile.
-
-    The stamp encodes the DoT endpoint <profile_id>.dns.nextdns.io:853
-    as a DoT stamp (protocol 0x06) with no certificate hash.
-    """
-
-    host = cfg.dot_stamp_host_format.format(profile_id=profile_id)
-    host_bytes = host.encode("utf-8")
-    stamp_bin = (
-        bytes([0x06]) + b"\x00" * 8 + bytes([len(host_bytes)]) + host_bytes
-    )
-    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
-    return f"sdns://{stamp_b64}"
-
-
-def _doq_stamp(profile_id: str, cfg: NextdnsSetupSystemWideConfig) -> str:
-    """The DoQ DNS stamp for a profile.
-
-    The stamp encodes the DoQ endpoint quic://<profile_id>.dns.nextdns.io:853
-    as a DoQ stamp (protocol 0x0A) with no certificate hash.
-    """
-
-    host = cfg.doq_stamp_host_format.format(profile_id=profile_id)
-    host_bytes = host.encode("utf-8")
-    stamp_bin = (
-        bytes([0x0A]) + b"\x00" * 8 + bytes([len(host_bytes)]) + host_bytes
-    )
-    stamp_b64 = base64.urlsafe_b64encode(stamp_bin).rstrip(b"=").decode("ascii")
-    return f"sdns://{stamp_b64}"
-
-
-def _static_lines(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> tuple[str, ...]:
-    """The [static] section lines for a profile over all three protocols.
-
-    Returns the TOML lines that define three [static] entries (DoH, DoT,
-    DoQ). The server_names line is separate.
-    """
-
-    doh_name, dot_name, doq_name = _static_entry_names(cfg)
-    return (
-        f"[static.'{doh_name}']",
-        f"stamp = '{_doh_stamp(profile_id, cfg)}'",
-        f"[static.'{dot_name}']",
-        f"stamp = '{_dot_stamp(profile_id, cfg)}'",
-        f"[static.'{doq_name}']",
-        f"stamp = '{_doq_stamp(profile_id, cfg)}'",
-    )
-
-
-def _server_names_line(cfg: NextdnsSetupSystemWideConfig) -> str:
-    """The server_names line that selects all three protocol entries."""
-
-    doh, dot, doq = _static_entry_names(cfg)
-    return f"server_names = ['{doh}', '{dot}', '{doq}']"
+    url = _forwarding_url(cfg, profile_id)
+    return f"[forwarding]\nforwarding = '{url}'"
 
 
 def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
@@ -197,27 +118,26 @@ def _remove_profile_id_file(cfg: NextdnsSetupSystemWideConfig) -> None:
 
 
 def _config_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
-    """True when the dnscrypt-proxy config already carries the entries.
+    """True when the dnscrypt-proxy config already carries the forwarding section.
 
-    The comparison checks that every [static] line and the server_names
-    line are present in the file. A missing file is never a match.
+    The comparison checks that the [forwarding] section with the correct
+    URL is present. A missing file is never a match.
     """
 
     if not cfg.dnscrypt_config_path.is_file():
         return False
     content = cfg.dnscrypt_config_path.read_text(encoding="utf-8")
-    expected = (*_static_lines(cfg, profile_id), _server_names_line(cfg))
-    return all(line in content for line in expected)
+    expected = _forwarding_section(cfg, profile_id)
+    return expected in content
 
 
 def _write_dnscrypt_config(
     cfg: NextdnsSetupSystemWideConfig, profile_id: str
 ) -> tuple[bool, str]:
-    """Write the [static] entries and server_names into the config.
+    """Write the [forwarding] section into the config.
 
-    Existing [static] entries owned by this task and the old server_names
-    line are removed, then the new entries are appended. Returns
-    (changed, error).
+    An existing [forwarding] section is replaced, a missing one is
+    appended at the end of the file. Returns (changed, error).
     """
 
     path = cfg.dnscrypt_config_path
@@ -228,36 +148,30 @@ def _write_dnscrypt_config(
     except OSError as exc:
         return False, f"cannot read {path}: {exc}"
 
-    doh_name, dot_name, doq_name = _static_entry_names(cfg)
-    owned_names = {doh_name, dot_name, doq_name}
+    new_section = _forwarding_section(cfg, profile_id)
+    if new_section in content:
+        return False, ""
+
+    # Remove any existing [forwarding] section
     lines = content.splitlines()
     result: list[str] = []
-    skip_static = False
+    skip = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("[static."):
-            name = stripped[len("[static.'"):].rstrip("']")
-            if name in owned_names:
-                skip_static = True
-                continue
-            skip_static = False
-        if skip_static:
-            if stripped.startswith("[") and not stripped.startswith("[static."):
-                skip_static = False
-                result.append(line)
+        if stripped == "[forwarding]":
+            skip = True
             continue
-        if stripped.startswith("server_names"):
+        if skip:
+            if stripped.startswith("["):
+                skip = False
+                result.append(line)
             continue
         result.append(line)
 
-    new_lines = list(_static_lines(cfg, profile_id))
-    result.extend(new_lines)
-    result.append(_server_names_line(cfg))
+    result.append("")
+    result.append(new_section)
 
     new_content = "\n".join(result) + "\n"
-    if new_content == content:
-        return False, ""
-
     try:
         path.write_text(new_content, encoding="utf-8")
     except OSError as exc:
@@ -319,12 +233,12 @@ def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
 
 
 def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
-    """Undo the [static] entries and the server_names line.
+    """Undo the [forwarding] section.
 
-    The entries owned by this task are removed from the configuration
-    file and dnscrypt-proxy is restarted, so the machine returns to its
-    previous resolver configuration. Every step is journaled; a failed
-    step is reported but cannot stop the run.
+    The section is removed from the configuration file and dnscrypt-proxy
+    is restarted, so the machine returns to its previous resolver
+    configuration. Every step is journaled; a failed step is reported but
+    cannot stop the run.
     """
 
     path = cfg.dnscrypt_config_path
@@ -336,32 +250,25 @@ def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
         _log(f"revert: cannot read {path}: {exc}", priority=cfg.error_priority)
         return
 
-    doh_name, dot_name, doq_name = _static_entry_names(cfg)
-    owned_names = {doh_name, dot_name, doq_name}
     lines = content.splitlines()
     result: list[str] = []
-    skip_static = False
+    skip = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("[static."):
-            name = stripped[len("[static.'"):].rstrip("']")
-            if name in owned_names:
-                skip_static = True
-                continue
-            skip_static = False
-        if skip_static:
-            if stripped.startswith("[") and not stripped.startswith("[static."):
-                skip_static = False
-                result.append(line)
+        if stripped == "[forwarding]":
+            skip = True
             continue
-        if stripped.startswith("server_names"):
+        if skip:
+            if stripped.startswith("["):
+                skip = False
+                result.append(line)
             continue
         result.append(line)
 
     new_content = "\n".join(result) + "\n"
     try:
         path.write_text(new_content, encoding="utf-8")
-        _log("reverted: removed the NextDNS [static] entries")
+        _log("reverted: removed the NextDNS [forwarding] section")
     except OSError as exc:
         _log(
             f"revert: cannot write {path}: {exc}",
@@ -489,8 +396,8 @@ def task(ctx: Context) -> TaskResult:
         success=True,
         changed=True,
         message=(
-            f"System DNS resolves through the NextDNS profile {profile_id} "
-            "over DoH, DoT and DoQ through dnscrypt-proxy; fallback servers "
+            f"System DNS forwards through the NextDNS profile {profile_id} "
+            "over DNS-over-HTTPS through dnscrypt-proxy; fallback servers "
             "keep the machine online when NextDNS is unreachable"
         ),
     )

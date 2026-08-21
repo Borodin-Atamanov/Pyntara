@@ -22,9 +22,6 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     )
     assert section.profile_id_file_mode == 0o644
     assert section.doh_url_format == "https://dns.nextdns.io/{profile_id}"
-    assert section.dot_stamp_host_format == "{profile_id}.dns.nextdns.io:853"
-    assert section.doq_stamp_host_format == "quic://{profile_id}.dns.nextdns.io:853"
-    assert section.static_name_prefix == "nextdns-profile"
     assert section.verification_url == "https://test.nextdns.io/"
     assert section.restart_proxy_command == (
         "systemctl",
@@ -56,9 +53,6 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
             'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
             'profile_id_file_mode = "0644"\n'
             'doh_url_format = "https://dns.nextdns.io/{profile_id}"\n'
-            'dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"\n'
-            'doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"\n'
-            'static_name_prefix = "nextdns-profile"\n'
             'verification_url = "https://test.nextdns.io/"\n'
             'restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]\n'
             'verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]\n'
@@ -82,20 +76,6 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
         lambda c: c.replace(
             'doh_url_format = "https://dns.nextdns.io/{profile_id}"',
             'doh_url_format = ""',
-        ),
-        # dot_stamp_host_format lacks the placeholder
-        lambda c: c.replace(
-            'dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"',
-            'dot_stamp_host_format = "dns.nextdns.io:853"',
-        ),
-        # doq_stamp_host_format lacks the placeholder
-        lambda c: c.replace(
-            'doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"',
-            'doq_stamp_host_format = "quic://dns.nextdns.io:853"',
-        ),
-        # static_name_prefix is empty
-        lambda c: c.replace(
-            'static_name_prefix = "nextdns-profile"', 'static_name_prefix = ""'
         ),
         # verification_url is empty
         lambda c: c.replace(

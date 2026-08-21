@@ -30,16 +30,12 @@ class NextdnsSetupSystemWideConfig:
     vault_group_title names the vault subgroup that carries the NextDNS
     profile accounts (the [vault_structure] groups). The task edits the
     dnscrypt-proxy configuration at dnscrypt_config_path in place: it
-    writes [static] entries for the chosen profile over DoH, DoT and DoQ
-    and sets server_names to use them. profile_id_file_path and
-    profile_id_file_mode are the path and mode of the file that records
-    the applied profile ID for the System Metrics collector.
+    writes a [forwarding] section that routes every query through the
+    NextDNS DoH endpoint for the chosen profile. profile_id_file_path
+    and profile_id_file_mode are the path and mode of the file that
+    records the applied profile ID for the System Metrics collector.
     doh_url_format is the DoH URL pattern with the {profile_id}
-    placeholder, dot_stamp_host_format and doq_stamp_host_format the
-    host:port patterns for the DoT and DoQ stamps. static_name_prefix
-    is the prefix of the [static] entry names; the task creates three
-    entries named <prefix>-doh, <prefix>-dot and <prefix>-doq.
-    verification_url is the NextDNS verification endpoint,
+    placeholder. verification_url is the NextDNS verification endpoint,
     restart_proxy_command restarts dnscrypt-proxy so the configuration
     takes effect, verification_command queries the endpoint (with the
     {url} and {timeout} placeholders). error_priority is the syslog
@@ -52,9 +48,6 @@ class NextdnsSetupSystemWideConfig:
     profile_id_file_path: Path
     profile_id_file_mode: int
     doh_url_format: str
-    dot_stamp_host_format: str
-    doq_stamp_host_format: str
-    static_name_prefix: str
     verification_url: str
     restart_proxy_command: tuple[str, ...]
     verification_command: tuple[str, ...]
@@ -106,28 +99,6 @@ def _nextdns_setup_system_wide_table(
             "nextdns_setup_system_wide.doh_url_format must contain "
             "the {profile_id} placeholder"
         )
-    dot_stamp_host_format = _nonempty_string_field(
-        raw.get("dot_stamp_host_format"),
-        "nextdns_setup_system_wide.dot_stamp_host_format",
-    )
-    if "{profile_id}" not in dot_stamp_host_format:
-        raise ConfigError(
-            "nextdns_setup_system_wide.dot_stamp_host_format must contain "
-            "the {profile_id} placeholder"
-        )
-    doq_stamp_host_format = _nonempty_string_field(
-        raw.get("doq_stamp_host_format"),
-        "nextdns_setup_system_wide.doq_stamp_host_format",
-    )
-    if "{profile_id}" not in doq_stamp_host_format:
-        raise ConfigError(
-            "nextdns_setup_system_wide.doq_stamp_host_format must contain "
-            "the {profile_id} placeholder"
-        )
-    static_name_prefix = _nonempty_string_field(
-        raw.get("static_name_prefix"),
-        "nextdns_setup_system_wide.static_name_prefix",
-    )
     verification_url = _nonempty_string_field(
         raw.get("verification_url"), "nextdns_setup_system_wide.verification_url"
     )
@@ -178,9 +149,6 @@ def _nextdns_setup_system_wide_table(
         profile_id_file_path=Path(profile_id_file_path),
         profile_id_file_mode=profile_id_file_mode,
         doh_url_format=doh_url_format,
-        dot_stamp_host_format=dot_stamp_host_format,
-        doq_stamp_host_format=doq_stamp_host_format,
-        static_name_prefix=static_name_prefix,
         verification_url=verification_url,
         restart_proxy_command=restart_proxy_command,
         verification_command=verification_command,

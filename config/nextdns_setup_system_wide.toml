@@ -2,15 +2,15 @@
 # System-wide NextDNS configuration through dnscrypt-proxy
 # (docs/spec/networking.md). The task picks one NextDNS profile per
 # machine from the vault group named below, deterministically from the
-# hostname, and configures dnscrypt-proxy to resolve through that
-# profile over all available encrypted protocols (DoH, DoT, DoQ). The
-# profile is selected by sha256(hostname) modulo the number of profiles
-# in the group, so the same hostname always gets the same profile. The
-# task writes [static] entries into the dnscrypt-proxy configuration
-# file and sets server_names to use them; the proxy tries every protocol
-# and keeps the fastest. The fallback servers already configured in
-# dnscrypt-proxy (by the dnscrypt_setup task) answer whenever NextDNS
-# itself is unreachable, so the machine never loses resolution.
+# hostname, and configures dnscrypt-proxy to forward all queries through
+# that profile over DNS-over-HTTPS. The profile is selected by
+# sha256(hostname) modulo the number of profiles in the group, so the
+# same hostname always gets the same profile. The task writes a
+# [forwarding] section into the dnscrypt-proxy configuration file, so
+# every query goes through the NextDNS profile. The fallback servers
+# already configured in dnscrypt-proxy (by the dnscrypt_setup task)
+# answer whenever NextDNS itself is unreachable, so the machine never
+# loses resolution.
 # Title of the vault subgroup that carries the NextDNS profile accounts.
 vault_group_title = "NextDNS"
 # Path of the dnscrypt-proxy configuration file the task edits in place.
@@ -26,15 +26,6 @@ profile_id_file_mode = "0644"
 # DoH endpoint pattern of the NextDNS service; {profile_id} is replaced
 # with the 6-hex profile ID, producing https://dns.nextdns.io/<id>.
 doh_url_format = "https://dns.nextdns.io/{profile_id}"
-# DoT endpoint pattern; {profile_id} is replaced, producing
-# <id>.dns.nextdns.io:853.
-dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"
-# DoQ endpoint pattern; {profile_id} is replaced, producing
-# quic://<id>.dns.nextdns.io:853.
-doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"
-# Server name prefix for the [static] entries; the task creates three
-# entries named <prefix>-doh, <prefix>-dot and <prefix>-doq.
-static_name_prefix = "nextdns-profile"
 # Verification endpoint that reports the active NextDNS profile as JSON;
 # the task checks it after applying the configuration.
 verification_url = "https://test.nextdns.io/"

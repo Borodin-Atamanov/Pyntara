@@ -218,9 +218,6 @@ dnscrypt_config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"
 doh_url_format = "https://dns.nextdns.io/{profile_id}"
-dot_stamp_host_format = "{profile_id}.dns.nextdns.io:853"
-doq_stamp_host_format = "quic://{profile_id}.dns.nextdns.io:853"
-static_name_prefix = "nextdns-profile"
 verification_url = "https://test.nextdns.io/"
 restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]
 verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
@@ -528,15 +525,6 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         config.nextdns_setup_system_wide.doh_url_format
         == "https://dns.nextdns.io/{profile_id}"
     )
-    assert (
-        config.nextdns_setup_system_wide.dot_stamp_host_format
-        == "{profile_id}.dns.nextdns.io:853"
-    )
-    assert (
-        config.nextdns_setup_system_wide.doq_stamp_host_format
-        == "quic://{profile_id}.dns.nextdns.io:853"
-    )
-    assert config.nextdns_setup_system_wide.static_name_prefix == "nextdns-profile"
     assert (
         config.nextdns_setup_system_wide.verification_url
         == "https://test.nextdns.io/"

@@ -129,14 +129,8 @@ def test_configures_proxy_and_verifies(
     assert result.success is True
     assert result.changed is True
     content = config_path.read_text(encoding="utf-8")
-    assert "[static.'nextdns-profile-doh']" in content
-    assert "[static.'nextdns-profile-dot']" in content
-    assert "[static.'nextdns-profile-doq']" in content
-    assert "stamp = 'sdns://" in content
-    assert (
-        "server_names = ['nextdns-profile-doh', 'nextdns-profile-dot', "
-        "'nextdns-profile-doq']"
-    ) in content
+    assert "[forwarding]" in content
+    assert "forwarding = 'https://dns.nextdns.io/" in content
     assert any(call[0] == "systemctl" and "restart" in call for call in calls)
     assert any(call[0] == "curl" for call in calls)
     profile_file = tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
@@ -158,15 +152,13 @@ def test_skip_when_already_configured(
     cfg = ctx.config.nextdns_setup_system_wide
     profile_id = select_profile_id(socket.gethostname(), PROFILE_IDS)
 
-    from pyntara.tasks.nextdns_setup_system_wide import (
-        _server_names_line,
-        _static_lines,
-    )
+    from pyntara.tasks.nextdns_setup_system_wide import _forwarding_section
 
     existing = config_path.read_text(encoding="utf-8")
-    new_lines = list(_static_lines(cfg, profile_id))
-    new_lines.append(_server_names_line(cfg))
-    config_path.write_text(existing + "\n".join(new_lines) + "\n", encoding="utf-8")
+    config_path.write_text(
+        existing + "\n" + _forwarding_section(cfg, profile_id) + "\n",
+        encoding="utf-8",
+    )
 
     calls = _install_subprocess(monkeypatch)
     result = task_module.task(ctx)
@@ -187,9 +179,7 @@ def test_verification_failure_reverts(
     result = task_module.task(ctx)
     assert result.success is False
     content = config_path.read_text(encoding="utf-8")
-    assert "nextdns-profile-doh" not in content
-    assert "nextdns-profile-dot" not in content
-    assert "nextdns-profile-doq" not in content
+    assert "[forwarding]" not in content
     profile_file = tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id"
     assert not profile_file.exists()
 
@@ -219,7 +209,7 @@ def test_non_json_verification_body_reports_excerpt_and_reverts(
     assert "did not return JSON" in (result.error or "")
     assert excerpt in (result.error or "")
     content = config_path.read_text(encoding="utf-8")
-    assert "nextdns-profile-doh" not in content
+    assert "[forwarding]" not in content
 
 
 def test_missing_group_fails_without_touching_config(
