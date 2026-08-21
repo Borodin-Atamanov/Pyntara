@@ -710,11 +710,19 @@ def task(ctx: Context) -> TaskResult:
             auto_dns_uuids = _disable_auto_dns_active(cfg, timeout)
         verify_error = _verify_system(cfg, discovered, timeout)
         if verify_error is not None:
-            _revert(cfg, dropin_changed, auto_dns_uuids, timeout, error_priority)
+            detail = (
+                f"{verify_error}; the resolver drop-in and the dnsproxy "
+                "service were kept so the system stays partly on dnsproxy; "
+                "remove the static provider DNS from the active "
+                "NetworkManager connection or reapply it, then rerun the task"
+            )
+            log_progress(
+                f"dnsproxy setup failed: {detail}", priority=error_priority
+            )
             return TaskResult(
                 success=False,
                 changed=True,
-                error=f"dnsproxy setup failed: {verify_error}; changes reverted",
+                error=f"dnsproxy setup failed: {detail}",
             )
     except (OSError, subprocess.SubprocessError, tarfile.TarError, RuntimeError) as exc:
         if cut_over:

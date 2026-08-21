@@ -349,20 +349,40 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     assert all("true" in command for command in modifies)
 
 
-def test_task_reverts_when_the_system_would_bypass_dnsproxy(
+def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
+    progress_calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        task_module,
+        "log_progress",
+        lambda message, *, priority=6: progress_calls.append((message, priority)),
+    )
     result, _, calls, config = _run_task(
         tmp_path, monkeypatch, provider_dns=True, routing_leftover=True
     )
     assert result.success is False
-    assert "reverted" in (result.error or "")
+    assert "bypass dnsproxy" in (result.error or "")
+    assert "were kept" in (result.error or "")
+    assert "reverted" not in (result.error or "")
     dropin = (
         config.dnsproxy_setup.resolved_conf_dir
         / config.dnsproxy_setup.resolved_dropin_file_name
     )
-    assert not dropin.exists()
-    assert ["systemctl", "stop", "dnsproxy.service"] in calls
+    assert dropin.exists()
+    assert not any(
+        command[:3] == ["systemctl", "stop", "dnsproxy.service"]
+        for command in calls
+    )
+    assert not any(
+        command[:3] == ["nmcli", "connection", "modify"]
+        and "false" in command
+        for command in calls
+    )
+    assert any(
+        priority == 3 and "were kept" in message
+        for message, priority in progress_calls
+    )
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:
