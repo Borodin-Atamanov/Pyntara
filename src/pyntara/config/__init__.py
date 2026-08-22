@@ -32,6 +32,7 @@ from .engine import EngineConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
+from .kde_settings import KdeSettingsConfig
 from .loader import Config, load_config
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
@@ -69,6 +70,7 @@ __all__ = [
     "HostnameConfig",
     "I2pdServiceSetupConfig",
     "KdeKeyboardSetupConfig",
+    "KdeSettingsConfig",
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
     "SshClientSetupConfig",

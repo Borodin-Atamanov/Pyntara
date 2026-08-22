@@ -1,0 +1,21 @@
+# Pyntara desktop appearance configuration.
+# Single source of truth for the kde_settings task: which dark color scheme
+# and which dark global theme the desktop uses, and how the changes are
+# applied. The task applies the theme values with the plasma-apply tools as
+# the target user, so the config files stay owned by that user, and the
+# changes apply immediately when a desktop session is running.
+
+[kde_settings]
+# Packages that must be present: the provider of the plasma-apply theme
+# tools (plasma-workspace) and the KConfig reader used for the idempotency
+# checks (libkf6config-bin). Missing packages are installed by the task.
+packages = ["plasma-workspace", "libkf6config-bin"]
+# The user whose desktop configuration is edited and that user's home
+# directory; the KDE tools resolve the config directory under it.
+username = "i"
+home_dir = "/home/i"
+# The dark color scheme applied to all Qt and KDE windows.
+color_scheme = "BreezeDark"
+# The dark global theme (look and feel) that covers the panel, the widgets,
+# the window decorations and the icons.
+look_and_feel = "org.kubuntudark.desktop"

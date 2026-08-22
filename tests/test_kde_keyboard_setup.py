@@ -113,8 +113,12 @@ def _install_fakes(
     monkeypatch.setattr(task_module, "install_package_once", fake_install)
     monkeypatch.setattr(
         task_module,
-        "_read_process_environment",
-        lambda pid: "unix:path=/run/user/1000/bus",
+        "session_bus_address",
+        (
+            lambda username, timeout: "unix:path=/run/user/1000/bus"
+            if bus_pid
+            else None
+        ),
     )
     return writes, reloads, restarts, installs
 

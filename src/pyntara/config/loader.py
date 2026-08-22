@@ -14,6 +14,7 @@ from .engine import EngineConfig, _engine_table
 from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
 from .kde_keyboard_setup import KdeKeyboardSetupConfig, _kde_keyboard_setup_table
+from .kde_settings import KdeSettingsConfig, _kde_settings_table
 from .nextdns_setup_system_wide import (
     NextdnsSetupSystemWideConfig,
     _nextdns_setup_system_wide_table,
@@ -58,6 +59,7 @@ class Config:
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
     kde_keyboard_setup: KdeKeyboardSetupConfig
+    kde_settings: KdeSettingsConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
@@ -131,6 +133,7 @@ def load_config(path: Path) -> Config:
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
         kde_keyboard_setup=_kde_keyboard_setup_table(data.get("kde_keyboard_setup")),
+        kde_settings=_kde_settings_table(data.get("kde_settings")),
         swapfile_service_install=_swapfile_service_install_table(
             data.get("swapfile_service_install")
         ),

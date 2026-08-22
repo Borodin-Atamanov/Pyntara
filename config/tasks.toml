@@ -109,6 +109,12 @@ depends = ["users_setup"]
 modes = ["desktop"]
 
 [[tasks]]
+name = "kde_settings"
+description = "Set the dark color scheme and the dark global theme for KDE."
+depends = ["users_setup"]
+modes = ["desktop"]
+
+[[tasks]]
 name = "imagemagick_install"
 description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]

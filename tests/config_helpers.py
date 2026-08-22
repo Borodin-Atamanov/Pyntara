@@ -52,6 +52,12 @@ def base_config() -> str:
         'indicator_display_style = "Flag"\n'
         'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]\n'
         'panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]\n'
+        '[kde_settings]\n'
+        'packages = ["plasma-workspace", "libkf6config-bin"]\n'
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'color_scheme = "BreezeDark"\n'
+        'look_and_feel = "org.kubuntudark.desktop"\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'

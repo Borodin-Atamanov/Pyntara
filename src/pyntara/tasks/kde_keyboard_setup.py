@@ -27,6 +27,7 @@ from pyntara.utils import (
     install_package_once,
     package_is_installed,
     run_command,
+    session_bus_address,
     trim_whitespace,
 )
 
@@ -148,39 +149,6 @@ def _keyboard_layout_config_group(text: str, plugin: str) -> tuple[str, ...] | N
     return None
 
 
-def _read_process_environment(pid: str) -> str | None:
-    """DBUS_SESSION_BUS_ADDRESS of a process, or None when unreadable."""
-
-    try:
-        data = Path(f"/proc/{pid}/environ").read_bytes()
-    except OSError:
-        return None
-    for entry in data.split(b"\0"):
-        if entry.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
-            return entry.split(b"=", 1)[1].decode("utf-8")
-    return None
-
-
-def _session_bus_address(cfg: KdeKeyboardSetupConfig, timeout: float) -> str | None:
-    """The DBus session address of the target user, or None.
-
-    The address is read from the environment of the user's kwin_wayland
-    process, which owns the session keyboard layout service. A missing
-    session (no kwin_wayland process) returns None.
-    """
-
-    result = run_command(
-        ["pgrep", "-u", cfg.username, "-x", "kwin_wayland"],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    lines = trim_whitespace(result.stdout).splitlines()
-    if not lines:
-        return None
-    return _read_process_environment(lines[0].strip())
-
-
 def _reload_kwin(
     cfg: KdeKeyboardSetupConfig,
     *,
@@ -194,7 +162,7 @@ def _reload_kwin(
     apply after the next login. A failing reload command is an error.
     """
 
-    bus = _session_bus_address(cfg, timeout)
+    bus = session_bus_address(cfg.username, timeout)
     if bus is None:
         _log("no desktop session found, layouts apply after login")
         return None

@@ -98,3 +98,21 @@ def _nonempty_string_field(raw: object, name: str) -> str:
     if not isinstance(raw, str) or not raw:
         raise ConfigError(f"{name} must be a non-empty string")
     return raw
+
+
+def _string_list(raw: object, name: str) -> tuple[str, ...]:
+    """Validate a non-empty array of non-empty strings."""
+
+    if not isinstance(raw, list) or not raw:
+        raise ConfigError(f"{name} must be a non-empty array of strings")
+    if not all(isinstance(part, str) and part.strip() for part in raw):
+        raise ConfigError(f"{name} must be non-empty strings")
+    return tuple(part.strip() for part in raw)
+
+
+def _bool_field(raw: object, name: str) -> bool:
+    """Validate a boolean config value."""
+
+    if not isinstance(raw, bool):
+        raise ConfigError(f"{name} must be a boolean")
+    return raw

@@ -219,6 +219,44 @@ def ensure_root_owner(path: Path) -> None:
         os.chown(path, 0, 0)
 
 
+def process_environment(pid: str) -> str | None:
+    """The DBUS_SESSION_BUS_ADDRESS of a process, or None when unreadable.
+
+    The session bus address is only meaningful for desktop processes of
+    the logged-in user, so the helper is used by the KDE desktop tasks.
+    """
+
+    try:
+        data = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    for entry in data.split(b"\0"):
+        if entry.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
+            return entry.split(b"=", 1)[1].decode("utf-8")
+    return None
+
+
+def session_bus_address(username: str, timeout: float) -> str | None:
+    """The DBus session address of a user, or None when no session exists.
+
+    The address is read from the environment of the user's kwin_wayland
+    process, which owns the desktop session services. A missing session
+    (no kwin_wayland process) returns None, so the caller can skip the
+    live reload and let the settings apply at the next login.
+    """
+
+    result = run_command(
+        ["pgrep", "-u", username, "-x", "kwin_wayland"],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    lines = trim_whitespace(result.stdout).splitlines()
+    if not lines:
+        return None
+    return process_environment(lines[0].strip())
+
+
 def backoff_delay(
     failures: int, base_seconds: int, multiplier: int, max_seconds: int
 ) -> int:

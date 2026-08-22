@@ -61,6 +61,13 @@ indicator_display_style = "Flag"
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
 panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]
 
+[kde_settings]
+packages = ["plasma-workspace", "libkf6config-bin"]
+username = "i"
+home_dir = "/home/i"
+color_scheme = "BreezeDark"
+look_and_feel = "org.kubuntudark.desktop"
+
 [swapfile_service_install]
 swapfile_path = "/swapfile"
 ram_multiplier = 2
@@ -444,6 +451,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/KWin",
         "org.kde.KWin.reconfigure",
     )
+    assert config.kde_settings.packages == ("plasma-workspace", "libkf6config-bin")
+    assert config.kde_settings.username == "i"
+    assert config.kde_settings.home_dir == "/home/i"
+    assert config.kde_settings.color_scheme == "BreezeDark"
+    assert config.kde_settings.look_and_feel == "org.kubuntudark.desktop"
     assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
     assert config.swapfile_service_install.ram_multiplier == 2
     assert config.swapfile_service_install.ram_extra_mb == 4096

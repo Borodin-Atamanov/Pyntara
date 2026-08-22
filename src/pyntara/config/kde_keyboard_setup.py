@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._fields import ConfigError, _nonempty_string_field
+from ._fields import (
+    ConfigError,
+    _bool_field,
+    _nonempty_string_field,
+    _string_list,
+)
 
 
 @dataclass(frozen=True)
@@ -42,24 +47,6 @@ class KdeKeyboardSetupConfig:
     indicator_display_style: str
     kwin_reload_command: tuple[str, ...]
     panel_restart_command: tuple[str, ...]
-
-
-def _string_list(raw: object, name: str) -> tuple[str, ...]:
-    """Validate a non-empty array of non-empty strings."""
-
-    if not isinstance(raw, list) or not raw:
-        raise ConfigError(f"{name} must be a non-empty array of strings")
-    if not all(isinstance(part, str) and part.strip() for part in raw):
-        raise ConfigError(f"{name} must be non-empty strings")
-    return tuple(part.strip() for part in raw)
-
-
-def _bool_field(raw: object, name: str) -> bool:
-    """Validate a boolean config value."""
-
-    if not isinstance(raw, bool):
-        raise ConfigError(f"{name} must be a boolean")
-    return raw
 
 
 def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
