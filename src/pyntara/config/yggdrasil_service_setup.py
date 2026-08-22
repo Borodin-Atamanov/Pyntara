@@ -55,7 +55,12 @@ class YggdrasilServiceSetupConfig:
     list used when the download fails. address_file_path is the saved
     self address file the task writes once the node is provisioned and
     address_file_mode its file mode; the address is not secret, so the
-    file is readable by every user.
+    file is readable by every user. address_save_retry_base_seconds,
+    address_save_retry_multiplier and address_save_retry_max_seconds
+    are the geometric backoff of the address save retries: the admin
+    socket is not ready immediately after a restart, so the getSelf
+    query is repeated while the total retry budget
+    address_save_retry_max_seconds lasts.
     """
 
     github_repo: str
@@ -80,6 +85,9 @@ class YggdrasilServiceSetupConfig:
     static_peers: tuple[str, ...]
     address_file_path: Path
     address_file_mode: int
+    address_save_retry_base_seconds: int
+    address_save_retry_multiplier: int
+    address_save_retry_max_seconds: int
 
 
 def _yggdrasil_uri_list_field(
@@ -157,7 +165,9 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     arrays with the allowed schemes; multicast_interfaces is the
     multicast block array; peer_probe_timeout_seconds is positive and
     peer_max_batches is non-negative; address_file_path is a non-empty
-    string.
+    string; address_save_retry_base_seconds is positive,
+    address_save_retry_multiplier is at least 2 and
+    address_save_retry_max_seconds is not below the base.
     """
 
     if not isinstance(raw, dict):
@@ -267,6 +277,31 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     address_file_mode = _octal_mode_field(
         raw.get("address_file_mode"), "yggdrasil_service_setup.address_file_mode"
     )
+    address_save_retry_base_seconds = _int_field(
+        raw.get("address_save_retry_base_seconds"),
+        "yggdrasil_service_setup.address_save_retry_base_seconds",
+    )
+    if address_save_retry_base_seconds < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_base_seconds must be positive"
+        )
+    address_save_retry_multiplier = _int_field(
+        raw.get("address_save_retry_multiplier"),
+        "yggdrasil_service_setup.address_save_retry_multiplier",
+    )
+    if address_save_retry_multiplier < 2:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_multiplier must be at least 2"
+        )
+    address_save_retry_max_seconds = _int_field(
+        raw.get("address_save_retry_max_seconds"),
+        "yggdrasil_service_setup.address_save_retry_max_seconds",
+    )
+    if address_save_retry_max_seconds < address_save_retry_base_seconds:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_max_seconds must be at "
+            "least address_save_retry_base_seconds"
+        )
     return YggdrasilServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -290,4 +325,7 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         static_peers=static_peers,
         address_file_path=address_file_path,
         address_file_mode=address_file_mode,
+        address_save_retry_base_seconds=address_save_retry_base_seconds,
+        address_save_retry_multiplier=address_save_retry_multiplier,
+        address_save_retry_max_seconds=address_save_retry_max_seconds,
     )

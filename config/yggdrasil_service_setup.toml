@@ -65,6 +65,16 @@ address_file_path = "/var/lib/pyntara/yggdrasil_self_address"
 # File mode of the saved address file, as an octal string. The address
 # is not secret, so the file is readable by every user.
 address_file_mode = "0644"
+# Retry of the self address save after the final restart: the admin
+# socket is not ready immediately, so the getSelf query is repeated
+# with the geometric backoff while the total retry budget lasts. The
+# first wait is address_save_retry_base_seconds, every further failure
+# multiplies the pause by address_save_retry_multiplier until the
+# budget address_save_retry_max_seconds is spent
+# (docs/spec/yggdrasil-service.md).
+address_save_retry_base_seconds = 1
+address_save_retry_multiplier = 2
+address_save_retry_max_seconds = 67
 # Multicast peer discovery: regex of interface names, beacon (advertise
 # presence) and listen (connect to discovered neighbours). One block
 # matching every interface with both switches covers the local network.

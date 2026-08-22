@@ -175,6 +175,31 @@ from pyntara.config import load_config
         base_config().replace(
             "static_peers = []", 'static_peers = ["carrierpigeon://1.2.3.4:1000"]'
         ),
+        # yggdrasil address_save_retry_base_seconds is a string, not an integer
+        base_config().replace(
+            "address_save_retry_base_seconds = 1",
+            'address_save_retry_base_seconds = "1"',
+        ),
+        # yggdrasil address_save_retry_base_seconds is zero
+        base_config().replace(
+            "address_save_retry_base_seconds = 1",
+            "address_save_retry_base_seconds = 0",
+        ),
+        # yggdrasil address_save_retry_multiplier is one
+        base_config().replace(
+            "address_save_retry_multiplier = 2",
+            "address_save_retry_multiplier = 1",
+        ),
+        # yggdrasil address_save_retry_max_seconds is a string, not an integer
+        base_config().replace(
+            "address_save_retry_max_seconds = 67",
+            'address_save_retry_max_seconds = "67"',
+        ),
+        # yggdrasil address_save_retry_max_seconds is below the base
+        base_config().replace(
+            "address_save_retry_max_seconds = 67",
+            "address_save_retry_max_seconds = 0",
+        ),
         # ssh_daemon_setup package_name is a number, not a string
         base_config().replace(
             'package_name = "openssh-server"', "package_name = 1"

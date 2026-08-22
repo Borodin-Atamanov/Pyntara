@@ -69,6 +69,9 @@ def _ctx(
     batch_size: int = 100,
     target_count: int = 6,
     static_peers: tuple[str, ...] = (),
+    address_save_retry_base_seconds: int = 1,
+    address_save_retry_multiplier: int = 2,
+    address_save_retry_max_seconds: int = 1,
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -100,6 +103,9 @@ def _ctx(
             / "lib"
             / "pyntara"
             / "yggdrasil_self_address",
+            yggdrasil_address_save_retry_base_seconds=address_save_retry_base_seconds,
+            yggdrasil_address_save_retry_multiplier=address_save_retry_multiplier,
+            yggdrasil_address_save_retry_max_seconds=address_save_retry_max_seconds,
         ),
     )
 
@@ -137,6 +143,7 @@ def _install_fake(
     peers_tarball: Path | None = None,
     journal_output: str = "",
     ctl_json: str = "",
+    ctl_failures: int = 0,
     ctl_peers_json: str = "",
     peers_after_start: bool = False,
     host_map: dict[str, str] | None = None,
@@ -151,17 +158,19 @@ def _install_fake(
     the fixture peers tarball, apt-get install fails the first
     fail_install attempts, systemctl reports the enabled and active state
     and runs start and restart, journalctl returns journal_output,
-    yggdrasilctl getSelf returns ctl_json and yggdrasilctl getPeers
-    returns ctl_peers_json (empty until the service is started when
-    peers_after_start is set). DNS resolution goes through host_map.
+    yggdrasilctl getSelf returns ctl_json (empty for the first
+    ctl_failures calls) and yggdrasilctl getPeers returns ctl_peers_json
+    (empty until the service is started when peers_after_start is set).
+    DNS resolution goes through host_map.
     """
 
     calls: list[list[str]] = []
     install_attempts = 0
     started = False
+    getself_calls = 0
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
-        nonlocal install_attempts, started
+        nonlocal install_attempts, started, getself_calls
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg" and command[1] == "--print-architecture":
@@ -216,6 +225,9 @@ def _install_fake(
                 if peers_after_start and not started:
                     return _FakeProc(0, "")
                 return _FakeProc(0, ctl_peers_json)
+            getself_calls += 1
+            if getself_calls <= ctl_failures:
+                return _FakeProc(0, "")
             return _FakeProc(0, ctl_json)
         return _FakeProc(0)
 
@@ -225,6 +237,31 @@ def _install_fake(
             yggdrasil_service_setup.socket, "getaddrinfo", _fake_getaddrinfo(host_map)
         )
     return calls
+
+
+@pytest.fixture(autouse=True)
+def _fake_time(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Fake the task time helpers so retry loops never sleep in tests.
+
+    The fake monotonic clock advances one second per reading and the
+    fake sleep records the requested pause without waiting, so the
+    geometric backoff of the address save retries runs fast and its
+    pauses are asserted directly.
+    """
+
+    sleeps: list[float] = []
+    now = [0.0]
+
+    def fake_monotonic() -> float:
+        now[0] += 1.0
+        return now[0]
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(yggdrasil_service_setup.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(yggdrasil_service_setup.time, "sleep", fake_sleep)
+    return sleeps
 
 
 def _write_ready_state(ctx: Context) -> None:
@@ -428,7 +465,7 @@ def test_saves_self_address_after_provisioning(
 def test_self_address_save_failure_does_not_fail_task(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The admin socket query does not parse: the task stays successful
+    # The admin socket query never parses: the task stays successful
     # and the address file is not written, so the save is best-effort.
     ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
     _install_fake(
@@ -438,6 +475,48 @@ def test_self_address_save_failure_does_not_fail_task(
     assert result.success is True
     assert result.changed is True
     assert not ctx.config.yggdrasil_service_setup.address_file_path.exists()
+
+
+def test_self_address_save_retries_until_socket_ready(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    _fake_time: list[float],
+) -> None:
+    # The admin socket answers only after two failed getSelf queries:
+    # the save retries with the geometric backoff and writes the address
+    # once the query succeeds.
+    ctx = _ctx(
+        tmp_path,
+        static_peers=("tls://1.2.3.4:1234",),
+        address_save_retry_max_seconds=67,
+    )
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        ctl_json=json.dumps({"address": SELF_ADDRESS}),
+        ctl_failures=2,
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert (
+        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+            encoding="utf-8"
+        ).strip()
+        == SELF_ADDRESS
+    )
+    getself_calls = [
+        call
+        for call in calls
+        if call[0] == "yggdrasilctl"
+        and call[1] == "-json"
+        and call[2] == "getSelf"
+    ]
+    assert len(getself_calls) == 3
+    assert _fake_time == [1, 2]
 
 
 def test_skip_requires_address_file(

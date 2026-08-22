@@ -118,6 +118,9 @@ def base_config() -> str:
         "static_peers = []\n"
         'address_file_path = "/var/lib/pyntara/yggdrasil_self_address"\n'
         'address_file_mode = "0644"\n'
+        "address_save_retry_base_seconds = 1\n"
+        "address_save_retry_multiplier = 2\n"
+        "address_save_retry_max_seconds = 67\n"
         "[[yggdrasil_service_setup.multicast_interfaces]]\n"
         'regex = ".*"\n'
         "beacon = true\n"

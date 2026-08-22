@@ -147,6 +147,9 @@ peer_max_batches = 0
 static_peers = []
 address_file_path = "/var/lib/pyntara/yggdrasil_self_address"
 address_file_mode = "0644"
+address_save_retry_base_seconds = 1
+address_save_retry_multiplier = 2
+address_save_retry_max_seconds = 67
 
 [[yggdrasil_service_setup.multicast_interfaces]]
 regex = ".*"
@@ -535,6 +538,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/var/lib/pyntara/yggdrasil_self_address"
     )
     assert config.yggdrasil_service_setup.address_file_mode == 0o644
+    assert config.yggdrasil_service_setup.address_save_retry_base_seconds == 1
+    assert config.yggdrasil_service_setup.address_save_retry_multiplier == 2
+    assert config.yggdrasil_service_setup.address_save_retry_max_seconds == 67
     assert config.tor_setup.package_name == "tor"
     assert config.tor_setup.service_unit_name == "tor@default.service"
     assert config.tor_setup.torrc_path == Path("/etc/tor/torrc")

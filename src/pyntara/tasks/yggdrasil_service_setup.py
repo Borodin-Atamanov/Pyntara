@@ -36,7 +36,10 @@ because a node without peers never joins the network.
 The apt index is not refreshed, because the package depends only on
 systemd. After the final restart the task saves the node self address
 from the admin socket into the configured address file, the fallback of
-the deployed address command when the live query fails. The task is
+the deployed address command when the live query fails. The save
+retries the query with the geometric backoff while the configured retry
+budget lasts, because the admin socket is not ready immediately after a
+restart. The task is
 idempotent: it skips when the installed version equals the newest
 release, the configuration exists with a non-empty peer list, the key
 file exists, the saved address file exists and the service is enabled
@@ -62,6 +65,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    backoff_delay,
     dpkg_architecture,
     ensure_root_owner,
     install_package_once,
@@ -609,38 +613,61 @@ def _save_self_address(
     """Save the node self address into the configured file; True when saved.
 
     The saved file is the fallback of the deployed address command when
-    the live admin socket query fails at collection time. The save is
-    best-effort: a failed query or an unparsable payload leaves the file
-    untouched and returns False, never failing the task, so the address
-    file is not a failure point of the provisioning.
+    the live admin socket query fails at collection time. The admin
+    socket is not ready immediately after a restart, so the query is
+    repeated with the geometric backoff while the total retry budget
+    lasts: the first wait is address_save_retry_base_seconds, every
+    further failure multiplies the pause by
+    address_save_retry_multiplier until the budget
+    address_save_retry_max_seconds is spent. The save stays best-effort:
+    a budget that runs out leaves the file untouched and returns False,
+    never failing the task, so the address file is not a failure point
+    of the provisioning.
     """
 
-    try:
-        result = run_command(
-            ["yggdrasilctl", "-json", "getSelf"],
-            check=False,
-            capture=True,
-            timeout=timeout,
+    deadline = time.monotonic() + cfg.address_save_retry_max_seconds
+    attempts = 0
+    while True:
+        attempts += 1
+        reason: str = ""
+        address: str | None = None
+        try:
+            result = run_command(
+                ["yggdrasilctl", "-json", "getSelf"],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                reason = f"yggdrasilctl getSelf exited {result.returncode}"
+            else:
+                address = self_address_from_output(result.stdout)
+                if address is None:
+                    reason = "yggdrasilctl getSelf output has no self address"
+        except (subprocess.TimeoutExpired, OSError):
+            reason = "yggdrasilctl getSelf unavailable"
+        if address is not None:
+            cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
+            cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
+            cfg.address_file_path.chmod(cfg.address_file_mode)
+            ensure_root_owner(cfg.address_file_path)
+            _log(f"saving self address to {cfg.address_file_path}: {address}")
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _log(f"{reason}, address file not written")
+            return False
+        pause = min(
+            backoff_delay(
+                attempts,
+                cfg.address_save_retry_base_seconds,
+                cfg.address_save_retry_multiplier,
+                cfg.address_save_retry_max_seconds,
+            ),
+            remaining,
         )
-    except (subprocess.TimeoutExpired, OSError):
-        _log("yggdrasilctl getSelf unavailable, address file not written")
-        return False
-    if result.returncode != 0:
-        _log(
-            "yggdrasilctl getSelf exited "
-            f"{result.returncode}, address file not written"
-        )
-        return False
-    address = self_address_from_output(result.stdout)
-    if address is None:
-        _log("yggdrasilctl getSelf output has no self address")
-        return False
-    cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
-    cfg.address_file_path.chmod(cfg.address_file_mode)
-    ensure_root_owner(cfg.address_file_path)
-    _log(f"saving self address to {cfg.address_file_path}: {address}")
-    return True
+        _log(f"{reason}, retrying in {pause}s")
+        time.sleep(pause)
 
 
 def task(ctx: Context) -> TaskResult:
