@@ -85,7 +85,6 @@ hostname -> config/hostname.py -> HostnameConfig -> hostname
 swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install
 zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service
 zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service
-dnscrypt_setup -> config/dnscrypt_setup.py -> DnscryptSetupConfig -> dnscrypt_setup
 dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup
 i2pd_service_setup -> config/i2pd_service_setup.py -> I2pdServiceSetupConfig -> i2pd_service_setup
 yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup

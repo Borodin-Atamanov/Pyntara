@@ -33,36 +33,7 @@ def base_config() -> str:
         'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-        '[dnscrypt_setup]\npackage_name = "dnscrypt-proxy"\n'
-        'config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"\n'
-        'service_unit_name = "dnscrypt-proxy.service"\n'
-        'socket_unit_name = "dnscrypt-proxy.socket"\n'
-        'socket_dropin_dir = "/etc/systemd/system/dnscrypt-proxy.socket.d"\n'
-        'socket_dropin_file_name = "pyntara.conf"\n'
-        'socket_dropin_file_mode = "0644"\n'
-        'socket_section = "[Socket]"\n'
-        'socket_dropin_header = "# Managed by the Pyntara dnscrypt_setup task."\n'
-        'listen_address = "0.0.0.0:53053"\n'
-        'fallback_resolvers = ["1.1.1.1", "8.8.8.8"]\n'
-        'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
-        'dropin_file_name = "dnscrypt.conf"\n'
-        'dropin_file_mode = "0644"\n'
-        'resolve_section = "[Resolve]"\n'
-        'dropin_header = "# Managed by the Pyntara dnscrypt_setup task."\n'
-        'dns_directive = "DNS=127.0.0.1:53053"\n'
-        'domains_directive = "~."\n'
-        'directive_keys = ["DNS", "Domains"]\n'
-        "manage_networkmanager = true\n"
-        'nmcli_check_command = ["nmcli", "--version"]\n'
-        'nmcli_list_command = ["nmcli", "-t", "-f", "NAME", "connection", "show"]\n'
-        'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'
-        'daemon_reload_command = ["systemctl", "daemon-reload"]\n'
-        'restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]\n'
-        'resolvectl_status_command = ["resolvectl", "status"]\n'
-        'verification_command = ["resolvectl", "query", "--cache=no", "example.com"]\n'
-        "install_retries = 3\n"
-        "start_check_attempts = 5\n"
-        "start_check_retry_delay_seconds = 1.0\n"
+
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'

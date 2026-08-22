@@ -27,7 +27,6 @@ from ._fields import (
 )
 from .add_extra_repos import AddExtraReposConfig
 from .cli_tools import CliToolsConfig
-from .dnscrypt_setup import DnscryptSetupConfig
 from .dnsproxy_setup import DnsproxySetupConfig
 from .engine import EngineConfig
 from .hostname import HostnameConfig
@@ -64,7 +63,6 @@ __all__ = [
     "CollectorModuleConfig",
     "Config",
     "ConfigError",
-    "DnscryptSetupConfig",
     "DnsproxySetupConfig",
     "EngineConfig",
     "HostnameConfig",

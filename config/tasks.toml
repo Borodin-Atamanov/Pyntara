@@ -108,13 +108,6 @@ description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]
 modes = ["server", "desktop"]
 
-# this task is deprecated and will be deleted
-[[tasks]]
-name = "dnscrypt_setup"
-description = "Run dnscrypt-proxy as the system-wide DNS resolver with fallback servers."
-depends = ["add_extra_repos"]
-modes = []
-
 [[tasks]]
 name = "nextdns_setup_system_wide"
 description = "Select and record the machine's NextDNS profile without configuring a resolver."
