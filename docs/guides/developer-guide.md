@@ -51,3 +51,20 @@ The bash test suite tests/test_pre_commit_hook.sh covers the hook on a temporary
 4. If the task needs runtime data files, create a task_data/<name>/ directory.
 5. Write tests in tests/test_<name>.py: at minimum one success scenario and one realistic error scenario. Use shared factories from tests/support.py (make_config, make_context, FakeProc). Mock external resources via monkeypatch (docs/guides/developer-guide.md, Testing rules).
 6. If the task belongs to a default install mode, verify that the mode lists it in tasks.toml and that the dependency chain is complete.
+
+## Task best practices
+
+These rules come from the kde_keyboard_setup hotkey work, where writing a config file alone did not make a setting work. They apply to any task that configures a running service or a desktop session.
+
+1. Find how a setting takes effect before writing files. A value a daemon reads only at session start does not apply live; the mechanism is a file read, a DBus call, or a reload signal. Design the task around the real mechanism.
+2. Identify the process that owns the state. A DBus service name can be served by an unexpected process (kwin serves org.kde.kglobalaccel on Wayland). Check the owner with GetConnectionUnixProcessID before planning restarts or reloads.
+3. Never trust a silent DBus success. A void method can no-op on a wrong argument without an error. Read the state back after every state-changing call.
+4. Take the exact contract from the source. Wrong argument order is a common silent failure; verify field order in the daemon headers or implementation, not by guessing.
+5. Prove the client before building on it. Some DBus clients cannot marshal nested types such as a(ai). Test the chosen client on the live system first.
+6. Replicate the GUI conflict handling. A daemon rejects an occupied key silently. Find the current owner, clear it, then assign.
+7. Separate deciding from executing. Keep decision logic in the task where tests can reach it, keep embedded subprocess scripts thin, and run those scripts in the same runtime they use in production (the target user, not the dev environment).
+8. Keep idempotency through read-back. Compare the current value before writing and use the before/after state to decide whether anything changed.
+9. Respect the side that persists state. If the daemon saves on its own, do not duplicate the file write and race its autosave; write the file only for the no-session path.
+10. Use stable identifiers in config keys. Prefer unique names over localized display names or codes that need a fragile mapping.
+11. Declare runtime dependencies in the task and install them. Do not assume a client library exists on the target.
+12. Document limitations honestly. State what is not applied automatically (conflicts without a session, unsupported forms) instead of claiming full behavior.
