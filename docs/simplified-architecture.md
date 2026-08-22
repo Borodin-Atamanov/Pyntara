@@ -31,7 +31,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 1. inst.sh bootstrap core: root check, FHS directories, optimistic apt, uv install, git fetch, uv sync, vault password resolution through check-vault, install mode detection.
 2. check-vault command and its tests.
 3. mypy --strict and ruff mandatory; pytest covers both the Python application and the bootstrap installer.
-4. The 17 tasks from the catalog as the main implementation work.
+4. The tasks from the catalog (config/tasks.toml) as the main implementation work.
 
 ## 5. What is next (separate changes)
 

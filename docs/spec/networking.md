@@ -1,11 +1,11 @@
 # Network features, proxy, and access
 
-## dnscrypt-proxy system-wide resolver
+## dnscrypt-proxy system-wide resolver (deprecated)
 
-Task: dnscrypt_setup. The machine resolves every DNS query through a
-local dnscrypt-proxy service, which listens on all interfaces and
-resolves through its encrypted servers with a large set of plain DNS
-fallback servers. The full design lives in docs/spec/dnscrypt-setup.md.
+Task: dnscrypt_setup. This task is deprecated and will be deleted. The
+active system-wide resolver is dnsproxy_setup (docs/spec/dnsproxy-setup.md).
+The dnscrypt-proxy implementation is kept in the repository but has no
+default install mode membership (modes = [] in tasks.toml).
 
 ## NextDNS system-wide resolver
 
