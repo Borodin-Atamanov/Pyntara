@@ -69,7 +69,7 @@ Spec — functional specification, what the system does and how. Design rational
 `docs/spec/users-and-host.md` — users i/j/k, hostname, passwords, ZRAM, swap, NTP, power
 `docs/spec/desktop-apps.md` — ImageMagick, FFmpeg, scrcpy, Kate, terminal, browsers
 `docs/spec/kde-keyboard-setup.md` — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
-`docs/spec/kde-settings.md` — KDE dark color scheme and dark global theme, applied via the plasma-apply tools
+`docs/spec/kde-settings.md` — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
 
 Guides — how to work with the project:
 `docs/guides/project-structure.md` — repository layout, file responsibilities, config editing tools

@@ -53,6 +53,15 @@ YGGDRASIL_PEER_SCHEMES: tuple[str, ...] = (
     "unix",
 )
 
+# Allowed values of kde_settings.numlock_on_boot. The values map to the
+# kcminputrc [Keyboard] NumLock int: on=0, off=1, unchanged=2 (the KDE
+# default, per the kcm_keyboard NumLockState enum).
+NUMLOCK_STATES: tuple[str, ...] = ("on", "off", "unchanged")
+
+# Allowed values of kde_settings.touchpad_click_method. The values map to
+# the libinput ClickMethod int: clickfinger=1, clickareas=2, none=0.
+CLICK_METHODS: tuple[str, ...] = ("clickfinger", "clickareas", "none")
+
 
 def _int_field(raw: object, name: str) -> int:
     """Validate an integer config value; bool is a subclass of int and must
@@ -135,3 +144,11 @@ def _string_map(raw: object, name: str) -> dict[str, str]:
             raise ConfigError(f"{name} values must be non-empty strings")
         result[key.strip()] = value.strip()
     return result
+
+
+def _enum_field(raw: object, name: str, allowed: tuple[str, ...]) -> str:
+    """Validate a config value restricted to an allowed vocabulary."""
+
+    if not isinstance(raw, str) or raw not in allowed:
+        raise ConfigError(f"{name} must be one of {', '.join(allowed)}")
+    return raw

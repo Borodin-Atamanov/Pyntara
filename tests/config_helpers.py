@@ -59,6 +59,13 @@ def base_config() -> str:
         'home_dir = "/home/i"\n'
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
+        'numlock_on_boot = "off"\n'
+        'touchpad_click_method = "clickfinger"\n'
+        "touchpad_disable_on_external_mouse = false\n"
+        "virtual_keyboard_enabled = true\n"
+        'virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"\n'
+        'virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]\n'
+        'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'

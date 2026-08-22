@@ -253,6 +253,24 @@ def make_config(
     kde_settings_home_dir: str = "/home/i",
     kde_settings_color_scheme: str = "BreezeDark",
     kde_settings_look_and_feel: str = "org.kubuntudark.desktop",
+    kde_settings_numlock_on_boot: str = "off",
+    kde_settings_touchpad_click_method: str = "clickfinger",
+    kde_settings_touchpad_disable_on_external_mouse: bool = False,
+    kde_settings_virtual_keyboard_enabled: bool = True,
+    kde_settings_virtual_keyboard_input_method: str = (
+        "/usr/share/applications/org.kde.plasma.keyboard.desktop"
+    ),
+    kde_settings_virtual_keyboard_locales: tuple[str, ...] = (
+        "en_US",
+        "es_MX",
+        "ru_RU",
+    ),
+    kde_settings_kwin_reload_command: tuple[str, ...] = (
+        "qdbus6",
+        "org.kde.KWin",
+        "/KWin",
+        "org.kde.KWin.reconfigure",
+    ),
     swapfile_path: Path = Path("/swapfile"),
     swapfile_ram_multiplier: float = 2.0,
     swapfile_ram_extra_mb: int = 4096,
@@ -592,6 +610,13 @@ def make_config(
             home_dir=kde_settings_home_dir,
             color_scheme=kde_settings_color_scheme,
             look_and_feel=kde_settings_look_and_feel,
+            numlock_on_boot=kde_settings_numlock_on_boot,
+            touchpad_click_method=kde_settings_touchpad_click_method,
+            touchpad_disable_on_external_mouse=kde_settings_touchpad_disable_on_external_mouse,
+            virtual_keyboard_enabled=kde_settings_virtual_keyboard_enabled,
+            virtual_keyboard_input_method=kde_settings_virtual_keyboard_input_method,
+            virtual_keyboard_locales=kde_settings_virtual_keyboard_locales,
+            kwin_reload_command=kde_settings_kwin_reload_command,
         ),
         swapfile_service_install=SwapfileServiceInstallConfig(
             swapfile_path=swapfile_path,

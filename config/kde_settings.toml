@@ -1,14 +1,17 @@
-# Pyntara desktop appearance configuration.
+# Pyntara desktop appearance and input configuration.
 # Single source of truth for the kde_settings task: which dark color scheme
-# and which dark global theme the desktop uses, and how the changes are
-# applied. The task applies the theme values with the plasma-apply tools as
-# the target user, so the config files stay owned by that user, and the
-# changes apply immediately when a desktop session is running.
+# and which dark global theme the desktop uses, the NumLock state on
+# startup, the touchpad preferences, the Wayland virtual keyboard, and how
+# the changes are applied. The task applies the theme values with the
+# plasma-apply tools and the input values with kwriteconfig6 as the target
+# user, so the config files stay owned by that user, and the changes apply
+# immediately when a desktop session is running.
 
 [kde_settings]
 # Packages that must be present: the provider of the plasma-apply theme
-# tools (plasma-workspace) and the KConfig reader used for the idempotency
-# checks (libkf6config-bin). Missing packages are installed by the task.
+# tools (plasma-workspace) and the KConfig reader and writer used for the
+# idempotency checks and the input settings (libkf6config-bin). Missing
+# packages are installed by the task.
 packages = ["plasma-workspace", "libkf6config-bin"]
 # The user whose desktop configuration is edited and that user's home
 # directory; the KDE tools resolve the config directory under it.
@@ -19,3 +22,19 @@ color_scheme = "BreezeDark"
 # The dark global theme (look and feel) that covers the panel, the widgets,
 # the window decorations and the icons.
 look_and_feel = "org.kubuntudark.desktop"
+# The NumLock state when Plasma starts: on, off or unchanged. Stored in
+# kcminputrc [Keyboard] NumLock as 0, 1 or 2.
+numlock_on_boot = "off"
+# Touchpad preferences, applied to every touchpad found on the target:
+# clickfinger, clickareas or none for the click method, and whether the
+# internal touchpad is disabled while an external mouse is connected.
+touchpad_click_method = "clickfinger"
+touchpad_disable_on_external_mouse = false
+# The Wayland virtual keyboard: whether it is enabled, the input method
+# that provides it and the enabled locales written to plasmakeyboardrc.
+virtual_keyboard_enabled = true
+virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"
+virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
+# Command that makes kwin re-read its configuration, so a changed Wayland
+# input method applies without a session restart.
+kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]

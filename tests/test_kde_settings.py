@@ -18,9 +18,23 @@ from support import make_config, make_context
 from pyntara.tasks import kde_settings as task_module
 
 
-def _ctx(tmp_path: Path, *, force: bool = False):
-    """Context with the target user home rooted in tmp_path."""
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    kcminputrc: str | None = None,
+    virtual_keyboard_enabled: bool = True,
+):
+    """Context with the target user home rooted in tmp_path.
 
+    kcminputrc, when given, is written into the user config directory so
+    the touchpad discovery reads it.
+    """
+
+    if kcminputrc is not None:
+        config_dir = tmp_path / ".config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "kcminputrc").write_text(kcminputrc, encoding="utf-8")
     return make_context(
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
@@ -28,6 +42,7 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         config=make_config(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
+            kde_settings_virtual_keyboard_enabled=virtual_keyboard_enabled,
         ),
     )
 
@@ -40,12 +55,13 @@ def _install_fakes(
     installed: bool = True,
     fail_install: bool = False,
     fail_on_apply: bool = False,
+    fail_on_write: bool = False,
 ):
     """Replace run_command, the session bus and package state.
 
-    currents maps a kdeglobals key name to its current value, so a key
-    whose value matches the target skips the apply. bus_pid empty disables
-    the desktop session lookup.
+    currents maps a KConfig key name to its current value, so a key whose
+    value matches the target skips the write or apply. bus_pid empty
+    disables the desktop session lookup.
     """
 
     currents = currents or {}
@@ -53,6 +69,8 @@ def _install_fakes(
     schemes: list[list[str]] = []
     order: list[str] = []
     installs: list[str] = []
+    writes: list[list[str]] = []
+    reloads: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         if command[:4] == ["runuser", "-u", "i", "--"]:
@@ -73,6 +91,14 @@ def _install_fakes(
                     raise subprocess.CalledProcessError(1, command)
                 schemes.append(list(command))
                 order.append("colorscheme")
+                return _FakeProc(0, "")
+            if inner[0] == "kwriteconfig6":
+                if fail_on_write:
+                    raise subprocess.CalledProcessError(1, command)
+                writes.append(list(command))
+                return _FakeProc(0, "")
+            if inner[0] == "qdbus6":
+                reloads.append(list(command))
                 return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -97,7 +123,7 @@ def _install_fakes(
             else None
         ),
     )
-    return themes, schemes, order, installs
+    return themes, schemes, order, installs, writes, reloads
 
 
 def test_first_run_applies_both_themes(
@@ -106,7 +132,7 @@ def test_first_run_applies_both_themes(
     # No current values: the global theme and the color scheme are both
     # applied, the global theme first.
     ctx = _ctx(tmp_path)
-    themes, schemes, order, installs = _install_fakes(monkeypatch)
+    themes, schemes, order, installs, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -126,8 +152,11 @@ def test_skip_when_already_configured(
     currents = {
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeDark",
+        "NumLock": "1",
+        "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop",
+        "enabledLocales": "en_US,es_MX,ru_RU",
     }
-    themes, schemes, order, _ = _install_fakes(
+    themes, schemes, order, _, writes, reloads = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -136,6 +165,8 @@ def test_skip_when_already_configured(
     assert themes == []
     assert schemes == []
     assert order == []
+    assert writes == []
+    assert reloads == []
 
 
 def test_force_applies_even_when_configured(
@@ -147,7 +178,7 @@ def test_force_applies_even_when_configured(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _ = _install_fakes(
+    themes, schemes, order, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -167,7 +198,7 @@ def test_only_color_scheme_differs(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeLight",
     }
-    themes, schemes, order, _ = _install_fakes(
+    themes, schemes, order, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -187,7 +218,7 @@ def test_only_theme_differs(
         "LookAndFeelPackage": "org.kde.breeze.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _ = _install_fakes(
+    themes, schemes, order, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -203,7 +234,7 @@ def test_missing_packages_are_installed(
 ) -> None:
     # A missing package is installed before the theme applies.
     ctx = _ctx(tmp_path)
-    _, _, _, installs = _install_fakes(monkeypatch, installed=False)
+    _, _, _, installs, _, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
     assert installs == ["plasma-workspace", "libkf6config-bin"]
@@ -237,9 +268,138 @@ def test_no_desktop_session_still_applies(
     # Without a kwin_wayland process the themes are still applied (the
     # config is written) and the run is not an error.
     ctx = _ctx(tmp_path)
-    themes, schemes, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    themes, schemes, _, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert themes
     assert schemes
+
+
+TOUCHPAD_RC = """\
+[Libinput][2362][597][SYNA3602:00 093A:0255 Touchpad]
+ClickMethod=2
+DisableEventsOnExternalMouse=true
+
+[Mouse]
+cursorSize=72
+"""
+
+
+def test_touchpad_groups_finds_touchpad_sections() -> None:
+    # Only the libinput groups whose device name ends with Touchpad match.
+    assert task_module._touchpad_groups(TOUCHPAD_RC) == [
+        ("Libinput", "2362", "597", "SYNA3602:00 093A:0255 Touchpad")
+    ]
+    assert task_module._touchpad_groups("[Mouse]\ncursorSize=72\n") == []
+
+
+def test_numlock_writes_off_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # NumLock "off" is written as the value 1, not by deleting the key.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    numlock_writes = [command for command in writes if "NumLock" in command]
+    assert numlock_writes
+    assert "kcminputrc" in " ".join(numlock_writes[0])
+    assert numlock_writes[0][-1] == "1"
+
+
+def test_numlock_skips_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # NumLock already at the "off" value skips the write.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents={"NumLock": "1"})
+    task_module.task(ctx)
+    assert not [command for command in writes if "NumLock" in command]
+
+
+def test_touchpad_writes_to_each_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The preferences go to every touchpad group in kcminputrc.
+    ctx = _ctx(tmp_path, kcminputrc=TOUCHPAD_RC)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    click_writes = [command for command in writes if "ClickMethod" in command]
+    disable_writes = [
+        command for command in writes if "DisableEventsOnExternalMouse" in command
+    ]
+    assert click_writes
+    assert disable_writes
+    assert "Libinput" in " ".join(click_writes[0])
+    # clickfinger maps to 1, disable on external mouse to false.
+    assert click_writes[0][-1] == "1"
+    assert disable_writes[0][-1] == "false"
+
+
+def test_touchpad_missing_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without a touchpad group no touchpad writes happen and it is not an
+    # error.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert not [command for command in writes if "ClickMethod" in command]
+
+
+def test_virtual_keyboard_enabled_writes_input_method_and_locales(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The input method goes to kwinrc and the locales to plasmakeyboardrc,
+    # then kwin is reloaded.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, reloads = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    input_writes = [
+        command
+        for command in writes
+        if "InputMethod" in command and "kwinrc" in " ".join(command)
+    ]
+    locale_writes = [command for command in writes if "enabledLocales" in command]
+    assert input_writes
+    assert locale_writes
+    assert "org.kde.plasma.keyboard.desktop" in " ".join(input_writes[0])
+    assert "en_US,es_MX,ru_RU" in " ".join(locale_writes[0])
+    assert reloads
+
+
+def test_virtual_keyboard_disabled_removes_input_method(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Disabled deletes the InputMethod key instead of writing it.
+    ctx = _ctx(tmp_path, virtual_keyboard_enabled=False)
+    _, _, _, _, writes, reloads = _install_fakes(
+        monkeypatch,
+        currents={
+            "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop"
+        },
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    delete_writes = [
+        command
+        for command in writes
+        if "InputMethod" in command and "--delete" in command
+    ]
+    assert delete_writes
+    assert reloads
+
+
+def test_virtual_keyboard_disabled_idempotent_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Disabled with no input method set changes nothing.
+    ctx = _ctx(tmp_path, virtual_keyboard_enabled=False)
+    _, _, _, _, writes, reloads = _install_fakes(monkeypatch)
+    task_module.task(ctx)
+    assert not [command for command in writes if "InputMethod" in command]
+    assert reloads == []
