@@ -32,27 +32,4 @@ The task verifies that the machine really resolves through the proxy: the servic
 
 ## Parameters
 
-All parameters live in the config/ directory under [dnscrypt_setup]:
-
-package_name is the package that provides the proxy
-config_path is the main configuration file the package ships, edited in place
-service_unit_name and socket_unit_name are the systemd units of the package
-socket_dropin_dir, socket_dropin_file_name and socket_dropin_file_mode are the directory, file name and mode of the systemd drop-in that changes the socket listen address
-socket_section and socket_dropin_header are the section header and the ownership comment of the socket drop-in
-listen_address is the address the proxy listens on (0.0.0.0:53053 by default)
-fallback_resolvers are the plain DNS servers the proxy uses when its encrypted servers are unreachable
-resolved_conf_dir, dropin_file_name and dropin_file_mode are the directory, file name and mode of the resolved drop-in
-resolve_section and dropin_header are the section header and the ownership comment of the resolved drop-in
-dns_directive is the DNS line that names the local proxy address
-domains_directive is the Domains value that routes every query through the global resolver
-directive_keys are the resolved drop-in directive keys the task owns
-manage_networkmanager tells the task to clear per-link DNS in NetworkManager
-nmcli_check_command, nmcli_list_command and nmcli_modify_command are the NetworkManager commands
-daemon_reload_command reloads systemd so the socket drop-in takes effect
-restart_resolved_command restarts systemd-resolved
-resolvectl_status_command queries the resolver state
-verification_command queries a domain through the proxy
-install_retries is the retry count of the package install
-start_check_attempts and start_check_retry_delay_seconds bound the loop that waits for the service to become active
-
-The syslog priority of a serious failure and the command timeout are not configured here: they are engine-wide values read from the [engine] table (engine.error_priority and engine.command_timeout_seconds), so the task never duplicates them.
+All parameters live in the [dnscrypt_setup] table of the config/ directory. The syslog priority of a serious failure and the command timeout are engine-wide values read from the [engine] table (engine.error_priority and engine.command_timeout_seconds), so the task never duplicates them.

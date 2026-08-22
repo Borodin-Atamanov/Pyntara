@@ -41,21 +41,4 @@ The target state is reached when the package is installed, sshd_config pulls the
 
 ## Parameters
 
-All parameters live in the config/ directory under [ssh_daemon_setup]:
-
-package_name is the package that provides the SSH server daemon
-package_status_timeout_seconds bounds the dpkg status query
-install_retries is the retry count of the package install; total attempts are retries plus one
-service_unit_name is the systemd unit of the SSH daemon
-socket_unit_name is the systemd socket unit of the SSH daemon, disabled so the configured port takes effect
-start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after a start
-sshd_config_path is the main daemon configuration, checked for the Include directive but never rewritten
-sshd_config_dropin_path is the drop-in file owned by the task, written through augeas
-dropin_file_mode is the file mode of the drop-in
-private_key_file_name and public_key_file_name are the repository key file names under task_data/ssh_daemon_setup/
-private_key_file_mode and public_key_file_mode are the file modes of the deployed keys
-authorized_keys_file_mode is the file mode of the authorized_keys file
-ssh_dir_mode is the file mode of the created .ssh directories
-root_ssh_dir is the .ssh directory of the root user
-users is the list of additional users whose .ssh directories receive the keys
-directives is the list of sshd_config keywords guaranteed by the task, each a name and a value
+All parameters live in the [ssh_daemon_setup] table of the config/ directory.

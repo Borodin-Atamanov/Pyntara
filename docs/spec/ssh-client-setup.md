@@ -23,9 +23,4 @@ The target state is reached when ssh_config pulls the drop-in directory in and t
 
 ## Parameters
 
-All parameters live in the config/ directory under [ssh_client_setup]:
-
-ssh_config_path is the main client configuration, checked for the Include directive but never rewritten
-ssh_config_dropin_path is the drop-in file owned by the task, written through augeas under the Host block
-dropin_file_mode is the file mode of the drop-in
-directives is the list of ssh_config keywords guaranteed by the task, each a name and a value
+All parameters live in the [ssh_client_setup] table of the config/ directory.

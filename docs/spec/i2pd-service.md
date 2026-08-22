@@ -78,22 +78,6 @@ The target state is reached when the installed version equals the newest release
 
 ## Parameters
 
-All parameters live in the config/ directory under [i2pd_service_setup]:
-
-github_repo is the GitHub repository in owner/name form
-download_dir is the directory for the downloaded package file
-service_unit_name is the systemd unit installed by the package
-config_path is the main configuration file owned by the task
-log_level is the i2pd verbosity: debug, info, warn, error or none
-http_enabled enables the web console
-socks_proxy_enabled enables the SOCKS proxy
-install_retries is the retry count of the package install; total attempts are retries plus one
-start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after start or restart
-tunnels_config_path is the owned tunnels file with the SSH server tunnel
-tunnel_name is the section name of the tunnel in the tunnels file
-tunnel_host is the local address the tunnel forwards to; the tunnel port is not a parameter, it is read from the ssh_daemon_setup Port directive
-tunnel_keys_path is the identity file of the tunnel destination in the i2pd data directory, created by i2pd on the first start; the tunnels file carries only its file name
-address_file_path is the saved address file the task writes once the identity exists; the deployed address command reads it as the fallback when the keys file cannot be decoded
-address_file_mode is the file mode of the saved address file, as an octal string; the address is not secret, so the file is readable by every user (0644 by default)
+All parameters live in the [i2pd_service_setup] table of the config/ directory.
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.

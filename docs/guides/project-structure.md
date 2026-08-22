@@ -61,13 +61,58 @@ src/pyntara/system_metrics.py — System Metrics generation, in-memory PDF encry
 
 One module per task, each exposing task(ctx) -> TaskResult. Task names come from the [[tasks]] section of the config/ directory, the single source of truth; the module list is not repeated here so renames in the config cannot leave stale names behind.
 
-## task_data/
+## Config section map
 
-task_data/.gitkeep — Keeps empty directory in git; runtime task state is stored in per-task subdirectories.
+Each TOML file in config/ has a corresponding parser module in src/pyntara/config/ and a frozen dataclass. The parser is wired in loader.py and the dataclass is exported from config/__init__.py. Tasks receive the whole Config through Context and access their section by name.
 
-## Notes
+engine -> config/engine.py -> EngineConfig -> all tasks via Context
+cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools
+add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos
+hostname -> config/hostname.py -> HostnameConfig -> hostname
+swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install
+zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service
+zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service
+dnscrypt_setup -> config/dnscrypt_setup.py -> DnscryptSetupConfig -> dnscrypt_setup
+dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup
+i2pd_service_setup -> config/i2pd_service_setup.py -> I2pdServiceSetupConfig -> i2pd_service_setup
+yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup
+tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup
+ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup
+ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup
+nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
+system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
+vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide
+local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup
+tasks -> config/tasks.py -> tuple[TaskConfig, ...] -> task_catalog.py
 
-This file describes the target structure for the project as implementation work progresses.
-Runtime-generated sensitive data must not be committed.
-Task implementations must stay idempotent and use explicit dependency passing via Context.
-Default datetime format is YYYY-MM-DD-HH-MM-SS unless a compatibility exception is required.
+## Public API surface
+
+Shared helpers that tasks import instead of reimplementing. When you need a capability, check this list first.
+
+Module              Public functions
+utils.py            run_command, package_is_installed, install_package_once,
+                    read_os_release, os_family_is_debian, dpkg_architecture,
+                    service_is_enabled, service_is_active, ensure_root_owner,
+                    proquint_encode, proquint_decode, trim_whitespace,
+                    backoff_delay
+
+config_edit.py      replace_line_by_string, add_line_to_file,
+                    sync_directives_by_key, sync_toml_root_directive
+
+nextdns_profile.py  select_profile_from_vault
+
+i2pd.py             decode_i2p_address
+
+yggdrasil.py        parse_self_address
+
+tor.py              read_onion_address
+
+ssh.py              read_ssh_port
+
+## Adding a new config section
+
+1. Create config/<name>.toml with the values and comments.
+2. Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.
+3. Add the dataclass field to the Config class in loader.py.
+4. Wire the parser in load_config() in loader.py.
+5. Export the dataclass from config/__init__.py.

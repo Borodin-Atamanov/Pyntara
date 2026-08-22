@@ -68,29 +68,6 @@ Outside force mode, when the configuration already carries peers and the saved a
 
 ## Parameters
 
-All parameters live in the config/ directory under [yggdrasil_service_setup]:
-
-github_repo is the GitHub repository in owner/name form
-download_dir is the directory for the downloaded package file
-service_unit_name is the systemd unit installed by the package
-install_retries is the retry count of the package install; total attempts are retries plus one
-config_path is the owned configuration file, which must match the DefaultConfigFile embedded in the package
-private_key_path is the PEM file with the node key, referenced by PrivateKeyPath
-config_file_mode and private_key_file_mode are the file modes of the configuration and the key
-if_name is the TUN interface name (ygg instead of auto)
-if_mtu is the interface MTU, within the yggdrasil range 1280 to 65535
-admin_listen is the admin socket URI used by yggdrasilctl
-listen is the array of inbound listener URIs, schemes tcp, tls, quic, ws and unix
-multicast_interfaces is the array of multicast blocks, each with regex, beacon and listen
-peers_full_path is where the full downloaded peer list is saved for reference
-peers_tarball_url is the public-peers repository tarball
-peer_batch_size is the probe batch size
-peer_target_count is the number of working peers to keep in the final configuration
-peer_probe_timeout_seconds is the wait per batch before reading the journal
-peer_max_batches is the batch cap; 0 means the whole list
-static_peers is the fallback peer list used when the download fails
-address_file_path is the saved self address file the task writes after the final restart; the deployed address command reads it as the fallback when the live admin socket query fails
-address_file_mode is the file mode of the saved address file, as an octal string; the address is not secret, so the file is readable by every user (0644 by default)
-address_save_retry_base_seconds, address_save_retry_multiplier and address_save_retry_max_seconds are the geometric backoff of the address save retries: the getSelf query is repeated while the total retry budget address_save_retry_max_seconds lasts, the first wait is the base, every further failure multiplies the pause by the multiplier, and a pause never exceeds the remaining budget
+All parameters live in the [yggdrasil_service_setup] table of the config/ directory.
 
 The task belongs to the server and desktop modes and has no dependencies: it does not touch the apt index, so add_extra_repos is not required.

@@ -32,11 +32,7 @@ Zswap is a compressed cache for swap pages: pages that are being swapped out are
 The zswap_service task writes the parameters into /sys/module/zswap/parameters immediately and installs a systemd oneshot service that repeats the writes at every boot.
 Zswap requires a backing swap device, so the task depends on swapfile_service_install.
 
-The values are aggressive, matching the ZRAM philosophy.
-The compressor is zstd, the strongest available on Kubuntu.
-The compressed pool may grow to max_pool_percent of installed RAM.
-accept_threshold_percent is 100, which disables the hysteresis so the pool accepts pages until the limit is hit.
-The shrinker is enabled to proactively write cold pages to the backing swapfile when memory pressure demands it.
+The values are aggressive, matching the ZRAM philosophy. All parameters live in the [zswap_service] table of the config/ directory: compressor, max_pool_percent, accept_threshold_percent, shrinker_enabled and the service unit name.
 
 ## Swap file
 

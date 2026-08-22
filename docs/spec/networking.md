@@ -63,8 +63,8 @@ disabled again and systemd-resolved is restarted, so the machine returns
 to its previous resolver configuration.
 
 Telemetry: after a successful verification the task records the applied
-profile ID in the file nextdns_setup_system_wide.profile_id_file_path
-(mode profile_id_file_mode). The file is removed on revert, so its
+profile ID in the file at the configured profile_id_file_path with the
+configured profile_id_file_mode. The file is removed on revert, so its
 presence means the profile is applied and verified. The System Metrics
 collector reads it into network.json through the nextdns module
 (docs/spec/system-metrics.md, section Collected data).

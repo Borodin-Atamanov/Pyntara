@@ -45,25 +45,7 @@ The target state is reached when the package is installed, the %include line is 
 
 ## Parameters
 
-All parameters live in the config/ directory under [tor_setup]:
-
-package_name is the package that provides the Tor daemon
-service_unit_name is the systemd unit of the Tor daemon instance (tor@default.service), not the empty master unit tor.service
-torrc_path is the main configuration file, never rewritten: the task only guarantees the %include line in it
-torrc_dropin_path is the owned drop-in file with the task settings, rendered by the task, directly in /etc/tor
-torrc_include_path is the %include value guaranteed in torrc_path; a plain file path naming the drop-in
-dropin_file_mode is the file mode of the drop-in, readable by the Tor daemon user (0644 by default)
-hidden_service_dir is the directory of the onion service identity, inside the Tor data directory
-hidden_service_dir_mode is the file mode of the directory; Tor refuses a world-readable directory
-tor_user is the system user the service runs as, the owner of the hidden service directory
-socks_port is the loopback port of the SOCKS proxy
-onion_ssh_port is the virtual port of the onion service a client connects to; the local forward port is read from the ssh_daemon_setup Port directive
-num_introduction_points is the number of introduction points of the service
-log_level is the Tor verbosity: debug, info, notice, warn or err
-install_retries is the retry count of the package install; total attempts are retries plus one
-start_check_attempts and start_check_retry_delay_seconds bound the readiness loop after start or restart
-address_file_path is the saved onion address file the task writes once the hostname file exists; the deployed address command reads it as the fallback when the hostname file cannot be read
-address_file_mode is the file mode of the saved address file, as an octal string; the address is not secret, so the file is readable by every user (0644 by default)
+All parameters live in the [tor_setup] table of the config/ directory.
 
 ## Connecting over Tor
 
