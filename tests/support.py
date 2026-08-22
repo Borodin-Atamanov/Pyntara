@@ -386,7 +386,7 @@ def make_config(
     system_metrics_collector_lock_file_path: Path = Path(
         "/run/pyntara/system_metrics_collector.lock"
     ),
-    system_metrics_collector_report_file_name: str = "network.json",
+    system_metrics_collector_report_file_name: str = "network-{hostname}.json",
     system_metrics_collector_network_modules: tuple[CollectorModuleConfig, ...] = (),
     system_metrics_collector_system_modules: tuple[CollectorModuleConfig, ...] = (),
     local_vault_source_production: Path = Path("secrets/production.vault"),

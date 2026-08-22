@@ -155,7 +155,7 @@ lock_file_path = "/run/pyntara/system_metrics_collector.lock"
 # commit_system_metrics command; the queue keeps the name and the random
 # suffix of the ingest, so daily reports with the same name coexist in
 # the queue.
-report_file_name = "network.json"
+report_file_name = "network-{hostname}.json"
 
 # Network modules: console commands whose full output forms the network
 # section of the report. ready_percent counts only these modules, so the

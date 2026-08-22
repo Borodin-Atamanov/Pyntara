@@ -79,6 +79,12 @@ def _fake_run(
     return calls
 
 
+def _fake_hostname(monkeypatch: pytest.MonkeyPatch, name: str = "testhost") -> None:
+    """Install a fake socket.gethostname returning a fixed name."""
+
+    monkeypatch.setattr("pyntara.metrics_collect.socket.gethostname", lambda: name)
+
+
 def _fake_time(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -352,13 +358,15 @@ def test_threshold_zero_collects_once(
 def test_commit_report_writes_commits_and_removes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The report is written under its configured name into the temp
-    # directory, committed through the command and the temporary file is
-    # removed afterwards.
+    # The report is written under its configured name (with hostname
+    # substituted) into the temp directory, committed through the command
+    # and the temporary file is removed afterwards.
+    _fake_hostname(monkeypatch, "testhost")
+    report_name = "network-testhost.json"
     calls = _fake_run(
         monkeypatch,
         {
-            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / "network.json")): _FakeProc(0, "ok"),
+            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)): _FakeProc(0, "ok"),
         },
     )
     monkeypatch.setattr(
@@ -372,8 +380,8 @@ def test_commit_report_writes_commits_and_removes(
         "system": [],
     }
     assert metrics_collect._commit_report(cfg, report) is True
-    assert calls == [[str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / "network.json")]]
-    assert not (tmp_path / "network.json").exists()
+    assert calls == [[str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)]]
+    assert not (tmp_path / report_name).exists()
 
 
 def test_commit_report_failure_returns_false(
@@ -381,10 +389,12 @@ def test_commit_report_failure_returns_false(
 ) -> None:
     # A nonzero commit exit is reported as a failed commit and the
     # temporary file is still removed.
+    _fake_hostname(monkeypatch, "testhost")
+    report_name = "network-testhost.json"
     _fake_run(
         monkeypatch,
         {
-            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / "network.json")): _FakeProc(
+            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)): _FakeProc(
                 1, "", "file already pending"
             ),
         },
@@ -400,7 +410,7 @@ def test_commit_report_failure_returns_false(
         "system": [],
     }
     assert metrics_collect._commit_report(cfg, report) is False
-    assert not (tmp_path / "network.json").exists()
+    assert not (tmp_path / report_name).exists()
 
 
 def test_main_missing_config_argument_raises(
@@ -419,7 +429,10 @@ def test_main_collects_and_commits(
 ) -> None:
     # The full flow: the config is loaded from the argument, the modules
     # are collected, the report is committed through the command and the
-    # temporary file is removed.
+    # temporary file is removed. The report file name includes the
+    # machine hostname.
+    _fake_hostname(monkeypatch, "testhost")
+    report_name = "network-testhost.json"
     commit_cmd = str(tmp_path / "usr" / "local" / "bin" / "commit")
     calls = _fake_run(
         monkeypatch,
@@ -427,7 +440,7 @@ def test_main_collects_and_commits(
             ("ip", "-4", "addr", "show", "scope", "global"): _FakeProc(
                 0, "inet 10.0.0.1\n"
             ),
-            (commit_cmd, str(tmp_path / "network.json")): _FakeProc(0, "ok"),
+            (commit_cmd, str(tmp_path / report_name)): _FakeProc(0, "ok"),
         },
     )
     monkeypatch.setattr(
@@ -442,8 +455,8 @@ def test_main_collects_and_commits(
         "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
     )
     metrics_collect.main()
-    assert [commit_cmd, str(tmp_path / "network.json")] in calls
-    assert not (tmp_path / "network.json").exists()
+    assert [commit_cmd, str(tmp_path / report_name)] in calls
+    assert not (tmp_path / report_name).exists()
 
 
 def test_main_exits_when_lock_held(
@@ -485,6 +498,8 @@ def test_main_commit_failure_exits_one(
 ) -> None:
     # A failed commit is an error exit, so the systemd restart policy
     # retries the collector.
+    _fake_hostname(monkeypatch, "testhost")
+    report_name = "network-testhost.json"
     commit_cmd = str(tmp_path / "usr" / "local" / "bin" / "commit")
     _fake_run(
         monkeypatch,
@@ -492,7 +507,7 @@ def test_main_commit_failure_exits_one(
             ("ip", "-4", "addr", "show", "scope", "global"): _FakeProc(
                 0, "inet 10.0.0.1\n"
             ),
-            (commit_cmd, str(tmp_path / "network.json")): _FakeProc(1, "", "spool missing"),
+            (commit_cmd, str(tmp_path / report_name)): _FakeProc(1, "", "spool missing"),
         },
     )
     monkeypatch.setattr(
@@ -515,7 +530,9 @@ def test_commit_report_json_content(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The committed file carries the report body as JSON under the
-    # configured name.
+    # configured name with the hostname substituted.
+    _fake_hostname(monkeypatch, "testhost")
+    report_name = "network-testhost.json"
     monkeypatch.setattr(
         "pyntara.metrics_collect.tempfile.gettempdir", lambda: str(tmp_path)
     )
@@ -539,4 +556,4 @@ def test_commit_report_json_content(
     assert metrics_collect._commit_report(cfg, report) is True
     assert len(written_content) == 1
     assert json.loads(written_content[0]) == report
-    assert not (tmp_path / "network.json").exists()
+    assert not (tmp_path / report_name).exists()

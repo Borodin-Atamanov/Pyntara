@@ -1,21 +1,23 @@
-"""System Metrics report collector: gather module output into network.json.
+"""System Metrics report collector: gather module output into network-<hostname>.json.
 
 The collector is a producer of the System Metrics queue: it runs the
 configured console commands, keeps their full output, waits up to the
 retry window for enough network modules to answer, writes the report as
-network.json into the system temp directory and commits it through the
-commit_system_metrics command. The systemd timer
-system_metrics_collector.timer, deployed by the system_metrics_setup
-task, starts the oneshot service system_metrics_collector.service after
-boot and at the configured daily time; the service reads the single
-system config from the command line argument and does all waiting
-itself, so systemd never sleeps for it (docs/spec/system-metrics.md,
-section Report collector). The report is a JSON document: generated_at
-in the project datetime format, ready_percent, and the network and
-system module results, each with its status (ok, empty or error) and
-the full command output. A non-blocking flock on the configured lock
-path keeps a second instance (a boot run overrunning into the daily
-run) from committing at the same time; the second instance exits.
+network-<hostname>.json into the system temp directory and commits it
+through the commit_system_metrics command. The hostname is the machine
+hostname at collection time, obtained from socket.gethostname(). The
+systemd timer system_metrics_collector.timer, deployed by the
+system_metrics_setup task, starts the oneshot service
+system_metrics_collector.service after boot and at the configured daily
+time; the service reads the single system config from the command line
+argument and does all waiting itself, so systemd never sleeps for it
+(docs/spec/system-metrics.md, section Report collector). The report is a
+JSON document: generated_at in the project datetime format,
+ready_percent, and the network and system module results, each with its
+status (ok, empty or error) and the full command output. A non-blocking
+flock on the configured lock path keeps a second instance (a boot run
+overrunning into the daily run) from committing at the same time; the
+second instance exits.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -168,17 +171,20 @@ def collect_until_ready(cfg: Config) -> dict[str, object]:
 def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
     """Write the report under its configured name and commit it.
 
-    The report is written to the system temp directory under
-    report_file_name with mode 0600 and passed to the configured
-    commit_system_metrics command, which publishes it into the spool
-    under the same name; the temporary file is always removed. A failed
-    write or a failed commit is journaled at the System Metrics error
-    priority and reported as False.
+    The report file name is the configured report_file_name template
+    with {hostname} replaced by the machine hostname at collection time.
+    The report is written to the system temp directory with mode 0600
+    and passed to the configured commit_system_metrics command, which
+    publishes it into the spool under the same name; the temporary file
+    is always removed. A failed write or a failed commit is journaled at
+    the System Metrics error priority and reported as False.
     """
 
     collector = cfg.system_metrics_setup.collector
     error_priority = cfg.system_metrics_setup.error_priority
-    report_path = Path(tempfile.gettempdir()) / collector.report_file_name
+    hostname = socket.gethostname()
+    report_name = collector.report_file_name.format(hostname=hostname)
+    report_path = Path(tempfile.gettempdir()) / report_name
     try:
         with open(report_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
