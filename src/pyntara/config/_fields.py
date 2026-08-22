@@ -116,3 +116,22 @@ def _bool_field(raw: object, name: str) -> bool:
     if not isinstance(raw, bool):
         raise ConfigError(f"{name} must be a boolean")
     return raw
+
+
+def _string_map(raw: object, name: str) -> dict[str, str]:
+    """Validate a table of non-empty strings keyed by non-empty strings.
+
+    The keys and values are stripped of surrounding whitespace. An empty
+    table is allowed (it means the feature the map configures is off).
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a table of strings")
+    result: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"{name} keys must be non-empty strings")
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{name} values must be non-empty strings")
+        result[key.strip()] = value.strip()
+    return result

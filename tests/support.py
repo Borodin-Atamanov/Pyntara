@@ -216,6 +216,7 @@ def make_config(
     kde_keyboard_setup_packages: tuple[str, ...] = (
         "libkf6config-bin",
         "qdbus-qt6",
+        "python3-dbus",
     ),
     kde_keyboard_setup_username: str = "i",
     kde_keyboard_setup_home_dir: str = "/home/i",
@@ -243,6 +244,7 @@ def make_config(
         "restart",
         "plasma-plasmashell.service",
     ),
+    kde_keyboard_setup_layout_switch_shortcuts: dict[str, str] | None = None,
     kde_settings_packages: tuple[str, ...] = (
         "plasma-workspace",
         "libkf6config-bin",
@@ -578,6 +580,11 @@ def make_config(
             indicator_display_style=kde_keyboard_setup_indicator_display_style,
             kwin_reload_command=kde_keyboard_setup_kwin_reload_command,
             panel_restart_command=kde_keyboard_setup_panel_restart_command,
+            layout_switch_shortcuts=(
+                kde_keyboard_setup_layout_switch_shortcuts
+                if kde_keyboard_setup_layout_switch_shortcuts is not None
+                else {}
+            ),
         ),
         kde_settings=KdeSettingsConfig(
             packages=kde_settings_packages,

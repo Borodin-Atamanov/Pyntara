@@ -7,9 +7,11 @@
 
 [kde_keyboard_setup]
 # Packages that must be present: the provider of kwriteconfig6 and
-# kreadconfig6 (libkf6config-bin) and the DBus client used for the reload
-# (qdbus-qt6). Missing packages are installed by the task.
-packages = ["libkf6config-bin", "qdbus-qt6"]
+# kreadconfig6 (libkf6config-bin), the DBus client used for the reload
+# (qdbus-qt6) and the python3-dbus bindings used to apply layout hotkeys
+# through the kglobalaccel daemon. Missing packages are installed by the
+# task.
+packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
 # The user whose desktop configuration is edited and that user's home and
 # config directories.
 username = "i"
@@ -37,3 +39,12 @@ kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfig
 # Command that restarts the Plasma panel so the indicator re-reads its
 # configuration.
 panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]
+# Global shortcuts that switch straight to one layout. The key of each
+# entry is the action unique name as shown in System Settings > Shortcuts >
+# Keyboard Layout Switcher (for example "Switch keyboard layout to Spanish"),
+# the value is the shortcut in Qt portable text format (for example
+# "Meta+Q"). With a running desktop session the task applies each shortcut
+# through the kglobalaccel daemon immediately and frees the key from its
+# current owner; without a session the entry is written to kglobalshortcutsrc
+# and takes effect at the next login. Empty by default: no hotkeys.
+layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }

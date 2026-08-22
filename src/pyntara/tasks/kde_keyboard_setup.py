@@ -12,10 +12,17 @@ idempotent: it compares every value with kreadconfig6 and writes only what
 differs. Missing packages (the kwriteconfig6 provider and the DBus client)
 are installed first. A desktop session that cannot be found disables the
 reload: the settings then apply after the next login.
+
+Optional per-layout hotkeys (layout_switch_shortcuts) are written to
+kglobalshortcutsrc the same way; when a desktop session is running, the
+supported shortcuts are also applied through the kglobalaccel daemon with
+python3-dbus, which frees the key from its current owner and makes the
+shortcut work immediately without a session restart.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -33,6 +40,19 @@ from pyntara.utils import (
 
 # The kxkbrc group that carries the layout settings.
 KXKBRC_GROUP: tuple[str, ...] = ("Layout",)
+# The KConfig file that carries the global shortcuts and the group and
+# daemon component that own the keyboard layout switcher actions.
+SHORTCUTS_FILE_NAME = "kglobalshortcutsrc"
+LAYOUT_SWITCHER_COMPONENT_UNIQUE = "KDE Keyboard Layout Switcher"
+LAYOUT_SWITCHER_COMPONENT_FRIENDLY = "Keyboard Layout Switcher"
+# Qt modifier flag values combined into the key code the kglobalaccel
+# daemon stores for a shortcut.
+_SHORTCUT_MODIFIER_BITS: dict[str, int] = {
+    "Ctrl": 0x04000000,
+    "Alt": 0x08000000,
+    "Shift": 0x02000000,
+    "Meta": 0x10000000,
+}
 
 
 def _as_user_command(cfg: KdeKeyboardSetupConfig, command: list[str]) -> list[str]:
@@ -178,6 +198,207 @@ def _reload_kwin(
     return None
 
 
+def _shortcut_to_combined(shortcut: str) -> int | None:
+    """The combined Qt key code of a portable shortcut, or None.
+
+    Only the shortcuts the daemon accepts are supported: any modifiers
+    from Ctrl, Alt, Shift and Meta plus one alphanumeric key. Other
+    portable forms (function keys, named keys) return None; the caller
+    then still writes the shortcut to the config file, it just cannot be
+    applied live.
+    """
+
+    parts = [part for part in shortcut.split("+") if part]
+    modifiers = 0
+    key: int | None = None
+    for part in parts:
+        if part in _SHORTCUT_MODIFIER_BITS:
+            modifiers |= _SHORTCUT_MODIFIER_BITS[part]
+        elif key is None and len(part) == 1 and part.isalnum():
+            key = ord(part.upper())
+        else:
+            return None
+    if key is None:
+        return None
+    return modifiers | key
+
+
+def _sync_hotkey_file(
+    cfg: KdeKeyboardSetupConfig,
+    shortcuts: dict[str, str],
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write the kglobalshortcutsrc hotkey entries; True on any write.
+
+    Each configured action gets its entry (active key, default key none,
+    friendly name) so the shortcut survives a login without a session.
+    The write is skipped when the entry already matches.
+    """
+
+    changed = False
+    group = (LAYOUT_SWITCHER_COMPONENT_UNIQUE,)
+    for action, shortcut in shortcuts.items():
+        value = f"{shortcut},none,{action}"
+        current = _kreadconfig(cfg, SHORTCUTS_FILE_NAME, group, action, timeout)
+        if not force and current == value:
+            continue
+        _kwriteconfig(
+            cfg,
+            SHORTCUTS_FILE_NAME,
+            group,
+            action,
+            value,
+            timeout=timeout,
+            bool_value=False,
+        )
+        _log(f"set hotkey {action}: {shortcut}")
+        changed = True
+    return changed
+
+
+# The python3-dbus client that applies hotkeys through the running
+# kglobalaccel daemon. It runs as the target user on the desktop session
+# bus. The payload is one JSON argument: the component names and a list
+# of [action unique name, combined key code] pairs. The script frees each
+# key from its current owner, assigns it to the configured action and
+# prints the before and after state as JSON. The actionId field order is
+# [component unique, action unique, component friendly, action friendly];
+# the daemon silently ignores a wrong order, so it must not change.
+_APPLY_HOTKEYS_SCRIPT = r"""
+import json
+import sys
+
+import dbus
+
+payload = json.loads(sys.argv[1])
+component_unique = payload["component_unique"]
+component_friendly = payload["component_friendly"]
+assign = payload["assign"]
+
+
+def combined_array(combined):
+    return dbus.Array(
+        [dbus.Int32(combined), dbus.Int32(0), dbus.Int32(0), dbus.Int32(0)],
+        signature="i",
+    )
+
+
+def set_keys(action_id, combined):
+    if combined:
+        keys = dbus.Array(
+            [dbus.Struct([combined_array(combined)], signature="(ai)")],
+            signature="(ai)",
+        )
+    else:
+        keys = dbus.Array([], signature="(ai)")
+    iface.setForeignShortcutKeys(action_id, keys)
+
+
+def owner_of(combined):
+    sequence = dbus.Struct([combined_array(combined)], signature=None)
+    result = list(iface.actionList(sequence))
+    return [str(part) for part in result] if result else None
+
+
+def read_keys(action_id):
+    return [int(seq[0][0]) for seq in iface.shortcutKeys(action_id)]
+
+
+bus = dbus.SessionBus()
+daemon = bus.get_object("org.kde.kglobalaccel", "/kglobalaccel")
+iface = dbus.Interface(daemon, "org.kde.KGlobalAccel")
+
+before = {}
+for action, combined in assign:
+    before[action] = read_keys([component_unique, action, component_friendly, action])
+
+owners = set()
+for action, combined in assign:
+    if not combined:
+        continue
+    owner = owner_of(combined)
+    if owner and owner[1] != action:
+        owners.add(tuple(owner))
+
+for owner in sorted(owners):
+    set_keys(list(owner), 0)
+
+for action, combined in assign:
+    set_keys([component_unique, action, component_friendly, action], combined)
+
+after = {}
+for action, combined in assign:
+    after[action] = read_keys([component_unique, action, component_friendly, action])
+
+print(json.dumps({"before": before, "after": after}))
+"""
+
+
+def _apply_hotkeys_live(
+    cfg: KdeKeyboardSetupConfig,
+    shortcuts: dict[str, str],
+    bus: str,
+    *,
+    timeout: float,
+    home_env: dict[str, str],
+) -> tuple[str | None, bool]:
+    """Apply the supported hotkeys through the running daemon.
+
+    Runs the embedded python3-dbus script as the target user on the
+    desktop session bus; the script frees each key from its current owner
+    and assigns it to the configured action, so the shortcut works without
+    a session restart. Shortcuts the parser does not support are skipped
+    here (they were already written to kglobalshortcutsrc). Returns error
+    text or None and whether a shortcut actually changed.
+    """
+
+    assign: list[tuple[str, int]] = []
+    for action, shortcut in shortcuts.items():
+        combined = _shortcut_to_combined(shortcut)
+        if combined is None:
+            _log(f"hotkey {action} is not applicable live, applies at login")
+            continue
+        assign.append((action, combined))
+    if not assign:
+        return None, False
+    payload = json.dumps(
+        {
+            "component_unique": LAYOUT_SWITCHER_COMPONENT_UNIQUE,
+            "component_friendly": LAYOUT_SWITCHER_COMPONENT_FRIENDLY,
+            "assign": assign,
+        }
+    )
+    try:
+        result = run_command(
+            _as_user_command(
+                cfg, ["python3", "-c", _APPLY_HOTKEYS_SCRIPT, payload]
+            ),
+            extra_env={**home_env, "DBUS_SESSION_BUS_ADDRESS": bus},
+            timeout=timeout,
+            capture=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"cannot apply layout hotkeys: {exc}", False
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return f"cannot parse kglobalaccel reply: {result.stdout}", False
+    before = report.get("before", {})
+    after = report.get("after", {})
+    changed = False
+    for action, combined in assign:
+        if after.get(action) != [combined]:
+            return (
+                f"cannot apply hotkey {action}: daemon reports {after.get(action)}",
+                False,
+            )
+        if before.get(action) != after.get(action):
+            changed = True
+    return None, changed
+
+
 def task(ctx: Context) -> TaskResult:
     """Write the KDE keyboard layout settings; skip when already reached.
 
@@ -281,6 +502,36 @@ def task(ctx: Context) -> TaskResult:
                 error=f"cannot write {cfg.appletsrc_file_name}: {exc}",
             )
     changed |= applet_changed
+
+    hotkeys_changed = False
+    if cfg.layout_switch_shortcuts:
+        try:
+            hotkeys_changed |= _sync_hotkey_file(
+                cfg,
+                cfg.layout_switch_shortcuts,
+                timeout=timeout,
+                force=force,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            return TaskResult(
+                success=False,
+                error=f"cannot write {SHORTCUTS_FILE_NAME}: {exc}",
+            )
+        bus = session_bus_address(cfg.username, timeout)
+        if bus is None:
+            _log("no desktop session found, layout hotkeys apply at login")
+        else:
+            hotkey_error, applied = _apply_hotkeys_live(
+                cfg,
+                cfg.layout_switch_shortcuts,
+                bus,
+                timeout=timeout,
+                home_env=home_env,
+            )
+            if hotkey_error is not None:
+                return TaskResult(success=False, error=hotkey_error)
+            hotkeys_changed |= applied
+    changed |= hotkeys_changed
 
     if layout_changed:
         reload_error = _reload_kwin(cfg, timeout=timeout, home_env=home_env)

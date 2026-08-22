@@ -16,6 +16,7 @@ from ._fields import (
     _bool_field,
     _nonempty_string_field,
     _string_list,
+    _string_map,
 )
 
 
@@ -31,7 +32,9 @@ class KdeKeyboardSetupConfig:
     applet whose display style is the layout indicator; layouts,
     switch_option and use_layout_switching are the kxkbrc values;
     indicator_display_style is the appletsrc value; kwin_reload_command
-    and panel_restart_command make the changes apply immediately.
+    and panel_restart_command make the changes apply immediately;
+    layout_switch_shortcuts maps keyboard switcher action names to the
+    shortcuts that switch straight to one layout.
     """
 
     packages: tuple[str, ...]
@@ -47,6 +50,7 @@ class KdeKeyboardSetupConfig:
     indicator_display_style: str
     kwin_reload_command: tuple[str, ...]
     panel_restart_command: tuple[str, ...]
+    layout_switch_shortcuts: dict[str, str]
 
 
 def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
@@ -93,5 +97,9 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
         panel_restart_command=_string_list(
             raw.get("panel_restart_command"),
             "kde_keyboard_setup.panel_restart_command",
+        ),
+        layout_switch_shortcuts=_string_map(
+            raw.get("layout_switch_shortcuts", {}),
+            "kde_keyboard_setup.layout_switch_shortcuts",
         ),
     )

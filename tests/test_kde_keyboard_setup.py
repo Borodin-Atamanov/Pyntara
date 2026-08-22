@@ -8,6 +8,7 @@ the command shape and answers per key.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,13 @@ displayStyle=Flag
 """
 
 
-def _ctx(tmp_path: Path, *, force: bool = False, appletsrc: str = SAMPLE_APPLETSRC):
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    appletsrc: str = SAMPLE_APPLETSRC,
+    hotkeys: dict[str, str] | None = None,
+):
     """Context with the target config directory rooted in tmp_path."""
 
     config_dir = tmp_path / ".config"
@@ -50,6 +57,7 @@ def _ctx(tmp_path: Path, *, force: bool = False, appletsrc: str = SAMPLE_APPLETS
             kde_keyboard_setup_username="i",
             kde_keyboard_setup_home_dir=str(tmp_path),
             kde_keyboard_setup_config_dir=str(config_dir),
+            kde_keyboard_setup_layout_switch_shortcuts=hotkeys,
         ),
     )
 
@@ -62,12 +70,15 @@ def _install_fakes(
     installed: bool = True,
     fail_install: bool = False,
     fail_on_write: bool = False,
+    fail_live_apply: bool = False,
+    hotkey_state: dict[str, list[int]] | None = None,
 ):
     """Replace run_command and package state; return captured command lists.
 
     currents maps a KConfig key name to its current value, so a key whose
     value matches the target skips the write. bus_pid empty disables the
-    desktop session lookup.
+    desktop session lookup. hotkey_state maps a hotkey action name to the
+    keys the daemon reports before the live apply, for idempotency tests.
     """
 
     currents = currents or {}
@@ -75,6 +86,7 @@ def _install_fakes(
     reloads: list[list[str]] = []
     restarts: list[list[str]] = []
     installs: list[str] = []
+    live_applies: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         if command[:4] == ["runuser", "-u", "i", "--"]:
@@ -92,6 +104,17 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 reloads.append(list(command))
                 return _FakeProc(0, "")
+            if inner[0] == "python3":
+                live_applies.append(list(command))
+                if fail_live_apply:
+                    raise subprocess.CalledProcessError(1, command)
+                payload = json.loads(inner[-1])
+                before: dict[str, list[int]] = {}
+                after: dict[str, list[int]] = {}
+                for action, combined in payload["assign"]:
+                    before[action] = list((hotkey_state or {}).get(action, []))
+                    after[action] = [combined]
+                return _FakeProc(0, json.dumps({"before": before, "after": after}))
         if command[0] == "pgrep":
             return _FakeProc(0, f"{bus_pid}\n" if bus_pid else "")
         if command[0] == "systemctl":
@@ -120,7 +143,7 @@ def _install_fakes(
             else None
         ),
     )
-    return writes, reloads, restarts, installs
+    return writes, reloads, restarts, installs, live_applies
 
 
 def test_first_run_writes_and_reloads(
@@ -129,7 +152,7 @@ def test_first_run_writes_and_reloads(
     # No current values: every kxkbrc key and the display style are
     # written, then kwin is reloaded and the panel restarted.
     ctx = _ctx(tmp_path)
-    writes, reloads, restarts, installs = _install_fakes(monkeypatch)
+    writes, reloads, restarts, installs, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -159,7 +182,7 @@ def test_skip_when_already_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _ = _install_fakes(
+    writes, reloads, restarts, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -182,7 +205,7 @@ def test_force_rewrites_even_when_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _ = _install_fakes(
+    writes, reloads, restarts, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -198,10 +221,10 @@ def test_missing_packages_are_installed(
 ) -> None:
     # A missing package is installed before the config writes.
     ctx = _ctx(tmp_path)
-    _, _, _, installs = _install_fakes(monkeypatch, installed=False)
+    _, _, _, installs, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
-    assert installs == ["libkf6config-bin", "qdbus-qt6"]
+    assert installs == ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
 
 
 def test_package_install_failure_is_error(
@@ -209,7 +232,7 @@ def test_package_install_failure_is_error(
 ) -> None:
     # A failed package install is a fatal error result.
     ctx = _ctx(tmp_path)
-    _, _, _, _ = _install_fakes(
+    _, _, _, _, _ = _install_fakes(
         monkeypatch, installed=False, fail_install=True
     )
     result = task_module.task(ctx)
@@ -222,7 +245,7 @@ def test_no_desktop_session_skips_reload(
 ) -> None:
     # Without a kwin_wayland process the reload is skipped, not fatal.
     ctx = _ctx(tmp_path)
-    writes, reloads, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    writes, reloads, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -236,7 +259,7 @@ def test_applet_missing_leaves_indicator(
     # Without the keyboard layout applet the indicator is left as is, no
     # panel restart.
     ctx = _ctx(tmp_path, appletsrc="[Containments][2]\nplugin=org.kde.plasma.panel\n")
-    writes, _, restarts, _ = _install_fakes(monkeypatch)
+    writes, _, restarts, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     display_writes = [
@@ -284,3 +307,148 @@ def test_keyboard_layout_config_group_missing() -> None:
         )
         is None
     )
+
+
+SPANISH_ACTION = "Switch keyboard layout to Spanish"
+HOTKEYS = {SPANISH_ACTION: "Meta+Q"}
+META_Q = 0x10000000 | 0x51
+
+
+def test_shortcut_to_combined_parses_modifiers_and_key() -> None:
+    # Modifiers plus one alphanumeric key become the combined Qt key code.
+    assert task_module._shortcut_to_combined("Meta+Q") == META_Q
+    assert task_module._shortcut_to_combined("Ctrl+Alt+E") == (
+        0x04000000 | 0x08000000 | 0x45
+    )
+    assert task_module._shortcut_to_combined("Shift+Meta+1") == (
+        0x02000000 | 0x10000000 | 0x31
+    )
+    assert task_module._shortcut_to_combined("Q") == 0x51
+
+
+def test_shortcut_to_combined_rejects_unsupported() -> None:
+    # Function keys, named keys and a bare modifier are not supported.
+    assert task_module._shortcut_to_combined("F5") is None
+    assert task_module._shortcut_to_combined("Space") is None
+    assert task_module._shortcut_to_combined("Meta") is None
+    assert task_module._shortcut_to_combined("") is None
+
+
+def test_no_session_writes_hotkey_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without a desktop session the hotkey is written to kglobalshortcutsrc
+    # and the live apply is skipped.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    writes, _, _, _, live_applies = _install_fakes(monkeypatch, bus_pid="")
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert live_applies == []
+    hotkey_writes = [
+        command
+        for command in writes
+        if "kglobalshortcutsrc" in " ".join(command)
+    ]
+    assert any(
+        SPANISH_ACTION in " ".join(command)
+        and f"Meta+Q,none,{SPANISH_ACTION}" in " ".join(command)
+        for command in hotkey_writes
+    )
+
+
+def test_no_session_hotkey_already_set_skips_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When the kglobalshortcutsrc entry already matches, nothing changes.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    currents = {
+        "LayoutList": "us,ru,es",
+        "Options": "grp:caps_select",
+        "Use": "true",
+        "displayStyle": "Flag",
+        SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
+    }
+    writes, reloads, restarts, _, live_applies = _install_fakes(
+        monkeypatch, bus_pid="", currents=currents
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert writes == []
+    assert reloads == []
+    assert restarts == []
+    assert live_applies == []
+
+
+def test_session_applies_hotkey_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With a desktop session the hotkey is applied through the daemon: the
+    # python3 client runs as the user with the correct payload.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert len(live_applies) == 1
+    payload = json.loads(live_applies[0][-1])
+    assert payload["component_unique"] == "KDE Keyboard Layout Switcher"
+    assert payload["component_friendly"] == "Keyboard Layout Switcher"
+    assert [SPANISH_ACTION, META_Q] in payload["assign"]
+
+
+def test_session_hotkey_already_applied_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When the file entry and the daemon already carry the shortcut, the
+    # task reports no change (the live client still runs and confirms).
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    currents = {
+        "LayoutList": "us,ru,es",
+        "Options": "grp:caps_select",
+        "Use": "true",
+        "displayStyle": "Flag",
+        SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
+    }
+    writes, reloads, restarts, _, live_applies = _install_fakes(
+        monkeypatch,
+        currents=currents,
+        hotkey_state={SPANISH_ACTION: [META_Q]},
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert writes == []
+    assert reloads == []
+    assert restarts == []
+    assert len(live_applies) == 1
+
+
+def test_session_hotkey_apply_failure_is_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A failing live apply is a fatal error result.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    _install_fakes(monkeypatch, fail_live_apply=True)
+    result = task_module.task(ctx)
+    assert result.success is False
+    assert "cannot apply layout hotkeys" in (result.error or "")
+
+
+def test_unsupported_shortcut_is_written_not_applied_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A function-key shortcut cannot be applied live but is still written
+    # to the config file.
+    ctx = _ctx(tmp_path, hotkeys={SPANISH_ACTION: "F5"})
+    writes, _, _, _, live_applies = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert live_applies == []
+    hotkey_writes = [
+        command
+        for command in writes
+        if "kglobalshortcutsrc" in " ".join(command)
+    ]
+    assert any(SPANISH_ACTION in " ".join(command) for command in hotkey_writes)

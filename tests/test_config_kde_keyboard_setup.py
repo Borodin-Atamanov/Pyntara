@@ -15,16 +15,18 @@ from pyntara.config import load_config
     [
         # packages is a string, not an array
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6"]',
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
             'packages = "libkf6config-bin"',
         ),
         # packages is an empty array
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6"]', "packages = []"
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
+            "packages = []",
         ),
         # packages contains a number, not strings
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6"]', "packages = [1]"
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
+            "packages = [1]",
         ),
         # username is a number, not a string
         base_config().replace('username = "i"', "username = 42"),
@@ -73,6 +75,26 @@ from pyntara.config import load_config
             'panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]',
             'panel_restart_command = "systemctl"',
         ),
+        # layout_switch_shortcuts is an array, not a table
+        base_config().replace(
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }',
+            'layout_switch_shortcuts = ["Meta+Q"]',
+        ),
+        # layout_switch_shortcuts key is an empty string
+        base_config().replace(
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }',
+            'layout_switch_shortcuts = { "" = "Meta+Q" }',
+        ),
+        # layout_switch_shortcuts value is a number, not a string
+        base_config().replace(
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }',
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = 42 }',
+        ),
+        # layout_switch_shortcuts value is an empty string
+        base_config().replace(
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }',
+            'layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "" }',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -82,7 +104,11 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 def test_load_config_kde_keyboard_setup_values(tmp_path: Path) -> None:
     # The typed values round-trip from the config document.
     config = load_config(write_config(tmp_path, base_config()))
-    assert config.kde_keyboard_setup.packages == ("libkf6config-bin", "qdbus-qt6")
+    assert config.kde_keyboard_setup.packages == (
+        "libkf6config-bin",
+        "qdbus-qt6",
+        "python3-dbus",
+    )
     assert config.kde_keyboard_setup.username == "i"
     assert config.kde_keyboard_setup.home_dir == "/home/i"
     assert config.kde_keyboard_setup.config_dir == "/home/i/.config"
@@ -91,6 +117,9 @@ def test_load_config_kde_keyboard_setup_values(tmp_path: Path) -> None:
     assert config.kde_keyboard_setup.switch_option == "grp:caps_select"
     assert config.kde_keyboard_setup.use_layout_switching is True
     assert config.kde_keyboard_setup.indicator_display_style == "Flag"
+    assert config.kde_keyboard_setup.layout_switch_shortcuts == {
+        "Switch keyboard layout to Spanish": "Meta+Q"
+    }
     assert config.kde_keyboard_setup.kwin_reload_command == (
         "qdbus6",
         "org.kde.KWin",

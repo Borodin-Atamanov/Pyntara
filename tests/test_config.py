@@ -47,7 +47,7 @@ hostname_file = "/etc/hostname"
 set_hostname_command = ["hostnamectl", "set-hostname"]
 
 [kde_keyboard_setup]
-packages = ["libkf6config-bin", "qdbus-qt6"]
+packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
 username = "i"
 home_dir = "/home/i"
 config_dir = "/home/i/.config"
@@ -60,6 +60,7 @@ use_layout_switching = true
 indicator_display_style = "Flag"
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
 panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]
+layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }
 
 [kde_settings]
 packages = ["plasma-workspace", "libkf6config-bin"]
@@ -438,13 +439,20 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "hostnamectl",
         "set-hostname",
     )
-    assert config.kde_keyboard_setup.packages == ("libkf6config-bin", "qdbus-qt6")
+    assert config.kde_keyboard_setup.packages == (
+        "libkf6config-bin",
+        "qdbus-qt6",
+        "python3-dbus",
+    )
     assert config.kde_keyboard_setup.username == "i"
     assert config.kde_keyboard_setup.home_dir == "/home/i"
     assert config.kde_keyboard_setup.layouts == ("us", "ru", "es")
     assert config.kde_keyboard_setup.switch_option == "grp:caps_select"
     assert config.kde_keyboard_setup.use_layout_switching is True
     assert config.kde_keyboard_setup.indicator_display_style == "Flag"
+    assert config.kde_keyboard_setup.layout_switch_shortcuts == {
+        "Switch keyboard layout to Spanish": "Meta+Q"
+    }
     assert config.kde_keyboard_setup.kwin_reload_command == (
         "qdbus6",
         "org.kde.KWin",
