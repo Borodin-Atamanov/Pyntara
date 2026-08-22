@@ -68,3 +68,11 @@ These rules come from the kde_keyboard_setup hotkey work, where writing a config
 10. Use stable identifiers in config keys. Prefer unique names over localized display names or codes that need a fragile mapping.
 11. Declare runtime dependencies in the task and install them. Do not assume a client library exists on the target.
 12. Document limitations honestly. State what is not applied automatically (conflicts without a session, unsupported forms) instead of claiming full behavior.
+
+## Planning a task
+
+Every task has two goals: the described goal (what the config or spec says) and the implied goal (what the user experiences after the task). The implied goal is the acceptance test; the described goal only serves it.
+
+Research on the machine before writing code. Run small reversible probes to establish facts: who owns the state, which tool or client works, what the exact call is. Never guess a mechanism a probe can settle in minutes, and never run a probe that disrupts the running session (restarting kwin or the Wayland session is forbidden).
+
+Make the plan proportional to uncertainty: when the mechanism is known, keep it short; when unknown, the first stage of the plan is the probe. After implementation, verify on the same machine: run the task and check the implied goal live, not only the unit tests.

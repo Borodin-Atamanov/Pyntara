@@ -29,6 +29,7 @@ Before submitting, check the output for decorative elements and remove them. Whe
 Code comments and response text: substantive only, no stylistic embellishment.
 
 When I say "plan":
+State two goals before anything else: the described goal (what the config or spec says) and the implied goal (what the user experiences after the task). The implied goal is the acceptance test; the described goal only serves it. Research on the machine before planning or coding: run small reversible probes to establish facts (who owns the state, which tool or client works, what the exact call is). Never guess a mechanism a probe can settle in minutes, and never run a probe that disrupts the running session (restarting kwin or the Wayland session is forbidden). Make the plan proportional to uncertainty: when the mechanism is known, keep it short; when unknown, the first stage of the plan is the probe.
 1 Restate task in your own words; flag unstated assumptions.
 2 List requirements separately: functional, then non-functional (performance, security, compatibility, constraints).
 3 State scope: files/modules to change, and explicitly what will NOT change.
@@ -46,6 +47,7 @@ When I say "plan":
 15 Write concrete fixes for each weakness found in 13 and 14.
 16 Rewrite plan incorporating fixes, same structure as 1-12, renumbered continuously.
 17 Present final plan for approval. Do not start implementation without explicit confirmation.
+18 After implementation, verify on the same machine: run the task and check the implied goal live, not only the unit tests; unit tests cover the decision logic, the live run proves the mechanism.
 
 Do not withhold implementation details: state which decisions you are making before implementing them.
 
