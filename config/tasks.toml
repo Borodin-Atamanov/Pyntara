@@ -103,6 +103,12 @@ depends = ["users_setup"]
 modes = ["desktop"]
 
 [[tasks]]
+name = "kde_keyboard_setup"
+description = "Configure KDE keyboard layouts and the layout indicator."
+depends = ["users_setup"]
+modes = ["desktop"]
+
+[[tasks]]
 name = "imagemagick_install"
 description = "Install latest ImageMagick"
 depends = ["add_extra_repos"]

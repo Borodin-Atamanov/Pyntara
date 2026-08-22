@@ -1,0 +1,39 @@
+# Pyntara desktop keyboard layout configuration.
+# Single source of truth for the kde_keyboard_setup task: which keyboard
+# layouts and switch options kxkbrc carries, how the keyboard layout
+# indicator displays the current layout, and how the changes are applied
+# immediately. The task writes the values with kwriteconfig6 as the target
+# user and reloads kwin and the Plasma panel.
+
+[kde_keyboard_setup]
+# Packages that must be present: the provider of kwriteconfig6 and
+# kreadconfig6 (libkf6config-bin) and the DBus client used for the reload
+# (qdbus-qt6). Missing packages are installed by the task.
+packages = ["libkf6config-bin", "qdbus-qt6"]
+# The user whose desktop configuration is edited and that user's home and
+# config directories.
+username = "i"
+home_dir = "/home/i"
+config_dir = "/home/i/.config"
+# The KConfig file names under config_dir that the task manages.
+kxkbrc_file_name = "kxkbrc"
+appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"
+# The Plasma applet whose display style is the layout indicator.
+applet_plugin = "org.kde.plasma.keyboardlayout"
+# The keyboard layouts in the order Caps Lock and Shift+Caps Lock cycle
+# through: the first is English, the second Russian.
+layouts = ["us", "ru", "es"]
+# The XKB switch option: Caps Lock to the first layout, Shift+Caps Lock to
+# the second layout.
+switch_option = "grp:caps_select"
+# Whether layout switching is enabled at all.
+use_layout_switching = true
+# How the keyboard layout indicator shows the current layout; Flag shows
+# the country flag instead of the layout name.
+indicator_display_style = "Flag"
+# Command that makes kwin re-read the keyboard layout configuration, so
+# the layouts apply immediately.
+kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# Command that restarts the Plasma panel so the indicator re-reads its
+# configuration.
+panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]

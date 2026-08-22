@@ -46,6 +46,21 @@ ubuntu_hosts = ["archive.ubuntu.com", "security.ubuntu.com"]
 hostname_file = "/etc/hostname"
 set_hostname_command = ["hostnamectl", "set-hostname"]
 
+[kde_keyboard_setup]
+packages = ["libkf6config-bin", "qdbus-qt6"]
+username = "i"
+home_dir = "/home/i"
+config_dir = "/home/i/.config"
+kxkbrc_file_name = "kxkbrc"
+appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"
+applet_plugin = "org.kde.plasma.keyboardlayout"
+layouts = ["us", "ru", "es"]
+switch_option = "grp:caps_select"
+use_layout_switching = true
+indicator_display_style = "Flag"
+kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart", "plasma-plasmashell.service"]
+
 [swapfile_service_install]
 swapfile_path = "/swapfile"
 ram_multiplier = 2
@@ -415,6 +430,19 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.hostname.set_hostname_command == (
         "hostnamectl",
         "set-hostname",
+    )
+    assert config.kde_keyboard_setup.packages == ("libkf6config-bin", "qdbus-qt6")
+    assert config.kde_keyboard_setup.username == "i"
+    assert config.kde_keyboard_setup.home_dir == "/home/i"
+    assert config.kde_keyboard_setup.layouts == ("us", "ru", "es")
+    assert config.kde_keyboard_setup.switch_option == "grp:caps_select"
+    assert config.kde_keyboard_setup.use_layout_switching is True
+    assert config.kde_keyboard_setup.indicator_display_style == "Flag"
+    assert config.kde_keyboard_setup.kwin_reload_command == (
+        "qdbus6",
+        "org.kde.KWin",
+        "/KWin",
+        "org.kde.KWin.reconfigure",
     )
     assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
     assert config.swapfile_service_install.ram_multiplier == 2

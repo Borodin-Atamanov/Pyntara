@@ -13,6 +13,7 @@ from .dnsproxy_setup import DnsproxySetupConfig, _dnsproxy_setup_table
 from .engine import EngineConfig, _engine_table
 from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
+from .kde_keyboard_setup import KdeKeyboardSetupConfig, _kde_keyboard_setup_table
 from .nextdns_setup_system_wide import (
     NextdnsSetupSystemWideConfig,
     _nextdns_setup_system_wide_table,
@@ -56,6 +57,7 @@ class Config:
     dnsproxy_setup: DnsproxySetupConfig
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
+    kde_keyboard_setup: KdeKeyboardSetupConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
@@ -128,6 +130,7 @@ def load_config(path: Path) -> Config:
         dnsproxy_setup=_dnsproxy_setup_table(data.get("dnsproxy_setup")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
+        kde_keyboard_setup=_kde_keyboard_setup_table(data.get("kde_keyboard_setup")),
         swapfile_service_install=_swapfile_service_install_table(
             data.get("swapfile_service_install")
         ),
