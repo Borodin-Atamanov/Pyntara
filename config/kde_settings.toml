@@ -339,3 +339,142 @@ group = ["Effect-cube"]
 key = "InvertY"
 value = "false"
 type = "bool"
+
+# kwinrc: the desktop rows, the scale, shake cursor and overview effects,
+# the mouse bindings, the night color, the window snapping and placement,
+# and the title bar buttons.
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Desktops"]
+key = "Rows"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-scale"]
+key = "Duration"
+value = "200"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-scale"]
+key = "InScale"
+value = "0.01"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-scale"]
+key = "OutScale"
+value = "0.01"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-shakecursor"]
+key = "Magnification"
+value = "4"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-overview"]
+key = "BorderActivate"
+value = "9"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["MouseBindings"]
+key = "CommandAll2"
+value = "Activate, raise and move"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["MouseBindings"]
+key = "CommandAll3"
+value = "Operations menu"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["MouseBindings"]
+key = "CommandAllWheel"
+value = "Change Opacity"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["MouseBindings"]
+key = "CommandTitlebarWheel"
+value = "Change Opacity"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["NightColor"]
+key = "Active"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["NightColor"]
+key = "Mode"
+value = "DarkLight"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "BorderSnapZone"
+value = "32"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "CenterSnapZone"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "ElectricBorderTiling"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "ElectricBorders"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "Placement"
+value = "Random"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "RollOverDesktops"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "SnapOnlyWhenOverlapping"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Windows"]
+key = "WindowSnapZone"
+value = "32"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["org.kde.kdecoration2"]
+key = "ButtonsOnLeft"
+value = "MSNE"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["org.kde.kdecoration2"]
+key = "ButtonsOnRight"
+value = "HFBIAX"
