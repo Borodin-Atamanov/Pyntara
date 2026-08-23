@@ -29,7 +29,7 @@ No task may read the environment, create global singletons, or assemble runtime 
 
 There are no CLI options. The engine configuration comes from two sources.
 
-The config/ directory at the repository root is the single source of truth for the values used by the Python part: one TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...), joined by pyntara.config.loader.render_config_source into a single document before parsing. The loader accepts both the directory form and a single file, so the deployed system config stays one file. The section map lives in [Config section map](docs/guides/project-structure.md#config-section-map); per-task parameters are documented in each spec's Parameters section (docs/spec/). Module configuration is stored in config.toml: every task keeps its own section, so task parameters are configurable without code changes. The [[tasks]] section is the task catalog: one entry per task with name, description, dependencies and mode membership. The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
+The config/ directory at the repository root is the single source of truth for the values used by the Python part: one TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...), joined by pyntara.config.loader.render_config_source into a single document before parsing. The loader accepts both the directory form and a single file, so the deployed system config stays one file. The section map lives in [Config section map](../guides/project-structure.md#config-section-map); per-task parameters are documented in each spec's Parameters section (docs/spec/). Module configuration is stored in config.toml: every task keeps its own section, so task parameters are configurable without code changes. The [[tasks]] section is the task catalog: one entry per task with name, description, dependencies and mode membership. The file is mandatory: a missing or invalid config stops the run, there are no defaults. Only the composition root reads the file; the values travel to tasks through Context.
 
 Behavioral values must never be hardcoded inside task modules. Every value that affects behavior lives in config/ (the joined config document), including unit file names, journal identifiers, queue and spool directory names, file modes and paths, and external API contracts such as the Google web app deployment URL pattern. All variables and constants live in config/ except explicit exceptions approved by the user, each approval recorded in this document under Approved exceptions. A hardcoded literal is allowed only as such a recorded user-approved exception; every other literal is a violation. Duplicating the same value or the same logic across modules is forbidden: shared values and helpers live in one module and are imported, never copied.
 
@@ -80,7 +80,7 @@ Task definitions live in the config/ directory under the [[tasks]] section (task
 
 Task-to-task data sharing is allowed only through Context fields or explicit arguments.
 
-Full task model contract: [Task model and idempotency](docs/contracts/task-model.md).
+Full task model contract: [Task model and idempotency](task-model.md).
 
 ## 6. Idempotency and side effects
 
@@ -95,11 +95,11 @@ named IPC command channels
 
 Exchange boundaries between processes of different systemd services must be explicitly documented as an architecture contract.
 
-The System Metrics service is the first long-running systemd service deployed from the pyntara code base. The system_metrics_setup task installs it into a dedicated venv (system_metrics_setup.venv_dir) and renders the repository config/ into system_metrics_setup.system_config_path, the single config of the target system, which the deployed service reads through pyntara.config.load_config, the same loader the installer uses, so both sides share one source of truth. The queue, the channel senders and the report collector are specified in [System Metrics](docs/spec/system-metrics.md). The sender opens the runtime secret vault /var/lib/pyntara/secrets/pyntara.vault, created by local_vault_setup, with the password from /etc/pyntara/pass; the password value never appears in any message.
+The System Metrics service is the first long-running systemd service deployed from the pyntara code base. The system_metrics_setup task installs it into a dedicated venv (system_metrics_setup.venv_dir) and renders the repository config/ into system_metrics_setup.system_config_path, the single config of the target system, which the deployed service reads through pyntara.config.load_config, the same loader the installer uses, so both sides share one source of truth. The queue, the channel senders and the report collector are specified in [System Metrics](../spec/system-metrics.md). The sender opens the runtime secret vault /var/lib/pyntara/secrets/pyntara.vault, created by local_vault_setup, with the password from /etc/pyntara/pass; the password value never appears in any message.
 
-The queue commit path is split between a thin command and a root service, so any user can commit without privileges: the task generates the thin commit_system_metrics command that publishes a regular non-empty file atomically into the spool, and a root ingest service moves spool files into the queue (see [Queue architecture](docs/spec/system-metrics.md#queue-architecture)).
+The queue commit path is split between a thin command and a root service, so any user can commit without privileges: the task generates the thin commit_system_metrics command that publishes a regular non-empty file atomically into the spool, and a root ingest service moves spool files into the queue (see [Queue architecture](../spec/system-metrics.md#queue-architecture)).
 
-The report collector is a producer of the same queue: a systemd timer starts a service that collects the configured console modules, waits for enough network modules to answer and commits the JSON report (see [Report collector](docs/spec/system-metrics.md#report-collector)). The system temp directory of the report and the lock file parent directory /run/pyntara are approved fixed machine contracts of this exchange.
+The report collector is a producer of the same queue: a systemd timer starts a service that collects the configured console modules, waits for enough network modules to answer and commits the JSON report (see [Report collector](../spec/system-metrics.md#report-collector)). The system temp directory of the report and the lock file parent directory /run/pyntara are approved fixed machine contracts of this exchange.
 
 Forbidden patterns:
 
@@ -123,5 +123,5 @@ Any change that breaks these guarantees must update this document and correspond
 
 ## 9. Secrets management
 
-Full secrets model specification: [Secrets model](docs/spec/secrets-model.md).
-Bootstrap-time vault resolution is specified in [Secrets files](docs/contracts/bootstrap.md#12-secrets-files).
+Full secrets model specification: [Secrets model](../spec/secrets-model.md).
+Bootstrap-time vault resolution is specified in [Secrets files](bootstrap.md#12-secrets-files).

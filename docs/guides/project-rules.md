@@ -84,6 +84,6 @@ One consistent formatting/style standard is required across the project.
 Documentation rules:
 
 1. Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally.
-2. Cross-references between documents are active Markdown links to the target file, with a heading-name anchor when a specific section is meant. Reference headings by name, never by section number.
+2. Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.
 3. Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.
 4. Prose follows the token economy of [Output and comment style](#3-output-and-comment-style-token-economy): delete sentences that add no information.

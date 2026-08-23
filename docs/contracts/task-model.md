@@ -1,6 +1,6 @@
 # Task model and idempotency
 
-This contract fixes the task model: what a task is, how tasks are declared, ordered and stored, and how idempotency is enforced. The runtime task contract (signature, TaskResult fields, presentation) lives in [Task contract](docs/contracts/architecture.md#5-task-contract) and [Task presentation](docs/guides/project-rules.md#11-task-presentation); this document covers the model and the catalog.
+This contract fixes the task model: what a task is, how tasks are declared, ordered and stored, and how idempotency is enforced. The runtime task contract (signature, TaskResult fields, presentation) lives in [Task contract](architecture.md#5-task-contract) and [Task presentation](../guides/project-rules.md#11-task-presentation); this document covers the model and the catalog.
 
 ## Idempotency
 
@@ -38,7 +38,7 @@ Task set and metadata are defined in the config/ directory under the [[tasks]] s
 
 ## Task contract (Python)
 
-The runtime contract of a task is fixed by [Task contract](docs/contracts/architecture.md#5-task-contract): a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error). The presentation contract (banner, pause, outcome line) is fixed by [Task presentation](docs/guides/project-rules.md#11-task-presentation).
+The runtime contract of a task is fixed by [Task contract](architecture.md#5-task-contract): a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error). The presentation contract (banner, pause, outcome line) is fixed by [Task presentation](../guides/project-rules.md#11-task-presentation).
 
 Data transfer between tasks is explicit only:
 through Context fields (e.g., secrets)

@@ -46,8 +46,8 @@ The bash test suite tests/test_pre_commit_hook.sh covers the hook on a temporary
 ## Adding a new task
 
 1. Add a [[tasks]] entry to config/tasks.toml with name, description, dependencies and modes. Dependencies must name tasks listed earlier in the file (docs/contracts/task-model.md).
-2. Create src/pyntara/tasks/<name>.py with a task(ctx) -> TaskResult function ([Task contract](docs/contracts/architecture.md#5-task-contract)). Import shared helpers from utils.py, config_edit.py or domain modules (i2pd.py, yggdrasil.py, tor.py, ssh.py, nextdns_profile.py) instead of reimplementing.
-3. If the task needs configuration values, add a [<name>] section to a new or existing TOML file in config/ and wire the parser in src/pyntara/config/ ([Adding a new config section](docs/guides/project-structure.md#adding-a-new-config-section)).
+2. Create src/pyntara/tasks/<name>.py with a task(ctx) -> TaskResult function ([Task contract](../contracts/architecture.md#5-task-contract)). Import shared helpers from utils.py, config_edit.py or domain modules (i2pd.py, yggdrasil.py, tor.py, ssh.py, nextdns_profile.py) instead of reimplementing.
+3. If the task needs configuration values, add a [<name>] section to a new or existing TOML file in config/ and wire the parser in src/pyntara/config/ ([Adding a new config section](project-structure.md#adding-a-new-config-section)).
 4. If the task needs runtime data files, create a task_data/<name>/ directory.
 5. Write tests in tests/test_<name>.py: at minimum one success scenario and one realistic error scenario. Use shared factories from tests/support.py (make_config, make_context, FakeProc). Mock external resources via monkeypatch ([Testing rules](#testing-rules)).
 6. If the task belongs to a default install mode, verify that the mode lists it in tasks.toml and that the dependency chain is complete.
