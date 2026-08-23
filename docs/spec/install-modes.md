@@ -13,7 +13,7 @@ When PYNTARA_INSTALL_MODE is omitted, the mode is auto-detected from the system:
 on desktop systems, desktop mode is used
 on server systems, server mode is used
 
-An unknown PYNTARA_INSTALL_MODE value shows the resilience notice and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#7-resilience-rule)).
+An unknown PYNTARA_INSTALL_MODE value shows the resilience notice and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#resilience-rule)).
 
 ## Task selection
 

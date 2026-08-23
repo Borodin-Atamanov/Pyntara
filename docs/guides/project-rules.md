@@ -2,21 +2,21 @@
 
 These defaults are mandatory for all Pyntara modules and scripts unless a concrete external constraint requires an exception.
 
-## 1. Command execution output policy
+## Command execution output policy
 
 Every command execution must stream output to the terminal in real time by default.
 The same output must be persisted to a log file by default.
 The system journal is the primary destination for own messages; the file log is a residual copy of the full stream.
 Exceptions are allowed only when command output must be suppressed for security or when a third-party tool breaks with streamed mode.
 
-### 1.1 Task presentation
+### Task presentation
 
 Before each new task the engine prints an empty line, then the task title.
 After the title there is a pause of engine.task_start_delay_seconds (the config/ directory), so the user sees which task starts.
 The task then runs and its output streams in real time, showing what is being done.
 After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
 
-### 1.2 Task progress output
+### Task progress output
 
 Every task reports its progress to stdout so the user sees what is being done.
 
@@ -27,25 +27,25 @@ Every task reports its progress to stdout so the user sees what is being done.
 5. A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
 6. Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
 
-### 1.3 Central logging
+### Central logging
 
 The system journal is the primary destination for all own messages: the engine mirrors them with the identifier pyntara-engine, the installer with pyntara-install. The file log is residual: it persists the full stream for offline review. All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
 
 Journal message priority is passed to the logging helpers as an optional numeric parameter, a syslog level: 6 (informational) by default, which every message reporting an action inside a task uses, and 3 (error) for serious failures. The priority is passed as a number, never embedded in the message text and never parsed from it.
 
-## 2. Datetime format policy
+## Datetime format policy
 
 Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.
 Use a different format only when integration requirements make this format incompatible.
 
-## 3. Output and comment style — token economy
+## Output and comment style (token economy)
 
 No pseudographics, ASCII art, or decorative separators in comments or output.
 No decorative bullets or box-drawing characters. Use plain text for lists.
 Tables or box-drawn layouts are allowed only on explicit user request.
 Comments must be concise and explain intent, not decorate. Every unnecessary character wastes tokens.
 
-## 4. General engineering requirements
+## General engineering requirements
 
 Full type annotations for all arguments and return values are mandatory.
 Type checking: mypy --strict, zero errors.
@@ -69,7 +69,7 @@ All variables and constants live in the config/ directory, never as constants in
 
 All text that crosses an external boundary must be passed through the shared trim_whitespace helper (pyntara.utils) before it is stored or reported, whenever trimming cannot damage the content: output captured from console commands, values read from files, and user data must never carry trailing newlines or stray edge whitespace into telemetry reports, logs or persisted values, while internal whitespace is preserved. Do not trim binary payloads: the rule applies to text.
 
-## 5. Documentation and comment style
+## Documentation and comment style
 
 When creating code and configurations, add comments in simple English.
 Comments must explain:
@@ -83,7 +83,7 @@ One consistent formatting/style standard is required across the project.
 
 Documentation rules:
 
-1. Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally.
+1. Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally. Numbering in headings is forbidden: a heading is not a list item, numbers burn tokens for nothing.
 2. Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.
 3. Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.
-4. Prose follows the token economy of [Output and comment style](#3-output-and-comment-style-token-economy): delete sentences that add no information.
+4. Prose follows the token economy of [Output and comment style](#output-and-comment-style-token-economy): delete sentences that add no information.

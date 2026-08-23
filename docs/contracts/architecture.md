@@ -3,7 +3,7 @@
 This document fixes the mandatory runtime architecture for Pyntara.
 All new modules and tasks must follow this contract.
 
-## 1. Runtime boundaries
+## Runtime boundaries
 
 inst.sh - bootloader
 pyntara.py (command entry and composition root)
@@ -13,7 +13,7 @@ context.py (Context construction)
 task_runner.py (task discovery and execution)
 tasks/*.py (one task per module)
 
-## 2. Composition root
+## Composition root
 
 The run command in pyntara.py is the only place that reads the environment and assembles runtime state:
 
@@ -25,7 +25,7 @@ launch the runner
 
 No task may read the environment, create global singletons, or assemble runtime state itself.
 
-## 3. Configuration
+## Configuration
 
 There are no CLI options. The engine configuration comes from two sources.
 
@@ -46,7 +46,7 @@ Approved exceptions (recorded user approvals):
 1. REPO_ROOT of every task module (Path(__file__).resolve().parents[3]): the repository clone location. It is a repository layout path (a fixed machine contract, not configuration: the clone must be locatable before the config is read) and is monkeypatched by the tests (docs/guides/developer-guide.md); the source vault paths of local_vault_setup are resolved against it.
 2. The NextDNS profile ID shape: exactly six lowercase hex digits, validated by pyntara.nextdns. It is a format invariant of the NextDNS service, not a behavior of the installer, so it stays in code; every other NextDNS value (the vault group title, the profile ID file path and mode) lives in the [nextdns_setup_system_wide] config table.
 
-## 4. Context contract
+## Context contract
 
 Context in context.py is a frozen dataclass. It is the only carrier for cross-cutting runtime dependencies:
 
@@ -60,7 +60,7 @@ config (Config loaded from config.toml)
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.
 
-## 5. Task contract
+## Task contract
 
 A task is a plain function:
 
@@ -82,7 +82,7 @@ Task-to-task data sharing is allowed only through Context fields or explicit arg
 
 Full task model contract: [Task model and idempotency](task-model.md).
 
-## 6. Idempotency and side effects
+## Idempotency and side effects
 
 Each task must be idempotent: repeated runs must not destroy an already configured system. A task checks the real system state (user exists, file present, service active) and skips changes when the goal is already reached. Force mode reruns a task even after completion.
 
@@ -107,11 +107,11 @@ module-level mutable state for runtime business data
 implicit environment reads inside task modules
 hidden data exchange via ad-hoc globals
 
-## 7. Resilience rule
+## Resilience rule
 
 The program must keep working whenever it can and must not crash on recoverable input errors. An invalid environment value shows an error notice naming the problem and the applied fallback, waits a visible countdown (plain numbers, default 7 seconds, engine.notice_timeout in config/) so the user can interrupt with Ctrl-C, then continues with the fallback. Only a condition with no possible fallback stops the program. A missing or invalid config is such a condition: it stops the run because the engine cannot know what to provision.
 
-## 8. Guardrails
+## Guardrails
 
 The architecture is guarded by tests:
 
@@ -121,7 +121,7 @@ task runner tests (missing modules skipped, failures, continue-on-error)
 
 Any change that breaks these guarantees must update this document and corresponding tests in the same pull request.
 
-## 9. Secrets management
+## Secrets management
 
 Full secrets model specification: [Secrets model](../spec/secrets-model.md).
-Bootstrap-time vault resolution is specified in [Secrets files](bootstrap.md#12-secrets-files).
+Bootstrap-time vault resolution is specified in [Secrets files](bootstrap.md#secrets-files).
