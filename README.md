@@ -42,41 +42,41 @@ Quick test run without the apt index refresh. The flag sits in the prefix of the
 bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
 ```
 
-Engine values and the task catalog live in the config/ directory at the repository root, one TOML file per top-level section, joined by the loader into a single document (docs/contracts/architecture.md section 3).
+Engine values and the task catalog live in the config/ directory at the repository root, one TOML file per top-level section, joined by the loader into a single document ([docs/contracts/architecture.md](docs/contracts/architecture.md) section 3).
 
 The interactive installer variant does not work and its development is stopped.
 
 ## Documentation index
 
-AI-Agent rules: `AGENTS.md`
+AI-Agent rules: [AGENTS.md](AGENTS.md)
 
 Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions testable in code:
-`docs/contracts/architecture.md` — runtime boundaries, composition root, Context, resilience rule
-`docs/contracts/bootstrap.md` — bootstrap installer contract for inst.sh
-`docs/contracts/task-model.md` — task model, idempotency contract, catalog and dependencies
+[docs/contracts/architecture.md](docs/contracts/architecture.md) — runtime boundaries, composition root, Context, resilience rule
+[docs/contracts/bootstrap.md](docs/contracts/bootstrap.md) — bootstrap installer contract for inst.sh
+[docs/contracts/task-model.md](docs/contracts/task-model.md) — task model, idempotency contract, catalog and dependencies
 
 Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
-`docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, task and force selection
-`docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
-`docs/spec/system-metrics.md` — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
-`docs/spec/nextdns-profile.md` — NextDNS profile selection and the profile ID file read by dnsproxy and System Metrics
-`docs/spec/dnsproxy-setup.md` — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
-`docs/spec/i2pd-service.md` — i2pd service install from GitHub releases, version and asset selection, download trust
-`docs/spec/yggdrasil-service.md` — yggdrasil service install from GitHub releases, version and asset selection, download trust
-`docs/spec/tor-service.md` — Tor install from the Ubuntu archive, SSH onion service, address file and client side
-`docs/spec/ssh-daemon-setup.md` — SSH server install, drop-in configuration, pre-generated key deployment
-`docs/spec/ssh-client-setup.md` — system-wide SSH client defaults, drop-in configuration
-`docs/spec/users-and-host.md` — hostname, ZRAM, zswap, swapfile
-`docs/spec/kde-keyboard-setup.md` — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
-`docs/spec/kde-settings.md` — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
+[docs/spec/install-modes.md](docs/spec/install-modes.md) — minimal/server/desktop modes, auto-detection, task and force selection
+[docs/spec/secrets-model.md](docs/spec/secrets-model.md) — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
+[docs/spec/system-metrics.md](docs/spec/system-metrics.md) — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
+[docs/spec/nextdns-profile.md](docs/spec/nextdns-profile.md) — NextDNS profile selection and the profile ID file read by dnsproxy and System Metrics
+[docs/spec/dnsproxy-setup.md](docs/spec/dnsproxy-setup.md) — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
+[docs/spec/i2pd-service.md](docs/spec/i2pd-service.md) — i2pd service install from GitHub releases, version and asset selection, download trust
+[docs/spec/yggdrasil-service.md](docs/spec/yggdrasil-service.md) — yggdrasil service install from GitHub releases, version and asset selection, download trust
+[docs/spec/tor-service.md](docs/spec/tor-service.md) — Tor install from the Ubuntu archive, SSH onion service, address file and client side
+[docs/spec/ssh-daemon-setup.md](docs/spec/ssh-daemon-setup.md) — SSH server install, drop-in configuration, pre-generated key deployment
+[docs/spec/ssh-client-setup.md](docs/spec/ssh-client-setup.md) — system-wide SSH client defaults, drop-in configuration
+[docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile
+[docs/spec/kde-keyboard-setup.md](docs/spec/kde-keyboard-setup.md) — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
+[docs/spec/kde-settings.md](docs/spec/kde-settings.md) — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
 
 Guides — how to work with the project:
-`docs/guides/project-structure.md` — repository layout, file responsibilities, config editing tools
-`docs/guides/project-rules.md` — code conventions: output policy, datetime format, engineering standards
-`docs/guides/developer-guide.md` — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow, task best practices
+[docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools
+[docs/guides/project-rules.md](docs/guides/project-rules.md) — code conventions: output policy, datetime format, engineering standards
+[docs/guides/developer-guide.md](docs/guides/developer-guide.md) — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow, task best practices
 
 Architecture decisions:
-`docs/simplified-architecture.md` — approved simplification rationale, resilience rule
+[docs/simplified-architecture.md](docs/simplified-architecture.md) — approved simplification rationale, resilience rule
 
 Plans:
-`docs/TODO.md` — planned future work, ideas for new tasks
+[docs/TODO.md](docs/TODO.md) — planned future work, ideas for new tasks
