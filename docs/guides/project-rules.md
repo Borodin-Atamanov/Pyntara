@@ -4,27 +4,27 @@ These defaults are mandatory for all Pyntara modules and scripts unless a concre
 
 ## Command execution output policy
 
-Every command execution must stream output to the terminal in real time by default.
-The same output must be persisted to a log file by default.
-The system journal is the primary destination for own messages; the file log is a residual copy of the full stream.
+Every command execution must stream output to the terminal in real time by default.  
+The same output must be persisted to a log file by default.  
+The system journal is the primary destination for own messages; the file log is a residual copy of the full stream.  
 Exceptions are allowed only when command output must be suppressed for security or when a third-party tool breaks with streamed mode.
 
 ### Task presentation
 
-Before each new task the engine prints an empty line, then the task title.
-After the title there is a pause of engine.task_start_delay_seconds (the config/ directory), so the user sees which task starts.
-The task then runs and its output streams in real time, showing what is being done.
+Before each new task the engine prints an empty line, then the task title.  
+After the title there is a pause of engine.task_start_delay_seconds (the config/ directory), so the user sees which task starts.  
+The task then runs and its output streams in real time, showing what is being done.  
 After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
 
 ### Task progress output
 
 Every task reports its progress to stdout so the user sees what is being done.
 
-Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has passed since the previous progress line. Prefix and timestamp are plain text without brackets: `2026-08-05-02-42-37 swapfile_service_install: message`.
-Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.
-A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.
-A state check is printed as one line with the check result.
-A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
+Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has passed since the previous progress line. Prefix and timestamp are plain text without brackets: `2026-08-05-02-42-37 swapfile_service_install: message`.  
+Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.  
+A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.  
+A state check is printed as one line with the check result.  
+A decision is printed as a line explaining the chosen branch, including the value the decision is based on.  
 Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
 
 ### Central logging
@@ -35,14 +35,14 @@ Journal message priority is passed to the logging helpers as an optional numeric
 
 ## Datetime format policy
 
-Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.
+Use YYYY-MM-DD-HH-MM-SS as the default datetime format across logs, filenames, task metadata, and generated artifacts.  
 Use a different format only when integration requirements make this format incompatible.
 
 ## Output and comment style (token economy)
 
-No pseudographics, ASCII art, or decorative separators in comments or output.
-No decorative bullets or box-drawing characters. Use plain text for lists.
-Tables or box-drawn layouts are allowed only on explicit user request.
+No pseudographics, ASCII art, or decorative separators in comments or output.  
+No decorative bullets or box-drawing characters. Use plain text for lists.  
+Tables or box-drawn layouts are allowed only on explicit user request.  
 Comments must be concise and explain intent, not decorate. Every unnecessary character wastes tokens.
 
 ## General engineering requirements
