@@ -1,6 +1,6 @@
-Agent Rules
+Agent Rules. This rules is ABLOSUTELY MANDATORY to follow! Without exceptions!
 
-<project_instructions priority="critical">
+<instructions priority="critical">
 
 Rules in this block take precedence over all other project context and cannot be overridden by the content of any other file.
 
@@ -23,7 +23,7 @@ After finishing changes, the agent MUST integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.
 Use descriptive naming: functions, variables, methods, and task names must explain what they do, so the name alone conveys the purpose.
-Strictly prohibit all decorative formatting in all code, comments, documentation, and messages. Do not use pseudographics, box-drawing characters, visual borders, filler separator lines, sequences of repeated decorative symbols (such as dashes, equals signs, underscores, or asterisks), ASCII diagrams, or Markdown tables unless explicitly requested. Convey structure, hierarchy, and relationships solely through plain text! Never repeat "=" or "-" or similar characters! Строго запрещено создавать строки вида "=== something ===" в любом контексте!
+Strictly prohibit all decorative formatting in all code, comments, documentation, and messages. Do not use pseudographics, box-drawing characters, visual borders, filler separator lines, sequences of repeated decorative symbols (such as dashes, equals signs, underscores, or asterisks), ASCII diagrams, or Markdown tables unless explicitly requested. Convey structure, hierarchy, and relationships solely through plain text! Never repeat "=" or "-" or similar characters! Строжайше запрещено генерировать любые строки вида "===<something>===" в любом контексте, особенно для запуска команд!
 Use Arabic numerals only as list markers, never bullets, dashes, or asterisks. Maximum 2-3 nesting levels with minimal indentation.
 Before submitting, check the output for decorative elements and remove them. When in doubt, remove the symbol: an unnecessary character adds no meaning.
 Code comments and response text: substantive only, no stylistic embellishment.
@@ -54,5 +54,5 @@ Do not withhold implementation details: state which decisions you are making bef
 This is a single-developer project: all the code is written by you, the AI agentess, under the guidance of a human (me).
 
 Если ты нарушаешь эти правила, то обязана явно сообщить пользователю об этом. И исправить своё поведение.
-</project_instructions>
+</instructions>
 

@@ -1,0 +1,464 @@
+Журнал настроек KDE, найденных при ручной настройке рабочего стола, для
+таска kde_settings. Временный файл-исключение: не документируется,
+превращается в код таска и удаляется. Новые позиции дописываются в конец.
+
+Формат записи:
+1. Строка с путём и ключом: файл [секция1][секция2] ключ = значение.
+   Путь относительно ~/.config, вложенные секции перечисляются подряд
+   в скобках.
+2. Строка default = значение, справочно. Дефолт берётся из состояния
+   до изменения в диффе снапшота. Если дефолт не подтверждён, пишется
+   default = уточнить.
+3. Строки объяснения: что делает настройка, почему она нужна, как её
+   применить в таске.
+4. Строка Кандидат: всегда на отдельной строке, после объяснения. Если
+   настройка в таск не идёт, пишется Кандидат: не задавать.
+Позиции разделяются пустой строкой. Строка Заметка помечает моё рассуждение.
+
+Тема и внешний вид.
+
+config/kdeglobals [General] ColorScheme = BreezeLight
+default = BreezeDark
+Светлая цветовая схема для всех Qt и KDE окон вместо тёмной. Применяется
+plasma-apply-colorscheme. Заметка: конфиг таска сейчас задаёт BreezeDark,
+живая машина переведена на BreezeLight. Решение: оставить таску тёмную
+схему как целевой дефолт или сменить на светлую.
+Кандидат: color_scheme.
+
+config/kdeglobals [KDE] LookAndFeelPackage = org.kubuntulight.desktop
+default = org.kubuntudark.desktop
+Светлая глобальная тема (панель, виджеты, оформление окон, иконки).
+Применяется plasma-apply-lookandfeel. Заметка: та же развилка светлая
+против тёмной, что и для ColorScheme, решается вместе.
+Кандидат: look_and_feel.
+
+config/kdeglobals [KDE] SingleClick = true
+default = false
+Одиночный клик открывает файлы и папки вместо двойного. Записывается
+kwriteconfig6 в группу [KDE].
+Кандидат: single_click.
+
+config/kdeglobals [General] XftHintStyle = hintfull
+default = hintfull, появился в kdeglobals, ранее в fontconfig был hintslight
+Полный хинтинг шрифтов. Заметка: дублируется в config/fontconfig/fonts.conf,
+решать где писать: kdeglobals или fontconfig.
+Кандидат: font_hint_style.
+
+config/kdeglobals [Sounds] Theme = freedesktop
+default = ocean, уточнить
+Тема системных звуков freedesktop вместо ocean. Синхронизируется в GTK
+(gtk-sound-theme-name) и xsettingsd (Net/SoundThemeName).
+Кандидат: sound_theme.
+
+config/kdeglobals [KDE] AutomaticLookAndFeelIdleInterval = 27
+default = уточнить
+Интервал автопереключения look and feel при бездействии, секунд. Появился
+при ручной настройке. Заметка: не факт, что осознанная правка, но не
+отсекаю.
+Кандидат: только если нужен.
+
+config/kcminputrc [Mouse] cursorTheme = Oxygen_Yellow
+default = breeze_cursors, уточнить
+Тема курсора Oxygen_Yellow, размер 72 в cursorSize. Синхронизируется в GTK
+(gtk-cursor-theme-name) и xsettingsd (Gtk/CursorThemeName, CursorThemeSize).
+Кандидат: cursor_theme.
+
+config/fontconfig/fonts.conf match edit name hintstyle = hintfull
+default = hintslight
+Полный хинтинг шрифтов на уровне fontconfig. Заметка: дублирует
+kdeglobals XftHintStyle, писать в одном месте.
+Кандидат: font_hint_style.
+
+config/fontconfig/fonts.conf добавлен <dir>~/.local/share/fonts</dir>
+default = отсутствовал
+Подключён пользовательский каталог шрифтов. Заметка: возможно, не нужен
+в таске, но не отсекаю.
+Кандидат: добавить каталог шрифтов.
+
+config/gtk-3.0/settings.ini [Settings] gtk-application-prefer-dark-theme = false
+default = true
+GTK-приложения светлые. Заметка: следствие светлой темы, отдельно не
+конфигурируется, применяется автоматически через xsettingsd/GTK sync.
+Кандидат: не задавать.
+
+config/gtk-3.0/settings.ini [Settings] gtk-icon-theme-name = breeze
+default = breeze-dark
+Иконки breeze вместо тёмных. Следствие светлой темы, отдельно не нужно.
+Кандидат: не задавать.
+
+config/gtk-3.0/settings.ini [Settings] gtk-shell-shows-menubar = 1
+default = 0, уточнить
+Показ глобального меню в строке заголовка GTK-приложений. Заметка:
+включает appmenu-gtk-module в gtk-modules.
+Кандидат: если нужен глобальный меню-бар.
+
+config/kdedefaults/kdeglobals [General] ColorScheme = BreezeLight
+config/kdedefaults/kdeglobals [Icons] Theme = breeze
+config/kdedefaults/ksplashrc [KSplash] Theme = org.kubuntulight.desktop
+config/kdedefaults/package = org.kubuntulight.desktop
+config/kdedefaults/plasmarc [Theme] name = kubuntu-light
+default = тёмные варианты
+Системные дефолты Kubuntu переведены на светлую тему. Заметка: это /etc/xdg
+уровень, таск пишет пользовательский уровень. Менять только если цель —
+светлая система по умолчанию.
+Кандидат: не задавать.
+
+Окна, рабочие столы, эффекты.
+
+config/kwinrc [Desktops] Number = 3
+default = 1
+Три виртуальных рабочих стола в один ряд. Записывается kwriteconfig6 в
+секцию [Desktops], ключ Number.
+Кандидат: desktop_count.
+
+config/kwinrc [Plugins] blurEnabled = true
+config/kwinrc [Plugins] cubeEnabled = true
+config/kwinrc [Plugins] fallapartEnabled = true
+config/kwinrc [Plugins] hidecursorEnabled = true
+config/kwinrc [Plugins] invertEnabled = true
+config/kwinrc [Plugins] magiclampEnabled = true
+config/kwinrc [Plugins] mouseclickEnabled = true
+config/kwinrc [Plugins] mousemarkEnabled = true
+config/kwinrc [Plugins] sheetEnabled = true
+config/kwinrc [Plugins] slidebackEnabled = true
+config/kwinrc [Plugins] touchpointsEnabled = true
+config/kwinrc [Plugins] minimizeallEnabled = false
+config/kwinrc [Plugins] squashEnabled = false
+default = false для каждого
+Включены и выключены эффекты KWin. Заметка: имеет смысл задавать группой
+как список включаемых и отключаемых эффектов, а не по одному ключу.
+Кандидат: enabled_effects, disabled_effects.
+
+config/kwinrc [Effect-zoom] ZoomFactor = 1.15
+default = 1.1, уточнить
+Коэффициент увеличения зум-эффекта.
+Кандидат: zoom_factor.
+
+config/kwinrc [Effect-zoom] MousePointer = 1
+default = 1, уточнить
+Показывать ли указатель мыши в увеличенной области.
+Кандидат: zoom_show_mouse_pointer.
+
+config/kwinrc [Effect-zoom] MouseTracking = 2
+default = 0, уточнить
+Режим слежения за мышью в зум-эффекте.
+Кандидат: zoom_mouse_tracking.
+
+config/kwinrc [Effect-zoom] PixelGridZoom = 10
+default = 4, уточнить
+Шаг пиксельной сетки зума.
+Кандидат: zoom_pixel_grid.
+
+config/kwinrc [Effect-wobblywindows] AdvancedMode = true
+config/kwinrc [Effect-wobblywindows] Drag = 92
+config/kwinrc [Effect-wobblywindows] MoveFactor = 20
+config/kwinrc [Effect-wobblywindows] Stiffness = 3
+default = уточнить
+Параметры эффекта желе: жёсткость 3, перетаскивание 92, фактор движения 20.
+Заметка: эффект декоративный, параметры тонкие; возможно, задавать только
+вкл/выкл.
+Кандидат: wobbly_*.
+
+config/kwinrc [Effect-mouseclick] LineWidth = 0.3
+config/kwinrc [Effect-mouseclick] RingCount = 7
+config/kwinrc [Effect-mouseclick] RingLife = 500
+config/kwinrc [Effect-mouseclick] RingSize = 128
+config/kwinrc [Effect-mouseclick] ShowText = false
+default = уточнить
+Анимация клика мыши: кольца, их число 7, время жизни 500, размер 128.
+Кандидат: mouse_click_effect_*.
+
+config/kwinrc [Effect-mousemark] Arrowdrawcontrol = false
+config/kwinrc [Effect-mousemark] Freedrawshift = false
+default = уточнить
+Эффект рисования меток мышью. Заметка: управляется через горячие клавиши
+ClearMouseMarks/ClearLastMouseMark, см. раздел клавиш.
+Кандидат: mousemark_*.
+
+config/kwinrc [Effect-cube] Background = SkyBox
+config/kwinrc [Effect-cube] CubeFaceDisplacement = 0
+config/kwinrc [Effect-cube] DistanceFactor = 1.01
+config/kwinrc [Effect-cube] SkyBox = /usr/share/wallpapers/Path/contents/images/2560x1600.jpg
+default = уточнить
+Эффект куба переключения рабочих столов с фоном SkyBox.
+Кандидат: cube_*.
+
+config/kwinrc [Effect-scale] Duration = 200
+config/kwinrc [Effect-scale] InScale = 0.01
+config/kwinrc [Effect-scale] OutScale = 0.01
+default = уточнить
+Эффект масштабирования окон при переключении.
+Кандидат: scale_*.
+
+config/kwinrc [Effect-shakecursor] Magnification = 4
+default = 7, уточнить
+Увеличение курсора при тряске мыши, было 7 стало 4.
+Кандидат: shake_cursor_magnification.
+
+config/kwinrc [Effect-login] FadeToBlack = true
+default = уточнить
+Затемнение при входе в сессию.
+Кандидат: login_fade_to_black.
+
+config/kwinrc [Effect-overview] BorderActivate = 9
+default = ElectricTopLeft, уточнить
+9 = ElectricNone, активация обзора по краю экрана отключена. Заметка:
+пользователь осознанно отключил границу обзора.
+Кандидат: overview_border_activate.
+
+config/kwinrc [MouseBindings] CommandAll2 = Activate, raise and move
+config/kwinrc [MouseBindings] CommandAll3 = Operations menu
+config/kwinrc [MouseBindings] CommandAllWheel = Change Opacity
+config/kwinrc [MouseBindings] CommandTitlebarWheel = Change Opacity
+default = уточнить
+Поведение кнопок и колеса мыши над окном: средняя кнопка поднимает и
+двигает, правая открывает меню, колесо меняет прозрачность. Заметка:
+CommandAllWheel по умолчанию обычно переключает рабочий стол; здесь
+заменено на прозрачность.
+Кандидат: mouse_bindings_*.
+
+config/kwinrc [NightColor] Active = true
+config/kwinrc [NightColor] Mode = DarkLight
+default = Active false, Mode Constant
+Ночной свет включён, режим по времени суток. Применяется через qdbus
+или kwriteconfig6.
+Кандидат: night_light_enabled, night_light_mode.
+
+config/kwinrc [Windows] BorderSnapZone = 32
+config/kwinrc [Windows] CenterSnapZone = 32
+config/kwinrc [Windows] ElectricBorderTiling = false
+config/kwinrc [Windows] ElectricBorders = 1
+config/kwinrc [Windows] Placement = Random
+config/kwinrc [Windows] RollOverDesktops = true
+config/kwinrc [Windows] WindowSnapZone = 32
+default = BorderSnapZone 10, WindowSnapZone 10, уточнить
+Прилипание окон к краям 32px, активные электрические края, случайное
+размещение новых окон, перекат при переключении столов. Заметка:
+ElectricBorders и Placement значения пометить на проверку дефолтов KWin.
+Кандидат: window_snap_*.
+
+config/kwinrc [org.kde.kdecoration2] ButtonsOnLeft = MSNE
+config/kwinrc [org.kde.kdecoration2] ButtonsOnRight = HFBIAX
+default = уточнить, у Plasma по умолчанию слева BIAX справа H
+Раскладка кнопок заголовка окна. Заметка: строки из букв кнопок, каждая
+буква кнопка.
+Кандидат: titlebar_buttons_left, titlebar_buttons_right.
+
+config/kwinoutputconfig.json [display eDP-1] brightness = 0.8
+default = 1
+Яркость встроенного дисплея 80 процентов. Заметка: значение записывается
+KWin при ручной настройке яркости, хранится в JSON.
+Кандидат: display_brightness.
+
+config/kwinoutputconfig.json [display eDP-1] scale = 1
+default = 1, ранее было 1.25
+Масштаб дисплея. Заметка: в журнале отмечено нет, пользователь откатил
+1.25 обратно на 1. В таск не включать.
+Кандидат: не задавать.
+
+Горячие клавиши.
+
+config/kglobalshortcutsrc [KDE Keyboard Layout Switcher] Switch keyboard layout to Spanish = Meta+E
+default = Meta+Q, уточнить
+Горячая клавиша переключения на испанскую раскладку. Заметка: относится
+к таску kde_keyboard_setup, который уже ведёт раскладки, а не к
+kde_settings. Учесть в том таске.
+Кандидат: не для kde_settings.
+
+config/kglobalshortcutsrc [kwin] ClearMouseMarks = Meta+Shift+F11
+config/kglobalshortcutsrc [kwin] ClearLastMouseMark = Meta+Shift+F12
+default = none
+Очистка всех меток и последней метки эффекта mouse mark.
+Кандидат: mousemark_clear_*.
+
+config/kglobalshortcutsrc [kwin] Cube = Meta+C
+default = none
+Включение эффекта куба по клавише.
+Кандидат: cube_shortcut.
+
+config/kglobalshortcutsrc [kwin] MinimizeAll = Meta+Shift+D
+config/kglobalshortcutsrc [kwin] MinimizeAllActiveScreen = (пусто)
+config/kglobalshortcutsrc [kwin] minimizeAllOthers = Meta+Shift+O
+config/kglobalshortcutsrc [kwin] minimizeAllOthersActiveScreen = (пусто)
+default = none
+Свернуть все окна и свернуть остальные окна. Заметка: в [Plugins]
+minimizeallEnabled=false, но клавиши назначены; проверить связку.
+Кандидат: minimize_all_shortcuts.
+
+config/kglobalshortcutsrc [kwin] ToggleCurrentThumbnail = Meta+Ctrl+T
+default = none
+Миниатюра текущего окна.
+Кандидат: thumbnail_shortcut.
+
+config/kglobalshortcutsrc [kwin] MoveZoomUp/Down/Left/Right = none
+default = Meta+Ctrl+стрелки, уточнить
+Перемещение зоны увеличения снято с клавиш. Заметка: стрелки освобождены,
+значения none.
+Кандидат: не задавать.
+
+Экран блокировки и сессия.
+
+config/kscreenlockerrc [Greeter][LnF][General] showMediaControls = false
+default = true, уточнить
+Скрыть медиа-контролы на экране блокировки.
+Кандидат: lockscreen_show_media_controls.
+
+config/kscreenlockerrc [Greeter][Wallpaper][org.kde.image][General] Image = file:///usr/share/wallpapers/Nexus/#day-night
+config/kscreenlockerrc [Greeter][Wallpaper][org.kde.image][General] PreviewImage = file:///usr/share/wallpapers/Nexus/#day-night
+default = file:///usr/share/wallpapers/Kubuntu/#day-night, уточнить
+Обои экрана блокировки Nexus со сменой день/ночь. Заметка: в журнале
+ранний сброс PreviewImage на null помечен нет, но текущее значение Nexus.
+Кандидат: lockscreen_wallpaper.
+
+config/ksmserverrc [General] loginMode = emptySession
+default = restorePreviousLogin, уточнить
+Пустая сессия при входе: окна прошлой сессии не восстанавливаются.
+Кандидат: session_login_mode.
+
+Питание.
+
+config/powerdevilrc [AC][Display] DimDisplayIdleTimeoutSec = 840
+config/powerdevilrc [AC][Display] TurnOffDisplayIdleTimeoutSec = 900
+default = уточнить
+От сети: затемнение дисплея через 840 секунд, выключение через 900.
+Кандидат: ac_dim_timeout, ac_off_timeout.
+
+config/powerdevilrc [AC][Performance] PowerProfile = performance
+default = balanced, уточнить
+От сети профиль производительности.
+Кандидат: ac_power_profile.
+
+config/powerdevilrc [AC][SuspendAndShutdown] AutoSuspendAction = 0
+config/powerdevilrc [AC][SuspendAndShutdown] AutoSuspendIdleTimeoutSec = 599940
+config/powerdevilrc [AC][SuspendAndShutdown] LidAction = 0
+config/powerdevilrc [Battery][SuspendAndShutdown] AutoSuspendAction = 0
+config/powerdevilrc [Battery][SuspendAndShutdown] LidAction = 0
+default = уточнить, у KDE по умолчанию сон по бездействию включён
+0 = бездействие, автопереход в сон отключён, крышка ничего не делает.
+Заметка: большой таймаут 599940 выглядит как отключение сна.
+Кандидат: suspend_disabled, lid_action.
+
+config/powerdevilrc [BatteryManagement] BatteryLowLevel = 17
+default = 20, уточнить
+Порог низкого заряда батареи 17 процентов.
+Кандидат: low_battery_level.
+
+config/powerdevilrc [LowBattery][Performance] PowerProfile = power-saver
+config/powerdevilrc [LowBattery][SuspendAndShutdown] LidAction = 0
+default = уточнить
+При низком заряде профиль экономии, крышка бездействует.
+Кандидат: low_battery_power_profile.
+
+Рабочий стол и обои.
+
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1][Wallpaper][org.kde.slideshow][General] SlideInterval = 64740
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1][Wallpaper][org.kde.slideshow][General] SlidePaths = /usr/share/wallpapers/
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1] wallpaperplugin = org.kde.slideshow
+default = интервал уточнить, плагин org.kde.image
+Слайд-шоу обоев: смена каждые 64740 секунд (около 18 часов), папка
+системных обоев. Заметка: 64740 секунд некратное число, возможно
+побочный эффект настройки; проверить.
+Кандидат: wallpaper_slideshow_*.
+
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1][Wallpaper][org.kde.potd][General] Provider = wcpotd
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1][Wallpaper][org.kde.potd][General] FillMode = 1
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][1][Wallpaper][org.kde.potd][General] UpdateOverMeteredConnection = 1
+default = уточнить
+Обои дня из Wikimedia (wcpotd), обновление по сети. Заметка: вместе со
+слайд-шоу даёт живые обои.
+Кандидат: wallpaper_potd_enabled.
+
+config/plasma-org.kde.plasma.desktop-appletsrc [Containments][2][Applets][3][Configuration] popupHeight = 513
+default = 509
+Высота всплывающего меню приложений kickoff. Заметка: мелочь, скорее
+шум, но не отсекаю.
+Кандидат: не задавать.
+
+Каталоги пользователя.
+
+config/user-dirs.dirs XDG_DOCUMENTS_DIR = $HOME/Downloads
+config/user-dirs.dirs XDG_MUSIC_DIR = $HOME/Downloads
+config/user-dirs.dirs XDG_PICTURES_DIR = $HOME/Downloads
+config/user-dirs.dirs XDG_PUBLICSHARE_DIR = $HOME/Downloads
+config/user-dirs.dirs XDG_TEMPLATES_DIR = $HOME/Downloads
+config/user-dirs.dirs XDG_VIDEOS_DIR = $HOME/Downloads
+default = отдельные каталоги $HOME/Documents, Music, Pictures и так далее
+Все пользовательские каталоги сведены в Downloads, Desktop остался.
+Заметка: существенная структурная правка, вероятно нужен отдельный шаг
+таска с созданием и перенаправлением каталогов.
+Кандидат: xdg_dirs.
+
+Приложения.
+
+config/konsolerc [Desktop Entry] DefaultProfile = Pyntara.profile
+default = Vs1.profile
+Профиль Konsole по умолчанию Pyntara. Заметка: файл профиля переименован
+local_share/konsole/Vs1.profile в Pyntara.profile.
+Кандидат: konsole_default_profile.
+
+config/krunnerrc [Plugins] krunner_keysEnabled = true
+config/krunnerrc [Plugins][Favorites] plugins = krunner_sessions,krunner_powerdevil,krunner_services,krunner_systemsettings
+default = уточнить
+Включён запуск по клавишам в KRunner и избранные плагины.
+Кандидат: krunner_favorite_plugins.
+
+config/systemmonitorrc [General] lastVisitedPage = processes.page
+default = уточнить
+Стартовая страница системного монитора — процессы. Заметка: в журнале
+ранее помечено шум, но текущее значение processes. Не отсекаю.
+Кандидат: не задавать.
+
+config/systemsettingsrc [systemsettings_sidebar_mode] HighlightNonDefaultSettings = true
+default = false, уточнить
+Подсветка нестандартных настроек в Настройках системы.
+Кандидат: highlight_non_default_settings.
+
+config/KDE/Sonnet.conf [General] autodetectLanguage = true
+config/KDE/Sonnet.conf [General] checkerEnabledByDefault = true
+config/KDE/Sonnet.conf [General] defaultLanguage = en_US
+config/KDE/Sonnet.conf [General] preferredLanguages = en_US
+default = уточнить
+Проверка орфографии: автоопределение языка, включена по умолчанию,
+язык en_US.
+Кандидат: spellcheck_default_language.
+
+config/kactivitymanagerd-pluginsrc [Plugin-org.kde.ActivityManager.Resources.Scoring] keep-history-for = 99999
+default = уточнить, у KDE порядок десятков дней
+Хранение истории активностей почти бесконечно. Заметка: 99999 выглядит
+как отключение ротации истории.
+Кандидат: activity_history_days.
+
+config/spectaclerc [ViewerWindow] 2560x1440 screen Height/Width = 571/808
+default = уточнить
+Геометрия окна просмотра скриншотов Spectacle. Заметка: мелочь, шум.
+Кандидат: не задавать.
+
+config/gwenviewrc [General] ThumbnailBarIsVisible = true
+default = false, уточнить
+Панель миниатюр в Gwenview видима. Заметка: мелочь.
+Кандидат: не задавать.
+
+Темы переключения окон.
+
+local_share/kwin/tabbox/circularalttab (новые файлы)
+local_share/kwin/tabbox/pie (новые файлы)
+default = нет, LayoutName в kwinrc отсутствует
+Установлены две темы переключения окон: Circular Alt+Tab v1.1.0 и Pie v1.0.
+Заметка: в config/kwinrc [TabBox] LayoutName не задан, активна стандартная
+org.kde.breeze.desktop. Темы установлены, но не выбраны.
+Кандидат: window_switcher_theme.
+
+Отдельные наблюдения.
+
+config/dconf/user изменён (бинарный)
+default = уточнить
+Бинарный dconf изменился. Заметка: вероятно следствие синхронизации GTK
+или стороннего приложения, содержимое не разобрано. Не отсекаю, но в
+таск скорее не нужно.
+Кандидат: не задавать.
+
+config/kdedefaults переведены на светлую тему
+default = тёмные
+Смотри запись про kdedefaults выше. Системные дефолты, не пользовательский
+уровень.
+Кандидат: не задавать.
