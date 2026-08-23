@@ -51,14 +51,18 @@ All parameters live in the [tor_setup] table of the config/ directory.
 
 An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1:9050 by default, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
 
+```bash
 ssh -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" <user>@<address>.onion
+```
 
 The virtual port is 22 by default, so -p is not needed. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
+```text
 Host <alias>
 HostName <address>.onion
 User <user>
 ProxyCommand nc -X 5 -x 127.0.0.1:9050 %h %p
+```
 
 The client must offer the deployed key; on the target machine the key is loaded once with ssh-add and the agent keeps it for the session. The connection is noticeably slower than the cleartext one, because the traffic crosses the Tor network in both directions, so the client timeouts from ssh_client_setup apply.
 

@@ -48,15 +48,19 @@ The keys file is the binary PrivateKeys record i2pd writes: the first 387 bytes 
 
 An SSH client reaches the tunnel through the local SOCKS proxy of i2pd, which the task enables. The proxy listens on 127.0.0.1:4447 by default, and the client routes the connection through it with a ProxyCommand:
 
+```bash
 ssh -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:4447 %h %p" <user>@<base32>.b32.i2p
+```
 
 The placeholders are the configured sshd Port directive, the user whose authorized_keys holds the deployed key, and the tunnel address from the task message. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
+```text
 Host <alias>
 HostName <base32>.b32.i2p
 User <user>
 Port 30222
 ProxyCommand nc -X 5 -x 127.0.0.1:4447 %h %p
+```
 
 The client must offer the deployed key; on the target machine the key is loaded once with ssh-add and the agent keeps it for the session. The connection is noticeably slower than the cleartext one, because the traffic crosses the I2P network in both directions, so the client timeouts from ssh_client_setup apply.
 
