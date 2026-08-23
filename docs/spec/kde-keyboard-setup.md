@@ -2,7 +2,7 @@
 
 There is a dedicated desktop task: kde_keyboard_setup.
 
-The task configures the KDE keyboard layouts and the layout indicator of the target user: the layout list and the switch option in kxkbrc, the indicator display style in the keyboard layout applet of the Plasma panel, and optional per-layout hotkeys in kglobalshortcutsrc. It belongs to the desktop mode and depends on users_setup, so the target user exists. The values are written with kwriteconfig6 as the target user, so the config files stay owned by that user, and the changes apply immediately through a kwin reload and a panel restart; the hotkeys are applied through the kglobalaccel daemon.
+The task configures the KDE keyboard layouts and the layout indicator of the target user: the layout list and the switch option in kxkbrc, the indicator display style in the keyboard layout applet of the Plasma panel, and optional per-layout hotkeys in kglobalshortcutsrc. It belongs to the desktop mode. The values are written with kwriteconfig6 as the target user, so the config files stay owned by that user, and the changes apply immediately through a kwin reload and a panel restart; the hotkeys are applied through the kglobalaccel daemon.
 
 ## Target configuration
 

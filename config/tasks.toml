@@ -49,27 +49,15 @@ depends = ["local_vault_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "users_setup"
-description = "Create and configure i, j, k users and required groups."
-depends = []
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
 name = "hostname"
 description = "Generate and persist random hostname."
 depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "passwords"
-description = "Derive root and user passwords from salt and hostname."
-depends = ["users_setup", "hostname"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
 name = "ssh_daemon_setup"
 description = "Install and configure SSH service with passwordless login keys."
-depends = ["users_setup"]
+depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -79,34 +67,16 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "power_behavior_configure_kde6"
-description = "Configure power behavior, no suspend on lid close or inactivity."
-depends = []
-modes = ["desktop"]
-
-[[tasks]]
-name = "desktop_apps_install"
-description = "Desktop defaults: Kate, terminal, language indicator, folders."
-depends = ["users_setup"]
-modes = ["desktop"]
-
-[[tasks]]
 name = "kde_keyboard_setup"
 description = "Configure KDE keyboard layouts and the layout indicator."
-depends = ["users_setup"]
+depends = []
 modes = ["desktop"]
 
 [[tasks]]
 name = "kde_settings"
 description = "Set the dark color scheme and the dark global theme for KDE."
-depends = ["users_setup"]
+depends = []
 modes = ["desktop"]
-
-[[tasks]]
-name = "imagemagick_install"
-description = "Install latest ImageMagick"
-depends = ["add_extra_repos"]
-modes = ["server", "desktop"]
 
 [[tasks]]
 name = "nextdns_setup_system_wide"

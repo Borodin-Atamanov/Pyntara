@@ -2,7 +2,7 @@
 
 There is a dedicated SSH server task: ssh_daemon_setup.
 
-The task installs the SSH server package, runs its systemd service and patches the daemon configuration through a drop-in file, so passwordless login with the pre-generated key pair works out of the box. The task belongs to all install modes and depends on users_setup, because the keys are deployed into the home directories of the configured users.
+The task installs the SSH server package, runs its systemd service and patches the daemon configuration through a drop-in file, so passwordless login with the pre-generated key pair works out of the box. The task belongs to all install modes and deploys the keys into the home directories of the configured users.
 
 ## Key pair
 
@@ -29,7 +29,7 @@ The keys are deployed into the .ssh directory of root (root_ssh_dir) and of ever
 2. The private and public key files are written with their configured modes and owned by the target user.
 3. The public key line is guaranteed in authorized_keys: the file is appended to, never rewritten, so keys the user added by hand survive; an already present key line is a no-op, so repeated runs do not accumulate duplicates.
 
-The task owns the key files: a file whose content differs from the repository copy is overwritten, so a manual edit cannot wedge the deployed keys. A configured user that does not exist yet is skipped with a log line, so the task stays idempotent while users_setup runs later.
+The task owns the key files: a file whose content differs from the repository copy is overwritten, so a manual edit cannot wedge the deployed keys. A configured user that does not exist yet is skipped with a log line, so the task stays idempotent.
 
 ## Service lifecycle
 

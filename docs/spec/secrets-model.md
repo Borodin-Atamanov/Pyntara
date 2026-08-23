@@ -70,21 +70,4 @@ The task is idempotent: without force it skips when the runtime vault already ex
 
 The default vault carries a well-known test value for this entry, mirroring its well-known vault password.
 
-## Salts
 
-The system uses salts:
-default salt from GitHub
-salt from KeePass, which overrides the default when present
-
-Salt replacement must be reflected in logs.
-
-## Password generation
-
-Passwords are generated from salt + random hostname for:
-root
-user i
-additional users j and k
-
-Default password lengths:
-root: 20 characters
-regular user: 16 characters

@@ -59,7 +59,7 @@ ssh_dir_mode = "0700"
 root_ssh_dir = "/root/.ssh"
 # Additional users whose .ssh directories receive the keys. A user that
 # does not exist yet is skipped with a log line, so the task stays
-# idempotent while users_setup runs later.
+# idempotent.
 users = ["i", "j", "k"]
 # sshd_config directives guaranteed by the task, written through augeas
 # into the drop-in. Each entry is a keyword and its value; a directive

@@ -2,7 +2,7 @@
 
 There is a dedicated desktop task: kde_settings.
 
-The task configures the dark appearance and the input and keyboard settings of the target user's KDE desktop: the color scheme that turns every Qt and KDE window dark, the global theme (look and feel) that covers the whole desktop, the NumLock state on startup, the touchpad preferences and the Wayland virtual keyboard. It belongs to the desktop mode and depends on users_setup, so the target user exists. The appearance values are applied with the plasma-apply tools and the input values with kwriteconfig6, all as the target user, so the config files stay owned by that user and the changes apply when a desktop session is running.
+The task configures the dark appearance and the input and keyboard settings of the target user's KDE desktop: the color scheme that turns every Qt and KDE window dark, the global theme (look and feel) that covers the whole desktop, the NumLock state on startup, the touchpad preferences and the Wayland virtual keyboard. It belongs to the desktop mode. The appearance values are applied with the plasma-apply tools and the input values with kwriteconfig6, all as the target user, so the config files stay owned by that user and the changes apply when a desktop session is running.
 
 ## Target configuration
 

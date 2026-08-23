@@ -31,7 +31,7 @@ directory of root and of every configured user and guarantees the
 public key in authorized_keys without removing other keys, so
 passwordless login works while the private key stays encrypted at rest.
 A configured user that does not exist yet is skipped with a log line,
-so the task stays idempotent while the users_setup task runs later.
+so the task stays idempotent.
 The task owns the key files and the drop-in. The service is enabled
 and started when inactive; a change that affects the port (a port
 change or a socket disable) is applied with a restart, any other

@@ -67,7 +67,6 @@ Spec — functional specification, what the system does and how. Design rational
 `docs/spec/ssh-daemon-setup.md` — SSH server install, drop-in configuration, pre-generated key deployment
 `docs/spec/ssh-client-setup.md` — system-wide SSH client defaults, drop-in configuration
 `docs/spec/users-and-host.md` — hostname, ZRAM, zswap, swapfile
-`docs/spec/desktop-apps.md` — ImageMagick, FFmpeg, scrcpy, Kate, terminal, browsers
 `docs/spec/kde-keyboard-setup.md` — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
 `docs/spec/kde-settings.md` — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
 
