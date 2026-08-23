@@ -24,7 +24,7 @@ at the configured profile_id_file_path with the configured
 profile_id_file_mode. dnsproxy_setup reads it to render its NextDNS
 upstreams (docs/spec/dnsproxy-setup.md), and the System Metrics
 collector reads it into network.json through the nextdns module
-(docs/spec/system-metrics.md, section Collected data). The file is
+([Collected data](docs/spec/system-metrics.md#collected-data)). The file is
 rewritten on a profile change and in force mode; the task is idempotent:
 it skips when the file already carries the selected profile. A missing
 profile group or an empty profile pool is a failure: the file is never

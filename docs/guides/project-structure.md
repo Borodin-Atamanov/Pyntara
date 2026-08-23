@@ -4,7 +4,7 @@ This document defines the target repository layout for Pyntara and explains what
 
 ## Configuration editing
 
-Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments. The single shared implementation of the line-edit approach lives in src/pyntara/config_edit.py; tasks import its functions instead of copying the logic (docs/guides/project-rules.md section 4).
+Many tasks must not overwrite whole files; they must perform targeted line-level edits while preserving unrelated content and comments. The single shared implementation of the line-edit approach lives in src/pyntara/config_edit.py; tasks import its functions instead of copying the logic ([General engineering requirements](docs/guides/project-rules.md#4-general-engineering-requirements)).
 
 replace_line_by_string edits text in memory: every line containing the needle or the slide is replaced with the slide, a line containing the stop word is left untouched, a line equal to the slide is never touched, and the slide is appended when nothing matched and add_slide_if_no_needle is true. It returns the new text and whether anything changed.
 
@@ -17,7 +17,7 @@ The helpers fit files where one setting is one line and the line order does not 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.
 README.md — Quick start, installation modes, and links to detailed docs.
 config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.
-hooks/pre-commit — Version bump hook: bumps the patch version before every commit (docs/guides/developer-guide.md, section Version bumping).
+hooks/pre-commit — Version bump hook: bumps the patch version before every commit (docs/guides/developer-guide.md, [Version bumping](docs/guides/developer-guide.md#version-bumping)).
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
@@ -28,12 +28,8 @@ guides/ — How to work with the project
 
 ## secrets/
 
-secrets/default.vault — Default/fallback KeePass database for test or recovery scenarios. In git.
-secrets/production.vault — Production KeePass database with real secrets. In git.
-secrets/default.password — Password for default.vault (well-known test value). In git.
-secrets/production.password — Password for production.vault. Not in git (.gitignore).
+The four secret files (default/production vaults and their passwords) are listed in [Secrets files](docs/contracts/bootstrap.md#12-secrets-files); their structure is described in [Secrets model](docs/spec/secrets-model.md).
 
-The layout of both vault files is described in the [vault_structure] table of the config/ directory, the single source of truth for the vault structure (docs/spec/secrets-model.md).
 secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).
 secrets/read_google_script_credentials.py — Prints the script ID, the deployment ID and the shared auth key of the System Metrics Google Drive web app from the google_script_key entry of a vault (username, the deployment ID embedded in url, and the password field); consumed by task_data/system_metrics_setup/deploy_google_script.sh, which substitutes the key into the __GOOGLE_SCRIPT_KEY__ template placeholder of google_drive_script.js.
 
@@ -49,7 +45,7 @@ src/pyntara/context.py — Context frozen dataclass.
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
 src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries, proquint_encode and proquint_decode pronounceable encoding of arbitrary bytes (draft-rayner-proquint) with the alphabet and bit layout fixed in the module, plus trim_whitespace, backoff_delay, ensure_root_owner, package and os-release helpers.
 src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in config file through augtool. Used by ssh_daemon_setup and ssh_client_setup.
-src/pyntara/config_edit.py — Line-level config editing helpers (section Configuration editing).
+src/pyntara/config_edit.py — Line-level config editing helpers (see [Configuration editing](#configuration-editing)).
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.
 src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel address from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.
 src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.
@@ -66,9 +62,7 @@ src/pyntara/metrics_send.py — Queue sender: dispatches entries from main_outbo
 src/pyntara/metrics_commit.py — Commit command logic: the thin bash script generated by system_metrics_setup delegates to this module for testing.
 src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
 
-Not implemented yet (target modules, see docs/simplified-architecture.md):
-src/pyntara/secrets_store.py — Vault loading/decryption and controlled secret access API.
-src/pyntara/systemd.py — Creation/update of systemd unit files and timers.
+Modules planned but not implemented yet are listed in [What is next](docs/simplified-architecture.md#5-what-is-next-separate-changes).
 
 ### src/pyntara/tasks/
 

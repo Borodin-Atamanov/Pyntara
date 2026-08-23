@@ -4,9 +4,7 @@ There is a dedicated System Metrics installation task.
 
 ## Network detection
 
-At system start, network availability is checked.
-If network is unavailable, the service enters the retry mode: the pause grows by the backoff_multiplier factor each consecutive failed cycle, starting from backoff_base_seconds and capped at backoff_max_seconds. All three values are whole seconds, so every pause is a whole number of seconds.
-When network appears, System Metrics attempts to send data.
+At system start the service checks network availability. When network is unavailable, it enters the retry mode of [Schedule and retry](#schedule-and-retry); when network appears, it attempts to send.
 
 ## Delivery channels
 
@@ -27,7 +25,7 @@ PDF encryption password is generated during Pyntara initialization from:
 KeePass salt (decrypted with admin password during installation)
 hostname
 
-Hostname is generated randomly as a proquint word pair (docs/spec/users-and-host.md, section Hostname).
+Hostname is generated randomly as a proquint word pair ([Hostname](docs/spec/users-and-host.md#hostname)).
 
 Unencrypted PDF versions must never be saved to disk (in-memory generation only).
 
@@ -39,12 +37,6 @@ System Metrics attempts to send immediately after computer boot.
 
 Retry mode:
 The service runs in the normal mode while it can send: every cycle drains all uploadable entries of the Google Drive channel queue. When a cycle made at least one send attempt and none succeeded (a curl failure, a timeout or a non-OK answer), the service switches to the retry mode. In the retry mode every cycle sends one randomly chosen uploadable entry, so one permanently rejected entry never blocks the drain of the rest; after n consecutive failed cycles the pause is delay(n) = min(backoff_base_seconds x backoff_multiplier^(n-1), backoff_max_seconds): the first failure waits the base, every further failure multiplies the pause by the integer multiplier until the ceiling. The parameters live in the config/ directory under [system_metrics_setup] (defaults: 2 seconds, a multiplier of 2, a ceiling of 4 hours). All three values are whole seconds, so every delay is a positive whole number of seconds by construction and never drops below the base. A cycle with a successful send, or with no send attempt at all (an empty queue, missing credentials or only non-uploadable entries), returns the service to the normal mode and resets k to zero. The counter lives in memory only, so a service restart starts from the normal mode, which matches the immediate send after boot.
-
-Base accumulation/retry behavior:
-System Metrics data accumulates for one day
-after successful send, next send is scheduled for 12:00 local time
-if unsent files exist, retries continue with sqrt(2) interval growth
-retries with this scheme run only if more than one day has passed since last send
 
 ## Collected data
 
@@ -76,14 +68,14 @@ Directory layout under system_metrics_dir, configured as system_metrics_setup.sy
 4. telegram — the Telegram channel queue, reserved for the future channel. The directory appears when the channel is implemented.
 5. main_sent — the sent archive. Senders move successfully sent entries here.
 
-Entry lifecycle:
+### Entry lifecycle
 
 1. The producer creates an artifact (encrypted PDF in memory, install log, anything) and runs commit_system_metrics FILE. The thin command checks that the file is regular and non-empty and publishes it into the spool atomically under the original name with mode 0600 and the commit time; a name that is already pending in the spool is an explicit error, never an overwrite.
 2. The path unit system_metrics-ingest.path watches the spool with inotify and starts the ingest service system_metrics-ingest.service on every file appearance; there is no polling. The service runs venv_dir/bin/python -m pyntara.metrics_ingest system_config_path, copies each spool file into temp with the queue file mode and the spool modification time (the commit time), publishes it into main_outbox under the original name plus a random alphanumeric suffix through a hard link and removes the spool entry. The source file is never modified.
 3. The dispatcher creates one hard link per main_outbox entry in every channel queue, and only after every link succeeds removes the name from main_outbox. A channel enabled later receives only entries committed after its enablement.
 4. Every channel drains its queue independently: entries are ordered by modification time according to send_order, the suffix is stripped and the original name is uploaded; on success the entry name is moved to main_sent, on failure it stays for retry. When a cycle made at least one send attempt and none succeeded, the loop switches to the retry mode described in the Schedule and retry section.
 
-Queue rules:
+### Queue rules
 
 1. Entry names preserve the original file name; hidden files are not filtered. A random alphanumeric suffix of queue_file_suffix_length characters is appended after a dot: <original>.<suffix>. The suffix lets entries with identical original names coexist; the sender strips exactly suffix_length + 1 trailing characters, so the remote server receives the original name.
 2. Empty files are rejected at ingest; the sender additionally skips empty entries as a second line of defense.

@@ -1,4 +1,4 @@
-# Pyntara 0.2.74
+# Pyntara 0.2.75
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -62,7 +62,7 @@ bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
 
 Engine values and the task catalog live in the config/ directory at the repository root,
 one TOML file per top-level section, joined by the loader into a single document
-([docs/contracts/architecture.md](docs/contracts/architecture.md) section 3).
+([Configuration](docs/contracts/architecture.md#3-configuration)).
 
 The interactive installer variant does not work and its development is stopped.
 
