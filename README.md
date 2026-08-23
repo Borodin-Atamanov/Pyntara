@@ -1,9 +1,13 @@
-# Pyntara
+# Pyntara version 0.2.72
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
 
-Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, configures ZRAM and swap, sets up SSH, DNS and anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment, and enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
+Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server
+in one command. It installs packages, configures ZRAM and swap, sets up SSH, DNS and
+anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment, and
+enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A
+single bootstrap script downloads the repo and launches the Python provisioning engine.
 
 ## Start
 
@@ -15,9 +19,14 @@ inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
 bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
 ```
 
-The installer runs non-interactively and never asks the user anything. The production vault password is optional: enter it once via read -s (hidden input) and pass it through the PYNTARA_VAULT_PASSWORD environment variable to use the production vault. Without a password, or with a password that matches no vault, the installer shows a short countdown notice and falls back to the default vault.
+The installer runs non-interactively and never asks the user anything. The production vault
+password is optional: enter it once via read -s (hidden input) and pass it through the
+PYNTARA_VAULT_PASSWORD environment variable to use the production vault. Without a password,
+or with a password that matches no vault, the installer shows a short countdown notice and
+falls back to the default vault.
 
-Optional environment variables can be added inside the sudo bash -c block, separated by spaces before the script invocation:
+Optional environment variables can be added inside the sudo bash -c block, separated by
+spaces before the script invocation:
 
 PYNTARA_VAULT_SOURCE — production or default. When omitted, the source is auto-detected from the password.
 
@@ -25,11 +34,20 @@ PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is a
 
 PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
 
-PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state is already reached. When omitted, no task is forced. The keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive. Invalid names are reported with a countdown notice and ignored.
+PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state
+is already reached. When omitted, no task is forced. The keyword all forces every task of
+the resolved run set. Task names and the keyword are case-insensitive. Invalid names are
+reported with a countdown notice and ignored.
 
-PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_extra_repos and cli_tools run before package operations. Use for test or offline runs; omit it in real provisioning so packages resolve from a fresh index.
+PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_extra_repos
+and cli_tools run before package operations. Use for test or offline runs; omit it in real
+provisioning so packages resolve from a fresh index.
 
-Quick test run without the apt index refresh. The flag sits in the prefix of the script invocation, so it reaches the installer and the engine; a flag joined with && would only set a shell variable and never reach the installer. The password is asked only when PYNTARA_VAULT_PASSWORD is not already set in the terminal; after the first run the variable stays exported in the same terminal, so a repeated run skips the prompt:
+Quick test run without the apt index refresh. The flag sits in the prefix of the script
+invocation, so it reaches the installer and the engine; a flag joined with && would only set
+a shell variable and never reach the installer. The password is asked only when
+PYNTARA_VAULT_PASSWORD is not already set in the terminal; after the first run the variable
+stays exported in the same terminal, so a repeated run skips the prompt:
 
 ```bash
 { [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]] \
@@ -42,7 +60,9 @@ Quick test run without the apt index refresh. The flag sits in the prefix of the
 bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
 ```
 
-Engine values and the task catalog live in the config/ directory at the repository root, one TOML file per top-level section, joined by the loader into a single document ([docs/contracts/architecture.md](docs/contracts/architecture.md) section 3).
+Engine values and the task catalog live in the config/ directory at the repository root,
+one TOML file per top-level section, joined by the loader into a single document
+([docs/contracts/architecture.md](docs/contracts/architecture.md) section 3).
 
 The interactive installer variant does not work and its development is stopped.
 
@@ -50,33 +70,40 @@ The interactive installer variant does not work and its development is stopped.
 
 AI-Agent rules: [AGENTS.md](AGENTS.md)
 
-Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions testable in code:
-[docs/contracts/architecture.md](docs/contracts/architecture.md) — runtime boundaries, composition root, Context, resilience rule
-[docs/contracts/bootstrap.md](docs/contracts/bootstrap.md) — bootstrap installer contract for inst.sh
-[docs/contracts/task-model.md](docs/contracts/task-model.md) — task model, idempotency contract, catalog and dependencies
+Contracts — mandatory runtime specifications, must not be violated. Only MUST assertions
+testable in code:
 
-Spec — functional specification, what the system does and how. Design rationale, formulas, parameters. May reference contracts but never repeat them:
-[docs/spec/install-modes.md](docs/spec/install-modes.md) — minimal/server/desktop modes, auto-detection, task and force selection
-[docs/spec/secrets-model.md](docs/spec/secrets-model.md) — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
-[docs/spec/system-metrics.md](docs/spec/system-metrics.md) — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
-[docs/spec/nextdns-profile.md](docs/spec/nextdns-profile.md) — NextDNS profile selection and the profile ID file read by dnsproxy and System Metrics
-[docs/spec/dnsproxy-setup.md](docs/spec/dnsproxy-setup.md) — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
-[docs/spec/i2pd-service.md](docs/spec/i2pd-service.md) — i2pd service install from GitHub releases, version and asset selection, download trust
-[docs/spec/yggdrasil-service.md](docs/spec/yggdrasil-service.md) — yggdrasil service install from GitHub releases, version and asset selection, download trust
-[docs/spec/tor-service.md](docs/spec/tor-service.md) — Tor install from the Ubuntu archive, SSH onion service, address file and client side
-[docs/spec/ssh-daemon-setup.md](docs/spec/ssh-daemon-setup.md) — SSH server install, drop-in configuration, pre-generated key deployment
-[docs/spec/ssh-client-setup.md](docs/spec/ssh-client-setup.md) — system-wide SSH client defaults, drop-in configuration
-[docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile
-[docs/spec/kde-keyboard-setup.md](docs/spec/kde-keyboard-setup.md) — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
-[docs/spec/kde-settings.md](docs/spec/kde-settings.md) — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
+1. [docs/contracts/architecture.md](docs/contracts/architecture.md) — runtime boundaries, composition root, Context, resilience rule
+2. [docs/contracts/bootstrap.md](docs/contracts/bootstrap.md) — bootstrap installer contract for inst.sh
+3. [docs/contracts/task-model.md](docs/contracts/task-model.md) — task model, idempotency contract, catalog and dependencies
+
+Spec — functional specification, what the system does and how. Design rationale, formulas,
+parameters. May reference contracts but never repeat them:
+
+4. [docs/spec/install-modes.md](docs/spec/install-modes.md) — minimal/server/desktop modes, auto-detection, task and force selection
+5. [docs/spec/secrets-model.md](docs/spec/secrets-model.md) — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
+6. [docs/spec/system-metrics.md](docs/spec/system-metrics.md) — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
+7. [docs/spec/nextdns-profile.md](docs/spec/nextdns-profile.md) — NextDNS profile selection and the profile ID file read by dnsproxy and System Metrics
+8. [docs/spec/dnsproxy-setup.md](docs/spec/dnsproxy-setup.md) — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
+9. [docs/spec/i2pd-service.md](docs/spec/i2pd-service.md) — i2pd service install from GitHub releases, version and asset selection, download trust
+10. [docs/spec/yggdrasil-service.md](docs/spec/yggdrasil-service.md) — yggdrasil service install from GitHub releases, version and asset selection, download trust
+11. [docs/spec/tor-service.md](docs/spec/tor-service.md) — Tor install from the Ubuntu archive, SSH onion service, address file and client side
+12. [docs/spec/ssh-daemon-setup.md](docs/spec/ssh-daemon-setup.md) — SSH server install, drop-in configuration, pre-generated key deployment
+13. [docs/spec/ssh-client-setup.md](docs/spec/ssh-client-setup.md) — system-wide SSH client defaults, drop-in configuration
+14. [docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile
+15. [docs/spec/kde-keyboard-setup.md](docs/spec/kde-keyboard-setup.md) — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
+16. [docs/spec/kde-settings.md](docs/spec/kde-settings.md) — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
 
 Guides — how to work with the project:
-[docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools
-[docs/guides/project-rules.md](docs/guides/project-rules.md) — code conventions: output policy, datetime format, engineering standards
-[docs/guides/developer-guide.md](docs/guides/developer-guide.md) — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow, task best practices
+
+17. [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools
+18. [docs/guides/project-rules.md](docs/guides/project-rules.md) — code conventions: output policy, datetime format, engineering standards
+19. [docs/guides/developer-guide.md](docs/guides/developer-guide.md) — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow, task best practices
 
 Architecture decisions:
-[docs/simplified-architecture.md](docs/simplified-architecture.md) — approved simplification rationale, resilience rule
+
+20. [docs/simplified-architecture.md](docs/simplified-architecture.md) — approved simplification rationale, resilience rule
 
 Plans:
-[docs/TODO.md](docs/TODO.md) — planned future work, ideas for new tasks
+
+21. [docs/TODO.md](docs/TODO.md) — planned future work, ideas for new tasks

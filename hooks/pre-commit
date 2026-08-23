@@ -4,7 +4,8 @@
 # hook still exits 0, so a broken bump never blocks a commit. The version
 # grows by one patch step on each successful run; the single version
 # source is src/pyntara/__init__.py, and the PYNTARA_VERSION line of
-# inst.sh is kept in sync by the same module (src/pyntara/bump_version.py).
+# inst.sh plus the README title line are kept in sync by the same module
+# (src/pyntara/bump_version.py).
 set -u
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -18,5 +19,5 @@ if ! PYTHONPATH="$repo_root/src" python3 -m pyntara.bump_version --root "$repo_r
     exit 0
 fi
 
-git add "$repo_root/src/pyntara/__init__.py" "$repo_root/inst.sh"
+git add "$repo_root/src/pyntara/__init__.py" "$repo_root/inst.sh" "$repo_root/README.md"
 exit 0

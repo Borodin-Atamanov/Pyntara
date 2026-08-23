@@ -19,8 +19,8 @@ from pyntara.bump_version import (
 )
 
 
-def make_repo(tmp_path: Path, version: str) -> tuple[Path, Path, Path]:
-    """A temporary package version file and installer, both at version."""
+def make_repo(tmp_path: Path, version: str) -> tuple[Path, Path, Path, Path]:
+    """A temporary package version file, installer and README, all at version."""
 
     package_file = tmp_path / "src" / "pyntara" / "__init__.py"
     package_file.parent.mkdir(parents=True)
@@ -31,7 +31,9 @@ def make_repo(tmp_path: Path, version: str) -> tuple[Path, Path, Path]:
     installer_file.write_text(
         f'#!/usr/bin/env bash\n\nPYNTARA_VERSION="{version}"\n', encoding="utf-8"
     )
-    return tmp_path, package_file, installer_file
+    readme_file = tmp_path / "README.md"
+    readme_file.write_text(f"# Pyntara version {version}\n", encoding="utf-8")
+    return tmp_path, package_file, installer_file, readme_file
 
 
 def test_next_patch_version_increments_patch() -> None:
@@ -47,7 +49,7 @@ def test_next_patch_version_rejects_invalid(version: str) -> None:
 
 
 def test_read_current_version_reads_version_line(tmp_path: Path) -> None:
-    _, package_file, _ = make_repo(tmp_path, "0.1.0")
+    _, package_file, _, _ = make_repo(tmp_path, "0.1.0")
     assert read_current_version(package_file) == "0.1.0"
 
 
@@ -59,7 +61,7 @@ def test_read_current_version_missing_line_is_an_error(tmp_path: Path) -> None:
 
 
 def test_set_version_in_file_replaces_version_line(tmp_path: Path) -> None:
-    _, package_file, _ = make_repo(tmp_path, "0.1.0")
+    _, package_file, _, _ = make_repo(tmp_path, "0.1.0")
     changed = set_version_in_file(
         package_file, '__version__ = "', '__version__ = "0.1.1"'
     )
@@ -76,18 +78,21 @@ def test_set_version_in_file_missing_line_is_untouched(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "some line\n"
 
 
-def test_bump_version_in_repo_updates_package_and_installer(tmp_path: Path) -> None:
-    root, package_file, installer_file = make_repo(tmp_path, "0.1.0")
+def test_bump_version_in_repo_updates_package_installer_and_readme(
+    tmp_path: Path,
+) -> None:
+    root, package_file, installer_file, readme_file = make_repo(tmp_path, "0.1.0")
     new_version = bump_version_in_repo(root)
     assert new_version == "0.1.1"
     assert read_current_version(package_file) == "0.1.1"
     assert 'PYNTARA_VERSION="0.1.1"' in installer_file.read_text(encoding="utf-8")
+    assert "# Pyntara version 0.1.1" in readme_file.read_text(encoding="utf-8")
 
 
 def test_bump_version_in_repo_keeps_installer_without_version_line(
     tmp_path: Path,
 ) -> None:
-    root, package_file, _ = make_repo(tmp_path, "0.1.0")
+    root, package_file, _, _ = make_repo(tmp_path, "0.1.0")
     installer_file = root / "inst.sh"
     installer_file.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     new_version = bump_version_in_repo(root)
@@ -96,10 +101,30 @@ def test_bump_version_in_repo_keeps_installer_without_version_line(
     assert installer_file.read_text(encoding="utf-8") == "#!/usr/bin/env bash\n"
 
 
+def test_bump_version_in_repo_keeps_readme_without_title_line(
+    tmp_path: Path,
+) -> None:
+    root, package_file, _, readme_file = make_repo(tmp_path, "0.1.0")
+    readme_file.write_text("# Not a version title\n", encoding="utf-8")
+    new_version = bump_version_in_repo(root)
+    assert new_version == "0.1.1"
+    assert read_current_version(package_file) == "0.1.1"
+    assert readme_file.read_text(encoding="utf-8") == "# Not a version title\n"
+
+
+def test_bump_version_in_repo_without_readme_skips_it(tmp_path: Path) -> None:
+    root, package_file, installer_file, readme_file = make_repo(tmp_path, "0.1.0")
+    readme_file.unlink()
+    new_version = bump_version_in_repo(root)
+    assert new_version == "0.1.1"
+    assert read_current_version(package_file) == "0.1.1"
+    assert 'PYNTARA_VERSION="0.1.1"' in installer_file.read_text(encoding="utf-8")
+
+
 def test_main_print_only_does_not_write(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root, package_file, _ = make_repo(tmp_path, "0.1.0")
+    root, package_file, _, _ = make_repo(tmp_path, "0.1.0")
     assert main(["--root", str(root), "--print-only"]) == 0
     assert capsys.readouterr().out.strip() == "0.1.1"
     assert read_current_version(package_file) == "0.1.0"
@@ -108,7 +133,7 @@ def test_main_print_only_does_not_write(
 def test_main_bumps_and_prints(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root, package_file, _ = make_repo(tmp_path, "0.1.0")
+    root, package_file, _, _ = make_repo(tmp_path, "0.1.0")
     assert main(["--root", str(root)]) == 0
     assert capsys.readouterr().out.strip() == "0.1.1"
     assert read_current_version(package_file) == "0.1.1"

@@ -55,14 +55,17 @@ EOF
 
 PYNTARA_VERSION="0.1.0"
 EOF
+    cat > "$tmp/README.md" <<'EOF'
+# Pyntara version 0.1.0
+EOF
     git -C "$tmp" add -A
     git -C "$tmp" commit -q -m "initial"
     git -C "$tmp" config core.hooksPath "$(dirname "$HOOK")"
 }
 
-test_commit_bumps_package_and_installer() {
-    # A normal commit must raise the patch version in both files inside
-    # the same commit.
+test_commit_bumps_package_installer_and_readme() {
+    # A normal commit must raise the patch version in all three files
+    # inside the same commit.
     local tmp
     tmp="$(mktemp -d)"
     make_versioned_repo "$tmp"
@@ -78,6 +81,12 @@ test_commit_bumps_package_and_installer() {
     if ! grep -q 'PYNTARA_VERSION="0.1.1"' "$tmp/inst.sh"; then
         echo "installer version not bumped to 0.1.1" >&2
         cat "$tmp/inst.sh" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q '# Pyntara version 0.1.1' "$tmp/README.md"; then
+        echo "readme version not bumped to 0.1.1" >&2
+        cat "$tmp/README.md" >&2
         rm -rf "$tmp"
         return 1
     fi
@@ -110,7 +119,7 @@ test_commit_without_change_does_not_block() {
     rm -rf "$tmp"
 }
 
-run_test test_commit_bumps_package_and_installer
+run_test test_commit_bumps_package_installer_and_readme
 run_test test_commit_without_change_does_not_block
 
 echo "Tests passed: $pass_count, failed: $fail_count"

@@ -3,10 +3,11 @@
 The pre-commit hook (hooks/pre-commit) runs this module before every
 commit so the version grows with each commit. The single version source
 is src/pyntara/__init__.py (pyproject.toml reads it through hatchling);
-the hook keeps the PYNTARA_VERSION line of inst.sh in sync through the
-shared line editor replace_line_by_string (config_edit.py), never a copy
-of the edit logic. A missing version line is left untouched: the hook
-must never invent content.
+the hook keeps the PYNTARA_VERSION line of inst.sh and the README title
+line in sync through the shared line editor replace_line_by_string
+(config_edit.py), never a copy of the edit logic. A missing version line
+is left untouched and a missing README is skipped: the hook must never
+invent content.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from pyntara.config_edit import replace_line_by_string
 _VERSION_PATTERN = re.compile(r'__version__ = "([^"]+)"')
 _PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")
 _INSTALLER_VERSION_FILE = Path("inst.sh")
+_README_VERSION_FILE = Path("README.md")
+_README_TITLE_PREFIX = "# Pyntara version "
 
 
 def read_current_version(version_file: Path) -> str:
@@ -60,15 +63,17 @@ def set_version_in_file(path: Path, needle: str, slide: str) -> bool:
 
 
 def bump_version_in_repo(root: Path) -> str:
-    """Bump the patch version in the package and the installer; return it.
+    """Bump the patch version in the package, installer and README; return it.
 
     The package version file is the source of truth; the installer line
-    follows it. Both updates are best-effort: a file missing its version
-    line stays untouched and never fails the bump.
+    and the README title follow it. All updates are best-effort: a file
+    missing its version line stays untouched, a missing README is
+    skipped, and none of that ever fails the bump.
     """
 
     version_file = root / _PACKAGE_VERSION_FILE
     installer_file = root / _INSTALLER_VERSION_FILE
+    readme_file = root / _README_VERSION_FILE
     new_version = next_patch_version(read_current_version(version_file))
     set_version_in_file(
         version_file, '__version__ = "', f'__version__ = "{new_version}"'
@@ -76,6 +81,10 @@ def bump_version_in_repo(root: Path) -> str:
     set_version_in_file(
         installer_file, 'PYNTARA_VERSION="', f'PYNTARA_VERSION="{new_version}"'
     )
+    if readme_file.exists():
+        set_version_in_file(
+            readme_file, _README_TITLE_PREFIX, f"{_README_TITLE_PREFIX}{new_version}"
+        )
     return new_version
 
 
