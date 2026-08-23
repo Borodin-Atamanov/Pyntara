@@ -79,18 +79,6 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "proxy_server"
-description = "Local authenticated proxy service with password and port."
-depends = ["local_vault_setup"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "proxy_tunnel"
-description = "Local tunnel to remote proxy or VPN."
-depends = ["proxy_server"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
 name = "power_behavior_configure_kde6"
 description = "Configure power behavior, no suspend on lid close or inactivity."
 depends = []

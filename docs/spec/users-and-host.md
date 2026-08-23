@@ -5,7 +5,7 @@ Task descriptions and dependencies are in the catalog; this document covers only
 
 ## Hostname
 
-Task: hostname. The machine hostname is a random proquint word pair: four random bytes encoded by the shared proquint_encode helper into two five-letter words joined by a dash, for example lusab-babad. The randomness comes from the secrets module, so the name is cryptographically strong: the hostname feeds password generation (docs/spec/secrets-model.md) and the deterministic NextDNS profile choice (docs/spec/networking.md), so it must not be guessable.
+Task: hostname. The machine hostname is a random proquint word pair: four random bytes encoded by the shared proquint_encode helper into two five-letter words joined by a dash, for example lusab-babad. The randomness comes from the secrets module, so the name is cryptographically strong: the hostname feeds password generation (docs/spec/secrets-model.md) and the deterministic NextDNS profile choice (docs/spec/nextdns-profile.md), so it must not be guessable.
 
 The task writes the name into the configured hostname.hostname_file and applies it to the running kernel through the configured hostname.set_hostname_command, so socket.gethostname() returns the new name for the dependent tasks. The task is idempotent: it skips when the hostname file already carries a name that decodes as a proquint (so it was set by this task) and the kernel already knows it; force mode always generates a fresh name.
 
@@ -41,24 +41,4 @@ RAM and free disk space are both considered.
 
 These tasks create system services executed at system startup.
 
-## NTP
 
-Use a large server list, starting from the most accurate and reliable.
-
-## Power management
-
-Do not suspend/sleep when lid is closed.
-Do not suspend on user inactivity.
-
-## Session restore
-
-Do not restore previous windows at next system start.
-
-## Logs and services
-
-Pyntara creates background services.
-Services write logs to proper Linux-standard storage locations.
-Logs must be rotated.
-Other logs are usually not sent regularly to System Metrics and remain local with rotation.
-Service logs should be verbose by default (detail levels), with consistent history of actions and command results.
-Secrets must not appear in logs in plain form; masking is required.

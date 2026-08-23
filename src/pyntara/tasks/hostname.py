@@ -6,7 +6,7 @@ joined by a dash, for example lusab-babad (docs/guides/project-structure.md,
 src/pyntara/utils.py). The randomness comes from the secrets module, so
 the name is cryptographically strong: the hostname feeds password
 generation (docs/spec/secrets-model.md) and the deterministic NextDNS
-profile choice (docs/spec/networking.md), so it must not be guessable.
+profile choice (docs/spec/nextdns-profile.md), so it must not be guessable.
 
 The task writes the name into the configured hostname file and applies it
 to the running kernel through the configured set_hostname_command, so

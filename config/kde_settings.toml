@@ -38,3 +38,28 @@ virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 # Command that makes kwin re-read its configuration, so a changed Wayland
 # input method applies without a session restart.
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# Additional KConfig values applied by the task as the target user, one
+# table per value. file is the config file name under ~/.config, group is
+# the list of group segments, key and value name the key and its string
+# form. type is string or bool (bool adds the kwriteconfig6 --type bool
+# flag); delete, when true, removes the key instead of writing it and
+# value must be absent. Every value is applied only when it differs from
+# the current one, so repeated runs skip matching values.
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBox"]
+key = "LayoutName"
+value = "coverswitch"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["Sounds"]
+key = "Theme"
+value = "freedesktop"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-login"]
+key = "FadeToBlack"
+value = "true"
+type = "bool"

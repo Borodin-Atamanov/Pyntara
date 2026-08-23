@@ -1,42 +1,16 @@
 [nextdns_setup_system_wide]
-# System-wide NextDNS configuration through dnscrypt-proxy
-# (docs/spec/networking.md). The task picks one NextDNS profile per
-# machine from the vault group named below, deterministically from the
-# hostname, and configures dnscrypt-proxy to forward all queries through
-# that profile over DNS-over-HTTPS. The profile is selected by
-# sha256(hostname) modulo the number of profiles in the group, so the
-# same hostname always gets the same profile. The task writes a
-# [forwarding] section into the dnscrypt-proxy configuration file, so
-# every query goes through the NextDNS profile. The fallback servers
-# already configured in dnscrypt-proxy (by the dnscrypt_setup task)
-# answer whenever NextDNS itself is unreachable, so the machine never
-# loses resolution.
+# System-wide NextDNS profile selection (docs/spec/nextdns-profile.md).
+# The task picks one NextDNS profile per machine from the vault group
+# named below, deterministically from the hostname, and records the
+# profile ID in the file below. The system-wide resolver is owned by the
+# dnsproxy_setup task, which reads the recorded ID.
 # Title of the vault subgroup that carries the NextDNS profile accounts.
 vault_group_title = "NextDNS"
-# Path of the dnscrypt-proxy configuration file the task edits in place.
-dnscrypt_config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
-# Path of the file that records the applied NextDNS profile ID. The task
-# writes the 6-hex ID here after a successful verification and removes it
-# on revert, so the file's presence means the profile is applied and
-# verified; the System Metrics collector reads it into network.json
+# Path of the file that records the selected NextDNS profile ID.
+# dnsproxy_setup and the System Metrics collector read it
 # (docs/spec/system-metrics.md, section Collected data).
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 # File mode of the recorded profile ID file, as an octal string.
 profile_id_file_mode = "0644"
-# DoH endpoint pattern of the NextDNS service; {profile_id} is replaced
-# with the 6-hex profile ID, producing https://dns.nextdns.io/<id>.
-doh_url_format = "https://dns.nextdns.io/{profile_id}"
-# Verification endpoint that reports the active NextDNS profile as JSON;
-# the task checks it after applying the configuration.
-verification_url = "https://test.nextdns.io/"
-# Command that restarts dnscrypt-proxy so the configuration takes effect.
-restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]
-# Command that queries the verification endpoint. The {url} placeholder is
-# replaced with verification_url and {timeout} with the command timeout in
-# seconds; the endpoint answers with a redirect to a per-query subdomain,
-# so --location follows it; the output is a JSON body with a status field.
-verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
-# Seconds a verification command may run before it is killed.
-command_timeout_seconds = 60

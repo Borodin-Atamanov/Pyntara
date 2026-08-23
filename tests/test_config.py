@@ -215,15 +215,9 @@ value = "no"
 
 [nextdns_setup_system_wide]
 vault_group_title = "NextDNS"
-dnscrypt_config_path = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"
-doh_url_format = "https://dns.nextdns.io/{profile_id}"
-verification_url = "https://test.nextdns.io/"
-restart_proxy_command = ["systemctl", "restart", "dnscrypt-proxy"]
-verification_command = ["curl", "--location", "--fail", "--silent", "--show-error", "--max-time", "{timeout}", "{url}"]
 error_priority = 3
-command_timeout_seconds = 60
 
 [system_metrics_setup]
 backoff_base_seconds = 2
@@ -623,28 +617,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         SshDirective(name="CheckHostIP", value="no"),
     )
     assert config.nextdns_setup_system_wide.vault_group_title == "NextDNS"
-    assert config.nextdns_setup_system_wide.dnscrypt_config_path == Path(
-        "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
-    )
     assert config.nextdns_setup_system_wide.profile_id_file_path == Path(
         "/var/lib/pyntara/nextdns_profile_id"
     )
     assert config.nextdns_setup_system_wide.profile_id_file_mode == 0o644
-    assert (
-        config.nextdns_setup_system_wide.doh_url_format
-        == "https://dns.nextdns.io/{profile_id}"
-    )
-    assert (
-        config.nextdns_setup_system_wide.verification_url
-        == "https://test.nextdns.io/"
-    )
-    assert config.nextdns_setup_system_wide.restart_proxy_command == (
-        "systemctl",
-        "restart",
-        "dnscrypt-proxy",
-    )
     assert config.nextdns_setup_system_wide.error_priority == 3
-    assert config.nextdns_setup_system_wide.command_timeout_seconds == 60
     assert config.system_metrics_setup.backoff_base_seconds == 2
     assert config.system_metrics_setup.backoff_multiplier == 2
     assert config.system_metrics_setup.backoff_max_seconds == 14400

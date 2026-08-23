@@ -1,36 +1,23 @@
-"""Task nextdns_setup_system_wide: configure dnscrypt-proxy for a NextDNS profile.
+"""Task nextdns_setup_system_wide: select and record the machine's NextDNS profile.
 
 The task picks one NextDNS profile per machine, deterministically from
-the hostname, and configures dnscrypt-proxy to forward all queries
-through that profile over DNS-over-HTTPS. The profile comes from the
-vault subgroup named by nextdns_setup_system_wide.vault_group_title, the
-endpoint URL lives in the config. The task writes a [forwarding] section
-into the dnscrypt-proxy configuration file, so every query goes through
-the NextDNS profile. The fallback servers already configured in
-dnscrypt-proxy (by the dnscrypt_setup task) answer whenever NextDNS
-itself is unreachable, so the machine never loses resolution.
-
-The task verifies that the machine really resolves through the chosen
-profile the way NextDNS recommends: a query to test.nextdns.io must
-report the profile (docs/spec/networking.md, section Verification). On a
-successful verification the applied profile ID is recorded in the
-profile ID file for the System Metrics collector; on a failed
-verification the [forwarding] section is removed, so the machine never
-keeps a half-applied configuration. The profiles come from the source
-vaults of the fresh clone, opened with the run password the way
-local_vault_setup opens them; the runtime vault is only a fallback,
-because the copy may be stale and predate the profile group. The task is
-idempotent: it skips when the [forwarding] section already matches and
-the resolver already answers through the profile; force mode rewrites
-the section and restarts the proxy, but the profile choice from the
-hostname never changes.
+the hostname, and records its ID in a file for dnsproxy_setup and the
+System Metrics collector (docs/spec/nextdns-profile.md). The profile
+comes from the vault group named by
+nextdns_setup_system_wide.vault_group_title, the ID is sha256(hostname)
+modulo the pool size, so the same hostname always resolves through the
+same account. The vaults are the source vaults of the fresh clone,
+opened with the run password the way local_vault_setup opens them; the
+runtime vault is only a fallback, because the copy may be stale and
+predate the profile group. The task is idempotent: it skips when the
+profile ID file already carries the selected profile; force mode
+rewrites the file, but the profile choice from the hostname never
+changes.
 """
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 from pathlib import Path
 
 from pykeepass import PyKeePass
@@ -42,7 +29,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
-from pyntara.utils import run_command
 
 # Module-level path constant is monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide):
@@ -53,33 +39,12 @@ from pyntara.utils import run_command
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _forwarding_url(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> str:
-    """The DoH forwarding URL for a profile."""
-
-    return cfg.doh_url_format.format(profile_id=profile_id)
-
-
-def _forwarding_section(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> str:
-    """The [forwarding] TOML section that routes all queries through NextDNS.
-
-    The section forces every query through the NextDNS DoH endpoint for
-    the chosen profile. The fallback_resolvers configured by
-    dnscrypt_setup answer when NextDNS is unreachable, because forwarding
-    falls back to the regular resolver path on failure.
-    """
-
-    url = _forwarding_url(cfg, profile_id)
-    return f"[forwarding]\nforwarding = '{url}'"
-
-
 def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
-    """Record the applied profile ID for the System Metrics collector.
+    """Record the selected profile ID for the System Metrics collector.
 
-    The file is written only after a successful verification, so its
-    presence means the profile is applied and verified. The mode and the
-    root ownership are applied; a failed write is journaled and reported,
-    so the task fails loudly instead of silently losing the telemetry
-    source.
+    The mode and the root ownership are applied; a failed write is
+    journaled and reported, so the task fails loudly instead of silently
+    losing the telemetry source.
     """
 
     path = cfg.profile_id_file_path
@@ -96,187 +61,6 @@ def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -
             priority=cfg.error_priority,
         )
         return False
-
-
-def _remove_profile_id_file(cfg: NextdnsSetupSystemWideConfig) -> None:
-    """Remove the recorded profile ID file, if present.
-
-    The file is removed together with the [static] entries on revert, so
-    a reverted machine never reports a profile that is no longer applied.
-    A failed removal is journaled but cannot stop the run.
-    """
-
-    path = cfg.profile_id_file_path
-    try:
-        path.unlink(missing_ok=True)
-    except OSError as exc:
-        _log(
-            f"revert: cannot remove the profile ID file {path}: {exc}",
-            priority=cfg.error_priority,
-        )
-
-
-def _config_matches(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
-    """True when the dnscrypt-proxy config already carries the forwarding section.
-
-    The comparison checks that the [forwarding] section with the correct
-    URL is present. A missing file is never a match.
-    """
-
-    if not cfg.dnscrypt_config_path.is_file():
-        return False
-    content = cfg.dnscrypt_config_path.read_text(encoding="utf-8")
-    expected = _forwarding_section(cfg, profile_id)
-    return expected in content
-
-
-def _write_dnscrypt_config(
-    cfg: NextdnsSetupSystemWideConfig, profile_id: str
-) -> tuple[bool, str]:
-    """Write the [forwarding] section into the config.
-
-    An existing [forwarding] section is replaced, a missing one is
-    appended at the end of the file. Returns (changed, error).
-    """
-
-    path = cfg.dnscrypt_config_path
-    if not path.is_file():
-        return False, f"{path} is missing"
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return False, f"cannot read {path}: {exc}"
-
-    new_section = _forwarding_section(cfg, profile_id)
-    if new_section in content:
-        return False, ""
-
-    # Remove any existing [forwarding] section
-    lines = content.splitlines()
-    result: list[str] = []
-    skip = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped == "[forwarding]":
-            skip = True
-            continue
-        if skip:
-            if stripped.startswith("["):
-                skip = False
-                result.append(line)
-            continue
-        result.append(line)
-
-    result.append("")
-    result.append(new_section)
-
-    new_content = "\n".join(result) + "\n"
-    try:
-        path.write_text(new_content, encoding="utf-8")
-    except OSError as exc:
-        return False, f"cannot write {path}: {exc}"
-    return True, ""
-
-
-def _restart_proxy(cfg: NextdnsSetupSystemWideConfig) -> str | None:
-    """Restart dnscrypt-proxy; error text on failure, None on success."""
-
-    try:
-        run_command(
-            list(cfg.restart_proxy_command),
-            timeout=cfg.command_timeout_seconds,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return f"cannot restart dnscrypt-proxy: {exc}"
-    return None
-
-
-def _test_nextdns(cfg: NextdnsSetupSystemWideConfig) -> tuple[bool, str]:
-    """(ok, detail) of the verification endpoint check.
-
-    The endpoint is the NextDNS-recommended verification: it reports the
-    state the query came through and the profile that answered. It
-    answers with a redirect to a per-query subdomain, so the command
-    follows redirects (the config carries --location). A JSON body with
-    status ok proves the machine resolves through a NextDNS profile.
-    """
-
-    timeout = cfg.command_timeout_seconds
-    command = [
-        part.replace("{url}", cfg.verification_url).replace(
-            "{timeout}", str(timeout)
-        )
-        for part in cfg.verification_command
-    ]
-    try:
-        result = run_command(
-            command,
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"verification endpoint unreachable: {exc}"
-    if result.returncode != 0:
-        return False, f"verification endpoint exited {result.returncode}"
-    try:
-        body = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        excerpt = result.stdout.strip()[:120] or "<empty body>"
-        return False, f"verification endpoint did not return JSON: {excerpt!r}"
-    status = body.get("status")
-    if status != "ok":
-        return False, f"verification endpoint reported status {status!r}"
-    profile = body.get("profile")
-    return True, f"status ok, profile {profile!r}"
-
-
-def _revert(cfg: NextdnsSetupSystemWideConfig) -> None:
-    """Undo the [forwarding] section.
-
-    The section is removed from the configuration file and dnscrypt-proxy
-    is restarted, so the machine returns to its previous resolver
-    configuration. Every step is journaled; a failed step is reported but
-    cannot stop the run.
-    """
-
-    path = cfg.dnscrypt_config_path
-    if not path.is_file():
-        return
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        _log(f"revert: cannot read {path}: {exc}", priority=cfg.error_priority)
-        return
-
-    lines = content.splitlines()
-    result: list[str] = []
-    skip = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped == "[forwarding]":
-            skip = True
-            continue
-        if skip:
-            if stripped.startswith("["):
-                skip = False
-                result.append(line)
-            continue
-        result.append(line)
-
-    new_content = "\n".join(result) + "\n"
-    try:
-        path.write_text(new_content, encoding="utf-8")
-        _log("reverted: removed the NextDNS [forwarding] section")
-    except OSError as exc:
-        _log(
-            f"revert: cannot write {path}: {exc}",
-            priority=cfg.error_priority,
-        )
-    _remove_profile_id_file(cfg)
-    error = _restart_proxy(cfg)
-    if error:
-        _log(f"revert: {error}", priority=cfg.error_priority)
 
 
 def _open_profile_vault(ctx: Context) -> PyKeePass | None:
@@ -298,20 +82,16 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
 
 
 def task(ctx: Context) -> TaskResult:
-    """Configure dnscrypt-proxy for a NextDNS profile; skip when done.
+    """Select a NextDNS profile and record its ID; skip when done.
 
     The vault is opened from the source vaults of the fresh clone with the
     run password, the way local_vault_setup opens them; the runtime vault
-    is only the fallback. The profile group is read from the vault, the
-    profile is derived from the hostname and the [static] entries are
-    written into the dnscrypt-proxy configuration. After the proxy
-    restarts the task verifies that the machine resolves through the
-    profile and, on a failed verification, reverts every change. A
-    missing profile group or an empty profile pool is a serious failure
-    journaled at error_priority: the proxy configuration is never touched
-    then. The task is idempotent: it skips when the [static] entries
-    match and the verification passes; force mode rewrites the entries
-    and restarts the proxy.
+    is only the fallback. The profile group is read from the vault and the
+    profile is derived from the hostname. A missing profile group or an
+    empty profile pool is a failure reported in the result: the profile
+    ID file is never touched then. The task is idempotent: it skips when
+    the profile ID file already carries the selected profile; force mode
+    rewrites the file.
     """
 
     cfg = ctx.config.nextdns_setup_system_wide

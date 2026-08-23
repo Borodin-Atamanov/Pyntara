@@ -5,8 +5,9 @@ it requires, the target user whose KDE configuration is edited, the dark
 color scheme applied to all windows, the dark global theme that covers
 the whole desktop, the input and keyboard settings (NumLock on startup,
 touchpad preferences, the Wayland virtual keyboard) and the command that
-reloads kwin. Future settings of the same task are added to this table as
-new keys.
+reloads kwin. The kconfig list carries additional KConfig values applied
+by the task as records; future settings of the same task are added either
+as new keys or as kconfig records.
 """
 
 from __future__ import annotations
@@ -23,6 +24,30 @@ from ._fields import (
     _string_list,
 )
 
+# The value types a kconfig record can carry. bool adds the kwriteconfig6
+# --type bool flag so the key is stored as a boolean, not as a string;
+# string is the plain form used for every other value.
+KCONFIG_TYPES: tuple[str, ...] = ("string", "bool")
+
+
+@dataclass(frozen=True)
+class KConfigRecord:
+    """One KConfig value applied by the kde_settings task.
+
+    file is the config file name under the target user config directory;
+    group is the list of group segments that lead to the key; key and
+    value name the key and the string form of its value; type is string
+    or bool, the latter storing the key as a boolean; delete, when true,
+    removes the key instead of writing it and value stays empty.
+    """
+
+    file: str
+    group: tuple[str, ...]
+    key: str
+    value: str
+    type: str
+    delete: bool
+
 
 @dataclass(frozen=True)
 class KdeSettingsConfig:
@@ -38,7 +63,8 @@ class KdeSettingsConfig:
     applied to every touchpad found; virtual_keyboard_enabled,
     virtual_keyboard_input_method and virtual_keyboard_locales configure
     the Wayland virtual keyboard; kwin_reload_command makes kwin re-read
-    its configuration.
+    its configuration; kconfig carries additional KConfig values applied
+    as records.
     """
 
     packages: tuple[str, ...]
@@ -53,6 +79,7 @@ class KdeSettingsConfig:
     virtual_keyboard_input_method: str
     virtual_keyboard_locales: tuple[str, ...]
     kwin_reload_command: tuple[str, ...]
+    kconfig: tuple[KConfigRecord, ...] = ()
 
 
 def _kde_settings_table(raw: object) -> KdeSettingsConfig:
@@ -103,4 +130,44 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kwin_reload_command=_string_list(
             raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
         ),
+        kconfig=_kconfig_records(raw.get("kconfig")),
     )
+
+
+def _kconfig_record(raw: object, index: int) -> KConfigRecord:
+    """Validate one [[kde_settings.kconfig]] record."""
+
+    name = f"kde_settings.kconfig[{index}]"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a table")
+    file_name = _nonempty_string_field(raw.get("file"), f"{name}.file")
+    group = _string_list(raw.get("group"), f"{name}.group")
+    key = _nonempty_string_field(raw.get("key"), f"{name}.key")
+    delete = _bool_field(raw.get("delete", False), f"{name}.delete")
+    if delete:
+        if raw.get("value") is not None:
+            raise ConfigError(f"{name} must not have a value when delete is true")
+        value = ""
+    else:
+        value = _nonempty_string_field(raw.get("value"), f"{name}.value")
+    value_type = _enum_field(
+        raw.get("type", "string"), f"{name}.type", KCONFIG_TYPES
+    )
+    return KConfigRecord(
+        file=file_name,
+        group=group,
+        key=key,
+        value=value,
+        type=value_type,
+        delete=delete,
+    )
+
+
+def _kconfig_records(raw: object) -> tuple[KConfigRecord, ...]:
+    """Validate the [[kde_settings.kconfig]] records; empty when absent."""
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError("[kde_settings] kconfig must be an array of tables")
+    return tuple(_kconfig_record(record, index) for index, record in enumerate(raw))

@@ -52,7 +52,7 @@ src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in
 src/pyntara/config_edit.py — Line-level config editing helpers (section Configuration editing).
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.
 src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel address from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.
-src/pyntara/nextdns.py — NextDNS profile selection and endpoint derivation: sha256(hostname) modulo pool size, DoT/DoH endpoint formulas. Imported by nextdns_setup_system_wide and nextdns_profile.
+src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.
 src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.
 src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.
@@ -114,7 +114,7 @@ config_edit.py      replace_line_by_string, add_line_to_file,
 augeas.py           parse_augtool_print, sync_dropin, read_dropin,
                     dropin_exists, remove_dropin
 
-nextdns.py          select_profile_id, profile_endpoints
+nextdns.py          profile_id_is_valid, select_profile_id
 
 nextdns_profile.py  select_profile_from_vault
 

@@ -360,6 +360,46 @@ def _apply_virtual_keyboard(
     return changed
 
 
+def _apply_kconfig_records(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Apply every configured kconfig record; True when any changed.
+
+    Each value record is read with kreadconfig6 and written only when it
+    differs, so matching records are skipped; a delete record removes the
+    key when it is present. Force mode writes and removes regardless.
+    """
+
+    changed = False
+    for record in cfg.kconfig:
+        if record.delete:
+            current = _kreadconfig(
+                cfg, record.file, record.group, record.key, timeout
+            )
+            if not force and not current:
+                continue
+            _delete_kconfig_key(
+                cfg, record.file, record.group, record.key, timeout=timeout
+            )
+            _log(f"removed {record.file} {record.key}")
+            changed = True
+            continue
+        changed |= _sync_config_value(
+            cfg,
+            record.file,
+            record.group,
+            record.key,
+            record.value,
+            timeout=timeout,
+            force=force,
+            bool_value=record.type == "bool",
+        )
+    return changed
+
+
 def _reload_kwin(
     cfg: KdeSettingsConfig,
     *,
@@ -395,8 +435,8 @@ def task(ctx: Context) -> TaskResult:
     it installs missing packages and applies the differing values as the
     target user: the global theme first, then the color scheme so the
     configured scheme wins, then the NumLock state, the touchpad
-    preferences and the Wayland virtual keyboard. Any failure is returned
-    as an error TaskResult.
+    preferences, the Wayland virtual keyboard and the configured kconfig
+    values. Any failure is returned as an error TaskResult.
     """
 
     cfg = ctx.config.kde_settings
@@ -439,6 +479,9 @@ def task(ctx: Context) -> TaskResult:
             cfg, timeout=timeout, force=force
         )
         settings_changed |= virtual_keyboard_changed
+        settings_changed |= _apply_kconfig_records(
+            cfg, timeout=timeout, force=force
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
     changed |= settings_changed

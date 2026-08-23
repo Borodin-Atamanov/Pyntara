@@ -15,6 +15,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.config import KConfigRecord
 from pyntara.tasks import kde_settings as task_module
 
 
@@ -403,3 +404,107 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
     task_module.task(ctx)
     assert not [command for command in writes if "InputMethod" in command]
     assert reloads == []
+
+
+def _kconfig_ctx(
+    tmp_path: Path,
+    records: tuple[KConfigRecord, ...],
+    *,
+    force: bool = False,
+):
+    """Context whose kconfig list carries the given records."""
+
+    return make_context(
+        install_mode="desktop",
+        force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_kconfig=records,
+        ),
+    )
+
+
+FULLY_CONFIGURED = {
+    "LookAndFeelPackage": "org.kubuntudark.desktop",
+    "ColorScheme": "BreezeDark",
+    "NumLock": "1",
+    "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop",
+    "enabledLocales": "en_US,es_MX,ru_RU",
+}
+
+
+def test_kconfig_records_write_differing_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Value records with no current value are written; the bool record
+    # gets the --type bool flag and the delete record removes a present
+    # key.
+    records = (
+        KConfigRecord(
+            "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
+        ),
+        KConfigRecord(
+            "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
+        ),
+        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _ = _install_fakes(
+        monkeypatch, currents={"StaleKey": "oldvalue"}
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    layout_writes = [command for command in writes if "LayoutName" in command]
+    single_writes = [command for command in writes if "SingleClick" in command]
+    delete_writes = [
+        command
+        for command in writes
+        if "StaleKey" in command and "--delete" in command
+    ]
+    assert layout_writes
+    assert layout_writes[0][-1] == "coverswitch"
+    assert single_writes
+    assert "--type" in single_writes[0] and "bool" in single_writes[0]
+    assert delete_writes
+
+
+def test_kconfig_records_skip_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A value record whose key already matches skips the write; a delete
+    # record whose key is absent skips the deletion, so nothing changes.
+    records = (
+        KConfigRecord(
+            "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
+        ),
+        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert not [command for command in writes if "LayoutName" in command]
+    assert not [command for command in writes if "StaleKey" in command]
+
+
+def test_kconfig_force_writes_even_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Force mode writes the value regardless of the current state.
+    records = (
+        KConfigRecord(
+            "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records, force=True)
+    currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert [command for command in writes if "LayoutName" in command]

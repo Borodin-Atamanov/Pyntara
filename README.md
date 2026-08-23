@@ -3,7 +3,7 @@
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
 
-Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, creates users, derives passwords from a KeePass vault, configures ZRAM and swap, sets up SSH, deploys a local proxy with a remote tunnel, tunes the desktop environment, and enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
+Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server in one command. It installs packages, configures ZRAM and swap, sets up SSH, DNS and anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment, and enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A single bootstrap script downloads the repo and launches the Python provisioning engine.
 
 ## Start
 
@@ -42,7 +42,7 @@ Quick test run without the apt index refresh. The flag sits in the prefix of the
 bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
 ```
 
-Engine values used by the Python part come from the config/ directory at the repository root, one TOML file per top-level section, joined into a single document by the loader: the task data root, the notice and command timeouts, the syslog error priority, the desktop detection process list, the Ubuntu archive components enabled by add_extra_repos, the cli_tools package list with the install retry count and the success threshold, the swapfile parameters, the ZRAM and zswap settings, the i2pd installation parameters (the GitHub repository, the download directory, the package service unit, the owned configuration path and the rendered log level and proxy switches, the SSH server tunnel with its identity file, the SSH port read from the ssh_daemon_setup directives and the saved tunnel address file, docs/spec/i2pd-service.md), the yggdrasil installation parameters (the GitHub repository, the download directory, the package service unit, the owned configuration and key paths, the interface settings, the listeners, the multicast blocks, the peer selection parameters and the saved self address file, docs/spec/yggdrasil-service.md), the Tor onion service parameters (the package and daemon instance unit names, the main configuration file with the guaranteed %include path, the owned drop-in file with its mode and the rendered log level, SOCKS port, introduction point count and the SSH onion service, the hidden service directory with its mode and owner, the saved onion address file, the SSH port read from the ssh_daemon_setup directives, docs/spec/tor-service.md), the SSH server parameters (the package and service unit names, the systemd socket unit disabled for the configured port, the checked and owned configuration paths, the directives written through augeas, the key file names and modes, the target users, docs/spec/ssh-daemon-setup.md), the SSH client parameters (the checked and owned configuration paths and the directives written through augeas under the Host block, docs/spec/ssh-client-setup.md), the KDE desktop theme values (the dark color scheme and the dark global theme, docs/spec/kde-settings.md), the secret vault structure and the System Metrics deployment parameters (service and ingest units, the report collector units, the spool path and modes, the journal identifiers, the channel queue names), and the task catalog under [[tasks]] with each task's name, description, dependencies and mode membership. The directory is mandatory; a missing or invalid config stops the run. The cli_tools task succeeds when at least cli_tools.package_success_threshold_percent of the configured packages are installed after the run; a single failing package is not fatal by itself.
+Engine values and the task catalog live in the config/ directory at the repository root, one TOML file per top-level section, joined by the loader into a single document (docs/contracts/architecture.md section 3).
 
 The interactive installer variant does not work and its development is stopped.
 
@@ -59,14 +59,14 @@ Spec — functional specification, what the system does and how. Design rational
 `docs/spec/install-modes.md` — minimal/server/desktop modes, auto-detection, task and force selection
 `docs/spec/secrets-model.md` — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback
 `docs/spec/system-metrics.md` — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive
-`docs/spec/networking.md` — local proxy server, proxy tunnel, NextDNS
+`docs/spec/nextdns-profile.md` — NextDNS profile selection and the profile ID file read by dnsproxy and System Metrics
 `docs/spec/dnsproxy-setup.md` — dnsproxy system-wide resolver, NextDNS encrypted upstreams, cache and fallback servers
 `docs/spec/i2pd-service.md` — i2pd service install from GitHub releases, version and asset selection, download trust
 `docs/spec/yggdrasil-service.md` — yggdrasil service install from GitHub releases, version and asset selection, download trust
 `docs/spec/tor-service.md` — Tor install from the Ubuntu archive, SSH onion service, address file and client side
 `docs/spec/ssh-daemon-setup.md` — SSH server install, drop-in configuration, pre-generated key deployment
 `docs/spec/ssh-client-setup.md` — system-wide SSH client defaults, drop-in configuration
-`docs/spec/users-and-host.md` — users i/j/k, hostname, passwords, ZRAM, swap, NTP, power
+`docs/spec/users-and-host.md` — hostname, ZRAM, zswap, swapfile
 `docs/spec/desktop-apps.md` — ImageMagick, FFmpeg, scrcpy, Kate, terminal, browsers
 `docs/spec/kde-keyboard-setup.md` — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon
 `docs/spec/kde-settings.md` — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
