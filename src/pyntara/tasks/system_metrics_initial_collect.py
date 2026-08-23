@@ -27,7 +27,7 @@ from pyntara.utils import run_command
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 # The systemd unit directory is a fixed machine contract (architecture
-# contract section 3), shared with the system_metrics_setup task.
+# contract, Configuration), shared with the system_metrics_setup task.
 SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 
 

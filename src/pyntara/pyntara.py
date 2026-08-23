@@ -38,7 +38,7 @@ app = typer.Typer(invoke_without_command=True)
 # The engine configuration lives in the repository root. inst.sh launches
 # pyntara from the clone root, so the config/ directory is always found
 # there. The directory is mandatory: a missing or invalid config stops the
-# run (architecture contract section 3).
+# run (architecture contract, Configuration).
 CONFIG_PATH = Path("config")
 
 
@@ -46,7 +46,7 @@ CONFIG_PATH = Path("config")
 def _main(ctx: typer.Context) -> None:
     """Launch the provisioning engine when no subcommand is given.
 
-    Bootstrap contract section 6: inst.sh runs `uv run pyntara` with no
+    Bootstrap contract, Python environment: inst.sh runs `uv run pyntara` with no
     arguments, so a bare invocation must start the engine instead of failing
     with "Missing command".
     """
@@ -59,7 +59,7 @@ def vault_password_is_correct(vault_path: str, password: str) -> bool:
     """Return True when the given password decrypts the KeePass database.
 
     This is the only place in the installer that touches KeePass decryption:
-    the shell must not decrypt vaults (bootstrap contract section 12), so
+    the shell must not decrypt vaults (bootstrap contract, Secrets files), so
     inst.sh delegates the verification to the check-vault command. Opening
     the database IS the verification: PyKeePass raises CredentialsError for
     a wrong password, so no separate password comparison is needed.

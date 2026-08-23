@@ -2,7 +2,7 @@
 # Runtime parameters of the long-running System Metrics service. The
 # deployed service reads this section through the same config loader as
 # the installer: system_config_path is the single config of the target
-# system (docs/contracts/architecture.md section 3). Every cycle the
+# system (architecture contract, Configuration). Every cycle the
 # service dispatches committed entries from main_outbox into the channel
 # queues and drains the Google Drive channel into the web app; the
 # encrypted PDF generation and the Telegram channel replace the
@@ -57,7 +57,7 @@ queue_file_suffix_length = 12
 # Directory of the System Metrics spool: the intake directory where the
 # generated commit_system_metrics command publishes files for the ingest
 # service to move into main_outbox. The path is a behavioral value and
-# therefore lives in the config (architecture contract section 3).
+# therefore lives in the config (architecture contract, Configuration).
 spool_dir = "/var/spool/system_metrics"
 # File mode of the spool directory, as an octal string. The mode is 1733:
 # sticky, write and search for everyone, no listing, so spool entry names

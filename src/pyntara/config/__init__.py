@@ -9,7 +9,7 @@ working unchanged.
 
 The file at the repository root is the single source of truth for the
 Python part of the engine. A missing or invalid file stops the run: there
-are no defaults (architecture contract section 3). The composition root
+are no defaults (architecture contract, Configuration). The composition root
 loads the config once and hands it to every task through Context.
 """
 

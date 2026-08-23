@@ -7,7 +7,7 @@ same hostname always resolves through the same account and the choice
 spreads machines evenly over the profile pool (docs/spec/nextdns-profile.md).
 The profile ID shape (six lowercase hex digits) is a format invariant of
 the NextDNS service and stays in code as an approved exception
-(architecture contract section 3); the vault group title lives in the
+(architecture contract, Configuration); the vault group title lives in the
 [nextdns_setup_system_wide] config table. The module is the single
 implementation of the selection; the task and the tests import it, never
 copy it.
@@ -20,7 +20,7 @@ import re
 
 # A NextDNS profile ID is exactly six lowercase hex digits. The shape is
 # a format invariant of the NextDNS service, approved as a code exception
-# in the architecture contract (section 3).
+# in the architecture contract (Configuration).
 PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")
 
 

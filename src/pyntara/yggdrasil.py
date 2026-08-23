@@ -3,7 +3,7 @@
 The yggdrasil_service_setup task and the deployed address command
 (pyntara.yggdrasil_address) both need the node address reported by the
 admin socket. The JSON parsing lives here, shared and imported, never
-copied (architecture contract section 3).
+copied (architecture contract, Configuration).
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ The i2pd and tor tasks forward to the local SSH daemon, so both need
 the sshd listen port. The port lives only in the ssh_daemon_setup
 directives, never duplicated into another config section; the single
 reader lives here and is imported by every task that needs the value
-(architecture contract section 3).
+(architecture contract, Configuration).
 """
 
 from __future__ import annotations

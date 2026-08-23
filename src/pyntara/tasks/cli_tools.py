@@ -1,7 +1,7 @@
 """Task cli_tools: install the console utility set.
 
 The package list comes from config.toml through ctx.config.cli_tools.packages
-(architecture contract section 3). The task checks the real system state
+(architecture contract, Configuration). The task checks the real system state
 with dpkg-query and installs only what is missing, so repeated runs change
 nothing (docs/contracts/task-model.md). Packages are installed one by one.
 The apt index is refreshed once before the first install, so packages

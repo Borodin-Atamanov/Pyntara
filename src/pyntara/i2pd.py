@@ -4,7 +4,7 @@ The i2pd_service_setup task and the deployed address command
 (pyntara.i2pd_address) both need the address of the SSH tunnel identity.
 The address is derived from the binary PrivateKeys record i2pd writes,
 so the decoder lives here, shared and imported, never copied
-(architecture contract section 3).
+(architecture contract, Configuration).
 """
 
 from __future__ import annotations

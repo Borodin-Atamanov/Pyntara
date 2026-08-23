@@ -45,7 +45,7 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 
 def test_load_config_missing_tasks_section_raises(tmp_path: Path) -> None:
     # The catalog is mandatory: without it the engine cannot compute the
-    # task set (architecture contract section 3). The base config is used
+    # task set (architecture contract, Configuration). The base config is used
     # with its [[tasks]] section cut off.
     assert_config_error(
         tmp_path,

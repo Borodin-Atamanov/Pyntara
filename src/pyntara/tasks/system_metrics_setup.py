@@ -10,7 +10,7 @@ from the repository version, so deployed services run the current code
 after every installer run.
 The single system config is copied to the configured system_config_path,
 so the deployed service reads its parameters with the same loader as the
-installer (architecture contract section 3). The long-running service
+installer (architecture contract, Configuration). The long-running service
 system_metrics.service drains the Google Drive channel queue; the ingest
 service system_metrics-ingest.service
 moves committed files from the spool into the queue and is started by the
@@ -21,7 +21,7 @@ system_metrics_collector.timer after boot and at the configured daily
 time; all waiting happens inside the collector (docs/spec/system-metrics.md,
 section Report collector).
 All unit names, journal identifiers and the spool path come from config
-(architecture contract section 3). The task generates the thin
+(architecture contract, Configuration). The task generates the thin
 commit_system_metrics command file from the command template with the
 configured spool path and journal identifier embedded, so the command
 needs no config access and no root privileges; it also creates the spool
@@ -58,7 +58,7 @@ from pyntara.utils import (
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 # Repository layout and the systemd unit directory are fixed machine
-# contracts (architecture contract section 3); the unit file names, the
+# contracts (architecture contract, Configuration); the unit file names, the
 # deployment paths of the venv and the system config live in config.toml
 # through Context.
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -298,7 +298,7 @@ def _render_commit_command(
     The command needs no config access at runtime: the spool path, the
     journal identifier and the temporary file prefix are substituted at
     generation time, so any user can run the command (architecture
-    contract section 3).
+    contract, Configuration).
     """
 
     template = COMMAND_TEMPLATE_PATH.read_text(encoding="utf-8")

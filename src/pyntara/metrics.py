@@ -9,8 +9,8 @@ secret vault created by local_vault_setup on demand, and a failed open is
 journaled through the shared pyntara.logger functions at error_priority.
 The password itself is never logged. The service reads the single system
 config system_config_path through the same loader as the installer, so
-its parameters come from the same source of truth (architecture contract
-section 3). The encrypted PDF generation and the Telegram channel replace
+its parameters come from the same source of truth (architecture contract,
+Configuration). The encrypted PDF generation and the Telegram channel replace
 the current Google-only sending in a later stage
 (docs/spec/system-metrics.md).
 """

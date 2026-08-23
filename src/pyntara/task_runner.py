@@ -41,7 +41,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
 
     Each task is announced with an empty line and a green banner line, then a
     short pause before execution so the user sees which task starts (project
-    rules section 1.1). Task output streams in real time through run_command; the
+    rules, Task presentation). Task output streams in real time through run_command; the
     outcome line is printed right after the task finishes. Returns (name,
     result) pairs in run order. A task that is not implemented or raises
     becomes a failed result with the reason in error. The entry point prints

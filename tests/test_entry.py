@@ -158,7 +158,7 @@ def test_run_warns_and_continues_on_unknown_tasks(
 ) -> None:
     # An unknown task name is not fatal: the engine shows an error notice,
     # pauses, then continues without the unknown name (simplified
-    # architecture section 2).
+    # architecture, What changed).
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "nope")

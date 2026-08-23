@@ -5,7 +5,7 @@
 # parsing (pyntara.config.loader.render_config_source). The directory is
 # mandatory: a missing or invalid config stops the run, there are no
 # defaults. Secrets never live here; vault credentials come from the
-# environment (architecture contract section 3).
+# environment (architecture contract, Configuration).
 
 [engine]
 # Directory for runtime task state.

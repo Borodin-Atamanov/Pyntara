@@ -5,7 +5,7 @@ for targeted line edits instead of overwriting whole files
 (docs/guides/project-structure.md, section Configuration editing). The
 module is the single shared implementation of the line-edit approach:
 tasks import replace_line_by_string and add_line_to_file instead of
-copying the logic (docs/guides/project-rules.md section 4). The helpers
+copying the logic (project rules, General engineering requirements). The helpers
 fit files where one setting is one line and the line order does not
 matter; structured formats are edited with their parsers, never here.
 """
@@ -90,7 +90,7 @@ def sync_directives_by_key(
     so a directive never touches a line with a different key: replacing
     DNS= cannot clobber FallbackDNS=. This is the shared implementation
     for tasks that own a subset of directives inside a foreign config
-    file (docs/guides/project-rules.md section 4); a missing file is
+    file (project rules, General engineering requirements); a missing file is
     created with the header, the section and the directives.
     """
 

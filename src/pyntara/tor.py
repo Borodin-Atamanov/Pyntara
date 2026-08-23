@@ -3,7 +3,7 @@
 The tor_setup task and the deployed address command
 (pyntara.tor_address) both need the onion address Tor wrote into the
 hidden service hostname file. The reading and trimming logic lives here,
-shared and imported, never copied (architecture contract section 3).
+shared and imported, never copied (architecture contract, Configuration).
 """
 
 from __future__ import annotations

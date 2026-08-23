@@ -34,8 +34,8 @@ from pyntara.tasks.local_vault_setup import open_source_vault
 # against temporary fixtures instead of the real system (developer guide):
 # the source vault paths of local_vault_setup are resolved against the
 # repository root, so the clone can live anywhere on the machine. It is
-# an approved repository layout path exception (architecture contract
-# section 3).
+# an approved repository layout path exception (architecture contract,
+# Configuration).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

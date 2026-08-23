@@ -2,7 +2,7 @@
 
 Every own message of the engine flows through this module: task progress
 lines, task banners, result lines and status events. Each helper writes to
-the console exactly like the code it replaces (project rules section 1.2)
+the console exactly like the code it replaces (project rules, Task progress output)
 and duplicates the message into the system journal through systemd-cat.
 The journal receives plain text without the console timestamp, because the
 journal stamps its own time, and without ANSI color codes. Subprocess

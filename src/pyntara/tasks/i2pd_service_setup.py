@@ -75,8 +75,8 @@ from pyntara.utils import (
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-# /etc/os-release is a fixed machine contract (architecture contract
-# section 3); the repository layout path is fixed by the repo itself.
+# /etc/os-release is a fixed machine contract (architecture contract,
+# Configuration); the repository layout path is fixed by the repo itself.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "i2pd_service_setup" / "i2pd.conf"
 TUNNELS_TEMPLATE_PATH = (

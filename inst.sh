@@ -12,10 +12,10 @@ set -euo pipefail
 
 
 # --- Implementation: phase 1.1 (root check) ---
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f check_root &>/dev/null; then
 check_root() {
-    # Bootstrap contract section 1: must run as root, otherwise exit with an error.
+    # Bootstrap contract, Entry point: must run as root, otherwise exit with an error.
     if [[ "$EUID" -ne 0 ]]; then
         echo "Error: Pyntara installer must run as root. Restart with: sudo bash $0" >&2
         exit 1
@@ -25,23 +25,23 @@ check_root() {
 fi
 
 # Implementation: phase 1.2 (FHS directories)
-# FHS base directories, bootstrap contract section 5.
+# FHS base directories, bootstrap contract, FHS paths.
 # Overridable via environment so tests never touch real system paths.
 CACHE_DIR="${PYNTARA_CACHE_DIR:-/var/cache/pyntara}"
 STATE_DIR="${PYNTARA_STATE_DIR:-/var/lib/pyntara}"
 LOG_DIR="${PYNTARA_LOG_DIR:-/var/log/pyntara}"
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f ensure_fhs_dirs &>/dev/null; then
 ensure_fhs_dirs() {
-    # Bootstrap contract section 5: create cache, state and log directories.
+    # Bootstrap contract, FHS paths: create cache, state and log directories.
     install -d "$CACHE_DIR" "$STATE_DIR" "$LOG_DIR"
     echo "FHS directories ready: $CACHE_DIR, $STATE_DIR, $LOG_DIR"
 }
 fi
 
 # Implementation: phase 1.3 (logging)
-# Single log file for the whole installer run, bootstrap contract section 9.
+# Single log file for the whole installer run, bootstrap contract, Logging.
 # Overridable via environment so tests never touch real system paths.
 LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 
@@ -52,10 +52,10 @@ LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 # launched by run_pyntara.
 JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-default}"
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f log &>/dev/null; then
 log() {
-    # Bootstrap contract section 9: timestamped message written to log file
+    # Bootstrap contract, Logging: timestamped message written to log file
     # and terminal, duplicated into the system journal without the timestamp
     # because the journal stamps its own time.
     local message="$1"
@@ -68,10 +68,10 @@ log() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f run_stream_to_log &>/dev/null; then
 run_stream_to_log() {
-    # Bootstrap contract section 9: run a command, stream output to terminal and log file.
+    # Bootstrap contract, Logging: run a command, stream output to terminal and log file.
     # stderr is merged into stdout so errors are captured too.
     # The if guard captures the command exit code without triggering errexit.
     if "$@" 2>&1 | tee -a "$LOG_FILE"; then
@@ -81,19 +81,19 @@ run_stream_to_log() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f run_logged &>/dev/null; then
 run_logged() {
-    # Bootstrap contract section 9: run a command, stream output to terminal and log file.
+    # Bootstrap contract, Logging: run a command, stream output to terminal and log file.
     run_stream_to_log "$@"
 }
 fi
 
 # Implementation: phase 1.4 (timing)
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f run_timed &>/dev/null; then
 run_timed() {
-    # Bootstrap contract section 7: run a command, time it, log duration and exit code.
+    # Bootstrap contract, Verbose execution and timing: run a command, time it, log duration and exit code.
     local start rc elapsed
     start="$(date +%s)"
     # The if guard captures the command exit code without triggering errexit.
@@ -109,10 +109,10 @@ run_timed() {
 fi
 
 # Implementation: phase 2.1 (optimistic apt)
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f apt_install &>/dev/null; then
 apt_install() {
-    # Bootstrap contract section 2: try install without update first,
+    # Bootstrap contract, Package installation: try install without update first,
     # refresh the index and retry only if the first attempt fails.
     # All apt operations are noninteractive.
     local packages=("$@")
@@ -128,13 +128,13 @@ apt_install() {
 fi
 
 # Implementation: phase 2.2 (package set)
-# Minimal runtime dependencies, bootstrap contract section 3, in required order.
+# Minimal runtime dependencies, bootstrap contract, Installed packages, in required order.
 RUNTIME_PACKAGES=(python3 python3-venv git curl ca-certificates)
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f install_dependencies &>/dev/null; then
 install_dependencies() {
-    # Bootstrap contract section 3: install only the packages that are missing.
+    # Bootstrap contract, Installed packages: install only the packages that are missing.
     # dpkg -s reports installed state, so repeated runs install nothing new.
     local missing=()
     local pkg
@@ -153,15 +153,15 @@ install_dependencies() {
 fi
 
 # Implementation: phase 2.3 (uv package manager)
-# Official Astral installer, bootstrap contract section 3.
+# Official Astral installer, bootstrap contract, Installed packages.
 # uv cache lives in its own subdirectory of the FHS cache directory
-# (bootstrap contract section 5). It must not equal the cache root itself:
+# (bootstrap contract, FHS paths). It must not equal the cache root itself:
 # the git clone lives at $CACHE_DIR/repo, and uv refuses a project directory
 # that is inside its own cache directory.
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f install_uv &>/dev/null; then
 install_uv() {
     # Install uv only when missing. The Astral installer runs in a subprocess
@@ -193,12 +193,12 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.2.75"
+PYNTARA_VERSION="0.2.76"
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then
 fetch_source() {
-    # Bootstrap contract section 4: clone the repo, or update an existing clone.
+    # Bootstrap contract, Source delivery: clone the repo, or update an existing clone.
     # A broken clone (no .git) is removed and recreated instead of failing.
     if [[ ! -d "$SOURCE_DIR" || -z "$(ls -A "$SOURCE_DIR")" ]]; then
         log "Cloning repository: $REPO_URL branch $REPO_BRANCH"
@@ -229,10 +229,10 @@ fi
 
 # Implementation: phase 3.2 (python environment via uv)
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f setup_python &>/dev/null; then
 setup_python() {
-    # Bootstrap contract section 6: uv sync in the repo directory.
+    # Bootstrap contract, Python environment: uv sync in the repo directory.
     # Use --locked when the lockfile is current, plain sync otherwise.
     # cd runs in a subshell so the caller's working directory never changes.
     if [[ ! -d "$SOURCE_DIR" ]]; then
@@ -257,11 +257,11 @@ fi
 
 # Implementation: phase 3.3 (launch pyntara)
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f run_pyntara &>/dev/null; then
 run_pyntara() {
-    # Bootstrap contract section 6: launch uv run pyntara.
-    # Bootstrap contract section 8: no time limit on the pyntara process.
+    # Bootstrap contract, Python environment: launch uv run pyntara.
+    # Bootstrap contract, No timeout on Pyntara: no time limit on the pyntara process.
     # cd runs in a subshell so the caller's working directory never changes.
     # The if guard captures the exit code without triggering errexit.
     if [[ ! -d "$SOURCE_DIR" ]]; then
@@ -290,7 +290,7 @@ DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secret
 # input; the user may interrupt with Ctrl-C.
 FALLBACK_NOTICE_TIMEOUT="${PYNTARA_FALLBACK_NOTICE_TIMEOUT:-7}"
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f show_message &>/dev/null; then
 show_message() {
     # Print a message as plain text without waiting for any input. The
@@ -299,7 +299,7 @@ show_message() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f log_status &>/dev/null; then
 log_status() {
     # Print a status message as plain text without pausing for Enter.
@@ -308,7 +308,7 @@ log_status() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f show_countdown &>/dev/null; then
 show_countdown() {
     # Print a message with a visible second-by-second countdown. No input is
@@ -328,12 +328,12 @@ show_countdown() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f check_vault_password &>/dev/null; then
 check_vault_password() {
     # Verify a candidate password by asking the Python engine to open the
     # KeePass database. The shell must not decrypt vaults itself (bootstrap
-    # contract section 12): decryption happens in pyntara check-vault via
+    # contract, Secrets files): decryption happens in pyntara check-vault via
     # pykeepass. The password travels through stdin, never as an argument,
     # so it cannot leak into the process list or the run_timed log line.
     local password="$1"
@@ -341,7 +341,7 @@ check_vault_password() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fallback_to_default_vault &>/dev/null; then
 fallback_to_default_vault() {
     # Export the well-known fallback password so the Python engine can decrypt
@@ -362,7 +362,7 @@ fallback_to_default_vault() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f prompt_vault_password &>/dev/null; then
 prompt_vault_password() {
     # Resolve the vault password and source for the Python engine.
@@ -407,7 +407,7 @@ fi
 
 # Implementation: phase 4.2 (install mode selection)
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f detect_default_mode &>/dev/null; then
 detect_default_mode() {
     # Choose the default install mode without asking the user, install-modes
@@ -435,7 +435,7 @@ detect_default_mode() {
 }
 fi
 
-# Guard so the test harness can inject a mock via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f prompt_install_mode &>/dev/null; then
 prompt_install_mode() {
     # Decide the install mode and export it for the Python engine.
@@ -452,7 +452,7 @@ prompt_install_mode() {
 }
 fi
 
-# Guard so the test harness can inject a mock main via source (bootstrap contract section 10).
+# Guard so the test harness can inject a mock main via source (bootstrap contract, Testability).
 if ! declare -f main &>/dev/null; then
 main() {
     # The version is the very first line of output: it must be visible even

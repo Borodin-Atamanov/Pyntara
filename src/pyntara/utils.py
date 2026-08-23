@@ -2,9 +2,9 @@
 
 run_command is the single command-execution wrapper used by tasks: no
 shell, real-time output streaming, timeout and return-code checking
-(docs/guides/project-rules.md section 4). The timeout is a required
+(project rules, General engineering requirements). The timeout is a required
 parameter: the value comes from config.toml through Context, never from a
-hardcoded default (architecture contract section 3).
+hardcoded default (architecture contract, Configuration).
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ source password never opens the runtime vault. The entry lives in the
 root group of the vault, because the structure is flat (the
 [vault_structure] table in config.toml). All paths and the entry title
 come from config.toml through ctx.config.local_vault_setup (architecture
-contract section 3). The source vault is not fixed: the production vault
+contract, Configuration). The source vault is not fixed: the production vault
 is tried first, then the default vault, both with the password from
 Context; when neither opens, the task journals a serious error at syslog
 level 3 and fails without stopping the run. The task is idempotent:
@@ -90,7 +90,7 @@ def open_source_vault(
     wins over the default vault. Other tasks that must read secrets from
     the fresh clone (nextdns_setup_system_wide) import this function
     instead of reimplementing the source selection
-    (docs/guides/project-rules.md section 4).
+    (project rules, General engineering requirements).
     """
 
     return _open_source_vault(*_resolve_source_vault(cfg), password)
