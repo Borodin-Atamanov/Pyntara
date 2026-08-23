@@ -56,7 +56,7 @@ EOF
 PYNTARA_VERSION="0.1.0"
 EOF
     cat > "$tmp/README.md" <<'EOF'
-# Pyntara version 0.1.0
+# Pyntara 0.1.0
 EOF
     git -C "$tmp" add -A
     git -C "$tmp" commit -q -m "initial"
@@ -84,7 +84,7 @@ test_commit_bumps_package_installer_and_readme() {
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q '# Pyntara version 0.1.1' "$tmp/README.md"; then
+    if ! grep -q '# Pyntara 0.1.1' "$tmp/README.md"; then
         echo "readme version not bumped to 0.1.1" >&2
         cat "$tmp/README.md" >&2
         rm -rf "$tmp"

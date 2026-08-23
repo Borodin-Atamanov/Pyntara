@@ -32,7 +32,7 @@ def make_repo(tmp_path: Path, version: str) -> tuple[Path, Path, Path, Path]:
         f'#!/usr/bin/env bash\n\nPYNTARA_VERSION="{version}"\n', encoding="utf-8"
     )
     readme_file = tmp_path / "README.md"
-    readme_file.write_text(f"# Pyntara version {version}\n", encoding="utf-8")
+    readme_file.write_text(f"# Pyntara {version}\n", encoding="utf-8")
     return tmp_path, package_file, installer_file, readme_file
 
 
@@ -86,7 +86,7 @@ def test_bump_version_in_repo_updates_package_installer_and_readme(
     assert new_version == "0.1.1"
     assert read_current_version(package_file) == "0.1.1"
     assert 'PYNTARA_VERSION="0.1.1"' in installer_file.read_text(encoding="utf-8")
-    assert "# Pyntara version 0.1.1" in readme_file.read_text(encoding="utf-8")
+    assert "# Pyntara 0.1.1" in readme_file.read_text(encoding="utf-8")
 
 
 def test_bump_version_in_repo_keeps_installer_without_version_line(

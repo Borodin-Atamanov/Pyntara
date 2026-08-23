@@ -22,7 +22,7 @@ _VERSION_PATTERN = re.compile(r'__version__ = "([^"]+)"')
 _PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")
 _INSTALLER_VERSION_FILE = Path("inst.sh")
 _README_VERSION_FILE = Path("README.md")
-_README_TITLE_PREFIX = "# Pyntara version "
+_README_TITLE_PREFIX = "# Pyntara "
 
 
 def read_current_version(version_file: Path) -> str:
