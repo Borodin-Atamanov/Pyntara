@@ -12,9 +12,9 @@ The key pair lives in the repository under task_data/ssh_daemon_setup/: the priv
 
 The task never rewrites sshd_config itself. The main configuration is patched through the drop-in at the configured sshd_config_dropin_path:
 
-The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include means the drop-in would be silently ignored, so the task fails with an explicit error instead of pretending the configuration is in place.
-The directives are written through augeas (augtool, installed by the augeas-tools package of the cli_tools task). augeas parses the real syntax and updates only what differs: a directive that is already present with the same value is left untouched, a directive with a different value is updated, a directive that is no longer configured is removed, and the ownership comment is guaranteed. The drop-in is owned by the task: a manual edit is reverted on the next run.
-An empty directives list removes the drop-in, so the task can revoke its own settings.
+The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include means the drop-in would be silently ignored, so the task fails with an explicit error instead of pretending the configuration is in place.  
+The directives are written through augeas (augtool, installed by the augeas-tools package of the cli_tools task). augeas parses the real syntax and updates only what differs: a directive that is already present with the same value is left untouched, a directive with a different value is updated, a directive that is no longer configured is removed, and the ownership comment is guaranteed. The drop-in is owned by the task: a manual edit is reverted on the next run.  
+An empty directives list removes the drop-in, so the task can revoke its own settings.  
 After a change the effective configuration is verified with sshd -T, which prints the result of the whole Include chain. A directive that a later file overrides, or a keyword the daemon does not know, is reported as an error instead of being silently accepted: the verification is independent of the OpenSSH version and of other files in the drop-in directory.
 
 ## Listen port and the systemd socket
@@ -25,8 +25,8 @@ Ubuntu activates the SSH daemon through the systemd socket unit socket_unit_name
 
 The keys are deployed into the .ssh directory of root (root_ssh_dir) and of every configured user. For every target:
 
-The .ssh directory is created with the configured ssh_dir_mode and owned by the target user.
-The private and public key files are written with their configured modes and owned by the target user.
+The .ssh directory is created with the configured ssh_dir_mode and owned by the target user.  
+The private and public key files are written with their configured modes and owned by the target user.  
 The public key line is guaranteed in authorized_keys: the file is appended to, never rewritten, so keys the user added by hand survive; an already present key line is a no-op, so repeated runs do not accumulate duplicates.
 
 The task owns the key files: a file whose content differs from the repository copy is overwritten, so a manual edit cannot wedge the deployed keys. A configured user that does not exist yet is skipped with a log line, so the task stays idempotent.

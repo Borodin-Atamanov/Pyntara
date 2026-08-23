@@ -47,22 +47,22 @@ Comments must be concise and explain intent, not decorate. Every unnecessary cha
 
 ## General engineering requirements
 
-Full type annotations for all arguments and return values are mandatory.
-Type checking: mypy --strict, zero errors.
-Formatting and static analysis: ruff, zero warnings before merge.
+Full type annotations for all arguments and return values are mandatory.  
+Type checking: mypy --strict, zero errors.  
+Formatting and static analysis: ruff, zero warnings before merge.  
 Descriptive naming: functions, methods, variables and task names must state what they do or hold, so the name alone explains the purpose.
 
 Subprocess calls:
-no shell=True
+no shell=True  
 mandatory return-code checking
 
-All setup tasks must be idempotent.
-Re-runs must not break the system and must not overwrite already generated secrets.
-Plaintext secret storage is forbidden (including code and logs).
-External inputs (including the config/ directory) are validated by explicit checks in the loading code: the config/ package type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.
-Internal structures without external validation use frozen dataclasses.
-All package-install operations and other operations must have timeouts.
-Tasks must also have reasonable large timeouts configured.
+All setup tasks must be idempotent.  
+Re-runs must not break the system and must not overwrite already generated secrets.  
+Plaintext secret storage is forbidden (including code and logs).  
+External inputs (including the config/ directory) are validated by explicit checks in the loading code: the config/ package type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.  
+Internal structures without external validation use frozen dataclasses.  
+All package-install operations and other operations must have timeouts.  
+Tasks must also have reasonable large timeouts configured.  
 All processes started from Python must provide return code used for correctness control.
 
 All variables and constants live in the config/ directory, never as constants inside task modules: this includes paths, file modes, unit file names, journal identifiers, queue and spool directory names. A module constant is allowed only as an exception explicitly approved by the user and recorded in docs/contracts/architecture.md; without such a recorded approval the value must live in the config/ directory. The same value or the same logic must never be duplicated across modules: shared values and helpers are defined once in a common module and imported.
@@ -73,9 +73,9 @@ All text that crosses an external boundary must be passed through the shared tri
 
 When creating code and configurations, add comments in simple English.
 Comments must explain:
-what the code does
-what each configuration line does
-why the action is performed
+what the code does  
+what each configuration line does  
+why the action is performed  
 why the architecture was chosen
 
 Explanations must be detailed enough for both humans and machines.
@@ -83,8 +83,8 @@ One consistent formatting/style standard is required across the project.
 
 Documentation rules:
 
-Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally. Numbering in headings is forbidden: a heading is not a list item, numbers burn tokens for nothing.
-Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.
-Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.
-Prose follows the token economy of [Output and comment style](#output-and-comment-style-token-economy): delete sentences that add no information.
+Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally. Numbering in headings is forbidden: a heading is not a list item, numbers burn tokens for nothing.  
+Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.  
+Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.  
+Prose follows the token economy of [Output and comment style](#output-and-comment-style-token-economy): delete sentences that add no information.  
 Numbered lists are forbidden in documentation: a list is plain text, one item per line, without markers or numbers. Order lives in the sequence of lines, not in digits; numbering burns tokens and forces renumbering on every edit. In conversation with the user, numbered lists are welcome: the numbers give convenient addresses for follow-up.

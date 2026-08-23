@@ -18,8 +18,8 @@ what the task does
 
 ## Structure
 
-Each task is a separate Python module in src/pyntara/tasks/.
-Task file name must match task name in the catalog.
+Each task is a separate Python module in src/pyntara/tasks/.  
+Task file name must match task name in the catalog.  
 Task data is stored in the task-data directory, in a subdirectory matching the task name.
 
 ## Example
@@ -32,8 +32,8 @@ The catalog lives in the config/ directory under the [[tasks]] section (tasks.to
 
 ## Task dependencies
 
-Enabling a task auto-enables all its required dependencies transitively.
-Disabling a task does not auto-disable dependent tasks.
+Enabling a task auto-enables all its required dependencies transitively.  
+Disabling a task does not auto-disable dependent tasks.  
 Task set and metadata are defined in the config/ directory under the [[tasks]] section; task_catalog.py holds the resolution logic.
 
 ## Task contract (Python)
@@ -41,8 +41,8 @@ Task set and metadata are defined in the config/ directory under the [[tasks]] s
 The runtime contract of a task is fixed by [Task contract](architecture.md#task-contract): a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error). The presentation contract (banner, pause, outcome line) is fixed by [Task presentation](../guides/project-rules.md#task-presentation).
 
 Data transfer between tasks is explicit only:
-through Context fields (e.g., secrets)
+through Context fields (e.g., secrets)  
 or through the orchestrator passing required values as arguments to the next task
 
-Hidden data exchange via shared mutable state outside Context and outside arguments is forbidden.
+Hidden data exchange via shared mutable state outside Context and outside arguments is forbidden.  
 No typing.Protocol, no ABC inheritance.

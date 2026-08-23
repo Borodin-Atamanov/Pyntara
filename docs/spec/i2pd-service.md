@@ -16,8 +16,8 @@ The distribution is read from /etc/os-release through the shared helpers in pynt
 
 Only Debian-based distributions are supported: the release assets are deb packages, and a distribution outside the Debian family is reported as a task error before any download. The deb asset is chosen by the dpkg architecture and the VERSION_CODENAME of the os-release file:
 
-the codename-specific asset i2pd_{tag}-1{codename}1_{arch}.deb wins, because it is built against this distribution
-the generic asset i2pd_{tag}-1_{arch}.deb is the fallback, so a release without a build for this codename still installs
+the codename-specific asset i2pd_{tag}-1{codename}1_{arch}.deb wins, because it is built against this distribution  
+the generic asset i2pd_{tag}-1_{arch}.deb is the fallback, so a release without a build for this codename still installs  
 a release without either asset for the architecture is reported as a task error
 
 The asset list comes from the release payload, so new codenames never need code changes: the exact name is looked up among the returned assets.

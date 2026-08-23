@@ -8,8 +8,8 @@ The task configures the KDE keyboard layouts and the layout indicator of the tar
 
 Two KConfig files under the configured config_dir are managed:
 
-kxkbrc, group [Layout]. LayoutList carries the configured layouts joined by commas, Options carries the XKB switch option, Use carries whether switching is enabled. The configured switch_option grp:caps_select means Caps Lock to the first layout and Shift+Caps Lock to the second layout, so the layout order in LayoutList decides which key gives English and which gives Russian.
-The Plasma appletsrc, the keyboard layout applet. The applet is found by its plugin declaration; its displayStyle is set to the configured indicator_display_style, so the indicator shows the country flag instead of the layout name.
+kxkbrc, group [Layout]. LayoutList carries the configured layouts joined by commas, Options carries the XKB switch option, Use carries whether switching is enabled. The configured switch_option grp:caps_select means Caps Lock to the first layout and Shift+Caps Lock to the second layout, so the layout order in LayoutList decides which key gives English and which gives Russian.  
+The Plasma appletsrc, the keyboard layout applet. The applet is found by its plugin declaration; its displayStyle is set to the configured indicator_display_style, so the indicator shows the country flag instead of the layout name.  
 kglobalshortcutsrc, the global shortcuts file. Each entry of layout_switch_shortcuts maps a keyboard layout switcher action to a shortcut in Qt portable text format, so one hotkey switches straight to one layout.
 
 ## Write mechanism
@@ -30,14 +30,14 @@ The task reads every current value with kreadconfig6 and writes only what differ
 
 All parameters live in the [kde_keyboard_setup] table of the config/ directory:
 
-packages, the packages the task ensures are installed: the provider of kwriteconfig6 and kreadconfig6 (libkf6config-bin), the DBus client used for the reload (qdbus-qt6) and the python3-dbus bindings used to apply the hotkeys live.
-username, home_dir and config_dir, the target user and that user's home and config directories.
-kxkbrc_file_name and appletsrc_file_name, the KConfig file names under config_dir.
-applet_plugin, the Plasma applet whose display style is the layout indicator.
-layouts, the layout list in the order Caps Lock and Shift+Caps Lock cycle through.
-switch_option, the XKB switch option.
-use_layout_switching, whether switching is enabled.
-indicator_display_style, how the indicator shows the current layout.
-kwin_reload_command, the command that makes kwin re-read the keyboard layout configuration.
-panel_restart_command, the command that restarts the Plasma panel.
+packages, the packages the task ensures are installed: the provider of kwriteconfig6 and kreadconfig6 (libkf6config-bin), the DBus client used for the reload (qdbus-qt6) and the python3-dbus bindings used to apply the hotkeys live.  
+username, home_dir and config_dir, the target user and that user's home and config directories.  
+kxkbrc_file_name and appletsrc_file_name, the KConfig file names under config_dir.  
+applet_plugin, the Plasma applet whose display style is the layout indicator.  
+layouts, the layout list in the order Caps Lock and Shift+Caps Lock cycle through.  
+switch_option, the XKB switch option.  
+use_layout_switching, whether switching is enabled.  
+indicator_display_style, how the indicator shows the current layout.  
+kwin_reload_command, the command that makes kwin re-read the keyboard layout configuration.  
+panel_restart_command, the command that restarts the Plasma panel.  
 layout_switch_shortcuts, the layout hotkeys: a table of keyboard layout switcher action names to shortcuts in Qt portable text format, empty by default.

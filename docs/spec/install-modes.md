@@ -1,8 +1,8 @@
 # Installation modes and task selection
 
 The system offers 3 installation options:
-minimal
-server
+minimal  
+server  
 desktop
 
 ## Mode selection
@@ -10,7 +10,7 @@ desktop
 The installer runs non-interactively. The mode is fixed by the PYNTARA_INSTALL_MODE environment variable.
 
 When PYNTARA_INSTALL_MODE is omitted, the mode is auto-detected from the system:
-on desktop systems, desktop mode is used
+on desktop systems, desktop mode is used  
 on server systems, server mode is used
 
 An unknown PYNTARA_INSTALL_MODE value shows the resilience notice and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#resilience-rule)).
@@ -22,8 +22,8 @@ The task set is fixed by the PYNTARA_TASKS environment variable: space-separated
 When PYNTARA_TASKS is omitted, the default task set of the chosen mode is used: the tasks whose modes field lists that mode.
 
 Each task has:
-explicit ordering
-name
+explicit ordering  
+name  
 human-readable description
 
 Task set and metadata are defined in the config/ directory under the [[tasks]] section. Unknown task names show the resilience notice and are ignored.

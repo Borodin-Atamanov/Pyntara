@@ -14,52 +14,52 @@ The helpers fit files where one setting is one line and the line order does not 
 
 ## Top-level files
 
-inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.
-README.md — Quick start, installation modes, and links to detailed docs.
-config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.
-hooks/pre-commit — Version bump hook: bumps the patch version before every commit (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
+inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
+README.md — Quick start, installation modes, and links to detailed docs.  
+config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.  
+hooks/pre-commit — Version bump hook: bumps the patch version before every commit (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).  
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
 
-contracts/ — Mandatory runtime specifications
-spec/ — Functional specification, what the system does
+contracts/ — Mandatory runtime specifications  
+spec/ — Functional specification, what the system does  
 guides/ — How to work with the project
 
 ## secrets/
 
 The four secret files (default/production vaults and their passwords) are listed in [Secrets files](../contracts/bootstrap.md#secrets-files); their structure is described in [Secrets model](../spec/secrets-model.md).
 
-secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).
+secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).  
 secrets/read_google_script_credentials.py — Prints the script ID, the deployment ID and the shared auth key of the System Metrics Google Drive web app from the google_script_key entry of a vault (username, the deployment ID embedded in url, and the password field); consumed by task_data/system_metrics_setup/deploy_google_script.sh, which substitutes the key into the __GOOGLE_SCRIPT_KEY__ template placeholder of google_drive_script.js.
 
 ## src/pyntara/
 
-src/pyntara/__init__.py — Package version and public exports.
-src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py and inst.sh through config_edit.replace_line_by_string. Consumed by hooks/pre-commit.
-src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.
-src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.
-src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.
-src/pyntara/models.py — TaskResult dataclass.
-src/pyntara/context.py — Context frozen dataclass.
-src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.
-src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries, proquint_encode and proquint_decode pronounceable encoding of arbitrary bytes (draft-rayner-proquint) with the alphabet and bit layout fixed in the module, plus trim_whitespace, backoff_delay, ensure_root_owner, package and os-release helpers.
-src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in config file through augtool. Used by ssh_daemon_setup and ssh_client_setup.
-src/pyntara/config_edit.py — Line-level config editing helpers (see [Configuration editing](#configuration-editing)).
-src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.
-src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel address from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.
-src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.
-src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.
-src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
-src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.
-src/pyntara/tor_address.py — Deployed address command: prints the Tor onion address from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address`.
-src/pyntara/yggdrasil.py — Shared Yggdrasil helpers: parse the node self address from yggdrasilctl JSON output. Imported by yggdrasil_service_setup and yggdrasil_address.
-src/pyntara/yggdrasil_address.py — Deployed address command: prints the yggdrasil self address from the admin socket or the saved fallback. Runs as `python -m pyntara.yggdrasil_address`.
-src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/system-metrics.md).
-src/pyntara/metrics_ingest.py — Queue ingest: moves spool files into the main_outbox directory. Runs as `python -m pyntara.metrics_ingest`.
-src/pyntara/metrics_collect.py — Report collector: runs console commands, waits for network modules, writes the report and commits it. Runs as `python -m pyntara.metrics_collect`.
-src/pyntara/metrics_send.py — Queue sender: dispatches entries from main_outbox into channel queues and drains them into delivery endpoints. Runs as part of the system_metrics service.
-src/pyntara/metrics_commit.py — Commit command logic: the thin bash script generated by system_metrics_setup delegates to this module for testing.
+src/pyntara/__init__.py — Package version and public exports.  
+src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py and inst.sh through config_edit.replace_line_by_string. Consumed by hooks/pre-commit.  
+src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
+src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.  
+src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  
+src/pyntara/models.py — TaskResult dataclass.  
+src/pyntara/context.py — Context frozen dataclass.  
+src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.  
+src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries, proquint_encode and proquint_decode pronounceable encoding of arbitrary bytes (draft-rayner-proquint) with the alphabet and bit layout fixed in the module, plus trim_whitespace, backoff_delay, ensure_root_owner, package and os-release helpers.  
+src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in config file through augtool. Used by ssh_daemon_setup and ssh_client_setup.  
+src/pyntara/config_edit.py — Line-level config editing helpers (see [Configuration editing](#configuration-editing)).  
+src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.  
+src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel address from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.  
+src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.  
+src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.  
+src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.  
+src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
+src/pyntara/tor_address.py — Deployed address command: prints the Tor onion address from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address`.  
+src/pyntara/yggdrasil.py — Shared Yggdrasil helpers: parse the node self address from yggdrasilctl JSON output. Imported by yggdrasil_service_setup and yggdrasil_address.  
+src/pyntara/yggdrasil_address.py — Deployed address command: prints the yggdrasil self address from the admin socket or the saved fallback. Runs as `python -m pyntara.yggdrasil_address`.  
+src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/system-metrics.md).  
+src/pyntara/metrics_ingest.py — Queue ingest: moves spool files into the main_outbox directory. Runs as `python -m pyntara.metrics_ingest`.  
+src/pyntara/metrics_collect.py — Report collector: runs console commands, waits for network modules, writes the report and commits it. Runs as `python -m pyntara.metrics_collect`.  
+src/pyntara/metrics_send.py — Queue sender: dispatches entries from main_outbox into channel queues and drains them into delivery endpoints. Runs as part of the system_metrics service.  
+src/pyntara/metrics_commit.py — Commit command logic: the thin bash script generated by system_metrics_setup delegates to this module for testing.  
 src/pyntara/tasks/ — One module per task, each exposing task(ctx) -> TaskResult.
 
 Modules planned but not implemented yet are listed in [What is next](../simplified-architecture.md#what-is-next-separate-changes).
@@ -72,23 +72,23 @@ One module per task, each exposing task(ctx) -> TaskResult. Task names come from
 
 Each TOML file in config/ has a corresponding parser module in src/pyntara/config/ and a frozen dataclass. The parser is wired in loader.py and the dataclass is exported from config/__init__.py. Tasks receive the whole Config through Context and access their section by name.
 
-engine -> config/engine.py -> EngineConfig -> all tasks via Context
-cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools
-add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos
-hostname -> config/hostname.py -> HostnameConfig -> hostname
-swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install
-zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service
-zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service
-dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup
-i2pd_service_setup -> config/i2pd_service_setup.py -> I2pdServiceSetupConfig -> i2pd_service_setup
-yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup
-tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup
-ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup
-ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup
-nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
-system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
-vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide
-local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup
+engine -> config/engine.py -> EngineConfig -> all tasks via Context  
+cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools  
+add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos  
+hostname -> config/hostname.py -> HostnameConfig -> hostname  
+swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install  
+zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service  
+zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service  
+dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup  
+i2pd_service_setup -> config/i2pd_service_setup.py -> I2pdServiceSetupConfig -> i2pd_service_setup  
+yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup  
+tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup  
+ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup  
+ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  
+nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide  
+system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup  
+vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  
+local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup  
 tasks -> config/tasks.py -> tuple[TaskConfig, ...] -> task_catalog.py
 
 ## Public API surface
@@ -122,8 +122,8 @@ ssh.py              ssh_port_from_directives
 
 ## Adding a new config section
 
-Create config/<name>.toml with the values and comments.
-Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.
-Add the dataclass field to the Config class in loader.py.
-Wire the parser in load_config() in loader.py.
+Create config/<name>.toml with the values and comments.  
+Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.  
+Add the dataclass field to the Config class in loader.py.  
+Wire the parser in load_config() in loader.py.  
 Export the dataclass from config/__init__.py.

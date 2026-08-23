@@ -10,39 +10,39 @@ Startup check: script must be running as root. If not, exit with an error.
 
 ## Package installation: optimistic apt strategy
 
-First attempt: apt-get install -y without apt-get update.
-If packages are missing (stale index), run apt-get update, then retry install.
-This avoids wasting time on apt-get update during test runs where packages are already cached.
+First attempt: apt-get install -y without apt-get update.  
+If packages are missing (stale index), run apt-get update, then retry install.  
+This avoids wasting time on apt-get update during test runs where packages are already cached.  
 All apt operations run with DEBIAN_FRONTEND=noninteractive.
 
 ## Installed packages (in order)
 
-python3, python3-venv, git, curl, ca-certificates — minimal runtime dependencies.
+python3, python3-venv, git, curl, ca-certificates — minimal runtime dependencies.  
 uv — Python package manager, installed via official Astral script.
 
 ## Source delivery: git only
 
-The only supported method: git clone --depth 1 into a temporary directory.
+The only supported method: git clone --depth 1 into a temporary directory.  
 On repeated runs: if the directory already exists and contains files, git fetch + reset to the latest revision instead of re-cloning from scratch.
 
 ## FHS paths
 
 All directories follow POSIX Linux standards as adopted by Ubuntu:
 
-/var/cache/pyntara/ — Git clone cache, uv cache
-/var/lib/pyntara/ — Runtime state, workspaces
+/var/cache/pyntara/ — Git clone cache, uv cache  
+/var/lib/pyntara/ — Runtime state, workspaces  
 /var/log/pyntara/ — Install logs
 
 ## Python environment
 
-uv sync in the cloned repository directory.
-If lockfile is current, use --locked. Otherwise sync without it.
+uv sync in the cloned repository directory.  
+If lockfile is current, use --locked. Otherwise sync without it.  
 After sync, launch: uv run pyntara (no timeout).
 
 ## Verbose execution and timing
 
-All programs run in maximum verbosity, non-interactive mode.
-Every significant command is wrapped in time so the user sees execution duration.
+All programs run in maximum verbosity, non-interactive mode.  
+Every significant command is wrapped in time so the user sees execution duration.  
 Trivial commands (echo, mkdir, cd) are not wrapped.
 
 ## No timeout on Pyntara
@@ -51,9 +51,9 @@ The uv run pyntara process runs without any time limit. Provisioning tasks take 
 
 ## Logging
 
-Every own message of the installer (log) goes to the system journal as the primary destination, with the identifier pyntara-install and without the console timestamp: the journal stamps its own time. The Python engine mirrors its own messages with the identifier pyntara-engine ([Central logging](../guides/project-rules.md#central-logging)). Journal forwarding is best effort: a missing systemd-cat or a failed write never stops the run.
-The full stream is persisted to /var/log/pyntara/install.log as a residual copy: every command and its output are written there, and the same output is streamed to the terminal in real time.
-Timestamps use YYYY-MM-DD-HH-MM-SS format.
+Every own message of the installer (log) goes to the system journal as the primary destination, with the identifier pyntara-install and without the console timestamp: the journal stamps its own time. The Python engine mirrors its own messages with the identifier pyntara-engine ([Central logging](../guides/project-rules.md#central-logging)). Journal forwarding is best effort: a missing systemd-cat or a failed write never stops the run.  
+The full stream is persisted to /var/log/pyntara/install.log as a residual copy: every command and its output are written there, and the same output is streamed to the terminal in real time.  
+Timestamps use YYYY-MM-DD-HH-MM-SS format.  
 Logging is always verbose. There is no quiet mode.
 
 ## Testability: conditional function declaration
@@ -72,19 +72,19 @@ If a function is already declared (test harness injected a mock via source), the
 
 The installer never shows interactive screens. All user interaction happens through environment variables:
 
-Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no vault, the default vault is used after a countdown notice).
-Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).
-Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).
-Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).
+Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no vault, the default vault is used after a countdown notice).  
+Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).  
+Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).  
+Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).  
 Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that cli_tools runs before the first install).
 
 The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. The interactive UI contract was deleted.
 
 ## Secrets files
 
-secrets/default.vault — Test/fallback KeePass database. In git.
-secrets/production.vault — Production KeePass database. In git.
-secrets/default.password — Password for default.vault (well-known test value). In git.
+secrets/default.vault — Test/fallback KeePass database. In git.  
+secrets/production.vault — Production KeePass database. In git.  
+secrets/default.password — Password for default.vault (well-known test value). In git.  
 secrets/production.password — Password for production.vault. Not in git (.gitignore).
 
 KeePass decryption is handled by a Python library, not shell tools.

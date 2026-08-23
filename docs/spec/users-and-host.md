@@ -14,11 +14,11 @@ The task writes the name into the configured hostname.hostname_file and applies 
 ZRAM is configured based on CPU core count.
 The device count equals the number of CPU cores; when the count cannot be determined, fallback_cpu_count is used.
 
-Each device is sized to the same share of memory_fraction_percent of installed RAM, rounded down to the alignment_bytes zram page size.
+Each device is sized to the same share of memory_fraction_percent of installed RAM, rounded down to the alignment_bytes zram page size.  
 Total ZRAM capacity is memory_fraction_percent of installed RAM.
 
-ZRAM should be aggressive, with strong compression, using almost all memory.
-Each device uses the configured compressor algorithm.
+ZRAM should be aggressive, with strong compression, using almost all memory.  
+Each device uses the configured compressor algorithm.  
 ZRAM swap is activated with the configured swap_priority, so it is used before the disk swapfile.
 
 All parameter values live in the [zram_service] table of the config/ directory: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts and reset_busy_retry_delay_seconds.
