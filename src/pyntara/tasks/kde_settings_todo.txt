@@ -13,6 +13,9 @@
    применить в таске.
 4. Строка Кандидат: всегда на отдельной строке, после объяснения. Если
    настройка в таск не идёт, пишется Кандидат: не задавать.
+5. Значения, совпадающие с дефолтом, тоже записываются, с пометкой
+   Кандидат: equal to default, skip. Это страховка от ошибочного
+   причисления важной настройки к дефолтной.
 Позиции разделяются пустой строкой. Строка Заметка помечает моё рассуждение.
 
 Тема и внешний вид.
@@ -50,12 +53,21 @@ default = ocean, уточнить
 (gtk-sound-theme-name) и xsettingsd (Net/SoundThemeName).
 Кандидат: sound_theme.
 
-config/kdeglobals [KDE] AutomaticLookAndFeelIdleInterval = 27
+config/kdeglobals [KDE] AutomaticLookAndFeel = true
+config/kdeglobals [KDE] AutomaticLookAndFeelIdleInterval = 99
 default = уточнить
-Интервал автопереключения look and feel при бездействии, секунд. Появился
-при ручной настройке. Заметка: не факт, что осознанная правка, но не
-отсекаю.
-Кандидат: только если нужен.
+Автопереключение светлой и тёмной темы по времени суток и интервал
+ожидания бездействия перед переключением. Заметка: значение интервала
+обновлено по дампу Global Theme: было 27, стало 99. Соответствует флагу
+Wait until idleness before switching.
+Кандидат: automatic_look_and_feel.
+
+config/kdeglobals [KDE] contrast = 4
+config/kdeglobals [KDE] frameContrast = 0.2
+default = уточнить
+Контраст цветовой схемы и контраст рамки окон. Заметка: появились при
+ручной настройке, источник значения страница Global Theme или Colors.
+Кандидат: color_contrast.
 
 config/kcminputrc [Mouse] cursorTheme = Oxygen_Yellow
 default = breeze_cursors, уточнить
@@ -150,12 +162,16 @@ default = 4, уточнить
 Кандидат: zoom_pixel_grid.
 
 config/kwinrc [Effect-wobblywindows] AdvancedMode = true
-config/kwinrc [Effect-wobblywindows] Drag = 92
-config/kwinrc [Effect-wobblywindows] MoveFactor = 20
-config/kwinrc [Effect-wobblywindows] Stiffness = 3
+config/kwinrc [Effect-wobblywindows] Drag = 98
+config/kwinrc [Effect-wobblywindows] MoveFactor = 3
+config/kwinrc [Effect-wobblywindows] Stiffness = 24
+config/kwinrc [Effect-wobblywindows] WobblynessLevel = 3
 default = уточнить
-Параметры эффекта желе: жёсткость 3, перетаскивание 92, фактор движения 20.
-Заметка: эффект декоративный, параметры тонкие; возможно, задавать только
+Параметры эффекта желе: жёсткость 24, перетаскивание 98, фактор движения 3.
+Заметка: значения обновлены по дампу диалога Configure и kwinrc.
+Диапазоны слайдеров из диалога: Stiffness 1-50, Drag 50-100, MoveFactor
+1-25. Флаги диалога: Wobble when moving true, Wobble when resizing true,
+Enable advanced mode true. Эффект декоративный, возможно задавать только
 вкл/выкл.
 Кандидат: wobbly_*.
 
@@ -230,11 +246,13 @@ config/kwinrc [Windows] ElectricBorderTiling = false
 config/kwinrc [Windows] ElectricBorders = 1
 config/kwinrc [Windows] Placement = Random
 config/kwinrc [Windows] RollOverDesktops = true
+config/kwinrc [Windows] SnapOnlyWhenOverlapping = true
 config/kwinrc [Windows] WindowSnapZone = 32
 default = BorderSnapZone 10, WindowSnapZone 10, уточнить
 Прилипание окон к краям 32px, активные электрические края, случайное
 размещение новых окон, перекат при переключении столов. Заметка:
-ElectricBorders и Placement значения пометить на проверку дефолтов KWin.
+SnapOnlyWhenOverlapping найден по странице Screen Edges. ElectricBorders
+и Placement значения пометить на проверку дефолтов KWin.
 Кандидат: window_snap_*.
 
 config/kwinrc [org.kde.kdecoration2] ButtonsOnLeft = MSNE
@@ -440,12 +458,20 @@ default = false, уточнить
 
 Темы переключения окон.
 
+config/kwinrc [TabBox] LayoutName = coverswitch
+config/kwinrc [TabBox] ActivitiesMode = 0
+config/kwinrc [TabBox] DesktopMode = 0
+default = LayoutName не задан, уточнить
+Тема переключения окон Cover Switch, найденная по странице Task Switcher.
+Заметка: обновление к прежней записи: LayoutName теперь задан в kwinrc
+как coverswitch. Установленные темы circularalttab и pie не выбраны.
+Кандидат: window_switcher_theme.
+
 local_share/kwin/tabbox/circularalttab (новые файлы)
 local_share/kwin/tabbox/pie (новые файлы)
-default = нет, LayoutName в kwinrc отсутствует
+default = нет
 Установлены две темы переключения окон: Circular Alt+Tab v1.1.0 и Pie v1.0.
-Заметка: в config/kwinrc [TabBox] LayoutName не задан, активна стандартная
-org.kde.breeze.desktop. Темы установлены, но не выбраны.
+Заметка: темы установлены, но активна Cover Switch (см. LayoutName выше).
 Кандидат: window_switcher_theme.
 
 Отдельные наблюдения.
@@ -462,3 +488,502 @@ default = тёмные
 Смотри запись про kdedefaults выше. Системные дефолты, не пользовательский
 уровень.
 Кандидат: не задавать.
+
+Доступность.
+
+config/kaccessrc пуст, kmagrc отсутствует
+default = дефолтные значения, в конфиг ничего не записано
+Страница Доступность в Настройках системы. Файлы конфигурации доступности
+пустые, значит все значения дефолтные. Перечислены блоки страницы с
+состоянием. Заметка: точные ключи конфига не известны, так как значения
+не сохранялись.
+Кандидат: equal to default, skip.
+
+Блок Zoom
+default = дефолтные значения
+Режим Full screen включён, Enable focus tracking выключен, Enable text
+caret tracking выключен, режим Magnify region выключен.
+Кандидат: equal to default, skip.
+
+Блок System Bell
+default = дефолтные значения
+Enable включён, кастомный звук не выбран, визуальный звонок Flash screen
+включён.
+Кандидат: equal to default, skip.
+
+Блок Modifier Keys, липкие клавиши
+default = дефолтные значения
+Enable выключен, Lock sticky keys включён, Disable when two keys are held
+down выключен.
+Кандидат: equal to default, skip.
+
+Блок Keyboard Filters, медленные и дребезговые клавиши
+default = дефолтные значения
+Slow keys Enable выключен, Bounce keys Enable выключен.
+Кандидат: equal to default, skip.
+
+Блок Mouse Navigation
+default = дефолтные значения
+Enable выключен, перемещение указателя цифровой клавиатурой выключено.
+Кандидат: equal to default, skip.
+
+Блок Activation Shortcuts
+default = дефолтные значения
+Enable выключен, Ring the system bell включён.
+Кандидат: equal to default, skip.
+
+Блок Screen Reader
+default = дефолтные значения, Orca не установлен
+Enable выключен, экранный диктор не настроен.
+Кандидат: equal to default, skip.
+
+Блок Color Blindness Correction
+default = дефолтные значения
+Enable выключен, тип коррекции Red and purple (Protanopia).
+Кандидат: equal to default, skip.
+
+Блок Invert
+config/kwinrc [Plugins] invertEnabled = true
+default = false
+Инверсия экрана и окон включена со страницы Доступность. Заметка: уже
+записана в раздел эффектов как invertEnabled.
+Кандидат: invert.
+
+Блок Shake Pointer
+config/kwinrc [Plugins] shakecursorEnabled = true
+default = false
+Тряска указателя включена со страницы Доступность. Заметка: уже записана
+в раздел эффектов через Effect-shakecursor Magnification.
+Кандидат: shake_pointer.
+
+Animations.
+
+config/kdeglobals [KDE] AnimationDurationFactor отсутствует
+default = 1.0, не записан
+Глобальная скорость анимаций не менялась, фактор длительности в
+kdeglobals не записан.
+Кандидат: equal to default, skip.
+
+config/kwinrc [Plugins] анимации окон не записаны
+default = дефолтные значения
+Выбор анимаций со страницы Animations: открытие окна Scale, разворот
+Stretch, сворачивание Magic Lamp, полный экран Window Aperture, обзор
+рабочего стола Slide, переключение столов Slide. В kwinrc [Plugins] эти
+плагины не записаны, значит значения дефолтные. Magic Lamp уже записан
+в разделе эффектов как magiclampEnabled.
+Кандидат: equal to default, skip.
+
+config/kwinrc [Plugins] fadingpopups, slidingpopups, login, logout не записаны
+default = true, дефолтные значения
+Флаги со страницы Animations: Fade popups включён, Slide Plasma popups
+включён, затухание при входе включено, затухание при выходе включено.
+Плагины не записаны в kwinrc, значит дефолт.
+Кандидат: equal to default, skip.
+
+Keyboard.
+
+config/kxkbrc [Layout] LayoutList = us,ru,es
+default = уточнить, на свежей системе обычно us,ru
+Раскладки клавиатуры us, ru, es со страницы Keyboard. Заметка: относится
+к таску kde_keyboard_setup, который уже ведёт раскладки.
+Кандидат: не для kde_settings.
+
+config/kxkbrc [Layout] Options = grp:caps_select
+default = none, уточнить
+Переключение раскладки Caps Lock, Shift+Caps Lock на предыдущую.
+Соответствует флагу со страницы Keyboard Caps Lock to first layout.
+Кандидат: layout_switch_shortcut в kde_keyboard_setup.
+
+config/kxkbrc [Layout] Model не задан
+default = Generic 104-key PC
+Модель клавиатуры стандартная, дефолт.
+Кандидат: equal to default, skip.
+
+config/kcminputrc [Keyboard] NumLock = 1
+default = 0, уточнить
+NumLock выключен при загрузке, комбо Turn off со страницы Keyboard.
+Заметка: уже есть в таске параметр numlock_on_boot=off.
+Кандидат: numlock_on_boot.
+
+Автоповтор клавиш: Key repeat включён, задержка 600 мс, скорость 25 в секунду
+default = 600 мс, 25 в секунду, дефолтные значения
+Параметры автоповтора со страницы Keyboard. Заметка: в конфигах не
+обнаружены, значения дефолтные.
+Кандидат: equal to default, skip.
+
+Число запасных раскладок = -1
+default = -1
+Запасные раскладки не используются. Дефолт.
+Кандидат: equal to default, skip.
+
+Заметка про файл Audio CDs
+default = не относится
+Файл systemsettings — Audio CDs — System Settings.json на самом деле
+содержит страницу Keyboard (frame показывал Keyboard). Отдельной страницы
+Audio CDs в дампах нет.
+Кандидат: не задавать.
+
+Boot Splash Screen.
+
+config/ksplashrc [KSplash] Theme = org.kde.oxygen
+default = org.kde.breeze, уточнить
+Тема заставки Oxygen вместо дефолтной Breeze. Заметка: уточнено по дампу
+Splash Screen: org.kde.oxygen это тема KSplash со страницы Splash Screen,
+запись о загрузочной заставке дублирует её. В kdedefaults прописана
+светлая org.kubuntulight, пользовательский уровень org.kde.oxygen.
+Кандидат: splash_theme.
+
+Configure Keyboard Shortcuts.
+
+config/kglobalshortcutsrc [kwin] Invert = Meta+I
+config/kglobalshortcutsrc [kwin] InvertWindow = Meta+Ctrl+I
+default = none, уточнить
+Сочетания из диалога Configure Keyboard Shortcuts: Toggle Invert Effect
+Meta+I, Toggle Invert Effect on Window Meta+Ctrl+I. Схема Default.
+Кандидат: invert_shortcuts.
+
+Configure, эффект Mouse Mark.
+
+config/kwinrc [Effect-mousemark] ширина линии Width = 3
+default = уточнить
+Диалог Configure эффекта Mouse Mark: ширина линии 3 (диапазон 1-10).
+Модификаторы рисования: свободное рисование Shift и Meta, стрелки Ctrl и
+Meta. Заметка: модификаторы в kwinrc записаны частично (Arrowdrawshift
+=false), точные ключи уточнить.
+Кандидат: mousemark_*.
+
+Configure, эффект Cube.
+
+config/kwinrc [Effect-cube] InvertX = false
+config/kwinrc [Effect-cube] InvertY = false
+default = false
+Диалог Configure эффекта Cube: инверсия мыши по X и Y выключена, фон
+Skybox выбран. Заметка: остальные параметры куба уже записаны в разделе
+эффектов.
+Кандидат: cube_*.
+
+Cursors.
+
+config/kcminputrc [Mouse] cursorSize = 72
+default = 24, уточнить
+Размер курсора 72 со страницы Cursors. Заметка: тема Oxygen_Yellow и
+размер уже упомянуты в разделе внешнего вида, здесь выделен отдельный
+параметр размера.
+Кандидат: cursor_size.
+
+Day-Night Cycle.
+
+Day-Night Cycle: автоопределение местоположения включено
+default = дефолтные значения
+Страница Day-Night Cycle: режим Based on device's location,
+автоопределение местоположения включено, восход 7:23, закат 18:28.
+Заметка: в kded6rc секция [DayNight] отсутствует, значения дефолтные,
+время рассчитано из геопозиции.
+Кандидат: equal to default, skip.
+
+Desktop Session.
+
+config/ksmserverrc [General] loginMode = emptySession
+default = restorePreviousLogin, уточнить
+Страница Desktop Session: при входе запускать пустую сессию. Заметка:
+уже записана в раздел экрана блокировки и сессии.
+Кандидат: session_login_mode.
+
+Остальные флаги Desktop Session
+default = дефолтные значения
+Подтверждение при завершении, перезагрузке и выходе включено, вход в UEFI
+после перезагрузки выключен, восстановление последнего сеанса выключено.
+Кандидат: equal to default, skip.
+
+Device Auto-Mount.
+
+Автоподключение устройств
+default = дефолтные значения
+Страница Device Auto-Mount: все устройства монтируются при входе и при
+подключении, новые носители монтируются автоматически. Заметка: solidrc
+отсутствует, значения дефолтные.
+Кандидат: equal to default, skip.
+
+General Behavior.
+
+config/kdeglobals [KDE] SingleClick = true
+default = false
+Страница General Behavior: открытие файлов по одному клику. Заметка: уже
+записана в разделе внешнего вида.
+Кандидат: single_click.
+
+Остальные флаги General Behavior
+default = дефолтные значения
+Тултипы панели и виджетов включены, OSD для статуса включён, прокрутка
+по клику в треке, плавная прокрутка, вставка по средней кнопке, при
+перетаскивании всегда спрашивать, сенсорный режим автоматически.
+Заметка: в kdeglobals не записаны, значения дефолтные.
+Кандидат: equal to default, skip.
+
+Global Theme.
+
+config/kdeglobals [KDE] AutomaticLookAndFeel = true
+default = false, уточнить
+Страница Global Theme: Switch to Dark Mode at Night включён, светлая тема
+днём и тёмная ночью. Заметка: параметры записаны выше в разделе внешнего
+вида.
+Кандидат: automatic_look_and_feel.
+
+Locations.
+
+Каталоги пользователя
+default = отдельные каталоги
+Страница Locations: каталоги Desktop, Documents, Downloads, Videos,
+Pictures, Music, Public, Templates. Заметка: уже записаны в разделе
+каталогов пользователя как XDG dirs, все сведены в Downloads.
+Кандидат: xdg_dirs.
+
+Login Screen (SDDM).
+
+config/sddm.conf [Autologin] User = i
+config/sddm.conf [Autologin] Session = plasma
+default = нет автовхода
+Автовход пользователя i в сессию Plasma со страницы Login Screen (SDDM).
+Заметка: системный конфиг /etc/sddm.conf, таск обычно пишет
+пользовательский уровень; учесть при решении о системных настройках.
+Кандидат: sddm_autologin.
+
+config/sddm.conf.d/20-kubuntu.conf [Theme] Current = kubuntu
+config/sddm.conf.d/20-kubuntu.conf [Theme] CursorSize = 30
+config/sddm.conf.d/20-kubuntu.conf [Theme] CursorTheme = breeze_cursors
+config/sddm.conf.d/20-kubuntu.conf [Theme] Font = Noto Sans,10
+default = уточнить, вероятно дефолт Kubuntu
+Тема экрана входа kubuntu с курсором breeze_cursors. Заметка: системный
+уровень.
+Кандидат: sddm_theme.
+
+Night Light.
+
+config/kwinrc [NightColor] Active = true
+config/kwinrc [NightColor] Mode = DarkLight
+default = Active false, Mode Constant
+Страница Night Light: режим переключения Sunrise and sunset, дневная
+температура 6500K, ночная 4500K. Заметка: уже записана в разделе окон и
+эффектов. Температуры в kwinrc не сохраняются, значения дефолтные.
+Кандидат: night_light_enabled, night_light_mode.
+
+Recent Files.
+
+Хранение истории недавних файлов
+default = дефолтные значения
+Страница Recent Files: Keep history для всех приложений, запоминание
+открытых документов для спектакля, порталов, KeePassXC, VS Code, Dolphin,
+Firefox, Gwenview, LibreOffice, Okular и других. Заметка: в дампе показано
+уведомление Cleared the activity history. Связано с kactivitymanagerd
+keep-history-for, уже записано в разделе приложений.
+Кандидат: equal to default, skip.
+
+Screen Edges.
+
+config/kwinrc [Windows] SnapOnlyWhenOverlapping = true
+default = false, уточнить
+Прилипание окон только при перекрытии. Найдено по странице Screen Edges.
+Кандидат: window_snap_*.
+
+Остальные флаги Screen Edges
+default = дефолтные значения
+Разворот по верхнему краю включён, тайлинг по боковым краям выключен,
+четверть экрана при 25 процентах, переключение стола по краю только при
+перемещении, задержка активации 75 мс, повторная 350 мс, угловой барьер
+включён, барьер края 100. Заметка: в kwinrc не записаны, дефолтные.
+Кандидат: equal to default, skip.
+
+Splash Screen.
+
+config/ksplashrc [KSplash] Theme = org.kde.oxygen
+default = org.kde.breeze, уточнить
+Тема заставки Plasma Oxygen, выбрана на странице Splash Screen (список
+Breeze, Oxygen, None). Заметка: уточнение к записи Boot Splash Screen:
+org.kde.oxygen относится к этой странице KSplash, а не к загрузочной
+заставке.
+Кандидат: splash_theme.
+
+Software Update.
+
+Обновление системы: вручную, еженедельно, применять сразу
+default = уточнить
+Страница Software Update: Update software Manually, Notification frequency
+Weekly, Apply system updates Immediately. Заметка: конфиг не найден,
+вероятно системный уровень (apt/unattended-upgrades) или KCM Kubuntu.
+Кандидат: только если нужен.
+
+Spell Check.
+
+config/KDE/Sonnet.conf проверка орфографии
+default = дефолтные значения
+Страница Spell Check: язык American English (United States),
+автоопределение языка включено, фоновая проверка включена, проверка по
+умолчанию включена, Skip run-together words включён. Заметка: уже записана
+в разделе приложений как Sonnet.
+Кандидат: spellcheck_default_language.
+
+System Sounds.
+
+config/kdeglobals [Sounds] Theme = freedesktop
+default = ocean, уточнить
+Страница System Sounds: выбрана тема FreeDesktop, звуки уведомлений
+включены. Заметка: уже записана в разделе внешнего вида.
+Кандидат: sound_theme.
+
+Touchpad.
+
+config/kcminputrc [Libinput][...][Touchpad] DisableEventsOnExternalMouse = true
+default = false
+Страница Touchpad: Disable while mouse is connected включён. Заметка:
+конфликтует с параметром таска touchpad_disable_on_external_mouse=false,
+на живой машине сейчас true. Согласовать.
+Кандидат: touchpad_disable_on_external_mouse.
+
+config/kcminputrc [Libinput][...][Touchpad] ClickMethod = 2
+default = 1, уточнить
+Способ щелчка: двумя пальцами (clickfinger). Со страницы Touchpad
+Right-click by pressing anywhere with two fingers. Заметка: совпадает с
+параметром таска touchpad_click_method=clickfinger.
+Кандидат: touchpad_click_method.
+
+Остальные флаги Touchpad
+default = дефолтные значения
+Устройство включено, отключение при вводе с клавиатуры включено, свап
+кнопок выключен, ускорение указателя включено, прокрутка двумя пальцами,
+натуральная прокрутка выключена, тап и перетаскивание включены. Заметка:
+в kcminputrc записаны только ClickMethod и DisableEventsOnExternalMouse.
+Кандидат: equal to default, skip.
+
+Task Switcher.
+
+config/kwinrc [TabBox] LayoutName = coverswitch
+default = не задан, уточнить
+Главная тема переключения окон Cover Switch со страницы Task Switcher.
+Заметка: записана в разделе тем переключения окон.
+Кандидат: window_switcher_theme.
+
+config/kwinrc [TabBox] ActivitiesMode = 0
+config/kwinrc [TabBox] DesktopMode = 0
+default = 0
+Фильтр по активности и рабочему столу в переключателе. Заметка: страница
+показывала фильтр Virtual desktops и Activities включёнными, в kwinrc
+режимы 0.
+Кандидат: equal to default, skip.
+
+Остальные флаги Task Switcher
+default = дефолтные значения
+Сортировка Recently used, Peek at Desktop выключен, одна кнопка на
+приложение выключена, Show selected window включён, альтернативная тема
+Thumbnail Grid, клавиши Alt+Tab и Meta+Tab. Заметка: альтернативная
+секция TabBoxAlternative в kwinrc пуста, значит дефолт.
+Кандидат: equal to default, skip.
+
+Virtual Desktops.
+
+config/kwinrc [Desktops] Rows = 1
+config/kwinrc [Desktops] Number = 3
+default = Number 1, Rows 1
+Три рабочих стола в один ряд со страницы Virtual Desktops. Заметка:
+Number уже записан в разделе окон, Rows новый.
+Кандидат: desktop_count, desktop_rows.
+
+Остальные флаги Virtual Desktops
+default = дефолтные значения
+Navigation wraps around включён, анимация переключения Slide включена,
+экранный индикатор выключен, индикаторы раскладки выключены. Заметка:
+в kwinrc не записаны.
+Кандидат: equal to default, skip.
+
+Wallpaper.
+
+Слайд-шоу обоев и обои дня
+default = уточнить
+Страница Wallpaper: тип Slideshow, позиция Scaled and cropped, порядок
+Random, динамические обои по дню и ночи, фон Solid color, набор картинок
+из /usr/share/wallpapers. Заметка: SlideInterval, SlidePaths,
+wallpaperplugin и potd уже записаны в разделе рабочего стола.
+Кандидат: wallpaper_slideshow_*.
+
+Динамические обои по циклу день-ночь
+default = уточнить
+Страница Wallpaper: Switch dynamic wallpapers Based on the day-night cycle.
+Заметка: новая возможность Plasma, точный ключ конфига уточнить.
+Кандидат: wallpaper_day_night.
+
+Window Decorations.
+
+config/kwinrc [org.kde.kdecoration2] AlwaysShowExcludeFromCapture = true
+default = false, уточнить
+Всегда показывать окно исключённое из захвата. Найдено по странице Window
+Decorations. Заметка: новый ключ, назначение уточнить.
+Кандидат: decoration_always_show_exclude.
+
+Оформление окна
+default = дефолтные значения
+Декорация Breeze из глобальной темы, рамка Theme default (No window
+borders), кнопки заголовка уже записаны в разделе окон. Заметка:
+BorderSize в kwinrc не записан, значение дефолтное.
+Кандидат: equal to default, skip.
+
+Desktop Effects.
+
+config/kwinrc [Plugins] список эффектов
+default = false для каждого
+Страница Desktop Effects подтверждает список включённых и выключенных
+эффектов: Hide Cursor, Track Mouse, Blur, Desaturate Unresponsive, Fall
+Apart, Highlight Screen Edges, Mouse Mark, Thumbnail Aside, Touch Points,
+Translucency, Wobbly Windows, Dim Inactive, Dim Screen for Administrator,
+Slide Back, Cube, Overview включены. Mouse Click Animation, Sheet, Dialog
+Parent выключены. Заметка: список [Plugins] уже записан в разделе окон и
+эффектов.
+Кандидат: enabled_effects, disabled_effects.
+
+Нестыковка Mouse Click Animation и Sheet
+default = mouseclickEnabled true, sheetEnabled true
+В дампе страницы Desktop Effects Mouse Click Animation и Sheet показаны
+выключенными, но в kwinrc [Plugins] mouseclickEnabled=true и
+sheetEnabled=true. Заметка: проверить на живой машине, возможно дамп
+поймал промежуточное состояние.
+Кандидат: уточнить.
+
+Power Management.
+
+config/powerdevilrc секции AC, Battery, Low Battery
+default = уточнить
+Страница Power Management подтверждает настройки энергосбережения: на
+переменном токе бездействие 9999 минут (9.999), засыпание выключено,
+крышка бездействует, профиль performance, затемнение 14 минут, выключение
+15 минут. На батарее таймауты короче, на низком заряде профиль power-saver.
+Заметка: страница показала Power Management settings could not be loaded,
+реальные значения в powerdevilrc и уже записаны в разделе питания.
+Кандидат: ac_*, battery_*, suspend_disabled, lid_action.
+
+Screen Locking.
+
+config/kscreenlockerrc [Daemon] автоблокировка не записана
+default = 15 минут, дефолтные значения
+Страница Screen Locking: автоблокировка через 15 минут, блокировка после
+пробуждения включена, пароль через 5 секунд, клавиша Meta+L. Заметка:
+секция [Daemon] в kscreenlockerrc отсутствует, значения дефолтные.
+Кандидат: equal to default, skip.
+
+config/kscreenlockerrc [Greeter][Wallpaper] обои Nexus
+default = уточнить
+Вкладка Appearance страницы Screen Locking: обои Image, Nexus с циклом
+день-ночь, часы всегда видны, медиа-контролы скрыты. Заметка: обои и
+showMediaControls уже записаны в разделе экрана блокировки. Появился
+бинарный ключ DarkLightScheduleState, разобрать.
+Кандидат: lockscreen_wallpaper.
+
+Window Behavior.
+
+config/kwinrc [Windows] фокус и размещение
+default = дефолтные значения
+Страница Window Behavior подтверждает: политика фокуса Click to focus,
+задержка фокуса 300 мс, защита от кражи фокуса Low, поднятие по клику
+включено, раздельный фокус экрана включён, двойной клик по заголовку
+разворачивает, колесо по заголовку меняет прозрачность, модификатор Meta
+для движения. Заметка: не-дефолтные значения уже записаны в разделах
+окон: snap-зоны 32, Placement Random, RollOverDesktops,
+SnapOnlyWhenOverlapping, MouseBindings.
+Кандидат: window_snap_*, mouse_bindings_*.
