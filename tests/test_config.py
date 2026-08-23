@@ -68,6 +68,7 @@ username = "i"
 home_dir = "/home/i"
 color_scheme = "BreezeDark"
 look_and_feel = "org.kubuntudark.desktop"
+automatic_look_and_feel = true
 numlock_on_boot = "off"
 touchpad_click_method = "clickfinger"
 touchpad_disable_on_external_mouse = false
@@ -465,6 +466,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.kde_settings.home_dir == "/home/i"
     assert config.kde_settings.color_scheme == "BreezeDark"
     assert config.kde_settings.look_and_feel == "org.kubuntudark.desktop"
+    assert config.kde_settings.automatic_look_and_feel is True
     assert config.kde_settings.numlock_on_boot == "off"
     assert config.kde_settings.touchpad_click_method == "clickfinger"
     assert config.kde_settings.touchpad_disable_on_external_mouse is False

@@ -57,7 +57,10 @@ class KdeSettingsConfig:
     of the plasma-apply theme tools and the KConfig reader); username and
     home_dir identify the user whose desktop config is edited; color_scheme
     is the dark scheme applied to all windows; look_and_feel is the dark
-    global theme that covers the whole desktop; numlock_on_boot is the
+    global theme that covers the whole desktop; automatic_look_and_feel,
+    when true, makes the task enable the native KDE day and night theme
+    switch and leaves the current theme to that switch; numlock_on_boot is
+    the
     NumLock state at Plasma startup; touchpad_click_method and
     touchpad_disable_on_external_mouse are the touchpad preferences
     applied to every touchpad found; virtual_keyboard_enabled,
@@ -72,6 +75,7 @@ class KdeSettingsConfig:
     home_dir: str
     color_scheme: str
     look_and_feel: str
+    automatic_look_and_feel: bool
     numlock_on_boot: str
     touchpad_click_method: str
     touchpad_disable_on_external_mouse: bool
@@ -100,6 +104,10 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         ),
         look_and_feel=_nonempty_string_field(
             raw.get("look_and_feel"), "kde_settings.look_and_feel"
+        ),
+        automatic_look_and_feel=_bool_field(
+            raw.get("automatic_look_and_feel"),
+            "kde_settings.automatic_look_and_feel",
         ),
         numlock_on_boot=_enum_field(
             raw.get("numlock_on_boot"),

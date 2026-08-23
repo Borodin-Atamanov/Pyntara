@@ -406,6 +406,40 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
     assert reloads == []
 
 
+def test_automatic_look_and_feel_skips_theme_and_enables_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With the native day and night switch on, the task applies no fixed
+    # theme; it writes the AutomaticLookAndFeel keys instead.
+    ctx = make_context(
+        install_mode="desktop",
+        force_tasks=frozenset(),
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_automatic_look_and_feel=True,
+        ),
+    )
+    themes, schemes, _, _, writes, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert themes == []
+    assert schemes == []
+    auto_writes = [
+        command for command in writes if "AutomaticLookAndFeel" in command
+    ]
+    assert auto_writes
+    assert "--type" in auto_writes[0] and "bool" in auto_writes[0]
+    interval_writes = [
+        command
+        for command in writes
+        if "AutomaticLookAndFeelIdleInterval" in command
+    ]
+    assert interval_writes
+    assert interval_writes[0][-1] == "99"
+
+
 def _kconfig_ctx(
     tmp_path: Path,
     records: tuple[KConfigRecord, ...],

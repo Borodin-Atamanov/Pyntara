@@ -11,8 +11,10 @@ the Wayland virtual keyboard. When a desktop session is running the
 changes apply immediately; without a session the tools still write the
 config and the settings apply after the next login. The task is
 idempotent: it reads the current values with kreadconfig6 and applies only
-what differs. Missing packages (the provider of the plasma-apply tools and
-the KConfig tools) are installed first.
+what differs. When automatic_look_and_feel is set, the task enables the
+native KDE day and night theme switch instead of applying a fixed theme,
+so a run never fights the switch. Missing packages (the provider of the
+plasma-apply tools and the KConfig tools) are installed first.
 """
 
 from __future__ import annotations
@@ -50,6 +52,9 @@ CLICK_METHOD_VALUES: dict[str, str] = {
     "clickareas": "2",
     "none": "0",
 }
+# The idle wait, in minutes, before the native day and night theme switch
+# applies its new theme; recorded from the user's manual tuning.
+AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL = "99"
 
 
 def _as_user_command(cfg: KdeSettingsConfig, command: list[str]) -> list[str]:
@@ -220,6 +225,44 @@ def _apply_color_scheme(
     )
     _log(f"applied color scheme: {cfg.color_scheme}")
     return True
+
+
+def _apply_automatic_look_and_feel(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Enable the native day and night theme switch; True when changed.
+
+    When automatic_look_and_feel is set, the task turns on the KDE switch
+    that alternates the light and dark themes by the time of day and does
+    not apply a fixed theme itself, so a run never fights the switch.
+    """
+
+    if not cfg.automatic_look_and_feel:
+        return False
+    changed = _sync_config_value(
+        cfg,
+        "kdeglobals",
+        KDE_GROUP,
+        "AutomaticLookAndFeel",
+        "true",
+        timeout=timeout,
+        force=force,
+        bool_value=True,
+    )
+    changed |= _sync_config_value(
+        cfg,
+        "kdeglobals",
+        KDE_GROUP,
+        "AutomaticLookAndFeelIdleInterval",
+        AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL,
+        timeout=timeout,
+        force=force,
+        bool_value=False,
+    )
+    return changed
 
 
 def _apply_numlock(
@@ -436,7 +479,10 @@ def task(ctx: Context) -> TaskResult:
     target user: the global theme first, then the color scheme so the
     configured scheme wins, then the NumLock state, the touchpad
     preferences, the Wayland virtual keyboard and the configured kconfig
-    values. Any failure is returned as an error TaskResult.
+    values. When automatic_look_and_feel is set, the theme is not applied
+    directly: the task enables the native day and night switch instead, so
+    a run never fights the switch. Any failure is returned as an error
+    TaskResult.
     """
 
     cfg = ctx.config.kde_settings
@@ -467,12 +513,17 @@ def task(ctx: Context) -> TaskResult:
     settings_changed = False
     virtual_keyboard_changed = False
     try:
-        settings_changed |= _apply_look_and_feel(
-            cfg, env=apply_env, timeout=timeout, force=force
-        )
-        settings_changed |= _apply_color_scheme(
-            cfg, env=apply_env, timeout=timeout, force=force
-        )
+        if cfg.automatic_look_and_feel:
+            settings_changed |= _apply_automatic_look_and_feel(
+                cfg, timeout=timeout, force=force
+            )
+        else:
+            settings_changed |= _apply_look_and_feel(
+                cfg, env=apply_env, timeout=timeout, force=force
+            )
+            settings_changed |= _apply_color_scheme(
+                cfg, env=apply_env, timeout=timeout, force=force
+            )
         settings_changed |= _apply_numlock(cfg, timeout=timeout, force=force)
         settings_changed |= _apply_touchpad(cfg, timeout=timeout, force=force)
         virtual_keyboard_changed = _apply_virtual_keyboard(

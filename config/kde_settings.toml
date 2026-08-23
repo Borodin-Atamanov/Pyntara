@@ -9,10 +9,12 @@
 
 [kde_settings]
 # Packages that must be present: the provider of the plasma-apply theme
-# tools (plasma-workspace) and the KConfig reader and writer used for the
-# idempotency checks and the input settings (libkf6config-bin). Missing
-# packages are installed by the task.
-packages = ["plasma-workspace", "libkf6config-bin"]
+# tools (plasma-workspace), the KConfig reader and writer used for the
+# idempotency checks and the input settings (libkf6config-bin), and the
+# Kubuntu settings that ship the light and dark global themes the native
+# day and night switch alternates between (kubuntu-settings-desktop).
+# Missing packages are installed by the task.
+packages = ["plasma-workspace", "libkf6config-bin", "kubuntu-settings-desktop"]
 # The user whose desktop configuration is edited and that user's home
 # directory; the KDE tools resolve the config directory under it.
 username = "i"
@@ -22,6 +24,12 @@ color_scheme = "BreezeDark"
 # The dark global theme (look and feel) that covers the panel, the widgets,
 # the window decorations and the icons.
 look_and_feel = "org.kubuntudark.desktop"
+# Whether the native KDE day and night theme switch is enabled. When true,
+# the task turns the switch on (AutomaticLookAndFeel) and leaves the theme
+# itself to the switch, so a run never overwrites the current theme; the
+# dark color_scheme and look_and_feel above then describe the night side.
+# When false, the task applies the dark theme directly as before.
+automatic_look_and_feel = true
 # The NumLock state when Plasma starts: on, off or unchanged. Stored in
 # kcminputrc [Keyboard] NumLock as 0, 1 or 2.
 numlock_on_boot = "off"
@@ -29,7 +37,7 @@ numlock_on_boot = "off"
 # clickfinger, clickareas or none for the click method, and whether the
 # internal touchpad is disabled while an external mouse is connected.
 touchpad_click_method = "clickfinger"
-touchpad_disable_on_external_mouse = false
+touchpad_disable_on_external_mouse = true
 # The Wayland virtual keyboard: whether it is enabled, the input method
 # that provides it and the enabled locales written to plasmakeyboardrc.
 virtual_keyboard_enabled = true
@@ -63,3 +71,34 @@ group = ["Effect-login"]
 key = "FadeToBlack"
 value = "true"
 type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["KDE"]
+key = "SingleClick"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["KDE"]
+key = "contrast"
+value = "4"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["KDE"]
+key = "frameContrast"
+value = "0.2"
+
+[[kde_settings.kconfig]]
+file = "kcminputrc"
+group = ["Mouse"]
+key = "cursorTheme"
+value = "Oxygen_Yellow"
+
+[[kde_settings.kconfig]]
+file = "kcminputrc"
+group = ["Mouse"]
+key = "cursorSize"
+value = "72"
