@@ -102,3 +102,240 @@ file = "kcminputrc"
 group = ["Mouse"]
 key = "cursorSize"
 value = "72"
+
+# kwinrc: the virtual desktop count and the window effects and their
+# parameters, each effect enabled or disabled through its [Plugins] key.
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Desktops"]
+key = "Number"
+value = "3"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "blurEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "cubeEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "fallapartEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "hidecursorEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "invertEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "magiclampEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "mouseclickEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "mousemarkEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "sheetEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "slidebackEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "touchpointsEnabled"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "minimizeallEnabled"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Plugins"]
+key = "squashEnabled"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-zoom"]
+key = "ZoomFactor"
+value = "1.15"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-zoom"]
+key = "MousePointer"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-zoom"]
+key = "MouseTracking"
+value = "2"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-zoom"]
+key = "PixelGridZoom"
+value = "10"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-wobblywindows"]
+key = "AdvancedMode"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-wobblywindows"]
+key = "Drag"
+value = "98"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-wobblywindows"]
+key = "MoveFactor"
+value = "3"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-wobblywindows"]
+key = "Stiffness"
+value = "24"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-wobblywindows"]
+key = "WobblynessLevel"
+value = "3"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mouseclick"]
+key = "LineWidth"
+value = "0.3"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mouseclick"]
+key = "RingCount"
+value = "7"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mouseclick"]
+key = "RingLife"
+value = "500"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mouseclick"]
+key = "RingSize"
+value = "128"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mouseclick"]
+key = "ShowText"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Arrowdrawcontrol"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Freedrawshift"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "Background"
+value = "SkyBox"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "CubeFaceDisplacement"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "DistanceFactor"
+value = "1.01"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "SkyBox"
+value = "/usr/share/wallpapers/Path/contents/images/2560x1600.jpg"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "InvertX"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-cube"]
+key = "InvertY"
+value = "false"
+type = "bool"
