@@ -122,8 +122,8 @@ ssh.py              ssh_port_from_directives
 
 ## Adding a new config section
 
-1. Create config/<name>.toml with the values and comments.
-2. Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.
-3. Add the dataclass field to the Config class in loader.py.
-4. Wire the parser in load_config() in loader.py.
-5. Export the dataclass from config/__init__.py.
+Create config/<name>.toml with the values and comments.
+Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.
+Add the dataclass field to the Config class in loader.py.
+Wire the parser in load_config() in loader.py.
+Export the dataclass from config/__init__.py.

@@ -20,12 +20,12 @@ After the task finishes the engine prints a completion line with a brief, inform
 
 Every task reports its progress to stdout so the user sees what is being done.
 
-1. Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has passed since the previous progress line. Prefix and timestamp are plain text without brackets: `2026-08-05-02-42-37 swapfile_service_install: message`.
-2. Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.
-3. A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.
-4. A state check is printed as one line with the check result.
-5. A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
-6. Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
+Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has passed since the previous progress line. Prefix and timestamp are plain text without brackets: `2026-08-05-02-42-37 swapfile_service_install: message`.
+Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.
+A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.
+A state check is printed as one line with the check result.
+A decision is printed as a line explaining the chosen branch, including the value the decision is based on.
+Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
 
 ### Central logging
 
@@ -83,7 +83,8 @@ One consistent formatting/style standard is required across the project.
 
 Documentation rules:
 
-1. Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally. Numbering in headings is forbidden: a heading is not a list item, numbers burn tokens for nothing.
-2. Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.
-3. Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.
-4. Prose follows the token economy of [Output and comment style](#output-and-comment-style-token-economy): delete sentences that add no information.
+Heading hierarchy: one H1 title, H2 sections, and H3 subsections where a section grows long. A heading name states the content, so a link to it reads naturally. Numbering in headings is forbidden: a heading is not a list item, numbers burn tokens for nothing.
+Cross-references between documents are active Markdown links relative to the current file, with a heading-name anchor when a specific section is meant; GitHub resolves relative links against the file that contains them, so a path is never written from the repository root. Reference headings by name, never by section number.
+Duplication is forbidden: a fact lives in the document that specifies it (contract, spec or guide); other documents link to it and say what is under the link instead of repeating the text.
+Prose follows the token economy of [Output and comment style](#output-and-comment-style-token-economy): delete sentences that add no information.
+Numbered lists are forbidden in documentation: a list is plain text, one item per line, without markers or numbers. Order lives in the sequence of lines, not in digits; numbering burns tokens and forces renumbering on every edit. In conversation with the user, numbered lists are welcome: the numbers give convenient addresses for follow-up.

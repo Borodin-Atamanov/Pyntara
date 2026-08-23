@@ -17,16 +17,16 @@ The google_script_key entry carries the System Metrics Google Drive web app cred
 ## Vault regeneration
 
 The script secrets/regenerate_vault_by_config.py creates or updates a vault file from the [vault_structure] table of the config/ directory. Run it with the project interpreter, for example .venv/bin/python secrets/regenerate_vault_by_config.py secrets/default.vault; invoked directly, the script re-executes itself with the project virtualenv interpreter. The vault password comes from the first available source in this order:
-1. The PYNTARA_VAULT_PASSWORD environment variable.
-2. The file next to the vault with the same name and the .password extension, its content trimmed of surrounding whitespace.
-3. An interactive prompt, only when stdin is a terminal.
+The PYNTARA_VAULT_PASSWORD environment variable.
+The file next to the vault with the same name and the .password extension, its content trimmed of surrounding whitespace.
+An interactive prompt, only when stdin is a terminal.
 
 The script never writes password files: default.password and production.password are maintained by hand.
 
 The script works in one of three modes:
-1. The vault file is absent or empty: the vault is created from the config, with every configured entry in the root group.
-2. --overwrite is given: the vault is recreated from the config; existing entries outside the config are lost.
-3. Otherwise the vault is opened with the password and the entries missing from the root group are added; every existing entry is kept.
+The vault file is absent or empty: the vault is created from the config, with every configured entry in the root group.
+--overwrite is given: the vault is recreated from the config; existing entries outside the config are lost.
+Otherwise the vault is opened with the password and the entries missing from the root group are added; every existing entry is kept.
 
 Newly created entries carry exactly the configured fields; a missing password field leaves the entry password empty for manual filling. The script exits with code 0 on success and no-op, 1 on any error, 2 on invalid usage; with no arguments it prints its usage help.
 
@@ -51,8 +51,8 @@ some values are one-time-use and must only live in memory during execution
 
 The runtime secret database and its password live on the target machine in fixed locations, so services that start after install can decrypt the database without user input.
 
-1. The runtime secret database lives at /var/lib/pyntara/secrets/pyntara.vault. The directory /var/lib/pyntara/secrets/ has mode 0700, the file has mode 0640.
-2. The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.
+The runtime secret database lives at /var/lib/pyntara/secrets/pyntara.vault. The directory /var/lib/pyntara/secrets/ has mode 0700, the file has mode 0640.
+The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.
 
 The file modes are configurable in the [local_vault_setup] table of the config/ directory as octal strings: secrets_dir_mode, local_vault_file_mode, pass_dir_mode and pass_file_mode.
 
@@ -69,5 +69,3 @@ The future local vault password comes from the pyntara_local_vault_password entr
 The task is idempotent: without force it skips when the runtime vault already exists; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file.
 
 The default vault carries a well-known test value for this entry, mirroring its well-known vault password.
-
-

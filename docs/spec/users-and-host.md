@@ -40,5 +40,3 @@ Size is calculated using formulas in configuration.
 RAM and free disk space are both considered.
 
 These tasks create system services executed at system startup.
-
-

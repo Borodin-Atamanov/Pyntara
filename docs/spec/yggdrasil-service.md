@@ -24,9 +24,9 @@ The package postinst creates the group and the /etc/yggdrasil directory and gene
 
 The node identity must survive config rewrites, so the task extracts the private key once into the separate PEM file at private_key_path and references it from the configuration through PrivateKeyPath:
 
-1. When the PEM file exists, nothing happens: the identity is kept.
-2. When the PEM is missing but the package-generated config exists, the key is extracted with yggdrasil -useconffile -exportkey and written to the PEM file with private_key_file_mode.
-3. When neither exists, a fresh config is generated with yggdrasil -genconf -json, piped into yggdrasil -useconf -exportkey, and the key is saved the same way.
+When the PEM file exists, nothing happens: the identity is kept.
+When the PEM is missing but the package-generated config exists, the key is extracted with yggdrasil -useconffile -exportkey and written to the PEM file with private_key_file_mode.
+When neither exists, a fresh config is generated with yggdrasil -genconf -json, piped into yggdrasil -useconf -exportkey, and the key is saved the same way.
 
 The configuration is rendered as JSON from the configured values: PrivateKeyPath, AdminListen, IfName, IfMTU, Listen, MulticastInterfaces and Peers. The log level is not part of the configuration: yggdrasil reads it from the -loglevel command line flag, which the package unit does not pass, so a log_level setting would have no effect and is therefore absent.
 
@@ -42,11 +42,11 @@ The full peer list comes from the official public-peers repository: the task dow
 
 The selection probes the list in batches:
 
-1. The full list is shuffled, so repeated force runs try different nodes.
-2. The first peer_batch_size peers are written into the configuration, the service is restarted, and the task waits peer_probe_timeout_seconds.
-3. The task reads the yggdrasil journal (journalctl) for Connected lines over that window, resolves each batch peer through DNS and keeps the peers whose address appears in the journal as working.
-4. When a batch reaches peer_target_count working peers, the task reads the latencies from yggdrasilctl -json getPeers over the admin socket, keeps the peer_target_count working peers with the lowest ping and restarts the service with the final configuration.
-5. When a batch has too few working peers, the next batch is tried, up to peer_max_batches (0 means the whole list). When no batch reaches the target, the last tried batch stays in the configuration and the task reports a warning, because the node at least keeps trying to connect.
+The full list is shuffled, so repeated force runs try different nodes.
+The first peer_batch_size peers are written into the configuration, the service is restarted, and the task waits peer_probe_timeout_seconds.
+The task reads the yggdrasil journal (journalctl) for Connected lines over that window, resolves each batch peer through DNS and keeps the peers whose address appears in the journal as working.
+When a batch reaches peer_target_count working peers, the task reads the latencies from yggdrasilctl -json getPeers over the admin socket, keeps the peer_target_count working peers with the lowest ping and restarts the service with the final configuration.
+When a batch has too few working peers, the next batch is tried, up to peer_max_batches (0 means the whole list). When no batch reaches the target, the last tried batch stays in the configuration and the task reports a warning, because the node at least keeps trying to connect.
 
 The apt index is not refreshed before the install: the package depends only on systemd, which is always installed. When the peer list download fails, the configured static_peers are used; a run where the download fails and static_peers is empty is a task error, because the node would be useless without any peers.
 

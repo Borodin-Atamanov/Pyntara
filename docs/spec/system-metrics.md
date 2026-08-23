@@ -66,30 +66,30 @@ The spool at the configured system_metrics_setup.spool_dir is the intake pre-que
 
 Directory layout under system_metrics_dir, configured as system_metrics_setup.system_metrics_dir (default /var/lib/pyntara/metrics):
 
-1. main_outbox — the intake directory of the queue. The ingest service publishes committed files here; the directory name comes from system_metrics_setup.main_outbox_dir.
-2. temp — temporary files of the ingest service. Copies are written here before publication into main_outbox. Handlers never scan this directory; leftovers of a crash between the hard link and the unlink are never swept (explicit decision). The directory name comes from system_metrics_setup.temp_dir.
-3. google_script — the Google Drive channel queue. The dispatcher creates one hard link per main_outbox entry here.
-4. telegram — the Telegram channel queue, reserved for the future channel. The directory appears when the channel is implemented.
-5. main_sent — the sent archive. Senders move successfully sent entries here.
+main_outbox — the intake directory of the queue. The ingest service publishes committed files here; the directory name comes from system_metrics_setup.main_outbox_dir.
+temp — temporary files of the ingest service. Copies are written here before publication into main_outbox. Handlers never scan this directory; leftovers of a crash between the hard link and the unlink are never swept (explicit decision). The directory name comes from system_metrics_setup.temp_dir.
+google_script — the Google Drive channel queue. The dispatcher creates one hard link per main_outbox entry here.
+telegram — the Telegram channel queue, reserved for the future channel. The directory appears when the channel is implemented.
+main_sent — the sent archive. Senders move successfully sent entries here.
 
 ### Entry lifecycle
 
-1. The producer creates an artifact (encrypted PDF in memory, install log, anything) and runs commit_system_metrics FILE. The thin command checks that the file is regular and non-empty and publishes it into the spool atomically under the original name with mode 0600 and the commit time; a name that is already pending in the spool is an explicit error, never an overwrite.
-2. The path unit system_metrics-ingest.path watches the spool with inotify and starts the ingest service system_metrics-ingest.service on every file appearance; there is no polling. The service runs venv_dir/bin/python -m pyntara.metrics_ingest system_config_path, copies each spool file into temp with the queue file mode and the spool modification time (the commit time), publishes it into main_outbox under the original name plus a random alphanumeric suffix through a hard link and removes the spool entry. The source file is never modified.
-3. The dispatcher creates one hard link per main_outbox entry in every channel queue, and only after every link succeeds removes the name from main_outbox. A channel enabled later receives only entries committed after its enablement.
-4. Every channel drains its queue independently: entries are ordered by modification time according to send_order, the suffix is stripped and the original name is uploaded; on success the entry name is moved to main_sent, on failure it stays for retry. When a cycle made at least one send attempt and none succeeded, the loop switches to the retry mode described in the Schedule and retry section.
+The producer creates an artifact (encrypted PDF in memory, install log, anything) and runs commit_system_metrics FILE. The thin command checks that the file is regular and non-empty and publishes it into the spool atomically under the original name with mode 0600 and the commit time; a name that is already pending in the spool is an explicit error, never an overwrite.
+The path unit system_metrics-ingest.path watches the spool with inotify and starts the ingest service system_metrics-ingest.service on every file appearance; there is no polling. The service runs venv_dir/bin/python -m pyntara.metrics_ingest system_config_path, copies each spool file into temp with the queue file mode and the spool modification time (the commit time), publishes it into main_outbox under the original name plus a random alphanumeric suffix through a hard link and removes the spool entry. The source file is never modified.
+The dispatcher creates one hard link per main_outbox entry in every channel queue, and only after every link succeeds removes the name from main_outbox. A channel enabled later receives only entries committed after its enablement.
+Every channel drains its queue independently: entries are ordered by modification time according to send_order, the suffix is stripped and the original name is uploaded; on success the entry name is moved to main_sent, on failure it stays for retry. When a cycle made at least one send attempt and none succeeded, the loop switches to the retry mode described in the Schedule and retry section.
 
 ### Queue rules
 
-1. Entry names preserve the original file name; hidden files are not filtered. A random alphanumeric suffix of queue_file_suffix_length characters is appended after a dot: <original>.<suffix>. The suffix lets entries with identical original names coexist; the sender strips exactly suffix_length + 1 trailing characters, so the remote server receives the original name.
-2. Empty files are rejected at ingest; the sender additionally skips empty entries as a second line of defense.
-3. Files larger than max_queue_file_size_bytes are rejected at ingest; the sender duplicates the check.
-4. Symlinks and hard links are treated as the files they point to: the content of the target is committed, the name of the passed path is used.
-5. Queue directories and entries carry the strictest permissions: system_metrics_dir_mode for every queue directory, queue_file_mode for every entry, root only.
-6. Send order comes from send_order: oldest_first (the default) sends the earliest committed entry first, newest_first the latest. Entries are ordered by modification time, which the commit command sets to the commit time; ties are broken by name.
-7. The ingest service creates only system_metrics_dir, main_outbox and temp. The channel queues and main_sent are created by the deployed service.
-8. Rejected spool entries (not regular, empty, oversized) are removed from the spool and reported in the journal; a failed publication leaves the spool entry in place so the next ingest run retries it. Spool entries with the spool_temp_prefix (the commit command temporaries) are never ingested.
-9. main_sent grows without a rotation policy for now; the archive retention is a future decision.
+Entry names preserve the original file name; hidden files are not filtered. A random alphanumeric suffix of queue_file_suffix_length characters is appended after a dot: <original>.<suffix>. The suffix lets entries with identical original names coexist; the sender strips exactly suffix_length + 1 trailing characters, so the remote server receives the original name.
+Empty files are rejected at ingest; the sender additionally skips empty entries as a second line of defense.
+Files larger than max_queue_file_size_bytes are rejected at ingest; the sender duplicates the check.
+Symlinks and hard links are treated as the files they point to: the content of the target is committed, the name of the passed path is used.
+Queue directories and entries carry the strictest permissions: system_metrics_dir_mode for every queue directory, queue_file_mode for every entry, root only.
+Send order comes from send_order: oldest_first (the default) sends the earliest committed entry first, newest_first the latest. Entries are ordered by modification time, which the commit command sets to the commit time; ties are broken by name.
+The ingest service creates only system_metrics_dir, main_outbox and temp. The channel queues and main_sent are created by the deployed service.
+Rejected spool entries (not regular, empty, oversized) are removed from the spool and reported in the journal; a failed publication leaves the spool entry in place so the next ingest run retries it. Spool entries with the spool_temp_prefix (the commit command temporaries) are never ingested.
+main_sent grows without a rotation policy for now; the archive retention is a future decision.
 
 ## Commit command
 
@@ -107,9 +107,9 @@ Every module is a name and a command as an argv array, never a shell line. A mod
 
 Collection flow:
 
-1. The service collects every module of both lists and computes ready_percent = the share of ok modules among the network modules; an empty network module list is trivially ready at 100 percent.
-2. When ready_percent is at least threshold_percent, the report is committed immediately.
-3. Otherwise the collection is repeated after the geometric backoff until retry_max_seconds have passed since the first collection; when the window is exhausted, the report is committed as is, whatever the readiness. A threshold of 0 commits after the first collection, a threshold of 100 waits for every network module.
+The service collects every module of both lists and computes ready_percent = the share of ok modules among the network modules; an empty network module list is trivially ready at 100 percent.
+When ready_percent is at least threshold_percent, the report is committed immediately.
+Otherwise the collection is repeated after the geometric backoff until retry_max_seconds have passed since the first collection; when the window is exhausted, the report is committed as is, whatever the readiness. A threshold of 0 commits after the first collection, a threshold of 100 waits for every network module.
 
 The report is a JSON document: generated_at in the project datetime format YYYY-MM-DD-HH-MM-SS, ready_percent, and the network and system module results, each with name, status and the trimmed output. The report is written under report_file_name into the system temp directory with mode 0600, committed through the commit_system_metrics command and the temporary file is removed; a failed commit is journaled at the System Metrics error priority and exits nonzero, so the systemd restart policy retries the collector. The queue keeps the name and the random suffix of the ingest, so daily reports with the same name coexist in the queue.
 
