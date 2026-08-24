@@ -420,7 +420,15 @@ def _disable_auto_dns_active(
     nmcli changes nothing.
     '''
 
-    check = run_command(list(cfg.nmcli_check_command), check=False, timeout=timeout)
+    try:
+        check = run_command(
+            list(cfg.nmcli_check_command), check=False, timeout=timeout
+        )
+    except OSError:
+        log_progress(
+            "nmcli not found, NetworkManager auto DNS management skipped"
+        )
+        return []
     if check.returncode != 0:
         return []
     listing = run_command(

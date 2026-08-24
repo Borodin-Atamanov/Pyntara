@@ -147,6 +147,7 @@ def _run_task(
     stubborn_port: bool = False,
     routing_leftover: bool = False,
     nmcli_active: str = "",
+    nmcli_missing: bool = False,
 ) -> tuple[Any, Path, list[list[str]], Any]:
     '''Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path, the recorded commands and the
@@ -155,8 +156,9 @@ def _run_task(
     scan report one listener on the first pass, stubborn_port keeps the
     listener after the kill, routing_leftover keeps the provider address
     in the post-cutover per-link state, and nmcli_active supplies the
-    active connection listing. probe controls the pre-cutover dnsproxy
-    answer check.'''
+    active connection listing. nmcli_missing makes the nmcli check
+    command raise FileNotFoundError. probe controls the pre-cutover
+    dnsproxy answer check.'''
     service_path = tmp_path / "dnsproxy.service"
     config = make_config(
         task_data_root=tmp_path,
@@ -204,6 +206,8 @@ def _run_task(
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         command = list(command)
         calls.append(command)
+        if nmcli_missing and command[0] == "nmcli":
+            raise FileNotFoundError("nmcli not found")
         if command[:2] in (["ss", "-lntp"], ["ss", "-lunp"]):
             if occupied_port or stubborn_port:
                 state["ss"] += 1
@@ -355,6 +359,23 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     assert ["nmcli", "device", "reapply", "wlp0"] in reapplies
     assert ["nmcli", "device", "reapply", "tun"] in reapplies
     assert not any(command[-1] == "lo" for command in reapplies)
+
+
+def test_task_succeeds_when_nmcli_is_missing(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, calls, _ = _run_task(tmp_path, monkeypatch, nmcli_missing=True)
+    assert result.success is True
+    nmcli_modifies = [
+        command for command in calls
+        if command[:3] == ["nmcli", "connection", "modify"]
+    ]
+    nmcli_reapplies = [
+        command for command in calls
+        if command[:3] == ["nmcli", "device", "reapply"]
+    ]
+    assert not nmcli_modifies
+    assert not nmcli_reapplies
 
 
 def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(

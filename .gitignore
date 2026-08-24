@@ -4,9 +4,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+gitignore/
 *.pyc
 secrets/production.password
 # Editor swap files must never reach the repository.
 *.kate-swp
 *.swp
-
