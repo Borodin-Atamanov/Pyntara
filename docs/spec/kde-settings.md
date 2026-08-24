@@ -2,42 +2,51 @@
 
 There is a dedicated desktop task: kde_settings.
 
-The task configures the dark appearance and the input and keyboard settings of the target user's KDE desktop: the color scheme that turns every Qt and KDE window dark, the global theme (look and feel) that covers the whole desktop, the NumLock state on startup, the touchpad preferences and the Wayland virtual keyboard. It belongs to the desktop mode. The appearance values are applied with the plasma-apply tools and the input values with kwriteconfig6, all as the target user, so the config files stay owned by that user and the changes apply when a desktop session is running.
+The task configures the target user's KDE desktop to the recorded manual setup: the light and dark theme switching, the color scheme and the global theme, the NumLock state, the touchpad preferences, the Wayland virtual keyboard, the window effects and their shortcuts, the night color, the lock screen, the power management, the desktop wallpaper, the XDG user directories, the Konsole profile and the SDDM login screen. It belongs to the desktop mode and depends on users_setup, so the target user exists.
 
 ## Target configuration
 
-The applied values live in KConfig files under the config directory of the target user:
+The KConfig values live in files under the config directory of the target user and are applied with kwriteconfig6 as that user, so the files stay owned by the user:
 
-kdeglobals carries the appearance. The color scheme in the [General] group, ColorScheme key, set to the configured color_scheme, is the palette every Qt and KDE window renders with. The global theme in the [KDE] group, LookAndFeelPackage key, set to the configured look_and_feel package, carries the defaults for the panel theme, the window decorations and the icon theme.  
-kcminputrc carries the input settings. The NumLock state on Plasma startup in the [Keyboard] group, NumLock key, is written as 0 (on), 1 (off) or 2 (unchanged) from numlock_on_boot. The touchpad preferences, ClickMethod and DisableEventsOnExternalMouse, are written into every [Libinput][id][serial][name] group whose device name ends with Touchpad, so the task works on any target hardware regardless of the touchpad model or its presence.  
-kwinrc and plasmakeyboardrc carry the Wayland virtual keyboard. The input method in the [Wayland] group, InputMethod key, is written with its plain name: the GUI writes the [$e] flag, kwriteconfig6 escapes it, and kreadconfig6 reads both forms through the plain key, so the plain form keeps the comparison idempotent. The enabled locales in plasmakeyboardrc, [General] enabledLocales key, are joined by commas.
+kdeglobals carries the theme. The color scheme and the global theme come from color_scheme and look_and_feel and are applied with the plasma-apply tools. When automatic_look_and_feel is set, the task enables the native KDE day and night switch (kdeglobals [KDE] AutomaticLookAndFeel) instead of applying a fixed theme, so a run never overwrites the current theme.  
+kcminputrc carries the input settings: the NumLock state on startup and the touchpad preferences written into every touchpad device group, so the task works on any target hardware.  
+kwinrc and plasmakeyboardrc carry the Wayland virtual keyboard.  
+The generic kconfig records apply every other KConfig value: the [[kde_settings.kconfig]] array of tables names a file, the group segments, the key and the string form of the value, with an optional bool type and an optional delete that removes the key. The records cover the window effects and their parameters, the night color, the window behavior, the lock screen, the power management, the wallpaper slideshow, the spell check language, the activity history and the Konsole default profile.  
+The window effect shortcuts live in kglobalshortcutsrc and are written in the KDE primary,alternate,description format. A configured shortcut wins over any other action: after the records are applied, the task scans kglobalshortcutsrc and unbinds every action that shares a configured primary key, wherever that action lives, so the shortcut works on any target machine.
+
+The user-level plain files:
+
+user-dirs.dirs folds the XDG user directories into Downloads from the user_dirs map, keeping unrelated lines and comments.  
+The Pyntara Konsole profile is rendered from the task_data template task_data/kde_settings/Pyntara.profile with the configured home directory and written under the user local share directory.  
+
+The system files:
+
+sddm.conf and sddm.conf.d/20-kubuntu.conf carry the login screen autologin and theme and are written as root from the sddm_* parameters.
 
 ## Apply mechanism
 
-The task reads every current value with kreadconfig6 as the target user and applies only what differs, through runuser with HOME set to the configured home_dir. The appearance is applied with the plasma-apply tools, the global theme first and then the color scheme so the configured scheme wins. The input values are written with kwriteconfig6. Missing packages (the provider of the plasma-apply tools and of the KConfig tools) are installed first, each failure being a fatal error.
+The task reads every current value with kreadconfig6 and applies only what differs, through runuser with HOME set to the configured home_dir for the user files and directly as root for the system files. The appearance is applied with the plasma-apply tools when the automatic switch is off. Missing packages are installed first, each failure being a fatal error.
 
 ## Apply immediately
 
-The apply commands run with the session bus address of the target user, read from the environment of that user's kwin_wayland process, so the theme changes apply at once. When the Wayland input method changed, the task runs the configured kwin_reload_command as a best effort; the NumLock state applies at the next Plasma startup and the input device settings at the next login, which is inherent to their nature. When no kwin_wayland process is found (a session that is not running yet), the commands still write the config and the settings apply after the next login; this is not an error. The touchpad settings can only be written once kcminputrc exists, that is after the first login opens the input devices; until then the task skips them with a message.
+The apply commands run with the session bus address of the target user, so the theme changes apply at once; without a session the tools still write the config and the settings apply after the next login. The NumLock state applies at the next Plasma startup, the input device settings at the next login, and the SDDM settings at the next boot. When the Wayland input method changed, the task runs the configured kwin_reload_command as a best effort.
 
 ## Idempotency
 
-The task reads every current value with kreadconfig6 and applies only what differs. The target state is reached when every configured value already matches the configuration and the packages are installed; the task then skips with changed=False. Force mode applies every value regardless. Missing packages are installed first, each failure being a fatal error.
+The task reads every current value and applies only what differs. The target state is reached when every configured value already matches and the packages are installed; the task then skips with changed=False. Force mode applies every value regardless.
 
 ## Parameters
 
 All parameters live in the [kde_settings] table of the config/ directory:
 
-packages, the packages the task ensures are installed: the provider of the plasma-apply theme tools (plasma-workspace) and of the KConfig tools (libkf6config-bin).  
+packages, the packages the task ensures are installed.  
 username and home_dir, the target user and that user's home directory.  
-color_scheme, the dark color scheme applied to all windows.  
-look_and_feel, the dark global theme applied to the whole desktop.  
-numlock_on_boot, the NumLock state on Plasma startup: on, off or unchanged.  
-touchpad_click_method, the touchpad click method: clickfinger, clickareas or none.  
-touchpad_disable_on_external_mouse, whether the touchpad is disabled while an external mouse is connected.  
-virtual_keyboard_enabled, whether the Wayland virtual keyboard is enabled.  
-virtual_keyboard_input_method, the input method that provides the virtual keyboard.  
-virtual_keyboard_locales, the enabled locales of the virtual keyboard.  
-kwin_reload_command, the command that makes kwin re-read its configuration.
-
-Future settings of the same task are added to the same table as new keys.
+user_dirs, the XDG user directories folded into Downloads.  
+color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
+automatic_look_and_feel, whether the native day and night switch is enabled.  
+numlock_on_boot, the NumLock state on Plasma startup.  
+touchpad_click_method and touchpad_disable_on_external_mouse, the touchpad preferences.  
+virtual_keyboard_enabled, virtual_keyboard_input_method and virtual_keyboard_locales, the Wayland virtual keyboard.  
+kwin_reload_command, the command that makes kwin re-read its configuration.  
+sddm_autologin_user, sddm_autologin_session, sddm_theme, sddm_theme_cursor_size, sddm_theme_cursor_theme and sddm_theme_font, the SDDM login screen values.  
+kconfig, the array of records that apply arbitrary KConfig values.
