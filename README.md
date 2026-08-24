@@ -1,4 +1,4 @@
-# Pyntara 0.2.103
+# Pyntara 0.2.104
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -11,19 +11,27 @@ single bootstrap script downloads the repo and launches the Python provisioning 
 
 ## Start
 
+The production vault password is taken from the PYNTARA_VAULT_PASSWORD environment variable
+when it is set; otherwise it is asked once via read -s (hidden input) and exported, so a
+repeated run in the same terminal skips the prompt:
+
 ```bash
-inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
-&& curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
--o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh \
-&& sudo --preserve-env=PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
-bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
+if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
+    read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD
+    echo
+fi
+export PYNTARA_VAULT_PASSWORD
+inst="$(mktemp /tmp/pyntara.XXXXXXXXX)"
+curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
+-o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh
+sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
+bash -c 'bash "$1"' _ "$inst"
 ```
 
-The installer runs non-interactively and never asks the user anything. The production vault
-password is optional: enter it once via read -s (hidden input) and pass it through the
-PYNTARA_VAULT_PASSWORD environment variable to use the production vault. Without a password,
-or with a password that matches no vault, the installer shows a short countdown notice and
-falls back to the default vault.
+The installer runs non-interactively and never asks the user anything. The vault source is
+auto-detected from the password: production when it opens production.vault, default when it
+matches default.password. Without a password, or with a password that matches no vault, the
+installer shows a short countdown notice and falls back to the default vault.
 
 Optional environment variables can be added inside the sudo bash -c block, separated by
 spaces before the script invocation:
@@ -43,11 +51,11 @@ PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_
 and cli_tools run before package operations. Use for test or offline runs; omit it in real
 provisioning so packages resolve from a fresh index.
 
-Quick test run without the apt index refresh. The flag sits in the prefix of the script
-invocation, so it reaches the installer and the engine; a flag joined with && would only set
-a shell variable and never reach the installer. The password is asked only when
-PYNTARA_VAULT_PASSWORD is not already set in the terminal; after the first run the variable
-stays exported in the same terminal, so a repeated run skips the prompt:
+A quick test run without the apt index refresh is the same main command with
+PYNTARA_SKIP_APT_UPDATE=1 set in the script invocation prefix, so it reaches the installer
+and the engine; a flag joined with && would only set a shell variable and never reach the
+installer. The password prompt is skipped because the main command already exported
+PYNTARA_VAULT_PASSWORD in this terminal:
 
 ```bash
 { [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]] \
