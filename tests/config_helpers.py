@@ -68,6 +68,12 @@ def base_config() -> str:
         'virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"\n'
         'virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]\n'
         'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]\n'
+        'sddm_autologin_user = "i"\n'
+        'sddm_autologin_session = "plasma"\n'
+        'sddm_theme = "kubuntu"\n'
+        "sddm_theme_cursor_size = \"30\"\n"
+        'sddm_theme_cursor_theme = "breeze_cursors"\n'
+        'sddm_theme_font = "Noto Sans,20"\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'

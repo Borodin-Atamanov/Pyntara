@@ -119,19 +119,16 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
 def _kde_settings_with_kconfig(records: str) -> str:
     """base_config() with [[kde_settings.kconfig]] records appended.
 
-    The records are inserted after the kde_settings kwin_reload_command,
-    the last key of the [kde_settings] table in base_config(): in TOML a
+    The records are inserted after the last key of the [kde_settings]
+    table in base_config(), the sddm_theme_font line: in TOML a
     [[kde_settings.kconfig]] header would otherwise capture the following
     plain keys into the last record element.
     """
 
-    reload_line = (
-        'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", '
-        '"org.kde.KWin.reconfigure"]\n'
-    )
-    tail = "[swapfile_service_install]"
+    anchor = 'sddm_theme_font = "Noto Sans,20"\n[swapfile_service_install]'
     return base_config().replace(
-        reload_line + tail, reload_line + records + "\n" + tail
+        anchor,
+        'sddm_theme_font = "Noto Sans,20"\n' + records + "\n[swapfile_service_install]",
     )
 
 

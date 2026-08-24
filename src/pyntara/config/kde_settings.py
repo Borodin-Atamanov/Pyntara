@@ -69,7 +69,9 @@ class KdeSettingsConfig:
     virtual_keyboard_input_method and virtual_keyboard_locales configure
     the Wayland virtual keyboard; kwin_reload_command makes kwin re-read
     its configuration; kconfig carries additional KConfig values applied
-    as records.
+    as records; the sddm_* values configure the login screen autologin and
+    theme in the system files /etc/sddm.conf and
+    /etc/sddm.conf.d/20-kubuntu.conf.
     """
 
     packages: tuple[str, ...]
@@ -86,6 +88,12 @@ class KdeSettingsConfig:
     virtual_keyboard_input_method: str
     virtual_keyboard_locales: tuple[str, ...]
     kwin_reload_command: tuple[str, ...]
+    sddm_autologin_user: str
+    sddm_autologin_session: str
+    sddm_theme: str
+    sddm_theme_cursor_size: str
+    sddm_theme_cursor_theme: str
+    sddm_theme_font: str
     kconfig: tuple[KConfigRecord, ...] = ()
 
 
@@ -141,6 +149,27 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         ),
         kwin_reload_command=_string_list(
             raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
+        ),
+        sddm_autologin_user=_nonempty_string_field(
+            raw.get("sddm_autologin_user"), "kde_settings.sddm_autologin_user"
+        ),
+        sddm_autologin_session=_nonempty_string_field(
+            raw.get("sddm_autologin_session"),
+            "kde_settings.sddm_autologin_session",
+        ),
+        sddm_theme=_nonempty_string_field(
+            raw.get("sddm_theme"), "kde_settings.sddm_theme"
+        ),
+        sddm_theme_cursor_size=_nonempty_string_field(
+            raw.get("sddm_theme_cursor_size"),
+            "kde_settings.sddm_theme_cursor_size",
+        ),
+        sddm_theme_cursor_theme=_nonempty_string_field(
+            raw.get("sddm_theme_cursor_theme"),
+            "kde_settings.sddm_theme_cursor_theme",
+        ),
+        sddm_theme_font=_nonempty_string_field(
+            raw.get("sddm_theme_font"), "kde_settings.sddm_theme_font"
         ),
         kconfig=_kconfig_records(raw.get("kconfig")),
     )

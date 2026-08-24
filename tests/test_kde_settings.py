@@ -103,6 +103,12 @@ def _install_fakes(
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
             return _FakeProc(0, "")
+        if command[0] == "kreadconfig6":
+            key = command[command.index("--key") + 1]
+            return _FakeProc(0, currents.get(key, ""))
+        if command[0] == "kwriteconfig6":
+            writes.append(list(command))
+            return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
     def fake_installed(package: str, timeout: float) -> bool:
@@ -158,6 +164,12 @@ def test_skip_when_already_configured(
         "NumLock": "1",
         "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop",
         "enabledLocales": "en_US,es_MX,ru_RU",
+        "User": "i",
+        "Session": "plasma",
+        "Current": "kubuntu",
+        "CursorSize": "30",
+        "CursorTheme": "breeze_cursors",
+        "Font": "Noto Sans,20",
     }
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
     themes, schemes, order, _, writes, reloads = _install_fakes(
@@ -638,6 +650,44 @@ def test_apply_konsole_profile_renders_template(
     assert changed2 is False
 
 
+def test_apply_sddm_writes_system_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The autologin and theme values are written to the system files.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    changed = task_module._apply_sddm(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    assert len(writes) == 6
+    assert "/etc/sddm.conf" in " ".join(writes[0])
+    assert writes[0][-1] == "i"
+    assert "/etc/sddm.conf.d/20-kubuntu.conf" in " ".join(writes[5])
+    assert writes[5][-1] == "Noto Sans,20"
+
+
+def test_apply_sddm_idempotent_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Matching system values change nothing.
+    ctx = _ctx(tmp_path)
+    currents = {
+        "User": "i",
+        "Session": "plasma",
+        "Current": "kubuntu",
+        "CursorSize": "30",
+        "CursorTheme": "breeze_cursors",
+        "Font": "Noto Sans,20",
+    }
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    changed = task_module._apply_sddm(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+    assert writes == []
+
+
 def _kconfig_ctx(
     tmp_path: Path,
     records: tuple[KConfigRecord, ...],
@@ -680,6 +730,12 @@ FULLY_CONFIGURED = {
     "NumLock": "1",
     "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop",
     "enabledLocales": "en_US,es_MX,ru_RU",
+    "User": "i",
+    "Session": "plasma",
+    "Current": "kubuntu",
+    "CursorSize": "30",
+    "CursorTheme": "breeze_cursors",
+    "Font": "Noto Sans,20",
 }
 
 

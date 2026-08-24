@@ -46,6 +46,15 @@ virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 # Command that makes kwin re-read its configuration, so a changed Wayland
 # input method applies without a session restart.
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# The SDDM login screen: autologin into the configured user session and
+# the login theme. These live in the system files /etc/sddm.conf and
+# /etc/sddm.conf.d/20-kubuntu.conf and are written by the task as root.
+sddm_autologin_user = "i"
+sddm_autologin_session = "plasma"
+sddm_theme = "kubuntu"
+sddm_theme_cursor_size = "30"
+sddm_theme_cursor_theme = "breeze_cursors"
+sddm_theme_font = "Noto Sans,20"
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.
 [kde_settings.user_dirs]

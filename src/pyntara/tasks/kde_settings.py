@@ -645,6 +645,101 @@ def _apply_konsole_profile(
     )
 
 
+def _system_kreadconfig(
+    file_name: str,
+    group_segments: tuple[str, ...],
+    key: str,
+    timeout: float,
+) -> str:
+    """Current value of one system KConfig key, read as the root process."""
+
+    command = ["kreadconfig6", "--file", file_name]
+    for segment in group_segments:
+        command.extend(["--group", segment])
+    command.extend(["--key", key])
+    result = run_command(command, check=False, capture=True, timeout=timeout)
+    return trim_whitespace(result.stdout)
+
+
+def _system_kwriteconfig(
+    file_name: str,
+    group_segments: tuple[str, ...],
+    key: str,
+    value: str,
+    *,
+    timeout: float,
+) -> None:
+    """Write one system KConfig key as the root process."""
+
+    command = ["kwriteconfig6", "--file", file_name]
+    for segment in group_segments:
+        command.extend(["--group", segment])
+    command.extend(["--key", key, value])
+    run_command(command, timeout=timeout)
+
+
+def _sync_system_value(
+    file_name: str,
+    group_segments: tuple[str, ...],
+    key: str,
+    target: str,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write a system KConfig key when it differs; True when written."""
+
+    current = _system_kreadconfig(file_name, group_segments, key, timeout)
+    if not force and current == target:
+        return False
+    _system_kwriteconfig(file_name, group_segments, key, target, timeout=timeout)
+    _log(f"set {file_name} {key}: {target}")
+    return True
+
+
+def _apply_sddm(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write the SDDM autologin and theme; True when any changed.
+
+    The values go into the system files /etc/sddm.conf and
+    /etc/sddm.conf.d/20-kubuntu.conf as the root process, so they apply to
+    the login screen on every boot.
+    """
+
+    changed = False
+    for key, value in (
+        ("User", cfg.sddm_autologin_user),
+        ("Session", cfg.sddm_autologin_session),
+    ):
+        changed |= _sync_system_value(
+            "/etc/sddm.conf",
+            ("Autologin",),
+            key,
+            value,
+            timeout=timeout,
+            force=force,
+        )
+    for key, value in (
+        ("Current", cfg.sddm_theme),
+        ("CursorSize", cfg.sddm_theme_cursor_size),
+        ("CursorTheme", cfg.sddm_theme_cursor_theme),
+        ("Font", cfg.sddm_theme_font),
+    ):
+        changed |= _sync_system_value(
+            "/etc/sddm.conf.d/20-kubuntu.conf",
+            ("Theme",),
+            key,
+            value,
+            timeout=timeout,
+            force=force,
+        )
+    return changed
+
+
 def _reload_kwin(
     cfg: KdeSettingsConfig,
     *,
@@ -740,6 +835,7 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= _apply_konsole_profile(
             cfg, timeout=timeout, force=force
         )
+        settings_changed |= _apply_sddm(cfg, timeout=timeout, force=force)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
     changed |= settings_changed

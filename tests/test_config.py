@@ -77,6 +77,12 @@ virtual_keyboard_enabled = true
 virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"
 virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+sddm_autologin_user = "i"
+sddm_autologin_session = "plasma"
+sddm_theme = "kubuntu"
+sddm_theme_cursor_size = "30"
+sddm_theme_cursor_theme = "breeze_cursors"
+sddm_theme_font = "Noto Sans,20"
 
 [swapfile_service_install]
 swapfile_path = "/swapfile"
@@ -474,6 +480,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.kde_settings.touchpad_disable_on_external_mouse is False
     assert config.kde_settings.virtual_keyboard_enabled is True
     assert config.kde_settings.virtual_keyboard_locales == ("en_US", "es_MX", "ru_RU")
+    assert config.kde_settings.sddm_autologin_user == "i"
+    assert config.kde_settings.sddm_autologin_session == "plasma"
+    assert config.kde_settings.sddm_theme == "kubuntu"
+    assert config.kde_settings.sddm_theme_cursor_size == "30"
+    assert config.kde_settings.sddm_theme_cursor_theme == "breeze_cursors"
+    assert config.kde_settings.sddm_theme_font == "Noto Sans,20"
     assert config.swapfile_service_install.swapfile_path == Path("/swapfile")
     assert config.swapfile_service_install.ram_multiplier == 2
     assert config.swapfile_service_install.ram_extra_mb == 4096
