@@ -478,3 +478,235 @@ file = "kwinrc"
 group = ["org.kde.kdecoration2"]
 key = "ButtonsOnRight"
 value = "HFBIAX"
+
+# kglobalshortcutsrc: the keyboard shortcuts for the window effects. KDE
+# stores them in the full primary,alternate,description format, so the
+# values carry that format with the primary key from the journal. The
+# empty active screen bindings are removed instead of written. The task
+# unbinds any other action that shares a configured primary key, so a
+# configured shortcut wins over conflicts on any target machine.
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "ClearMouseMarks"
+value = "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "ClearLastMouseMark"
+value = "Meta+Shift+F12,Meta+Shift+F12,Clear Last Mouse Mark"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Cube"
+value = "Meta+C,Meta+C,Toggle Cube"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "MinimizeAll"
+value = "Meta+D,none,Minimize all windows"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "MinimizeAllActiveScreen"
+delete = true
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "minimizeAllOthers"
+value = "Meta+Shift+O,none,Minimize all other windows"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "minimizeAllOthersActiveScreen"
+delete = true
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Invert"
+value = "Meta+I,none,Toggle Invert Effect"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "InvertWindow"
+value = "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window"
+
+# kscreenlockerrc: the lock screen media controls and the day and night
+# wallpaper.
+[[kde_settings.kconfig]]
+file = "kscreenlockerrc"
+group = ["Greeter", "LnF", "General"]
+key = "showMediaControls"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kscreenlockerrc"
+group = ["Greeter", "Wallpaper", "org.kde.image", "General"]
+key = "Image"
+value = "file:///usr/share/wallpapers/Nexus/#day-night"
+
+[[kde_settings.kconfig]]
+file = "kscreenlockerrc"
+group = ["Greeter", "Wallpaper", "org.kde.image", "General"]
+key = "PreviewImage"
+value = "file:///usr/share/wallpapers/Nexus/#day-night"
+
+# ksmserverrc: start an empty session at login.
+[[kde_settings.kconfig]]
+file = "ksmserverrc"
+group = ["General"]
+key = "loginMode"
+value = "emptySession"
+
+# powerdevilrc: sleep only when the energy is low, per the user decision.
+# On AC and battery the auto suspend and the lid action are off, the low
+# battery profile switches to power-saver.
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "Display"]
+key = "DimDisplayIdleTimeoutSec"
+value = "840"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "Display"]
+key = "TurnOffDisplayIdleTimeoutSec"
+value = "900"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "Performance"]
+key = "PowerProfile"
+value = "performance"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "SuspendAndShutdown"]
+key = "AutoSuspendAction"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "SuspendAndShutdown"]
+key = "AutoSuspendIdleTimeoutSec"
+value = "599940"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["AC", "SuspendAndShutdown"]
+key = "LidAction"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["Battery", "SuspendAndShutdown"]
+key = "AutoSuspendAction"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["Battery", "SuspendAndShutdown"]
+key = "LidAction"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["BatteryManagement"]
+key = "BatteryLowLevel"
+value = "17"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["LowBattery", "Performance"]
+key = "PowerProfile"
+value = "power-saver"
+
+[[kde_settings.kconfig]]
+file = "powerdevilrc"
+group = ["LowBattery", "SuspendAndShutdown"]
+key = "LidAction"
+value = "0"
+
+# plasma-org.kde.plasma.desktop-appletsrc: the desktop wallpaper slideshow.
+[[kde_settings.kconfig]]
+file = "plasma-org.kde.plasma.desktop-appletsrc"
+group = ["Containments", "1", "Wallpaper", "org.kde.slideshow", "General"]
+key = "SlideInterval"
+value = "64740"
+
+[[kde_settings.kconfig]]
+file = "plasma-org.kde.plasma.desktop-appletsrc"
+group = ["Containments", "1", "Wallpaper", "org.kde.slideshow", "General"]
+key = "SlidePaths"
+value = "/usr/share/wallpapers/"
+
+[[kde_settings.kconfig]]
+file = "plasma-org.kde.plasma.desktop-appletsrc"
+group = ["Containments", "1"]
+key = "wallpaperplugin"
+value = "org.kde.slideshow"
+
+# systemsettingsrc: highlight the non-default settings.
+[[kde_settings.kconfig]]
+file = "systemsettingsrc"
+group = ["systemsettings_sidebar_mode"]
+key = "HighlightNonDefaultSettings"
+value = "true"
+type = "bool"
+
+# KDE/Sonnet.conf: the spell check defaults in English.
+[[kde_settings.kconfig]]
+file = "KDE/Sonnet.conf"
+group = ["General"]
+key = "autodetectLanguage"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "KDE/Sonnet.conf"
+group = ["General"]
+key = "checkerEnabledByDefault"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "KDE/Sonnet.conf"
+group = ["General"]
+key = "defaultLanguage"
+value = "en_US"
+
+[[kde_settings.kconfig]]
+file = "KDE/Sonnet.conf"
+group = ["General"]
+key = "preferredLanguages"
+value = "en_US"
+
+# kactivitymanagerd-pluginsrc: keep the activity history almost forever.
+[[kde_settings.kconfig]]
+file = "kactivitymanagerd-pluginsrc"
+group = ["Plugin-org.kde.ActivityManager.Resources.Scoring"]
+key = "keep-history-for"
+value = "99999"
+
+# konsolerc: the default Konsole profile.
+[[kde_settings.kconfig]]
+file = "konsolerc"
+group = ["Desktop Entry"]
+key = "DefaultProfile"
+value = "Pyntara.profile"
+
+# kwinrc: the mouse mark line width.
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Width"
+value = "3"

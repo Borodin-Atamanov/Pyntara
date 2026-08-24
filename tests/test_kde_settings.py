@@ -440,6 +440,126 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
     assert interval_writes[0][-1] == "99"
 
 
+SHORTCUTS_RC = """\
+[kwin]
+Show Desktop=Meta+D,Meta+D,Peek at Desktop
+ClearMouseMarks=Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks
+[org.kde.krunner.desktop]
+clipboard_action=Meta+Ctrl+X,Meta+Ctrl+X,Automatic Action Popup Menu
+"""
+
+
+def test_shortcut_primaries_collects_owned_keys(tmp_path: Path) -> None:
+    # Only the non-delete kglobalshortcutsrc records with a comma value
+    # own a primary key.
+    records = (
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAll",
+            "Meta+D,none,Minimize all windows",
+            "string",
+            False,
+        ),
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "ClearMouseMarks",
+            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
+            "string",
+            False,
+        ),
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAllActiveScreen",
+            "",
+            "string",
+            True,
+        ),
+        KConfigRecord("kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False),
+    )
+    cfg = make_config(
+        task_data_root=tmp_path, kde_settings_kconfig=records
+    ).kde_settings
+    owned = task_module._shortcut_primaries(cfg)
+    assert owned == {
+        "Meta+D": ["MinimizeAll"],
+        "Meta+Shift+F11": ["ClearMouseMarks"],
+    }
+
+
+def test_clear_shortcut_conflicts_unbinds_other_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The action sharing a configured primary key is unbound; the
+    # configured shortcuts and unrelated actions are left alone.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        SHORTCUTS_RC, encoding="utf-8"
+    )
+    records = (
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAll",
+            "Meta+D,none,Minimize all windows",
+            "string",
+            False,
+        ),
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "ClearMouseMarks",
+            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
+            "string",
+            False,
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    cleared = task_module._clear_shortcut_conflicts(
+        ctx.config.kde_settings, timeout=5
+    )
+    assert cleared is True
+    show_writes = [command for command in writes if "Show Desktop" in command]
+    assert show_writes
+    assert show_writes[0][-1] == "none,none,Peek at Desktop"
+    assert not [command for command in writes if "ClearMouseMarks" in command]
+    assert not [command for command in writes if "clipboard_action" in command]
+
+
+def test_clear_shortcut_conflicts_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # After the conflict is cleared its primary is none, so a second pass
+    # changes nothing.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\nShow Desktop=none,none,Peek at Desktop\n",
+        encoding="utf-8",
+    )
+    records = (
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAll",
+            "Meta+D,none,Minimize all windows",
+            "string",
+            False,
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    cleared = task_module._clear_shortcut_conflicts(
+        ctx.config.kde_settings, timeout=5
+    )
+    assert cleared is False
+    assert writes == []
+
+
 def _kconfig_ctx(
     tmp_path: Path,
     records: tuple[KConfigRecord, ...],

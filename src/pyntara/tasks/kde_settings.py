@@ -443,6 +443,79 @@ def _apply_kconfig_records(
     return changed
 
 
+def _shortcut_primaries(cfg: KdeSettingsConfig) -> dict[str, list[str]]:
+    """Map every shortcut primary key to the shortcut keys that own it.
+
+    The shortcut records are the kconfig records of kglobalshortcutsrc
+    whose value is in the KDE primary,alternate,description format; the
+    primary is the first comma field. A delete record owns no key.
+    """
+
+    owned: dict[str, list[str]] = {}
+    for record in cfg.kconfig:
+        if record.file != "kglobalshortcutsrc" or record.delete:
+            continue
+        if "," not in record.value:
+            continue
+        primary = record.value.split(",", 1)[0]
+        owned.setdefault(primary, []).append(record.key)
+    return owned
+
+
+def _clear_shortcut_conflicts(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+) -> bool:
+    """Unbind every action that shares a primary key with a configured
+    shortcut; True when any was cleared.
+
+    A configured shortcut must win over any other action on the target
+    machine, wherever that action lives. The scan reads kglobalshortcutsrc
+    and rewrites every value whose primary field matches a configured
+    primary and whose key is not one of the configured shortcuts to
+    none,none, so the key stops belonging to that action. The rewrite runs
+    through kwriteconfig6 as the target user, keeping the file owned by
+    that user. A missing file is not an error.
+    """
+
+    owned = _shortcut_primaries(cfg)
+    if not owned:
+        return False
+    path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    group: tuple[str, ...] = ()
+    changed = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            group = tuple(part for part in stripped[1:-1].split("][") if part)
+            continue
+        key, sep, value = stripped.partition("=")
+        if not sep or "," not in value:
+            continue
+        primary = value.split(",", 1)[0]
+        if primary not in owned or key in owned[primary]:
+            continue
+        fields = value.split(",")
+        cleared = ",".join(["none", "none"] + fields[2:])
+        _kwriteconfig(
+            cfg,
+            "kglobalshortcutsrc",
+            group,
+            key,
+            cleared,
+            timeout=timeout,
+            bool_value=False,
+        )
+        _log(f"cleared conflicting shortcut {key}: {primary}")
+        changed = True
+    return changed
+
+
 def _reload_kwin(
     cfg: KdeSettingsConfig,
     *,
@@ -533,6 +606,7 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= _apply_kconfig_records(
             cfg, timeout=timeout, force=force
         )
+        settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
     changed |= settings_changed
