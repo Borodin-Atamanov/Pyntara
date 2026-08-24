@@ -44,6 +44,16 @@ from pyntara.config import load_config
         base_config().replace(
             'look_and_feel = "org.kubuntudark.desktop"', 'look_and_feel = ""'
         ),
+        # look_and_feel_light is a number, not a string
+        base_config().replace(
+            'look_and_feel_light = "org.kubuntulight.desktop"',
+            "look_and_feel_light = 1",
+        ),
+        # look_and_feel_light is an empty string
+        base_config().replace(
+            'look_and_feel_light = "org.kubuntulight.desktop"',
+            'look_and_feel_light = ""',
+        ),
         # automatic_look_and_feel is a string, not a boolean
         base_config().replace(
             "automatic_look_and_feel = true", 'automatic_look_and_feel = "true"'
@@ -55,6 +65,14 @@ from pyntara.config import load_config
         # cursor_theme is an empty string
         base_config().replace(
             'cursor_theme = "Oxygen_Yellow"', 'cursor_theme = ""'
+        ),
+        # cursor_theme_light is a number, not a string
+        base_config().replace(
+            'cursor_theme_light = "Oxygen_Blue"', "cursor_theme_light = 42"
+        ),
+        # cursor_theme_light is an empty string
+        base_config().replace(
+            'cursor_theme_light = "Oxygen_Blue"', 'cursor_theme_light = ""'
         ),
         # numlock_on_boot is a number, not a string
         base_config().replace(
@@ -107,8 +125,10 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
     assert config.kde_settings.home_dir == "/home/i"
     assert config.kde_settings.color_scheme == "BreezeDark"
     assert config.kde_settings.look_and_feel == "org.kubuntudark.desktop"
+    assert config.kde_settings.look_and_feel_light == "org.kubuntulight.desktop"
     assert config.kde_settings.automatic_look_and_feel is True
     assert config.kde_settings.cursor_theme == "Oxygen_Yellow"
+    assert config.kde_settings.cursor_theme_light == "Oxygen_Blue"
     assert config.kde_settings.numlock_on_boot == "off"
     assert config.kde_settings.touchpad_click_method == "clickfinger"
     assert config.kde_settings.touchpad_disable_on_external_mouse is False

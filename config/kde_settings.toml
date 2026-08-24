@@ -24,6 +24,10 @@ color_scheme = "BreezeDark"
 # The dark global theme (look and feel) that covers the panel, the widgets,
 # the window decorations and the icons.
 look_and_feel = "org.kubuntudark.desktop"
+# The light global theme the day and night switch alternates to during the
+# day; the task copies it with its cursor theme into the user look and feel
+# directory, so the switch applies the configured light cursor theme too.
+look_and_feel_light = "org.kubuntulight.desktop"
 # Whether the native KDE day and night theme switch is enabled. When true,
 # the task turns the switch on (AutomaticLookAndFeel) and leaves the theme
 # itself to the switch, so a run never overwrites the current theme; the
@@ -35,6 +39,9 @@ automatic_look_and_feel = true
 # day and night theme switch overwrites cursorTheme in kcminputrc with
 # the theme default when it applies a look and feel.
 cursor_theme = "Oxygen_Yellow"
+# The mouse cursor theme the task writes into the light theme defaults, so
+# the day and night switch applies the blue cursor on the light theme.
+cursor_theme_light = "Oxygen_Blue"
 # The NumLock state when Plasma starts: on, off or unchanged. Stored in
 # kcminputrc [Keyboard] NumLock as 0, 1 or 2.
 numlock_on_boot = "off"

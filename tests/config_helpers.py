@@ -61,8 +61,10 @@ def base_config() -> str:
         'user_dirs = { "XDG_DOCUMENTS_DIR" = "$HOME/Downloads", "XDG_MUSIC_DIR" = "$HOME/Downloads", "XDG_PICTURES_DIR" = "$HOME/Downloads", "XDG_PUBLICSHARE_DIR" = "$HOME/Downloads", "XDG_TEMPLATES_DIR" = "$HOME/Downloads", "XDG_VIDEOS_DIR" = "$HOME/Downloads" }\n'
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
+        'look_and_feel_light = "org.kubuntulight.desktop"\n'
         "automatic_look_and_feel = true\n"
         'cursor_theme = "Oxygen_Yellow"\n'
+        'cursor_theme_light = "Oxygen_Blue"\n'
         'numlock_on_boot = "off"\n'
         'touchpad_click_method = "clickfinger"\n'
         "touchpad_disable_on_external_mouse = false\n"

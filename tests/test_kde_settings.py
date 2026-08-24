@@ -138,6 +138,12 @@ def _install_fakes(
             else None
         ),
     )
+    # The system theme directory never exists, so the theme cursor
+    # overrides skip the copy in the general task tests; the override
+    # tests point it at their own fixtures.
+    monkeypatch.setattr(
+        task_module, "SYSTEM_LOOK_AND_FEEL_DIR", Path("/nonexistent/look-and-feel")
+    )
     return themes, schemes, order, installs, writes, reloads, cursorthemes
 
 
@@ -529,6 +535,97 @@ def test_cursor_theme_applied_after_kconfig_records(
     assert any("cursorTheme" in command for command in writes)
     assert cursorthemes
     assert "Oxygen_Yellow" in " ".join(cursorthemes[0])
+
+
+def _make_system_theme(root: Path, name: str, cursor: str = "breeze_cursors") -> None:
+    """Create a minimal system look and feel theme under root."""
+
+    defaults = root / name / "contents" / "defaults"
+    defaults.parent.mkdir(parents=True, exist_ok=True)
+    defaults.write_text(
+        f"[kcminputrc][Mouse]\ncursorTheme={cursor}\n", encoding="utf-8"
+    )
+    (root / name / "metadata.json").write_text("{}", encoding="utf-8")
+
+
+def test_theme_cursor_overrides_copies_themes_with_cursors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both configured themes are copied into the user look and feel
+    # directory and their defaults carry the configured cursor themes.
+    system = tmp_path / "system-look-and-feel"
+    _make_system_theme(system, "org.kubuntudark.desktop")
+    _make_system_theme(system, "org.kubuntulight.desktop")
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    monkeypatch.setattr(task_module, "SYSTEM_LOOK_AND_FEEL_DIR", system)
+    changed = task_module._apply_theme_cursor_overrides(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    user_dir = tmp_path / ".local/share/plasma/look-and-feel"
+    dark_defaults = user_dir / "org.kubuntudark.desktop/contents/defaults"
+    light_defaults = user_dir / "org.kubuntulight.desktop/contents/defaults"
+    assert dark_defaults.is_file()
+    assert light_defaults.is_file()
+    defaults_writes = [
+        command for command in writes if "defaults" in " ".join(command)
+    ]
+    assert any("Oxygen_Yellow" in command for command in defaults_writes)
+    assert any("Oxygen_Blue" in command for command in defaults_writes)
+
+
+def test_theme_cursor_overrides_skip_missing_system_themes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A missing system theme is not an error; the copy is skipped.
+    ctx = _ctx(tmp_path)
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_theme_cursor_overrides(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+
+
+def test_theme_cursor_overrides_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A second pass with matching cursor values changes nothing.
+    system = tmp_path / "system-look-and-feel"
+    _make_system_theme(system, "org.kubuntudark.desktop")
+    _make_system_theme(system, "org.kubuntulight.desktop")
+    monkeypatch.setattr(task_module, "SYSTEM_LOOK_AND_FEEL_DIR", system)
+    ctx = _ctx(tmp_path)
+    values: dict[tuple[str, str], str] = {}
+    writes: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        if command[:4] == ["runuser", "-u", "i", "--"]:
+            inner = command[4:]
+            if inner[0] == "kreadconfig6":
+                file = inner[inner.index("--file") + 1]
+                key = inner[inner.index("--key") + 1]
+                return _FakeProc(0, values.get((file, key), ""))
+            if inner[0] == "kwriteconfig6":
+                file = inner[inner.index("--file") + 1]
+                key = inner[inner.index("--key") + 1]
+                writes.append(list(command))
+                values[(file, key)] = inner[-1]
+                return _FakeProc(0, "")
+        if command[0] in ("chown", "chmod"):
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    changed = task_module._apply_theme_cursor_overrides(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    assert writes
+    changed2 = task_module._apply_theme_cursor_overrides(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed2 is False
 
 
 SHORTCUTS_RC = """\

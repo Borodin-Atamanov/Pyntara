@@ -59,12 +59,15 @@ class KdeSettingsConfig:
     home_dir identify the user whose desktop config is edited; user_dirs
     maps the XDG user directories to their target paths; color_scheme is
     the dark scheme applied to all windows; look_and_feel is the dark
-    global theme that covers the whole desktop; automatic_look_and_feel,
-    when true, makes the task enable the native KDE day and night theme
-    switch and leaves the current theme to that switch; cursor_theme is
-    the mouse cursor theme applied to the desktop session with
-    plasma-apply-cursortheme, so it wins over the theme default that the
-    day and night switch writes; numlock_on_boot is the
+    global theme that covers the whole desktop; look_and_feel_light is the
+    light global theme the day and night switch alternates to;
+    automatic_look_and_feel, when true, makes the task enable the native
+    KDE day and night theme switch and leaves the current theme to that
+    switch; cursor_theme is the mouse cursor theme applied to the desktop
+    session with plasma-apply-cursortheme, so it wins over the theme
+    default that the day and night switch writes; cursor_theme_light is
+    the cursor theme written into the light theme defaults, so the switch
+    applies it on the light theme too; numlock_on_boot is the
     NumLock state at Plasma startup; touchpad_click_method and
     touchpad_disable_on_external_mouse are the touchpad preferences
     applied to every touchpad found; virtual_keyboard_enabled,
@@ -82,8 +85,10 @@ class KdeSettingsConfig:
     user_dirs: dict[str, str]
     color_scheme: str
     look_and_feel: str
+    look_and_feel_light: str
     automatic_look_and_feel: bool
     cursor_theme: str
+    cursor_theme_light: str
     numlock_on_boot: str
     touchpad_click_method: str
     touchpad_disable_on_external_mouse: bool
@@ -120,12 +125,18 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         look_and_feel=_nonempty_string_field(
             raw.get("look_and_feel"), "kde_settings.look_and_feel"
         ),
+        look_and_feel_light=_nonempty_string_field(
+            raw.get("look_and_feel_light"), "kde_settings.look_and_feel_light"
+        ),
         automatic_look_and_feel=_bool_field(
             raw.get("automatic_look_and_feel"),
             "kde_settings.automatic_look_and_feel",
         ),
         cursor_theme=_nonempty_string_field(
             raw.get("cursor_theme"), "kde_settings.cursor_theme"
+        ),
+        cursor_theme_light=_nonempty_string_field(
+            raw.get("cursor_theme_light"), "kde_settings.cursor_theme_light"
         ),
         numlock_on_boot=_enum_field(
             raw.get("numlock_on_boot"),

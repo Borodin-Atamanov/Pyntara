@@ -9,7 +9,10 @@ and keyboard settings as KConfig values with kwriteconfig6: the NumLock
 state on startup, the touchpad preferences (to every touchpad found) and
 the Wayland virtual keyboard. The cursor theme is applied with
 plasma-apply-cursortheme after the kconfig records, so it wins over the
-theme default that the day and night switch writes. When a desktop
+theme default that the day and night switch writes. The dark and light
+themes are copied into the user look and feel directory with their
+configured cursor themes in the defaults, so the switch applies the right
+cursor with the theme itself. When a desktop
 session is running the changes apply immediately; without a session the
 tools still write the config and the settings apply after the next login.
 The task is idempotent: it reads the current values with kreadconfig6 and
@@ -22,6 +25,7 @@ first.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -57,6 +61,12 @@ MOUSE_GROUP: tuple[str, ...] = ("Mouse",)
 # under the target user config and local share directories.
 USER_DIRS_FILE = "user-dirs.dirs"
 KONSOLE_PROFILE_REL = ".local/share/konsole/Pyntara.profile"
+# The system and user look and feel directories: the user copy of a theme
+# wins over the system one, so the task copies the themes whose defaults
+# carry the configured cursor themes.
+SYSTEM_LOOK_AND_FEEL_DIR = Path("/usr/share/plasma/look-and-feel")
+USER_LOOK_AND_FEEL_REL = ".local/share/plasma/look-and-feel"
+THEME_DEFAULTS_REL = Path("contents") / "defaults"
 NUMLOCK_GROUP: tuple[str, ...] = ("Keyboard",)
 WAYLAND_GROUP: tuple[str, ...] = ("Wayland",)
 VIRTUAL_KEYBOARD_GROUP: tuple[str, ...] = ("General",)
@@ -446,6 +456,53 @@ def _apply_cursor_theme(
     return True
 
 
+def _apply_theme_cursor_overrides(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Copy the configured themes with their cursor defaults; True when changed.
+
+    The day and night theme switch overwrites cursorTheme in kcminputrc
+    with the theme default whenever it applies a look and feel, so the
+    task copies the dark and light themes into the user look and feel
+    directory, where a copy wins over the system one, and writes the
+    configured cursor theme into the copy defaults. The switch then
+    applies the right cursor with the theme itself. A missing system
+    theme is not an error: the packages install it before the task runs.
+    """
+
+    changed = False
+    for look_and_feel, cursor_theme in (
+        (cfg.look_and_feel, cfg.cursor_theme),
+        (cfg.look_and_feel_light, cfg.cursor_theme_light),
+    ):
+        source = SYSTEM_LOOK_AND_FEEL_DIR / look_and_feel
+        if not source.is_dir():
+            _log(f"no system theme {look_and_feel}, cursor override skipped")
+            continue
+        target = Path(cfg.home_dir) / USER_LOOK_AND_FEEL_REL / look_and_feel
+        if not target.is_dir():
+            shutil.copytree(source, target)
+            run_command(
+                ["chown", "-R", f"{cfg.username}:{cfg.username}", str(target)],
+                timeout=timeout,
+            )
+            _log(f"copied theme {look_and_feel} into the user look and feel directory")
+        changed |= _sync_config_value(
+            cfg,
+            str(target / THEME_DEFAULTS_REL),
+            ("kcminputrc", "Mouse"),
+            "cursorTheme",
+            cursor_theme,
+            timeout=timeout,
+            force=force,
+            bool_value=False,
+        )
+    return changed
+
+
 def _apply_kconfig_records(
     cfg: KdeSettingsConfig,
     *,
@@ -808,11 +865,12 @@ def task(ctx: Context) -> TaskResult:
     target user: the global theme first, then the color scheme so the
     configured scheme wins, then the NumLock state, the touchpad
     preferences, the Wayland virtual keyboard, the configured kconfig
-    values and the cursor theme last, so it wins over the theme default
-    the day and night switch writes. When automatic_look_and_feel is set,
-    the theme is not applied directly: the task enables the native day and
-    night switch instead, so a run never fights the switch. Any failure is
-    returned as an error TaskResult.
+    values, the theme cursor overrides that let the day and night switch
+    apply the configured cursors, and the cursor theme last, so it wins
+    over the theme default the switch writes. When automatic_look_and_feel
+    is set, the theme is not applied directly: the task enables the native
+    day and night switch instead, so a run never fights the switch. Any
+    failure is returned as an error TaskResult.
     """
 
     cfg = ctx.config.kde_settings
@@ -861,6 +919,9 @@ def task(ctx: Context) -> TaskResult:
         )
         settings_changed |= virtual_keyboard_changed
         settings_changed |= _apply_kconfig_records(
+            cfg, timeout=timeout, force=force
+        )
+        settings_changed |= _apply_theme_cursor_overrides(
             cfg, timeout=timeout, force=force
         )
         settings_changed |= _apply_cursor_theme(
