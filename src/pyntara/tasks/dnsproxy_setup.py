@@ -609,8 +609,10 @@ def _verify_system(
         )
         if state.returncode != 0:
             return (
-                "cannot read per-link DNS state: resolvectl exited "
-                f"{state.returncode}",
+                (
+                    "cannot read per-link DNS state: resolvectl exited "
+                    f"{state.returncode}"
+                ),
                 None,
             )
         leftover = [
@@ -621,25 +623,31 @@ def _verify_system(
         if leftover:
             if nm_managed:
                 return (
-                    "per-link DNS still lists provider resolver(s) "
-                    f"{', '.join(leftover)}; the system would bypass dnsproxy",
+                    (
+                        "per-link DNS still lists provider resolver(s) "
+                        f"{', '.join(leftover)}; the system would bypass dnsproxy"
+                    ),
                     None,
                 )
             route_error = _resolved_uses_dnsproxy(cfg, timeout)
             if route_error is None:
                 return (
                     None,
-                    f"per-link DNS still lists provider resolver(s) "
-                    f"{', '.join(leftover)}; NetworkManager is absent so this "
-                    "task cannot remove them, but systemd-resolved routes "
-                    "queries through dnsproxy (stub resolv.conf mode, global "
-                    f"DNS points at 127.0.0.1:{cfg.listen_port}); remove the "
-                    "provider nameservers from the netplan or systemd-networkd "
-                    "configuration to fully clean up",
+                    (
+                        "per-link DNS still lists provider resolver(s) "
+                        f"{', '.join(leftover)}; NetworkManager is absent so this "
+                        "task cannot remove them, but systemd-resolved routes "
+                        "queries through dnsproxy (stub resolv.conf mode, global "
+                        f"DNS points at 127.0.0.1:{cfg.listen_port}); remove the "
+                        "provider nameservers from the netplan or systemd-networkd "
+                        "configuration to fully clean up"
+                    ),
                 )
             return (
-                f"per-link DNS still lists provider resolver(s) "
-                f"{', '.join(leftover)}; {route_error}",
+                (
+                    "per-link DNS still lists provider resolver(s) "
+                    f"{', '.join(leftover)}; {route_error}"
+                ),
                 None,
             )
     return None, None

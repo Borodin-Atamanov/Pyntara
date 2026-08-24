@@ -153,7 +153,7 @@ def test_first_run_applies_both_themes(
     # No current values: the global theme and the color scheme are both
     # applied, the global theme first.
     ctx = _ctx(tmp_path)
-    themes, schemes, order, installs, _, _, cursorthemes = _install_fakes(
+    themes, schemes, order, installs, _, _, _ = _install_fakes(
         monkeypatch
     )
     result = task_module.task(ctx)
