@@ -34,6 +34,13 @@ from pyntara.utils import (
     trim_whitespace,
 )
 
+# Module-level path constants are monkeypatched by the tests, which run
+# against temporary fixtures instead of the real system (developer guide).
+REPO_ROOT = Path(__file__).resolve().parents[3]
+KONSOLE_PROFILE_TEMPLATE = (
+    REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
+)
+
 # The kdeglobals groups and keys that carry the applied theme values.
 GENERAL_GROUP: tuple[str, ...] = ("General",)
 KDE_GROUP: tuple[str, ...] = ("KDE",)
@@ -42,6 +49,10 @@ KDE_GROUP: tuple[str, ...] = ("KDE",)
 KCINPUTRC_FILE = "kcminputrc"
 KWINRC_FILE = "kwinrc"
 PLASMA_KEYBOARD_RC = "plasmakeyboardrc"
+# The XDG user directory file and the Konsole profile target path, both
+# under the target user config and local share directories.
+USER_DIRS_FILE = "user-dirs.dirs"
+KONSOLE_PROFILE_REL = ".local/share/konsole/Pyntara.profile"
 NUMLOCK_GROUP: tuple[str, ...] = ("Keyboard",)
 WAYLAND_GROUP: tuple[str, ...] = ("Wayland",)
 VIRTUAL_KEYBOARD_GROUP: tuple[str, ...] = ("General",)
@@ -516,6 +527,124 @@ def _clear_shortcut_conflicts(
     return changed
 
 
+def _user_dirs_merged(current: str, user_dirs: dict[str, str]) -> str:
+    """current with the configured XDG dirs replaced in place.
+
+    A line whose key equals a configured XDG variable is replaced by the
+    configured directive, so its position is kept and a matching value
+    leaves the line untouched; a configured directive missing from the
+    file is appended. Every other line, comments and foreign keys, is
+    preserved.
+    """
+
+    directives = {key: f'{key}="{value}"' for key, value in user_dirs.items()}
+    seen: set[str] = set()
+    merged: list[str] = []
+    for line in current.splitlines():
+        stripped = line.strip()
+        key = stripped.split("=", 1)[0].strip() if "=" in stripped else ""
+        if key in directives:
+            merged.append(directives[key])
+            seen.add(key)
+        else:
+            merged.append(line)
+    for key, directive in directives.items():
+        if key not in seen:
+            merged.append(directive)
+    return "\n".join(merged) + "\n"
+
+
+def _write_user_file(
+    cfg: KdeSettingsConfig,
+    rel_path: str,
+    content: str,
+    *,
+    mode: str,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write one user-owned file as the target user; True when written.
+
+    The directory is created as the target user, the content is written by
+    the root process and then chowned and chmodded to the target user, so
+    the file keeps the user ownership a desktop config file needs. A file
+    that already holds the content is skipped.
+    """
+
+    target = Path(cfg.home_dir) / rel_path
+    if not force and target.is_file():
+        try:
+            if target.read_text(encoding="utf-8") == content:
+                return False
+        except OSError:
+            pass
+    run_command(
+        _as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),
+        extra_env=_home_env(cfg),
+        timeout=timeout,
+    )
+    # The user mkdir above owns the directory; this direct creation is a
+    # no-op when it succeeded and a fallback for a read-only fixture.
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    run_command(
+        ["chown", f"{cfg.username}:{cfg.username}", str(target)],
+        timeout=timeout,
+    )
+    run_command(["chmod", mode, str(target)], timeout=timeout)
+    _log(f"wrote {target}")
+    return True
+
+
+def _apply_user_dirs(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write the configured XDG user directories; True when changed."""
+
+    path = Path(cfg.home_dir) / ".config" / USER_DIRS_FILE
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    content = _user_dirs_merged(current, cfg.user_dirs)
+    return _write_user_file(
+        cfg,
+        f".config/{USER_DIRS_FILE}",
+        content,
+        mode="0600",
+        timeout=timeout,
+        force=force,
+    )
+
+
+def _apply_konsole_profile(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Write the Pyntara Konsole profile; True when changed.
+
+    The template is rendered with the target home directory, so the profile
+    points at the right Downloads directory on any target machine.
+    """
+
+    try:
+        template = KONSOLE_PROFILE_TEMPLATE.read_text(encoding="utf-8")
+    except OSError:
+        _log("no konsole profile template, profile left as is")
+        return False
+    content = template.replace("{home_dir}", cfg.home_dir)
+    return _write_user_file(
+        cfg,
+        KONSOLE_PROFILE_REL,
+        content,
+        mode="0600",
+        timeout=timeout,
+        force=force,
+    )
+
+
 def _reload_kwin(
     cfg: KdeSettingsConfig,
     *,
@@ -607,6 +736,10 @@ def task(ctx: Context) -> TaskResult:
             cfg, timeout=timeout, force=force
         )
         settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
+        settings_changed |= _apply_user_dirs(cfg, timeout=timeout, force=force)
+        settings_changed |= _apply_konsole_profile(
+            cfg, timeout=timeout, force=force
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
     changed |= settings_changed

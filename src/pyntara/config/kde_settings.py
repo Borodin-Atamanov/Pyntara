@@ -22,6 +22,7 @@ from ._fields import (
     _enum_field,
     _nonempty_string_field,
     _string_list,
+    _string_map,
 )
 
 # The value types a kconfig record can carry. bool adds the kwriteconfig6
@@ -55,8 +56,9 @@ class KdeSettingsConfig:
 
     packages are the packages the task ensures are installed (the provider
     of the plasma-apply theme tools and the KConfig reader); username and
-    home_dir identify the user whose desktop config is edited; color_scheme
-    is the dark scheme applied to all windows; look_and_feel is the dark
+    home_dir identify the user whose desktop config is edited; user_dirs
+    maps the XDG user directories to their target paths; color_scheme is
+    the dark scheme applied to all windows; look_and_feel is the dark
     global theme that covers the whole desktop; automatic_look_and_feel,
     when true, makes the task enable the native KDE day and night theme
     switch and leaves the current theme to that switch; numlock_on_boot is
@@ -73,6 +75,7 @@ class KdeSettingsConfig:
     packages: tuple[str, ...]
     username: str
     home_dir: str
+    user_dirs: dict[str, str]
     color_scheme: str
     look_and_feel: str
     automatic_look_and_feel: bool
@@ -99,6 +102,7 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         home_dir=_nonempty_string_field(
             raw.get("home_dir"), "kde_settings.home_dir"
         ),
+        user_dirs=_string_map(raw.get("user_dirs"), "kde_settings.user_dirs"),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
         ),

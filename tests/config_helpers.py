@@ -57,6 +57,7 @@ def base_config() -> str:
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
         'home_dir = "/home/i"\n'
+        'user_dirs = { "XDG_DOCUMENTS_DIR" = "$HOME/Downloads", "XDG_MUSIC_DIR" = "$HOME/Downloads", "XDG_PICTURES_DIR" = "$HOME/Downloads", "XDG_PUBLICSHARE_DIR" = "$HOME/Downloads", "XDG_TEMPLATES_DIR" = "$HOME/Downloads", "XDG_VIDEOS_DIR" = "$HOME/Downloads" }\n'
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
         "automatic_look_and_feel = true\n"

@@ -66,6 +66,7 @@ layout_switch_shortcuts = { "Switch keyboard layout to Spanish" = "Meta+Q" }
 packages = ["plasma-workspace", "libkf6config-bin"]
 username = "i"
 home_dir = "/home/i"
+user_dirs = { "XDG_DOCUMENTS_DIR" = "$HOME/Downloads" }
 color_scheme = "BreezeDark"
 look_and_feel = "org.kubuntudark.desktop"
 automatic_look_and_feel = true
@@ -464,6 +465,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.kde_settings.packages == ("plasma-workspace", "libkf6config-bin")
     assert config.kde_settings.username == "i"
     assert config.kde_settings.home_dir == "/home/i"
+    assert config.kde_settings.user_dirs == {"XDG_DOCUMENTS_DIR": "$HOME/Downloads"}
     assert config.kde_settings.color_scheme == "BreezeDark"
     assert config.kde_settings.look_and_feel == "org.kubuntudark.desktop"
     assert config.kde_settings.automatic_look_and_feel is True

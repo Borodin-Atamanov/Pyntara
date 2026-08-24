@@ -101,6 +101,8 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 reloads.append(list(command))
                 return _FakeProc(0, "")
+        if command[0] in ("chown", "chmod"):
+            return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
     def fake_installed(package: str, timeout: float) -> bool:
@@ -157,6 +159,7 @@ def test_skip_when_already_configured(
         "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop",
         "enabledLocales": "en_US,es_MX,ru_RU",
     }
+    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
     themes, schemes, order, _, writes, reloads = _install_fakes(
         monkeypatch, currents=currents
     )
@@ -560,6 +563,81 @@ def test_clear_shortcut_conflicts_idempotent(
     assert writes == []
 
 
+def test_user_dirs_merged_replaces_in_place_and_keeps_others() -> None:
+    # A matching directive keeps the line, a differing one is replaced in
+    # place, missing directives are appended, comments and foreign keys
+    # survive.
+    current = (
+        "# comment\n"
+        'XDG_DESKTOP_DIR="$HOME/Desktop"\n'
+        'XDG_DOCUMENTS_DIR="$HOME/Documents"\n'
+        'XDG_MUSIC_DIR="$HOME/Downloads"\n'
+        "XDG_UNRELATED=value\n"
+    )
+    user_dirs = {
+        "XDG_DOCUMENTS_DIR": "$HOME/Downloads",
+        "XDG_MUSIC_DIR": "$HOME/Downloads",
+    }
+    merged = task_module._user_dirs_merged(current, user_dirs)
+    lines = merged.splitlines()
+    assert lines[0] == "# comment"
+    assert lines[1] == 'XDG_DESKTOP_DIR="$HOME/Desktop"'
+    assert 'XDG_DOCUMENTS_DIR="$HOME/Downloads"' in lines
+    assert 'XDG_MUSIC_DIR="$HOME/Downloads"' in lines
+    assert "XDG_UNRELATED=value" in lines
+
+
+def test_apply_user_dirs_writes_configured_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The configured XDG dirs replace the existing ones and a second pass
+    # changes nothing.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "user-dirs.dirs").write_text(
+        'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_MUSIC_DIR="$HOME/Music"\n',
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_user_dirs(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    text = (config_dir / "user-dirs.dirs").read_text(encoding="utf-8")
+    assert 'XDG_MUSIC_DIR="$HOME/Downloads"' in text
+    assert 'XDG_DESKTOP_DIR="$HOME/Desktop"' in text
+    changed2 = task_module._apply_user_dirs(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed2 is False
+
+
+def test_apply_konsole_profile_renders_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The template is rendered with the configured home dir and written
+    # under the user local share directory; a second pass is a no-op.
+    asset = tmp_path / "Pyntara.profile"
+    asset.write_text(
+        "Directory={home_dir}/Downloads/\nName=Pyntara\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(task_module, "KONSOLE_PROFILE_TEMPLATE", asset)
+    ctx = _ctx(tmp_path)
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_konsole_profile(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    target = tmp_path / ".local/share/konsole/Pyntara.profile"
+    expected = f"Directory={tmp_path}/Downloads/\nName=Pyntara\n"
+    assert target.read_text(encoding="utf-8") == expected
+    changed2 = task_module._apply_konsole_profile(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed2 is False
+
+
 def _kconfig_ctx(
     tmp_path: Path,
     records: tuple[KConfigRecord, ...],
@@ -578,6 +656,22 @@ def _kconfig_ctx(
             kde_settings_kconfig=records,
         ),
     )
+
+
+def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
+    """Write the user-dirs.dirs and the Konsole profile the task expects,
+    so an idempotent run sees them as already configured."""
+
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "user-dirs.dirs").write_text(
+        task_module._user_dirs_merged("", cfg.user_dirs), encoding="utf-8"
+    )
+    profile = task_module.KONSOLE_PROFILE_TEMPLATE.read_text(encoding="utf-8")
+    profile = profile.replace("{home_dir}", cfg.home_dir)
+    profile_dir = tmp_path / ".local/share/konsole"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
 
 
 FULLY_CONFIGURED = {
@@ -638,6 +732,7 @@ def test_kconfig_records_skip_when_matching(
     )
     ctx = _kconfig_ctx(tmp_path, records)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
+    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
     _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True

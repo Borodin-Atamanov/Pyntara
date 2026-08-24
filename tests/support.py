@@ -252,6 +252,7 @@ def make_config(
     ),
     kde_settings_username: str = "i",
     kde_settings_home_dir: str = "/home/i",
+    kde_settings_user_dirs: dict[str, str] | None = None,
     kde_settings_color_scheme: str = "BreezeDark",
     kde_settings_look_and_feel: str = "org.kubuntudark.desktop",
     kde_settings_automatic_look_and_feel: bool = False,
@@ -590,6 +591,18 @@ def make_config(
             packages=kde_settings_packages,
             username=kde_settings_username,
             home_dir=kde_settings_home_dir,
+            user_dirs=(
+                kde_settings_user_dirs
+                if kde_settings_user_dirs is not None
+                else {
+                    "XDG_DOCUMENTS_DIR": "$HOME/Downloads",
+                    "XDG_MUSIC_DIR": "$HOME/Downloads",
+                    "XDG_PICTURES_DIR": "$HOME/Downloads",
+                    "XDG_PUBLICSHARE_DIR": "$HOME/Downloads",
+                    "XDG_TEMPLATES_DIR": "$HOME/Downloads",
+                    "XDG_VIDEOS_DIR": "$HOME/Downloads",
+                }
+            ),
             color_scheme=kde_settings_color_scheme,
             look_and_feel=kde_settings_look_and_feel,
             automatic_look_and_feel=kde_settings_automatic_look_and_feel,

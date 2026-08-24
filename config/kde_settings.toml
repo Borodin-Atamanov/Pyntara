@@ -46,6 +46,15 @@ virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 # Command that makes kwin re-read its configuration, so a changed Wayland
 # input method applies without a session restart.
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# The XDG user directories, all folded into Downloads while Desktop stays;
+# each maps an XDG_*_DIR variable to its target path.
+[kde_settings.user_dirs]
+XDG_DOCUMENTS_DIR = "$HOME/Downloads"
+XDG_MUSIC_DIR = "$HOME/Downloads"
+XDG_PICTURES_DIR = "$HOME/Downloads"
+XDG_PUBLICSHARE_DIR = "$HOME/Downloads"
+XDG_TEMPLATES_DIR = "$HOME/Downloads"
+XDG_VIDEOS_DIR = "$HOME/Downloads"
 # Additional KConfig values applied by the task as the target user, one
 # table per value. file is the config file name under ~/.config, group is
 # the list of group segments, key and value name the key and its string
