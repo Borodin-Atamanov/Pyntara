@@ -79,7 +79,7 @@ packages = [
 
     # media tools
     "mediainfo", # mediainfo: technical details of media files, codecs and streams
-    "exiftool", # exiftool: read and write EXIF and IPTC metadata in media files
+    "libimage-exiftool-perl", # libimage-exiftool-perl: exiftool tool for EXIF and IPTC metadata; the real package behind the virtual exiftool name
 
     # automation and configuration
     "expect", # expect: automate interactive terminal programs

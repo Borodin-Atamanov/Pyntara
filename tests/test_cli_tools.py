@@ -79,6 +79,16 @@ def test_cli_tools_depends_on_add_extra_repos() -> None:
     assert task_def.depends == ("add_extra_repos",)
 
 
+def test_real_config_names_exiftool_by_its_real_package() -> None:
+    # exiftool is a virtual name provided by libimage-exiftool-perl.
+    # dpkg-query cannot see virtual names, so listing exiftool would make
+    # the task consider it missing forever and reinstall it on every run.
+    # The real config must name the real package.
+    config = load_config(REPO_ROOT / "config")
+    assert "libimage-exiftool-perl" in config.cli_tools.packages
+    assert "exiftool" not in config.cli_tools.packages
+
+
 def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(_ctx())
