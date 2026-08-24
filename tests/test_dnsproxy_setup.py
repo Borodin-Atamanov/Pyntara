@@ -10,6 +10,17 @@ from pyntara.tasks import dnsproxy_setup as task_module
 
 PASSWORD = "password"
 
+ROUTED_STATUS = (
+    "Global\n"
+    "  resolv.conf mode: stub\n"
+    "Current DNS Server: 127.0.0.1:53053\n"
+    "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
+    "        DNS Domain: ~.\n"
+    "\n"
+    "Link 2 (eth0)\n"
+    "Current DNS Server: 195.179.224.53\n"
+)
+
 
 def test_discover_dns_servers_combines_and_sorts_both_command_outputs(monkeypatch: Any) -> None:
     outputs = {
@@ -64,6 +75,7 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
         assert form in command
     assert "--output=/var/log/pyntara/dnsproxy.log" in command
     assert "--upstream-mode=load_balance" in command
+    assert "--cache-size=16777216" in command
     assert "--verbose" not in command
 
 
@@ -148,7 +160,7 @@ def _run_task(
     routing_leftover: bool = False,
     nmcli_active: str = "",
     nmcli_missing: bool = False,
-    query_log_content: str = "",
+    resolvectl_status_output: str = "",
 ) -> tuple[Any, Path, list[list[str]], Any]:
     '''Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path, the recorded commands and the
@@ -158,9 +170,10 @@ def _run_task(
     listener after the kill, routing_leftover keeps the provider address
     in the post-cutover per-link state, and nmcli_active supplies the
     active connection listing. nmcli_missing makes the nmcli check
-    command raise FileNotFoundError, and query_log_content seeds the
-    dnsproxy query log file. probe controls the pre-cutover dnsproxy
-    answer check.'''
+    command raise FileNotFoundError, and resolvectl_status_output
+    overrides the resolvectl status listing; an empty value uses a
+    listing that routes through dnsproxy. probe controls the pre-cutover
+    dnsproxy answer check.'''
     service_path = tmp_path / "dnsproxy.service"
     config = make_config(
         task_data_root=tmp_path,
@@ -177,8 +190,6 @@ def _run_task(
         ),
     )
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
-    if query_log_content:
-        (tmp_path / "dnsproxy.log").write_text(query_log_content, encoding="utf-8")
     context = make_context(vault_password=PASSWORD, config=config)
     monkeypatch.setattr(
         task_module,
@@ -223,6 +234,8 @@ def _run_task(
             return FakeProc(0, "")
         if command == active_list_command:
             return FakeProc(0, nmcli_active)
+        if command == list(config.dnsproxy_setup.resolvectl_status_command):
+            return FakeProc(0, resolvectl_status_output or ROUTED_STATUS)
         if command[:4] == ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns"]:
             return FakeProc(0, "ipv4.ignore-auto-dns:no\nipv6.ignore-auto-dns:no\n")
         if provider_dns and command == ["resolvectl", "dns"]:
@@ -382,7 +395,7 @@ def test_task_succeeds_when_nmcli_is_missing(
     assert not nmcli_reapplies
 
 
-def test_task_succeeds_with_warning_when_nm_missing_and_dnsproxy_serves_queries(
+def test_task_succeeds_with_warning_when_nm_missing_and_resolved_routes_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     result, _, _, _ = _run_task(
@@ -391,25 +404,54 @@ def test_task_succeeds_with_warning_when_nm_missing_and_dnsproxy_serves_queries(
         provider_dns=True,
         routing_leftover=True,
         nmcli_missing=True,
-        query_log_content="2026-08-24T06:11:46Z [info] query example.com A\n",
     )
     assert result.success is True
     assert any("per-link DNS" in warning for warning in result.warnings)
-    assert "Domains=~." in " ".join(result.warnings)
+    assert "routes queries through dnsproxy" in " ".join(result.warnings)
 
 
-def test_task_fails_when_nm_missing_and_dnsproxy_does_not_serve_queries(
+def test_task_fails_when_nm_missing_and_global_dns_does_not_point_at_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
+    status = (
+        "Global\n"
+        "  resolv.conf mode: stub\n"
+        "Current DNS Server: 195.179.224.53\n"
+        "       DNS Servers: 195.179.224.53 209.126.15.53\n"
+        "        DNS Domain: ~.\n"
+    )
     result, _, _, _ = _run_task(
         tmp_path,
         monkeypatch,
         provider_dns=True,
         routing_leftover=True,
         nmcli_missing=True,
+        resolvectl_status_output=status,
     )
     assert result.success is False
-    assert "bypass dnsproxy" in (result.error or "")
+    assert "does not point at" in (result.error or "")
+
+
+def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    status = (
+        "Global\n"
+        "  resolv.conf mode: foreign\n"
+        "Current DNS Server: 127.0.0.1:53053\n"
+        "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
+        "        DNS Domain: ~.\n"
+    )
+    result, _, _, _ = _run_task(
+        tmp_path,
+        monkeypatch,
+        provider_dns=True,
+        routing_leftover=True,
+        nmcli_missing=True,
+        resolvectl_status_output=status,
+    )
+    assert result.success is False
+    assert "stub resolv.conf mode" in (result.error or "")
 
 
 def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(

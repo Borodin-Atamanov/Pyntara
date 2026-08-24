@@ -270,6 +270,7 @@ def _command(
     )
     if cfg.cache_enabled:
         command.append("--cache")
+        command.append("--cache-size=" + str(cfg.cache_size_bytes))
     for bootstrap in (*pool_forms, *provider_forms):
         command.append("--bootstrap=" + bootstrap)
     return command
@@ -511,25 +512,63 @@ def _restore_auto_dns(
             )
 
 
-def _query_log_records_domain(
-    cfg: DnsproxySetupConfig, domain: str
-) -> bool:
-    '''True when the dnsproxy query log shows the domain.
+def _global_block_lines(status_lines: list[str]) -> list[str]:
+    '''The lines of the Global block of resolvectl status output.
 
-    The verification domain recorded in the query log proves that
-    systemd-resolved actually routes queries through dnsproxy, even when
-    provider DNS addresses survive on a per-link scope that this task
-    cannot edit because NetworkManager is absent. Only the last part of
-    the log is read, because the file grows with every query.
+    The block starts at the line Global and ends at the first empty line
+    or Link block, whichever comes first. A missing Global marker yields
+    an empty list.
     '''
 
-    try:
-        content = cfg.query_log_path.read_bytes()[-65536:].decode(
-            "utf-8", errors="replace"
+    started = False
+    block: list[str] = []
+    for line in status_lines:
+        stripped = line.strip()
+        if not started:
+            if stripped == "Global":
+                started = True
+            continue
+        if not stripped or stripped.startswith("Link "):
+            break
+        block.append(line)
+    return block
+
+
+def _resolved_uses_dnsproxy(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
+    '''Error text when systemd-resolved does not route through dnsproxy.
+
+    Two facts from the Global block of resolvectl status prove that every
+    system query goes through dnsproxy: the resolv.conf mode is stub, so
+    applications resolve through systemd-resolved, and the global DNS
+    points at our loopback listener, so systemd-resolved forwards to
+    dnsproxy. This check is used when NetworkManager is absent and the
+    per-link provider DNS cannot be removed by the task.
+    '''
+
+    result = run_command(
+        list(cfg.resolvectl_status_command),
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return f"cannot read resolvectl status: exited {result.returncode}"
+    global_text = "\n".join(_global_block_lines(result.stdout.splitlines()))
+    if "resolv.conf mode: stub" not in global_text:
+        return "systemd-resolved does not use the stub resolv.conf mode"
+    dns_scope_lines = " ".join(
+        line
+        for line in global_text.splitlines()
+        if line.lstrip().startswith(("Current DNS Server", "DNS Servers"))
+    )
+    loopback_v4 = f"127.0.0.1:{cfg.listen_port}"
+    loopback_v6 = f"[::1]:{cfg.listen_port}"
+    if loopback_v4 not in dns_scope_lines and loopback_v6 not in dns_scope_lines:
+        return (
+            "systemd-resolved global DNS does not point at "
+            f"127.0.0.1:{cfg.listen_port}"
         )
-    except OSError:
-        return False
-    return domain in content
+    return None
 
 
 def _verify_system(
@@ -546,10 +585,11 @@ def _verify_system(
     on a per-link scope: if one does and NetworkManager is managed, the
     system would bypass dnsproxy despite a successful lookup, so it is
     an error. When NetworkManager is absent the per-link provider DNS
-    cannot be removed by this task, so the query log is consulted
-    instead: a verification domain recorded there proves that the global
-    Domains=~. routing already sends queries through dnsproxy, and the
-    surviving per-link servers are reported as a warning, not an error.
+    cannot be removed by this task, so the resolver state is checked
+    instead: a stub resolv.conf mode and a global DNS pointing at our
+    loopback listener prove that systemd-resolved routes queries through
+    dnsproxy, and the surviving per-link servers are reported as a
+    warning, not an error.
     '''
 
     command = [
@@ -585,20 +625,21 @@ def _verify_system(
                     f"{', '.join(leftover)}; the system would bypass dnsproxy",
                     None,
                 )
-            if _query_log_records_domain(cfg, cfg.verification_domain):
+            route_error = _resolved_uses_dnsproxy(cfg, timeout)
+            if route_error is None:
                 return (
                     None,
                     f"per-link DNS still lists provider resolver(s) "
                     f"{', '.join(leftover)}; NetworkManager is absent so this "
-                    "task cannot remove them, but the global Domains=~. routing "
-                    "already sends queries through dnsproxy (the verification "
-                    "domain is recorded in the dnsproxy query log); remove the "
+                    "task cannot remove them, but systemd-resolved routes "
+                    "queries through dnsproxy (stub resolv.conf mode, global "
+                    f"DNS points at 127.0.0.1:{cfg.listen_port}); remove the "
                     "provider nameservers from the netplan or systemd-networkd "
                     "configuration to fully clean up",
                 )
             return (
-                "per-link DNS still lists provider resolver(s) "
-                f"{', '.join(leftover)}; the system would bypass dnsproxy",
+                f"per-link DNS still lists provider resolver(s) "
+                f"{', '.join(leftover)}; {route_error}",
                 None,
             )
     return None, None

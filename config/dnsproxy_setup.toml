@@ -12,6 +12,8 @@ dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
 upstream_mode = "load_balance"
 cache_enabled = true
+# dnsproxy cache size in bytes, passed as --cache-size. 16 MiB.
+cache_size_bytes = 16777216
 # When true, the task reads the current network provider DNS (resolvectl
 # and nmcli) and appends every discovered address to the end of both the
 # bootstrap and the fallback resolver groups in plain UDP port 53 form

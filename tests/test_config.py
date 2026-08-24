@@ -327,6 +327,7 @@ dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
 upstream_mode = "load_balance"
 cache_enabled = true
+cache_size_bytes = 16777216
 bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]
 append_provider_dns = true
 query_log_path = "/var/log/pyntara/dnsproxy.log"
@@ -419,6 +420,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "security.ubuntu.com",
     )
     assert config.dnsproxy_setup.append_provider_dns is True
+    assert config.dnsproxy_setup.cache_size_bytes == 16777216
     assert config.dnsproxy_setup.verification_domain == "example.com"
     assert config.dnsproxy_setup.nmcli_active_list_command == (
         "nmcli",

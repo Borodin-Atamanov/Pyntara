@@ -170,3 +170,22 @@ def test_load_config_progress_priority_invalid_raises(
     tmp_path: Path, content: str
 ) -> None:
     assert_config_error(tmp_path, content, match="progress_priority")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # cache_size_bytes is a string, not an integer
+        base_config().replace(
+            "cache_size_bytes = 16777216", 'cache_size_bytes = "16777216"'
+        ),
+        # cache_size_bytes is zero
+        base_config().replace("cache_size_bytes = 16777216", "cache_size_bytes = 0"),
+        # cache_size_bytes is negative
+        base_config().replace("cache_size_bytes = 16777216", "cache_size_bytes = -1"),
+    ],
+)
+def test_load_config_cache_size_bytes_invalid_raises(
+    tmp_path: Path, content: str
+) -> None:
+    assert_config_error(tmp_path, content, match="cache_size_bytes")

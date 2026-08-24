@@ -31,6 +31,7 @@ class DnsproxySetupConfig:
     doq_host_format: str
     upstream_mode: str
     cache_enabled: bool
+    cache_size_bytes: int
     bootstrap_resolvers: tuple[str, ...]
     append_provider_dns: bool
     query_log_path: Path
@@ -121,6 +122,11 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     cache_enabled = raw.get("cache_enabled")
     if not isinstance(cache_enabled, bool):
         raise ConfigError("dnsproxy_setup.cache_enabled must be a boolean")
+    cache_size_bytes = _int_field(
+        raw.get("cache_size_bytes"), "dnsproxy_setup.cache_size_bytes"
+    )
+    if cache_size_bytes <= 0:
+        raise ConfigError("dnsproxy_setup.cache_size_bytes must be positive")
     bootstrap_resolvers = _string_list(raw, "bootstrap_resolvers")
     append_provider_dns = raw.get("append_provider_dns")
     if not isinstance(append_provider_dns, bool):
@@ -224,6 +230,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         doq_host_format=endpoint_values[2],
         upstream_mode=upstream_mode,
         cache_enabled=cache_enabled,
+        cache_size_bytes=cache_size_bytes,
         bootstrap_resolvers=bootstrap_resolvers,
         append_provider_dns=append_provider_dns,
         query_log_path=query_log_path,
