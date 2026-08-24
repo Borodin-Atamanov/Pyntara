@@ -379,7 +379,11 @@ def _apply_hotkeys_live(
             timeout=timeout,
             capture=True,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    except subprocess.CalledProcessError as exc:
+        detail = trim_whitespace(exc.stderr or "")
+        suffix = f": {detail}" if detail else ""
+        return f"cannot apply layout hotkeys: {exc}{suffix}", False
+    except subprocess.TimeoutExpired as exc:
         return f"cannot apply layout hotkeys: {exc}", False
     try:
         report = json.loads(result.stdout)

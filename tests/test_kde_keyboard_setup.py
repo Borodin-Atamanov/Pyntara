@@ -71,6 +71,7 @@ def _install_fakes(
     fail_install: bool = False,
     fail_on_write: bool = False,
     fail_live_apply: bool = False,
+    live_apply_error_stderr: str = "",
     hotkey_state: dict[str, list[int]] | None = None,
 ):
     """Replace run_command and package state; return captured command lists.
@@ -107,7 +108,9 @@ def _install_fakes(
             if inner[0] == "python3":
                 live_applies.append(list(command))
                 if fail_live_apply:
-                    raise subprocess.CalledProcessError(1, command)
+                    raise subprocess.CalledProcessError(
+                        1, command, stderr=live_apply_error_stderr
+                    )
                 payload = json.loads(inner[-1])
                 before: dict[str, list[int]] = {}
                 after: dict[str, list[int]] = {}
@@ -434,6 +437,22 @@ def test_session_hotkey_apply_failure_is_error(
     result = task_module.task(ctx)
     assert result.success is False
     assert "cannot apply layout hotkeys" in (result.error or "")
+
+
+def test_session_hotkey_apply_failure_reports_client_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The error message carries the client error output, so a recurring
+    # live apply failure is diagnosable from the task log alone.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    _install_fakes(
+        monkeypatch,
+        fail_live_apply=True,
+        live_apply_error_stderr="Traceback (most recent call last):\nNameError\n",
+    )
+    result = task_module.task(ctx)
+    assert result.success is False
+    assert "NameError" in (result.error or "")
 
 
 def test_unsupported_shortcut_is_written_not_applied_live(

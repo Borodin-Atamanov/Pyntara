@@ -39,11 +39,14 @@ from the admin socket into the configured address file, the fallback of
 the deployed address command when the live query fails. The save
 retries the query with the geometric backoff while the configured retry
 budget lasts, because the admin socket is not ready immediately after a
-restart. The task is
-idempotent: it skips when the installed version equals the newest
-release, the configuration exists with a non-empty peer list, the key
-file exists, the saved address file exists and the service is enabled
-and active; force mode reruns the whole peer selection.
+restart. A crashed run leaves the persistent TUN device behind with a
+saved NetworkManager connection profile, so the task cleans the leftover
+interface up before it starts the service, because otherwise yggdrasil
+panics on the already assigned address. The task is idempotent: it skips
+when the installed version equals the newest release, the configuration
+exists with a non-empty peer list, the key file exists, the saved
+address file exists and the service is enabled and active; force mode
+reruns the whole peer selection.
 """
 
 from __future__ import annotations
@@ -600,11 +603,88 @@ def _pick_best_peers(
     return sorted(working, key=key)[:target_count]
 
 
-def _restart_service(service_name: str, timeout: float) -> None:
-    """Restart the service, or start it when it is not running."""
+def _cleanup_leftover_interface(
+    cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> None:
+    """Remove a stale yggdrasil interface before the service starts.
 
-    action = "restart" if service_is_active(service_name, timeout) else "start"
-    run_command(["systemctl", action, service_name], timeout=timeout)
+    A crashed run leaves the persistent TUN device behind with the node
+    address still assigned, and a saved NetworkManager connection profile
+    keeps the device alive and re-adds the address, so the next start
+    panics with "failed to add address to link: file exists". The
+    cleanup removes the interface only when no yggdrasil process owns
+    it: the service is not active. The NetworkManager profile is deleted
+    first, because it recreates the device otherwise, then the
+    interface. Both steps are best-effort: a missing ip or nmcli, an
+    absent profile or a failed delete leaves the interface in place and
+    the start reports its own error.
+    """
+
+    try:
+        exists = (
+            run_command(
+                ["ip", "link", "show", "dev", cfg.if_name],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        exists = False
+    if not exists:
+        return
+    if service_is_active(cfg.service_unit_name, timeout):
+        return
+    _log(
+        f"leftover interface {cfg.if_name} without a running service, "
+        "cleaning up"
+    )
+    try:
+        profile_exists = (
+            run_command(
+                ["nmcli", "connection", "show", cfg.if_name],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            ).returncode
+            == 0
+        )
+        if profile_exists:
+            run_command(
+                ["nmcli", "connection", "delete", cfg.if_name],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+            _log(f"deleted NetworkManager connection {cfg.if_name}")
+    except OSError:
+        pass
+    try:
+        run_command(
+            ["ip", "link", "del", cfg.if_name],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except OSError:
+        pass
+
+
+def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
+    """Restart the service, or start it cleanly when it is not running.
+
+    The start path cleans a stale leftover interface up first, so a
+    crashed previous run never blocks the start with its stale address.
+    """
+
+    if service_is_active(cfg.service_unit_name, timeout):
+        run_command(
+            ["systemctl", "restart", cfg.service_unit_name], timeout=timeout
+        )
+        return
+    _cleanup_leftover_interface(cfg, timeout)
+    run_command(["systemctl", "start", cfg.service_unit_name], timeout=timeout)
 
 
 def _save_self_address(
@@ -835,6 +915,7 @@ def task(ctx: Context) -> TaskResult:
                 f"starting service {cfg.service_unit_name} with the "
                 "existing configuration"
             )
+            _cleanup_leftover_interface(cfg, timeout)
             try:
                 run_command(
                     ["systemctl", "start", cfg.service_unit_name], timeout=timeout
@@ -915,7 +996,7 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("configuration written")
         try:
-            _restart_service(cfg.service_unit_name, timeout)
+            _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False,
@@ -977,7 +1058,7 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("configuration written")
         try:
-            _restart_service(cfg.service_unit_name, timeout)
+            _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False,

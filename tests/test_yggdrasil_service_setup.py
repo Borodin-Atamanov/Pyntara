@@ -149,6 +149,8 @@ def _install_fake(
     host_map: dict[str, str] | None = None,
     version_output: str | None = None,
     active_becomes: bool = True,
+    interface_exists: bool = False,
+    nm_profile_exists: bool = False,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -229,6 +231,20 @@ def _install_fake(
             if getself_calls <= ctl_failures:
                 return _FakeProc(0, "")
             return _FakeProc(0, ctl_json)
+        if command[0] == "ip":
+            if command[1] == "link" and command[2] == "show":
+                if interface_exists:
+                    return _FakeProc(0, "ygg: <POINTOPOINT> mtu 65535\n")
+                return _FakeProc(1, "Device \"ygg\" does not exist\n")
+            if command[1] == "link" and command[2] == "del":
+                return _FakeProc(0)
+        if command[0] == "nmcli":
+            if command[1] == "connection" and command[2] == "show":
+                if nm_profile_exists:
+                    return _FakeProc(0, "connection.id: ygg\n")
+                return _FakeProc(1, "unknown connection\n")
+            if command[1] == "connection" and command[2] == "delete":
+                return _FakeProc(0)
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -1021,3 +1037,126 @@ def test_installed_version_parsing(
         "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(0, "unknown output")
     )
     assert yggdrasil_service_setup._installed_version(10) is None
+
+
+def test_cleanup_leftover_interface_deletes_profile_and_iface(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A stale interface with a saved NetworkManager profile and no running
+    # service is removed: the profile first, then the interface, so the
+    # next start does not panic on the already assigned address.
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        active=False,
+        interface_exists=True,
+        nm_profile_exists=True,
+    )
+    yggdrasil_service_setup._cleanup_leftover_interface(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert ["nmcli", "connection", "delete", "ygg"] in calls
+    assert ["ip", "link", "del", "ygg"] in calls
+
+
+def test_cleanup_leftover_interface_keeps_running_service(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A live interface owned by a running service is never touched.
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        active=True,
+        interface_exists=True,
+        nm_profile_exists=True,
+    )
+    yggdrasil_service_setup._cleanup_leftover_interface(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert not any(call[0] == "nmcli" for call in calls)
+    assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
+
+
+def test_cleanup_leftover_interface_skipped_without_iface(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Without an interface there is nothing to clean up.
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        active=False,
+        interface_exists=False,
+    )
+    yggdrasil_service_setup._cleanup_leftover_interface(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert not any(call[0] == "nmcli" for call in calls)
+    assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
+
+
+def test_cleanup_leftover_interface_without_nmcli(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine without NetworkManager has no nmcli binary: the profile
+    # step is skipped and the interface is still deleted, because nothing
+    # recreates it.
+    ctx = _ctx(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_subprocess_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        calls.append(list(command))
+        if command[0] == "nmcli":
+            raise FileNotFoundError(command[0])
+        if command[0] == "ip" and command[2] == "show":
+            return _FakeProc(0, "ygg: <POINTOPOINT> mtu 65535\n")
+        if command[0] == "ip" and command[2] == "del":
+            return _FakeProc(0)
+        if command[0] == "systemctl":
+            return _FakeProc(1, "inactive\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_subprocess_run)
+    yggdrasil_service_setup._cleanup_leftover_interface(
+        ctx.config.yggdrasil_service_setup, 10
+    )
+    assert ["ip", "link", "del", "ygg"] in calls
+
+
+def test_ready_state_with_leftover_interface_cleans_and_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The config already has peers but the service is down and a stale
+    # interface with a NetworkManager profile blocks the start: the task
+    # cleans the leftover up, starts the service and reports live
+    # connections from the existing configuration.
+    ctx = _ctx(tmp_path)
+    _write_ready_state(ctx)
+    ctl_peers = json.dumps(
+        {
+            "peers": [
+                {"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}
+            ]
+        }
+    )
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=VERSION,
+        enabled=True,
+        active=False,
+        ctl_peers_json=ctl_peers,
+        peers_after_start=True,
+        host_map={"10.0.0.1": "10.0.0.1"},
+        interface_exists=True,
+        nm_profile_exists=True,
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["nmcli", "connection", "delete", "ygg"] in calls
+    assert ["ip", "link", "del", "ygg"] in calls
+    assert ["systemctl", "start", "yggdrasil.service"] in calls
