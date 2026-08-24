@@ -7,9 +7,11 @@ This contract fixes the task model: what a task is, how tasks are declared, orde
 Each task must be idempotent:
 repeated runs must not destroy an already configured system
 
-If target state is already reached, a task normally skips changes.
+A task distinguishes its result by success, warnings and skipped. A plain done result means the task ran, tracked the real system state and brought it to the intended state without failed steps; whether it changed anything does not matter, a rerun that finds the target state already reached is also a plain done result. A done result with warnings means the task ran and tracked the state but some steps could not be performed, so the target state is not fully reached: this is how a recoverable failure is reported, the result stays successful, and the entry point exits nonzero so the incomplete configuration is visible to scripts. A skipped result is separate: it marks a task whose module is missing and which could not run at all; it is not how a reached target state is reported. There is no separate error outcome: a task that fails returns a done result with warnings, never a plain done result.
 
-Tasks must support force mode that reruns a task even after completion. Force mode is a list of task names (PYNTARA_FORCE_TASKS); a forced task reruns even when the target state is already reached. The keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive.
+Idempotency distinguishes two kinds of change on a rerun. A normal run is allowed and expected to bring the system to the intended state: update an installed version to the newest release, rewrite a configuration the task owns, run a database migration. These actions do not destroy the configured system and require no force mode. What a normal run must never do is regenerate an already generated persistent identity: a hostname, a private key, or an overlay network address (yggdrasil, tor, i2p). Such an identity is read and reused on a rerun, because regenerating it would break established references and connections.
+
+Force mode is the explicit permission to regenerate. A forced task reruns even when the target state is already reached and may tear the identity down and build it afresh where a normal run keeps it. Force mode is a list of task names (PYNTARA_FORCE_TASKS); the keyword all forces every task of the resolved run set. Task names and the keyword are case-insensitive.
 
 ## Task configuration
 

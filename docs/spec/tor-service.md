@@ -41,7 +41,7 @@ The service unit comes from the package; the task never renders or writes it. Th
 
 ## Idempotency
 
-The target state is reached when the package is installed, the %include line is present in the main configuration, the drop-in file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then skips with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode rewrites the drop-in, verifies the configuration, restarts the service and rewrites the address file, but never reinstalls the package and never touches the main configuration beyond the guaranteed %include line.
+The target state is reached when the package is installed, the %include line is present in the main configuration, the drop-in file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then returns done with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode rewrites the drop-in, verifies the configuration, restarts the service and rewrites the address file, but never reinstalls the package and never touches the main configuration beyond the guaranteed %include line.
 
 ## Parameters
 

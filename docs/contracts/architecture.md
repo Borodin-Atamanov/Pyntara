@@ -87,7 +87,7 @@ Full task model contract: [Task model and idempotency](task-model.md).
 
 ## Idempotency and side effects
 
-Each task must be idempotent: repeated runs must not destroy an already configured system. A task checks the real system state (user exists, file present, service active) and skips changes when the goal is already reached. Force mode reruns a task even after completion.
+Each task must be idempotent: repeated runs must not destroy an already configured system. A task checks the real system state (user exists, file present, service active) and is a plain done result when it tracked that the target state is reached, whether it changed anything or not; a run that finds the target state already reached is also done. A task whose steps could not all be performed returns a done result with warnings, not a plain done result, and the entry point exits nonzero. A normal run may update a version to the newest release and run a migration, because these bring the system to the intended state and do not destroy it; force mode reruns a task even after completion. A normal run must never regenerate a persistent identity (a hostname, a private key, an overlay network address); regeneration is reserved for force mode, which tears the identity down and builds it afresh (docs/contracts/task-model.md, section [Idempotency](task-model.md#idempotency)).
 
 Allowed explicit shared state channels:
 

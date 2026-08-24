@@ -19,7 +19,7 @@ ssh_config parses command-line options first, then the user-specific file, then 
 
 ## Idempotency
 
-The target state is reached when ssh_config pulls the drop-in directory in and the drop-in matches the configured directives through augeas; the task then skips with changed=False. Force mode rewrites the drop-in and verifies it again. There is no daemon to restart: the client reads its configuration on every invocation.
+The target state is reached when ssh_config pulls the drop-in directory in and the drop-in matches the configured directives through augeas; the task then returns done with changed=False. Force mode rewrites the drop-in and verifies it again. There is no daemon to restart: the client reads its configuration on every invocation.
 
 ## Parameters
 

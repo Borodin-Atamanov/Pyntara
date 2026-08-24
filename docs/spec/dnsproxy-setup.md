@@ -34,7 +34,7 @@ When NetworkManager is absent the task cannot remove the per-link provider DNS, 
 `nextdns_setup_system_wide` selects and records the machine's NextDNS profile and writes the profile id file that `dnsproxy_setup` reads. The `dnsproxy_setup` task owns the default system-wide resolver in all install modes; it does not remove dnscrypt-proxy, because any process that owns the resolver port is stopped by the port scan before the service starts.
 
 ## Idempotency
-A matching installed binary, service unit, query log setup, resolver drop-in, enabled and active service, absent per-link provider DNS and successful verification produce a skipped task result. Force mode restarts and reapplies the owned state. All task-owned paths and values come from `[dnsproxy_setup]` configuration.
+A matching installed binary, service unit, query log setup, resolver drop-in, enabled and active service, absent per-link provider DNS and successful verification produce a done result with changed=False. Force mode restarts and reapplies the owned state. All task-owned paths and values come from `[dnsproxy_setup]` configuration.
 
 ## Runtime DNS discovery
 The task module exposes `discover_dns_servers(cfg, timeout)` for other tasks that need DNS addresses from current network state. It always invokes both `resolvectl dns` and `nmcli -t -f IP4.DNS,IP6.DNS device show`; it does not read files or change system state. Outputs from both commands are combined, duplicate and loopback addresses are removed, valid addresses are normalized and sorted into separate IPv4 and IPv6 tuples. A failure of one command does not discard results from the other; diagnostics are returned with the address groups. The function only discovers addresses and does not test DNS reachability.

@@ -24,7 +24,7 @@ When a desktop session is running, the supported layout hotkeys are also applied
 
 ## Idempotency
 
-The task reads every current value with kreadconfig6 and writes only what differs. The hotkey entries are compared the same way; when a session is running, the live apply reports the before and after state of each action and counts only real changes. The target state is reached when every kxkbrc value, the displayStyle and every hotkey entry already match the configuration and the packages are installed; the task then skips with changed=False. Force mode rewrites every value and reloads regardless. Missing packages are installed first; each failure is a warning and the remaining independent steps still run.
+The task reads every current value with kreadconfig6 and writes only what differs. The hotkey entries are compared the same way; when a session is running, the live apply reports the before and after state of each action and counts only real changes. The target state is reached when every kxkbrc value, the displayStyle and every hotkey entry already match the configuration and the packages are installed; the task then returns done with changed=False. Force mode rewrites every value and reloads regardless. Missing packages are installed first; each failure is a warning and the remaining independent steps still run.
 
 ## Parameters
 

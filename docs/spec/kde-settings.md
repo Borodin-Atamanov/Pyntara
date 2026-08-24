@@ -33,7 +33,7 @@ The apply commands run with the session bus address of the target user, so the t
 
 ## Idempotency
 
-The task reads every current value and applies only what differs. The target state is reached when every configured value already matches and the packages are installed; the task then skips with changed=False. Force mode applies every value regardless.
+The task reads every current value and applies only what differs. The target state is reached when every configured value already matches and the packages are installed; the task then returns done with changed=False. Force mode applies every value regardless.
 
 ## Parameters
 
