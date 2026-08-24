@@ -230,17 +230,19 @@ def test_missing_packages_are_installed(
     assert installs == ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
 
 
-def test_package_install_failure_is_error(
+def test_package_install_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failed package install is a fatal error result.
+    # A failed package install is a warning; without the kwriteconfig6
+    # provider the config writes are skipped and the task still completes.
     ctx = _ctx(tmp_path)
-    _, _, _, _, _ = _install_fakes(
+    writes, _, _, _, _ = _install_fakes(
         monkeypatch, installed=False, fail_install=True
     )
     result = task_module.task(ctx)
-    assert result.success is False
-    assert result.error is not None
+    assert result.success is True
+    assert any("cannot install" in warning for warning in result.warnings)
+    assert writes == []
 
 
 def test_no_desktop_session_skips_reload(
@@ -272,15 +274,16 @@ def test_applet_missing_leaves_indicator(
     assert restarts == []
 
 
-def test_write_failure_is_error(
+def test_write_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failing kwriteconfig6 is a fatal error result.
+    # A failing kwriteconfig6 is a warning and the remaining steps still
+    # run; the task completes with the collected warnings.
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch, fail_on_write=True)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert result.error is not None
+    assert result.success is True
+    assert any("cannot write" in warning for warning in result.warnings)
 
 
 def test_keyboard_layout_config_group_finds_nested_applet() -> None:
@@ -428,22 +431,29 @@ def test_session_hotkey_already_applied_is_idempotent(
     assert len(live_applies) == 1
 
 
-def test_session_hotkey_apply_failure_is_error(
+def test_session_hotkey_apply_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failing live apply is a fatal error result.
+    # A failing live apply is a warning and the task still completes, so
+    # the reload and the panel restart are not skipped.
     ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
-    _install_fakes(monkeypatch, fail_live_apply=True)
+    _, reloads, restarts, _, _ = _install_fakes(
+        monkeypatch, fail_live_apply=True
+    )
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "cannot apply layout hotkeys" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "cannot apply layout hotkeys" in warning for warning in result.warnings
+    )
+    assert reloads
+    assert restarts
 
 
 def test_session_hotkey_apply_failure_reports_client_stderr(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The error message carries the client error output, so a recurring
-    # live apply failure is diagnosable from the task log alone.
+    # The warning carries the client error output, so a recurring live
+    # apply failure is diagnosable from the task log alone.
     ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
     _install_fakes(
         monkeypatch,
@@ -451,8 +461,8 @@ def test_session_hotkey_apply_failure_reports_client_stderr(
         live_apply_error_stderr="Traceback (most recent call last):\nNameError\n",
     )
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "NameError" in (result.error or "")
+    assert result.success is True
+    assert any("NameError" in warning for warning in result.warnings)
 
 
 def test_unsupported_shortcut_is_written_not_applied_live(

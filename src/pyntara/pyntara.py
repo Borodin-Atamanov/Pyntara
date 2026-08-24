@@ -306,11 +306,22 @@ def run() -> None:
         for name, result in results
         if not result.success and not result.skipped
     ]
+    warned = [
+        name
+        for name, result in results
+        if result.success and not result.skipped and result.warnings
+    ]
     skipped = [name for name, result in results if result.skipped]
     for name, result in results:
         log_result_line(name, result, to_journal=False)
     if failed:
         log_event(f"Failed {len(failed)} of {len(results)} tasks: {' '.join(failed)}")
+        raise typer.Exit(1)
+    if warned:
+        log_event(
+            f"Finished {len(results) - len(skipped)} of {len(results)} tasks, "
+            f"{len(warned)} with warnings: {' '.join(warned)}"
+        )
         raise typer.Exit(1)
     if skipped:
         log_event(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,6 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     ],
 )
 def test_load_config_nextdns_wrong_types_raise(
-    tmp_path: Path, mutate: object
+    tmp_path: Path, mutate: Callable[[str], str]
 ) -> None:
     assert_config_error(tmp_path, mutate(base_config()))

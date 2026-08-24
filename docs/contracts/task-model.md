@@ -38,7 +38,7 @@ Task set and metadata are defined in the config/ directory under the [[tasks]] s
 
 ## Task contract (Python)
 
-The runtime contract of a task is fixed by [Task contract](architecture.md#task-contract): a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error). The presentation contract (banner, pause, outcome line) is fixed by [Task presentation](../guides/project-rules.md#task-presentation).
+The runtime contract of a task is fixed by [Task contract](architecture.md#task-contract): a task is a plain function task(ctx) -> TaskResult, and TaskResult carries the fields defined there (success, changed, skipped, message, error, warnings). A recoverable failure is a warning, never a fatal task error: the task completes and the runner and the entry point report the warnings and exit nonzero. The presentation contract (banner, pause, outcome line) is fixed by [Task presentation](../guides/project-rules.md#task-presentation).
 
 Data transfer between tasks is explicit only:
 through Context fields (e.g., secrets)  

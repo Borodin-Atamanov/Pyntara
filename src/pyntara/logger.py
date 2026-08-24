@@ -205,6 +205,11 @@ def log_result_line(
     print(line)
     if to_journal:
         _send_to_journal(line, priority=priority)
+    for warning in result.warnings:
+        warn_line = f"[warn] {name}: {warning}"
+        print(warn_line)
+        if to_journal:
+            _send_to_journal(warn_line, priority=priority)
 
 
 def log_event(

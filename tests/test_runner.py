@@ -40,24 +40,45 @@ def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A raising task becomes a completed result with the reason in warnings,
+    # so a broken task never stops the run.
     def boom(ctx: Context) -> TaskResult:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(task_runner, "load_task", lambda name: boom)
     results = task_runner.run_tasks(_ctx(), ["cli_tools"])
     result = results[0][1]
-    assert result.success is False
-    assert result.error == "boom"
+    assert result.success is True
+    assert result.warnings == ("boom",)
+    assert result.message == "completed with warnings"
 
 
 def test_run_tasks_reports_import_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A broken import becomes a completed result with the reason in warnings.
     def broken(name: str) -> object:
         raise RuntimeError("import exploded")
 
     monkeypatch.setattr(task_runner, "load_task", broken)
     results = task_runner.run_tasks(_ctx(), ["cli_tools"])
-    assert results[0][1].success is False
-    assert "import failed" in (results[0][1].error or "")
+    result = results[0][1]
+    assert result.success is True
+    assert any("import failed" in warning for warning in result.warnings)
+
+
+def test_run_tasks_converts_task_failure_to_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A task that reports success=False for a recoverable failure is
+    # converted into a completed result carrying the reason as a warning.
+    def fake_load(name: str) -> object:
+        return lambda ctx: TaskResult(success=False, error="cannot apply hotkey")
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
+    result = results[0][1]
+    assert result.success is True
+    assert result.warnings == ("cannot apply hotkey",)
+    assert result.message == "completed with warnings"
 
 
 def test_run_tasks_continues_after_failure(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -475,6 +475,32 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     assert f"All {expected} tasks finished" in result.output
 
 
+def test_run_reports_warnings_and_exits_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Tasks that completed with warnings make the run exit nonzero and
+    # report the count, so scripts can detect an incomplete configuration.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0)
+    )
+
+    def warn_task(ctx: object) -> TaskResult:
+        return TaskResult(
+            success=True, message="done", warnings=("cannot apply hotkey",)
+        )
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: warn_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 1
+    expected = len(_default_run_set("minimal"))
+    assert (
+        f"Finished {expected} of {expected} tasks, {expected} with warnings"
+        in result.output
+    )
+
+
 def _captured_skip_flag(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> bool | None:

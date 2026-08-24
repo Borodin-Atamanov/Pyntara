@@ -404,14 +404,16 @@ def _apply_hotkeys_live(
 
 
 def task(ctx: Context) -> TaskResult:
-    """Write the KDE keyboard layout settings; skip when already reached.
+    """Write the KDE keyboard layout settings; warn instead of failing.
 
     The goal is reached when every kxkbrc value and the indicator display
     style already match the configuration and the packages are installed;
     the task then returns changed=False. Otherwise it installs missing
     packages, writes the differing values as the target user and reloads
-    kwin and the Plasma panel so the settings apply immediately. Any
-    failure is returned as an error TaskResult.
+    kwin and the Plasma panel so the settings apply immediately. A step
+    that cannot be performed is reported as a warning and the remaining
+    independent steps still run, because a recoverable failure must never
+    stop the provisioning.
     """
 
     cfg = ctx.config.kde_keyboard_setup
@@ -419,6 +421,7 @@ def task(ctx: Context) -> TaskResult:
     force = "kde_keyboard_setup" in ctx.force_tasks
     home_env = _home_env(cfg)
     changed = False
+    warnings: list[str] = []
 
     for package in cfg.packages:
         if package_is_installed(package, timeout):
@@ -426,48 +429,52 @@ def task(ctx: Context) -> TaskResult:
         _log(f"installing {package}")
         ok, error = install_package_once(package, timeout)
         if not ok:
-            return TaskResult(
-                success=False, error=f"cannot install {package}: {error}"
-            )
-        changed = True
+            warnings.append(f"cannot install {package}: {error}")
+        else:
+            changed = True
+    if warnings:
+        # The provider of kwriteconfig6 and the DBus client is the
+        # mechanism of the whole task; without it the writes and the
+        # live apply cannot succeed, so the rest is skipped.
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message="KDE keyboard layouts not configured",
+            warnings=tuple(warnings),
+        )
 
-    run_command(
-        _as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),
-        extra_env=home_env,
-        timeout=timeout,
-    )
-
-    layout_changed = False
     try:
-        layout_changed |= _sync_key(
-            cfg,
-            KXKBRC_GROUP,
-            "LayoutList",
-            ",".join(cfg.layouts),
+        run_command(
+            _as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),
+            extra_env=home_env,
             timeout=timeout,
-            force=force,
-            bool_value=False,
-        )
-        layout_changed |= _sync_key(
-            cfg,
-            KXKBRC_GROUP,
-            "Options",
-            cfg.switch_option,
-            timeout=timeout,
-            force=force,
-            bool_value=False,
-        )
-        layout_changed |= _sync_key(
-            cfg,
-            KXKBRC_GROUP,
-            "Use",
-            "true" if cfg.use_layout_switching else "false",
-            timeout=timeout,
-            force=force,
-            bool_value=True,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(success=False, error=f"cannot write kxkbrc: {exc}")
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message="KDE keyboard layouts not configured",
+            warnings=(f"cannot create {cfg.config_dir}: {exc}",),
+        )
+
+    layout_changed = False
+    for key, target, bool_value in (
+        ("LayoutList", ",".join(cfg.layouts), False),
+        ("Options", cfg.switch_option, False),
+        ("Use", "true" if cfg.use_layout_switching else "false", True),
+    ):
+        try:
+            layout_changed |= _sync_key(
+                cfg,
+                KXKBRC_GROUP,
+                key,
+                target,
+                timeout=timeout,
+                force=force,
+                bool_value=bool_value,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"cannot write kxkbrc {key}: {exc}")
     changed |= layout_changed
 
     applet_changed = False
@@ -501,10 +508,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"set indicator display style: {cfg.indicator_display_style}")
                 applet_changed = True
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                error=f"cannot write {cfg.appletsrc_file_name}: {exc}",
-            )
+            warnings.append(f"cannot write {cfg.appletsrc_file_name}: {exc}")
     changed |= applet_changed
 
     hotkeys_changed = False
@@ -517,10 +521,7 @@ def task(ctx: Context) -> TaskResult:
                 force=force,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                error=f"cannot write {SHORTCUTS_FILE_NAME}: {exc}",
-            )
+            warnings.append(f"cannot write {SHORTCUTS_FILE_NAME}: {exc}")
         bus = session_bus_address(cfg.username, timeout)
         if bus is None:
             _log("no desktop session found, layout hotkeys apply at login")
@@ -533,22 +534,35 @@ def task(ctx: Context) -> TaskResult:
                 home_env=home_env,
             )
             if hotkey_error is not None:
-                return TaskResult(success=False, error=hotkey_error)
-            hotkeys_changed |= applied
+                warnings.append(hotkey_error)
+            else:
+                hotkeys_changed |= applied
     changed |= hotkeys_changed
 
     if layout_changed:
         reload_error = _reload_kwin(cfg, timeout=timeout, home_env=home_env)
         if reload_error is not None:
-            return TaskResult(success=False, error=reload_error)
+            warnings.append(reload_error)
 
     if applet_changed:
         try:
             run_command(list(cfg.panel_restart_command), timeout=timeout)
             _log("restarted Plasma panel")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(success=False, error=f"cannot restart panel: {exc}")
+            warnings.append(f"cannot restart panel: {exc}")
 
+    if warnings:
+        message = (
+            "KDE keyboard layouts configured with warnings"
+            if changed
+            else "KDE keyboard layouts not configured"
+        )
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message=message,
+            warnings=tuple(warnings),
+        )
     if not changed:
         return TaskResult(success=True, changed=False, message="already configured")
     return TaskResult(

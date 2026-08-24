@@ -72,9 +72,12 @@ success
 changed  
 skipped (default False; True when the task module is missing and the task could not run)  
 message (optional)  
-error (optional)
+error (optional)  
+warnings (optional tuple of strings; the steps of a completed task that could not be performed)
 
 No typing.Protocol, no ABC inheritance, no registry.
+
+A recoverable failure is never fatal: a task that could not perform a step reports it in warnings and still completes, and the runner converts a task that returns success=False or raises into a completed result carrying the reason in warnings. The run always continues with the remaining tasks, and the entry point counts the tasks with warnings and exits nonzero, so an incomplete configuration is visible to scripts without ever stopping the provisioning. Only a missing or invalid config, detected before any task runs, stops the run.
 
 Task definitions live in the config/ directory under the [[tasks]] section (tasks.toml). Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file, which keeps default task sets ordered and rules out cycles. task_catalog.py holds only the logic that operates on the catalog: validate_mode, default_tasks, resolve.
 
@@ -116,8 +119,8 @@ The program must keep working whenever it can and must not crash on recoverable 
 The architecture is guarded by tests:
 
 task catalog tests (mode defaults, dependency resolution, validation)  
-entry point tests (mode resolution, task set, force list, resilience rule)  
-task runner tests (missing modules skipped, failures, continue-on-error)
+entry point tests (mode resolution, task set, force list, resilience rule, warnings exit code)  
+task runner tests (missing modules skipped, failures converted to warnings, continue-on-error)
 
 Any change that breaks these guarantees must update this document and corresponding tests in the same pull request.
 

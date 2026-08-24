@@ -764,38 +764,48 @@ def task(ctx: Context) -> TaskResult:
     the fallback of the deployed address command. Every step is reported
     to stdout: measurements and decisions as single lines that include
     their result, long-running commands as a line before and a line after.
-    Any failure is returned as an error TaskResult: the runner continues
-    with the remaining tasks and never stops here.
+    A step that cannot be performed is reported as a warning and the task
+    still completes, because a recoverable failure must never stop the
+    provisioning; the entry point counts the warnings and exits nonzero.
     """
 
     cfg = ctx.config.yggdrasil_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
     force = "yggdrasil_service_setup" in ctx.force_tasks
+    warnings: list[str] = []
+
+    def done(message: str, changed: bool) -> TaskResult:
+        """A completed result carrying the collected warnings."""
+
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message=message,
+            warnings=tuple(warnings),
+        )
 
     try:
         arch = dpkg_architecture(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, error=f"cannot determine dpkg architecture: {exc}"
-        )
+        warnings.append(f"cannot determine dpkg architecture: {exc}")
+        return done("yggdrasil not configured", False)
     _log(f"reading dpkg architecture: {arch}")
 
     try:
         release = _fetch_release_json(cfg.github_repo, timeout)
         tag = _release_tag(release)
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
+        warnings.append(str(exc))
+        return done("yggdrasil not configured", False)
     version = tag.removeprefix("v")
     _log(f"checking latest release: {version}")
 
     selected = _select_asset(release, version, arch)
     if selected is None:
-        return TaskResult(
-            success=False,
-            error=(
-                f"release {version} has no yggdrasil-{version}-{arch}.deb asset"
-            ),
+        warnings.append(
+            f"release {version} has no yggdrasil-{version}-{arch}.deb asset"
         )
+        return done("yggdrasil not configured", False)
     asset_name, asset_url = selected
     _log(f"selected asset: {asset_name}")
 
@@ -846,7 +856,8 @@ def task(ctx: Context) -> TaskResult:
         try:
             _download_asset(cfg.download_dir, asset_name, asset_url, timeout)
         except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
+            warnings.append(str(exc))
+            return done("yggdrasil not configured", changed)
         _log("package downloaded")
         _log(f"installing package: apt-get install -y {asset_name}")
         ok, error = _install_deb(
@@ -856,31 +867,27 @@ def task(ctx: Context) -> TaskResult:
             retries=cfg.install_retries,
         )
         if not ok:
-            return TaskResult(success=False, error=f"cannot install yggdrasil: {error}")
+            warnings.append(f"cannot install yggdrasil: {error}")
+            return done("yggdrasil not configured", changed)
         _log("package installed")
         try:
             _cleanup_downloads(cfg.download_dir, asset_name)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"cannot remove downloaded files: {exc}",
-            )
+            warnings.append(f"cannot remove downloaded files: {exc}")
+            return done("yggdrasil not configured", True)
         changed = True
 
     _log(f"ensuring private key at {cfg.private_key_path}")
     try:
         _ensure_private_key(cfg, timeout)
     except RuntimeError as exc:
-        return TaskResult(success=False, changed=changed, error=str(exc))
+        warnings.append(str(exc))
+        return done("yggdrasil not configured", changed)
     if cfg.private_key_path.is_file():
         _log(f"private key ready: {cfg.private_key_path}")
     else:
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"private key not created at {cfg.private_key_path}",
-        )
+        warnings.append(f"private key not created at {cfg.private_key_path}")
+        return done("yggdrasil not configured", changed)
 
     if not enabled:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
@@ -889,11 +896,8 @@ def task(ctx: Context) -> TaskResult:
                 ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl enable failed: {exc}",
-            )
+            warnings.append(f"systemctl enable failed: {exc}")
+            return done("yggdrasil not configured", changed)
         _log("service enabled")
         changed = True
 
@@ -921,34 +925,25 @@ def task(ctx: Context) -> TaskResult:
                     ["systemctl", "start", cfg.service_unit_name], timeout=timeout
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                return TaskResult(
-                    success=False,
-                    changed=True,
-                    error=f"systemctl start failed: {exc}",
-                )
+                warnings.append(f"systemctl start failed: {exc}")
+                return done("yggdrasil node not running", True)
             changed = True
         _log(
             f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
         )
         time.sleep(cfg.peer_probe_timeout_seconds)
         if not service_is_active(cfg.service_unit_name, timeout):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
-                    f"service {cfg.service_unit_name} did not become active "
-                    "after start"
-                ),
+            warnings.append(
+                f"service {cfg.service_unit_name} did not become active "
+                "after start"
             )
+            return done("yggdrasil node not running", changed)
         if not _latencies_from_ctl(timeout):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
-                    f"service {cfg.service_unit_name} is active but has no "
-                    "connections; rerun in force mode to re-select peers"
-                ),
+            warnings.append(
+                f"service {cfg.service_unit_name} is active but has no "
+                "connections; rerun in force mode to re-select peers"
             )
+            return done("yggdrasil running without live connections", changed)
         _log("service active with live connections")
         return TaskResult(
             success=True,
@@ -967,14 +962,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"peer list download failed, using static_peers: {exc}")
     if downloaded is None:
         if not cfg.static_peers:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=(
-                    "cannot download the peer list and static_peers is empty; "
-                    "a yggdrasil node without peers never joins the network"
-                ),
+            warnings.append(
+                "cannot download the peer list and static_peers is empty; "
+                "a yggdrasil node without peers never joins the network"
             )
+            return done("yggdrasil not configured", changed)
         peers = list(cfg.static_peers)
         _log(f"using {len(peers)} static peers")
     else:
@@ -989,29 +981,20 @@ def task(ctx: Context) -> TaskResult:
         try:
             _write_config(cfg, selected)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"cannot write configuration: {exc}",
-            )
+            warnings.append(f"cannot write configuration: {exc}")
+            return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
             _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"systemctl restart failed: {exc}",
-            )
+            warnings.append(f"systemctl restart failed: {exc}")
+            return done("yggdrasil not configured", True)
         if not service_is_active(cfg.service_unit_name, timeout):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
-                    f"service {cfg.service_unit_name} did not become active "
-                    "after restart"
-                ),
+            warnings.append(
+                f"service {cfg.service_unit_name} did not become active "
+                "after restart"
             )
+            return done("yggdrasil node not running", True)
         _log("service active")
         _save_self_address(cfg, timeout)
         return TaskResult(
@@ -1051,20 +1034,14 @@ def task(ctx: Context) -> TaskResult:
         try:
             _write_config(cfg, batch)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"cannot write configuration: {exc}",
-            )
+            warnings.append(f"cannot write configuration: {exc}")
+            return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
             _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"systemctl restart failed: {exc}",
-            )
+            warnings.append(f"systemctl restart failed: {exc}")
+            return done("yggdrasil not configured", True)
         _log(
             f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
         )
@@ -1103,14 +1080,11 @@ def task(ctx: Context) -> TaskResult:
         f"({len(last_batch)} peers) in the configuration"
     )
     if not service_is_active(cfg.service_unit_name, timeout):
-        return TaskResult(
-            success=False,
-            changed=True,
-            error=(
-                f"service {cfg.service_unit_name} did not become active "
-                "after restart"
-            ),
+        warnings.append(
+            f"service {cfg.service_unit_name} did not become active "
+            "after restart"
         )
+        return done("yggdrasil node not running", True)
     _save_self_address(cfg, timeout)
     return TaskResult(
         success=True,

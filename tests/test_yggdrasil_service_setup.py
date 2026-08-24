@@ -332,12 +332,12 @@ def test_already_configured_skips(
     )
 
 
-def test_active_service_without_connections_reports_error(
+def test_active_service_without_connections_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The service is active and the config has peers, but the admin
     # socket reports no connections: the task does not re-select peers
-    # and reports that a force rerun is needed.
+    # and completes with a warning that a force rerun is needed.
     ctx = _ctx(tmp_path)
     _write_ready_state(ctx)
     calls = _install_fake(
@@ -348,8 +348,8 @@ def test_active_service_without_connections_reports_error(
         active=True,
     )
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "no connections" in (result.error or "")
+    assert result.success is True
+    assert any("no connections" in warning for warning in result.warnings)
     # No peer list download, no config rewrite.
     assert not any(
         call[0] == "curl" and "public-peers" in call[-1] for call in calls
@@ -670,18 +670,19 @@ def test_no_batch_reaches_target_keeps_last_batch(
     assert "10.0.0.2:1002" in config_text
 
 
-def test_download_fails_and_no_static_peers_reports_error(
+def test_download_fails_and_no_static_peers_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The peer download fails and static_peers is empty: the task reports
-    # the error, because a node without peers never joins the network.
+    # The peer download fails and static_peers is empty: the task
+    # completes with a warning, because a node without peers never joins
+    # the network.
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
     )
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "static_peers is empty" in (result.error or "")
+    assert result.success is True
+    assert any("static_peers is empty" in warning for warning in result.warnings)
     assert not any(
         call[0] == "systemctl" and call[1] in ("start", "restart")
         for call in calls
@@ -696,8 +697,8 @@ def test_install_gives_up_after_retries(
     ctx = _ctx(tmp_path, retries=3)
     calls = _install_fake(monkeypatch, tmp_path, installed_version=None, fail_install=99)
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install yggdrasil" in (result.error or "")
+    assert result.success is True
+    assert any("cannot install yggdrasil" in warning for warning in result.warnings)
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
@@ -719,28 +720,32 @@ def test_install_retries_transient_failure(
     assert len(install_calls) == 2
 
 
-def test_no_matching_asset_reports_error(
+def test_no_matching_asset_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The release has no asset for this architecture: the task reports the
-    # missing asset and stops.
+    # The release has no asset for this architecture: the task completes
+    # with a warning about the missing asset.
     ctx = _ctx(tmp_path)
     release = json.dumps({"tag_name": TAG, "assets": []})
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, release_json=release
     )
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "has no yggdrasil-0.5.14-amd64.deb asset" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "has no yggdrasil-0.5.14-amd64.deb asset" in warning
+        for warning in result.warnings
+    )
     assert not any(
         call[0] == "apt-get" and call[1] == "install" for call in calls
     )
 
 
-def test_release_json_failure_reports_error(
+def test_release_json_failure_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The releases API fails: the task reports the fetch error.
+    # The releases API fails: the task completes with a warning about the
+    # fetch error.
     ctx = _ctx(tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -751,8 +756,8 @@ def test_release_json_failure_reports_error(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "cannot fetch" in (result.error or "")
+    assert result.success is True
+    assert any("cannot fetch" in warning for warning in result.warnings)
 
 
 def test_force_reruns_peer_selection(
@@ -789,11 +794,11 @@ def test_force_reruns_peer_selection(
     )
 
 
-def test_service_never_active_reports_error(
+def test_service_never_active_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The service never becomes active after the final restart: the task
-    # reports the failure.
+    # completes with a warning.
     ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
@@ -804,8 +809,8 @@ def test_service_never_active_reports_error(
         active_becomes=False,
     )
     result = yggdrasil_service_setup.task(ctx)
-    assert result.success is False
-    assert "did not become active" in (result.error or "")
+    assert result.success is True
+    assert any("did not become active" in warning for warning in result.warnings)
     assert any(
         call[0] == "systemctl" and call[1] == "start" for call in calls
     )

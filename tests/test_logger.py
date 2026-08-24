@@ -265,6 +265,32 @@ def test_log_result_line_to_journal_false_skips_journal(
     assert _wait_absent(identifier, "hidden")
 
 
+def test_log_result_line_prints_warnings(
+    monkeypatch: pytest.MonkeyPatch,
+    journal_available: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Each warning of a completed result gets its own [warn] line on the
+    # console and in the journal, after the [done] line.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    identifier = _new_identifier("warn-result")
+    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    logger.log_result_line(
+        "cli_tools",
+        TaskResult(
+            success=True,
+            message="done",
+            warnings=("cannot apply hotkey", "no session"),
+        ),
+    )
+    captured = capsys.readouterr()
+    assert "[done] cli_tools: done" in captured.out
+    assert "[warn] cli_tools: cannot apply hotkey" in captured.out
+    assert "[warn] cli_tools: no session" in captured.out
+    assert _wait_for(identifier, "[warn] cli_tools: cannot apply hotkey")
+
+
 def test_log_event_to_journal_false_skips_journal(
     monkeypatch: pytest.MonkeyPatch, journal_available: bool
 ) -> None:
