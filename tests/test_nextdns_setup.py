@@ -89,13 +89,15 @@ def test_records_profile_id_file(
     assert "dnsproxy_setup" in result.message
 
 
-def test_skip_when_file_already_matches(
+def test_already_done_when_file_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
     # The selected profile depends on the machine hostname, so the test
     # pins the hostname and writes exactly the profile the task derives.
+    # The task has already fulfilled its mission, so it reports done with
+    # no changes, never a skip.
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
     selected = _selected_profile(tmp_path, ctx)
     profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
@@ -104,7 +106,7 @@ def test_skip_when_file_already_matches(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False
-    assert result.skipped is True
+    assert result.skipped is False
     assert result.message is not None
     assert "already carries" in result.message
 

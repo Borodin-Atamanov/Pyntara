@@ -9,10 +9,10 @@ modulo the pool size, so the same hostname always resolves through the
 same account. The vaults are the source vaults of the fresh clone,
 opened with the run password the way local_vault_setup opens them; the
 runtime vault is only a fallback, because the copy may be stale and
-predate the profile group. The task is idempotent: it skips when the
-profile ID file already carries the selected profile; force mode
-rewrites the file, but the profile choice from the hostname never
-changes.
+predate the profile group. The task is idempotent: when the profile ID
+file already carries the selected profile it reports done with no
+changes; force mode rewrites the file, but the profile choice from the
+hostname never changes.
 """
 
 from __future__ import annotations
@@ -89,9 +89,9 @@ def task(ctx: Context) -> TaskResult:
     is only the fallback. The profile group is read from the vault and the
     profile is derived from the hostname. A missing profile group or an
     empty profile pool is a failure reported in the result: the profile
-    ID file is never touched then. The task is idempotent: it skips when
-    the profile ID file already carries the selected profile; force mode
-    rewrites the file.
+    ID file is never touched then. The task is idempotent: when the
+    profile ID file already carries the selected profile it reports done
+    with no changes; force mode rewrites the file.
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
@@ -121,7 +121,6 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             changed=False,
-            skipped=True,
             message="profile ID file already carries the selected profile",
         )
 

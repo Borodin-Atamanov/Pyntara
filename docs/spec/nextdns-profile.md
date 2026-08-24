@@ -26,6 +26,7 @@ upstreams (docs/spec/dnsproxy-setup.md), and the System Metrics
 collector reads it into network.json through the nextdns module
 ([Collected data](system-metrics.md#collected-data)). The file is
 rewritten on a profile change and in force mode; the task is idempotent:
-it skips when the file already carries the selected profile. A missing
+when the file already carries the selected profile it reports done with
+no changes. A missing
 profile group or an empty profile pool is a failure: the file is never
 touched then.
