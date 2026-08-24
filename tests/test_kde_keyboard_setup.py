@@ -105,7 +105,7 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 reloads.append(list(command))
                 return _FakeProc(0, "")
-            if inner[0] == "python3":
+            if inner[0] == "/usr/bin/python3":
                 live_applies.append(list(command))
                 if fail_live_apply:
                     raise subprocess.CalledProcessError(
