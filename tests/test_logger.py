@@ -291,6 +291,29 @@ def test_log_result_line_prints_warnings(
     assert _wait_for(identifier, "[warn] cli_tools: cannot apply hotkey")
 
 
+def test_log_result_line_skip_never_invents_not_implemented(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A skipped result without a message prints a bare [skip] line and must
+    # never invent a reason: the old not implemented fallback misled users
+    # into thinking a task is absent when it only skipped. A skip with a
+    # message keeps its detail. to_journal=False keeps the test free of the
+    # system journal.
+    logger.log_result_line(
+        "cli_tools", TaskResult(success=False, skipped=True), to_journal=False
+    )
+    captured = capsys.readouterr()
+    assert "[skip] cli_tools" in captured.out
+    assert "not implemented" not in captured.out
+    logger.log_result_line(
+        "cli_tools",
+        TaskResult(success=False, skipped=True, message="skipped for a reason"),
+        to_journal=False,
+    )
+    captured = capsys.readouterr()
+    assert "[skip] cli_tools: skipped for a reason" in captured.out
+
+
 def test_log_event_to_journal_false_skips_journal(
     monkeypatch: pytest.MonkeyPatch, journal_available: bool
 ) -> None:

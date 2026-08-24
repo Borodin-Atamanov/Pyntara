@@ -193,8 +193,9 @@ def log_result_line(
     """
 
     if result.skipped:
-        detail = result.message or "not implemented"
-        line = f"[skip] {name}: {detail}"
+        line = f"[skip] {name}"
+        if result.message:
+            line = f"{line}: {result.message}"
     elif result.success:
         line = f"[done] {name}"
         if result.message:
