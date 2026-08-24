@@ -118,7 +118,12 @@ def task(ctx: Context) -> TaskResult:
     except OSError:
         existing = ""
     if existing == profile_id and "nextdns_setup_system_wide" not in ctx.force_tasks:
-        return TaskResult(success=True, changed=False, skipped=True)
+        return TaskResult(
+            success=True,
+            changed=False,
+            skipped=True,
+            message="profile ID file already carries the selected profile",
+        )
 
     if not _write_profile_id_file(cfg, profile_id):
         return TaskResult(success=False, error="cannot record the NextDNS profile ID")

@@ -105,6 +105,8 @@ def test_skip_when_file_already_matches(
     assert result.success is True
     assert result.changed is False
     assert result.skipped is True
+    assert result.message is not None
+    assert "already carries" in result.message
 
 
 def test_force_rewrites_file(
