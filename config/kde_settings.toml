@@ -30,6 +30,11 @@ look_and_feel = "org.kubuntudark.desktop"
 # dark color_scheme and look_and_feel above then describe the night side.
 # When false, the task applies the dark theme directly as before.
 automatic_look_and_feel = true
+# The mouse cursor theme applied to the desktop session. The task applies
+# it with plasma-apply-cursortheme after the kconfig records, because the
+# day and night theme switch overwrites cursorTheme in kcminputrc with
+# the theme default when it applies a look and feel.
+cursor_theme = "Oxygen_Yellow"
 # The NumLock state when Plasma starts: on, off or unchanged. Stored in
 # kcminputrc [Keyboard] NumLock as 0, 1 or 2.
 numlock_on_boot = "off"
@@ -108,12 +113,6 @@ file = "kdeglobals"
 group = ["KDE"]
 key = "frameContrast"
 value = "0.2"
-
-[[kde_settings.kconfig]]
-file = "kcminputrc"
-group = ["Mouse"]
-key = "cursorTheme"
-value = "Oxygen_Yellow"
 
 [[kde_settings.kconfig]]
 file = "kcminputrc"

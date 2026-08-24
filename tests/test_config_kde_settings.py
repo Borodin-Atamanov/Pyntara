@@ -48,6 +48,14 @@ from pyntara.config import load_config
         base_config().replace(
             "automatic_look_and_feel = true", 'automatic_look_and_feel = "true"'
         ),
+        # cursor_theme is a number, not a string
+        base_config().replace(
+            'cursor_theme = "Oxygen_Yellow"', "cursor_theme = 42"
+        ),
+        # cursor_theme is an empty string
+        base_config().replace(
+            'cursor_theme = "Oxygen_Yellow"', 'cursor_theme = ""'
+        ),
         # numlock_on_boot is a number, not a string
         base_config().replace(
             'numlock_on_boot = "off"', "numlock_on_boot = 1"
@@ -100,6 +108,7 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
     assert config.kde_settings.color_scheme == "BreezeDark"
     assert config.kde_settings.look_and_feel == "org.kubuntudark.desktop"
     assert config.kde_settings.automatic_look_and_feel is True
+    assert config.kde_settings.cursor_theme == "Oxygen_Yellow"
     assert config.kde_settings.numlock_on_boot == "off"
     assert config.kde_settings.touchpad_click_method == "clickfinger"
     assert config.kde_settings.touchpad_disable_on_external_mouse is False

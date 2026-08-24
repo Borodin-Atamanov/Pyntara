@@ -7,14 +7,17 @@ Both values are applied with the plasma-apply tools through runuser, so
 the config files stay owned by that user. The task also applies the input
 and keyboard settings as KConfig values with kwriteconfig6: the NumLock
 state on startup, the touchpad preferences (to every touchpad found) and
-the Wayland virtual keyboard. When a desktop session is running the
-changes apply immediately; without a session the tools still write the
-config and the settings apply after the next login. The task is
-idempotent: it reads the current values with kreadconfig6 and applies only
-what differs. When automatic_look_and_feel is set, the task enables the
-native KDE day and night theme switch instead of applying a fixed theme,
-so a run never fights the switch. Missing packages (the provider of the
-plasma-apply tools and the KConfig tools) are installed first.
+the Wayland virtual keyboard. The cursor theme is applied with
+plasma-apply-cursortheme after the kconfig records, so it wins over the
+theme default that the day and night switch writes. When a desktop
+session is running the changes apply immediately; without a session the
+tools still write the config and the settings apply after the next login.
+The task is idempotent: it reads the current values with kreadconfig6 and
+applies only what differs. When automatic_look_and_feel is set, the task
+enables the native KDE day and night theme switch instead of applying a
+fixed theme, so a run never fights the switch. Missing packages (the
+provider of the plasma-apply tools and the KConfig tools) are installed
+first.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ KDE_GROUP: tuple[str, ...] = ("KDE",)
 KCINPUTRC_FILE = "kcminputrc"
 KWINRC_FILE = "kwinrc"
 PLASMA_KEYBOARD_RC = "plasmakeyboardrc"
+MOUSE_GROUP: tuple[str, ...] = ("Mouse",)
 # The XDG user directory file and the Konsole profile target path, both
 # under the target user config and local share directories.
 USER_DIRS_FILE = "user-dirs.dirs"
@@ -414,6 +418,34 @@ def _apply_virtual_keyboard(
     return changed
 
 
+def _apply_cursor_theme(
+    cfg: KdeSettingsConfig,
+    *,
+    env: dict[str, str],
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Apply the configured cursor theme; True when changed.
+
+    The cursor theme is applied with plasma-apply-cursortheme, which sets
+    the live cursor and writes cursorTheme into kcminputrc. The native
+    day and night theme switch overwrites cursorTheme with the theme
+    default whenever it applies a look and feel, so the task applies the
+    cursor theme after the kconfig records to win over that overwrite.
+    """
+
+    current = _kreadconfig(cfg, KCINPUTRC_FILE, MOUSE_GROUP, "cursorTheme", timeout)
+    if not force and current == cfg.cursor_theme:
+        return False
+    run_command(
+        _as_user_command(cfg, ["plasma-apply-cursortheme", cfg.cursor_theme]),
+        extra_env=env,
+        timeout=timeout,
+    )
+    _log(f"applied cursor theme: {cfg.cursor_theme}")
+    return True
+
+
 def _apply_kconfig_records(
     cfg: KdeSettingsConfig,
     *,
@@ -775,11 +807,12 @@ def task(ctx: Context) -> TaskResult:
     it installs missing packages and applies the differing values as the
     target user: the global theme first, then the color scheme so the
     configured scheme wins, then the NumLock state, the touchpad
-    preferences, the Wayland virtual keyboard and the configured kconfig
-    values. When automatic_look_and_feel is set, the theme is not applied
-    directly: the task enables the native day and night switch instead, so
-    a run never fights the switch. Any failure is returned as an error
-    TaskResult.
+    preferences, the Wayland virtual keyboard, the configured kconfig
+    values and the cursor theme last, so it wins over the theme default
+    the day and night switch writes. When automatic_look_and_feel is set,
+    the theme is not applied directly: the task enables the native day and
+    night switch instead, so a run never fights the switch. Any failure is
+    returned as an error TaskResult.
     """
 
     cfg = ctx.config.kde_settings
@@ -829,6 +862,9 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= virtual_keyboard_changed
         settings_changed |= _apply_kconfig_records(
             cfg, timeout=timeout, force=force
+        )
+        settings_changed |= _apply_cursor_theme(
+            cfg, env=apply_env, timeout=timeout, force=force
         )
         settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
         settings_changed |= _apply_user_dirs(cfg, timeout=timeout, force=force)

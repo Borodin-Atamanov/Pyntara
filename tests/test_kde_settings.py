@@ -68,6 +68,7 @@ def _install_fakes(
     currents = currents or {}
     themes: list[list[str]] = []
     schemes: list[list[str]] = []
+    cursorthemes: list[list[str]] = []
     order: list[str] = []
     installs: list[str] = []
     writes: list[list[str]] = []
@@ -92,6 +93,11 @@ def _install_fakes(
                     raise subprocess.CalledProcessError(1, command)
                 schemes.append(list(command))
                 order.append("colorscheme")
+                return _FakeProc(0, "")
+            if inner[0] == "plasma-apply-cursortheme":
+                if fail_on_apply:
+                    raise subprocess.CalledProcessError(1, command)
+                cursorthemes.append(list(command))
                 return _FakeProc(0, "")
             if inner[0] == "kwriteconfig6":
                 if fail_on_write:
@@ -132,7 +138,7 @@ def _install_fakes(
             else None
         ),
     )
-    return themes, schemes, order, installs, writes, reloads
+    return themes, schemes, order, installs, writes, reloads, cursorthemes
 
 
 def test_first_run_applies_both_themes(
@@ -141,7 +147,9 @@ def test_first_run_applies_both_themes(
     # No current values: the global theme and the color scheme are both
     # applied, the global theme first.
     ctx = _ctx(tmp_path)
-    themes, schemes, order, installs, _, _ = _install_fakes(monkeypatch)
+    themes, schemes, order, installs, _, _, cursorthemes = _install_fakes(
+        monkeypatch
+    )
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -169,10 +177,11 @@ def test_skip_when_already_configured(
         "Current": "kubuntu",
         "CursorSize": "30",
         "CursorTheme": "breeze_cursors",
+        "cursorTheme": "Oxygen_Yellow",
         "Font": "Noto Sans,20",
     }
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
-    themes, schemes, order, _, writes, reloads = _install_fakes(
+    themes, schemes, order, _, writes, reloads, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -194,7 +203,7 @@ def test_force_applies_even_when_configured(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _, _, _ = _install_fakes(
+    themes, schemes, order, _, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -214,7 +223,7 @@ def test_only_color_scheme_differs(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeLight",
     }
-    themes, schemes, order, _, _, _ = _install_fakes(
+    themes, schemes, order, _, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -234,7 +243,7 @@ def test_only_theme_differs(
         "LookAndFeelPackage": "org.kde.breeze.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _, _, _ = _install_fakes(
+    themes, schemes, order, _, _, _, _ = _install_fakes(
         monkeypatch, currents=currents
     )
     result = task_module.task(ctx)
@@ -250,7 +259,7 @@ def test_missing_packages_are_installed(
 ) -> None:
     # A missing package is installed before the theme applies.
     ctx = _ctx(tmp_path)
-    _, _, _, installs, _, _ = _install_fakes(monkeypatch, installed=False)
+    _, _, _, installs, _, _, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
     assert installs == ["plasma-workspace", "libkf6config-bin"]
@@ -284,7 +293,7 @@ def test_no_desktop_session_still_applies(
     # Without a kwin_wayland process the themes are still applied (the
     # config is written) and the run is not an error.
     ctx = _ctx(tmp_path)
-    themes, schemes, _, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    themes, schemes, _, _, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -315,7 +324,7 @@ def test_numlock_writes_off_value(
 ) -> None:
     # NumLock "off" is written as the value 1, not by deleting the key.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     numlock_writes = [command for command in writes if "NumLock" in command]
@@ -329,7 +338,9 @@ def test_numlock_skips_when_matching(
 ) -> None:
     # NumLock already at the "off" value skips the write.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents={"NumLock": "1"})
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch, currents={"NumLock": "1"}
+    )
     task_module.task(ctx)
     assert not [command for command in writes if "NumLock" in command]
 
@@ -339,7 +350,7 @@ def test_touchpad_writes_to_each_found(
 ) -> None:
     # The preferences go to every touchpad group in kcminputrc.
     ctx = _ctx(tmp_path, kcminputrc=TOUCHPAD_RC)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     click_writes = [command for command in writes if "ClickMethod" in command]
@@ -360,7 +371,7 @@ def test_touchpad_missing_skips(
     # Without a touchpad group no touchpad writes happen and it is not an
     # error.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert not [command for command in writes if "ClickMethod" in command]
@@ -372,7 +383,7 @@ def test_virtual_keyboard_enabled_writes_input_method_and_locales(
     # The input method goes to kwinrc and the locales to plasmakeyboardrc,
     # then kwin is reloaded.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, reloads = _install_fakes(monkeypatch)
+    _, _, _, _, writes, reloads, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     input_writes = [
@@ -393,7 +404,7 @@ def test_virtual_keyboard_disabled_removes_input_method(
 ) -> None:
     # Disabled deletes the InputMethod key instead of writing it.
     ctx = _ctx(tmp_path, virtual_keyboard_enabled=False)
-    _, _, _, _, writes, reloads = _install_fakes(
+    _, _, _, _, writes, reloads, _ = _install_fakes(
         monkeypatch,
         currents={
             "InputMethod": "/usr/share/applications/org.kde.plasma.keyboard.desktop"
@@ -415,7 +426,7 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
 ) -> None:
     # Disabled with no input method set changes nothing.
     ctx = _ctx(tmp_path, virtual_keyboard_enabled=False)
-    _, _, _, _, writes, reloads = _install_fakes(monkeypatch)
+    _, _, _, _, writes, reloads, _ = _install_fakes(monkeypatch)
     task_module.task(ctx)
     assert not [command for command in writes if "InputMethod" in command]
     assert reloads == []
@@ -436,7 +447,7 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
             kde_settings_automatic_look_and_feel=True,
         ),
     )
-    themes, schemes, _, _, writes, _ = _install_fakes(monkeypatch)
+    themes, schemes, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert themes == []
@@ -453,6 +464,71 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
     ]
     assert interval_writes
     assert interval_writes[0][-1] == "99"
+
+
+def test_cursor_theme_applied_when_different(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A differing cursorTheme is applied with plasma-apply-cursortheme.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, _, _, cursorthemes = _install_fakes(
+        monkeypatch, currents={"cursorTheme": "breeze_cursors"}
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert cursorthemes
+    assert "Oxygen_Yellow" in " ".join(cursorthemes[0])
+    assert "plasma-apply-cursortheme" in " ".join(cursorthemes[0])
+
+
+def test_cursor_theme_skips_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The already applied cursorTheme skips the cursor apply.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, _, _, cursorthemes = _install_fakes(
+        monkeypatch, currents={"cursorTheme": "Oxygen_Yellow"}
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert cursorthemes == []
+
+
+def test_cursor_theme_force_applies_even_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Force mode applies the cursor theme regardless of the current state.
+    ctx = _ctx(tmp_path, force=True)
+    _, _, _, _, _, _, cursorthemes = _install_fakes(
+        monkeypatch, currents={"cursorTheme": "Oxygen_Yellow"}
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert cursorthemes
+    assert "Oxygen_Yellow" in " ".join(cursorthemes[0])
+
+
+def test_cursor_theme_applied_after_kconfig_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The cursor theme apply runs after the kconfig records, so it wins
+    # over any theme default the records or the day and night switch
+    # write.
+    records = (
+        KConfigRecord(
+            "kcminputrc", ("Mouse",), "cursorTheme", "breeze_cursors", "string", False
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _, cursorthemes = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert any("cursorTheme" in command for command in writes)
+    assert cursorthemes
+    assert "Oxygen_Yellow" in " ".join(cursorthemes[0])
 
 
 SHORTCUTS_RC = """\
@@ -533,7 +609,7 @@ def test_clear_shortcut_conflicts_unbinds_other_actions(
         ),
     )
     ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     cleared = task_module._clear_shortcut_conflicts(
         ctx.config.kde_settings, timeout=5
     )
@@ -567,7 +643,7 @@ def test_clear_shortcut_conflicts_idempotent(
         ),
     )
     ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     cleared = task_module._clear_shortcut_conflicts(
         ctx.config.kde_settings, timeout=5
     )
@@ -655,7 +731,7 @@ def test_apply_sddm_writes_system_files(
 ) -> None:
     # The autologin and theme values are written to the system files.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     changed = task_module._apply_sddm(
         ctx.config.kde_settings, timeout=5, force=False
     )
@@ -680,7 +756,7 @@ def test_apply_sddm_idempotent_when_matching(
         "CursorTheme": "breeze_cursors",
         "Font": "Noto Sans,20",
     }
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
     changed = task_module._apply_sddm(
         ctx.config.kde_settings, timeout=5, force=False
     )
@@ -735,6 +811,7 @@ FULLY_CONFIGURED = {
     "Current": "kubuntu",
     "CursorSize": "30",
     "CursorTheme": "breeze_cursors",
+    "cursorTheme": "Oxygen_Yellow",
     "Font": "Noto Sans,20",
 }
 
@@ -755,7 +832,7 @@ def test_kconfig_records_write_differing_values(
         KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
     )
     ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _ = _install_fakes(
+    _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch, currents={"StaleKey": "oldvalue"}
     )
     result = task_module.task(ctx)
@@ -789,7 +866,7 @@ def test_kconfig_records_skip_when_matching(
     ctx = _kconfig_ctx(tmp_path, records)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False
@@ -808,7 +885,7 @@ def test_kconfig_force_writes_even_when_matching(
     )
     ctx = _kconfig_ctx(tmp_path, records, force=True)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
-    _, _, _, _, writes, _ = _install_fakes(monkeypatch, currents=currents)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True

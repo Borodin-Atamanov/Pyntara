@@ -62,6 +62,7 @@ def base_config() -> str:
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
         "automatic_look_and_feel = true\n"
+        'cursor_theme = "Oxygen_Yellow"\n'
         'numlock_on_boot = "off"\n'
         'touchpad_click_method = "clickfinger"\n'
         "touchpad_disable_on_external_mouse = false\n"

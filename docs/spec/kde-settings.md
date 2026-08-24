@@ -9,7 +9,7 @@ The task configures the target user's KDE desktop to the recorded manual setup: 
 The KConfig values live in files under the config directory of the target user and are applied with kwriteconfig6 as that user, so the files stay owned by the user:
 
 kdeglobals carries the theme. The color scheme and the global theme come from color_scheme and look_and_feel and are applied with the plasma-apply tools. When automatic_look_and_feel is set, the task enables the native KDE day and night switch (kdeglobals [KDE] AutomaticLookAndFeel) instead of applying a fixed theme, so a run never overwrites the current theme.  
-kcminputrc carries the input settings: the NumLock state on startup and the touchpad preferences written into every touchpad device group, so the task works on any target hardware.  
+kcminputrc carries the input settings: the NumLock state on startup, the touchpad preferences written into every touchpad device group, so the task works on any target hardware, and the mouse cursor theme, applied with plasma-apply-cursortheme after the kconfig records so it wins over the theme default that the day and night switch writes.  
 kwinrc and plasmakeyboardrc carry the Wayland virtual keyboard.  
 The generic kconfig records apply every other KConfig value: the [[kde_settings.kconfig]] array of tables names a file, the group segments, the key and the string form of the value, with an optional bool type and an optional delete that removes the key. The records cover the window effects and their parameters, the night color, the window behavior, the lock screen, the power management, the wallpaper slideshow, the spell check language, the activity history and the Konsole default profile.  
 The window effect shortcuts live in kglobalshortcutsrc and are written in the KDE primary,alternate,description format. A configured shortcut wins over any other action: after the records are applied, the task scans kglobalshortcutsrc and unbinds every action that shares a configured primary key, wherever that action lives, so the shortcut works on any target machine.
@@ -44,6 +44,7 @@ username and home_dir, the target user and that user's home directory.
 user_dirs, the XDG user directories folded into Downloads.  
 color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
 automatic_look_and_feel, whether the native day and night switch is enabled.  
+cursor_theme, the mouse cursor theme applied to the desktop session with plasma-apply-cursortheme.  
 numlock_on_boot, the NumLock state on Plasma startup.  
 touchpad_click_method and touchpad_disable_on_external_mouse, the touchpad preferences.  
 virtual_keyboard_enabled, virtual_keyboard_input_method and virtual_keyboard_locales, the Wayland virtual keyboard.  
