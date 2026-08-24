@@ -31,7 +31,7 @@ Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log
 
 The system journal is the primary destination for all own messages: the engine mirrors them with the identifier pyntara-engine, the installer with pyntara-install. The file log is residual: it persists the full stream for offline review. All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
 
-Journal message priority is passed to the logging helpers as an optional numeric parameter, a syslog level: 6 (informational) by default, which every message reporting an action inside a task uses, and 3 (error) for serious failures. The priority is passed as a number, never embedded in the message text and never parsed from it.
+Journal message priority is passed to the logging helpers as an optional numeric parameter, a syslog level. The engine configuration in the [engine] table holds the two levels: progress_priority (7, debug) for every message reporting an action inside a task, and error_priority (3, error) for serious failures. A task reads both from its engine config and passes them explicitly to log_progress, so the levels stay configurable without code changes. The priority is passed as a number, never embedded in the message text and never parsed from it.
 
 ## Datetime format policy
 

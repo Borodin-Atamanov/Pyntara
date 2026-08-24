@@ -21,6 +21,7 @@ class EngineConfig:
     notice_timeout: int
     command_timeout_seconds: int
     error_priority: int
+    progress_priority: int
     process_check_timeout_seconds: int
     task_start_delay_seconds: float
     desktop_detect_processes: tuple[str, ...]
@@ -49,6 +50,11 @@ def _engine_table(raw: object) -> EngineConfig:
     error_priority = _int_field(raw.get("error_priority"), "engine.error_priority")
     if not 0 <= error_priority <= 7:
         raise ConfigError("engine.error_priority must be between 0 and 7")
+    progress_priority = _int_field(
+        raw.get("progress_priority"), "engine.progress_priority"
+    )
+    if not 0 <= progress_priority <= 7:
+        raise ConfigError("engine.progress_priority must be between 0 and 7")
     return EngineConfig(
         task_data_root=Path(task_data_root),
         notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
@@ -56,6 +62,7 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
         ),
         error_priority=error_priority,
+        progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(
             raw.get("process_check_timeout_seconds"),
             "engine.process_check_timeout_seconds",

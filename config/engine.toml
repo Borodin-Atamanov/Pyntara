@@ -16,6 +16,9 @@ notice_timeout = 7
 command_timeout_seconds = 1800
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
+# Syslog priority of task progress actions, 0 to 7. Debug level keeps the
+# journal detailed; errors stay at error_priority.
+progress_priority = 7
 # Seconds the desktop detection process check may take.
 process_check_timeout_seconds = 5
 # Seconds the engine pauses after showing a task title before running it.

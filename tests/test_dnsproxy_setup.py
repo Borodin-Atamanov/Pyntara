@@ -148,6 +148,7 @@ def _run_task(
     routing_leftover: bool = False,
     nmcli_active: str = "",
     nmcli_missing: bool = False,
+    query_log_content: str = "",
 ) -> tuple[Any, Path, list[list[str]], Any]:
     '''Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path, the recorded commands and the
@@ -157,8 +158,9 @@ def _run_task(
     listener after the kill, routing_leftover keeps the provider address
     in the post-cutover per-link state, and nmcli_active supplies the
     active connection listing. nmcli_missing makes the nmcli check
-    command raise FileNotFoundError. probe controls the pre-cutover
-    dnsproxy answer check.'''
+    command raise FileNotFoundError, and query_log_content seeds the
+    dnsproxy query log file. probe controls the pre-cutover dnsproxy
+    answer check.'''
     service_path = tmp_path / "dnsproxy.service"
     config = make_config(
         task_data_root=tmp_path,
@@ -175,6 +177,8 @@ def _run_task(
         ),
     )
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
+    if query_log_content:
+        (tmp_path / "dnsproxy.log").write_text(query_log_content, encoding="utf-8")
     context = make_context(vault_password=PASSWORD, config=config)
     monkeypatch.setattr(
         task_module,
@@ -376,6 +380,36 @@ def test_task_succeeds_when_nmcli_is_missing(
     ]
     assert not nmcli_modifies
     assert not nmcli_reapplies
+
+
+def test_task_succeeds_with_warning_when_nm_missing_and_dnsproxy_serves_queries(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, _, _ = _run_task(
+        tmp_path,
+        monkeypatch,
+        provider_dns=True,
+        routing_leftover=True,
+        nmcli_missing=True,
+        query_log_content="2026-08-24T06:11:46Z [info] query example.com A\n",
+    )
+    assert result.success is True
+    assert any("per-link DNS" in warning for warning in result.warnings)
+    assert "Domains=~." in " ".join(result.warnings)
+
+
+def test_task_fails_when_nm_missing_and_dnsproxy_does_not_serve_queries(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, _, _, _ = _run_task(
+        tmp_path,
+        monkeypatch,
+        provider_dns=True,
+        routing_leftover=True,
+        nmcli_missing=True,
+    )
+    assert result.success is False
+    assert "bypass dnsproxy" in (result.error or "")
 
 
 def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(

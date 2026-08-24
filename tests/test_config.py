@@ -28,6 +28,7 @@ task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
 command_timeout_seconds = 1800
 error_priority = 3
+progress_priority = 7
 process_check_timeout_seconds = 5
 task_start_delay_seconds = 0.5
 desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]

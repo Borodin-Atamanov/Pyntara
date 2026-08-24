@@ -39,8 +39,8 @@ _last_log_time = 0.0
 def _write_to_shared_journal(text: str, identifier: str) -> None:
     """Write one line through the reused systemd-cat process, best effort.
 
-    The shared process writes informational entries (syslog level 6), the
-    default for every message that does not carry an explicit priority.
+    The shared process writes informational entries (syslog level 6),
+    used when a message carries the explicit informational priority.
     A missing executable or a failed write never stops the run: without a
     journal the console and the install log keep working as before.
     """
@@ -144,7 +144,8 @@ def log_progress(message: str, *, priority: int = 6) -> None:
     YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has
     passed since the previous progress line, so bursts of lines stay
     compact. The journal receives the message without the timestamp at
-    the given syslog priority, informational by default.
+    the given syslog priority, informational by default; tasks pass the
+    configured engine progress and error priorities instead.
     """
 
     frame = inspect.currentframe()

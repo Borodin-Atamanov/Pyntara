@@ -175,6 +175,7 @@ def make_config(
     notice_timeout: int = 7,
     command_timeout_seconds: int = 1800,
     error_priority: int = 3,
+    progress_priority: int = 7,
     process_check_timeout_seconds: int = 5,
     task_start_delay_seconds: float = 0.5,
     engine_desktop_detect_processes: tuple[str, ...] = (
@@ -489,6 +490,7 @@ def make_config(
             notice_timeout=notice_timeout,
             command_timeout_seconds=command_timeout_seconds,
             error_priority=error_priority,
+            progress_priority=progress_priority,
             process_check_timeout_seconds=process_check_timeout_seconds,
             task_start_delay_seconds=task_start_delay_seconds,
             desktop_detect_processes=engine_desktop_detect_processes,

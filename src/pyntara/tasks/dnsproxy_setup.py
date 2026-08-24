@@ -334,7 +334,9 @@ def _listening_pids(cfg: DnsproxySetupConfig, timeout: float) -> set[int]:
     return pids
 
 
-def _free_listen_port(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
+def _free_listen_port(
+    cfg: DnsproxySetupConfig, timeout: float, progress_priority: int
+) -> str | None:
     '''Stop whatever listens on the resolver port; error text or None.
 
     The port belongs to dnsproxy; a leftover process from an earlier
@@ -349,7 +351,8 @@ def _free_listen_port(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
     ordered = sorted(pids)
     log_progress(
         f"port {cfg.listen_port} is occupied by PID(s) "
-        f"{', '.join(str(pid) for pid in ordered)}; stopping them"
+        f"{', '.join(str(pid) for pid in ordered)}; stopping them",
+        priority=progress_priority,
     )
     for pid in ordered:
         run_command([*cfg.kill_command, str(pid)], check=False, timeout=timeout)
@@ -359,7 +362,10 @@ def _free_listen_port(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
             f"port {cfg.listen_port} is still occupied by PID(s) "
             f"{', '.join(str(pid) for pid in sorted(remaining))} after the stop"
         )
-    log_progress(f"stopped the process(es) holding port {cfg.listen_port}")
+    log_progress(
+        f"stopped the process(es) holding port {cfg.listen_port}",
+        priority=progress_priority,
+    )
     return None
 
 
@@ -405,8 +411,24 @@ def _dns_probe_answers(cfg: DnsproxySetupConfig, timeout: float) -> bool:
     return False
 
 
+def _nmcli_available(cfg: DnsproxySetupConfig, timeout: float) -> bool:
+    '''True when nmcli runs successfully.
+
+    A missing or broken nmcli makes NetworkManager management impossible;
+    the caller then skips NM changes instead of raising.
+    '''
+
+    try:
+        result = run_command(
+            list(cfg.nmcli_check_command), check=False, timeout=timeout
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
 def _disable_auto_dns_active(
-    cfg: DnsproxySetupConfig, timeout: float
+    cfg: DnsproxySetupConfig, timeout: float, progress_priority: int
 ) -> list[tuple[str, str]]:
     '''Ignore auto DNS on active connections; the changed (UUID, device) pairs.
 
@@ -420,16 +442,11 @@ def _disable_auto_dns_active(
     nmcli changes nothing.
     '''
 
-    try:
-        check = run_command(
-            list(cfg.nmcli_check_command), check=False, timeout=timeout
-        )
-    except OSError:
+    if not _nmcli_available(cfg, timeout):
         log_progress(
-            "nmcli not found, NetworkManager auto DNS management skipped"
+            "nmcli unavailable, NetworkManager auto DNS management skipped",
+            priority=progress_priority,
         )
-        return []
-    if check.returncode != 0:
         return []
     listing = run_command(
         list(cfg.nmcli_active_list_command), capture=True, timeout=timeout
@@ -494,16 +511,45 @@ def _restore_auto_dns(
             )
 
 
+def _query_log_records_domain(
+    cfg: DnsproxySetupConfig, domain: str
+) -> bool:
+    '''True when the dnsproxy query log shows the domain.
+
+    The verification domain recorded in the query log proves that
+    systemd-resolved actually routes queries through dnsproxy, even when
+    provider DNS addresses survive on a per-link scope that this task
+    cannot edit because NetworkManager is absent. Only the last part of
+    the log is read, because the file grows with every query.
+    '''
+
+    try:
+        content = cfg.query_log_path.read_bytes()[-65536:].decode(
+            "utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+    return domain in content
+
+
 def _verify_system(
-    cfg: DnsproxySetupConfig, discovered: DiscoveredDnsServers, timeout: float
-) -> str | None:
-    '''Error text when the system does not resolve through dnsproxy.
+    cfg: DnsproxySetupConfig,
+    discovered: DiscoveredDnsServers,
+    timeout: float,
+    nm_managed: bool,
+) -> tuple[str | None, str | None]:
+    '''Error and warning text after the resolver cutover.
 
     The functional check queries the verification domain through
     systemd-resolved. The routing check then asserts that none of the
     provider DNS addresses discovered before the cutover still appears
-    on a per-link scope: if one does, per-link DNS takes precedence and
-    the system would bypass dnsproxy despite a successful lookup.
+    on a per-link scope: if one does and NetworkManager is managed, the
+    system would bypass dnsproxy despite a successful lookup, so it is
+    an error. When NetworkManager is absent the per-link provider DNS
+    cannot be removed by this task, so the query log is consulted
+    instead: a verification domain recorded there proves that the global
+    Domains=~. routing already sends queries through dnsproxy, and the
+    surviving per-link servers are reported as a warning, not an error.
     '''
 
     command = [
@@ -513,7 +559,7 @@ def _verify_system(
     result = run_command(command, check=False, capture=True, timeout=timeout)
     if result.returncode != 0:
         excerpt = (result.stdout + result.stderr).strip()[:200] or "<no output>"
-        return f"system DNS verification failed: {excerpt}"
+        return f"system DNS verification failed: {excerpt}", None
     if cfg.append_provider_dns and (discovered.ipv4 or discovered.ipv6):
         state = run_command(
             list(cfg.resolvectl_dns_command),
@@ -524,7 +570,8 @@ def _verify_system(
         if state.returncode != 0:
             return (
                 "cannot read per-link DNS state: resolvectl exited "
-                f"{state.returncode}"
+                f"{state.returncode}",
+                None,
             )
         leftover = [
             address
@@ -532,11 +579,29 @@ def _verify_system(
             if address in state.stdout
         ]
         if leftover:
+            if nm_managed:
+                return (
+                    "per-link DNS still lists provider resolver(s) "
+                    f"{', '.join(leftover)}; the system would bypass dnsproxy",
+                    None,
+                )
+            if _query_log_records_domain(cfg, cfg.verification_domain):
+                return (
+                    None,
+                    f"per-link DNS still lists provider resolver(s) "
+                    f"{', '.join(leftover)}; NetworkManager is absent so this "
+                    "task cannot remove them, but the global Domains=~. routing "
+                    "already sends queries through dnsproxy (the verification "
+                    "domain is recorded in the dnsproxy query log); remove the "
+                    "provider nameservers from the netplan or systemd-networkd "
+                    "configuration to fully clean up",
+                )
             return (
                 "per-link DNS still lists provider resolver(s) "
-                f"{', '.join(leftover)}; the system would bypass dnsproxy"
+                f"{', '.join(leftover)}; the system would bypass dnsproxy",
+                None,
             )
-    return None
+    return None, None
 
 
 def _service_log(cfg: DnsproxySetupConfig, timeout: float) -> str:
@@ -558,6 +623,7 @@ def _revert(
     dropin_changed: bool,
     auto_dns_changed: list[tuple[str, str]],
     timeout: float,
+    progress_priority: int,
     error_priority: int,
 ) -> None:
     '''Undo the resolver cutover; never raises.
@@ -573,7 +639,10 @@ def _revert(
         path = cfg.resolved_conf_dir / cfg.resolved_dropin_file_name
         try:
             path.unlink()
-            log_progress("reverted: removed the resolver drop-in")
+            log_progress(
+                "reverted: removed the resolver drop-in",
+                priority=progress_priority,
+            )
         except OSError as exc:
             log_progress(
                 f"revert: cannot remove {path}: {exc}", priority=error_priority
@@ -581,7 +650,10 @@ def _revert(
     if auto_dns_changed:
         try:
             _restore_auto_dns(cfg, auto_dns_changed, timeout)
-            log_progress("reverted: restored NetworkManager auto DNS handling")
+            log_progress(
+                "reverted: restored NetworkManager auto DNS handling",
+                priority=progress_priority,
+            )
         except (OSError, subprocess.SubprocessError) as exc:
             log_progress(
                 f"revert: cannot restore NetworkManager: {exc}",
@@ -630,6 +702,7 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
     error_priority = ctx.config.engine.error_priority
+    progress_priority = ctx.config.engine.progress_priority
     profile_id = _read_profile_id(cfg)
     if profile_id is None:
         return TaskResult(
@@ -658,6 +731,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     dropin_changed = False
     auto_dns_changed: list[tuple[str, str]] = []
+    verify_warning: str | None = None
     cut_over = False
     try:
         if installed != target_version:
@@ -688,7 +762,7 @@ def task(ctx: Context) -> TaskResult:
             changed = True
         active = service_is_active(cfg.service_unit_name, timeout)
         if not active:
-            error = _free_listen_port(cfg, timeout)
+            error = _free_listen_port(cfg, timeout, progress_priority)
             if error is not None:
                 return TaskResult(success=False, changed=changed, error=error)
         if not service_is_enabled(cfg.service_unit_name, timeout):
@@ -736,8 +810,13 @@ def task(ctx: Context) -> TaskResult:
         if dropin_changed:
             run_command(list(cfg.restart_resolved_command), timeout=timeout)
         if cfg.manage_networkmanager:
-            auto_dns_changed = _disable_auto_dns_active(cfg, timeout)
-        verify_error = _verify_system(cfg, discovered, timeout)
+            auto_dns_changed = _disable_auto_dns_active(
+                cfg, timeout, progress_priority
+            )
+        nm_managed = cfg.manage_networkmanager and _nmcli_available(cfg, timeout)
+        verify_error, verify_warning = _verify_system(
+            cfg, discovered, timeout, nm_managed
+        )
         if verify_error is not None:
             detail = (
                 f"{verify_error}; the resolver drop-in and the dnsproxy "
@@ -755,7 +834,14 @@ def task(ctx: Context) -> TaskResult:
             )
     except (OSError, subprocess.SubprocessError, tarfile.TarError, RuntimeError) as exc:
         if cut_over:
-            _revert(cfg, dropin_changed, auto_dns_changed, timeout, error_priority)
+            _revert(
+                cfg,
+                dropin_changed,
+                auto_dns_changed,
+                timeout,
+                progress_priority,
+                error_priority,
+            )
         return TaskResult(
             success=False, changed=changed, error=f"dnsproxy setup failed: {exc}"
         )
@@ -763,4 +849,5 @@ def task(ctx: Context) -> TaskResult:
         success=True,
         changed=changed,
         message=f"dnsproxy active with NextDNS profile {profile_id}",
+        warnings=(verify_warning,) if verify_warning else (),
     )

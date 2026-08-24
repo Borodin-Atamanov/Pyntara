@@ -28,6 +28,7 @@ def base_config() -> str:
     return (
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
         "command_timeout_seconds = 1800\nerror_priority = 3\n"
+        "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
         'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
