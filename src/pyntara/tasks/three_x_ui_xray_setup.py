@@ -721,16 +721,67 @@ def _converge_panel_port(
     return True, f"panel port moved to {cfg.panel_port}"
 
 
+def _wait_panel_http(
+    cfg: ThreeXuiXraySetupConfig,
+    timeout: float,
+    *,
+    attempts: int = 20,
+    retry_delay_seconds: float = 0.5,
+) -> bool:
+    """True when the panel answers HTTP on the configured port.
+
+    Polls the panel's csrf-token endpoint until it answers. A port
+    migration restarts the panel and the HTTP listener can trail the
+    systemd active state by a moment; stage 2 would otherwise report a
+    false login failure. The scheme follows the configured certificate
+    and TLS is not verified, mirroring the API client. An unreadable
+    install-result.env leaves the web base path empty, which still
+    detects the listener.
+    """
+
+    web_path = ""
+    try:
+        env = xui_client.parse_install_result_env(Path(cfg.install_result_env_path))
+        web_path = env.get("XUI_WEB_BASE_PATH", "")
+    except (FileNotFoundError, RuntimeError, OSError):
+        pass
+    try:
+        scheme = xui_client.panel_scheme(cfg, timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        scheme = "http"
+    base_url = xui_client.build_panel_url(
+        cfg.panel_http_address, str(cfg.panel_port), web_path, scheme=scheme
+    )
+    for _ in range(attempts):
+        try:
+            result = run_command(
+                [
+                    "curl",
+                    "--silent",
+                    "--max-time",
+                    "2",
+                    "--insecure",
+                    "--output",
+                    "/dev/null",
+                    "--header",
+                    "X-Requested-With: XMLHttpRequest",
+                    f"{base_url}/csrf-token",
+                ],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+        if result.returncode == 0:
+            return True
+        time.sleep(retry_delay_seconds)
+    return False
+
+
 def _sync_install_result_env(
     cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> bool:
-    """Rewrite install-result.env so its port and access URL match reality.
-
-    The panel port converges to cfg.panel_port and the access URL scheme
-    follows the configured certificate, so consumers never read a stale
-    port or a scheme the panel does not serve. Returns True when the
-    file changed.
-    """
 
     env_path = Path(cfg.install_result_env_path)
     if not env_path.is_file():
@@ -1132,6 +1183,10 @@ def task(ctx: Context) -> TaskResult:
         result.changed = True
         result.message = (result.message or "") + f"; {converged_message}"
     _sync_install_result_env(cfg, timeout)
+    # A port migration restarts the panel; the HTTP listener can trail
+    # the systemd active state by a moment, so stage 2 would otherwise
+    # report a false login failure. Wait for the listener before it.
+    _wait_panel_http(cfg, timeout)
 
     # When the installer attempted SSL (a machine with a public address)
     # but the certificate is missing, the challenge could not be served:

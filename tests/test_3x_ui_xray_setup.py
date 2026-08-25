@@ -1002,6 +1002,29 @@ class TestPanelPortConvergence:
         cfg = config.three_x_ui_xray_setup
         assert xui._sync_install_result_env(cfg, 30) is False
 
+    def test_wait_panel_http_returns_when_ready(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The panel answers on the first poll: the wait returns True.
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(0, ""),
+        )
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
+        assert xui._wait_panel_http(self._cfg(tmp_path), 30) is True
+
+    def test_wait_panel_http_retries_then_false(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The panel never answers: the wait retries and reports False.
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(7, ""),
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
+        assert xui._wait_panel_http(self._cfg(tmp_path), 30) is False
+
 
 class TestSslReachability:
     """Tests for deciding whether the HTTP-01 challenge can be served."""
