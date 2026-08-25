@@ -29,6 +29,9 @@ from pyntara.tasks import i2pd_service_setup
 I2PD_TEMPLATE = """\
 loglevel = $log_level
 
+bandwidth = $bandwidth
+share = $share
+
 tunconf = $tunnels_config_path
 
 [http]
@@ -542,12 +545,15 @@ def test_select_asset_prioritizes_codename() -> None:
 
 def test_render_config_bool_spelling() -> None:
     # Booleans render as the lowercase true/false spelling i2pd accepts;
-    # the main configuration names the owned tunnels file through tunconf.
+    # the main configuration names the owned tunnels file through tunconf
+    # and carries the configured bandwidth limit and transit share.
     ctx = _ctx(Path("/tmp"))
     config = i2pd_service_setup._render_config(
         ctx.config.i2pd_service_setup
     )
     assert "loglevel = warn\n" in config
+    assert "bandwidth = 12500\n" in config
+    assert "share = 1\n" in config
     assert (
         f"tunconf = {ctx.config.i2pd_service_setup.tunnels_config_path}\n"
         in config

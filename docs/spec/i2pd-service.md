@@ -80,6 +80,10 @@ The package installs the unit with a dedicated system user and a data directory;
 
 The target state is reached when the installed version equals the newest release tag, the configuration file matches the rendered template, the tunnels file matches its render, the tunnel keys file exists, the saved address file matches the current address and the service is enabled and active; the task then returns done with changed=False. A missing keys file keeps the task active: it restarts the service so i2pd regenerates the identity, and never reinstalls a matching version. A missing or stale address file also keeps the task active: it writes the file and never reinstalls or restarts a matching, active installation. Force mode rewrites the configurations and restarts the service, but never reinstalls a matching version. The download directory holds only the files of an interrupted install: the package is removed after a successful install, so the directory never accumulates old versions.
 
+## Traffic limit
+
+The router traffic is limited by two parameters rendered into the main configuration file. bandwidth is the total bandwidth limit of the router in kilobytes per second; the configured value 12500 maps to a 100 Mbit/s link, because 100 Mbit/s is 12500000 bytes per second and one kilobyte is 1000 bytes. share is the percentage of that bandwidth used for transit traffic; the configured value 1 means one percent. The transit limit therefore is bandwidth times share divided by 100, so the configured values yield 12500 times 1 divided by 100, that is 125 kilobytes per second, which is the most the router relays for foreign tunnels while the other 99 percent stays for its own traffic.
+
 ## Parameters
 
 All parameters live in the [i2pd_service_setup] table of the config/ directory.

@@ -121,6 +121,8 @@ download_dir = "/var/lib/pyntara/i2pd-download"
 service_unit_name = "i2pd.service"
 config_path = "/etc/i2pd/i2pd.conf"
 log_level = "warn"
+bandwidth = 12500
+share = 1
 http_enabled = false
 socks_proxy_enabled = true
 install_retries = 3
@@ -545,6 +547,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.i2pd_service_setup.service_unit_name == "i2pd.service"
     assert config.i2pd_service_setup.config_path == Path("/etc/i2pd/i2pd.conf")
     assert config.i2pd_service_setup.log_level == "warn"
+    assert config.i2pd_service_setup.bandwidth == 12500
+    assert config.i2pd_service_setup.share == 1
     assert config.i2pd_service_setup.http_enabled is False
     assert config.i2pd_service_setup.socks_proxy_enabled is True
     assert config.i2pd_service_setup.install_retries == 3

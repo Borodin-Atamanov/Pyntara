@@ -96,6 +96,8 @@ def base_config() -> str:
         'service_unit_name = "i2pd.service"\n'
         'config_path = "/etc/i2pd/i2pd.conf"\n'
         'log_level = "warn"\n'
+        "bandwidth = 12500\n"
+        "share = 1\n"
         "http_enabled = false\n"
         "socks_proxy_enabled = true\n"
         "install_retries = 3\n"

@@ -13,6 +13,12 @@ service_unit_name = "i2pd.service"
 config_path = "/etc/i2pd/i2pd.conf"
 # i2pd log verbosity: debug, info, warn, error or none.
 log_level = "warn"
+# Total router bandwidth limit in kilobytes per second; 100 Mbit/s is
+# 12500 KB/s. The limit applies to both directions combined.
+bandwidth = 12500
+# Percentage of the router bandwidth shared for transit traffic; 1 means
+# one percent, so the transit limit is bandwidth * share / 100.
+share = 1
 # Whether the web console is enabled (http.enabled of i2pd.conf).
 http_enabled = false
 # Whether the SOCKS proxy is enabled (socksproxy.enabled of i2pd.conf).

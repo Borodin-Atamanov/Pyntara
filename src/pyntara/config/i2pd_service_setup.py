@@ -26,8 +26,11 @@ class I2pdServiceSetupConfig:
     config_path is the main configuration file the task writes, and it must
     match the --conf path of the package unit, otherwise the changes are
     ignored; log_level is the i2pd verbosity from I2PD_LOG_LEVELS;
-    http_enabled and socks_proxy_enabled toggle the web console and the
-    SOCKS proxy in the rendered configuration; install_retries is the
+    bandwidth is the total router bandwidth limit in kilobytes per second
+    and share is the percentage of that bandwidth used for transit
+    traffic; http_enabled and socks_proxy_enabled toggle the web console
+    and the SOCKS proxy in the rendered configuration; install_retries is
+    the
     retry count of the package install, so the total attempts are retries
     plus one; start_check_attempts and start_check_retry_delay_seconds
     bound the loop that waits for the service to become active after a
@@ -52,6 +55,8 @@ class I2pdServiceSetupConfig:
     service_unit_name: str
     config_path: Path
     log_level: str
+    bandwidth: int
+    share: int
     http_enabled: bool
     socks_proxy_enabled: bool
     install_retries: int
@@ -70,8 +75,10 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
 
     github_repo, download_dir, service_unit_name and config_path are
     non-empty strings; log_level is one of the I2PD_LOG_LEVELS values;
-    http_enabled and socks_proxy_enabled are strict booleans;
-    install_retries and start_check_attempts are positive integers;
+    bandwidth is a positive integer in kilobytes per second and share is
+    an integer percentage between 0 and 100; http_enabled and
+    socks_proxy_enabled are strict booleans; install_retries and
+    start_check_attempts are positive integers;
     start_check_retry_delay_seconds is positive, so the readiness loop
     always waits between attempts. tunnels_config_path and
     tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
@@ -102,6 +109,16 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         raise ConfigError(
             "i2pd_service_setup.log_level must be one of "
             + ", ".join(I2PD_LOG_LEVELS)
+        )
+    bandwidth = _int_field(
+        raw.get("bandwidth"), "i2pd_service_setup.bandwidth"
+    )
+    if bandwidth < 1:
+        raise ConfigError("i2pd_service_setup.bandwidth must be positive")
+    share = _int_field(raw.get("share"), "i2pd_service_setup.share")
+    if share < 0 or share > 100:
+        raise ConfigError(
+            "i2pd_service_setup.share must be between 0 and 100"
         )
     http_enabled = raw.get("http_enabled")
     if not isinstance(http_enabled, bool):
@@ -161,6 +178,8 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         service_unit_name=service_unit_name,
         config_path=config_path,
         log_level=log_level,
+        bandwidth=bandwidth,
+        share=share,
         http_enabled=http_enabled,
         socks_proxy_enabled=socks_proxy_enabled,
         install_retries=install_retries,
