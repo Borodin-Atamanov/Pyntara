@@ -171,6 +171,9 @@ install_dir = "/usr/local/x-ui"
 service_unit_name = "x-ui.service"
 start_check_attempts = 10
 start_check_retry_delay_seconds = 1
+install_result_env_path = "/etc/x-ui/install-result.env"
+panel_http_address = "127.0.0.1"
+vault_entry_title = "three_x_ui_credentials"
 
 [tor_setup]
 package_name = "tor"
@@ -323,6 +326,10 @@ notes = "Telegram bot token for System Metrics."
 [[vault_structure.entries]]
 title = "google_script_key"
 notes = "Google Drive web app credentials for System Metrics."
+
+[[vault_structure.entries]]
+title = "three_x_ui_credentials"
+notes = "3x-ui panel credentials on this machine."
 
 [dnsproxy_setup]
 github_repo = "AdguardTeam/dnsproxy"
@@ -786,6 +793,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.vault_structure.entries[1].title == "pyntara_local_vault_password"
     assert config.vault_structure.entries[2].title == "telegram_bot_token"
     assert config.vault_structure.entries[3].title == "google_script_key"
+    assert config.vault_structure.entries[4].title == "three_x_ui_credentials"
     assert config.tasks[0].name == "add_extra_repos"
     assert config.tasks[0].description == "Enable extra Ubuntu archive components."
     assert config.tasks[0].depends == ()

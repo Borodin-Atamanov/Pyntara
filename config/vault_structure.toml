@@ -25,6 +25,10 @@ notes = "Password that protects the runtime secret vault at /var/lib/pyntara/sec
 title = "google_script_key"
 notes = "Credentials of the System Metrics Google Drive web app. The username field carries the Apps Script project script ID, the url field carries the web app deployment endpoint (from which the deployment ID is derived), the password field carries the shared auth key that the deployed script mirrors into its ALLOWED_KEYS list. Consumed by the Google script deploy helper and by the System Metrics client. The default vault carries well-known test values mirroring its well-known vault password."
 
+[[vault_structure.entries]]
+title = "three_x_ui_credentials"
+notes = "Credentials of the 3x-ui Xray panel on this machine. The username field carries the panel admin username, the password field carries the panel admin password, the url field carries the panel base URL (http://127.0.0.1:PORT/BASE_PATH). Additional values are stored in the notes field as key=value lines: XUI_PANEL_PORT, XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE. Consumed by the three_x_ui_xray_setup task stage 2, which reads the credentials from /etc/x-ui/install-result.env and writes them into this entry on first run."
+
 [[vault_structure.groups]]
 title = "NextDNS"
 notes = "NextDNS profile accounts, one entry per profile. The username field holds the 6-hex profile ID, the title pairs the ID with a proquint name, other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the accounts survive every vault regeneration. Consumed by the nextdns_setup_system_wide task, which derives one profile per machine hostname."

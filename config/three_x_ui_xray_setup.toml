@@ -17,3 +17,12 @@ service_unit_name = "x-ui.service"
 start_check_attempts = 10
 # Pause in seconds between two readiness checks.
 start_check_retry_delay_seconds = 1
+# Path to the install-result.env file the panel writes on first start.
+# Stage 2 reads the generated credentials from this file.
+install_result_env_path = "/etc/x-ui/install-result.env"
+# HTTP address of the panel for REST API calls. 127.0.0.1 is the local
+# machine; the panel listens on localhost and on the public interface.
+panel_http_address = "127.0.0.1"
+# Title of the runtime vault entry that stores the panel credentials.
+# The entry must exist in the [vault_structure] table.
+vault_entry_title = "three_x_ui_credentials"

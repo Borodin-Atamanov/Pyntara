@@ -1,6 +1,6 @@
 # 3x-ui Xray panel
 
-There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Those are stage 2 (panel API control) and stage 3 (universal server inbound) and are documented in the TODO.
+There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 (universal server inbound) is documented in the TODO.
 
 ## Installation mechanism
 
@@ -24,11 +24,21 @@ When the version differs, the service is disabled or inactive, or the task is fo
 
 ## Credentials boundary
 
-Stage 1 sets no username, password, port or webBasePath and does not read them. On the first start the panel generates its own random credentials and API token and writes them into /etc/x-ui/install-result.env (mode 600, root). This file is the handoff to stage 2, which logs in through the panel API and stores the credentials in the project vault. On a rerun of the official installer against a panel whose credentials are no longer the defaults, the installer preserves them; only a panel still using default credentials is given fresh random credentials.
+Stage 1 sets no username, password, port or webBasePath and does not read them. On the first start the panel generates its own random credentials and API token and writes them into /etc/x-ui/install-result.env (mode 600, root). This file is the handoff to stage 2, which logs in through the panel API and stores the credentials in the runtime vault. On a rerun of the official installer against a panel whose credentials are no longer the defaults, the installer preserves them; only a panel still using default credentials is given fresh random credentials.
 
 ## Service lifecycle
 
 The systemd unit is created by the official installer; the task never renders or writes it. After the installer completes, the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts. A unit that stays inactive after the loop is a task error.
+
+## Stage 2: credential capture and vault storage
+
+After the installer finishes (or when the target state is already reached on a rerun), the task runs stage 2: it reads the install-result.env file, builds the panel base URL from the address, port and webBasePath, performs a CSRF-protected login (GET /csrf-token, POST /login with X-CSRF-Token header and form-encoded username and password, then GET /panel/api/inbounds/list to verify the session), and stores the credentials in the runtime vault.
+
+The vault entry is named by vault_entry_title in the task config (three_x_ui_credentials by default). The username field carries the panel admin username, the password field carries the panel admin password, the url field carries the panel base URL (http://127.0.0.1:PORT/BASE_PATH). The notes field carries the additional values as key=value lines: XUI_PANEL_PORT, XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE.
+
+When the vault entry already exists and its values match the current credentials, stage 2 does nothing (changed=False). When the values differ (a panel reinstall changed the credentials), the entry is updated. When the install-result.env file is absent or the panel is unreachable, stage 2 returns a warning but does not fail the task, so a rerun after the panel starts will capture the credentials.
+
+The runtime vault must exist before stage 2 runs; the local_vault_setup task, which runs earlier in the default task set, creates it. When the runtime vault is unavailable, stage 2 returns a warning and the credentials are not stored.
 
 ## Limitations of stage 1
 

@@ -131,6 +131,17 @@ def load_config(path: Path) -> Config:
             "system_metrics_setup.google_script_key_entry_title must name an "
             "entry of the [vault_structure] table"
         )
+    three_x_ui = data.get("three_x_ui_xray_setup")
+    if isinstance(three_x_ui, dict):
+        vault_entry_title = three_x_ui.get("vault_entry_title")
+        if vault_entry_title is not None and not any(
+            entry.title == vault_entry_title
+            for entry in vault_structure.entries
+        ):
+            raise ConfigError(
+                "three_x_ui_xray_setup.vault_entry_title must name an entry "
+                "of the [vault_structure] table"
+            )
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),

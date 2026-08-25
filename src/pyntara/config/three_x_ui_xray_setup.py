@@ -20,7 +20,11 @@ class ThreeXuiXraySetupConfig:
     service_unit_name is the systemd unit the official installer creates
     and the task checks for enabled and active; start_check_attempts and
     start_check_retry_delay_seconds form the readiness loop that waits
-    for the service to become active after an install.
+    for the service to become active after an install. Stage 2 fields:
+    install_result_env_path is the file the panel writes on first start
+    with the generated credentials; panel_http_address is the host for
+    REST API calls; vault_entry_title names the runtime vault entry
+    where the credentials are stored.
     """
 
     github_repo: str
@@ -29,13 +33,17 @@ class ThreeXuiXraySetupConfig:
     service_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: int
+    install_result_env_path: Path
+    panel_http_address: str
+    vault_entry_title: str
 
 
 def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     """Validate the [three_x_ui_xray_setup] table and build the config.
 
-    github_repo, install_script_url, install_dir and service_unit_name
-    are non-empty strings; start_check_attempts is positive and
+    github_repo, install_script_url, install_dir, service_unit_name,
+    install_result_env_path, panel_http_address and vault_entry_title are
+    non-empty strings; start_check_attempts is positive and
     start_check_retry_delay_seconds is non-negative.
     """
 
@@ -76,6 +84,20 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.start_check_retry_delay_seconds "
             "must not be negative"
         )
+    install_result_env_path = Path(
+        _nonempty_string_field(
+            raw.get("install_result_env_path"),
+            "three_x_ui_xray_setup.install_result_env_path",
+        )
+    )
+    panel_http_address = _nonempty_string_field(
+        raw.get("panel_http_address"),
+        "three_x_ui_xray_setup.panel_http_address",
+    )
+    vault_entry_title = _nonempty_string_field(
+        raw.get("vault_entry_title"),
+        "three_x_ui_xray_setup.vault_entry_title",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -83,4 +105,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         service_unit_name=service_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        install_result_env_path=install_result_env_path,
+        panel_http_address=panel_http_address,
+        vault_entry_title=vault_entry_title,
     )

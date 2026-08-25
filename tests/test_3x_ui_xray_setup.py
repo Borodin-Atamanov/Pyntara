@@ -5,7 +5,8 @@ monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md). The task wraps the official installer,
 so the tests fake the GitHub releases API and the subprocess calls and
 record the commands, verifying that the installer is invoked only when
-the target state is not already reached.
+the target state is not already reached. Stage 2 dependencies (panel
+REST API, runtime vault) are also mocked.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import importlib
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -30,6 +32,51 @@ def _release_json(tag: str = TAG) -> str:
     """The GitHub releases API payload used by the curl fake."""
 
     return json.dumps({"tag_name": f"v{tag}", "assets": []})
+
+
+def _stage2_fake(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    login_ok: bool = True,
+    vault_ok: bool = True,
+) -> None:
+    """Mock stage 2 dependencies: panel API and runtime vault.
+
+    Creates a fake install-result.env in tmp_path, mocks the panel
+    client to return login_ok, and mocks the runtime vault opener to
+    return a fake PyKeePass when vault_ok is True.
+    """
+
+    # Create a fake install-result.env in the tmp_path location.
+    env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text(
+        "XUI_USERNAME=admin\n"
+        "XUI_PASSWORD=secret\n"
+        "XUI_PANEL_PORT=3579\n"
+        "XUI_WEB_BASE_PATH=/xui\n"
+        "XUI_API_TOKEN=tok123\n"
+        "XUI_DB_TYPE=sqlite\n",
+        encoding="utf-8",
+    )
+
+    # Mock the panel client.
+    monkeypatch.setattr(
+        "pyntara.xui.login_and_verify",
+        lambda _cfg, _env, _timeout: login_ok,
+    )
+
+    # Mock the runtime vault opener.
+    if vault_ok:
+        fake_kp = Mock()
+        fake_kp.find_entries.return_value = None
+        fake_kp.root_group = Mock()
+        fake_kp.add_entry = Mock()
+        fake_kp.save = Mock()
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
+    else:
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: None)
 
 
 def _ctx(
@@ -54,6 +101,7 @@ def _ctx(
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_start_check_attempts=check_attempts,
             three_x_ui_start_check_retry_delay_seconds=retry_delay,
+            three_x_ui_install_result_env_path=tmp_path / "etc" / "x-ui" / "install-result.env",
         ),
     )
 
@@ -125,7 +173,8 @@ def test_already_configured_does_not_run_installer(
 ) -> None:
     # The installed version equals the newest release and the service is
     # enabled and active: the task returns done with changed=False and
-    # never invokes the official installer.
+    # never invokes the official installer. Stage 2 runs and succeeds.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
@@ -146,7 +195,8 @@ def test_installs_when_absent(
 ) -> None:
     # 3x-ui is not installed and the service is not enabled or active:
     # the task downloads the official installer, runs it non-interactively
-    # and waits for the service to become active.
+    # and waits for the service to become active. Stage 2 runs after.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
@@ -167,7 +217,8 @@ def test_installs_new_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # An older release is installed: the task runs the installer and
-    # waits for the service to become active again.
+    # waits for the service to become active again. Stage 2 runs after.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
@@ -188,6 +239,8 @@ def test_restarts_inactive_service(
 ) -> None:
     # The same version is installed but the service is inactive: the
     # target state is not reached, so the installer runs to bring it up.
+    # Stage 2 runs after.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
@@ -207,7 +260,8 @@ def test_force_runs_installer_when_already_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Force mode reruns the installer even when the same version is
-    # installed and the service is enabled and active.
+    # installed and the service is enabled and active. Stage 2 runs after.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, force=True)
     calls = _install_fake(
         monkeypatch,
@@ -228,6 +282,8 @@ def test_installer_failure_reports_error(
 ) -> None:
     # The official installer exits nonzero: the task reports the failure
     # as an error result, which the runner converts to a warning.
+    # Stage 2 is not reached because the installer failed.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
@@ -247,7 +303,8 @@ def test_service_never_active_reports_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The installer ran but the service never becomes active within the
-    # readiness loop: the task reports an error.
+    # readiness loop: the task reports an error. Stage 2 is not reached.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, check_attempts=1)
     calls = _install_fake(
         monkeypatch,
@@ -267,7 +324,8 @@ def test_release_json_failure_reports_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The GitHub releases API is unreachable: the task reports the
-    # failure without ever running the installer.
+    # failure without ever running the installer. Stage 2 is not reached.
+    _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -280,3 +338,47 @@ def test_release_json_failure_reports_error(
     result = xui.task(ctx)
     assert result.success is False
     assert "cannot fetch" in (result.error or "")
+
+
+def test_stage2_login_failure_reports_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The installer succeeded but stage 2 login fails: the task returns
+    # success with warnings.
+    _stage2_fake(monkeypatch, tmp_path, login_ok=False)
+    ctx = _ctx(tmp_path)
+    _install_fake(
+        monkeypatch,
+        install_dir=tmp_path / "usr" / "local" / "x-ui",
+        installed_version=None,
+        enabled=False,
+        active=False,
+        active_becomes=True,
+    )
+    result = xui.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings is not None
+    assert any("login failed" in w for w in result.warnings)
+
+
+def test_stage2_vault_unavailable_reports_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The installer and login succeeded but the runtime vault is
+    # unavailable: the task returns success with warnings.
+    _stage2_fake(monkeypatch, tmp_path, vault_ok=False)
+    ctx = _ctx(tmp_path)
+    _install_fake(
+        monkeypatch,
+        install_dir=tmp_path / "usr" / "local" / "x-ui",
+        installed_version=None,
+        enabled=False,
+        active=False,
+        active_becomes=True,
+    )
+    result = xui.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings is not None
+    assert any("vault unavailable" in w for w in result.warnings)

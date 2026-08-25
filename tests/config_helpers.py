@@ -143,6 +143,9 @@ def base_config() -> str:
         'service_unit_name = "x-ui.service"\n'
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"
+        'install_result_env_path = "/etc/x-ui/install-result.env"\n'
+        'panel_http_address = "127.0.0.1"\n'
+        'vault_entry_title = "three_x_ui_credentials"\n'
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'
@@ -284,6 +287,8 @@ def base_config() -> str:
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
         '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
         'notes = "Google script credentials."\n'
+        '[[vault_structure.entries]]\ntitle = "three_x_ui_credentials"\n'
+        'notes = "3x-ui panel credentials."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'
