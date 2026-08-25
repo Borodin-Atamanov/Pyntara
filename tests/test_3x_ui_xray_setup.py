@@ -40,12 +40,19 @@ def _stage2_fake(
     *,
     login_ok: bool = True,
     vault_ok: bool = True,
+    inbound_exists: bool = False,
+    create_inbound_ok: bool = True,
+    keygen_ok: bool = True,
 ) -> None:
-    """Mock stage 2 dependencies: panel API and runtime vault.
+    """Mock stage 2 and stage 3 dependencies: panel API and runtime vault.
 
     Creates a fake install-result.env in tmp_path, mocks the panel
     client to return login_ok, and mocks the runtime vault opener to
-    return a fake PyKeePass when vault_ok is True.
+    return a fake PyKeePass when vault_ok is True. Stage 3 mocks:
+    inbound_exists controls whether find_inbound_by_port returns an
+    existing inbound; create_inbound_ok controls whether create_inbound
+    succeeds; keygen_ok controls whether generate_reality_key returns a
+    keypair.
     """
 
     # Create a fake install-result.env in the tmp_path location.
@@ -61,10 +68,38 @@ def _stage2_fake(
         encoding="utf-8",
     )
 
-    # Mock the panel client.
+    # Mock the panel client for stage 2.
     monkeypatch.setattr(
         "pyntara.xui.login_and_verify",
         lambda _cfg, _env, _timeout: login_ok,
+    )
+
+    # Mock stage 3 API functions.
+    if inbound_exists:
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port",
+            lambda _cfg, _env, _port, _timeout: {"id": 1, "port": _port, "protocol": "vless"},
+        )
+    else:
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port",
+            lambda _cfg, _env, _port, _timeout: None,
+        )
+
+    if keygen_ok:
+        monkeypatch.setattr(
+            "pyntara.xui.generate_reality_key",
+            lambda _cfg, _env, _timeout: ("priv123", "pub123"),
+        )
+    else:
+        monkeypatch.setattr(
+            "pyntara.xui.generate_reality_key",
+            lambda _cfg, _env, _timeout: None,
+        )
+
+    monkeypatch.setattr(
+        "pyntara.xui.create_inbound",
+        lambda _cfg, _env, _payload, _timeout: (create_inbound_ok, "inbound created"),
     )
 
     # Mock the runtime vault opener.
@@ -185,7 +220,7 @@ def test_already_configured_does_not_run_installer(
     )
     result = xui.task(ctx)
     assert result.success is True
-    assert result.changed is False
+    assert result.changed is True  # stage 3 created inbound
     assert result.message == "already configured"
     assert not any(call[0] == "bash" for call in calls)
 
@@ -382,3 +417,81 @@ def test_stage2_vault_unavailable_reports_warning(
     assert result.changed is True
     assert result.warnings is not None
     assert any("vault unavailable" in w for w in result.warnings)
+
+
+class TestStage3:
+    """Tests for stage 3: universal server inbound creation."""
+
+    def test_creates_inbound_on_first_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # No inbound exists on the configured port: stage 3 generates a
+        # keypair and creates the inbound.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=False)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True  # stage 3 created inbound
+
+    def test_skips_when_inbound_exists(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # An inbound on the configured port already exists: stage 3 does
+        # nothing.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is False
+
+    def test_reports_keygen_failure(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Key generation fails: stage 3 returns a warning.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=False, keygen_ok=False)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.warnings is not None
+        assert any("REALITY keypair" in w for w in result.warnings)
+
+    def test_reports_create_failure(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Inbound creation fails: stage 3 returns a warning.
+        _stage2_fake(
+            monkeypatch, tmp_path, inbound_exists=False, create_inbound_ok=False
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.warnings is not None
+        assert any("creation failed" in w for w in result.warnings)

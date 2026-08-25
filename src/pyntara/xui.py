@@ -5,10 +5,11 @@ reading the install-result.env file the panel writes on first start,
 building the panel base URL, performing a CSRF-protected login and
 verifying the session. Stage 2 of the three_x_ui_xray_setup task uses
 these functions to check that the panel is reachable and the credentials
-are valid before storing them in the runtime vault; stage 3 will reuse
-the same helpers for inbound management. The functions are stateless
-and take the config and timeout as parameters, so they are testable
-without a running panel.
+are valid before storing them in the runtime vault. Stage 3 uses the
+Bearer-token API helpers (list_inbounds, find_inbound_by_port,
+create_inbound, generate_reality_key, build_vless_reality_payload) for
+inbound management. The functions are stateless and take the config and
+timeout as parameters, so they are testable without a running panel.
 """
 
 from __future__ import annotations
@@ -217,3 +218,200 @@ def verify_bearer(
         timeout=timeout,
     )
     return status == 200 and _json_success(body)
+
+
+def _bearer_opener(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+) -> tuple[str, urllib.request.OpenerDirector]:
+    """Build the panel base URL and an opener with Bearer auth headers.
+
+    Returns (base_url, opener) for use by stage 3 API calls. The opener
+    carries no cookie jar because Bearer-token calls do not need session
+    cookies.
+    """
+
+    base_url = build_panel_url(
+        cfg.panel_http_address,
+        env.get("XUI_PANEL_PORT", ""),
+        env.get("XUI_WEB_BASE_PATH"),
+    )
+    opener = urllib.request.build_opener()
+    return base_url, opener
+
+
+def _bearer_headers(env: dict[str, str]) -> dict[str, str]:
+    """Common headers for Bearer-authenticated API calls."""
+
+    return {
+        "Authorization": f"Bearer {env.get('XUI_API_TOKEN', '')}",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+
+def list_inbounds(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> list[dict[str, object]]:
+    """List every inbound owned by the authenticated user.
+
+    Returns the obj array from the response. Returns an empty list on
+    failure (unreachable panel, bad token, unexpected response shape).
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/list",
+        headers=_bearer_headers(env),
+        timeout=timeout,
+    )
+    if status != 200:
+        return []
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+    obj = data.get("obj")
+    if not isinstance(obj, list):
+        return []
+    return obj
+
+
+def find_inbound_by_port(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    port: int,
+    timeout: float,
+) -> dict[str, object] | None:
+    """Find an inbound by its port number.
+
+    Returns the first inbound dict whose port matches, or None when no
+    inbound uses the given port.
+    """
+
+    inbounds = list_inbounds(cfg, env, timeout)
+    for inbound in inbounds:
+        if isinstance(inbound, dict) and inbound.get("port") == port:
+            return inbound
+    return None
+
+
+def create_inbound(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    payload: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Create a new inbound through the panel API.
+
+    Returns (success, message). On success the message is the response
+    msg field. On failure the message describes the error (port conflict,
+    unreachable panel, etc.).
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    data = json.dumps(payload).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/json"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/add",
+        data=data,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    if status == 0:
+        return False, "panel unreachable"
+    try:
+        resp = json.loads(body)
+    except json.JSONDecodeError:
+        return False, f"unexpected response (HTTP {status})"
+    if not isinstance(resp, dict):
+        return False, f"unexpected response (HTTP {status})"
+    msg = resp.get("msg", "")
+    if resp.get("success"):
+        return True, msg or "inbound created"
+    return False, msg or "unknown error"
+
+
+def generate_reality_key(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> tuple[str, str] | None:
+    """Generate a new X25519 keypair for Reality through the panel API.
+
+    Returns (private_key, public_key) on success, or None on failure.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/server/getNewX25519Cert",
+        headers=_bearer_headers(env),
+        timeout=timeout,
+    )
+    if status != 200:
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    obj = data.get("obj")
+    if not isinstance(obj, dict):
+        return None
+    private_key = obj.get("privateKey", "")
+    public_key = obj.get("publicKey", "")
+    if not private_key or not public_key:
+        return None
+    return (private_key, public_key)
+
+
+def build_vless_reality_payload(
+    port: int,
+    remark: str,
+    dest: str,
+    server_names: tuple[str, ...],
+    private_key: str,
+    short_id: str,
+) -> dict[str, object]:
+    """Build the JSON payload for creating a VLESS+REALITY inbound.
+
+    settings, streamSettings and sniffing are returned as nested JSON
+    objects (the preferred format for the panel API). The payload is
+    ready to be serialised and sent to /panel/api/inbounds/add.
+    """
+
+    return {
+        "remark": remark,
+        "port": port,
+        "protocol": "vless",
+        "settings": {
+            "clients": [],
+            "decryption": "none",
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "show": False,
+                "xver": 0,
+                "dest": dest,
+                "serverNames": list(server_names),
+                "privateKey": private_key,
+                "shortIds": [short_id],
+            },
+        },
+        "sniffing": {
+            "enabled": True,
+            "destOverride": ["http", "tls"],
+        },
+        "enable": True,
+    }

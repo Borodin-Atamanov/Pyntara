@@ -174,6 +174,11 @@ start_check_retry_delay_seconds = 1
 install_result_env_path = "/etc/x-ui/install-result.env"
 panel_http_address = "127.0.0.1"
 vault_entry_title = "three_x_ui_credentials"
+inbound_port = 443
+inbound_remark = "universal"
+reality_dest = "www.google.com:443"
+reality_server_names = ["www.google.com"]
+reality_short_id = "6ba85179e30d4fc2"
 
 [tor_setup]
 package_name = "tor"

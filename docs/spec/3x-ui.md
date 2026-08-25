@@ -40,6 +40,46 @@ When the vault entry already exists and its values match the current credentials
 
 The runtime vault must exist before stage 2 runs; the local_vault_setup task, which runs earlier in the default task set, creates it. When the runtime vault is unavailable, stage 2 returns a warning and the credentials are not stored.
 
-## Limitations of stage 1
+## Stage 3: universal server inbound
 
-Stage 1 verifies only that the panel binary is installed, the version matches and the service is active. It does not verify that the panel answers over HTTP, because that requires the credentials and the API login, which are stage 2. A service that reports active but fails to serve is not detected on stage 1; stage 2 will catch it through the session check.
+After stage 2 completes, the task runs stage 3: it creates a VLESS inbound with REALITY on the port configured in `inbound_port` through the panel Bearer-token API. On a rerun it finds the existing inbound by port and returns done without creating a duplicate.
+
+The REALITY keypair is generated through the panel's built-in endpoint `GET /panel/api/server/getNewX25519Cert`, which returns both the private and public X25519 keys. The private key is required for the inbound configuration; the public key is stored alongside it in the vault entry notes for client configuration.
+
+### API authentication
+
+Stage 3 uses the Bearer token from `install-result.env` (`XUI_API_TOKEN`) for all API calls. The Bearer token authenticates every `/panel/api/*` endpoint without needing a CSRF token or session cookie, as documented by the panel: "Bearer-token callers can skip this — the middleware short-circuits CSRF for authenticated API requests."
+
+### Inbound payload
+
+The inbound is created with nested JSON objects for `settings`, `streamSettings` and `sniffing` (the preferred format). The payload structure:
+
+- `protocol`: `"vless"`
+- `port`: from `inbound_port` config
+- `remark`: from `inbound_remark` config
+- `settings`: `{"clients": [], "decryption": "none"}`
+- `streamSettings`: `{"network": "tcp", "security": "reality", "realitySettings": {"show": false, "xver": 0, "dest": "<reality_dest>", "serverNames": ["<reality_server_names>"], "privateKey": "<generated>", "shortIds": ["<reality_short_id>"]}}`
+- `sniffing`: `{"enabled": true, "destOverride": ["http", "tls"]}`
+- `enable`: `true`
+
+### Idempotency
+
+Before creating, the task calls `GET /panel/api/inbounds/list` and searches for an inbound whose `port` matches the configured `inbound_port`. When found, stage 3 returns immediately with `changed=False`. When not found, it generates a keypair, creates the inbound, and appends the REALITY keys to the vault entry notes.
+
+### Key storage
+
+The generated private and public keys are appended to the existing vault entry notes as `REALITY_PRIVATE_KEY=<value>` and `REALITY_PUBLIC_KEY=<value>` on separate lines. When the vault is unavailable, the inbound is still created but the keys are not persisted (a warning is returned).
+
+### Config reference
+
+New fields in the `[three_x_ui_xray_setup]` table:
+
+- `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.
+- `inbound_remark` (string, optional, default `"universal"`): Display label for the inbound in the panel.
+- `reality_dest` (string, optional, default `"www.google.com:443"`): Destination address and port for REALITY TLS handshake mimicry.
+- `reality_server_names` (array of strings, optional, default `["www.google.com"]`): ServerNames the REALITY handshake presents.
+- `reality_short_id` (string, optional, default `"6ba85179e30d4fc2"`): Short ID for REALITY. Must be a hex string.
+
+### Limitations
+
+Stage 3 does not add any clients to the inbound — the `clients` array is created empty. Client management is outside the scope of this stage. The inbound is created with `enable: true` and starts accepting connections immediately after the panel applies the configuration.

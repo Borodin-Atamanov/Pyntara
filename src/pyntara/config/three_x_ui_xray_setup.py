@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._fields import ConfigError, _int_field, _nonempty_string_field
+from ._fields import ConfigError, _int_field, _nonempty_string_field, _string_list
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,11 @@ class ThreeXuiXraySetupConfig:
     install_result_env_path: Path
     panel_http_address: str
     vault_entry_title: str
+    inbound_port: int
+    inbound_remark: str
+    reality_dest: str
+    reality_server_names: tuple[str, ...]
+    reality_short_id: str
 
 
 def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
@@ -98,6 +103,30 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("vault_entry_title"),
         "three_x_ui_xray_setup.vault_entry_title",
     )
+    inbound_port = _int_field(
+        raw.get("inbound_port"),
+        "three_x_ui_xray_setup.inbound_port",
+    )
+    if inbound_port < 1 or inbound_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.inbound_port must be between 1 and 65535"
+        )
+    inbound_remark = _nonempty_string_field(
+        raw.get("inbound_remark"),
+        "three_x_ui_xray_setup.inbound_remark",
+    )
+    reality_dest = _nonempty_string_field(
+        raw.get("reality_dest"),
+        "three_x_ui_xray_setup.reality_dest",
+    )
+    reality_server_names = _string_list(
+        raw.get("reality_server_names"),
+        "three_x_ui_xray_setup.reality_server_names",
+    )
+    reality_short_id = _nonempty_string_field(
+        raw.get("reality_short_id"),
+        "three_x_ui_xray_setup.reality_short_id",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -108,4 +137,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         install_result_env_path=install_result_env_path,
         panel_http_address=panel_http_address,
         vault_entry_title=vault_entry_title,
+        inbound_port=inbound_port,
+        inbound_remark=inbound_remark,
+        reality_dest=reality_dest,
+        reality_server_names=reality_server_names,
+        reality_short_id=reality_short_id,
     )

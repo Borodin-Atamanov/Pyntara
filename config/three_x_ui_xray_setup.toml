@@ -26,3 +26,15 @@ panel_http_address = "127.0.0.1"
 # Title of the runtime vault entry that stores the panel credentials.
 # The entry must exist in the [vault_structure] table.
 vault_entry_title = "three_x_ui_credentials"
+# Stage 3: universal server inbound parameters.
+# Port for the VLESS+REALITY inbound. Required.
+inbound_port = 443
+# Remark for the inbound. Optional, default "universal".
+inbound_remark = "universal"
+# REALITY destination address:port for TLS handshake mimicry.
+# Optional, default "www.google.com:443".
+reality_dest = "www.google.com:443"
+# REALITY serverNames list. Optional, default ["www.google.com"].
+reality_server_names = ["www.google.com"]
+# REALITY shortIds entry. Optional, default is a random 8-hex-char string.
+reality_short_id = "6ba85179e30d4fc2"

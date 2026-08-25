@@ -30,6 +30,11 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "install_result_env_path": Path("/etc/x-ui/install-result.env"),
         "panel_http_address": "127.0.0.1",
         "vault_entry_title": "three_x_ui_credentials",
+        "inbound_port": 443,
+        "inbound_remark": "universal",
+        "reality_dest": "www.google.com:443",
+        "reality_server_names": ("www.google.com",),
+        "reality_short_id": "6ba85179e30d4fc2",
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]
@@ -208,3 +213,235 @@ class TestVerifyBearer:
         cfg = _cfg()
         env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
         assert xui_client.verify_bearer(cfg, env, 5) is False
+
+
+class TestListInbounds:
+    """Tests for list_inbounds."""
+
+    def _mock_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        ok: bool = True,
+    ) -> None:
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener, url, kwargs
+            if ok:
+                return (200, json.dumps({"success": True, "obj": [{"id": 1, "port": 443}]}))
+            return (200, json.dumps({"success": False}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+
+    def test_returns_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._mock_request(monkeypatch, ok=True)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.list_inbounds(cfg, env, 5)
+        assert len(result) == 1
+        assert result[0]["port"] == 443
+
+    def test_returns_empty_on_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(monkeypatch, ok=False)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.list_inbounds(cfg, env, 5)
+        assert result == []
+
+
+class TestFindInboundByPort:
+    """Tests for find_inbound_by_port."""
+
+    def _mock_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        inbounds: list[dict[str, object]] | None = None,
+    ) -> None:
+        if inbounds is None:
+            inbounds = [{"id": 1, "port": 443}, {"id": 2, "port": 80}]
+
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener, url, kwargs
+            return (200, json.dumps({"success": True, "obj": inbounds}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+
+    def test_finds_by_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._mock_request(monkeypatch)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.find_inbound_by_port(cfg, env, 443, 5)
+        assert result is not None
+        assert result["id"] == 1
+
+    def test_returns_none_when_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(monkeypatch)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.find_inbound_by_port(cfg, env, 9999, 5)
+        assert result is None
+
+
+class TestCreateInbound:
+    """Tests for create_inbound."""
+
+    def _mock_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        success: bool = True,
+        msg: str = "inbound created",
+        status: int = 200,
+    ) -> None:
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener, url, kwargs
+            return (status, json.dumps({"success": success, "msg": msg}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+
+    def test_creates_successfully(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._mock_request(monkeypatch, success=True)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        payload = {"remark": "test", "port": 443, "protocol": "vless"}
+        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        assert ok is True
+        assert "created" in msg
+
+    def test_rejects_duplicate_port(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(
+            monkeypatch,
+            success=False,
+            msg="port 443 already used by inbound 'test' (#1)",
+        )
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        payload = {"remark": "test", "port": 443, "protocol": "vless"}
+        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        assert ok is False
+        assert "already used" in msg
+
+    def test_handles_unreachable_panel(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(monkeypatch, status=0)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        payload = {"remark": "test", "port": 443, "protocol": "vless"}
+        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        assert ok is False
+        assert "unreachable" in msg
+
+
+class TestGenerateRealityKey:
+    """Tests for generate_reality_key."""
+
+    def _mock_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        ok: bool = True,
+    ) -> None:
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener, url, kwargs
+            if ok:
+                return (
+                    200,
+                    json.dumps(
+                        {
+                            "success": True,
+                            "obj": {
+                                "privateKey": "priv123",
+                                "publicKey": "pub123",
+                            },
+                        }
+                    ),
+                )
+            return (200, json.dumps({"success": False}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+
+    def test_returns_keypair(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._mock_request(monkeypatch, ok=True)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.generate_reality_key(cfg, env, 5)
+        assert result is not None
+        priv, pub = result
+        assert priv == "priv123"
+        assert pub == "pub123"
+
+    def test_returns_none_on_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(monkeypatch, ok=False)
+        cfg = _cfg()
+        env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
+        result = xui_client.generate_reality_key(cfg, env, 5)
+        assert result is None
+
+
+class TestBuildVlessRealityPayload:
+    """Tests for build_vless_reality_payload."""
+
+    def test_builds_correct_structure(self) -> None:
+        payload = xui_client.build_vless_reality_payload(
+            port=443,
+            remark="universal",
+            dest="www.google.com:443",
+            server_names=("www.google.com",),
+            private_key="priv123",
+            short_id="6ba85179e30d4fc2",
+        )
+        assert payload["port"] == 443
+        assert payload["protocol"] == "vless"
+        assert payload["remark"] == "universal"
+        assert payload["enable"] is True
+        assert payload["settings"]["decryption"] == "none"
+        assert payload["streamSettings"]["security"] == "reality"
+        assert payload["streamSettings"]["realitySettings"]["dest"] == "www.google.com:443"
+        assert payload["streamSettings"]["realitySettings"]["privateKey"] == "priv123"
+        assert payload["streamSettings"]["realitySettings"]["shortIds"] == ["6ba85179e30d4fc2"]
+        assert payload["sniffing"]["enabled"] is True
+        assert payload["sniffing"]["destOverride"] == ["http", "tls"]
+
+    def test_accepts_custom_values(self) -> None:
+        payload = xui_client.build_vless_reality_payload(
+            port=8443,
+            remark="custom",
+            dest="bing.com:443",
+            server_names=("bing.com", "www.bing.com"),
+            private_key="customkey",
+            short_id="abc12345",
+        )
+        assert payload["port"] == 8443
+        assert payload["remark"] == "custom"
+        assert payload["streamSettings"]["realitySettings"]["dest"] == "bing.com:443"
+        assert payload["streamSettings"]["realitySettings"]["serverNames"] == [
+            "bing.com",
+            "www.bing.com",
+        ]
+        assert payload["streamSettings"]["realitySettings"]["privateKey"] == "customkey"
+        assert payload["streamSettings"]["realitySettings"]["shortIds"] == ["abc12345"]

@@ -146,6 +146,11 @@ def base_config() -> str:
         'install_result_env_path = "/etc/x-ui/install-result.env"\n'
         'panel_http_address = "127.0.0.1"\n'
         'vault_entry_title = "three_x_ui_credentials"\n'
+        'inbound_port = 443\n'
+        'inbound_remark = "universal"\n'
+        'reality_dest = "www.google.com:443"\n'
+        'reality_server_names = ["www.google.com"]\n'
+        'reality_short_id = "6ba85179e30d4fc2"\n'
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'

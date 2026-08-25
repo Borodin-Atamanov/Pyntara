@@ -23,9 +23,13 @@ notes field carries the additional values (XUI_PANEL_PORT,
 XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE) as key=value lines.
 Stage 2 runs after every install and on every rerun where the target
 state is already reached, so the vault entry is always up to date.
-"""
 
-from __future__ import annotations
+Stage 3 creates a VLESS+REALITY inbound on the configured port through
+the panel Bearer-token API. The REALITY keypair is generated through
+the panel's getNewX25519Cert endpoint; the private and public keys are
+appended to the vault entry notes. On a rerun the task finds the
+existing inbound by port and returns done without creating a duplicate.
+"""
 
 import json
 import re
@@ -320,6 +324,108 @@ def _stage2(
     return None
 
 
+def _stage3(
+    cfg: ThreeXuiXraySetupConfig,
+    full_config: Config,
+    timeout: float,
+) -> TaskResult | None:
+    """Run stage 3: create the universal server inbound.
+
+    Reads the panel credentials from install-result.env, searches for an
+    existing inbound on the configured port, and creates a VLESS+REALITY
+    inbound when none exists. The REALITY keypair is generated through
+    the panel API and the keys are appended to the vault entry notes.
+
+    Returns None on success (inbound created or already exists). Returns
+    a TaskResult when a non-fatal problem occurs (missing env, unreachable
+    panel, vault unavailable), so the caller returns it as a
+    done-with-warnings result.
+    """
+
+    # Read the credentials the panel generated on first start.
+    try:
+        env = xui_client.parse_install_result_env(cfg.install_result_env_path)
+    except FileNotFoundError:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=("install-result.env not found: panel may not have started yet",),
+        )
+    except RuntimeError as exc:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(str(exc),),
+        )
+    _log("stage 3: read credentials from install-result.env")
+
+    # Check if an inbound on the configured port already exists.
+    existing = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
+    if existing is not None:
+        _log(f"stage 3: inbound on port {cfg.inbound_port} already exists")
+        return None
+    _log(f"stage 3: no inbound on port {cfg.inbound_port}, will create")
+
+    # Generate a REALITY keypair through the panel API.
+    keypair = xui_client.generate_reality_key(cfg, env, timeout)
+    if keypair is None:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=("failed to generate REALITY keypair: panel may be unreachable",),
+        )
+    private_key, public_key = keypair
+    _log("stage 3: REALITY keypair generated")
+
+    # Build and send the inbound creation payload.
+    payload = xui_client.build_vless_reality_payload(
+        port=cfg.inbound_port,
+        remark=cfg.inbound_remark,
+        dest=cfg.reality_dest,
+        server_names=cfg.reality_server_names,
+        private_key=private_key,
+        short_id=cfg.reality_short_id,
+    )
+    ok, msg = xui_client.create_inbound(cfg, env, payload, timeout)
+    if not ok:
+        _log(f"stage 3: inbound creation failed: {msg}")
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(f"inbound creation failed: {msg}",),
+        )
+    _log(f"stage 3: inbound created ({msg})")
+
+    # Append the REALITY keys to the vault entry notes.
+    kp = metrics.open_runtime_vault(full_config)
+    if kp is None:
+        _log("stage 3: runtime vault unavailable, keys not stored")
+        return TaskResult(
+            success=True,
+            changed=True,
+            message="inbound created, keys not stored (vault unavailable)",
+        )
+    _log("stage 3: runtime vault opened")
+
+    entry = kp.find_entries(
+        title=cfg.vault_entry_title,
+        group=kp.root_group,
+        recursive=False,
+        first=True,
+    )
+    if entry is not None:
+        existing_notes = entry.notes or ""
+        key_lines = [f"REALITY_PRIVATE_KEY={private_key}", f"REALITY_PUBLIC_KEY={public_key}"]
+        new_notes = existing_notes + ("\n" if existing_notes else "") + "\n".join(key_lines)
+        entry.notes = new_notes
+        kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
+        _log("stage 3: REALITY keys saved to vault entry notes")
+    else:
+        _log("stage 3: vault entry not found, keys not stored")
+
+    return TaskResult(success=True, changed=True, message="inbound created")
+
+
 def task(ctx: Context) -> TaskResult:
     """Wrap the official 3x-ui installer; done when the same version runs.
 
@@ -332,7 +438,10 @@ def task(ctx: Context) -> TaskResult:
     waits for the service to become active. After the installer finishes
     (or when the target state is already reached), stage 2 reads the
     panel credentials, verifies the session through the REST API and
-    stores them in the runtime vault. Every step is reported to stdout:
+    stores them in the runtime vault. Stage 3 creates a VLESS+REALITY
+    inbound on the configured port through the panel API; on a rerun it
+    finds the existing inbound by port and returns done. Every step is
+    reported to stdout:
     measurements and decisions as single lines that include their result,
     long-running commands as a line before and a line after. Any failure
     is returned as an error TaskResult: the runner continues with the
@@ -411,12 +520,24 @@ def task(ctx: Context) -> TaskResult:
 
     # Stage 2: read credentials, verify session, store in vault.
     stage2_result = _stage2(cfg, ctx.config, timeout)
+    stage2_warnings: tuple[str, ...] = ()
     if stage2_result is not None:
-        # Merge warnings from stage 2 into the main result.
+        stage2_warnings = stage2_result.warnings or ()
+
+    # Stage 3: create the universal server inbound.
+    stage3_result = _stage3(cfg, ctx.config, timeout)
+    stage3_warnings: tuple[str, ...] = ()
+    stage3_changed = False
+    if stage3_result is not None:
+        stage3_warnings = stage3_result.warnings or ()
+        stage3_changed = stage3_result.changed
+
+    all_warnings = stage2_warnings + stage3_warnings
+    if all_warnings or stage3_changed:
         return TaskResult(
-            success=stage2_result.success,
-            changed=result.changed,
+            success=True,
+            changed=result.changed or stage3_changed,
             message=result.message,
-            warnings=stage2_result.warnings,
+            warnings=all_warnings or None,
         )
     return result
