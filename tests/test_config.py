@@ -172,6 +172,7 @@ service_unit_name = "x-ui.service"
 start_check_attempts = 10
 start_check_retry_delay_seconds = 1
 install_result_env_path = "/etc/x-ui/install-result.env"
+panel_port = 35353
 panel_http_address = "127.0.0.1"
 vault_entry_title = "three_x_ui_credentials"
 inbound_port = 443
@@ -560,6 +561,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/var/lib/pyntara/i2pd_ssh_address"
     )
     assert config.i2pd_service_setup.address_file_mode == 0o644
+    assert config.three_x_ui_xray_setup.panel_port == 35353
+    assert config.three_x_ui_xray_setup.install_result_env_path == Path(
+        "/etc/x-ui/install-result.env"
+    )
     assert (
         config.yggdrasil_service_setup.github_repo
         == "yggdrasil-network/yggdrasil-go"

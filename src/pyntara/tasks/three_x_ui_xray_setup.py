@@ -10,8 +10,14 @@ equals the newest release tag and the service is already enabled and
 active, the task returns a plain done result with changed=False: the
 official installer always tears the panel down and rebuilds it, so it
 must not be run on a working panel just to confirm the state. Otherwise
-the task downloads the official install.sh and runs it in non-interactive
-mode (XUI_NONINTERACTIVE=1).
+the task frees the fixed panel port (stopping the x-ui service when it
+owns the port, terminating an unknown process), downloads the official
+install.sh and runs it in non-interactive mode (XUI_NONINTERACTIVE=1)
+with the proquint credentials and the panel port passed as env vars
+(XUI_USERNAME, XUI_PASSWORD, XUI_WEB_BASE_PATH, XUI_PANEL_PORT). The
+installer applies them on first deployment and preserves the current
+values on an existing panel with custom credentials, so a rerun never
+rotates them.
 
 Stage 2 reads the credentials the panel generated on first start from
 /etc/x-ui/install-result.env, logs in through the panel REST API to
@@ -32,6 +38,7 @@ existing inbound by port and returns done without creating a duplicate.
 """
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -44,7 +51,13 @@ from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_active, service_is_enabled
+from pyntara.utils import (
+    ensure_port_free,
+    proquint_encode,
+    run_command,
+    service_is_active,
+    service_is_enabled,
+)
 
 # The x-ui binary prints its version as a bare dotted triple, e.g. 3.7.0.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
@@ -166,21 +179,46 @@ def _download_installer(
     return script_path
 
 
-def _run_installer(script_path: Path, timeout: float) -> None:
+def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
+    """The XUI_ credential and port env vars for the installer.
+
+    The panel port is fixed to cfg.panel_port; the username, password
+    and webBasePath are proquint encodings of fresh random bytes
+    (docs/spec/3x-ui.md, Credentials boundary). The installer applies
+    these values only when the panel is in the default state (first
+    deployment); on an existing panel with custom credentials it
+    preserves the current values, so a rerun never rotates them. The
+    applied values land in /etc/x-ui/install-result.env for stage 2.
+    """
+
+    return {
+        "XUI_USERNAME": proquint_encode(os.urandom(4), ""),
+        "XUI_PASSWORD": proquint_encode(os.urandom(8), ""),
+        "XUI_WEB_BASE_PATH": proquint_encode(os.urandom(8), "-"),
+        "XUI_PANEL_PORT": str(cfg.panel_port),
+    }
+
+
+def _run_installer(
+    script_path: Path, timeout: float, extra_env: dict[str, str]
+) -> None:
     """Run the downloaded official installer in non-interactive mode.
 
     XUI_NONINTERACTIVE=1 makes the installer replace every interactive
     prompt with an environment-variable value or a sane default. The
-    stage-1 task sets no username, password or port, so the panel
-    generates them itself and saves them to /etc/x-ui/install-result.env
-    for stage 2 to read. Raises CalledProcessError or TimeoutExpired,
-    so the caller reports the reason.
+    extra env carries the proquint credentials and the fixed panel port;
+    the installer applies them on first deployment and preserves the
+    current values on an existing panel with custom credentials. Raises
+    CalledProcessError or TimeoutExpired, so the caller reports the
+    reason.
     """
 
+    env = {"XUI_NONINTERACTIVE": "1"}
+    env.update(extra_env)
     try:
         run_command(
             ["bash", str(script_path)],
-            extra_env={"XUI_NONINTERACTIVE": "1"},
+            extra_env=env,
             timeout=timeout,
         )
     finally:
@@ -481,6 +519,22 @@ def task(ctx: Context) -> TaskResult:
         _log("target state already reached")
         result = TaskResult(success=True, changed=False, message="already configured", warnings=())
     else:
+        # The panel binds the fixed port, so the port must be free before
+        # the installer runs: stop x-ui when it owns the port, terminate
+        # an unknown process.
+        _log(f"checking panel port {cfg.panel_port} is free")
+        try:
+            freed = ensure_port_free(
+                cfg.panel_port,
+                cfg.service_unit_name,
+                timeout,
+                service_process_name="x-ui",
+            )
+        except RuntimeError as exc:
+            return TaskResult(success=False, error=str(exc))
+        if freed:
+            _log(f"panel port {cfg.panel_port}: {freed}")
+
         _log(f"downloading installer {cfg.install_script_url}")
         try:
             script_path = _download_installer(cfg, timeout)
@@ -488,9 +542,9 @@ def task(ctx: Context) -> TaskResult:
             return TaskResult(success=False, error=str(exc))
         _log("installer downloaded")
 
-        _log("running official 3x-ui installer")
+        _log("running official 3x-ui installer with proquint credentials")
         try:
-            _run_installer(script_path, timeout)
+            _run_installer(script_path, timeout, _credential_env(cfg))
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"installer failed: {exc}")
         _log("installer finished")

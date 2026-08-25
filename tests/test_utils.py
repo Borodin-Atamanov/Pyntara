@@ -9,11 +9,14 @@ import pytest
 from support import FakeProc as _FakeProc
 
 from pyntara.utils import (
+    ensure_port_free,
+    port_listener_pid,
     proquint_decode,
     proquint_encode,
     run_command,
     service_is_active,
     service_is_enabled,
+    service_main_pid,
     trim_whitespace,
 )
 
@@ -267,4 +270,249 @@ def test_trim_whitespace_removes_edges_only(text: str, expected: str) -> None:
     # Leading and trailing whitespace is removed; everything between the
     # edges, including internal newlines, is preserved.
     assert trim_whitespace(text) == expected
+
+
+class TestPortFreeing:
+    """Tests for the port-listener and port-freeing helpers."""
+
+    def test_port_listener_pid_parses_ss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The pid is parsed from the process column of the ss output.
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            assert command[0] == "ss"
+            return _FakeProc(
+                0, 'LISTEN 0 4096 *:35353 *:* users:(("x-ui",pid=34311,fd=11))\n'
+            )
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        assert port_listener_pid(35353, timeout=30) == 34311
+
+    def test_port_listener_pid_none_when_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An empty ss output means the port is free.
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(0, ""),
+        )
+        assert port_listener_pid(35353, timeout=30) is None
+
+    def test_port_listener_pid_none_on_ss_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A failed ss query is treated as a free port: the caller must
+        # not mistake an unreadable state for an occupied one.
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(7, ""),
+        )
+        assert port_listener_pid(35353, timeout=30) is None
+
+    def test_service_main_pid_parses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The MainPID is parsed from systemctl show --value.
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(0, "34311\n"),
+        )
+        assert service_main_pid("x-ui.service", timeout=30) == 34311
+
+    def test_service_main_pid_none_when_stopped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A zero MainPID (stopped service) normalizes to None.
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(0, "0\n"),
+        )
+        assert service_main_pid("x-ui.service", timeout=30) is None
+
+    def test_ensure_port_free_free_port_does_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No listener on the port: no stop and no kill.
+        killed: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(0, ""),
+        )
+        monkeypatch.setattr(
+            "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
+        )
+        result = ensure_port_free(
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is None
+        assert killed == []
+
+    def test_ensure_port_free_stops_own_service(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The listener pid matches the service MainPID: systemctl stop
+        # runs and the freed port is confirmed.
+        calls: list[list[str]] = []
+        ss_calls = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(command)
+            nonlocal ss_calls
+            if command[0] == "ss":
+                ss_calls += 1
+                if ss_calls == 1:
+                    return _FakeProc(
+                        0,
+                        'LISTEN 0 4096 *:35353 *:* '
+                        'users:(("x-ui",pid=34311,fd=11))\n',
+                    )
+                return _FakeProc(0, "")
+            if command[0] == "systemctl" and command[1] == "show":
+                return _FakeProc(0, "34311\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        result = ensure_port_free(
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is not None
+        assert "stopped x-ui.service" in result
+        assert ["systemctl", "stop", "x-ui.service"] in calls
+
+    def test_ensure_port_free_stops_by_process_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The MainPID does not match but the process name is x-ui: the
+        # service is stopped anyway.
+        calls: list[list[str]] = []
+        ss_calls = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(command)
+            nonlocal ss_calls
+            if command[0] == "ss":
+                ss_calls += 1
+                if ss_calls == 1:
+                    return _FakeProc(
+                        0,
+                        'LISTEN 0 4096 *:35353 *:* '
+                        'users:(("x-ui",pid=999,fd=11))\n',
+                    )
+                return _FakeProc(0, "")
+            if command[0] == "systemctl" and command[1] == "show":
+                return _FakeProc(0, "0\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        monkeypatch.setattr("pyntara.utils.process_comm", lambda pid: "x-ui")
+        result = ensure_port_free(
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is not None
+        assert "stopped x-ui.service" in result
+        assert ["systemctl", "stop", "x-ui.service"] in calls
+
+    def test_ensure_port_free_terminates_unknown_process(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An unknown listener is terminated with SIGTERM; the freed port
+        # is confirmed and no SIGKILL is needed.
+        killed: list[tuple[int, int]] = []
+        ss_calls = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            nonlocal ss_calls
+            if command[0] == "ss":
+                ss_calls += 1
+                if ss_calls == 1:
+                    return _FakeProc(
+                        0, 'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n'
+                    )
+                return _FakeProc(0, "")
+            if command[0] == "systemctl" and command[1] == "show":
+                return _FakeProc(0, "0\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        monkeypatch.setattr(
+            "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
+        )
+        result = ensure_port_free(
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is not None
+        assert "terminated unknown process 999" in result
+        assert killed == [(999, 15)]  # SIGTERM only
+
+    def test_ensure_port_free_sigkills_when_grace_expires(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The process ignores SIGTERM, so SIGKILL is sent after the grace
+        # period and the port is freed.
+        killed: list[tuple[int, int]] = []
+        ss_calls = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            nonlocal ss_calls
+            if command[0] == "ss":
+                ss_calls += 1
+                if ss_calls == 1:
+                    return _FakeProc(
+                        0,
+                        'LISTEN 0 4096 *:35353 *:* '
+                        'users:(("other",pid=999,fd=9))\n',
+                    )
+                if ss_calls == 2:
+                    return _FakeProc(
+                        0,
+                        'LISTEN 0 4096 *:35353 *:* '
+                        'users:(("other",pid=999,fd=9))\n',
+                    )
+                return _FakeProc(0, "")
+            if command[0] == "systemctl" and command[1] == "show":
+                return _FakeProc(0, "0\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        monkeypatch.setattr(
+            "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
+        )
+        monkeypatch.setattr("pyntara.utils.time.sleep", lambda _seconds: None)
+        monotonic = iter([0.0, 0.0, 6.0])
+        monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
+        result = ensure_port_free(
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is not None
+        assert "killed unknown process 999" in result
+        assert killed == [(999, 15), (999, 9)]  # SIGTERM then SIGKILL
+
+    def test_ensure_port_free_raises_when_still_occupied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Even SIGKILL does not free the port: the helper raises.
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.run",
+            lambda command, **kwargs: _FakeProc(
+                0,
+                'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
+            )
+            if command[0] == "ss"
+            else _FakeProc(0, "0\n"),
+        )
+        monkeypatch.setattr(
+            "pyntara.utils.os.kill", lambda pid, sig: None
+        )
+        monkeypatch.setattr("pyntara.utils.time.sleep", lambda _seconds: None)
+        monotonic = iter([0.0, 0.0, 6.0])
+        monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
+        with pytest.raises(RuntimeError, match="still listens"):
+            ensure_port_free(
+                35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            )
 

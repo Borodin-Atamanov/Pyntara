@@ -8,6 +8,8 @@ The task wraps the official install.sh of the configured repository instead of d
 
 The official installer runs non-interactively: XUI_NONINTERACTIVE=1 replaces every interactive prompt with an environment-variable value or a sane default. Alone among the service-install tasks, 3x-ui does not own a rendered configuration file: the panel stores its own state in a generated SQLite database, so on stage 1 there is nothing for the task to write or diff.
 
+Before the installer runs, the task frees the fixed panel port: when the x-ui service owns it, the service is stopped via systemctl; when an unknown process owns it, the process is terminated with SIGTERM and then SIGKILL after a grace period. The installer is then run with the proquint credentials and the panel port in its environment (XUI_USERNAME, XUI_PASSWORD, XUI_WEB_BASE_PATH, XUI_PANEL_PORT).
+
 ## Version resolution
 
 The newest release tag comes from the GitHub releases API of the configured repository, the endpoint https://api.github.com/repos/{github_repo}/releases/latest. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is a task error. The tag carries a leading v; the version comparison strips it on both sides.
@@ -24,7 +26,18 @@ When the version differs, the service is disabled or inactive, or the task is fo
 
 ## Credentials boundary
 
-Stage 1 sets no username, password, port or webBasePath and does not read them. On the first start the panel generates its own random credentials and API token and writes them into /etc/x-ui/install-result.env (mode 600, root). This file is the handoff to stage 2, which logs in through the panel API and stores the credentials in the runtime vault. On a rerun of the official installer against a panel whose credentials are no longer the defaults, the installer preserves them; only a panel still using default credentials is given fresh random credentials.
+The task generates the panel credentials itself and passes them to the installer as env vars, so the task controls the credentials instead of accepting whatever the installer generates. The values are proquint encodings (draft-rayner-proquint, shared proquint_encode in utils) of fresh random bytes from os.urandom:
+
+- username: 4 random bytes, no separator, 10 letters.
+- password: 8 random bytes, no separator, 20 letters.
+- webBasePath: 8 random bytes, dash separator, 23 characters (20 letters and 3 dashes).
+- panel port: the fixed panel_port from the task config, default 35353.
+
+The installer applies these env vars only when the panel is in the default state: a fresh panel starts with the default credentials and a short webBasePath, so the installer sets all four values and writes them into /etc/x-ui/install-result.env (mode 600, root) through write_install_result. On a rerun against a panel whose credentials are no longer the defaults, the installer preserves the current credentials, port and webBasePath, so a rerun never rotates them: the credentials are effectively applied only at the first deployment. This is the intended gate: the task does not re-check the panel state itself.
+
+The API token is left to panel generation: the x-ui binary has no setter for it, so there is nothing the task could pass.
+
+The install-result.env file is the handoff to stage 2, which logs in through the panel API and stores the credentials in the runtime vault.
 
 ## Service lifecycle
 
@@ -74,6 +87,7 @@ The generated private and public keys are appended to the existing vault entry n
 
 New fields in the `[three_x_ui_xray_setup]` table:
 
+- `panel_port` (integer, optional, default `35353`): fixed panel port passed to the installer via XUI_PANEL_PORT. Must be between 1 and 65535. Applied on first deployment; preserved on an existing panel with custom credentials.
 - `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.
 - `inbound_remark` (string, optional, default `"universal"`): Display label for the inbound in the panel.
 - `reality_dest` (string, optional, default `"www.google.com:443"`): Destination address and port for REALITY TLS handshake mimicry.

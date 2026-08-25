@@ -20,6 +20,10 @@ start_check_retry_delay_seconds = 1
 # Path to the install-result.env file the panel writes on first start.
 # Stage 2 reads the generated credentials from this file.
 install_result_env_path = "/etc/x-ui/install-result.env"
+# Fixed panel port passed to the installer via XUI_PANEL_PORT. The
+# installer applies it on first deployment; on an existing panel with
+# custom credentials it preserves the current port.
+panel_port = 35353
 # HTTP address of the panel for REST API calls. 127.0.0.1 is the local
 # machine; the panel listens on localhost and on the public interface.
 panel_http_address = "127.0.0.1"

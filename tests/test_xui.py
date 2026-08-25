@@ -7,8 +7,6 @@ monkeypatch; the tests only touch temporary fixtures.
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -28,6 +26,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "start_check_attempts": 10,
         "start_check_retry_delay_seconds": 1,
         "install_result_env_path": Path("/etc/x-ui/install-result.env"),
+        "panel_port": 35353,
         "panel_http_address": "127.0.0.1",
         "vault_entry_title": "three_x_ui_credentials",
         "inbound_port": 443,

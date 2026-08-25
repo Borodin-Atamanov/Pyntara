@@ -10,7 +10,10 @@ hardcoded default (architecture contract, Configuration).
 from __future__ import annotations
 
 import os
+import re
+import signal
 import subprocess
+import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -205,6 +208,121 @@ def service_is_active(name: str, timeout: float) -> bool:
         timeout=timeout,
     )
     return result.returncode == 0 and result.stdout.strip() == "active"
+
+
+def port_listener_pid(port: int, timeout: float) -> int | None:
+    """The PID of the process listening on the TCP port, or None.
+
+    The query runs `ss -tlnp "sport = :PORT"` and parses the first
+    pid=N token in the process column. None when the port is free, when
+    ss is unavailable, or when the query fails: an unknown listener is
+    reported as absent so the caller can proceed safely.
+    """
+
+    result = run_command(
+        ["ss", "-tlnp", f"sport = :{port}"],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        match = re.search(r"pid=(\d+)", line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def service_main_pid(service_name: str, timeout: float) -> int | None:
+    """The systemd MainPID of the service, or None when not running.
+
+    systemctl show -p MainPID --value prints 0 when the unit has no
+    running main process; that is normalized to None, so a stopped
+    service never matches a live listener.
+    """
+
+    result = run_command(
+        ["systemctl", "show", "-p", "MainPID", "--value", service_name],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        pid = int(result.stdout.strip())
+    except ValueError:
+        return None
+    return pid or None
+
+
+def process_comm(pid: int) -> str | None:
+    """The process name from /proc/<pid>/comm, or None when unreadable.
+
+    The name identifies the process when the systemd MainPID does not
+    match (a manually started binary or a stale unit state). A missing
+    or unreadable entry means the process is gone.
+    """
+
+    try:
+        value = Path(f"/proc/{pid}/comm").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return value.strip() or None
+
+
+def ensure_port_free(
+    port: int,
+    service_unit_name: str,
+    timeout: float,
+    *,
+    service_process_name: str | None = None,
+    kill_grace_seconds: int = 5,
+) -> str | None:
+    """Free the TCP port for a new listener; returns the action taken.
+
+    Detects the process listening on the port. When the listener is the
+    given systemd service (MainPID match) or carries the configured
+    process name, the service is stopped with systemctl. Any other
+    listener is an unknown process and is terminated with SIGTERM, then
+    SIGKILL after kill_grace_seconds if it still holds the port. Returns
+    None when the port is already free, a short message otherwise.
+    Raises RuntimeError when the port is still occupied after the action.
+    """
+
+    pid = port_listener_pid(port, timeout)
+    if pid is None:
+        return None
+    is_ours = pid == service_main_pid(service_unit_name, timeout)
+    if not is_ours and service_process_name:
+        is_ours = process_comm(pid) == service_process_name
+    if is_ours:
+        run_command(["systemctl", "stop", service_unit_name], timeout=timeout)
+        if port_listener_pid(port, timeout) is None:
+            return f"stopped {service_unit_name} listening on port {port}"
+        # systemctl did not free the port: the listener is not the managed
+        # service (for example a manually started binary), fall through to
+        # the unknown-process termination below.
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return None
+    deadline = time.monotonic() + kill_grace_seconds
+    while time.monotonic() < deadline:
+        if port_listener_pid(port, timeout) is None:
+            return f"terminated unknown process {pid} on port {port}"
+        time.sleep(0.2)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return None
+    if port_listener_pid(port, timeout) is not None:
+        raise RuntimeError(
+            f"process {pid} still listens on port {port} after SIGKILL"
+        )
+    return f"killed unknown process {pid} on port {port}"
 
 
 def ensure_root_owner(path: Path) -> None:

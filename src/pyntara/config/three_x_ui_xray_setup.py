@@ -20,7 +20,10 @@ class ThreeXuiXraySetupConfig:
     service_unit_name is the systemd unit the official installer creates
     and the task checks for enabled and active; start_check_attempts and
     start_check_retry_delay_seconds form the readiness loop that waits
-    for the service to become active after an install. Stage 2 fields:
+    for the service to become active after an install. panel_port is the
+    fixed panel port passed to the installer via XUI_PANEL_PORT; the
+    installer applies it on first deployment and preserves the current
+    port on an existing panel with custom credentials. Stage 2 fields:
     install_result_env_path is the file the panel writes on first start
     with the generated credentials; panel_http_address is the host for
     REST API calls; vault_entry_title names the runtime vault entry
@@ -34,6 +37,7 @@ class ThreeXuiXraySetupConfig:
     start_check_attempts: int
     start_check_retry_delay_seconds: int
     install_result_env_path: Path
+    panel_port: int
     panel_http_address: str
     vault_entry_title: str
     inbound_port: int
@@ -95,6 +99,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.install_result_env_path",
         )
     )
+    panel_port = _int_field(
+        raw.get("panel_port"),
+        "three_x_ui_xray_setup.panel_port",
+    )
+    if panel_port < 1 or panel_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.panel_port must be between 1 and 65535"
+        )
     panel_http_address = _nonempty_string_field(
         raw.get("panel_http_address"),
         "three_x_ui_xray_setup.panel_http_address",
@@ -135,6 +147,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         install_result_env_path=install_result_env_path,
+        panel_port=panel_port,
         panel_http_address=panel_http_address,
         vault_entry_title=vault_entry_title,
         inbound_port=inbound_port,

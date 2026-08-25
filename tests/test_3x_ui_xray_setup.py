@@ -152,6 +152,7 @@ def _install_fake(
     active: bool = False,
     active_becomes: bool = True,
     installer_fails: bool = False,
+    captured_env: list[dict[str, str]] | None = None,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -161,7 +162,8 @@ def _install_fake(
     answers installed_version. With active_becomes, the service turns
     active after the installer runs; without it, the readiness loop runs
     out. With missing_binary, the version query raises FileNotFoundError
-    like a real missing executable.
+    like a real missing executable. When captured_env is given, the env
+    dict of every bash call is appended to it.
     """
 
     calls: list[list[str]] = []
@@ -169,6 +171,10 @@ def _install_fake(
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         nonlocal started
+        if command[0] == "bash" and captured_env is not None:
+            env = kwargs.get("env")
+            if isinstance(env, dict):
+                captured_env.append(env)
         del kwargs
         calls.append(list(command))
         if command[0] == "curl":
@@ -495,3 +501,103 @@ class TestStage3:
         assert result.success is True
         assert result.warnings is not None
         assert any("creation failed" in w for w in result.warnings)
+
+
+class TestProquintCredentials:
+    """Tests for the proquint credential env passed to the installer."""
+
+    def test_credential_env_has_proquint_format(self, tmp_path: Path) -> None:
+        # The generated credentials have the fixed proquint shapes:
+        # username 10 letters, password 20 letters, webBasePath 23 chars
+        # with three dash separators, panel port from config.
+        config = make_config(task_data_root=tmp_path)
+        cfg = config.three_x_ui_xray_setup
+        env = xui._credential_env(cfg)
+        proquint_letters = frozenset("bdfghjklmnprstvzaiou")
+        assert env["XUI_PANEL_PORT"] == str(cfg.panel_port)
+        assert len(env["XUI_USERNAME"]) == 10
+        assert set(env["XUI_USERNAME"]) <= proquint_letters
+        assert len(env["XUI_PASSWORD"]) == 20
+        assert set(env["XUI_PASSWORD"]) <= proquint_letters
+        assert len(env["XUI_WEB_BASE_PATH"]) == 23
+        assert env["XUI_WEB_BASE_PATH"].count("-") == 3
+        assert set(env["XUI_WEB_BASE_PATH"].replace("-", "")) <= proquint_letters
+
+    def test_installer_receives_credential_env(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The installer runs with XUI_NONINTERACTIVE plus the proquint
+        # credentials and the fixed panel port in its environment.
+        envs: list[dict[str, str]] = []
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            captured_env=envs,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert envs, "installer bash call did not record an env"
+        bash_env = envs[0]
+        assert bash_env["XUI_NONINTERACTIVE"] == "1"
+        assert bash_env["XUI_PANEL_PORT"] == "35353"
+        assert len(bash_env["XUI_USERNAME"]) == 10
+        assert len(bash_env["XUI_PASSWORD"]) == 20
+        assert len(bash_env["XUI_WEB_BASE_PATH"]) == 23
+
+    def test_panel_port_freed_before_installer(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The task frees the panel port before running the installer,
+        # passing the service unit name and the x-ui process name.
+        captured: list[tuple[int, str, str | None]] = []
+
+        def fake_ensure_port_free(
+            port: int,
+            service_name: str,
+            _timeout: float,
+            **kwargs: object,
+        ) -> None:
+            captured.append((port, service_name, kwargs.get("service_process_name")))
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert captured == [(35353, "x-ui.service", "x-ui")]
+
+    def test_port_free_failure_reports_error(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel port stays occupied after the free attempt: the task
+        # reports an error and never runs the installer.
+        def fake_ensure_port_free(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("still occupied")
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        ctx = _ctx(tmp_path)
+        calls = _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is False
+        assert "still occupied" in (result.error or "")
+        assert not any(call[0] == "bash" for call in calls)

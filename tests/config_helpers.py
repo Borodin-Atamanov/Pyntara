@@ -144,6 +144,7 @@ def base_config() -> str:
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"
         'install_result_env_path = "/etc/x-ui/install-result.env"\n'
+        "panel_port = 35353\n"
         'panel_http_address = "127.0.0.1"\n'
         'vault_entry_title = "three_x_ui_credentials"\n'
         'inbound_port = 443\n'
