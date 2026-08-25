@@ -527,7 +527,8 @@ class TestProquintCredentials:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # The installer runs with XUI_NONINTERACTIVE plus the proquint
-        # credentials and the fixed panel port in its environment.
+        # credentials, the fixed panel port and the SSL mode in its
+        # environment.
         envs: list[dict[str, str]] = []
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
@@ -546,15 +547,52 @@ class TestProquintCredentials:
         bash_env = envs[0]
         assert bash_env["XUI_NONINTERACTIVE"] == "1"
         assert bash_env["XUI_PANEL_PORT"] == "35353"
+        assert bash_env["XUI_SSL_MODE"] == "ip"
         assert len(bash_env["XUI_USERNAME"]) == 10
         assert len(bash_env["XUI_PASSWORD"]) == 20
         assert len(bash_env["XUI_WEB_BASE_PATH"]) == 23
 
+    def test_installer_omits_ssl_mode_when_disabled(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # With ssl_enabled=False the installer env has no XUI_SSL_MODE,
+        # so the panel stays HTTP.
+        envs: list[dict[str, str]] = []
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = make_context(
+            install_mode="server",
+            force_tasks=frozenset({"three_x_ui_xray_setup"}),
+            task_data_root=tmp_path,
+            skip_apt_update=True,
+            config=make_config(
+                task_data_root=tmp_path,
+                three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
+                three_x_ui_install_result_env_path=(
+                    tmp_path / "etc" / "x-ui" / "install-result.env"
+                ),
+                three_x_ui_ssl_enabled=False,
+            ),
+        )
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            captured_env=envs,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert envs
+        assert "XUI_SSL_MODE" not in envs[0]
+
     def test_panel_port_freed_before_installer(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The task frees the panel port before running the installer,
-        # passing the service unit name and the x-ui process name.
+        # The task frees the panel port and the ACME port before running
+        # the installer, passing the service unit name and the x-ui
+        # process name.
         captured: list[tuple[int, str, str | None]] = []
 
         def fake_ensure_port_free(
@@ -568,6 +606,52 @@ class TestProquintCredentials:
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert captured == [
+            (35353, "x-ui.service", "x-ui"),
+            (80, "x-ui.service", "x-ui"),
+        ]
+
+    def test_ssl_disabled_frees_only_panel_port(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # With ssl_enabled=False the task frees only the panel port, not
+        # the ACME port.
+        captured: list[tuple[int, str, str | None]] = []
+
+        def fake_ensure_port_free(
+            port: int,
+            service_name: str,
+            _timeout: float,
+            **kwargs: object,
+        ) -> None:
+            captured.append((port, service_name, kwargs.get("service_process_name")))
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = make_context(
+            install_mode="server",
+            force_tasks=frozenset({"three_x_ui_xray_setup"}),
+            task_data_root=tmp_path,
+            skip_apt_update=True,
+            config=make_config(
+                task_data_root=tmp_path,
+                three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
+                three_x_ui_install_result_env_path=(
+                    tmp_path / "etc" / "x-ui" / "install-result.env"
+                ),
+                three_x_ui_ssl_enabled=False,
+            ),
+        )
         _install_fake(
             monkeypatch,
             install_dir=tmp_path / "usr" / "local" / "x-ui",
@@ -601,3 +685,183 @@ class TestProquintCredentials:
         assert result.success is False
         assert "still occupied" in (result.error or "")
         assert not any(call[0] == "bash" for call in calls)
+
+
+class TestStageSsl:
+    """Tests for stage 4: the Let's Encrypt IP certificate setup."""
+
+    def _cfg(
+        self, tmp_path: Path, *, ssl_enabled: bool = True
+    ) -> object:
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
+            three_x_ui_ssl_enabled=ssl_enabled,
+        )
+        return config.three_x_ui_xray_setup
+
+    def test_stage_ssl_skipped_when_disabled(self, tmp_path: Path) -> None:
+        # ssl_enabled=False disables the whole stage.
+        assert xui._stage_ssl(self._cfg(tmp_path, ssl_enabled=False), 30) is None
+
+    def test_stage_ssl_does_nothing_when_cert_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A panel that already has a certificate is left alone.
+        monkeypatch.setattr(
+            xui, "_panel_cert_value", lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem"
+        )
+        assert xui._stage_ssl(self._cfg(tmp_path), 30) is None
+
+    def test_stage_ssl_warns_when_no_ip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No public address can be detected: the stage warns and changes
+        # nothing.
+        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: None)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        assert result is not None
+        assert result.changed is False
+        assert any("public IPv4" in w for w in result.warnings or ())
+
+    def test_stage_ssl_issues_cert_when_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No certificate: the stage detects the IP, frees the ACME port
+        # and issues the certificate.
+        seen: dict[str, object] = {}
+
+        def fake_issue(_cfg: object, ip: str, _timeout: float) -> tuple[bool, str]:
+            seen["ip"] = ip
+            return True, "certificate issued"
+
+        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(xui, "_issue_ip_certificate", fake_issue)
+        monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        assert result is not None
+        assert result.changed is True
+        assert seen["ip"] == "203.0.113.5"
+
+    def test_stage_ssl_warns_on_acme_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # acme.sh fails to issue the certificate: the stage warns.
+        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(
+            xui,
+            "_issue_ip_certificate",
+            lambda _cfg, ip, _timeout: (False, "port 80 unreachable"),
+        )
+        monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        assert result is not None
+        assert result.changed is False
+        assert any("SSL certificate setup failed" in w for w in result.warnings or ())
+
+    def test_issue_ip_certificate_runs_acme_steps(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The acme.sh command sequence mirrors the installer: issue,
+        # installcert and point the panel at the files.
+        calls: list[list[str]] = []
+        cert_full = tmp_path / "fullchain.pem"
+        cert_key = tmp_path / "privkey.pem"
+        monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
+        monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+        monkeypatch.setattr(xui, "CERT_FULLCHAIN", cert_full)
+        monkeypatch.setattr(xui, "CERT_PRIVKEY", cert_key)
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(list(command))
+            if command[1] == "--installcert":
+                cert_full.write_text("fullchain", encoding="utf-8")
+                cert_key.write_text("privkey", encoding="utf-8")
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = self._cfg(tmp_path)
+        ok, message = xui._issue_ip_certificate(cfg, "203.0.113.5", 30)
+        assert ok is True
+        assert any(command[1] == "--issue" and "203.0.113.5" in command for command in calls)
+        assert any(command[1] == "--installcert" for command in calls)
+        assert any(
+            command[0] == str(cfg.install_dir / "x-ui") and command[1] == "cert"
+            for command in calls
+        )
+        assert message == "certificate issued"
+
+    def test_issue_ip_certificate_warns_on_step_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A failed acme.sh step reports a failure message.
+        monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
+        monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            if command[1] == "--issue":
+                return _FakeProc(1, "error")
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        ok, message = xui._issue_ip_certificate(self._cfg(tmp_path), "203.0.113.5", 30)
+        assert ok is False
+        assert "acme.sh step failed" in message
+
+    def test_rerun_invokes_stage_ssl(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # On a rerun (target state reached, installer skipped) the task
+        # runs stage 4.
+        called: list[bool] = []
+        monkeypatch.setattr(
+            xui,
+            "_stage_ssl",
+            lambda _cfg, _timeout: (called.append(True), None)[1],
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert called == [True]
+
+    def test_rerun_with_ssl_issue_reports_changed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A rerun that issues the missing certificate reports changed.
+        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(
+            xui,
+            "_issue_ip_certificate",
+            lambda _cfg, ip, _timeout: (True, "certificate issued"),
+        )
+        monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True

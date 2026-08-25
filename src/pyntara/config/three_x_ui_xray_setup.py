@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._fields import ConfigError, _int_field, _nonempty_string_field, _string_list
+from ._fields import (
+    ConfigError,
+    _bool_field,
+    _int_field,
+    _nonempty_string_field,
+    _string_list,
+)
 
 
 @dataclass(frozen=True)
@@ -23,7 +29,11 @@ class ThreeXuiXraySetupConfig:
     for the service to become active after an install. panel_port is the
     fixed panel port passed to the installer via XUI_PANEL_PORT; the
     installer applies it on first deployment and preserves the current
-    port on an existing panel with custom credentials. Stage 2 fields:
+    port on an existing panel with custom credentials. ssl_enabled turns
+    on the Let's Encrypt IP certificate setup (installer option 2): the
+    installer runs with XUI_SSL_MODE=ip, the ACME port is freed before
+    SSL setup, and on a rerun the task issues the certificate through
+    acme.sh when the panel has none. Stage 2 fields:
     install_result_env_path is the file the panel writes on first start
     with the generated credentials; panel_http_address is the host for
     REST API calls; vault_entry_title names the runtime vault entry
@@ -38,6 +48,7 @@ class ThreeXuiXraySetupConfig:
     start_check_retry_delay_seconds: int
     install_result_env_path: Path
     panel_port: int
+    ssl_enabled: bool
     panel_http_address: str
     vault_entry_title: str
     inbound_port: int
@@ -107,6 +118,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raise ConfigError(
             "three_x_ui_xray_setup.panel_port must be between 1 and 65535"
         )
+    ssl_enabled = _bool_field(
+        raw.get("ssl_enabled"),
+        "three_x_ui_xray_setup.ssl_enabled",
+    )
     panel_http_address = _nonempty_string_field(
         raw.get("panel_http_address"),
         "three_x_ui_xray_setup.panel_http_address",
@@ -148,6 +163,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         install_result_env_path=install_result_env_path,
         panel_port=panel_port,
+        ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,
         vault_entry_title=vault_entry_title,
         inbound_port=inbound_port,

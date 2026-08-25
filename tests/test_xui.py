@@ -27,6 +27,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "start_check_retry_delay_seconds": 1,
         "install_result_env_path": Path("/etc/x-ui/install-result.env"),
         "panel_port": 35353,
+        "ssl_enabled": True,
         "panel_http_address": "127.0.0.1",
         "vault_entry_title": "three_x_ui_credentials",
         "inbound_port": 443,

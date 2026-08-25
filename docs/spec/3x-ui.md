@@ -1,6 +1,6 @@
 # 3x-ui Xray panel
 
-There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 (universal server inbound) is documented in the TODO.
+There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 creates the universal server inbound. Stage 4 ensures the Let's Encrypt IP certificate when ssl_enabled.
 
 ## Installation mechanism
 
@@ -8,7 +8,7 @@ The task wraps the official install.sh of the configured repository instead of d
 
 The official installer runs non-interactively: XUI_NONINTERACTIVE=1 replaces every interactive prompt with an environment-variable value or a sane default. Alone among the service-install tasks, 3x-ui does not own a rendered configuration file: the panel stores its own state in a generated SQLite database, so on stage 1 there is nothing for the task to write or diff.
 
-Before the installer runs, the task frees the fixed panel port: when the x-ui service owns it, the service is stopped via systemctl; when an unknown process owns it, the process is terminated with SIGTERM and then SIGKILL after a grace period. The installer is then run with the proquint credentials and the panel port in its environment (XUI_USERNAME, XUI_PASSWORD, XUI_WEB_BASE_PATH, XUI_PANEL_PORT).
+Before the installer runs, the task frees the fixed panel port and, when ssl_enabled is set, the ACME port 80: when the x-ui service owns a port, the service is stopped via systemctl; when an unknown process owns it, the process is terminated with SIGTERM and then SIGKILL after a grace period. The installer is then run with the proquint credentials, the panel port and the SSL mode in its environment (XUI_USERNAME, XUI_PASSWORD, XUI_WEB_BASE_PATH, XUI_PANEL_PORT, XUI_SSL_MODE).
 
 ## Version resolution
 
@@ -83,11 +83,20 @@ Before creating, the task calls `GET /panel/api/inbounds/list` and searches for 
 
 The generated private and public keys are appended to the existing vault entry notes as `REALITY_PRIVATE_KEY=<value>` and `REALITY_PUBLIC_KEY=<value>` on separate lines. When the vault is unavailable, the inbound is still created but the keys are not persisted (a warning is returned).
 
+## Stage 4: SSL certificate
+
+When `ssl_enabled` is set, the panel gets a Let's Encrypt certificate for its public IP address (installer option 2, the shortlived profile). The certificate is valid for about six days and auto-renews through the acme.sh cron job.
+
+On the install path the installer receives `XUI_SSL_MODE=ip` in its environment, so its own SSL step issues the certificate. The ACME HTTP-01 listener binds port 80, and the installer's SSL step fails in non-interactive mode when the port is busy, so the task frees port 80 before the installer runs.
+
+On a rerun where the target state is reached and the installer is skipped, the task runs stage 4: it queries `x-ui setting -getCert true` and does nothing when the panel already has a certificate. When it has none, the stage detects the public IPv4 address from the same echo services the installer uses, frees port 80 and issues the certificate through acme.sh exactly like the installer's setup_ip_certificate: `--issue --standalone --httpport 80` with the shortlived profile, `--installcert` into `/root/cert/ip` with a reload command that restarts x-ui, then `x-ui cert -webCert -webCertKey`. A panel that cannot be reached by Let's Encrypt (no public address, port 80 not open) reports a warning and stays on HTTP; the failure never fails the task.
+
 ### Config reference
 
 New fields in the `[three_x_ui_xray_setup]` table:
 
 - `panel_port` (integer, optional, default `35353`): fixed panel port passed to the installer via XUI_PANEL_PORT. Must be between 1 and 65535. Applied on first deployment; preserved on an existing panel with custom credentials.
+- `ssl_enabled` (boolean, optional, default `true`): enables the Let's Encrypt IP certificate setup. When false the installer runs without XUI_SSL_MODE, no port is freed for ACME and stage 4 is skipped; the panel stays HTTP.
 - `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.
 - `inbound_remark` (string, optional, default `"universal"`): Display label for the inbound in the panel.
 - `reality_dest` (string, optional, default `"www.google.com:443"`): Destination address and port for REALITY TLS handshake mimicry.

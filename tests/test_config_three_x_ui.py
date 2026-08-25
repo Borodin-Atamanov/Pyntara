@@ -15,6 +15,10 @@ from config_helpers import assert_config_error, base_config
         base_config().replace("panel_port = 35353", "panel_port = 0"),
         # panel_port is above the valid range
         base_config().replace("panel_port = 35353", "panel_port = 65536"),
+        # ssl_enabled is a string, not a boolean
+        base_config().replace("ssl_enabled = true", 'ssl_enabled = "true"'),
+        # ssl_enabled is an integer, not a boolean
+        base_config().replace("ssl_enabled = true", "ssl_enabled = 1"),
         # inbound_port is a string, not an integer
         base_config().replace("inbound_port = 443", 'inbound_port = "443"'),
         # inbound_port is below the valid range

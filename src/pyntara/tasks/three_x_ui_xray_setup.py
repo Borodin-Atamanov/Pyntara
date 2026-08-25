@@ -35,6 +35,14 @@ the panel Bearer-token API. The REALITY keypair is generated through
 the panel's getNewX25519Cert endpoint; the private and public keys are
 appended to the vault entry notes. On a rerun the task finds the
 existing inbound by port and returns done without creating a duplicate.
+
+Stage 4 ensures the Let's Encrypt IP certificate when ssl_enabled. The
+installer runs with XUI_SSL_MODE=ip and the ACME port is freed before
+it, so a fresh install or a forced rerun gets the certificate from the
+installer. On a rerun where the installer is skipped, the stage checks
+`x-ui setting -getCert` and issues the certificate through acme.sh when
+the panel has none. A panel that cannot be reached by Let's Encrypt
+reports a warning instead of failing the task.
 """
 
 import json
@@ -65,6 +73,29 @@ VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 # The release tag carries a leading v, the version output does not; the
 # comparison normalizes the prefix away on the tag side.
 TAG_VERSION_PATTERN = re.compile(r"^v?")
+
+# The ACME HTTP-01 listener port and the certificate location mirror the
+# official installer's setup_ip_certificate, so the task and the
+# installer produce the same layout.
+ACME_PORT = 80
+CERT_DIR = Path("/root/cert/ip")
+CERT_FULLCHAIN = CERT_DIR / "fullchain.pem"
+CERT_PRIVKEY = CERT_DIR / "privkey.pem"
+
+# Echo services that report the public IPv4 address, in the same order
+# the official installer tries them.
+SERVER_IP_SERVICES = (
+    "https://api4.ipify.org",
+    "https://ipv4.icanhazip.com",
+    "https://v4.api.ipinfo.io/ip",
+    "https://ipv4.myexternalip.com/raw",
+    "https://4.ident.me",
+    "https://check-host.net/ip",
+)
+
+# The IPv4 pattern used to validate an address reported by an echo
+# service; a full match only, so garbage is never accepted.
+IPV4_PATTERN = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
 
 
 def _normalized_version(value: str) -> str:
@@ -464,6 +495,208 @@ def _stage3(
     return TaskResult(success=True, changed=True, message="inbound created")
 
 
+def _panel_cert_value(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> str | None:
+    """The panel certificate path from `x-ui setting -getCert`, or None.
+
+    An empty cert value means no certificate is configured; a nonzero
+    exit or a missing cert line is treated the same, so the caller can
+    attempt setup.
+    """
+
+    result = run_command(
+        [str(cfg.install_dir / "x-ui"), "setting", "-getCert", "true"],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        if "cert:" in line:
+            value = line.split("cert:", 1)[1].strip()
+            return value or None
+    return None
+
+
+def _detect_server_ip(timeout: float) -> str | None:
+    """The public IPv4 address from the first reachable echo service.
+
+    Each service is queried with a short curl call; the first answer
+    that looks like an IPv4 address wins. None when no service answers.
+    """
+
+    for service in SERVER_IP_SERVICES:
+        try:
+            result = run_command(
+                ["curl", "--silent", "--max-time", "3", service],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if result.returncode != 0:
+            continue
+        candidate = result.stdout.strip().strip('"')
+        if IPV4_PATTERN.fullmatch(candidate):
+            return candidate
+    return None
+
+
+def _acme_path() -> Path:
+    """The acme.sh binary under the current user's home directory."""
+
+    return Path.home() / ".acme.sh" / "acme.sh"
+
+
+def _ensure_acme(timeout: float) -> bool:
+    """Install acme.sh via get.acme.sh when it is not present yet.
+
+    True when the acme.sh binary exists after the call. A missing binary
+    after an install attempt is a failure.
+    """
+
+    acme = _acme_path()
+    if acme.is_file():
+        return True
+    try:
+        run_command(
+            ["bash", "-c", "curl -s https://get.acme.sh | sh"],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+    return acme.is_file()
+
+
+def _issue_ip_certificate(
+    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+) -> tuple[bool, str]:
+    """Issue and install a Let's Encrypt IP certificate for the address.
+
+    Mirrors the official installer's setup_ip_certificate: runs acme.sh
+    with the shortlived profile over the standalone HTTP-01 listener,
+    installs the certificate under /root/cert/ip and points the panel at
+    it through `x-ui cert`. Returns (ok, message).
+    """
+
+    if not _ensure_acme(timeout):
+        return False, "acme.sh install failed"
+    acme = _acme_path()
+    reload_cmd = f"systemctl restart {cfg.service_unit_name} 2>/dev/null || true"
+    steps = [
+        [str(acme), "--set-default-ca", "--server", "letsencrypt", "--force"],
+        [
+            str(acme),
+            "--issue",
+            "-d",
+            ip,
+            "--standalone",
+            "--server",
+            "letsencrypt",
+            "--certificate-profile",
+            "shortlived",
+            "--days",
+            "6",
+            "--httpport",
+            str(ACME_PORT),
+            "--force",
+        ],
+        [
+            str(acme),
+            "--installcert",
+            "--force",
+            "-d",
+            ip,
+            "--key-file",
+            str(CERT_PRIVKEY),
+            "--fullchain-file",
+            str(CERT_FULLCHAIN),
+            "--reloadcmd",
+            reload_cmd,
+        ],
+        [str(acme), "--upgrade", "--auto-upgrade"],
+    ]
+    for command in steps:
+        try:
+            result = run_command(
+                command, check=False, capture=True, timeout=timeout
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return False, f"acme.sh step failed: {exc}"
+        if result.returncode != 0:
+            return False, (
+                f"acme.sh step failed (exit {result.returncode}): "
+                f"{' '.join(command[1:3])}"
+            )
+    if not CERT_FULLCHAIN.is_file() or not CERT_PRIVKEY.is_file():
+        return False, "certificate files missing after acme.sh installcert"
+    try:
+        run_command(
+            [
+                str(cfg.install_dir / "x-ui"),
+                "cert",
+                "-webCert",
+                str(CERT_FULLCHAIN),
+                "-webCertKey",
+                str(CERT_PRIVKEY),
+            ],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot point panel at certificate: {exc}"
+    return True, "certificate issued"
+
+
+def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
+    """Run stage 4: ensure a Let's Encrypt IP certificate on a rerun.
+
+    Runs when the target state is already reached and the installer is
+    skipped. A panel that already has a certificate changes nothing.
+    When it has none, the stage detects the public IPv4 address, frees
+    the ACME port and issues a shortlived Let's Encrypt certificate
+    through acme.sh. Returns None on success and a TaskResult with a
+    warning when the certificate cannot be set up (no public address,
+    busy port, acme.sh failure).
+    """
+
+    if not cfg.ssl_enabled:
+        return None
+    if _panel_cert_value(cfg, timeout) is not None:
+        _log("stage 4: SSL certificate already configured")
+        return None
+    ip = _detect_server_ip(timeout)
+    if ip is None:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=("cannot detect public IPv4 address for SSL setup",),
+        )
+    _log(f"stage 4: issuing Let's Encrypt IP certificate for {ip}")
+    try:
+        freed = ensure_port_free(
+            ACME_PORT,
+            cfg.service_unit_name,
+            timeout,
+            service_process_name="x-ui",
+        )
+    except RuntimeError as exc:
+        return TaskResult(success=True, changed=False, warnings=(str(exc),))
+    if freed:
+        _log(f"stage 4: ACME port {ACME_PORT}: {freed}")
+    ok, message = _issue_ip_certificate(cfg, ip, timeout)
+    if not ok:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(f"SSL certificate setup failed: {message}",),
+        )
+    _log(f"stage 4: {message}")
+    return TaskResult(
+        success=True, changed=True, message="SSL certificate configured"
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Wrap the official 3x-ui installer; done when the same version runs.
 
@@ -510,14 +743,17 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
-    if (
+    rerun = (
         not force
         and installed_version == _normalized_version(tag)
         and enabled
         and active
-    ):
+    )
+    if rerun:
         _log("target state already reached")
-        result = TaskResult(success=True, changed=False, message="already configured", warnings=())
+        result = TaskResult(
+            success=True, changed=False, message="already configured", warnings=()
+        )
     else:
         # The panel binds the fixed port, so the port must be free before
         # the installer runs: stop x-ui when it owns the port, terminate
@@ -535,6 +771,23 @@ def task(ctx: Context) -> TaskResult:
         if freed:
             _log(f"panel port {cfg.panel_port}: {freed}")
 
+        # The installer's SSL step runs the ACME HTTP-01 challenge on
+        # port 80 and fails in non-interactive mode when the port is
+        # busy, so the port must be free before the installer runs.
+        if cfg.ssl_enabled:
+            _log(f"checking ACME port {ACME_PORT} is free")
+            try:
+                freed = ensure_port_free(
+                    ACME_PORT,
+                    cfg.service_unit_name,
+                    timeout,
+                    service_process_name="x-ui",
+                )
+            except RuntimeError as exc:
+                return TaskResult(success=False, error=str(exc))
+            if freed:
+                _log(f"ACME port {ACME_PORT}: {freed}")
+
         _log(f"downloading installer {cfg.install_script_url}")
         try:
             script_path = _download_installer(cfg, timeout)
@@ -543,8 +796,11 @@ def task(ctx: Context) -> TaskResult:
         _log("installer downloaded")
 
         _log("running official 3x-ui installer with proquint credentials")
+        installer_env = _credential_env(cfg)
+        if cfg.ssl_enabled:
+            installer_env["XUI_SSL_MODE"] = "ip"
         try:
-            _run_installer(script_path, timeout, _credential_env(cfg))
+            _run_installer(script_path, timeout, installer_env)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"installer failed: {exc}")
         _log("installer finished")
@@ -586,11 +842,23 @@ def task(ctx: Context) -> TaskResult:
         stage3_warnings = stage3_result.warnings or ()
         stage3_changed = stage3_result.changed
 
-    all_warnings = stage2_warnings + stage3_warnings
-    if all_warnings or stage3_changed:
+    # Stage 4: ensure the Let's Encrypt IP certificate on a rerun. When
+    # the installer ran it already had XUI_SSL_MODE=ip; when it was
+    # skipped the stage issues the certificate itself.
+    stage4_result: TaskResult | None = None
+    stage4_warnings: tuple[str, ...] = ()
+    stage4_changed = False
+    if rerun:
+        stage4_result = _stage_ssl(cfg, timeout)
+        if stage4_result is not None:
+            stage4_warnings = stage4_result.warnings or ()
+            stage4_changed = stage4_result.changed
+
+    all_warnings = stage2_warnings + stage3_warnings + stage4_warnings
+    if all_warnings or stage3_changed or stage4_changed:
         return TaskResult(
             success=True,
-            changed=result.changed or stage3_changed,
+            changed=result.changed or stage3_changed or stage4_changed,
             message=result.message,
             warnings=all_warnings or (),
         )
