@@ -13,6 +13,7 @@ without a running panel.
 
 from __future__ import annotations
 
+import http.cookiejar
 import json
 import urllib.error
 import urllib.parse
@@ -70,118 +71,40 @@ def build_panel_url(
     return base
 
 
-def _csrf_token(
-    base_url: str, timeout: float
-) -> str | None:
-    """Fetch a CSRF token from the panel, or None on failure.
+def _request(
+    opener: urllib.request.OpenerDirector,
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    timeout: float,
+) -> tuple[int, str]:
+    """Send an HTTP request and return (status_code, body).
 
-    GET /csrf-token returns {"success":true,"obj":"<token>"}. The
-    request also sets a session cookie (3x-ui) that must be reused in
-    the login call. Returns the token string or None when the panel
-    does not answer or returns an unexpected payload.
+    Uses the provided opener (which carries a cookie jar) so session
+    cookies persist across calls. Returns (0, '') on connection errors.
     """
 
-    url = f"{base_url}/csrf-token"
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers or {},
+        method=method,
+    )
     try:
-        req = urllib.request.Request(
-            url,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
+            return (resp.status, body)
+    except urllib.error.HTTPError as exc:
+        return (exc.code, exc.read().decode("utf-8") if exc.fp else "")
     except (urllib.error.URLError, OSError, ValueError):
-        return None
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict) or not data.get("success"):
-        return None
-    token = data.get("obj")
-    return str(token) if isinstance(token, str) and token else None
+        return (0, "")
 
 
-def _login(
-    base_url: str, username: str, password: str, csrf_token: str, timeout: float
-) -> bool:
-    """Authenticate with the panel and establish a session cookie.
+def _json_success(body: str) -> bool:
+    """True when the body is valid JSON with success=true."""
 
-    POST /login with form-encoded username and password, the CSRF token
-    in the X-CSRF-Token header and the session cookie from the csrf-token
-    call. Returns True when the panel responds with success=true.
-    """
-
-    data = urllib.parse.urlencode(
-        {"username": username, "password": password}
-    ).encode("utf-8")
-    url = f"{base_url}/login"
-    try:
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-CSRF-Token": csrf_token,
-                "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{base_url}/",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        return False
-    return bool(isinstance(data, dict) and data.get("success"))
-
-
-def _verify_session(base_url: str, timeout: float) -> bool:
-    """Check that the session cookie is valid by calling a protected API.
-
-    GET /panel/api/inbounds/list with the session cookie from the login
-    call. Returns True when the panel responds with success=true.
-    """
-
-    url = f"{base_url}/panel/api/inbounds/list"
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"X-Requested-With": "XMLHttpRequest"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        return False
-    return bool(isinstance(data, dict) and data.get("success"))
-
-
-def _verify_bearer(base_url: str, api_token: str, timeout: float) -> bool:
-    """Check that the Bearer API token is valid.
-
-    GET /panel/api/inbounds/list with Authorization: Bearer <token>.
-    Returns True when the panel responds with success=true.
-    """
-
-    url = f"{base_url}/panel/api/inbounds/list"
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {api_token}",
-                "X-Requested-With": "XMLHttpRequest",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
@@ -210,18 +133,57 @@ def login_and_verify(
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
     )
-    token = _csrf_token(base_url, timeout)
-    if token is None:
+
+    # Create an opener with a cookie jar so the session cookie persists.
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar)
+    )
+
+    # Step 1: fetch CSRF token.
+    status, body = _request(
+        opener,
+        f"{base_url}/csrf-token",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        timeout=timeout,
+    )
+    if status != 200 or not _json_success(body):
         return False
-    if not _login(
-        base_url,
-        env.get("XUI_USERNAME", ""),
-        env.get("XUI_PASSWORD", ""),
-        token,
-        timeout,
-    ):
+    try:
+        token = json.loads(body).get("obj", "")
+    except (json.JSONDecodeError, AttributeError):
         return False
-    return _verify_session(base_url, timeout)
+    if not isinstance(token, str) or not token:
+        return False
+
+    # Step 2: login with username and password.
+    login_data = urllib.parse.urlencode(
+        {"username": env.get("XUI_USERNAME", ""), "password": env.get("XUI_PASSWORD", "")}
+    ).encode("utf-8")
+    status, body = _request(
+        opener,
+        f"{base_url}/login",
+        data=login_data,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRF-Token": token,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"{base_url}/",
+        },
+        method="POST",
+        timeout=timeout,
+    )
+    if status != 200 or not _json_success(body):
+        return False
+
+    # Step 3: verify the session by calling a protected API.
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/list",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        timeout=timeout,
+    )
+    return status == 200 and _json_success(body)
 
 
 def verify_bearer(
@@ -241,4 +203,17 @@ def verify_bearer(
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
     )
-    return _verify_bearer(base_url, env.get("XUI_API_TOKEN", ""), timeout)
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar)
+    )
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/list",
+        headers={
+            "Authorization": f"Bearer {env.get('XUI_API_TOKEN', '')}",
+            "X-Requested-With": "XMLHttpRequest",
+        },
+        timeout=timeout,
+    )
+    return status == 200 and _json_success(body)

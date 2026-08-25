@@ -10,7 +10,6 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -105,70 +104,68 @@ class TestBuildPanelUrl:
 class TestLoginAndVerify:
     """Tests for login_and_verify."""
 
-    def _mock_urlopen(
+    def _mock_request(
         self,
         monkeypatch: pytest.MonkeyPatch,
         *,
-        csrf_token: str | None = "tok123",
+        csrf_ok: bool = True,
         login_ok: bool = True,
         verify_ok: bool = True,
     ) -> None:
-        """Install a urllib.request.urlopen mock that simulates the panel."""
+        """Install a _request mock that simulates the panel."""
 
         call_count: list[int] = [0]
 
-        def fake_urlopen(
-            req: urllib.request.Request, **kwargs: object
-        ) -> Mock:
-            del kwargs
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener
             call_count[0] += 1
-            mock = Mock()
-            url = req.full_url
 
             if "/csrf-token" in url:
-                payload = {"success": True, "obj": csrf_token} if csrf_token else {"success": False}
-                mock.read.return_value = json.dumps(payload).encode("utf-8")
+                if csrf_ok:
+                    return (200, json.dumps({"success": True, "obj": "tok123"}))
+                return (200, json.dumps({"success": False}))
             elif "/login" in url:
-                payload = {"success": login_ok, "msg": "ok" if login_ok else "fail"}
-                mock.read.return_value = json.dumps(payload).encode("utf-8")
+                if login_ok:
+                    return (200, json.dumps({"success": True, "msg": "ok"}))
+                return (200, json.dumps({"success": False, "msg": "fail"}))
             elif "/panel/api/inbounds/list" in url:
-                payload = {"success": verify_ok, "obj": []}
-                mock.read.return_value = json.dumps(payload).encode("utf-8")
-            else:
-                raise urllib.error.URLError("unexpected url")
-            # Support context manager protocol.
-            mock.__enter__ = lambda *a: mock
-            mock.__exit__ = lambda *a: None
-            return mock
+                if verify_ok:
+                    return (200, json.dumps({"success": True, "obj": []}))
+                return (200, json.dumps({"success": False}))
+            return (0, "")
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
 
     def test_successful_login(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch)
+        self._mock_request(monkeypatch)
         cfg = _cfg()
         env = {"XUI_USERNAME": "admin", "XUI_PASSWORD": "pass", "XUI_PANEL_PORT": "3579"}
         assert xui_client.login_and_verify(cfg, env, 5) is True
 
     def test_fails_on_csrf_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch, csrf_token=None)
+        self._mock_request(monkeypatch, csrf_ok=False)
         cfg = _cfg()
         env = {"XUI_USERNAME": "admin", "XUI_PASSWORD": "pass", "XUI_PANEL_PORT": "3579"}
         assert xui_client.login_and_verify(cfg, env, 5) is False
 
     def test_fails_on_login_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch, login_ok=False)
+        self._mock_request(monkeypatch, login_ok=False)
         cfg = _cfg()
         env = {"XUI_USERNAME": "admin", "XUI_PASSWORD": "wrong", "XUI_PANEL_PORT": "3579"}
         assert xui_client.login_and_verify(cfg, env, 5) is False
 
     def test_fails_on_verify_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch, verify_ok=False)
+        self._mock_request(monkeypatch, verify_ok=False)
         cfg = _cfg()
         env = {"XUI_USERNAME": "admin", "XUI_PASSWORD": "pass", "XUI_PANEL_PORT": "3579"}
         assert xui_client.login_and_verify(cfg, env, 5) is False
 
     def test_uses_web_base_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch)
+        self._mock_request(monkeypatch)
         cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
@@ -182,33 +179,32 @@ class TestLoginAndVerify:
 class TestVerifyBearer:
     """Tests for verify_bearer."""
 
-    def _mock_urlopen(
+    def _mock_request(
         self,
         monkeypatch: pytest.MonkeyPatch,
         *,
         ok: bool = True,
     ) -> None:
-        def fake_urlopen(
-            req: urllib.request.Request, **kwargs: object
-        ) -> Mock:
-            del kwargs
-            mock = Mock()
-            payload = {"success": ok, "obj": []}
-            mock.read.return_value = json.dumps(payload).encode("utf-8")
-            mock.__enter__ = lambda *a: mock
-            mock.__exit__ = lambda *a: None
-            return mock
+        def fake_request(
+            opener: object,
+            url: str,
+            **kwargs: object,
+        ) -> tuple[int, str]:
+            del opener, url, kwargs
+            if ok:
+                return (200, json.dumps({"success": True, "obj": []}))
+            return (200, json.dumps({"success": False}))
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
 
     def test_successful(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch, ok=True)
+        self._mock_request(monkeypatch, ok=True)
         cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
         assert xui_client.verify_bearer(cfg, env, 5) is True
 
     def test_fails_on_bad_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._mock_urlopen(monkeypatch, ok=False)
+        self._mock_request(monkeypatch, ok=False)
         cfg = _cfg()
         env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
         assert xui_client.verify_bearer(cfg, env, 5) is False
