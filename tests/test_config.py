@@ -164,6 +164,14 @@ regex = ".*"
 beacon = true
 listen = true
 
+[three_x_ui_xray_setup]
+github_repo = "MHSanaei/3x-ui"
+install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"
+install_dir = "/usr/local/x-ui"
+service_unit_name = "x-ui.service"
+start_check_attempts = 10
+start_check_retry_delay_seconds = 1
+
 [tor_setup]
 package_name = "tor"
 service_unit_name = "tor@default.service"

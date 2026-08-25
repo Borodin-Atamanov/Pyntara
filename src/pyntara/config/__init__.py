@@ -43,6 +43,7 @@ from .system_metrics_setup import (
     SystemMetricsSetupConfig,
 )
 from .tasks import TaskConfig
+from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
 from .vault import LocalVaultSetupConfig, VaultEntry, VaultStructureConfig
 from .yggdrasil_service_setup import (
@@ -81,6 +82,7 @@ __all__ = [
     "SystemMetricsCollectorConfig",
     "SystemMetricsSetupConfig",
     "TaskConfig",
+    "ThreeXuiXraySetupConfig",
     "TorSetupConfig",
     "VaultEntry",
     "VaultStructureConfig",

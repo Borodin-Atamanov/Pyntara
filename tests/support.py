@@ -34,6 +34,7 @@ from pyntara.config import (
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
     TaskConfig,
+    ThreeXuiXraySetupConfig,
     TorSetupConfig,
     VaultEntry,
     VaultStructureConfig,
@@ -323,6 +324,14 @@ def make_config(
     i2pd_tunnel_keys_path: Path = Path("/var/lib/i2pd/ssh.dat"),
     i2pd_address_file_path: Path = Path("/var/lib/pyntara/i2pd_ssh_address"),
     i2pd_address_file_mode: int = 0o644,
+    three_x_ui_github_repo: str = "MHSanaei/3x-ui",
+    three_x_ui_install_script_url: str = (
+        "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"
+    ),
+    three_x_ui_install_dir: Path = Path("/usr/local/x-ui"),
+    three_x_ui_service_unit_name: str = "x-ui.service",
+    three_x_ui_start_check_attempts: int = 10,
+    three_x_ui_start_check_retry_delay_seconds: int = 1,
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",
@@ -681,6 +690,14 @@ def make_config(
             tunnel_keys_path=i2pd_tunnel_keys_path,
             address_file_path=i2pd_address_file_path,
             address_file_mode=i2pd_address_file_mode,
+        ),
+        three_x_ui_xray_setup=ThreeXuiXraySetupConfig(
+            github_repo=three_x_ui_github_repo,
+            install_script_url=three_x_ui_install_script_url,
+            install_dir=three_x_ui_install_dir,
+            service_unit_name=three_x_ui_service_unit_name,
+            start_check_attempts=three_x_ui_start_check_attempts,
+            start_check_retry_delay_seconds=three_x_ui_start_check_retry_delay_seconds,
         ),
         yggdrasil_service_setup=YggdrasilServiceSetupConfig(
             github_repo=yggdrasil_github_repo,

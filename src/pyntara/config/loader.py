@@ -34,6 +34,10 @@ from .system_metrics_setup import (
     _system_metrics_setup_table,
 )
 from .tasks import TaskConfig, _tasks_table
+from .three_x_ui_xray_setup import (
+    ThreeXuiXraySetupConfig,
+    _three_x_ui_xray_setup_table,
+)
 from .tor_setup import TorSetupConfig, _tor_setup_table
 from .vault import (
     LocalVaultSetupConfig,
@@ -65,6 +69,7 @@ class Config:
     zram_service: ZramServiceConfig
     i2pd_service_setup: I2pdServiceSetupConfig
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
+    three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
@@ -144,6 +149,9 @@ def load_config(path: Path) -> Config:
         ),
         yggdrasil_service_setup=_yggdrasil_service_setup_table(
             data.get("yggdrasil_service_setup")
+        ),
+        three_x_ui_xray_setup=_three_x_ui_xray_setup_table(
+            data.get("three_x_ui_xray_setup")
         ),
         tor_setup=_tor_setup_table(data.get("tor_setup")),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),

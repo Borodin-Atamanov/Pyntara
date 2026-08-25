@@ -113,3 +113,9 @@ name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]
 modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "three_x_ui_xray_setup"
+description = "Install the 3x-ui Xray panel from GitHub releases as a system service via the official installer."
+depends = []
+modes = []

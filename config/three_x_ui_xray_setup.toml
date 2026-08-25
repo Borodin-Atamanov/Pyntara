@@ -1,0 +1,19 @@
+[three_x_ui_xray_setup]
+# 3x-ui Xray panel installation parameters (docs/spec/3x-ui.md).
+# The task wraps the official 3x-ui installer: it compares the installed
+# version with the newest release and runs the official install.sh in
+# non-interactive mode only when the version differs, the service is not
+# in the target state, or the task is forced.
+# GitHub repository of 3x-ui, owner/name form used by the releases API.
+github_repo = "MHSanaei/3x-ui"
+# URL of the official installer script the task downloads and runs.
+install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"
+# Directory holding the x-ui binary, where the installed version is read.
+install_dir = "/usr/local/x-ui"
+# Name of the systemd service unit the official installer creates.
+service_unit_name = "x-ui.service"
+# Readiness loop after the installer runs: attempts and pause between
+# two is-active checks.
+start_check_attempts = 10
+# Pause in seconds between two readiness checks.
+start_check_retry_delay_seconds = 1
