@@ -582,6 +582,9 @@ def _issue_ip_certificate(
 
     if not _ensure_acme(timeout):
         return False, "acme.sh install failed"
+    # acme.sh installcert does not create the certificate directory
+    # itself; the installer creates it with mkdir -p before the call.
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
     acme = _acme_path()
     reload_cmd = f"systemctl restart {cfg.service_unit_name} 2>/dev/null || true"
     steps = [
@@ -631,6 +634,11 @@ def _issue_ip_certificate(
             )
     if not CERT_FULLCHAIN.is_file() or not CERT_PRIVKEY.is_file():
         return False, "certificate files missing after acme.sh installcert"
+    try:
+        os.chmod(CERT_PRIVKEY, 0o600)
+        os.chmod(CERT_FULLCHAIN, 0o644)
+    except OSError as exc:
+        return False, f"cannot secure certificate permissions: {exc}"
     try:
         run_command(
             [

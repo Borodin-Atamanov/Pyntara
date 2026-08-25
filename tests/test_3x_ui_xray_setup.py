@@ -765,13 +765,16 @@ class TestStageSsl:
     def test_issue_ip_certificate_runs_acme_steps(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The acme.sh command sequence mirrors the installer: issue,
-        # installcert and point the panel at the files.
+        # The acme.sh command sequence mirrors the installer: create the
+        # certificate directory, issue, installcert and point the panel
+        # at the files.
         calls: list[list[str]] = []
-        cert_full = tmp_path / "fullchain.pem"
-        cert_key = tmp_path / "privkey.pem"
+        cert_dir = tmp_path / "cert"
+        cert_full = cert_dir / "fullchain.pem"
+        cert_key = cert_dir / "privkey.pem"
         monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
         monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+        monkeypatch.setattr(xui, "CERT_DIR", cert_dir)
         monkeypatch.setattr(xui, "CERT_FULLCHAIN", cert_full)
         monkeypatch.setattr(xui, "CERT_PRIVKEY", cert_key)
 
@@ -789,12 +792,15 @@ class TestStageSsl:
         cfg = self._cfg(tmp_path)
         ok, message = xui._issue_ip_certificate(cfg, "203.0.113.5", 30)
         assert ok is True
+        assert cert_dir.is_dir()
         assert any(command[1] == "--issue" and "203.0.113.5" in command for command in calls)
         assert any(command[1] == "--installcert" for command in calls)
         assert any(
             command[0] == str(cfg.install_dir / "x-ui") and command[1] == "cert"
             for command in calls
         )
+        assert cert_key.stat().st_mode & 0o777 == 0o600
+        assert cert_full.stat().st_mode & 0o777 == 0o644
         assert message == "certificate issued"
 
     def test_issue_ip_certificate_warns_on_step_failure(
@@ -803,6 +809,7 @@ class TestStageSsl:
         # A failed acme.sh step reports a failure message.
         monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
         monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+        monkeypatch.setattr(xui, "CERT_DIR", tmp_path / "cert")
 
         def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
             del kwargs
