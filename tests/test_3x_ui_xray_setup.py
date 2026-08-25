@@ -209,6 +209,56 @@ def _install_fake(
     return calls
 
 
+def _panel_fake(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    show_port: str = "35353",
+    cert_value: str | None = None,
+) -> list[list[str]]:
+    """Fake subprocess with a queryable panel; return the command calls.
+
+    Answers `x-ui setting -show true` with the given port and `setting
+    -getCert true` with the given certificate, so the port convergence
+    and the SSL checks work through the real helpers. curl serves the
+    release JSON and writes the fixture installer; bash runs it; the
+    service reports enabled and active.
+    """
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        calls.append(list(command))
+        if command[0] == "curl":
+            if "--output" in command:
+                path = Path(command[command.index("--output") + 1])
+                path.write_text("#!/bin/sh\necho fake installer\n", encoding="utf-8")
+            return _FakeProc(0, _release_json())
+        if command[0] == "bash":
+            return _FakeProc(0)
+        if command[0] == "ip":
+            return _FakeProc(0)
+        if command[0].endswith("x-ui"):
+            if command[1:3] == ["setting", "-show"]:
+                return _FakeProc(0, f"port: {show_port}\nwebBasePath: /xui/\n")
+            if command[1:3] == ["setting", "-getCert"]:
+                return _FakeProc(0, f"cert: {cert_value or ''}\n")
+            if command[1:3] == ["setting", "-port"]:
+                return _FakeProc(0)
+            if command[1] == "-v":
+                return _FakeProc(0, f"{TAG}\n")
+        if command[0] == "systemctl":
+            if command[1] == "is-enabled":
+                return _FakeProc(0, "enabled\n")
+            if command[1] == "is-active":
+                return _FakeProc(0, "active\n")
+            return _FakeProc(0)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    return calls
+
+
 def test_already_configured_does_not_run_installer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -686,6 +736,382 @@ class TestProquintCredentials:
         assert "still occupied" in (result.error or "")
         assert not any(call[0] == "bash" for call in calls)
 
+    def test_nat_skip_passes_ssl_mode_none(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A machine behind NAT without a port-80 forward: the installer
+        # runs with XUI_SSL_MODE=none, the ACME port is not freed, and
+        # the task warns that SSL was skipped.
+        envs: list[dict[str, str]] = []
+        captured: list[int] = []
+
+        def fake_ensure_port_free(
+            port: int, *_args: object, **_kwargs: object
+        ) -> None:
+            captured.append(port)
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: False)
+        monkeypatch.setattr(
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+        )
+        monkeypatch.setattr(
+            xui, "_sync_install_result_env", lambda _cfg, _timeout: False
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            captured_env=envs,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert envs[0]["XUI_SSL_MODE"] == "none"
+        assert captured == [35353]
+        assert any("SSL skipped" in w for w in result.warnings or ())
+
+    def test_nat_forward_attempts_ssl(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A machine behind NAT with a confirmed port-80 forward: SSL is
+        # attempted with XUI_SSL_MODE=ip and the ACME port is freed.
+        envs: list[dict[str, str]] = []
+        captured: list[int] = []
+
+        def fake_ensure_port_free(
+            port: int, *_args: object, **_kwargs: object
+        ) -> None:
+            captured.append(port)
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: True)
+        monkeypatch.setattr(
+            "pyntara.xui.panel_cert_value",
+            lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
+        )
+        monkeypatch.setattr(
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+        )
+        monkeypatch.setattr(
+            xui, "_sync_install_result_env", lambda _cfg, _timeout: False
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            captured_env=envs,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert envs[0]["XUI_SSL_MODE"] == "ip"
+        assert captured == [35353, 80]
+
+    def test_post_verify_warns_when_ssl_attempt_failed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # SSL was attempted but the panel has no certificate: the task
+        # warns that the certificate could not be issued.
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: True)
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+        )
+        monkeypatch.setattr(
+            xui, "_sync_install_result_env", lambda _cfg, _timeout: False
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any("could not be issued" in w for w in result.warnings or ())
+
+
+class TestPanelPortConvergence:
+    """Tests for bringing the panel to the configured port."""
+
+    def _cfg(self, tmp_path: Path) -> object:
+        return make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
+            three_x_ui_install_result_env_path=(
+                tmp_path / "etc" / "x-ui" / "install-result.env"
+            ),
+        ).three_x_ui_xray_setup
+
+    def test_converge_panel_port_migrates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The panel is on a different port: the target port is freed, the
+        # new port is set and the panel restarts.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(list(command))
+            if command[1:3] == ["setting", "-show"]:
+                return _FakeProc(0, "port: 35905\nwebBasePath: /xui/\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        cfg = self._cfg(tmp_path)
+        changed, message = xui._converge_panel_port(cfg, 30)
+        assert changed is True
+        assert message == "panel port moved to 35353"
+        assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
+        assert ["systemctl", "restart", "x-ui.service"] in calls
+
+    def test_converge_panel_port_noop_when_already_correct(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The panel already listens on the configured port: nothing changes.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(list(command))
+            if command[1:3] == ["setting", "-show"]:
+                return _FakeProc(0, "port: 35353\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = self._cfg(tmp_path)
+        changed, message = xui._converge_panel_port(cfg, 30)
+        assert changed is False
+        assert message is None
+        assert not any(c[1:3] == ["setting", "-port"] for c in calls)
+
+    def test_converge_panel_port_raises_when_occupied(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The target port stays occupied: the migration raises.
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            if command[1:3] == ["setting", "-show"]:
+                return _FakeProc(0, "port: 35905\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        monkeypatch.setattr(
+            xui,
+            "ensure_port_free",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("still occupied")),
+        )
+        cfg = self._cfg(tmp_path)
+        with pytest.raises(RuntimeError):
+            xui._converge_panel_port(cfg, 30)
+
+    def test_converges_panel_port_after_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The installer left the panel on an old port: the task brings it
+        # to the configured port and updates install-result.env.
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        calls = _panel_fake(monkeypatch, show_port="35905")
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
+        assert ["systemctl", "restart", "x-ui.service"] in calls
+        env_text = (tmp_path / "etc" / "x-ui" / "install-result.env").read_text(
+            encoding="utf-8"
+        )
+        assert "XUI_PANEL_PORT=35353" in env_text
+
+    def test_converges_panel_port_on_rerun(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A rerun finds the panel on an old port and migrates it to the
+        # configured one, reporting a change.
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        calls = _panel_fake(monkeypatch, show_port="35905")
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True
+        assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
+        assert ["systemctl", "restart", "x-ui.service"] in calls
+
+    def test_sync_install_result_env_updates_port_and_scheme(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The file carries a stale port and an http access url while the
+        # panel serves https: both are rewritten to match reality.
+        env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            "XUI_USERNAME=admin\nXUI_PASSWORD=pass\nXUI_PANEL_PORT=3579\n"
+            "XUI_WEB_BASE_PATH=/xui\n"
+            "XUI_ACCESS_URL=http://203.0.113.5:3579/xui\n"
+            "XUI_API_TOKEN=tok\nXUI_DB_TYPE=sqlite\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "https")
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_result_env_path=env_path,
+        )
+        cfg = config.three_x_ui_xray_setup
+        assert xui._sync_install_result_env(cfg, 30) is True
+        text = env_path.read_text(encoding="utf-8")
+        assert "XUI_PANEL_PORT=35353" in text
+        assert "XUI_ACCESS_URL=https://203.0.113.5:35353/xui" in text
+
+    def test_sync_install_result_env_noop_when_current(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The file already carries the real port and scheme: no rewrite.
+        env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            "XUI_USERNAME=admin\nXUI_PASSWORD=pass\nXUI_PANEL_PORT=35353\n"
+            "XUI_WEB_BASE_PATH=/xui\n"
+            "XUI_ACCESS_URL=http://203.0.113.5:35353/xui\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_result_env_path=env_path,
+        )
+        cfg = config.three_x_ui_xray_setup
+        assert xui._sync_install_result_env(cfg, 30) is False
+
+
+class TestSslReachability:
+    """Tests for deciding whether the HTTP-01 challenge can be served."""
+
+    def test_is_private_ipv4_ranges(self) -> None:
+        assert xui._is_private_ipv4("10.0.0.1") is True
+        assert xui._is_private_ipv4("172.16.0.1") is True
+        assert xui._is_private_ipv4("172.31.255.255") is True
+        assert xui._is_private_ipv4("172.32.0.1") is False
+        assert xui._is_private_ipv4("192.168.1.1") is True
+        assert xui._is_private_ipv4("203.0.113.5") is False
+
+    def test_local_ipv4_parses_first_inet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(
+                0,
+                "3: wlp86s0 inet 192.168.187.146/24 brd 192.168.187.255 "
+                "scope global dynamic\n",
+            ),
+        )
+        assert xui._local_ipv4(30) == "192.168.187.146"
+
+    def test_local_ipv4_none_on_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(0, ""),
+        )
+        assert xui._local_ipv4(30) is None
+
+    def test_ssl_reachable_public_address(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A public address on the interface allows the attempt directly.
+        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "203.0.113.5")
+        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _t: False)
+        assert xui._ssl_reachable(30) is True
+
+    def test_ssl_reachable_private_with_forward(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Behind NAT with a confirmed port-80 forward: attempt SSL.
+        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "192.168.1.10")
+        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _t: True)
+        assert xui._ssl_reachable(30) is True
+
+    def test_ssl_reachable_private_without_forward(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Behind NAT without a forward: skip SSL.
+        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "192.168.1.10")
+        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _t: False)
+        assert xui._ssl_reachable(30) is False
+
+    def test_ssl_reachable_unknown_local_address(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Unknown local address: the attempt is allowed, never skipped.
+        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: None)
+        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _t: False)
+        assert xui._ssl_reachable(30) is True
+
+    def test_probe_port_80_forward_confirmed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The temporary listener answers a connection through the public
+        # address: the forward is confirmed.
+        fake_proc = Mock()
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _t: "203.0.113.5")
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
+            lambda *a, **k: fake_proc,
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(0, "ok"),
+        )
+        assert xui._probe_port_80_forward(30) is True
+        fake_proc.terminate.assert_called_once()
+
+    def test_probe_port_80_forward_not_confirmed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The connection fails (no forward): not confirmed.
+        fake_proc = Mock()
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _t: "203.0.113.5")
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
+            lambda *a, **k: fake_proc,
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(7, ""),
+        )
+        assert xui._probe_port_80_forward(30) is False
+        fake_proc.terminate.assert_called_once()
+
+    def test_probe_port_80_forward_needs_public_ip(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No public address: the probe cannot confirm a forward.
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _t: None)
+        assert xui._probe_port_80_forward(30) is False
+
 
 class TestStageSsl:
     """Tests for stage 4: the Let's Encrypt IP certificate setup."""
@@ -726,6 +1152,19 @@ class TestStageSsl:
         assert result.changed is False
         assert any("public IPv4" in w for w in result.warnings or ())
 
+    def test_stage_ssl_skips_when_not_reachable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The machine is behind NAT without a port-80 forward: the stage
+        # warns and does not attempt the certificate.
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: False)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        assert result is not None
+        assert result.changed is False
+        assert any("SSL skipped" in w for w in result.warnings or ())
+
     def test_stage_ssl_issues_cert_when_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -739,6 +1178,7 @@ class TestStageSsl:
 
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: True)
         monkeypatch.setattr(xui, "_issue_ip_certificate", fake_issue)
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
         result = xui._stage_ssl(self._cfg(tmp_path), 30)
@@ -752,6 +1192,7 @@ class TestStageSsl:
         # acme.sh fails to issue the certificate: the stage warns.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _timeout: True)
         monkeypatch.setattr(
             xui,
             "_issue_ip_certificate",

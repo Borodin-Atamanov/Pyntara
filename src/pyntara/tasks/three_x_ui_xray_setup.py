@@ -36,13 +36,18 @@ the panel's getNewX25519Cert endpoint; the private and public keys are
 appended to the vault entry notes. On a rerun the task finds the
 existing inbound by port and returns done without creating a duplicate.
 
-Stage 4 ensures the Let's Encrypt IP certificate when ssl_enabled. The
-installer runs with XUI_SSL_MODE=ip and the ACME port is freed before
-it, so a fresh install or a forced rerun gets the certificate from the
-installer. On a rerun where the installer is skipped, the stage checks
-`x-ui setting -getCert` and issues the certificate through acme.sh when
-the panel has none. A panel that cannot be reached by Let's Encrypt
-reports a warning instead of failing the task.
+Stage 4 ensures the Let's Encrypt IP certificate when ssl_enabled and
+the HTTP-01 challenge can reach the machine: a machine with a public
+address on an interface (a VPS) or a confirmed port-80 forward runs the
+installer with XUI_SSL_MODE=ip; a machine behind NAT without a forward
+skips SSL with a clear warning and the panel stays HTTP. On a rerun
+where the installer is skipped, the stage checks `x-ui setting -getCert`
+and issues the certificate through acme.sh when the panel has none.
+After the installer (and on a rerun) the task brings the panel to the
+configured port, migrating it when an earlier install left it on another
+port, and syncs install-result.env so its port and scheme match reality.
+A panel that cannot be reached by Let's Encrypt reports a warning
+instead of failing the task.
 """
 
 import json
@@ -537,6 +542,249 @@ def _detect_server_ip(timeout: float) -> str | None:
     return None
 
 
+def _is_private_ipv4(address: str) -> bool:
+    """True for an RFC1918 private IPv4 address (the machine is behind NAT).
+
+    The private ranges are 10.0.0.0/8, 172.16.0.0/12 and
+    192.168.0.0/16. A machine whose own interface carries only private
+    addresses cannot serve the Let's Encrypt HTTP-01 challenge on port 80
+    unless the router forwards it.
+    """
+
+    parts = address.split(".")
+    if len(parts) != 4:
+        return False
+    if parts[0] == "10":
+        return True
+    if parts[0] == "172" and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+        return True
+    return parts[0] == "192" and parts[1] == "168"
+
+
+def _local_ipv4(timeout: float) -> str | None:
+    """The machine's own global-scope IPv4 address, or None.
+
+    Parsed from `ip -4 -o addr show scope global`; the first inet
+    address wins. None when ip is unavailable or no address is found.
+    """
+
+    try:
+        result = run_command(
+            ["ip", "-4", "-o", "addr", "show", "scope", "global"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    for line in result.stdout.splitlines():
+        match = re.search(r"\binet\s+(\d{1,3}(?:\.\d{1,3}){3})/\d+", line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _probe_port_80_forward(timeout: float) -> bool:
+    """True when external port 80 is forwarded back to this machine.
+
+    Binds a temporary HTTP listener on the ACME port and connects to the
+    detected public address from the machine itself. A successful
+    connection means the router forwards external port 80 here; any
+    failure (no forward, no hairpin NAT, busy port, missing python3) is
+    treated as not confirmed.
+    """
+
+    public_ip = _detect_server_ip(timeout)
+    if public_ip is None:
+        return False
+    try:
+        listener = subprocess.Popen(
+            ["python3", "-m", "http.server", str(ACME_PORT), "--bind", "0.0.0.0"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    try:
+        time.sleep(1)
+        try:
+            result = run_command(
+                [
+                    "curl",
+                    "--silent",
+                    "--connect-timeout",
+                    "5",
+                    "--max-time",
+                    "8",
+                    f"http://{public_ip}:{ACME_PORT}/",
+                ],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
+    finally:
+        listener.terminate()
+        try:
+            listener.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            listener.kill()
+
+
+def _ssl_reachable(timeout: float) -> bool:
+    """Whether the Let's Encrypt HTTP-01 challenge can be served.
+
+    A machine with a public address on an interface (a VPS) serves the
+    challenge directly. A machine behind NAT can only when the router
+    forwards external port 80 back to it, which the self-test confirms.
+    When the local address cannot be determined the attempt is allowed,
+    so a working setup is never skipped by accident.
+    """
+
+    local_ip = _local_ipv4(timeout)
+    if local_ip is None or not _is_private_ipv4(local_ip):
+        return True
+    return _probe_port_80_forward(timeout)
+
+
+def _actual_panel_port(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> str | None:
+    """The panel port from `x-ui setting -show true`, or None.
+
+    The setting output prints "port: N" among other values; the first
+    matching line wins. None when the panel cannot be queried or the
+    line is absent.
+    """
+
+    try:
+        result = run_command(
+            [str(cfg.install_dir / "x-ui"), "setting", "-show", "true"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        match = re.search(r"^\s*port:\s*(\d+)\s*$", line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _converge_panel_port(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> tuple[bool, str | None]:
+    """Bring the panel to the configured port; returns (changed, message).
+
+    Reads the actual panel port from `x-ui setting -show true`. When it
+    differs from cfg.panel_port the target port is freed, the new port
+    is set through `x-ui setting -port` and the panel restarts so the
+    change takes effect. Raises RuntimeError when the port stays
+    occupied or the panel cannot be reconfigured. An unreadable panel
+    port is reported as a message with changed=False, so a transient
+    read failure does not fail the task.
+    """
+
+    actual = _actual_panel_port(cfg, timeout)
+    if actual is None:
+        return False, "cannot read panel port"
+    if actual == str(cfg.panel_port):
+        return False, None
+    try:
+        ensure_port_free(
+            cfg.panel_port,
+            cfg.service_unit_name,
+            timeout,
+            service_process_name="x-ui",
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"panel port {cfg.panel_port} still occupied: {exc}"
+        ) from None
+    try:
+        run_command(
+            [str(cfg.install_dir / "x-ui"), "setting", "-port", str(cfg.panel_port)],
+            timeout=timeout,
+        )
+        run_command(
+            ["systemctl", "restart", cfg.service_unit_name],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"cannot move panel to port {cfg.panel_port}: {exc}"
+        ) from None
+    return True, f"panel port moved to {cfg.panel_port}"
+
+
+def _sync_install_result_env(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> bool:
+    """Rewrite install-result.env so its port and access URL match reality.
+
+    The panel port converges to cfg.panel_port and the access URL scheme
+    follows the configured certificate, so consumers never read a stale
+    port or a scheme the panel does not serve. Returns True when the
+    file changed.
+    """
+
+    env_path = Path(cfg.install_result_env_path)
+    if not env_path.is_file():
+        return False
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    values: dict[str, str] = {}
+    order: list[str] = []
+    for line in text.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+            order.append(key.strip())
+    port = str(cfg.panel_port)
+    try:
+        scheme = xui_client.panel_scheme(cfg, timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        scheme = None
+    url = values.get("XUI_ACCESS_URL")
+    changed = False
+    if values.get("XUI_PANEL_PORT") != port:
+        values["XUI_PANEL_PORT"] = port
+        changed = True
+    if url is not None:
+        old_scheme = url.split("://", 1)[0] if "://" in url else "http"
+        host = ""
+        if "://" in url:
+            host = url.split("://", 1)[1].split("/", 1)[0]
+            if ":" in host:
+                host = host.split(":", 1)[0]
+        new_url = f"{scheme or old_scheme}://{host}:{port}"
+        web_path = values.get("XUI_WEB_BASE_PATH", "").strip("/")
+        if web_path:
+            new_url += f"/{web_path}"
+        if url != new_url:
+            values["XUI_ACCESS_URL"] = new_url
+            changed = True
+    if not changed:
+        return False
+    new_lines = []
+    for key in order:
+        new_lines.append(f"{key}={values[key]}")
+    for key, value in values.items():
+        if key not in order:
+            new_lines.append(f"{key}={value}")
+    try:
+        env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 def _acme_path() -> Path:
     """The acme.sh binary under the current user's home directory."""
 
@@ -684,6 +932,19 @@ def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | Non
             changed=False,
             warnings=("cannot detect public IPv4 address for SSL setup",),
         )
+    if not _ssl_reachable(timeout):
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(
+                (
+                    "SSL skipped: port 80 is not reachable from the internet "
+                    "on this machine (it is behind NAT), so the panel serves "
+                    "HTTP. To enable HTTPS, forward port 80 to this machine "
+                    "and re-run the task."
+                ),
+            ),
+        )
     _log(f"stage 4: issuing Let's Encrypt IP certificate for {ip}")
     try:
         freed = ensure_port_free(
@@ -761,6 +1022,8 @@ def task(ctx: Context) -> TaskResult:
         and enabled
         and active
     )
+    ssl_attempt = False
+    ssl_skip_warning = ""
     if rerun:
         _log("target state already reached")
         result = TaskResult(
@@ -783,10 +1046,26 @@ def task(ctx: Context) -> TaskResult:
         if freed:
             _log(f"panel port {cfg.panel_port}: {freed}")
 
+        # Decide whether the Let's Encrypt HTTP-01 challenge can reach
+        # this machine before passing XUI_SSL_MODE. A machine behind NAT
+        # (only private addresses on its interfaces) cannot serve the
+        # challenge unless the router forwards port 80; attempting SSL
+        # there would fail with a misleading error, so it is skipped and
+        # the panel stays HTTP with a clear warning.
+        if cfg.ssl_enabled:
+            ssl_attempt = _ssl_reachable(timeout)
+            if not ssl_attempt:
+                ssl_skip_warning = (
+                    "SSL skipped: port 80 is not reachable from the "
+                    "internet on this machine (it is behind NAT), so the "
+                    "panel serves HTTP. To enable HTTPS, forward port 80 "
+                    "to this machine and re-run the task."
+                )
+
         # The installer's SSL step runs the ACME HTTP-01 challenge on
         # port 80 and fails in non-interactive mode when the port is
         # busy, so the port must be free before the installer runs.
-        if cfg.ssl_enabled:
+        if ssl_attempt:
             _log(f"checking ACME port {ACME_PORT} is free")
             try:
                 freed = ensure_port_free(
@@ -810,7 +1089,7 @@ def task(ctx: Context) -> TaskResult:
         _log("running official 3x-ui installer with proquint credentials")
         installer_env = _credential_env(cfg)
         if cfg.ssl_enabled:
-            installer_env["XUI_SSL_MODE"] = "ip"
+            installer_env["XUI_SSL_MODE"] = "ip" if ssl_attempt else "none"
         try:
             _run_installer(script_path, timeout, installer_env)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -840,6 +1119,36 @@ def task(ctx: Context) -> TaskResult:
             success=True, changed=True, message=f"installed 3x-ui {tag}"
         )
 
+    # Bring the panel to the configured port and sync install-result.env
+    # so its port and scheme match reality. Runs in both paths: a rerun
+    # can find a panel on a port left by an earlier install, and the
+    # installer preserves an existing port on a reinstall.
+    try:
+        converged, converged_message = _converge_panel_port(cfg, timeout)
+    except RuntimeError as exc:
+        return TaskResult(success=False, error=str(exc))
+    if converged:
+        _log(f"panel port: {converged_message}")
+        result.changed = True
+        result.message = (result.message or "") + f"; {converged_message}"
+    _sync_install_result_env(cfg, timeout)
+
+    # When the installer attempted SSL (a machine with a public address)
+    # but the certificate is missing, the challenge could not be served:
+    # the panel stays HTTP and the user is told why instead of reading a
+    # silent https that does not exist.
+    if (
+        not rerun
+        and cfg.ssl_enabled
+        and ssl_attempt
+        and xui_client.panel_cert_value(cfg, timeout) is None
+    ):
+        ssl_skip_warning = (
+            "SSL certificate could not be issued: Let's Encrypt could "
+            "not reach port 80 on this machine (check the firewall or "
+            "port forwarding). The panel serves HTTP."
+        )
+
     # Stage 2: read credentials, verify session, store in vault.
     stage2_result = _stage2(cfg, ctx.config, timeout)
     stage2_warnings: tuple[str, ...] = ()
@@ -866,7 +1175,8 @@ def task(ctx: Context) -> TaskResult:
             stage4_warnings = stage4_result.warnings or ()
             stage4_changed = stage4_result.changed
 
-    all_warnings = stage2_warnings + stage3_warnings + stage4_warnings
+    ssl_warnings = (ssl_skip_warning,) if ssl_skip_warning else ()
+    all_warnings = ssl_warnings + stage2_warnings + stage3_warnings + stage4_warnings
     if all_warnings or stage3_changed or stage4_changed:
         return TaskResult(
             success=True,
