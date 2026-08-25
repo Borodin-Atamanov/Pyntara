@@ -479,7 +479,7 @@ def task(ctx: Context) -> TaskResult:
         and active
     ):
         _log("target state already reached")
-        result = TaskResult(success=True, changed=False, message="already configured")
+        result = TaskResult(success=True, changed=False, message="already configured", warnings=())
     else:
         _log(f"downloading installer {cfg.install_script_url}")
         try:
@@ -538,6 +538,6 @@ def task(ctx: Context) -> TaskResult:
             success=True,
             changed=result.changed or stage3_changed,
             message=result.message,
-            warnings=all_warnings or None,
+            warnings=all_warnings or (),
         )
     return result
