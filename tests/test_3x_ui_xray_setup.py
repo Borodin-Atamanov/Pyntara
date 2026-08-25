@@ -799,6 +799,9 @@ class TestStageSsl:
             command[0] == str(cfg.install_dir / "x-ui") and command[1] == "cert"
             for command in calls
         )
+        # The panel must restart after the cert paths are set to serve
+        # TLS with the new certificate.
+        assert ["systemctl", "restart", "x-ui.service"] in calls
         assert cert_key.stat().st_mode & 0o777 == 0o600
         assert cert_full.stat().st_mode & 0o777 == 0o644
         assert message == "certificate issued"

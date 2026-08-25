@@ -653,6 +653,16 @@ def _issue_ip_certificate(
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot point panel at certificate: {exc}"
+    # The panel only serves TLS after a restart; the acme.sh reloadcmd
+    # already restarted it before the certificate paths were set, so the
+    # restart must happen again after x-ui cert.
+    try:
+        run_command(
+            ["systemctl", "restart", cfg.service_unit_name],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot restart {cfg.service_unit_name}: {exc}"
     return True, "certificate issued"
 
 
