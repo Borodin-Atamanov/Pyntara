@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import pytest
+from support import FakeProc as _FakeProc
 
 from pyntara import xui as xui_client
 from pyntara.config import ThreeXuiXraySetupConfig
@@ -104,6 +105,44 @@ class TestBuildPanelUrl:
     def test_custom_address(self) -> None:
         url = xui_client.build_panel_url("0.0.0.0", "8080", "/xui")
         assert url == "http://0.0.0.0:8080/xui"
+
+    def test_https_scheme(self) -> None:
+        url = xui_client.build_panel_url(
+            "127.0.0.1", "35353", "/xui", scheme="https"
+        )
+        assert url == "https://127.0.0.1:35353/xui"
+
+
+class TestPanelScheme:
+    """Tests for panel_cert_value and panel_scheme."""
+
+    def test_cert_configured_is_https(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A set certificate path means the panel serves TLS.
+        monkeypatch.setattr(
+            "pyntara.xui.run_command",
+            lambda command, **kwargs: _FakeProc(
+                0,
+                "cert: /root/cert/ip/fullchain.pem\n"
+                "key: /root/cert/ip/privkey.pem\n",
+            ),
+        )
+        cfg = _cfg()
+        assert (
+            xui_client.panel_cert_value(cfg, 30) == "/root/cert/ip/fullchain.pem"
+        )
+        assert xui_client.panel_scheme(cfg, 30) == "https"
+
+    def test_no_cert_is_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An empty cert value means plain HTTP.
+        monkeypatch.setattr(
+            "pyntara.xui.run_command",
+            lambda command, **kwargs: _FakeProc(0, "cert: \nkey: \n"),
+        )
+        cfg = _cfg()
+        assert xui_client.panel_cert_value(cfg, 30) is None
+        assert xui_client.panel_scheme(cfg, 30) == "http"
 
 
 class TestLoginAndVerify:

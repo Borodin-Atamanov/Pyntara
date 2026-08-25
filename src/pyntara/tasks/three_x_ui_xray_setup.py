@@ -295,6 +295,22 @@ def _build_notes(env: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _panel_env(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> dict[str, str]:
+    """The install-result.env pairs plus the panel URL scheme.
+
+    XUI_SCHEME carries https when the panel serves TLS and http
+    otherwise; the shared API client reads it when building the base
+    URL, so stages work on both a plain HTTP panel and one with a
+    certificate.
+    """
+
+    env = xui_client.parse_install_result_env(cfg.install_result_env_path)
+    env["XUI_SCHEME"] = xui_client.panel_scheme(cfg, timeout)
+    return env
+
+
 def _stage2(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
@@ -310,7 +326,7 @@ def _stage2(
 
     # Read the credentials the panel generated on first start.
     try:
-        env = xui_client.parse_install_result_env(cfg.install_result_env_path)
+        env = _panel_env(cfg, timeout)
     except FileNotFoundError:
         return TaskResult(
             success=True,
@@ -350,6 +366,7 @@ def _stage2(
         cfg.panel_http_address,
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
+        scheme=env.get("XUI_SCHEME", "http"),
     )
     username = env.get("XUI_USERNAME", "")
     password = env.get("XUI_PASSWORD", "")
@@ -413,7 +430,7 @@ def _stage3(
 
     # Read the credentials the panel generated on first start.
     try:
-        env = xui_client.parse_install_result_env(cfg.install_result_env_path)
+        env = _panel_env(cfg, timeout)
     except FileNotFoundError:
         return TaskResult(
             success=True,
@@ -493,29 +510,6 @@ def _stage3(
         _log("stage 3: vault entry not found, keys not stored")
 
     return TaskResult(success=True, changed=True, message="inbound created")
-
-
-def _panel_cert_value(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> str | None:
-    """The panel certificate path from `x-ui setting -getCert`, or None.
-
-    An empty cert value means no certificate is configured; a nonzero
-    exit or a missing cert line is treated the same, so the caller can
-    attempt setup.
-    """
-
-    result = run_command(
-        [str(cfg.install_dir / "x-ui"), "setting", "-getCert", "true"],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    for line in (result.stdout + "\n" + result.stderr).splitlines():
-        if "cert:" in line:
-            value = line.split("cert:", 1)[1].strip()
-            return value or None
-    return None
 
 
 def _detect_server_ip(timeout: float) -> str | None:
@@ -680,7 +674,7 @@ def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | Non
 
     if not cfg.ssl_enabled:
         return None
-    if _panel_cert_value(cfg, timeout) is not None:
+    if xui_client.panel_cert_value(cfg, timeout) is not None:
         _log("stage 4: SSL certificate already configured")
         return None
     ip = _detect_server_ip(timeout)

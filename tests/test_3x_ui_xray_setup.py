@@ -709,7 +709,8 @@ class TestStageSsl:
     ) -> None:
         # A panel that already has a certificate is left alone.
         monkeypatch.setattr(
-            xui, "_panel_cert_value", lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem"
+            "pyntara.xui.panel_cert_value",
+            lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
         assert xui._stage_ssl(self._cfg(tmp_path), 30) is None
 
@@ -718,7 +719,7 @@ class TestStageSsl:
     ) -> None:
         # No public address can be detected: the stage warns and changes
         # nothing.
-        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: None)
         result = xui._stage_ssl(self._cfg(tmp_path), 30)
         assert result is not None
@@ -736,7 +737,7 @@ class TestStageSsl:
             seen["ip"] = ip
             return True, "certificate issued"
 
-        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
         monkeypatch.setattr(xui, "_issue_ip_certificate", fake_issue)
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
@@ -749,7 +750,7 @@ class TestStageSsl:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # acme.sh fails to issue the certificate: the stage warns.
-        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
         monkeypatch.setattr(
             xui,
@@ -855,7 +856,7 @@ class TestStageSsl:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # A rerun that issues the missing certificate reports changed.
-        monkeypatch.setattr(xui, "_panel_cert_value", lambda _cfg, _timeout: None)
+        monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _timeout: "203.0.113.5")
         monkeypatch.setattr(
             xui,
@@ -875,3 +876,52 @@ class TestStageSsl:
         result = xui.task(ctx)
         assert result.success is True
         assert result.changed is True
+
+    def test_panel_env_adds_https_scheme_when_tls(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The install-result.env pairs carry the panel URL scheme, so the
+        # API client talks TLS to a panel that serves a certificate.
+        env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            "XUI_USERNAME=admin\nXUI_PASSWORD=pass\nXUI_PANEL_PORT=35353\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _cfg, _timeout: "https")
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_result_env_path=env_path,
+        )
+        env = xui._panel_env(config.three_x_ui_xray_setup, 30)
+        assert env["XUI_SCHEME"] == "https"
+        assert env["XUI_PANEL_PORT"] == "35353"
+
+    def test_stage2_vault_url_uses_https_when_tls(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A panel that serves TLS is stored in the vault with an https
+        # base url.
+        env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            "XUI_USERNAME=admin\nXUI_PASSWORD=pass\nXUI_PANEL_PORT=35353\n"
+            "XUI_WEB_BASE_PATH=/xui\nXUI_API_TOKEN=tok\nXUI_DB_TYPE=sqlite\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("pyntara.xui.login_and_verify", lambda _c, _e, _t: True)
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "https")
+        fake_kp = Mock()
+        fake_kp.find_entries.return_value = None
+        fake_kp.root_group = Mock()
+        fake_kp.add_entry = Mock()
+        fake_kp.save = Mock()
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _c: fake_kp)
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_result_env_path=env_path,
+        )
+        result = xui._stage2(config.three_x_ui_xray_setup, config, 30)
+        assert result is None
+        url = fake_kp.add_entry.call_args.kwargs["url"]
+        assert url.startswith("https://")

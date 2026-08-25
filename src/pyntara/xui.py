@@ -16,12 +16,80 @@ from __future__ import annotations
 
 import http.cookiejar
 import json
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from pyntara.config import ThreeXuiXraySetupConfig
+from pyntara.utils import run_command
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """An unverified TLS context for local panel HTTPS connections.
+
+    The panel serves a certificate for its public IP address, while the
+    API client connects to the configured local address (127.0.0.1), so
+    hostname verification would reject every request. The TLS here only
+    protects the panel's own admin traffic; the local client does not
+    need to validate the certificate.
+    """
+
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def _https_opener(
+    *handlers: urllib.request.BaseHandler,
+) -> urllib.request.OpenerDirector:
+    """Build an opener that accepts the local unverified TLS context.
+
+    The HTTPSHandler with the unverified context is appended to the
+    given handlers, so every panel call works whether the panel serves
+    plain HTTP or TLS.
+    """
+
+    return urllib.request.build_opener(
+        *handlers,
+        urllib.request.HTTPSHandler(context=_ssl_context()),
+    )
+
+
+def panel_cert_value(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> str | None:
+    """The panel certificate path from `x-ui setting -getCert`, or None.
+
+    An empty cert value means no certificate is configured; a nonzero
+    exit or a missing cert line is treated the same, so the caller can
+    attempt setup. Shared by the SSL stage and the scheme detection.
+    """
+
+    result = run_command(
+        [str(cfg.install_dir / "x-ui"), "setting", "-getCert", "true"],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        if "cert:" in line:
+            value = line.split("cert:", 1)[1].strip()
+            return value or None
+    return None
+
+
+def panel_scheme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str:
+    """The panel URL scheme: https when a certificate is configured.
+
+    The panel serves TLS only when a certificate path is set. Any
+    failure to read the state is treated as http, so the client stays
+    reachable over plain HTTP.
+    """
+
+    return "https" if panel_cert_value(cfg, timeout) else "http"
 
 
 def parse_install_result_env(path: Path) -> dict[str, str]:
@@ -54,17 +122,21 @@ def parse_install_result_env(path: Path) -> dict[str, str]:
 
 
 def build_panel_url(
-    address: str, port: str, web_base_path: str | None
+    address: str,
+    port: str,
+    web_base_path: str | None,
+    scheme: str = "http",
 ) -> str:
-    """The panel base URL from its address, port and optional webBasePath.
+    """The panel base URL from its scheme, address, port and webBasePath.
 
     The address is the configured panel_http_address (127.0.0.1 on the
-    local machine). The port comes from XUI_PANEL_PORT. The webBasePath
-    comes from XUI_WEB_BASE_PATH and is stripped of leading and trailing
-    slashes; an empty or absent base path is omitted.
+    local machine). The scheme is http by default and https when the
+    panel serves TLS. The port comes from XUI_PANEL_PORT. The
+    webBasePath comes from XUI_WEB_BASE_PATH and is stripped of leading
+    and trailing slashes; an empty or absent base path is omitted.
     """
 
-    base = f"http://{address}:{port}"
+    base = f"{scheme}://{address}:{port}"
     if web_base_path:
         cleaned = web_base_path.strip("/")
         if cleaned:
@@ -133,13 +205,12 @@ def login_and_verify(
         cfg.panel_http_address,
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
+        scheme=env.get("XUI_SCHEME", "http"),
     )
 
     # Create an opener with a cookie jar so the session cookie persists.
     jar = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(jar)
-    )
+    opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
 
     # Step 1: fetch CSRF token.
     status, body = _request(
@@ -203,11 +274,10 @@ def verify_bearer(
         cfg.panel_http_address,
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
+        scheme=env.get("XUI_SCHEME", "http"),
     )
     jar = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(jar)
-    )
+    opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
     status, body = _request(
         opener,
         f"{base_url}/panel/api/inbounds/list",
@@ -235,8 +305,9 @@ def _bearer_opener(
         cfg.panel_http_address,
         env.get("XUI_PANEL_PORT", ""),
         env.get("XUI_WEB_BASE_PATH"),
+        scheme=env.get("XUI_SCHEME", "http"),
     )
-    opener = urllib.request.build_opener()
+    opener = _https_opener()
     return base_url, opener
 
 
