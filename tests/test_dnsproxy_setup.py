@@ -454,22 +454,15 @@ def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
     assert "stub resolv.conf mode" in (result.error or "")
 
 
-def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnsproxy(
+def test_task_succeeds_with_warning_when_per_link_provider_dns_survives_but_routing_goes_through_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    progress_calls: list[tuple[str, int]] = []
-    monkeypatch.setattr(
-        task_module,
-        "log_progress",
-        lambda message, *, priority=6: progress_calls.append((message, priority)),
-    )
     result, _, calls, config = _run_task(
         tmp_path, monkeypatch, provider_dns=True, routing_leftover=True
     )
-    assert result.success is False
-    assert "bypass dnsproxy" in (result.error or "")
-    assert "were kept" in (result.error or "")
-    assert "reverted" not in (result.error or "")
+    assert result.success is True
+    assert any("per-link DNS" in warning for warning in result.warnings)
+    assert "routes queries through dnsproxy" in " ".join(result.warnings)
     dropin = (
         config.dnsproxy_setup.resolved_conf_dir
         / config.dnsproxy_setup.resolved_dropin_file_name
@@ -479,15 +472,37 @@ def test_task_keeps_partial_config_and_fails_when_the_system_would_bypass_dnspro
         command[:3] == ["systemctl", "stop", "dnsproxy.service"]
         for command in calls
     )
-    assert not any(
-        command[:3] == ["nmcli", "connection", "modify"]
-        and "false" in command
-        for command in calls
+
+
+def test_per_link_dns_addresses_matches_whole_tokens_only() -> None:
+    output = (
+        "Global: 127.0.0.1:53053 [::1]:53053\n"
+        "Link 2 (eth0): 2800:810:100:1:200:115:192:29 2800:810:100::15 "
+        "2800:810:100::9\n"
+        "Link 3 (wlx1):\n"
     )
-    assert any(
-        priority == 3 and "were kept" in message
-        for message, priority in progress_calls
+    addresses = task_module._per_link_dns_addresses(output)
+    assert "2800:810:100:1:200:115:192:29" in addresses
+    assert "2800:810:100::15" in addresses
+    assert "2800:810:100::9" in addresses
+    assert "810:100::15" not in addresses
+
+
+def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    status = (
+        "Global\n"
+        "  resolv.conf mode: stub\n"
+        "Current DNS Server: 127.0.0.1:53053\n"
+        "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
+        "        DNS Domain: local\n"
     )
+    result, _, _, _ = _run_task(
+        tmp_path, monkeypatch, resolvectl_status_output=status
+    )
+    assert result.success is False
+    assert "no ~. routing domain" in (result.error or "")
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:

@@ -537,12 +537,13 @@ def _global_block_lines(status_lines: list[str]) -> list[str]:
 def _resolved_uses_dnsproxy(cfg: DnsproxySetupConfig, timeout: float) -> str | None:
     '''Error text when systemd-resolved does not route through dnsproxy.
 
-    Two facts from the Global block of resolvectl status prove that every
-    system query goes through dnsproxy: the resolv.conf mode is stub, so
-    applications resolve through systemd-resolved, and the global DNS
-    points at our loopback listener, so systemd-resolved forwards to
-    dnsproxy. This check is used when NetworkManager is absent and the
-    per-link provider DNS cannot be removed by the task.
+    Three facts from the Global block of resolvectl status prove that
+    every system query goes through dnsproxy: the resolv.conf mode is
+    stub, so applications resolve through systemd-resolved, the global
+    DNS points at our loopback listener, so systemd-resolved forwards to
+    dnsproxy, and the wildcard routing domain ~. is present, so no query
+    can fall through to a default-route per-link server. Any of the
+    three missing means the routing guarantee is broken.
     '''
 
     result = run_command(
@@ -568,28 +569,55 @@ def _resolved_uses_dnsproxy(cfg: DnsproxySetupConfig, timeout: float) -> str | N
             "systemd-resolved global DNS does not point at "
             f"127.0.0.1:{cfg.listen_port}"
         )
+    domain_lines = " ".join(
+        line
+        for line in global_text.splitlines()
+        if line.lstrip().startswith("DNS Domain")
+    )
+    if "~." not in domain_lines:
+        return "systemd-resolved global DNS has no ~. routing domain"
     return None
+
+
+def _per_link_dns_addresses(output: str) -> set[str]:
+    '''Validated DNS addresses on the per-link scopes of resolvectl dns.
+
+    Only Link lines carry per-link servers; the Global and empty scopes
+    are skipped. Each token is validated as an IP address so a truncated
+    token such as 810:100::15 can never match as a substring of a longer
+    address such as 2800:810:100::15.
+    '''
+
+    addresses: set[str] = set()
+    for line in output.splitlines():
+        if not line.lstrip().startswith("Link "):
+            continue
+        for token in line.split(":", 1)[-1].split():
+            try:
+                address = ipaddress.ip_address(token.strip("[]"))
+            except ValueError:
+                continue
+            if address.is_loopback or address.is_unspecified:
+                continue
+            addresses.add(str(address))
+    return addresses
 
 
 def _verify_system(
     cfg: DnsproxySetupConfig,
     discovered: DiscoveredDnsServers,
     timeout: float,
-    nm_managed: bool,
 ) -> tuple[str | None, str | None]:
     '''Error and warning text after the resolver cutover.
 
     The functional check queries the verification domain through
-    systemd-resolved. The routing check then asserts that none of the
-    provider DNS addresses discovered before the cutover still appears
-    on a per-link scope: if one does and NetworkManager is managed, the
-    system would bypass dnsproxy despite a successful lookup, so it is
-    an error. When NetworkManager is absent the per-link provider DNS
-    cannot be removed by this task, so the resolver state is checked
-    instead: a stub resolv.conf mode and a global DNS pointing at our
-    loopback listener prove that systemd-resolved routes queries through
-    dnsproxy, and the surviving per-link servers are reported as a
-    warning, not an error.
+    systemd-resolved. The routing check then reads the Global block of
+    resolvectl status: a stub resolv.conf mode, a global DNS pointing at
+    our loopback listener and the wildcard routing domain ~. prove that
+    systemd-resolved routes every query through dnsproxy. Surviving
+    per-link provider DNS is not an error by itself: without a routing
+    domain on the per-link scope it does not compete with the global ~.,
+    so the leftover servers are reported as a warning, not a failure.
     '''
 
     command = [
@@ -600,6 +628,16 @@ def _verify_system(
     if result.returncode != 0:
         excerpt = (result.stdout + result.stderr).strip()[:200] or "<no output>"
         return f"system DNS verification failed: {excerpt}", None
+    route_error = _resolved_uses_dnsproxy(cfg, timeout)
+    if route_error is not None:
+        return (
+            (
+                "systemd-resolved would not route queries through dnsproxy: "
+                f"{route_error}"
+            ),
+            None,
+        )
+    warnings: list[str] = []
     if cfg.append_provider_dns and (discovered.ipv4 or discovered.ipv6):
         state = run_command(
             list(cfg.resolvectl_dns_command),
@@ -608,49 +646,24 @@ def _verify_system(
             timeout=timeout,
         )
         if state.returncode != 0:
-            return (
-                (
-                    "cannot read per-link DNS state: resolvectl exited "
-                    f"{state.returncode}"
-                ),
-                None,
+            warnings.append(
+                "cannot read per-link DNS state: resolvectl exited "
+                f"{state.returncode}"
             )
-        leftover = [
-            address
-            for address in (*discovered.ipv4, *discovered.ipv6)
-            if address in state.stdout
-        ]
-        if leftover:
-            if nm_managed:
-                return (
-                    (
-                        "per-link DNS still lists provider resolver(s) "
-                        f"{', '.join(leftover)}; the system would bypass dnsproxy"
-                    ),
-                    None,
-                )
-            route_error = _resolved_uses_dnsproxy(cfg, timeout)
-            if route_error is None:
-                return (
-                    None,
-                    (
-                        "per-link DNS still lists provider resolver(s) "
-                        f"{', '.join(leftover)}; NetworkManager is absent so this "
-                        "task cannot remove them, but systemd-resolved routes "
-                        "queries through dnsproxy (stub resolv.conf mode, global "
-                        f"DNS points at 127.0.0.1:{cfg.listen_port}); remove the "
-                        "provider nameservers from the netplan or systemd-networkd "
-                        "configuration to fully clean up"
-                    ),
-                )
-            return (
-                (
+        else:
+            leftover = [
+                address
+                for address in (*discovered.ipv4, *discovered.ipv6)
+                if address in _per_link_dns_addresses(state.stdout)
+            ]
+            if leftover:
+                warnings.append(
                     "per-link DNS still lists provider resolver(s) "
-                    f"{', '.join(leftover)}; {route_error}"
-                ),
-                None,
-            )
-    return None, None
+                    f"{', '.join(leftover)}; systemd-resolved routes queries "
+                    "through dnsproxy, but removing these servers from the "
+                    "active connection makes the configuration clean"
+                )
+    return None, "; ".join(warnings) if warnings else None
 
 
 def _service_log(cfg: DnsproxySetupConfig, timeout: float) -> str:
@@ -862,16 +875,12 @@ def task(ctx: Context) -> TaskResult:
             auto_dns_changed = _disable_auto_dns_active(
                 cfg, timeout, progress_priority
             )
-        nm_managed = cfg.manage_networkmanager and _nmcli_available(cfg, timeout)
-        verify_error, verify_warning = _verify_system(
-            cfg, discovered, timeout, nm_managed
-        )
+        verify_error, verify_warning = _verify_system(cfg, discovered, timeout)
         if verify_error is not None:
             detail = (
                 f"{verify_error}; the resolver drop-in and the dnsproxy "
-                "service were kept so the system stays partly on dnsproxy; "
-                "remove the static provider DNS from the active "
-                "NetworkManager connection or reapply it, then rerun the task"
+                "service were kept, so the system stays on dnsproxy; "
+                "check the systemd-resolved routing and rerun the task"
             )
             log_progress(
                 f"dnsproxy setup failed: {detail}", priority=error_priority
