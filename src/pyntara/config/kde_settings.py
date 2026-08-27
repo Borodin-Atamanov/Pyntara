@@ -102,6 +102,7 @@ class KdeSettingsConfig:
     sddm_theme_cursor_size: str
     sddm_theme_cursor_theme: str
     sddm_theme_font: str
+    places_hidden: tuple[str, ...] = ()
     kconfig: tuple[KConfigRecord, ...] = ()
 
 
@@ -119,6 +120,11 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("home_dir"), "kde_settings.home_dir"
         ),
         user_dirs=_string_map(raw.get("user_dirs"), "kde_settings.user_dirs"),
+        places_hidden=(
+            _string_list(raw["places_hidden"], "kde_settings.places_hidden")
+            if "places_hidden" in raw
+            else ()
+        ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
         ),

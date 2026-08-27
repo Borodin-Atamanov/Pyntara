@@ -28,6 +28,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from xml.etree import ElementTree
 
 from pyntara.config import KdeSettingsConfig
 from pyntara.context import Context
@@ -61,6 +62,7 @@ MOUSE_GROUP: tuple[str, ...] = ("Mouse",)
 # under the target user config and local share directories.
 USER_DIRS_FILE = "user-dirs.dirs"
 KONSOLE_PROFILE_REL = ".local/share/konsole/Pyntara.profile"
+USER_PLACES_REL = ".local/share/user-places.xbel"
 # The system and user look and feel directories: the user copy of a theme
 # wins over the system one, so the task copies the themes whose defaults
 # carry the configured cursor themes.
@@ -685,6 +687,78 @@ def _write_user_file(
     return True
 
 
+def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
+    """current with IsHidden=true for the hidden places; None when unchanged.
+
+    The Dolphin Places panel file user-places.xbel marks a hidden system
+    place by an IsHidden element in its KDE metadata. The match runs on
+    the bookmark title, so no machine-specific id or device uuid enters
+    the task. The file is re-serialized as XML only when a marker was
+    added or changed; a run that changed nothing returns None so the task
+    never rewrites the file over formatting differences alone.
+    """
+
+    ElementTree.register_namespace(
+        "bookmark", "http://freedesktop.org/standards/desktop-bookmarks"
+    )
+    ElementTree.register_namespace("kdepriv", "http://www.kde.org/kdepriv")
+    ElementTree.register_namespace(
+        "mime", "http://freedesktop.org/standards/shared-mime-info"
+    )
+    root = ElementTree.fromstring(current)
+    changed = False
+    for bookmark in root.findall("bookmark"):
+        if bookmark.findtext("title") not in hidden:
+            continue
+        for metadata in bookmark.findall("info/metadata"):
+            if metadata.get("owner") != "http://www.kde.org":
+                continue
+            marker = metadata.find("IsHidden")
+            if marker is None:
+                ElementTree.SubElement(metadata, "IsHidden").text = "true"
+                changed = True
+            elif marker.text != "true":
+                marker.text = "true"
+                changed = True
+    if not changed:
+        return None
+    header = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xbel>\n'
+    return header + ElementTree.tostring(root, encoding="unicode")
+
+
+def _apply_places_hidden(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Hide the configured system places in the Dolphin Places panel.
+
+    The Places panel lives in user-places.xbel under the user local share
+    directory, a plain XML file the desktop session owns. The task matches
+    the configured hidden titles in the existing file and adds the
+    IsHidden marker to their KDE metadata, leaving every other entry, the
+    automatic device separators and the user bookmarks, untouched. A
+    missing file is not an error: the desktop creates it at the first
+    login, and the next run applies the hiding.
+    """
+
+    if not cfg.places_hidden:
+        return False
+    path = Path(cfg.home_dir) / USER_PLACES_REL
+    try:
+        current = path.read_text(encoding="utf-8")
+    except OSError:
+        _log("no user-places.xbel found, Places hiding applies after first login")
+        return False
+    content = _places_xbel_hidden(current, set(cfg.places_hidden))
+    if content is None:
+        return False
+    return _write_user_file(
+        cfg, USER_PLACES_REL, content, mode="0600", timeout=timeout, force=force
+    )
+
+
 def _apply_user_dirs(
     cfg: KdeSettingsConfig,
     *,
@@ -930,6 +1004,9 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
         settings_changed |= _apply_user_dirs(cfg, timeout=timeout, force=force)
         settings_changed |= _apply_konsole_profile(
+            cfg, timeout=timeout, force=force
+        )
+        settings_changed |= _apply_places_hidden(
             cfg, timeout=timeout, force=force
         )
         settings_changed |= _apply_sddm(cfg, timeout=timeout, force=force)

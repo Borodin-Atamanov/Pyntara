@@ -48,7 +48,7 @@ numlock_on_boot = "off"
 # Touchpad preferences, applied to every touchpad found on the target:
 # clickfinger, clickareas or none for the click method, and whether the
 # internal touchpad is disabled while an external mouse is connected.
-touchpad_click_method = "clickfinger"
+touchpad_click_method = "clickareas"
 touchpad_disable_on_external_mouse = true
 # The Wayland virtual keyboard: whether it is enabled, the input method
 # that provides it and the enabled locales written to plasmakeyboardrc.
@@ -67,6 +67,13 @@ sddm_theme = "kubuntu"
 sddm_theme_cursor_size = "30"
 sddm_theme_cursor_theme = "breeze_cursors"
 sddm_theme_font = "Noto Sans,20"
+# The Dolphin Places panel entries hidden on the target machine, matched
+# by their bookmark title in user-places.xbel. The hidden set matches the
+# recorded setup where every XDG user directory is folded into Downloads,
+# so only Downloads stays visible among the default places. An empty list
+# leaves the Places panel untouched.
+places_hidden = ["Home", "Desktop", "Documents", "Music", "Pictures", "Videos"]
+
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.
 [kde_settings.user_dirs]
@@ -87,7 +94,37 @@ XDG_VIDEOS_DIR = "$HOME/Downloads"
 file = "kwinrc"
 group = ["TabBox"]
 key = "LayoutName"
+value = "thumbnail_grid"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBox"]
+key = "ActivitiesMode"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBox"]
+key = "DesktopMode"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBoxAlternative"]
+key = "LayoutName"
 value = "coverswitch"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBoxAlternative"]
+key = "ActivitiesMode"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["TabBoxAlternative"]
+key = "DesktopMode"
+value = "0"
 
 [[kde_settings.kconfig]]
 file = "kdeglobals"
@@ -133,7 +170,7 @@ value = "72"
 file = "kwinrc"
 group = ["Desktops"]
 key = "Number"
-value = "3"
+value = "4"
 
 [[kde_settings.kconfig]]
 file = "kwinrc"
@@ -563,6 +600,41 @@ group = ["kwin"]
 key = "InvertWindow"
 value = "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window"
 
+# kglobalshortcutsrc: the keyboard layout switch and the window switcher.
+# The Spanish layout switch primary key is Meta+E. The window switching
+# uses Alt+Tab as the primary switcher and Meta+Tab as the alternative,
+# matching the recorded setup; the task unbinds conflicts on the primary
+# keys.
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["KDE Keyboard Layout Switcher"]
+key = "Switch keyboard layout to Spanish"
+value = "Meta+E,none,Switch keyboard layout to Spanish"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Walk Through Windows"
+value = "Alt+Tab,Meta+Tab,Walk Through Windows"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Walk Through Windows (Reverse)"
+value = "Alt+Shift+Tab,Meta+Shift+Tab,Walk Through Windows (Reverse)"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Walk Through Windows Alternative"
+value = "Meta+Tab,none,Walk Through Windows Alternative"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "Walk Through Windows Alternative (Reverse)"
+value = "Meta+Shift+Tab,none,Walk Through Windows Alternative (Reverse)"
+
 # kscreenlockerrc: the lock screen media controls and the day and night
 # wallpaper.
 [[kde_settings.kconfig]]
@@ -734,3 +806,1478 @@ file = "kwinrc"
 group = ["Effect-mousemark"]
 key = "Width"
 value = "3"
+
+# dolphinrc: the file manager preferences recorded on the target machine.
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["ContentDisplay"]
+key = "DirectorySizeMode"
+value = "ContentSize"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["ContentDisplay"]
+key = "RecursiveDirectorySizeLimit"
+value = "12"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "HomeUrl"
+value = "/home/i/Downloads"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "AutoExpandFolders"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "BrowseThroughArchives"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "OpenNewTabAfterLastTab"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "RememberOpenedTabs"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "ShowFullPath"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "ShowFullPathInTitlebar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "ShowStatusBar"
+value = "FullWidth"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["General"]
+key = "ShowToolTips"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "dolphinrc"
+group = ["InformationPanel"]
+key = "dateFormat"
+value = "ShortFormat"
+
+# kdeglobals: hide the permanent delete command and limit the remote and
+# total preview sizes.
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["KDE"]
+key = "ShowDeleteCommand"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["PreviewSettings"]
+key = "EnableRemoteFolderThumbnail"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["PreviewSettings"]
+key = "MaximumRemoteSize"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "kdeglobals"
+group = ["PreviewSettings"]
+key = "MaximumSize"
+value = "32505856"
+
+# kiorc: confirm delete and empty trash, always ask before launching
+# executable scripts.
+[[kde_settings.kconfig]]
+file = "kiorc"
+group = ["Confirmations"]
+key = "ConfirmDelete"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kiorc"
+group = ["Confirmations"]
+key = "ConfirmEmptyTrash"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kiorc"
+group = ["Confirmations"]
+key = "ConfirmTrash"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kiorc"
+group = ["Executable scripts"]
+key = "behaviourOnLaunch"
+value = "alwaysAsk"
+
+# kservicemenurc: the service menu actions shown in the file manager
+# context menu.
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "compressfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "extractfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "forgetfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "hidefileitemaction"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "installFont"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "kactivitymanagerd_fileitem_linking_plugin"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "kdeconnectfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "kio-admin"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "makefileactions"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "mountisoaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "movetonewfolderitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "plasmavaultfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "runInKonsole"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "setfoldericonitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "sharefileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "slideshowfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "tagsfileitemaction"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "kservicemenurc"
+group = ["Show"]
+key = "wallpaperfileitemaction"
+value = "true"
+type = "bool"
+
+# ktrashrc: size and time limits of the user trash.
+[[kde_settings.kconfig]]
+file = "ktrashrc"
+group = ["/home/i/.local/share/Trash"]
+key = "Days"
+value = "211"
+
+[[kde_settings.kconfig]]
+file = "ktrashrc"
+group = ["/home/i/.local/share/Trash"]
+key = "Percent"
+value = "23"
+
+[[kde_settings.kconfig]]
+file = "ktrashrc"
+group = ["/home/i/.local/share/Trash"]
+key = "UseSizeLimit"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "ktrashrc"
+group = ["/home/i/.local/share/Trash"]
+key = "UseTimeLimit"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "ktrashrc"
+group = ["/home/i/.local/share/Trash"]
+key = "LimitReachedAction"
+value = "2"
+
+# katerc: the Kate editor preferences recorded on the target machine,
+# grouped by section. Keys whose value is empty on the target are not
+# carried into the task: the empty form is the Kate default, so the task
+# leaves them alone.
+# katerc [General]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Allow Tab Scrolling"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Auto Hide Tabs"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Close After Last"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Close documents with window"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Cycle To First Tab"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Days Meta Infos"
+value = "180"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Diagnostics Limit"
+value = "12000"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Diff Show Style"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Elide Tab Text"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Enable Context ToolView"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Expand Tabs"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Icon size for left and right sidebar buttons"
+value = "32"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Modified Notification"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Mouse back button action"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Mouse forward button action"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Open New Tab To The Right Of Current"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Output History Limit"
+value = "100"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Output With Date"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Recent File List Entry Count"
+value = "99"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Restore Window Configuration"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "SDI Mode"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Save Meta Infos"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Full Path in Title"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Menu Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Status Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Symbol In Navigation Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Tab Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Tabs Close Button"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show Url Nav Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show output view for message type"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show text for left and right sidebar"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Show welcome view for new window"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Startup Session"
+value = "manual"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Stash new unsaved files"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Stash unsaved file changes"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Sync section size with tab positions"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Tab Double Click New Document"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Tab Middle Click Close Document"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["General"]
+key = "Tabbar Tab Limit"
+value = "0"
+
+# katerc [KTextEditor Document]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Allow End of Line Detection"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Detect Indent"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Reload If Any External Changes Occurs"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Reload If State Is In Version Control"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Save"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Save Interval"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Auto Save On Focus Out"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "BOM"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Backup Local"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Backup Remote"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Backup Suffix"
+value = "~"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Camel Cursor"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Encoding"
+value = "UTF-8"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "End of Line"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Indent On Backspace"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Indent On Tab"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Indent On Text Paste"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Indentation Mode"
+value = "normal"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Indentation Width"
+value = "4"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Keep Extra Spaces"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Line Length Limit"
+value = "10000"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Newline at End of File"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "On-The-Fly Spellcheck"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Overwrite Mode"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "PageUp/PageDown Moves Cursor"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Remove Spaces"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "ReplaceTabsDyn"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Show Spaces"
+value = "2"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Show Tabs"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Smart Home"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Swap File Mode"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Swap Sync Interval"
+value = "15"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Tab Handling"
+value = "2"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Tab Width"
+value = "4"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Trailing Marker Size"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Use Editor Config"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Word Wrap"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Document"]
+key = "Word Wrap Column"
+value = "80"
+
+# katerc [KTextEditor Renderer]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Animate Bracket Matching"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Auto Color Theme Selection"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Color Theme"
+value = "Breeze Dark"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Line Height Multiplier"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Show Indentation Lines"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Show Whole Bracket Expression"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Text Font"
+value = "Hack,10,-1,7,400,0,0,0,0,0,0,0,0,0,0,1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor Renderer"]
+key = "Word Wrap Marker"
+value = "true"
+type = "bool"
+
+# katerc [KTextEditor View]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Allow Mark Menu"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Auto Brackets"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Auto Center Lines"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Auto Completion"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Auto Completion Preselect First Entry"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Backspace Remove Composed Characters"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Bookmark Menu Sorting"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Bracket Match Preview"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Chars To Enclose Selection"
+value = "<>(){}[]'\""
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Cycle Through Bookmarks"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Default Mark Type"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Disable bracket match highlight if inactive"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Disable current line highlight if inactive"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Dynamic Word Wrap"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Dynamic Word Wrap Align Indent"
+value = "80"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Dynamic Word Wrap At Static Marker"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Dynamic Word Wrap Indicators"
+value = "1"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Dynamic Wrap not at word boundaries"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Enable Accessibility"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Enable Tab completion"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Enter To Insert Completion"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Fold First Line"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Folding Bar"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Folding Preview"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Hide cursor if inactive"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Icon Bar"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Input Mode"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Keyword Completion"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Line Modification"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Line Numbers"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Max Clipboard History Entries"
+value = "777"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Maximum Search History Size"
+value = "100"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Mouse Paste At Cursor Position"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Multiple Cursor Modifier"
+value = "134217728"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Persistent Selection"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Bar Marks"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Bar Mini Map All"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Bar Mini Map Width"
+value = "60"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Bar MiniMap"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Bar Preview"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Scroll Past End"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Search/Replace Flags"
+value = "140"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Shoe Line Ending Type in Statusbar"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Documentation With Completion"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show File Encoding"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Folding Icons On Hover Only"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Line Count"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Scrollbars"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Statusbar Dictionary"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Statusbar Highlighting Mode"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Statusbar Input Mode"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Statusbar Line Column"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Statusbar Tab Settings"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Show Word Count"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Smart Copy Cut"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Statusbar Line Column Compact Mode"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Text Drag And Drop"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Vi Input Mode Steal Keys"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Vi Relative Line Numbers"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Word Completion"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Word Completion Minimal Word Length"
+value = "3"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["KTextEditor View"]
+key = "Word Completion Remove Tail"
+value = "true"
+type = "bool"
+
+# katerc [Konsole]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["Konsole"]
+key = "AutoSyncronizeMode"
+value = "0"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["Konsole"]
+key = "KonsoleEscKeyBehaviour"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["Konsole"]
+key = "KonsoleEscKeyExceptions"
+value = "vi,vim,nvim,git"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["Konsole"]
+key = "RemoveExtension"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["Konsole"]
+key = "SetEditor"
+value = "false"
+type = "bool"
+
+# katerc [filetree]
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["filetree"]
+key = "showFullPathOnRoots"
+value = "true"
+type = "bool"
+
+# katerc [lspclient], the language server client settings.
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "AutoHover"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "AutoImport"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "CompletionDocumentation"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "CompletionParens"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "Diagnostics"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "FormatOnSave"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "HighlightGoto"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "HighlightSymbol"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "IncrementalSync"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "InlayHints"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "Messages"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "ReferencesDeclaration"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SemanticHighlighting"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "ShowCompletions"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SignatureHelp"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SymbolDetails"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SymbolExpand"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SymbolSort"
+value = "false"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "SymbolTree"
+value = "true"
+type = "bool"
+
+[[kde_settings.kconfig]]
+file = "katerc"
+group = ["lspclient"]
+key = "TypeFormatting"
+value = "false"
+type = "bool"

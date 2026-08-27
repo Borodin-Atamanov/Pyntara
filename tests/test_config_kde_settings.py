@@ -145,6 +145,25 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
     )
 
 
+def test_load_config_kde_settings_places_hidden(tmp_path: Path) -> None:
+    # The hidden Places panel entries round-trip and default to empty.
+    config = load_config(write_config(tmp_path, base_config()))
+    assert config.kde_settings.places_hidden == ()
+    anchor = 'sddm_theme_font = "Noto Sans,20"\n[swapfile_service_install]'
+    content = base_config().replace(
+        anchor,
+        'sddm_theme_font = "Noto Sans,20"\n'
+        'places_hidden = ["Home", "Desktop", "Documents"]\n'
+        "[swapfile_service_install]",
+    )
+    config = load_config(write_config(tmp_path, content))
+    assert config.kde_settings.places_hidden == (
+        "Home",
+        "Desktop",
+        "Documents",
+    )
+
+
 def _kde_settings_with_kconfig(records: str) -> str:
     """base_config() with [[kde_settings.kconfig]] records appended.
 

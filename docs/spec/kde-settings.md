@@ -11,13 +11,14 @@ The KConfig values live in files under the config directory of the target user a
 kdeglobals carries the theme. The color scheme and the global theme come from color_scheme and look_and_feel and are applied with the plasma-apply tools. When automatic_look_and_feel is set, the task enables the native KDE day and night switch (kdeglobals [KDE] AutomaticLookAndFeel) instead of applying a fixed theme, so a run never overwrites the current theme. The task copies the dark and light themes (look_and_feel and look_and_feel_light) into the user look and feel directory, where a copy wins over the system one, and writes the configured cursor themes into the copy defaults, so the switch applies the right cursor with the theme itself.  
 kcminputrc carries the input settings: the NumLock state on startup, the touchpad preferences written into every touchpad device group, so the task works on any target hardware, and the mouse cursor theme, applied with plasma-apply-cursortheme after the kconfig records so it wins over the theme default that the day and night switch writes.  
 kwinrc and plasmakeyboardrc carry the Wayland virtual keyboard.  
-The generic kconfig records apply every other KConfig value: the [[kde_settings.kconfig]] array of tables names a file, the group segments, the key and the string form of the value, with an optional bool type and an optional delete that removes the key. The records cover the window effects and their parameters, the night color, the window behavior, the lock screen, the power management, the wallpaper slideshow, the spell check language, the activity history and the Konsole default profile.  
-The window effect shortcuts live in kglobalshortcutsrc and are written in the KDE primary,alternate,description format. A configured shortcut wins over any other action: after the records are applied, the task scans kglobalshortcutsrc and unbinds every action that shares a configured primary key, wherever that action lives, so the shortcut works on any target machine.
+The generic kconfig records apply every other KConfig value: the [[kde_settings.kconfig]] array of tables names a file, the group segments, the key and the string form of the value, with an optional bool type and an optional delete that removes the key. The records cover the window effects and their parameters, the night color, the window behavior, the lock screen, the power management, the wallpaper slideshow, the spell check language, the activity history, the Konsole default profile, the file manager preferences (dolphinrc), the Kate editor and its LSP client (katerc), the file operations confirmations (kiorc), the service menu actions (kservicemenurc) and the trash limits (ktrashrc).  
+The window effect shortcuts and the window switcher live in kglobalshortcutsrc and are written in the KDE primary,alternate,description format. A configured shortcut wins over any other action: after the records are applied, the task scans kglobalshortcutsrc and unbinds every action that shares a configured primary key, wherever that action lives, so the shortcut works on any target machine. The window switcher records set the primary and alternative Alt+Tab bindings and the TabBox layouts; the keyboard layout switch records set the per-layout hotkeys.
 
 The user-level plain files:
 
 user-dirs.dirs folds the XDG user directories into Downloads from the user_dirs map, keeping unrelated lines and comments.  
 The Pyntara Konsole profile is rendered from the task_data template task_data/kde_settings/Pyntara.profile with the configured home directory and written under the user local share directory.  
+user-places.xbel, the Dolphin Places panel, gets the system places from places_hidden hidden by their bookmark title: the task adds the IsHidden marker to the matching entries and leaves every other entry, the automatic device separators and the user bookmarks, untouched. A missing file is not an error: the desktop creates it at the first login, and the next run applies the hiding.  
 
 The system files:
 
@@ -42,6 +43,7 @@ All parameters live in the [kde_settings] table of the config/ directory:
 packages, the packages the task ensures are installed.  
 username and home_dir, the target user and that user's home directory.  
 user_dirs, the XDG user directories folded into Downloads.  
+places_hidden, the Dolphin Places panel system entries hidden by title in user-places.xbel.  
 color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
 look_and_feel_light, the light theme the day and night switch alternates to.  
 automatic_look_and_feel, whether the native day and night switch is enabled.  

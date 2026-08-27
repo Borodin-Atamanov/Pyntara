@@ -823,6 +823,161 @@ def test_apply_konsole_profile_renders_template(
     assert changed2 is False
 
 
+XBEL = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xbel>
+<xbel xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks" xmlns:mime="http://www.freedesktop.org/standards/shared-mime-info">
+ <bookmark href="file:///home/i">
+  <title>Home</title>
+  <info>
+   <metadata owner="http://freedesktop.org">
+    <bookmark:icon name="user-home"/>
+   </metadata>
+   <metadata owner="http://www.kde.org">
+    <ID>1787750121/0</ID>
+    <isSystemItem>true</isSystemItem>
+   </metadata>
+  </info>
+ </bookmark>
+ <bookmark href="file:///home/i/Downloads">
+  <title>Downloads</title>
+  <info>
+   <metadata owner="http://www.kde.org">
+    <ID>1787750121/3</ID>
+    <isSystemItem>true</isSystemItem>
+   </metadata>
+  </info>
+ </bookmark>
+ <separator>
+  <info>
+   <metadata owner="http://www.kde.org">
+    <UDI>/org/freedesktop/UDisks2/block_devices/sda1</UDI>
+    <uuid>e2696dd4-8a28-4562-9241-014cdda1546c</uuid>
+   </metadata>
+  </info>
+ </separator>
+</xbel>
+"""
+
+
+def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
+    # Home is matched by its title and hidden, Downloads stays visible,
+    # and the machine-specific device separator survives untouched.
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
+    assert out is not None
+    home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
+    assert "<IsHidden>true</IsHidden>" in home
+    downloads = out.split("<title>Downloads</title>")[1].split("</bookmark>")[0]
+    assert "<IsHidden>" not in downloads
+    assert "e2696dd4-8a28-4562-9241-014cdda1546c" in out
+
+
+def test_places_xbel_hidden_idempotent() -> None:
+    # A second pass over an already hidden file changes nothing.
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
+    assert out is not None
+    assert task_module._places_xbel_hidden(out, {"Home"}) is None
+
+
+def test_apply_places_hidden_writes_when_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Places file gets the IsHidden marker and a second pass changes
+    # nothing.
+    places_dir = tmp_path / ".local/share"
+    places_dir.mkdir(parents=True, exist_ok=True)
+    (places_dir / "user-places.xbel").write_text(XBEL, encoding="utf-8")
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_places_hidden=("Home",),
+        ),
+    )
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_places_hidden(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    text = (places_dir / "user-places.xbel").read_text(encoding="utf-8")
+    assert "IsHidden" in text
+    changed2 = task_module._apply_places_hidden(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed2 is False
+
+
+def test_apply_places_hidden_skips_when_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A file that already hides the configured places changes nothing.
+    already = task_module._places_xbel_hidden(XBEL, {"Home"})
+    assert already is not None
+    places_dir = tmp_path / ".local/share"
+    places_dir.mkdir(parents=True, exist_ok=True)
+    (places_dir / "user-places.xbel").write_text(already, encoding="utf-8")
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_places_hidden=("Home",),
+        ),
+    )
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_places_hidden(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+
+
+def test_apply_places_hidden_missing_file_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without the Places file the hiding is skipped and not an error.
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_places_hidden=("Home",),
+        ),
+    )
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_places_hidden(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+
+
+def test_touchpad_clickareas_writes_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The clickareas method maps to the ClickMethod value 2.
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_touchpad_click_method="clickareas",
+        ),
+    )
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kcminputrc").write_text(TOUCHPAD_RC, encoding="utf-8")
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    click_writes = [command for command in writes if "ClickMethod" in command]
+    assert click_writes
+    assert click_writes[0][-1] == "2"
+
+
 def test_apply_sddm_writes_system_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

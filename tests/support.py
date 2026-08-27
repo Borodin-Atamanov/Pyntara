@@ -289,6 +289,7 @@ def make_config(
     kde_settings_sddm_theme_cursor_theme: str = "breeze_cursors",
     kde_settings_sddm_theme_font: str = "Noto Sans,20",
     kde_settings_kconfig: tuple[KConfigRecord, ...] = (),
+    kde_settings_places_hidden: tuple[str, ...] = (),
     swapfile_path: Path = Path("/swapfile"),
     swapfile_ram_multiplier: float = 2.0,
     swapfile_ram_extra_mb: int = 4096,
@@ -663,6 +664,7 @@ def make_config(
             sddm_theme_cursor_size=kde_settings_sddm_theme_cursor_size,
             sddm_theme_cursor_theme=kde_settings_sddm_theme_cursor_theme,
             sddm_theme_font=kde_settings_sddm_theme_font,
+            places_hidden=kde_settings_places_hidden,
             kconfig=kde_settings_kconfig,
         ),
         swapfile_service_install=SwapfileServiceInstallConfig(
