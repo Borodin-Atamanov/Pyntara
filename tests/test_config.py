@@ -153,7 +153,7 @@ listen = ["tcp://[::]:0", "tls://[::]:0", "quic://[::]:0", "ws://[::]:0"]
 peers_full_path = "/etc/yggdrasil/peers-full.txt"
 peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"
 peer_batch_size = 100
-peer_target_count = 6
+peer_target_count = 11
 peer_probe_timeout_seconds = 30
 peer_max_batches = 0
 static_peers = []
@@ -162,6 +162,9 @@ address_file_mode = "0644"
 address_save_retry_base_seconds = 1
 address_save_retry_multiplier = 2
 address_save_retry_max_seconds = 67
+connection_wait_base_seconds = 1
+connection_wait_multiplier = 2
+connection_wait_max_seconds = 30
 
 [[yggdrasil_service_setup.multicast_interfaces]]
 regex = ".*"
@@ -608,7 +611,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/etc/yggdrasil/peers-full.txt"
     )
     assert config.yggdrasil_service_setup.peer_batch_size == 100
-    assert config.yggdrasil_service_setup.peer_target_count == 6
+    assert config.yggdrasil_service_setup.peer_target_count == 11
     assert config.yggdrasil_service_setup.peer_probe_timeout_seconds == 30
     assert config.yggdrasil_service_setup.peer_max_batches == 0
     assert config.yggdrasil_service_setup.static_peers == ()
@@ -619,6 +622,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.yggdrasil_service_setup.address_save_retry_base_seconds == 1
     assert config.yggdrasil_service_setup.address_save_retry_multiplier == 2
     assert config.yggdrasil_service_setup.address_save_retry_max_seconds == 67
+    assert config.yggdrasil_service_setup.connection_wait_base_seconds == 1
+    assert config.yggdrasil_service_setup.connection_wait_multiplier == 2
+    assert config.yggdrasil_service_setup.connection_wait_max_seconds == 30
     assert config.tor_setup.package_name == "tor"
     assert config.tor_setup.service_unit_name == "tor@default.service"
     assert config.tor_setup.torrc_path == Path("/etc/tor/torrc")

@@ -88,6 +88,9 @@ class YggdrasilServiceSetupConfig:
     address_save_retry_base_seconds: int
     address_save_retry_multiplier: int
     address_save_retry_max_seconds: int
+    connection_wait_base_seconds: int
+    connection_wait_multiplier: int
+    connection_wait_max_seconds: int
 
 
 def _yggdrasil_uri_list_field(
@@ -302,6 +305,31 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
             "yggdrasil_service_setup.address_save_retry_max_seconds must be at "
             "least address_save_retry_base_seconds"
         )
+    connection_wait_base_seconds = _int_field(
+        raw.get("connection_wait_base_seconds"),
+        "yggdrasil_service_setup.connection_wait_base_seconds",
+    )
+    if connection_wait_base_seconds < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_base_seconds must be positive"
+        )
+    connection_wait_multiplier = _int_field(
+        raw.get("connection_wait_multiplier"),
+        "yggdrasil_service_setup.connection_wait_multiplier",
+    )
+    if connection_wait_multiplier < 2:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_multiplier must be at least 2"
+        )
+    connection_wait_max_seconds = _int_field(
+        raw.get("connection_wait_max_seconds"),
+        "yggdrasil_service_setup.connection_wait_max_seconds",
+    )
+    if connection_wait_max_seconds < connection_wait_base_seconds:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_max_seconds must be at "
+            "least connection_wait_base_seconds"
+        )
     return YggdrasilServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -328,4 +356,7 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         address_save_retry_base_seconds=address_save_retry_base_seconds,
         address_save_retry_multiplier=address_save_retry_multiplier,
         address_save_retry_max_seconds=address_save_retry_max_seconds,
+        connection_wait_base_seconds=connection_wait_base_seconds,
+        connection_wait_multiplier=connection_wait_multiplier,
+        connection_wait_max_seconds=connection_wait_max_seconds,
     )

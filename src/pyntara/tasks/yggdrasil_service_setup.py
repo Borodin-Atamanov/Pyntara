@@ -750,6 +750,44 @@ def _save_self_address(
         time.sleep(pause)
 
 
+def _wait_for_connections(
+    cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> int:
+    """The live peer count, retried until the configured budget runs out.
+
+    After the final restart the peers need a moment to re-establish
+    their connections, so the getPeers query is repeated with the
+    geometric backoff while the total retry budget
+    connection_wait_max_seconds lasts, mirroring the address save retry.
+    Returns the number of live connections at the end, 0 when none
+    connected within the budget, so the caller can warn the user that
+    the node is not reachable from the mesh instead of reporting a
+    healthy node.
+    """
+
+    deadline = time.monotonic() + cfg.connection_wait_max_seconds
+    attempts = 0
+    while True:
+        attempts += 1
+        live = _latencies_from_ctl(timeout)
+        if live:
+            return len(live)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 0
+        pause = min(
+            backoff_delay(
+                attempts,
+                cfg.connection_wait_base_seconds,
+                cfg.connection_wait_multiplier,
+                cfg.connection_wait_max_seconds,
+            ),
+            remaining,
+        )
+        _log(f"no live connections yet, retrying in {pause}s")
+        time.sleep(pause)
+
+
 def task(ctx: Context) -> TaskResult:
     """Install the newest yggdrasil release, configure it and pick working peers.
 
@@ -996,14 +1034,19 @@ def task(ctx: Context) -> TaskResult:
             )
             return done("yggdrasil node not running", True)
         _log("service active")
+        live = _wait_for_connections(cfg, timeout)
+        if not live:
+            warnings.append(
+                f"service {cfg.service_unit_name} is active but has no "
+                "live connections; rerun in force mode to re-select peers"
+            )
+        else:
+            _log(f"service active with {live} live connections")
         _save_self_address(cfg, timeout)
-        return TaskResult(
-            success=True,
-            changed=True,
-            message=(
-                f"yggdrasil {version} installed, {len(selected)} peers "
-                f"configured, service {cfg.service_unit_name} active"
-            ),
+        return done(
+            f"yggdrasil {version} installed, {len(selected)} peers "
+            f"configured, service {cfg.service_unit_name} active",
+            True,
         )
 
     if downloaded is None:
@@ -1085,13 +1128,18 @@ def task(ctx: Context) -> TaskResult:
             "after restart"
         )
         return done("yggdrasil node not running", True)
+    live = _wait_for_connections(cfg, timeout)
+    if not live:
+        warnings.append(
+            f"service {cfg.service_unit_name} is active but has no "
+            "live connections; rerun in force mode to re-select peers"
+        )
+    else:
+        _log(f"service active with {live} live connections")
     _save_self_address(cfg, timeout)
-    return TaskResult(
-        success=True,
-        changed=True,
-        message=(
-            f"yggdrasil {version} installed, no batch reached "
-            f"{cfg.peer_target_count} working peers, keeping the last "
-            f"batch of {len(last_batch)} peers"
-        ),
+    return done(
+        f"yggdrasil {version} installed, no batch reached "
+        f"{cfg.peer_target_count} working peers, keeping the last "
+        f"batch of {len(last_batch)} peers",
+        True,
     )

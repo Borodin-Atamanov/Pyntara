@@ -48,6 +48,8 @@ The task reads the yggdrasil journal (journalctl) for Connected lines over that 
 When a batch reaches peer_target_count working peers, the task reads the latencies from yggdrasilctl -json getPeers over the admin socket, keeps the peer_target_count working peers with the lowest ping and restarts the service with the final configuration.  
 When a batch has too few working peers, the next batch is tried, up to peer_max_batches (0 means the whole list). When no batch reaches the target, the last tried batch stays in the configuration and the task reports a warning, because the node at least keeps trying to connect.
 
+The configured peer_target_count (11 by default) deliberately exceeds the few peers a node needs to join the mesh: the surplus is redundancy, so the node stays reachable from the outside when some public peers flap or die, which keeps the SSH-over-yggdrasil path alive.
+
 The apt index is not refreshed before the install: the package depends only on systemd, which is always installed. When the peer list download fails, the configured static_peers are used; a run where the download fails and static_peers is empty is a task error, because the node would be useless without any peers.
 
 ## Determining the address on the target system
@@ -58,7 +60,7 @@ After the final restart the task saves the address reported by yggdrasilctl -jso
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The package postinst enables the unit; the task enables it when it is not enabled, then restarts it for every probe batch and after the final configuration. A crashed run leaves the persistent TUN interface behind with the node address still assigned, and a saved NetworkManager connection profile named after the interface keeps the device alive and re-adds the address, so the next start panics with failed to add address to link: file exists. Before any start the task therefore removes the leftover interface when the service is not running: the NetworkManager profile named after if_name is deleted first, then the interface. Both steps are best-effort: when ip or nmcli are missing, the profile is absent or a delete fails, the interface stays and the start reports its own error. A running service is never touched. After the final restart the task checks once that the unit reports active, because the simple service either starts or fails immediately; a unit that stays inactive is reported as a warning, never as a fatal task error, and the run continues with the remaining tasks. The package also installs the yggdrasil-default-config.service unit; the task does not manage it.
+The service unit comes from the package; the task never renders or writes it. The package postinst enables the unit; the task enables it when it is not enabled, then restarts it for every probe batch and after the final configuration. A crashed run leaves the persistent TUN interface behind with the node address still assigned, and a saved NetworkManager connection profile named after the interface keeps the device alive and re-adds the address, so the next start panics with failed to add address to link: file exists. Before any start the task therefore removes the leftover interface when the service is not running: the NetworkManager profile named after if_name is deleted first, then the interface. Both steps are best-effort: when ip or nmcli are missing, the profile is absent or a delete fails, the interface stays and the start reports its own error. A running service is never touched. After the final restart the task checks once that the unit reports active, because the simple service either starts or fails immediately; a unit that stays inactive is reported as a warning, never as a fatal task error, and the run continues with the remaining tasks. After the active check of a fresh selection the task also waits for live connections from the admin socket with the geometric backoff: the first wait is connection_wait_base_seconds, every further failure multiplies the pause by connection_wait_multiplier until the budget connection_wait_max_seconds is spent, because the peers need a moment to re-establish their connections. A node that stays without live connections reports a warning telling the user to rerun in force mode, because such a node cannot be reached from the mesh and the SSH-over-yggdrasil path would not work. The package also installs the yggdrasil-default-config.service unit; the task does not manage it.
 
 ## Idempotency
 
@@ -69,5 +71,7 @@ Outside force mode, when the configuration already carries peers and the saved a
 ## Parameters
 
 All parameters live in the [yggdrasil_service_setup] table of the config/ directory.
+
+The live connection check after the final restart uses the geometric backoff connection_wait_base_seconds, connection_wait_multiplier and connection_wait_max_seconds, mirroring the address save retry: a pause never exceeds the remaining budget up to connection_wait_max_seconds.
 
 The task belongs to the server and desktop modes and has no dependencies: it does not touch the apt index, so add_extra_repos is not required.

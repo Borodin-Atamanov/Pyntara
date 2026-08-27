@@ -44,7 +44,7 @@ peers_tarball_url = "https://codeload.github.com/yggdrasil-network/public-peers/
 # How many peers are probed in one batch.
 peer_batch_size = 100
 # How many working peers to keep in the final configuration.
-peer_target_count = 6
+peer_target_count = 11
 # How long to wait for a batch to connect before reading the journal.
 # The connections arrive in a wave some 30-35 seconds after the restart,
 # because the dials to the batch run with a bounded parallelism and the
@@ -75,6 +75,14 @@ address_file_mode = "0644"
 address_save_retry_base_seconds = 1
 address_save_retry_multiplier = 2
 address_save_retry_max_seconds = 67
+# Retry of the live connection check after the final restart: the
+# peers need a moment to re-establish their connections, so the admin
+# socket query is repeated with the geometric backoff while the total
+# retry budget lasts, mirroring the address save
+# (docs/spec/yggdrasil-service.md).
+connection_wait_base_seconds = 1
+connection_wait_multiplier = 2
+connection_wait_max_seconds = 30
 # Multicast peer discovery: regex of interface names, beacon (advertise
 # presence) and listen (connect to discovered neighbours). One block
 # matching every interface with both switches covers the local network.

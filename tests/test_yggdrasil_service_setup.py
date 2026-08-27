@@ -72,6 +72,9 @@ def _ctx(
     address_save_retry_base_seconds: int = 1,
     address_save_retry_multiplier: int = 2,
     address_save_retry_max_seconds: int = 1,
+    connection_wait_base_seconds: int = 1,
+    connection_wait_multiplier: int = 2,
+    connection_wait_max_seconds: int = 1,
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -106,6 +109,9 @@ def _ctx(
             yggdrasil_address_save_retry_base_seconds=address_save_retry_base_seconds,
             yggdrasil_address_save_retry_multiplier=address_save_retry_multiplier,
             yggdrasil_address_save_retry_max_seconds=address_save_retry_max_seconds,
+            yggdrasil_connection_wait_base_seconds=connection_wait_base_seconds,
+            yggdrasil_connection_wait_multiplier=connection_wait_multiplier,
+            yggdrasil_connection_wait_max_seconds=connection_wait_max_seconds,
         ),
     )
 
@@ -1165,3 +1171,97 @@ def test_ready_state_with_leftover_interface_cleans_and_starts(
     assert ["nmcli", "connection", "delete", "ygg"] in calls
     assert ["ip", "link", "del", "ygg"] in calls
     assert ["systemctl", "start", "yggdrasil.service"] in calls
+
+
+def test_wait_for_connections_returns_live_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
+) -> None:
+    # Live peers are reported immediately without a retry pause.
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    live = {("10.0.0.1", 1001): 1.0, ("10.0.0.2", 1002): 2.0}
+    monkeypatch.setattr(
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: live
+    )
+    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 2
+    assert _fake_time == []
+
+
+def test_wait_for_connections_gives_up_without_peers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
+) -> None:
+    # No peer appears within the retry budget: the helper returns 0 and
+    # records the backoff pauses, so the caller can warn the user.
+    cfg = _ctx(
+        tmp_path, connection_wait_max_seconds=3
+    ).config.yggdrasil_service_setup
+    monkeypatch.setattr(
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: {}
+    )
+    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 0
+    # The helper retried within the budget and then gave up instead of
+    # looping forever; the exact pause count depends on the fake clock
+    # reads, so only the retry itself is asserted.
+    assert len(_fake_time) >= 1
+
+
+def test_wait_for_connections_retries_until_peers_appear(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
+) -> None:
+    # The first query sees no peers; the retry sees one and returns the
+    # count.
+    cfg = _ctx(
+        tmp_path, connection_wait_max_seconds=3
+    ).config.yggdrasil_service_setup
+    state = {"calls": 0}
+
+    def fake_latencies(timeout: float) -> dict[tuple[str, int], float]:
+        del timeout
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return {}
+        return {("10.0.0.1", 1001): 1.0}
+
+    monkeypatch.setattr(
+        yggdrasil_service_setup, "_latencies_from_ctl", fake_latencies
+    )
+    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 1
+    assert state["calls"] == 2
+
+
+def test_final_config_without_live_connections_warns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Peers connected during the batch, but the admin socket reports none
+    # after the final restart: the task completes with a warning instead
+    # of silently reporting a healthy node.
+    uris = ["tcp://10.0.0.1:1001", "tcp://10.0.0.2:1002"]
+    tarball = _make_peers_tarball(tmp_path, uris)
+    journal = (
+        "2026-08-13 Connected outbound: "
+        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
+        "source 192.168.85.146:54588\n"
+        "2026-08-13 Connected outbound: "
+        "226:43e9:3739:64a4:db0c:4147:abfe:6ea7@10.0.0.2:1002, "
+        "source 192.168.85.146:54589\n"
+    )
+    ctx = _ctx(tmp_path, batch_size=3, target_count=2)
+    _install_fake(
+        monkeypatch,
+        tmp_path,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        peers_tarball=tarball,
+        journal_output=journal,
+        host_map={"10.0.0.1": "10.0.0.1", "10.0.0.2": "10.0.0.2"},
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert any(
+        "has no live connections" in warning for warning in result.warnings
+    )
+    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+        encoding="utf-8"
+    )
+    assert "10.0.0.1:1001" in config_text
