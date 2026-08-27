@@ -49,6 +49,8 @@ def base_config() -> str:
         'applet_plugin = "org.kde.plasma.keyboardlayout"\n'
         'layouts = ["us", "ru", "es"]\n'
         'switch_option = "grp:caps_select"\n'
+        "reset_old_options = true\n"
+        'switch_mode = "WinClass"\n'
         "use_layout_switching = true\n"
         'indicator_display_style = "Flag"\n'
         'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]\n'
@@ -134,6 +136,9 @@ def base_config() -> str:
         "address_save_retry_base_seconds = 1\n"
         "address_save_retry_multiplier = 2\n"
         "address_save_retry_max_seconds = 67\n"
+        "connection_wait_base_seconds = 1\n"
+        "connection_wait_multiplier = 2\n"
+        "connection_wait_max_seconds = 30\n"
         "[[yggdrasil_service_setup.multicast_interfaces]]\n"
         'regex = ".*"\n'
         "beacon = true\n"

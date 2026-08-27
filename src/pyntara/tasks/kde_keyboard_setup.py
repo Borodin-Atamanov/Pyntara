@@ -1,16 +1,18 @@
 """Task kde_keyboard_setup: configure KDE keyboard layouts and indicator.
 
 The task writes the desktop keyboard layout settings with kwriteconfig6 as
-the target user: the layout list, the XKB switch option (Caps Lock to the
-first layout, Shift+Caps Lock to the second) and the enabled switch into
-kxkbrc, and the indicator display style (the country flag) into the
-keyboard layout applet of the Plasma panel. kwriteconfig6 runs as the
-configured user through runuser, so the config files stay owned by that
-user. When a value changed, the task reloads the kwin configuration and
-restarts the Plasma panel, so the settings apply immediately. The task is
-idempotent: it compares every value with kreadconfig6 and writes only what
-differs. Missing packages (the kwriteconfig6 provider and the DBus client)
-are installed first. A desktop session that cannot be found disables the
+the target user: the complete kxkbrc [Layout] group as KDE produces it
+(the layout list, the XKB switch option, the reset flag, the switch mode
+and the per-layout empty display names and variants), so kwin applies the
+switch option at the next session start, and the indicator display style
+(the country flag) into the keyboard layout applet of the Plasma panel.
+kwriteconfig6 runs as the configured user through runuser, so the config
+files stay owned by that user. When a value changed, the task reloads the
+kwin configuration and restarts the Plasma panel; the layout list applies
+at once, the switch option at the next login. The task is idempotent: it
+compares every value with kreadconfig6 and writes only what differs.
+Missing packages (the kwriteconfig6 provider and the DBus client) are
+installed first. A desktop session that cannot be found disables the
 reload: the settings then apply after the next login.
 
 Optional per-layout hotkeys (layout_switch_shortcuts) are written to
@@ -70,6 +72,12 @@ def _home_env(cfg: KdeKeyboardSetupConfig) -> dict[str, str]:
     """Environment that points the KDE tools at the target user home."""
 
     return {"HOME": cfg.home_dir}
+
+
+def _per_layout_empty_list(layouts: tuple[str, ...]) -> str:
+    """The kxkbrc comma list of empty display names or variants, one per layout."""
+
+    return ",".join([""] * len(layouts))
 
 
 def _kreadconfig(
@@ -183,8 +191,10 @@ def _reload_kwin(
     """Reload the kwin keyboard layout config; error text or None.
 
     The reload runs through the target user's session bus so kwin re-reads
-    kxkbrc immediately. A missing session is not an error: the settings
-    apply after the next login. A failing reload command is an error.
+    kxkbrc immediately; the layout list applies at once, the switch option
+    takes effect at the next session start. A missing session is not an
+    error: the settings apply after the next login. A failing reload
+    command is an error.
     """
 
     bus = session_bus_address(cfg.username, timeout)
@@ -465,7 +475,11 @@ def task(ctx: Context) -> TaskResult:
     layout_changed = False
     for key, target, bool_value in (
         ("LayoutList", ",".join(cfg.layouts), False),
+        ("DisplayNames", _per_layout_empty_list(cfg.layouts), False),
+        ("VariantList", _per_layout_empty_list(cfg.layouts), False),
         ("Options", cfg.switch_option, False),
+        ("ResetOldOptions", "true" if cfg.reset_old_options else "false", True),
+        ("SwitchMode", cfg.switch_mode, False),
         ("Use", "true" if cfg.use_layout_switching else "false", True),
     ):
         try:
@@ -548,6 +562,7 @@ def task(ctx: Context) -> TaskResult:
         reload_error = _reload_kwin(cfg, timeout=timeout, home_env=home_env)
         if reload_error is not None:
             warnings.append(reload_error)
+        _log("the layout switch option takes effect at the next login")
 
     if applet_changed:
         try:

@@ -30,7 +30,8 @@ class KdeKeyboardSetupConfig:
     edited; kxkbrc_file_name and appletsrc_file_name are the KConfig files
     under config_dir that the task manages; applet_plugin is the Plasma
     applet whose display style is the layout indicator; layouts,
-    switch_option and use_layout_switching are the kxkbrc values;
+    switch_option, reset_old_options, switch_mode and
+    use_layout_switching are the kxkbrc values;
     indicator_display_style is the appletsrc value; kwin_reload_command
     and panel_restart_command make the changes apply immediately;
     layout_switch_shortcuts maps keyboard switcher action names to the
@@ -46,6 +47,8 @@ class KdeKeyboardSetupConfig:
     applet_plugin: str
     layouts: tuple[str, ...]
     switch_option: str
+    reset_old_options: bool
+    switch_mode: str
     use_layout_switching: bool
     indicator_display_style: str
     kwin_reload_command: tuple[str, ...]
@@ -82,6 +85,12 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
         layouts=_string_list(raw.get("layouts"), "kde_keyboard_setup.layouts"),
         switch_option=_nonempty_string_field(
             raw.get("switch_option"), "kde_keyboard_setup.switch_option"
+        ),
+        reset_old_options=_bool_field(
+            raw.get("reset_old_options"), "kde_keyboard_setup.reset_old_options"
+        ),
+        switch_mode=_nonempty_string_field(
+            raw.get("switch_mode"), "kde_keyboard_setup.switch_mode"
         ),
         use_layout_switching=_bool_field(
             raw.get("use_layout_switching"),

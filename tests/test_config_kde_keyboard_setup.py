@@ -57,6 +57,12 @@ from pyntara.config import load_config
         base_config().replace(
             'switch_option = "grp:caps_select"', 'switch_option = ""'
         ),
+        # reset_old_options is a string, not a boolean
+        base_config().replace(
+            "reset_old_options = true", 'reset_old_options = "true"'
+        ),
+        # switch_mode is an empty string
+        base_config().replace('switch_mode = "WinClass"', 'switch_mode = ""'),
         # use_layout_switching is a string, not a boolean
         base_config().replace(
             "use_layout_switching = true", 'use_layout_switching = "true"'
@@ -115,6 +121,8 @@ def test_load_config_kde_keyboard_setup_values(tmp_path: Path) -> None:
     assert config.kde_keyboard_setup.kxkbrc_file_name == "kxkbrc"
     assert config.kde_keyboard_setup.layouts == ("us", "ru", "es")
     assert config.kde_keyboard_setup.switch_option == "grp:caps_select"
+    assert config.kde_keyboard_setup.reset_old_options is True
+    assert config.kde_keyboard_setup.switch_mode == "WinClass"
     assert config.kde_keyboard_setup.use_layout_switching is True
     assert config.kde_keyboard_setup.indicator_display_style == "Flag"
     assert config.kde_keyboard_setup.layout_switch_shortcuts == {

@@ -28,6 +28,15 @@ layouts = ["us", "ru", "es"]
 # The XKB switch option: Caps Lock to the first layout, Shift+Caps Lock to
 # the second layout.
 switch_option = "grp:caps_select"
+# Whether kwin resets the previous XKB options before applying the
+# configured one. This and switch_mode complete the kxkbrc [Layout] group
+# the way KDE writes it; kwin applies the switch option at session start
+# only when the group is complete, so a minimal group leaves a freshly
+# installed session on the default single layout.
+reset_old_options = true
+# The KDE switch mode written into kxkbrc, part of the complete [Layout]
+# group. WinClass is the value KDE writes itself.
+switch_mode = "WinClass"
 # Whether layout switching is enabled at all.
 use_layout_switching = true
 # How the keyboard layout indicator shows the current layout; Flag shows

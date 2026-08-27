@@ -174,6 +174,36 @@ def test_first_run_writes_and_reloads(
     assert installs == []
 
 
+def test_writes_complete_kxkbrc_layout_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The complete [Layout] group is written so kwin applies the switch
+    # option at the next session start; a minimal group leaves a fresh
+    # session on the default single layout.
+    ctx = _ctx(tmp_path)
+    writes, _, _, _, _ = _install_fakes(monkeypatch)
+    task_module.task(ctx)
+    layout_writes = [
+        command for command in writes if "--file" in command and "kxkbrc" in command
+    ]
+    assert any(
+        "--key" in command and "DisplayNames" in command and ",," in command
+        for command in layout_writes
+    )
+    assert any(
+        "--key" in command and "VariantList" in command and ",," in command
+        for command in layout_writes
+    )
+    assert any(
+        "--key" in command and "ResetOldOptions" in command and "true" in command
+        for command in layout_writes
+    )
+    assert any(
+        "--key" in command and "SwitchMode" in command and "WinClass" in command
+        for command in layout_writes
+    )
+
+
 def test_skip_when_already_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -181,7 +211,11 @@ def test_skip_when_already_configured(
     ctx = _ctx(tmp_path)
     currents = {
         "LayoutList": "us,ru,es",
+        "DisplayNames": ",,",
+        "VariantList": ",,",
         "Options": "grp:caps_select",
+        "ResetOldOptions": "true",
+        "SwitchMode": "WinClass",
         "Use": "true",
         "displayStyle": "Flag",
     }
@@ -204,7 +238,11 @@ def test_force_rewrites_even_when_configured(
     ctx = _ctx(tmp_path, force=True)
     currents = {
         "LayoutList": "us,ru,es",
+        "DisplayNames": ",,",
+        "VariantList": ",,",
         "Options": "grp:caps_select",
+        "ResetOldOptions": "true",
+        "SwitchMode": "WinClass",
         "Use": "true",
         "displayStyle": "Flag",
     }
@@ -370,7 +408,11 @@ def test_no_session_hotkey_already_set_skips_write(
     ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
     currents = {
         "LayoutList": "us,ru,es",
+        "DisplayNames": ",,",
+        "VariantList": ",,",
         "Options": "grp:caps_select",
+        "ResetOldOptions": "true",
+        "SwitchMode": "WinClass",
         "Use": "true",
         "displayStyle": "Flag",
         SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
@@ -412,7 +454,11 @@ def test_session_hotkey_already_applied_is_idempotent(
     ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
     currents = {
         "LayoutList": "us,ru,es",
+        "DisplayNames": ",,",
+        "VariantList": ",,",
         "Options": "grp:caps_select",
+        "ResetOldOptions": "true",
+        "SwitchMode": "WinClass",
         "Use": "true",
         "displayStyle": "Flag",
         SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
