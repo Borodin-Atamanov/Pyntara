@@ -8,11 +8,12 @@ The download and run command is documented in README.md under Start; README.md i
 The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD, or with a password that matches no vault, the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
 
-## Package installation: optimistic apt strategy
+## Package installation: apt update before install
 
-First attempt: apt-get install -y without apt-get update.  
-If packages are missing (stale index), run apt-get update, then retry install.  
-This avoids wasting time on apt-get update during test runs where packages are already cached.  
+The apt index is refreshed before the first install by default, so packages resolve from a fresh index.  
+PYNTARA_SKIP_APT_UPDATE (1, true or yes) skips the refresh for test or offline runs.  
+A failed refresh is logged as a warning and the install continues with the existing index.  
+There is no optimistic first attempt and no retry.  
 All apt operations run with DEBIAN_FRONTEND=noninteractive.
 
 ## Installed packages (in order)

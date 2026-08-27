@@ -1,4 +1,4 @@
-# Pyntara 0.2.134
+# Pyntara 0.2.135
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -42,9 +42,9 @@ is already reached. When omitted, no task is forced. The keyword all forces ever
 the resolved run set. Task names and the keyword are case-insensitive. Invalid names are
 reported with a countdown notice and ignored.
 
-PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that add_extra_repos
-and cli_tools run before package operations. Use for test or offline runs; omit it in real
-provisioning so packages resolve from a fresh index.
+PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that inst.sh,
+add_extra_repos and cli_tools run before package operations. Use for test or offline runs;
+omit it in real provisioning so packages resolve from a fresh index.
 
 The developer run keeps the password in the shell environment: it asks once, exports
 PYNTARA_VAULT_PASSWORD, and skips the prompt on later runs in the same terminal when the

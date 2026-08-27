@@ -443,25 +443,18 @@ inst_run_timed_preserves_failing_exit_code() {
     rm -rf "$tmp"
 }
 
-inst_apt_install_succeeds_without_index_refresh() {
-    # When the first install works, apt-get update must never be called.
+inst_apt_install_updates_before_install() {
+    # By default the index is refreshed before the install, exactly once.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
     local calls="$tmp/apt_calls"
     local bin="$tmp/bin"
     mkdir -p "$bin"
-    # Mock apt-get records its subcommand and arguments.
     cat > "$bin/apt-get" <<'EOF'
 #!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
-if [[ "$1" == "install" ]]; then
-    exit 0
-fi
-if [[ "$1" == "update" ]]; then
-    exit 0
-fi
-exit 1
+exit 0
 EOF
     chmod +x "$bin/apt-get"
     local output
@@ -469,25 +462,36 @@ EOF
         bash -c 'source "$1"; apt_install dialog python3' _ "$INSTALLER" 2>&1)"
     local update_calls
     update_calls="$(grep -c '^update$' "$calls" || true)"
-    if [[ "$update_calls" -ne 0 ]]; then
-        echo "apt-get update called on successful first install" >&2
+    local install_calls
+    install_calls="$(grep -c '^install -y dialog python3$' "$calls" || true)"
+    if [[ "$update_calls" -ne 1 ]]; then
+        echo "apt-get update must be called exactly once by default" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q '^install -y dialog python3$' "$calls"; then
-        echo "install arguments missing from mock calls" >&2
+    if [[ "$install_calls" -ne 1 ]]; then
+        echo "apt-get install must be called exactly once, got $install_calls" >&2
         rm -rf "$tmp"
         return 1
     fi
-    assert_contains "$output" "Packages installed without index refresh" "success message" || {
+    if [[ "$(head -1 "$calls")" != "update" ]]; then
+        echo "update must precede install in the call order" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    assert_contains "$output" "Refreshing package index before install" "refresh message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "Packages installed: dialog python3" "success message" || {
         rm -rf "$tmp"
         return 1
     }
     rm -rf "$tmp"
 }
 
-inst_apt_install_refreshes_index_after_first_failure() {
-    # When the first install fails, update must run before the retry.
+inst_apt_install_skips_update_when_flag_set() {
+    # PYNTARA_SKIP_APT_UPDATE=1 must skip the index refresh but keep the install.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
@@ -497,30 +501,72 @@ inst_apt_install_refreshes_index_after_first_failure() {
     cat > "$bin/apt-get" <<'EOF'
 #!/bin/bash
 echo "$@" >> "$APT_CALLS_FILE"
-if [[ "$1" == "install" && -f "$INSTALL_FAILED_MARKER" ]]; then
+exit 0
+EOF
+    chmod +x "$bin/apt-get"
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        PYNTARA_SKIP_APT_UPDATE=1 \
+        bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER" 2>&1)"
+    local update_calls
+    update_calls="$(grep -c '^update$' "$calls" || true)"
+    local install_calls
+    install_calls="$(grep -c '^install -y dialog$' "$calls" || true)"
+    if [[ "$update_calls" -ne 0 ]]; then
+        echo "apt-get update must be skipped when PYNTARA_SKIP_APT_UPDATE is set" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$install_calls" -ne 1 ]]; then
+        echo "apt-get install must still run once, got $install_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    assert_contains "$output" "Package index refresh skipped" "skip message" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    rm -rf "$tmp"
+}
+
+inst_apt_install_warns_and_continues_when_update_fails() {
+    # A failed apt-get update is a warning, not a failure: install still runs.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local calls="$tmp/apt_calls"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/apt-get" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$APT_CALLS_FILE"
+if [[ "$1" == "update" ]]; then
     exit 1
 fi
 exit 0
 EOF
     chmod +x "$bin/apt-get"
-    : > "$tmp/failed"
-    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
-        INSTALL_FAILED_MARKER="$tmp/failed" \
-        bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER"
-    local update_line
-    update_line="$(grep -c '^update$' "$calls" || true)"
-    local install_lines
-    install_lines="$(grep -c '^install -y dialog$' "$calls" || true)"
-    if [[ "$update_line" -ne 1 ]]; then
-        echo "apt-get update must be called exactly once" >&2
+    local output
+    output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER" 2>&1)"
+    local update_calls
+    update_calls="$(grep -c '^update$' "$calls" || true)"
+    local install_calls
+    install_calls="$(grep -c '^install -y dialog$' "$calls" || true)"
+    if [[ "$update_calls" -ne 1 ]]; then
+        echo "apt-get update must be attempted once" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if [[ "$install_lines" -ne 2 ]]; then
-        echo "expected install twice (before and after update), got $install_lines" >&2
+    if [[ "$install_calls" -ne 1 ]]; then
+        echo "install must continue after a failed update, got $install_calls" >&2
         rm -rf "$tmp"
         return 1
     fi
+    assert_contains "$output" "Package index refresh failed, continuing with the existing index" "warning message" || {
+        rm -rf "$tmp"
+        return 1
+    }
     rm -rf "$tmp"
 }
 
@@ -1718,8 +1764,9 @@ run_test inst_log_survives_failing_systemd_cat
 run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
 run_test inst_run_timed_logs_duration_and_exit_code
 run_test inst_run_timed_preserves_failing_exit_code
-run_test inst_apt_install_succeeds_without_index_refresh
-run_test inst_apt_install_refreshes_index_after_first_failure
+run_test inst_apt_install_updates_before_install
+run_test inst_apt_install_skips_update_when_flag_set
+run_test inst_apt_install_warns_and_continues_when_update_fails
 run_test inst_apt_install_passes_package_list
 run_test inst_install_dependencies_skips_when_all_present
 run_test inst_install_dependencies_installs_missing_packages

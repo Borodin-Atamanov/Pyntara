@@ -108,22 +108,43 @@ run_timed() {
 }
 fi
 
-# Implementation: phase 2.1 (optimistic apt)
+# Implementation: phase 2.1 (apt package install)
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f apt_update_skipped &>/dev/null; then
+apt_update_skipped() {
+    # Bootstrap contract, Package installation: true when PYNTARA_SKIP_APT_UPDATE
+    # is 1, true or yes; mirrors the engine flag semantics in pyntara.py. Any
+    # other value, including 0, does not skip the refresh.
+    local value
+    value="${PYNTARA_SKIP_APT_UPDATE:-}"
+    [[ -n "$value" ]] && [[ "${value,,}" == "1" || "${value,,}" == "true" || "${value,,}" == "yes" ]]
+}
+fi
+
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f apt_install &>/dev/null; then
 apt_install() {
-    # Bootstrap contract, Package installation: try install without update first,
-    # refresh the index and retry only if the first attempt fails.
+    # Bootstrap contract, Package installation: refresh the apt index before the
+    # install by default, so packages resolve from a fresh index; skip the refresh
+    # when PYNTARA_SKIP_APT_UPDATE is set (test or offline runs). A failed refresh
+    # is a warning, not a failure: the existing index may still satisfy the install.
+    # There is no optimistic first attempt and no retry.
     # All apt operations are noninteractive.
     local packages=("$@")
+    if apt_update_skipped; then
+        log "Package index refresh skipped"
+    else
+        log "Refreshing package index before install"
+        if ! DEBIAN_FRONTEND=noninteractive run_timed apt-get update; then
+            log "Package index refresh failed, continuing with the existing index"
+        fi
+    fi
     if DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y "${packages[@]}"; then
-        log "Packages installed without index refresh: ${packages[*]}"
+        log "Packages installed: ${packages[*]}"
         return 0
     fi
-    log "First install attempt failed, refreshing package index"
-    DEBIAN_FRONTEND=noninteractive run_timed apt-get update
-    DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y "${packages[@]}"
-    log "Packages installed after index refresh: ${packages[*]}"
+    log "Package install failed: ${packages[*]}"
+    return 1
 }
 fi
 
@@ -193,7 +214,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.2.134"
+PYNTARA_VERSION="0.2.135"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then

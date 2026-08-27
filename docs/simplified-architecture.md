@@ -27,7 +27,7 @@ tests/: pytest for the engine, bash tests for inst.sh.
 
 ## What stays unchanged
 
-inst.sh bootstrap core: root check, FHS directories, optimistic apt, uv install, git fetch, uv sync, vault password resolution through check-vault, install mode detection.  
+inst.sh bootstrap core: root check, FHS directories, apt update before install, uv install, git fetch, uv sync, vault password resolution through check-vault, install mode detection.  
 check-vault command and its tests.  
 mypy --strict and ruff mandatory; pytest covers both the Python application and the bootstrap installer.  
 The tasks from the catalog (config/tasks.toml) as the main implementation work.
