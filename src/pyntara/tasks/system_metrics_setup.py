@@ -3,8 +3,10 @@
 The task makes the pyntara package and its dependencies available to the
 services on the target machine: a dedicated virtual environment is created
 at the configured venv_dir with uv and the package is installed into it
-from the repository clone (REPO_ROOT), so deployed services import the
-same code base the installer uses and never need the clone afterwards.
+from the repository lockfile of the clone (REPO_ROOT), so deployed
+services import the same code base the installer uses, run the same
+dependency versions as the repository and never need the clone
+afterwards.
 The venv is refreshed whenever its installed pyntara version differs
 from the repository version, so deployed services run the current code
 after every installer run.
@@ -140,12 +142,14 @@ def _ensure_venv(
     untouched; a stale or broken venv is updated even without force,
     because the deployed services must run the current code. The venv is
     created when missing with the configured python version; the package
-    is installed from the repository clone with --reinstall when the
-    update refreshes an existing venv, so uv replaces the installed code
-    even when the package metadata did not change.
+    and its dependencies are installed from the repository lockfile with
+    uv sync, so the deployed venv runs the same versions as the
+    repository. The pyntara package itself is reinstalled from the clone
+    when the update refreshes an existing venv or force asks for it,
+    because uv sync does not rebuild a local project whose lockfile entry
+    carries no version.
     """
 
-    venv_python = venv_dir / "bin" / "python"
     if venv_up_to_date and not force:
         return False, None
     created = False
@@ -160,13 +164,25 @@ def _ensure_venv(
             return False, f"cannot create venv: {exc}"
         _log("venv created")
         created = True
-    install = [uv, "pip", "install"]
+    sync = [
+        uv,
+        "sync",
+        "--project",
+        str(REPO_ROOT),
+        "--active",
+        "--locked",
+        "--no-dev",
+        "--no-editable",
+    ]
     if force or (not venv_up_to_date and not created):
-        install.append("--reinstall")
-    install += ["--python", str(venv_python), str(REPO_ROOT)]
-    _log(f"installing pyntara into the venv from {REPO_ROOT}")
+        sync += ["--reinstall-package", "pyntara"]
+    _log(f"installing pyntara into the venv from the lockfile of {REPO_ROOT}")
     try:
-        run_command(install, timeout=timeout)
+        run_command(
+            sync,
+            timeout=timeout,
+            extra_env={"VIRTUAL_ENV": str(venv_dir)},
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot install pyntara into the venv: {exc}"
     _log("pyntara installed into the venv")

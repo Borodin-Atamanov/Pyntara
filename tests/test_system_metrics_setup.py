@@ -459,8 +459,13 @@ def test_deploys_service_ingest_and_command(
     assert result.changed is True
     assert ["uv", "venv", str(fixtures["venv_dir"]), "--python", "3"] in calls
     assert any(
-        call[0] == "uv" and call[1] == "pip" and call[2] == "install"
-        and "--python" in call
+        call[0] == "uv" and call[1] == "sync"
+        and "--project" in call
+        and "--active" in call
+        and "--locked" in call
+        and "--no-dev" in call
+        and "--no-editable" in call
+        and "--reinstall-package" not in call
         for call in calls
     )
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
@@ -531,8 +536,8 @@ def test_force_reinstalls_and_restarts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Everything is already configured but the task is forced: the package
-    # is reinstalled with --reinstall, the config and units rewritten, the
-    # service and the path unit enabled and restarted.
+    # is reinstalled with --reinstall-package pyntara, the config and units
+    # rewritten, the service and the path unit enabled and restarted.
     fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
@@ -549,8 +554,9 @@ def test_force_reinstalls_and_restarts(
     assert result.success is True
     assert result.changed is True
     assert any(
-        call[0] == "uv" and call[1] == "pip" and call[2] == "install"
-        and "--reinstall" in call
+        call[0] == "uv" and call[1] == "sync"
+        and "--reinstall-package" in call
+        and "pyntara" in call
         for call in calls
     )
     assert ["systemctl", "enable", "system_metrics.service"] in calls
@@ -598,9 +604,9 @@ def test_stale_venv_is_updated_and_service_restarted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The venv runs an old pyntara version while everything else is
-    # deployed: the task reinstalls the package with --reinstall and
-    # restarts the long-running service, so the new code takes effect
-    # without a reboot.
+    # deployed: the task reinstalls the package with --reinstall-package
+    # pyntara and restarts the long-running service, so the new code takes
+    # effect without a reboot.
     fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
@@ -618,8 +624,9 @@ def test_stale_venv_is_updated_and_service_restarted(
     assert result.success is True
     assert result.changed is True
     assert any(
-        call[0] == "uv" and call[1] == "pip" and call[2] == "install"
-        and "--reinstall" in call
+        call[0] == "uv" and call[1] == "sync"
+        and "--reinstall-package" in call
+        and "pyntara" in call
         for call in calls
     )
     assert ["systemctl", "restart", "system_metrics.service"] in calls
@@ -636,15 +643,15 @@ def test_uv_missing_fails(
     assert "uv" in (result.error or "")
 
 
-def test_uv_pip_install_failure_fails(
+def test_uv_sync_failure_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A failed package install is an error: the task reports it and the
     # runner continues with the remaining tasks.
-    def fail_uv_install(command: list[str]) -> bool:
-        return command[0] == "uv" and command[1] == "pip" and command[2] == "install"
+    def fail_uv_sync(command: list[str]) -> bool:
+        return command[0] == "uv" and command[1] == "sync"
 
-    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_install)
+    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_sync)
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is False
     assert "cannot install" in (result.error or "")
