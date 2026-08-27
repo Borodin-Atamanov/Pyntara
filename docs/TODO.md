@@ -1,6 +1,6 @@
 # TODO
 
-Planned future work, one idea per item. Items are not commitments: an item moves to a spec (docs/spec/) when implementation starts.
+Planned future work. После реализации - удаляем из файла.
 
 three_x_ui_xray_setup stage 2: gain programmatic control of the panel through its REST API. Take the credentials the panel generated on first start and wrote into /etc/x-ui/install-result.env, log in, verify the session, and store the credentials in the project vault instead of plain config; the login helper is a shared reusable module with tests against mocked responses. (done?)
 three_x_ui_xray_setup stage 3: create the universal server inbound through the panel API. Create a VLESS inbound with REALITY on the configured port from the task config table; on a rerun find the existing inbound and return done. Tests cover the request payloads and the idempotent re-run. (done 2026-08-25)  

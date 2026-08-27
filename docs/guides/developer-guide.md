@@ -69,6 +69,8 @@ Document limitations honestly. State what is not applied automatically (conflict
 
 ## Planning a task
 
+The full planning procedure is defined in [planning-procedure.md](planning-procedure.md). It is mandatory when the user says "plan". This section summarises the key principles that apply to every task, with or without a formal plan.
+
 Every task has two goals: the described goal (what the config or spec says) and the implied goal (what the user experiences after the task). The implied goal is the acceptance test; the described goal only serves it.
 
 Research on the machine before writing code. Run small reversible probes to establish facts: who owns the state, which tool or client works, what the exact call is. Never guess a mechanism a probe can settle in minutes, and never run a probe that disrupts the running session (restarting kwin or the Wayland session is forbidden).
