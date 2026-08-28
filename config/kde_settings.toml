@@ -351,7 +351,25 @@ type = "bool"
 
 # The mousemark effect modifiers use KWin defaults: Shift+Meta for free
 # draw (Freedrawshift=true, Freedrawmeta=true) and Ctrl+Meta for arrows
-# (Arrowdrawcontrol=true, Arrowdrawmeta=true). No explicit entries needed.
+# (Arrowdrawcontrol=true, Arrowdrawmeta=true). The delete entries remove
+# the old wrong values that the previous config wrote.
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Arrowdrawcontrol"
+delete = true
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Arrowdrawshift"
+delete = true
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["Effect-mousemark"]
+key = "Freedrawshift"
+delete = true
 
 [[kde_settings.kconfig]]
 file = "kwinrc"
@@ -599,6 +617,12 @@ value = "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window"
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]
+key = "manage activities"
+value = "none,none,Show Activity Switcher"
+
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["plasmashell"]
 key = "manage activities"
 value = "none,none,Show Activity Switcher"
 

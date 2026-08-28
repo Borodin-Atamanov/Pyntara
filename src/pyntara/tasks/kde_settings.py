@@ -930,6 +930,110 @@ def _reload_kwin(
     return None
 
 
+def _apply_desktop_count_live(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    env: dict[str, str],
+) -> str | None:
+    """Apply the configured desktop count through the DBus API; error or None.
+
+    KWin reads the desktop count from kwinrc only at session start, so a
+    kwin reconfigure does not apply a changed Number. This function reads
+    the target count from the kconfig records and creates or removes
+    desktops through the VirtualDesktopManager DBus API to match it live.
+    A missing session bus is not an error: the count applies at the next
+    login.
+    """
+
+    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+        return None
+    target = None
+    for record in cfg.kconfig:
+        if record.file == "kwinrc" and record.group == ("Desktops",) and record.key == "Number":
+            target = int(record.value)
+            break
+    if target is None:
+        return None
+    try:
+        result = run_command(
+            _as_user_command(
+                cfg,
+                [
+                    "qdbus6",
+                    "org.kde.KWin",
+                    "/VirtualDesktopManager",
+                    "org.kde.KWin.VirtualDesktopManager.count",
+                ],
+            ),
+            extra_env=env,
+            timeout=timeout,
+            capture=True,
+        )
+        current = int(trim_whitespace(result.stdout))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as exc:
+        return f"cannot read desktop count: {exc}"
+    if current == target:
+        return None
+    if current < target:
+        for _ in range(current, target):
+            try:
+                run_command(
+                    _as_user_command(
+                        cfg,
+                        [
+                            "qdbus6",
+                            "org.kde.KWin",
+                            "/VirtualDesktopManager",
+                            "org.kde.KWin.VirtualDesktopManager.createDesktop",
+                            "0",
+                            "",
+                        ],
+                    ),
+                    extra_env=env,
+                    timeout=timeout,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                return f"cannot create desktop: {exc}"
+        _log(f"created {target - current} desktops, live count now {target}")
+    else:
+        result = run_command(
+            _as_user_command(
+                cfg,
+                [
+                    "qdbus6",
+                    "org.kde.KWin",
+                    "/VirtualDesktopManager",
+                    "org.kde.KWin.VirtualDesktopManager.desktops",
+                ],
+            ),
+            extra_env=env,
+            timeout=timeout,
+            capture=True,
+        )
+        ids = trim_whitespace(result.stdout).split("\n")
+        for desktop_id in ids[-current + target:]:
+            try:
+                run_command(
+                    _as_user_command(
+                        cfg,
+                        [
+                            "qdbus6",
+                            "org.kde.KWin",
+                            "/VirtualDesktopManager",
+                            "org.kde.KWin.VirtualDesktopManager.removeDesktop",
+                            desktop_id,
+                        ],
+                    ),
+                    extra_env=env,
+                    timeout=timeout,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                return f"cannot remove desktop: {exc}"
+        _log(f"removed {current - target} desktops, live count now {target}")
+    return None
+
+
 def task(ctx: Context) -> TaskResult:
     """Apply the dark appearance and the input and keyboard settings.
 
@@ -1021,6 +1125,10 @@ def task(ctx: Context) -> TaskResult:
         reload_error = _reload_kwin(cfg, timeout=timeout, env=apply_env)
         if reload_error is not None:
             return TaskResult(success=False, error=reload_error)
+
+    desktop_error = _apply_desktop_count_live(cfg, timeout=timeout, env=apply_env)
+    if desktop_error is not None:
+        return TaskResult(success=False, error=desktop_error)
 
     if not changed:
         return TaskResult(success=True, changed=False, message="already configured")
