@@ -51,7 +51,10 @@ the certificate is trusted or self-signed and how to obtain a trusted
 one. After the installer (and on a rerun) the task brings the panel to
 the configured port, migrating it when an earlier install left it on
 another port, and syncs install-result.env so its port and scheme match
-reality.
+reality. In force mode on an existing panel the task also applies fresh
+proquint credentials and webBasePath directly through `x-ui setting`,
+because the installer preserves them on a non-default panel; normal runs
+never touch them.
 """
 
 import json
@@ -772,15 +775,20 @@ def _wait_panel_http(
     return False
 
 
-def _sync_install_result_env(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> bool:
+def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
+    """Apply key=value updates to an env file, preserving line order.
 
-    env_path = Path(cfg.install_result_env_path)
-    if not env_path.is_file():
+    Reads the file, keeps the order of the existing keys, appends keys
+    that are not present yet, replaces the given pairs and writes back
+    only when something changed. Returns True when the file was
+    rewritten. Shared by the install-result.env sync and the credential
+    takeover, so the file is written through one mechanism.
+    """
+
+    if not path.is_file():
         return False
     try:
-        text = env_path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return False
     values: dict[str, str] = {}
@@ -790,17 +798,57 @@ def _sync_install_result_env(
             key, _, value = line.partition("=")
             values[key.strip()] = value.strip()
             order.append(key.strip())
-    port = str(cfg.panel_port)
-    try:
-        scheme = xui_client.panel_scheme(cfg, timeout)
-    except (subprocess.TimeoutExpired, OSError):
-        scheme = None
-    url = values.get("XUI_ACCESS_URL")
     changed = False
-    if values.get("XUI_PANEL_PORT") != port:
-        values["XUI_PANEL_PORT"] = port
-        changed = True
+    for key, value in updates.items():
+        if values.get(key) != value:
+            values[key] = value
+            changed = True
+    if not changed:
+        return False
+    new_lines = []
+    for key in order:
+        new_lines.append(f"{key}={values[key]}")
+    for key, value in values.items():
+        if key not in order:
+            new_lines.append(f"{key}={value}")
+    try:
+        path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def _sync_install_result_env(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> bool:
+    """Sync install-result.env so its port, scheme and url match reality.
+
+    The panel port after the convergence and the scheme after the HTTPS
+    stage set the certificate are written through the shared env rewrite,
+    so consumers never read a stale port or a scheme the panel does not
+    serve.
+    """
+
+    env_path = Path(cfg.install_result_env_path)
+    if not env_path.is_file():
+        return False
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+    port = str(cfg.panel_port)
+    updates: dict[str, str] = {"XUI_PANEL_PORT": port}
+    url = values.get("XUI_ACCESS_URL")
     if url is not None:
+        try:
+            scheme = xui_client.panel_scheme(cfg, timeout)
+        except (subprocess.TimeoutExpired, OSError):
+            scheme = None
         old_scheme = url.split("://", 1)[0] if "://" in url else "http"
         host = ""
         if "://" in url:
@@ -812,21 +860,64 @@ def _sync_install_result_env(
         if web_path:
             new_url += f"/{web_path}"
         if url != new_url:
-            values["XUI_ACCESS_URL"] = new_url
-            changed = True
-    if not changed:
-        return False
-    new_lines = []
-    for key in order:
-        new_lines.append(f"{key}={values[key]}")
-    for key, value in values.items():
-        if key not in order:
-            new_lines.append(f"{key}={value}")
+            updates["XUI_ACCESS_URL"] = new_url
+    return _rewrite_env(env_path, updates)
+
+
+def _takeover_credentials(
+    cfg: ThreeXuiXraySetupConfig,
+    timeout: float,
+    creds: dict[str, str],
+) -> tuple[bool, str]:
+    """Force-apply fresh proquint credentials and webBasePath to the panel.
+
+    Runs in force mode on an existing panel: the installer preserves the
+    current credentials and webBasePath on a non-default panel, so the
+    task applies the fresh values it generated for the installer directly
+    through `x-ui setting`, rewrites install-result.env through the shared
+    helper and restarts the panel, so stage 2 stores the new values.
+    Returns (changed, message); a failure returns (False, error).
+    """
+
+    username = creds.get("XUI_USERNAME", "")
+    password = creds.get("XUI_PASSWORD", "")
+    web_base_path = creds.get("XUI_WEB_BASE_PATH", "")
     try:
-        env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    except OSError:
-        return False
-    return True
+        run_command(
+            [
+                str(cfg.install_dir / "x-ui"),
+                "setting",
+                "-username",
+                username,
+                "-password",
+                password,
+                "-webBasePath",
+                web_base_path,
+            ],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot set panel credentials: {exc}"
+    _rewrite_env(
+        Path(cfg.install_result_env_path),
+        {
+            "XUI_USERNAME": username,
+            "XUI_PASSWORD": password,
+            "XUI_WEB_BASE_PATH": web_base_path,
+        },
+    )
+    try:
+        run_command(
+            ["systemctl", "restart", cfg.service_unit_name],
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot restart {cfg.service_unit_name}: {exc}"
+    _wait_panel_http(cfg, timeout)
+    return True, (
+        f"panel credentials and webBasePath set to fresh proquint "
+        f"values ({web_base_path})"
+    )
 
 
 def _acme_path() -> Path:
@@ -1098,6 +1189,42 @@ def _ensure_self_signed_cert(
     return True, "self-signed certificate configured"
 
 
+def _issue_trusted_cert(
+    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+) -> TaskResult | None:
+    """Issue a trusted Let's Encrypt certificate and report the result.
+
+    Frees the ACME port, issues the certificate through acme.sh and
+    returns a TaskResult carrying the change or the warning. Shared by
+    the no-certificate and the self-signed-upgrade paths of the HTTPS
+    stage.
+    """
+
+    _log(f"issuing Let's Encrypt IP certificate for {ip}")
+    try:
+        freed = ensure_port_free(
+            cfg.acme_port,
+            cfg.service_unit_name,
+            timeout,
+            service_process_name="x-ui",
+        )
+    except RuntimeError as exc:
+        return TaskResult(success=True, changed=False, warnings=(str(exc),))
+    if freed:
+        _log(f"ACME port {cfg.acme_port}: {freed}")
+    ok, message = _issue_ip_certificate(cfg, ip, timeout)
+    if not ok:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(f"SSL certificate setup failed: {message}",),
+        )
+    _log(f"SSL certificate configured ({message})")
+    return TaskResult(
+        success=True, changed=True, message="SSL certificate configured"
+    )
+
+
 def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
     """Ensure the panel serves HTTPS; returns a TaskResult when changed.
 
@@ -1120,34 +1247,19 @@ def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | Non
     if cert is not None and cert != self_signed:
         _log("SSL certificate already configured")
         return None
-    if cert == self_signed and not _ssl_reachable(cfg, timeout):
-        _log("self-signed certificate already configured")
+    if cert == self_signed:
+        # Our self-signed certificate is installed; only a now-reachable
+        # port 80 justifies replacing it with a trusted one.
+        if not _ssl_reachable(cfg, timeout):
+            _log("self-signed certificate already configured")
+            return None
+        ip = _detect_server_ip(cfg, timeout)
+        if ip is not None:
+            return _issue_trusted_cert(cfg, ip, timeout)
         return None
     ip = _detect_server_ip(cfg, timeout)
     if ip is not None and _ssl_reachable(cfg, timeout):
-        _log(f"issuing Let's Encrypt IP certificate for {ip}")
-        try:
-            freed = ensure_port_free(
-                cfg.acme_port,
-                cfg.service_unit_name,
-                timeout,
-                service_process_name="x-ui",
-            )
-        except RuntimeError as exc:
-            return TaskResult(success=True, changed=False, warnings=(str(exc),))
-        if freed:
-            _log(f"ACME port {cfg.acme_port}: {freed}")
-        ok, message = _issue_ip_certificate(cfg, ip, timeout)
-        if not ok:
-            return TaskResult(
-                success=True,
-                changed=False,
-                warnings=(f"SSL certificate setup failed: {message}",),
-            )
-        _log(f"SSL certificate configured ({message})")
-        return TaskResult(
-            success=True, changed=True, message="SSL certificate configured"
-        )
+        return _issue_trusted_cert(cfg, ip, timeout)
     ok, message = _ensure_self_signed_cert(cfg, timeout)
     if ok:
         return TaskResult(
@@ -1305,8 +1417,31 @@ def task(ctx: Context) -> TaskResult:
                 ),
             )
         _log(f"checking installed version: {_installed_version(cfg, timeout)}")
+        # Force takeover: the installer preserves credentials and
+        # webBasePath on an existing non-default panel, so force applies
+        # the fresh proquint values it generated for the installer
+        # directly. A fresh install already received them from the
+        # installer environment.
+        takeover_note = ""
+        if force and installed_version is not None:
+            takeover_ok, takeover_message = _takeover_credentials(
+                cfg, timeout, installer_env
+            )
+            if takeover_ok:
+                _log(takeover_message)
+                takeover_note = f"; {takeover_message}"
+            elif takeover_message:
+                return TaskResult(
+                    success=True,
+                    changed=True,
+                    warnings=(
+                        f"panel credential takeover failed: {takeover_message}",
+                    ),
+                )
         result = TaskResult(
-            success=True, changed=True, message=f"installed 3x-ui {tag}"
+            success=True,
+            changed=True,
+            message=f"installed 3x-ui {tag}{takeover_note}",
         )
 
     # Bring the panel to the configured port and sync install-result.env

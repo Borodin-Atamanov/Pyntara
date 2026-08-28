@@ -35,6 +35,8 @@ The task generates the panel credentials itself and passes them to the installer
 
 The installer applies these env vars only when the panel is in the default state: a fresh panel starts with the default credentials and a short webBasePath, so the installer sets all four values and writes them into /etc/x-ui/install-result.env (mode 600, root) through write_install_result. On a rerun against a panel whose credentials are no longer the defaults, the installer preserves the current credentials, port and webBasePath, so a rerun never rotates them: the credentials are effectively applied only at the first deployment. This is the intended gate: the task does not re-check the panel state itself.
 
+In force mode on an existing panel the task rotates the credentials and webBasePath: it applies the fresh proquint values it generated for the installer directly through `x-ui setting -username -password -webBasePath`, rewrites install-result.env and restarts the panel, so stage 2 stores the new values in the runtime vault. This is the explicit permission to regenerate the panel identity; normal runs never touch it. A fresh install already receives the values from the installer environment, so no takeover is needed there.
+
 The API token is left to panel generation: the x-ui binary has no setter for it, so there is nothing the task could pass.
 
 The install-result.env file is the handoff to stage 2, which logs in through the panel API and stores the credentials in the runtime vault.

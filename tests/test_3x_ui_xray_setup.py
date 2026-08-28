@@ -157,6 +157,7 @@ def _install_fake(
     installer_fails: bool = False,
     captured_env: list[dict[str, str]] | None = None,
     mock_stage_ssl: bool = True,
+    mock_takeover: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -214,6 +215,10 @@ def _install_fake(
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+    if mock_takeover:
+        monkeypatch.setattr(
+            xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
+        )
     return calls
 
 
@@ -223,6 +228,7 @@ def _panel_fake(
     show_port: str = "35353",
     cert_value: str | None = None,
     mock_stage_ssl: bool = True,
+    mock_takeover: bool = True,
 ) -> list[list[str]]:
     """Fake subprocess with a queryable panel; return the command calls.
 
@@ -267,6 +273,10 @@ def _panel_fake(
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+    if mock_takeover:
+        monkeypatch.setattr(
+            xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
+        )
     return calls
 
 
@@ -1729,3 +1739,211 @@ class TestSelfSignedCert:
         assert result is None
         url = fake_kp.add_entry.call_args.kwargs["url"]
         assert url.startswith("https://")
+
+
+class TestRewriteEnv:
+    """Tests for the shared ordered env-file rewrite helper."""
+
+    def test_updates_values_preserving_order(self, tmp_path: Path) -> None:
+        path = tmp_path / "env"
+        path.write_text("A=1\nB=2\nC=3\n", encoding="utf-8")
+        assert xui._rewrite_env(path, {"B": "9", "D": "4"}) is True
+        assert path.read_text(encoding="utf-8") == "A=1\nB=9\nC=3\nD=4\n"
+
+    def test_noop_when_unchanged(self, tmp_path: Path) -> None:
+        path = tmp_path / "env"
+        path.write_text("A=1\n", encoding="utf-8")
+        assert xui._rewrite_env(path, {"A": "1"}) is False
+        assert path.read_text(encoding="utf-8") == "A=1\n"
+
+    def test_missing_file_returns_false(self, tmp_path: Path) -> None:
+        assert xui._rewrite_env(tmp_path / "nope", {"A": "1"}) is False
+
+
+class TestTakeoverCredentials:
+    """Tests for the force credential and webBasePath takeover."""
+
+    def _cfg(self, tmp_path: Path) -> object:
+        return make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
+            three_x_ui_install_result_env_path=(
+                tmp_path / "etc" / "x-ui" / "install-result.env"
+            ),
+        ).three_x_ui_xray_setup
+
+    def test_applies_credentials_and_rewrites_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The fresh values are set through x-ui setting, the env file is
+        # rewritten through the shared helper and the panel restarts.
+        env_path = tmp_path / "etc" / "x-ui" / "install-result.env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            "XUI_USERNAME=old\nXUI_PASSWORD=old\n"
+            "XUI_WEB_BASE_PATH=oldpath\nXUI_PANEL_PORT=35353\n",
+            encoding="utf-8",
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(list(command))
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = self._cfg(tmp_path)
+        creds = {
+            "XUI_USERNAME": "newuser",
+            "XUI_PASSWORD": "newpass",
+            "XUI_WEB_BASE_PATH": "new-path-here",
+        }
+        ok, message = xui._takeover_credentials(cfg, 30, creds)
+        assert ok is True
+        assert "new-path-here" in message
+        assert any(
+            command[0] == str(cfg.install_dir / "x-ui")
+            and command[1:3] == ["setting", "-username"]
+            and "newuser" in command
+            and "newpass" in command
+            and "new-path-here" in command
+            for command in calls
+        )
+        assert ["systemctl", "restart", cfg.service_unit_name] in calls
+        text = env_path.read_text(encoding="utf-8")
+        assert "XUI_USERNAME=newuser" in text
+        assert "XUI_PASSWORD=newpass" in text
+        assert "XUI_WEB_BASE_PATH=new-path-here" in text
+        assert "XUI_PANEL_PORT=35353" in text
+
+    def test_setting_failure_reports_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            if command[1:3] == ["setting", "-username"]:
+                raise subprocess.CalledProcessError(1, command)
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = self._cfg(tmp_path)
+        ok, message = xui._takeover_credentials(
+            cfg,
+            30,
+            {"XUI_USERNAME": "u", "XUI_PASSWORD": "p", "XUI_WEB_BASE_PATH": "w"},
+        )
+        assert ok is False
+        assert "cannot set panel credentials" in message
+
+    def test_restart_failure_reports_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            if command[0] == "systemctl":
+                raise subprocess.CalledProcessError(1, command)
+            return _FakeProc(0)
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = self._cfg(tmp_path)
+        ok, message = xui._takeover_credentials(
+            cfg,
+            30,
+            {"XUI_USERNAME": "u", "XUI_PASSWORD": "p", "XUI_WEB_BASE_PATH": "w"},
+        )
+        assert ok is False
+        assert "cannot restart" in message
+
+
+class TestForceTakeoverWiring:
+    """Tests for the force takeover in the task flow."""
+
+    def _takeover_fake(
+        self, monkeypatch: pytest.MonkeyPatch, seen: list[bool]
+    ) -> None:
+        def fake_takeover(
+            _cfg: object, _timeout: float, _creds: dict[str, str]
+        ) -> tuple[bool, str]:
+            seen.append(True)
+            return (
+                True,
+                (
+                    "panel credentials and webBasePath set to fresh proquint "
+                    "values (new-path)"
+                ),
+            )
+
+        monkeypatch.setattr(xui, "_takeover_credentials", fake_takeover)
+
+    def test_force_takes_over_existing_panel(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Force on an existing panel applies fresh credentials through the
+        # takeover helper and reports it in the done message.
+        seen: list[bool] = []
+        self._takeover_fake(monkeypatch, seen)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_takeover=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert seen == [True]
+        assert (
+            "panel credentials and webBasePath set to fresh proquint values"
+            in result.message
+        )
+
+    def test_force_fresh_install_skips_takeover(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Force on a fresh install: the installer already applied our env
+        # values, so the takeover is not needed.
+        seen: list[bool] = []
+        self._takeover_fake(monkeypatch, seen)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path, force=True)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            mock_takeover=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert seen == []
+
+    def test_normal_run_skips_takeover(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A normal rerun never touches credentials or webBasePath.
+        seen: list[bool] = []
+        self._takeover_fake(monkeypatch, seen)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_takeover=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert seen == []

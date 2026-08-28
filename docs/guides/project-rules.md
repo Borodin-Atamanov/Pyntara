@@ -9,6 +9,10 @@ The same output must be persisted to a log file by default.
 The system journal is the primary destination for own messages; the file log is a residual copy of the full stream.  
 Exceptions are allowed only when command output must be suppressed for security or when a third-party tool breaks with streamed mode.
 
+### Agent command reading
+
+When the agent runs a long-running or large-output command from the repository, the output goes to a temporary file first (mktemp or /dev/shm) and is read with tail afterwards; a direct pipe through grep or tail buffers the stream and hides progress and intermediate lines until the command ends. The temporary log path is printed before the command starts, so the log is always reachable while the command runs.
+
 ### Task presentation
 
 Before each new task the engine prints an empty line, then the task title.  
