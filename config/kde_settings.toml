@@ -460,7 +460,13 @@ value = "Activate, raise and move"
 file = "kwinrc"
 group = ["MouseBindings"]
 key = "CommandAll3"
-value = "Operations menu"
+value = "Resize"
+
+[[kde_settings.kconfig]]
+file = "kwinrc"
+group = ["MouseBindings"]
+key = "CommandAllKey"
+value = "Meta"
 
 [[kde_settings.kconfig]]
 file = "kwinrc"
