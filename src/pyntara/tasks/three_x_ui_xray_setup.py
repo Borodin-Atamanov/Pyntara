@@ -1321,7 +1321,6 @@ def task(ctx: Context) -> TaskResult:
         _log(f"panel port: {converged_message}")
         result.changed = True
         result.message = (result.message or "") + f"; {converged_message}"
-    _sync_install_result_env(cfg, timeout)
     # A port migration restarts the panel; the HTTP listener can trail
     # the systemd active state by a moment, so stage 2 would otherwise
     # report a false login failure. Wait for the listener before it.
@@ -1342,6 +1341,11 @@ def task(ctx: Context) -> TaskResult:
                 part for part in (result.message, ssl_result.message) if part
             )
         _wait_panel_http(cfg, timeout)
+
+    # Sync install-result.env so its port and scheme match reality: the
+    # port after the convergence, the scheme after the HTTPS stage set
+    # the certificate.
+    _sync_install_result_env(cfg, timeout)
 
     # Stage 2: read credentials, verify session, store in vault.
     stage2_result = _stage2(cfg, ctx.config, timeout)

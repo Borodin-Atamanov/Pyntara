@@ -884,6 +884,39 @@ class TestProquintCredentials:
         assert result.success is True
         assert any("could not be issued" in w for w in result.warnings or ())
 
+    def test_sync_runs_after_stage_ssl(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The install-result.env sync runs after the HTTPS stage, so the
+        # scheme in the file reflects the certificate the stage set.
+        order: list[str] = []
+
+        def fake_stage_ssl(_cfg: object, _timeout: float) -> None:
+            order.append("stage_ssl")
+
+        def fake_sync(_cfg: object, _timeout: float) -> bool:
+            order.append("sync")
+            return False
+
+        monkeypatch.setattr(xui, "_stage_ssl", fake_stage_ssl)
+        monkeypatch.setattr(xui, "_sync_install_result_env", fake_sync)
+        monkeypatch.setattr(
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_stage_ssl=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert order == ["stage_ssl", "sync"]
+
 
 class TestPanelPortConvergence:
     """Tests for bringing the panel to the configured port."""
