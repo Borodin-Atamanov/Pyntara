@@ -1,6 +1,6 @@
 # 3x-ui Xray panel
 
-There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 creates the universal server inbound. Stage 4 ensures the Let's Encrypt IP certificate when ssl_enabled.
+There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 creates the universal server inbound. Stage 4 ensures the panel serves HTTPS when ssl_enabled: a trusted Let's Encrypt IP certificate when the challenge can reach the machine, a self-signed certificate otherwise.
 
 ## Installation mechanism
 
@@ -83,27 +83,32 @@ Before creating, the task calls `GET /panel/api/inbounds/list` and searches for 
 
 The generated private and public keys are appended to the existing vault entry notes as `REALITY_PRIVATE_KEY=<value>` and `REALITY_PUBLIC_KEY=<value>` on separate lines. When the vault is unavailable, the inbound is still created but the keys are not persisted (a warning is returned).
 
-## Stage 4: SSL certificate
+## Stage 4: HTTPS certificate
 
-When `ssl_enabled` is set, the panel gets a Let's Encrypt certificate for its public IP address (installer option 2, the shortlived profile). The certificate is valid for about six days and auto-renews through the acme.sh cron job.
+When `ssl_enabled` is set, the panel must serve HTTPS, never plain HTTP. A trusted Let's Encrypt IP certificate is issued when the HTTP-01 challenge can reach the machine (installer option 2, the shortlived profile); when it cannot, the task generates a self-signed certificate instead, so the admin traffic over the internet stays encrypted.
 
-The task attempts SSL only when the HTTP-01 challenge can reach the machine. A machine with a public address on an interface (a VPS) can serve the challenge directly; a machine behind NAT can only when the router forwards external port 80 back to it, which a self-test confirms by binding a temporary listener on port 80 and connecting to the detected public address. On the install path a reachable machine receives `XUI_SSL_MODE=ip` in the installer environment and the task frees port 80 before the installer runs; a machine behind NAT without a forward receives `XUI_SSL_MODE=none` and the panel stays HTTP with a clear warning about how to enable HTTPS (forward port 80 and re-run).
+The task attempts a trusted certificate only when the HTTP-01 challenge can reach the machine. A machine with a public address on an interface (a VPS) can serve the challenge directly; a machine behind NAT can only when the router forwards external port 80 back to it, which a self-test confirms by binding a temporary listener on port 80 and connecting to the detected public address. On the install path a reachable machine receives `XUI_SSL_MODE=ip` in the installer environment and the task frees port 80 before the installer runs; a machine behind NAT without a forward receives `XUI_SSL_MODE=none` and the task generates a self-signed certificate after the install.
 
-On a rerun where the target state is reached and the installer is skipped, the task runs stage 4: it queries `x-ui setting -getCert true` and does nothing when the panel already has a certificate. When it has none and the challenge is reachable, the stage detects the public IPv4 address from the same echo services the installer uses, frees port 80 and issues the certificate through acme.sh exactly like the installer's setup_ip_certificate: `--issue --standalone --httpport 80` with the shortlived profile, `--installcert` into `/root/cert/ip` with a reload command that restarts x-ui, then `x-ui cert -webCert -webCertKey`. A panel that cannot be reached by Let's Encrypt (no public address, port 80 not open) reports a warning and stays on HTTP; the failure never fails the task.
+The self-signed certificate is generated with openssl into `self_signed_cert_dir`; the openssl package is installed through the shared helper when absent, so the setup never depends on a preinstalled package. The panel is pointed at the files through `x-ui cert -webCert -webCertKey` and restarted. The certificate is valid for 825 days; a rerun regenerates it only when the files are missing or expired, and never touches a certificate the task does not own.
+
+On a rerun where the target state is reached and the installer is skipped, the stage queries `x-ui setting -getCert true` and does nothing when the panel already carries a trusted or foreign certificate. When the panel has none and the challenge is reachable, the stage detects the public IPv4 address from the same echo services the installer uses, frees port 80 and issues the certificate through acme.sh exactly like the installer's setup_ip_certificate: `--issue --standalone --httpport 80` with the shortlived profile, `--installcert` into `cert_dir` with a reload command that restarts x-ui, then `x-ui cert -webCert -webCertKey`. When the panel serves the task's self-signed certificate and port 80 has become reachable, the stage replaces it with a trusted one. A trusted certificate that cannot be obtained is reported honestly: the panel serves HTTPS with the self-signed certificate and the message tells how to get a trusted one (forward port 80 and re-run); the failure never fails the task.
 
 After the installer runs (and on a rerun) the task brings the panel to the configured `panel_port`: it reads the actual port from `x-ui setting -show true` and, when an earlier install left it on another port, frees the target port, sets the new one and restarts the panel. It then syncs `/etc/x-ui/install-result.env` so its `XUI_PANEL_PORT` and `XUI_ACCESS_URL` carry the real port and the real scheme (http or https), so consumers never read a stale port or a scheme the panel does not serve.
 
 ### Config reference
 
-New fields in the `[three_x_ui_xray_setup]` table:
-
-- `panel_port` (integer, optional, default `35353`): fixed panel port. Must be between 1 and 65535. Passed to the installer via XUI_PANEL_PORT and applied on first deployment; the task also brings an existing panel to this port when an earlier install left it on another port.
-- `ssl_enabled` (boolean, optional, default `true`): enables the Let's Encrypt IP certificate setup. When false the installer runs without XUI_SSL_MODE, no port is freed for ACME and stage 4 is skipped; the panel stays HTTP. When true, SSL is attempted only when port 80 is reachable from the internet (a public address on the machine or a confirmed port-80 forward); behind NAT without a forward the task skips SSL with a warning and the panel stays HTTP.
-- `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.
-- `inbound_remark` (string, optional, default `"universal"`): Display label for the inbound in the panel.
-- `reality_dest` (string, optional, default `"www.google.com:443"`): Destination address and port for REALITY TLS handshake mimicry.
-- `reality_server_names` (array of strings, optional, default `["www.google.com"]`): ServerNames the REALITY handshake presents.
-- `reality_short_id` (string, optional, default `"6ba85179e30d4fc2"`): Short ID for REALITY. Must be a hex string.
+New fields in the `[three_x_ui_xray_setup]` table:  
+`panel_port` (integer, optional, default `35353`): fixed panel port. Must be between 1 and 65535. Passed to the installer via XUI_PANEL_PORT and applied on first deployment; the task also brings an existing panel to this port when an earlier install left it on another port.  
+`ssl_enabled` (boolean, optional, default `true`): enables the panel HTTPS setup. When false the installer runs without XUI_SSL_MODE and the panel stays HTTP; when true the panel serves HTTPS, a trusted Let's Encrypt IP certificate when port 80 is reachable and a self-signed certificate otherwise.  
+`acme_port` (integer, optional, default `80`): the HTTP-01 challenge listener port, mirroring the installer's setup_ip_certificate layout.  
+`cert_dir` (path, optional, default `/root/cert/ip`): directory of the trusted Let's Encrypt certificate; the config loader derives the fullchain and privkey paths from it.  
+`self_signed_cert_dir` (path, optional, default `/root/cert/selfsigned`): directory of the self-signed fallback certificate.  
+`server_ip_services` (array of strings, optional): echo services that report the public IPv4 address, tried in order until one answers.  
+`inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.  
+`inbound_remark` (string, optional, default `"universal"`): display label for the inbound in the panel.  
+`reality_dest` (string, optional, default `"www.google.com:443"`): destination address and port for REALITY TLS handshake mimicry.  
+`reality_server_names` (array of strings, optional, default `["www.google.com"]`): ServerNames the REALITY handshake presents.  
+`reality_short_id` (string, optional, default `"6ba85179e30d4fc2"`): short ID for REALITY. Must be a hex string.
 
 ### Limitations
 

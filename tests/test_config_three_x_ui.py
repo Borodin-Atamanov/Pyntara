@@ -23,6 +23,24 @@ from config_helpers import assert_config_error, base_config
         base_config().replace("inbound_port = 443", 'inbound_port = "443"'),
         # inbound_port is below the valid range
         base_config().replace("inbound_port = 443", "inbound_port = 0"),
+        # acme_port is a string, not an integer
+        base_config().replace("acme_port = 80", 'acme_port = "80"'),
+        # acme_port is below the valid range
+        base_config().replace("acme_port = 80", "acme_port = 0"),
+        # acme_port is above the valid range
+        base_config().replace("acme_port = 80", "acme_port = 65536"),
+        # cert_dir is empty
+        base_config().replace('cert_dir = "/root/cert/ip"', 'cert_dir = ""'),
+        # self_signed_cert_dir is empty
+        base_config().replace(
+            'self_signed_cert_dir = "/root/cert/selfsigned"',
+            'self_signed_cert_dir = ""',
+        ),
+        # server_ip_services is empty
+        base_config().replace(
+            'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]',
+            "server_ip_services = []",
+        ),
     ],
 )
 def test_three_x_ui_invalid_values_raise(

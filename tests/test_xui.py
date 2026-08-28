@@ -36,6 +36,16 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "reality_dest": "www.google.com:443",
         "reality_server_names": ("www.google.com",),
         "reality_short_id": "6ba85179e30d4fc2",
+        "acme_port": 80,
+        "cert_dir": Path("/root/cert/ip"),
+        "cert_fullchain": Path("/root/cert/ip/fullchain.pem"),
+        "cert_privkey": Path("/root/cert/ip/privkey.pem"),
+        "self_signed_cert_dir": Path("/root/cert/selfsigned"),
+        "self_signed_cert_fullchain": Path(
+            "/root/cert/selfsigned/fullchain.pem"
+        ),
+        "self_signed_cert_privkey": Path("/root/cert/selfsigned/privkey.pem"),
+        "server_ip_services": ("https://api4.ipify.org",),
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]

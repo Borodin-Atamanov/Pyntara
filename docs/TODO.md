@@ -1,10 +1,6 @@
 # TODO
 
-Planned future work. После реализации - удаляем из файла.
-
-three_x_ui_xray_setup stage 2: gain programmatic control of the panel through its REST API. Take the credentials the panel generated on first start and wrote into /etc/x-ui/install-result.env, log in, verify the session, and store the credentials in the project vault instead of plain config; the login helper is a shared reusable module with tests against mocked responses. (done?)
-three_x_ui_xray_setup stage 3: create the universal server inbound through the panel API. Create a VLESS inbound with REALITY on the configured port from the task config table; on a rerun find the existing inbound and return done. Tests cover the request payloads and the idempotent re-run. (done 2026-08-25)  
-three_x_ui_xray_setup: add a shared utility to kill unknown processes occupying a port. The helper checks which process listens on a given TCP port via /proc or ss; if the process is x-ui, stop it via systemctl; if it is an unknown process, kill it with SIGTERM then SIGKILL after a timeout. Used for panel port (35353) and ACME port (80). (done 2026-08-25: ensure_port_free in utils.py, used for the panel port and the ACME port)
+Planned future work. После реализации - удаляем из этого файла.
 
 ## Fresh install log findings
 
@@ -32,6 +28,4 @@ Logging: decide a consistent ordering for task results. A failed mechanism is re
 Logging: the KDE tasks must log their detailed actions. kde_keyboard_setup and kde_settings currently write too little about what they do. The hotkey warning shows only 'daemon reports []' with no expected value and no shortcut (src/pyntara/tasks/kde_keyboard_setup.py line 403), and kde_settings writes conflicting keys without explanation, seen in gitignore/pyntara_install_real_issues.log: PowerProfile set to performance then power-saver, LidAction set three times. Detail the KDE tasks' own progress: log each setting with its target value, log the applied result, and add a final verification line showing the resulting state. Важно не показывать ключи, куда мы пишем, например, разные версии энергосбережения, для разных режимов: через батарейку, от сети, мало энергии. Аналогично по всем другим действиям - полностью показываем, что делаем, полные пути к ключам.
 
 i2pd_service_setup: make the service work and write the SSH tunnel address into the log. Today the task finishes with 'SSH tunnel address appears after the first start' and no address is saved, seen in gitignore/pyntara_install_real_issues.log together with the check line 'checking saved address file /var/lib/pyntara/i2pd_ssh_address: missing or stale'. The task waits for the service to become active but not for the address to appear, unlike tor_setup which waits and writes the address file. Make the task wait for the address to appear within a bounded number of checks, write it to /var/lib/pyntara/i2pd_ssh_address and print it in the [done] line. Да, адрес - надо показывать в логах.
-
-three_x_ui_xray_setup. Решить, что сделать с проблемой с панелью в http, когда она за натом. По идее мы должны включать https, просто в негодным сертификатом, когда по объективным причинам не можем достучаться до 80го порта извне. Это не повод делать вход через http. Или повод?
 

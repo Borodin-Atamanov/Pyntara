@@ -160,6 +160,10 @@ def base_config() -> str:
         'reality_dest = "www.google.com:443"\n'
         'reality_server_names = ["www.google.com"]\n'
         'reality_short_id = "6ba85179e30d4fc2"\n'
+        "acme_port = 80\n"
+        'cert_dir = "/root/cert/ip"\n'
+        'self_signed_cert_dir = "/root/cert/selfsigned"\n'
+        'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'

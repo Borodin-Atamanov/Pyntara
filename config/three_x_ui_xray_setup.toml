@@ -47,3 +47,23 @@ reality_dest = "www.google.com:443"
 reality_server_names = ["www.google.com"]
 # REALITY shortIds entry. Optional, default is a random 8-hex-char string.
 reality_short_id = "6ba85179e30d4fc2"
+# ACME HTTP-01 listener port and the certificate location mirror the
+# official installer's setup_ip_certificate layout, so the task and the
+# installer produce the same files. The fullchain and privkey paths are
+# derived from cert_dir by the config loader.
+acme_port = 80
+cert_dir = "/root/cert/ip"
+# Self-signed fallback certificate location used when the Let's Encrypt
+# challenge cannot reach the machine (behind NAT without a port-80
+# forward), so the panel still serves HTTPS instead of plain HTTP.
+self_signed_cert_dir = "/root/cert/selfsigned"
+# Echo services that report the public IPv4 address, in the order the
+# official installer tries them.
+server_ip_services = [
+    "https://api4.ipify.org",
+    "https://ipv4.icanhazip.com",
+    "https://v4.api.ipinfo.io/ip",
+    "https://ipv4.myexternalip.com/raw",
+    "https://4.ident.me",
+    "https://check-host.net/ip",
+]

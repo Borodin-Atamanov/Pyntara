@@ -188,6 +188,10 @@ inbound_remark = "universal"
 reality_dest = "www.google.com:443"
 reality_server_names = ["www.google.com"]
 reality_short_id = "6ba85179e30d4fc2"
+acme_port = 80
+cert_dir = "/root/cert/ip"
+self_signed_cert_dir = "/root/cert/selfsigned"
+server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]
 
 [tor_setup]
 package_name = "tor"
@@ -575,6 +579,28 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.three_x_ui_xray_setup.ssl_enabled is True
     assert config.three_x_ui_xray_setup.install_result_env_path == Path(
         "/etc/x-ui/install-result.env"
+    )
+    assert config.three_x_ui_xray_setup.acme_port == 80
+    assert config.three_x_ui_xray_setup.cert_dir == Path("/root/cert/ip")
+    assert config.three_x_ui_xray_setup.cert_fullchain == Path(
+        "/root/cert/ip/fullchain.pem"
+    )
+    assert config.three_x_ui_xray_setup.cert_privkey == Path(
+        "/root/cert/ip/privkey.pem"
+    )
+    assert config.three_x_ui_xray_setup.self_signed_cert_dir == Path(
+        "/root/cert/selfsigned"
+    )
+    assert config.three_x_ui_xray_setup.self_signed_cert_fullchain == Path(
+        "/root/cert/selfsigned/fullchain.pem"
+    )
+    assert config.three_x_ui_xray_setup.server_ip_services == (
+        "https://api4.ipify.org",
+        "https://ipv4.icanhazip.com",
+        "https://v4.api.ipinfo.io/ip",
+        "https://ipv4.myexternalip.com/raw",
+        "https://4.ident.me",
+        "https://check-host.net/ip",
     )
     assert (
         config.yggdrasil_service_setup.github_repo

@@ -56,6 +56,14 @@ class ThreeXuiXraySetupConfig:
     reality_dest: str
     reality_server_names: tuple[str, ...]
     reality_short_id: str
+    acme_port: int
+    cert_dir: Path
+    cert_fullchain: Path
+    cert_privkey: Path
+    self_signed_cert_dir: Path
+    self_signed_cert_fullchain: Path
+    self_signed_cert_privkey: Path
+    server_ip_services: tuple[str, ...]
 
 
 def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
@@ -154,6 +162,29 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("reality_short_id"),
         "three_x_ui_xray_setup.reality_short_id",
     )
+    acme_port = _int_field(
+        raw.get("acme_port"),
+        "three_x_ui_xray_setup.acme_port",
+    )
+    if acme_port < 1 or acme_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.acme_port must be between 1 and 65535"
+        )
+    cert_dir = Path(
+        _nonempty_string_field(
+            raw.get("cert_dir"), "three_x_ui_xray_setup.cert_dir"
+        )
+    )
+    self_signed_cert_dir = Path(
+        _nonempty_string_field(
+            raw.get("self_signed_cert_dir"),
+            "three_x_ui_xray_setup.self_signed_cert_dir",
+        )
+    )
+    server_ip_services = _string_list(
+        raw.get("server_ip_services"),
+        "three_x_ui_xray_setup.server_ip_services",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -171,4 +202,12 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         reality_dest=reality_dest,
         reality_server_names=reality_server_names,
         reality_short_id=reality_short_id,
+        acme_port=acme_port,
+        cert_dir=cert_dir,
+        cert_fullchain=cert_dir / "fullchain.pem",
+        cert_privkey=cert_dir / "privkey.pem",
+        self_signed_cert_dir=self_signed_cert_dir,
+        self_signed_cert_fullchain=self_signed_cert_dir / "fullchain.pem",
+        self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
+        server_ip_services=server_ip_services,
     )

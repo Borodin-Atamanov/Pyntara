@@ -349,6 +349,17 @@ def make_config(
     three_x_ui_reality_dest: str = "www.google.com:443",
     three_x_ui_reality_server_names: tuple[str, ...] = ("www.google.com",),
     three_x_ui_reality_short_id: str = "6ba85179e30d4fc2",
+    three_x_ui_acme_port: int = 80,
+    three_x_ui_cert_dir: Path = Path("/root/cert/ip"),
+    three_x_ui_self_signed_cert_dir: Path = Path("/root/cert/selfsigned"),
+    three_x_ui_server_ip_services: tuple[str, ...] = (
+        "https://api4.ipify.org",
+        "https://ipv4.icanhazip.com",
+        "https://v4.api.ipinfo.io/ip",
+        "https://ipv4.myexternalip.com/raw",
+        "https://4.ident.me",
+        "https://check-host.net/ip",
+    ),
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",
@@ -733,6 +744,18 @@ def make_config(
             reality_dest=three_x_ui_reality_dest,
             reality_server_names=three_x_ui_reality_server_names,
             reality_short_id=three_x_ui_reality_short_id,
+            acme_port=three_x_ui_acme_port,
+            cert_dir=three_x_ui_cert_dir,
+            cert_fullchain=three_x_ui_cert_dir / "fullchain.pem",
+            cert_privkey=three_x_ui_cert_dir / "privkey.pem",
+            self_signed_cert_dir=three_x_ui_self_signed_cert_dir,
+            self_signed_cert_fullchain=(
+                three_x_ui_self_signed_cert_dir / "fullchain.pem"
+            ),
+            self_signed_cert_privkey=(
+                three_x_ui_self_signed_cert_dir / "privkey.pem"
+            ),
+            server_ip_services=three_x_ui_server_ip_services,
         ),
         yggdrasil_service_setup=YggdrasilServiceSetupConfig(
             github_repo=yggdrasil_github_repo,
