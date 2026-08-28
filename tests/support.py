@@ -254,6 +254,8 @@ def make_config(
     kde_settings_packages: tuple[str, ...] = (
         "plasma-workspace",
         "libkf6config-bin",
+        "kubuntu-settings-desktop",
+        "python3-dbus",
     ),
     kde_settings_username: str = "i",
     kde_settings_home_dir: str = "/home/i",

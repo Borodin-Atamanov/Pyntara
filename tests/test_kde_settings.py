@@ -185,6 +185,8 @@ def test_skip_when_already_configured(
         "CursorTheme": "breeze_cursors",
         "cursorTheme": "Oxygen_Yellow",
         "Font": "Noto Sans,20",
+        "window-grow-shrinkEnabled": "true",
+        "window-restore-trackerEnabled": "true",
     }
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
     themes, schemes, order, _, writes, reloads, _ = _install_fakes(
@@ -268,7 +270,12 @@ def test_missing_packages_are_installed(
     _, _, _, installs, _, _, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
-    assert installs == ["plasma-workspace", "libkf6config-bin"]
+    assert installs == [
+        "plasma-workspace",
+        "libkf6config-bin",
+        "kubuntu-settings-desktop",
+        "python3-dbus",
+    ]
 
 
 def test_package_install_failure_is_error(
@@ -432,7 +439,14 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
 ) -> None:
     # Disabled with no input method set changes nothing.
     ctx = _ctx(tmp_path, virtual_keyboard_enabled=False)
-    _, _, _, _, writes, reloads, _ = _install_fakes(monkeypatch)
+    currents = {
+        "window-grow-shrinkEnabled": "true",
+        "window-restore-trackerEnabled": "true",
+    }
+    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _, _, _, _, writes, reloads, _ = _install_fakes(
+        monkeypatch, currents=currents
+    )
     task_module.task(ctx)
     assert not [command for command in writes if "InputMethod" in command]
     assert reloads == []
@@ -823,6 +837,209 @@ def test_apply_konsole_profile_renders_template(
     assert changed2 is False
 
 
+def _script_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    session: bool = True,
+) -> tuple[list[list[str]], list[list[str]]]:
+    """Replace run_command for the KWin script install helpers.
+
+    The fake answers the mkdir, kreadconfig6, kwriteconfig6, python3 and
+    chown/chmod commands the install and hotkey steps run; writes and
+    live releases are recorded.
+    """
+
+    writes: list[list[str]] = []
+    releases: list[list[str]] = []
+    current_plugins: dict[str, str] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        if command[:4] == ["runuser", "-u", "i", "--"]:
+            inner = command[4:]
+            if inner[0] == "mkdir":
+                return _FakeProc(0, "")
+            if inner[0] == "kreadconfig6":
+                key = inner[inner.index("--key") + 1]
+                return _FakeProc(0, current_plugins.get(key, ""))
+            if inner[0] == "kwriteconfig6":
+                writes.append(list(command))
+                if "kwinrc" in command and inner[-1] == "true":
+                    key = inner[inner.index("--key") + 1]
+                    current_plugins[key] = "true"
+                return _FakeProc(0, "")
+            if inner[0] == "python3":
+                releases.append(list(command))
+                return _FakeProc(0, "")
+        if command[0] in ("chown", "chmod"):
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    monkeypatch.setattr(
+        task_module,
+        "session_bus_address",
+        (
+            lambda username, timeout: "unix:path=/run/user/1000/bus"
+            if session
+            else None
+        ),
+    )
+    return writes, releases
+
+
+def _write_script_templates(root: Path) -> None:
+    """Write minimal KWin script templates under the given root."""
+
+    for script in task_module.KWIN_SCRIPTS:
+        for rel_file in task_module.KWIN_SCRIPT_FILES:
+            target = root / script / rel_file
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(rel_file, encoding="utf-8")
+
+
+def test_apply_kwin_scripts_installs_and_enables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Templates are copied into the user kwin scripts directory and the
+    # scripts are enabled in kwinrc [Plugins]; a second pass is a no-op.
+    template_root = tmp_path / "kwin"
+    _write_script_templates(template_root)
+    monkeypatch.setattr(task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", template_root)
+    ctx = _ctx(tmp_path)
+    writes, _ = _script_fakes(monkeypatch)
+    changed = task_module._apply_kwin_scripts(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is True
+    for script in task_module.KWIN_SCRIPTS:
+        for rel_file in task_module.KWIN_SCRIPT_FILES:
+            target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
+            assert target.read_text(encoding="utf-8") == rel_file
+    enabled = [
+        command[command.index("--key") + 1]
+        for command in writes
+        if "kwriteconfig6" in command and "kwinrc" in command
+    ]
+    for script in task_module.KWIN_SCRIPTS:
+        assert f"{script}Enabled" in enabled
+    changed2 = task_module._apply_kwin_scripts(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed2 is False
+
+
+def test_apply_kwin_scripts_missing_templates_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No templates: the step changes nothing and is not an error.
+    monkeypatch.setattr(
+        task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", tmp_path / "missing"
+    )
+    ctx = _ctx(tmp_path)
+    writes, _ = _script_fakes(monkeypatch)
+    changed = task_module._apply_kwin_scripts(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+    assert writes == []
+
+
+def test_script_hotkey_owners_finds_foreign_and_skips_own() -> None:
+    # A foreign action that owns a script hotkey is returned; the
+    # scripts' own actions are not.
+    text = (
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n"
+        "Grow Window by 5px=Meta+Ctrl+Up,none,Grow Window by 5px\n"
+        "Window Maximize=Meta+PgUp,Meta+PgUp,Maximize Window\n"
+    )
+    owners = task_module._script_hotkey_owners(text)
+    assert owners == [
+        (("kwin",), "Switch One Desktop Up", "Switch One Desktop Up")
+    ]
+
+
+def test_free_script_hotkeys_clears_and_releases_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The foreign owner is cleared in the config and the running daemon
+    # is asked to release the key through python3-dbus.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    writes, releases = _script_fakes(monkeypatch, session=True)
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    changed = task_module._free_script_hotkeys(
+        ctx.config.kde_settings, env=env, timeout=5
+    )
+    assert changed is True
+    cleared = [command for command in writes if "Switch One Desktop Up" in command]
+    assert cleared
+    assert cleared[0][-1] == "none,none,Switch One Desktop Up"
+    assert releases
+    assert releases[0][:4] == ["runuser", "-u", "i", "--"]
+    assert "python3" in releases[0]
+
+
+def test_free_script_hotkeys_without_session_skips_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without a session bus the config is still cleared, but no daemon
+    # release runs.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Down=Meta+Ctrl+Down,none,Switch One Desktop Down\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    _, releases = _script_fakes(monkeypatch, session=False)
+    changed = task_module._free_script_hotkeys(
+        ctx.config.kde_settings, env={}, timeout=5
+    )
+    assert changed is True
+    assert releases == []
+
+
+def test_kwin_scripts_installed_and_hotkeys_freed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The full task installs the scripts, enables them and frees the
+    # script hotkeys from the foreign actions.
+    template_root = tmp_path / "kwin"
+    _write_script_templates(template_root)
+    monkeypatch.setattr(task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", template_root)
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n"
+        "Switch One Desktop Down=Meta+Ctrl+Down,Meta+Ctrl+Down,Switch One Desktop Down\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    result = task_module.task(ctx)
+    assert result.success is True
+    for script in task_module.KWIN_SCRIPTS:
+        for rel_file in task_module.KWIN_SCRIPT_FILES:
+            target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
+            assert target.read_text(encoding="utf-8") == rel_file
+    cleared = [
+        command
+        for command in writes
+        if "Switch One Desktop Up" in command
+        or "Switch One Desktop Down" in command
+    ]
+    assert len(cleared) == 2
+
+
 XBEL = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xbel>
@@ -1050,6 +1267,12 @@ def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
     profile_dir = tmp_path / ".local/share/konsole"
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
+    for script in task_module.KWIN_SCRIPTS:
+        for rel_file in task_module.KWIN_SCRIPT_FILES:
+            template = task_module.KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
+            target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 FULLY_CONFIGURED = {
@@ -1065,6 +1288,8 @@ FULLY_CONFIGURED = {
     "CursorTheme": "breeze_cursors",
     "cursorTheme": "Oxygen_Yellow",
     "Font": "Noto Sans,20",
+    "window-grow-shrinkEnabled": "true",
+    "window-restore-trackerEnabled": "true",
 }
 
 

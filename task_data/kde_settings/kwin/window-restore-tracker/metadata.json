@@ -1,0 +1,17 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "bikog@pm.me",
+                "Name": "Borodin-Atamanov"
+            }
+        ],
+        "Description": "Re-remember the restore geometry on maximize and tile events, so dragging a maximized or tiled window returns it to its current size.",
+        "Id": "window-restore-tracker",
+        "License": "GPL-2.0-or-later",
+        "Name": "Window Restore Tracker",
+        "Version": "1.0.0"
+    },
+    "X-Plasma-API": "javascript"
+}

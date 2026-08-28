@@ -10,11 +10,13 @@
 [kde_settings]
 # Packages that must be present: the provider of the plasma-apply theme
 # tools (plasma-workspace), the KConfig reader and writer used for the
-# idempotency checks and the input settings (libkf6config-bin), and the
+# idempotency checks and the input settings (libkf6config-bin), the
 # Kubuntu settings that ship the light and dark global themes the native
-# day and night switch alternates between (kubuntu-settings-desktop).
+# day and night switch alternates between (kubuntu-settings-desktop), and
+# the dbus python client used to release keyboard combinations in the
+# running KGlobalAccel daemon (python3-dbus).
 # Missing packages are installed by the task.
-packages = ["plasma-workspace", "libkf6config-bin", "kubuntu-settings-desktop"]
+packages = ["plasma-workspace", "libkf6config-bin", "kubuntu-settings-desktop", "python3-dbus"]
 # The user whose desktop configuration is edited and that user's home
 # directory; the KDE tools resolve the config directory under it.
 username = "i"

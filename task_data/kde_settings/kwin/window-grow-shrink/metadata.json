@@ -1,0 +1,17 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "bikog@pm.me",
+                "Name": "Borodin-Atamanov"
+            }
+        ],
+        "Description": "Grow or shrink the active window by 5 pixels on each side with Meta+Ctrl+Up and Meta+Ctrl+Down and remember each new size as the restore size.",
+        "Id": "window-grow-shrink",
+        "License": "GPL-2.0-or-later",
+        "Name": "Window Grow Shrink",
+        "Version": "1.0.0"
+    },
+    "X-Plasma-API": "javascript"
+}

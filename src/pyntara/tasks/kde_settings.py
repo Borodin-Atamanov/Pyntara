@@ -48,6 +48,24 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 KONSOLE_PROFILE_TEMPLATE = (
     REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
 )
+# The KWin scripts the task installs and enables. Each script is a
+# directory under the kwin task data root with metadata.json and
+# contents/code/main.js, copied into the user local share kwin scripts
+# directory; enabling lives in kwinrc [Plugins].
+KWIN_SCRIPTS_TEMPLATE_ROOT = REPO_ROOT / "task_data" / "kde_settings" / "kwin"
+KWIN_SCRIPTS: tuple[str, ...] = ("window-grow-shrink", "window-restore-tracker")
+KWIN_SCRIPT_FILES: tuple[str, ...] = ("metadata.json", "contents/code/main.js")
+USER_KWIN_SCRIPTS_REL = Path(".local/share/kwin/scripts")
+# The keyboard combinations the KWin scripts claim for themselves. The
+# task sets them aggressively: any action that owns one of them,
+# wherever it lives, is cleared so the script grabs the key.
+KWIN_SCRIPT_HOTKEYS: tuple[str, ...] = ("Meta+Ctrl+Up", "Meta+Ctrl+Down")
+# The script actions that own the hotkeys; they are never cleared as
+# conflicts with themselves.
+KWIN_SCRIPT_ACTIONS: tuple[str, ...] = (
+    "Grow Window by 5px",
+    "Shrink Window by 5px",
+)
 
 # The kdeglobals groups and keys that carry the applied theme values.
 GENERAL_GROUP: tuple[str, ...] = ("General",)
@@ -687,6 +705,172 @@ def _write_user_file(
     return True
 
 
+def _apply_kwin_scripts(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+) -> bool:
+    """Install and enable the KWin scripts; True when anything changed.
+
+    Each script template under the kwin task data directory is written
+    into the user local share kwin scripts directory as the target user
+    and enabled in kwinrc [Plugins]. Files are written only when their
+    content differs, so repeated runs skip matching scripts. A script
+    whose template is missing is skipped entirely, so no dangling
+    kwinrc enable is written.
+    """
+
+    changed = False
+    for script in KWIN_SCRIPTS:
+        templates = {
+            rel_file: KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
+            for rel_file in KWIN_SCRIPT_FILES
+        }
+        if any(not template.is_file() for template in templates.values()):
+            _log(f"no kwin script template for {script}, {script} left as is")
+            continue
+        for rel_file, template in templates.items():
+            content = template.read_text(encoding="utf-8")
+            changed |= _write_user_file(
+                cfg,
+                str(USER_KWIN_SCRIPTS_REL / script / rel_file),
+                content,
+                mode="0644",
+                timeout=timeout,
+                force=force,
+            )
+        changed |= _sync_config_value(
+            cfg,
+            KWINRC_FILE,
+            ("Plugins",),
+            f"{script}Enabled",
+            "true",
+            timeout=timeout,
+            force=force,
+            bool_value=True,
+        )
+    return changed
+
+
+def _script_hotkey_owners(
+    text: str,
+) -> list[tuple[tuple[str, ...], str, str]]:
+    """The records in kglobalshortcutsrc that own a script hotkey.
+
+    Every record whose primary or alternate key matches one of the
+    combinations the KWin scripts claim is returned with its group, key
+    and description, so the task can clear it from any action, whatever
+    process registered it. The scripts' own actions are never returned.
+    """
+
+    owners: list[tuple[tuple[str, ...], str, str]] = []
+    group: tuple[str, ...] = ()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            group = tuple(part for part in stripped[1:-1].split("][") if part)
+            continue
+        key, sep, value = stripped.partition("=")
+        if not sep or "," not in value:
+            continue
+        if key in KWIN_SCRIPT_ACTIONS:
+            continue
+        fields = value.split(",")
+        primary = fields[0].strip()
+        alternate = fields[1].strip() if len(fields) > 1 else ""
+        if (
+            primary not in KWIN_SCRIPT_HOTKEYS
+            and alternate not in KWIN_SCRIPT_HOTKEYS
+        ):
+            continue
+        description = fields[2] if len(fields) > 2 else ""
+        owners.append((group, key, description))
+    return owners
+
+
+def _release_hotkeys_live(
+    cfg: KdeSettingsConfig,
+    targets: list[tuple[str, str]],
+    *,
+    env: dict[str, str],
+    timeout: float,
+) -> None:
+    """Ask the running KGlobalAccel daemon to release the hotkeys.
+
+    The config rewrite alone only applies at the next session start; the
+    running daemon holds the keys in memory, so it must release them for
+    the change to apply live. The call runs through python3-dbus as the
+    target user, the package the task installs.
+    """
+
+    code = (
+        "import dbus\n"
+        "import sys\n"
+        "bus = dbus.SessionBus()\n"
+        "obj = bus.get_object('org.kde.kglobalaccel', '/kglobalaccel')\n"
+        "iface = dbus.Interface(obj, 'org.kde.KGlobalAccel')\n"
+        "empty = dbus.Array([], signature='(ai)')\n"
+        "for index in range(1, len(sys.argv), 2):\n"
+        "    group = sys.argv[index]\n"
+        "    action = sys.argv[index + 1]\n"
+        "    iface.setForeignShortcutKeys([group, action, group, action], empty)\n"
+    )
+    command = ["python3", "-c", code]
+    for group, action in targets:
+        command.extend([group, action])
+    run_command(
+        _as_user_command(cfg, command),
+        extra_env=env,
+        timeout=timeout,
+    )
+    _log(f"released {len(targets)} hotkey owners in the running daemon")
+
+
+def _free_script_hotkeys(
+    cfg: KdeSettingsConfig,
+    *,
+    env: dict[str, str],
+    timeout: float,
+) -> bool:
+    """Clear every action that owns a script hotkey; True when changed.
+
+    The keyboard combinations the KWin scripts claim are set
+    aggressively: any action that owns one of them, wherever it lives,
+    is cleared, so the script grabs the key when it registers. The
+    records are rewritten as the target user; when a desktop session is
+    running the daemon releases the keys live through python3-dbus.
+    """
+
+    path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    owners = _script_hotkey_owners(text)
+    if not owners:
+        return False
+    changed = False
+    targets: list[tuple[str, str]] = []
+    for group, key, description in owners:
+        _kwriteconfig(
+            cfg,
+            "kglobalshortcutsrc",
+            group,
+            key,
+            f"none,none,{description}" if description else "none,none",
+            timeout=timeout,
+            bool_value=False,
+        )
+        _log(f"cleared {key} from {group} for the kwin script hotkeys")
+        if group:
+            targets.append((group[0], key))
+        changed = True
+    if targets and "DBUS_SESSION_BUS_ADDRESS" in env:
+        _release_hotkeys_live(cfg, targets, env=env, timeout=timeout)
+    return changed
+
+
 def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
     """current with IsHidden=true for the hidden places; None when unchanged.
 
@@ -1078,6 +1262,7 @@ def task(ctx: Context) -> TaskResult:
 
     settings_changed = False
     virtual_keyboard_changed = False
+    kwin_scripts_changed = False
     try:
         if cfg.automatic_look_and_feel:
             settings_changed |= _apply_automatic_look_and_feel(
@@ -1106,6 +1291,13 @@ def task(ctx: Context) -> TaskResult:
             cfg, env=apply_env, timeout=timeout, force=force
         )
         settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
+        kwin_scripts_changed = _apply_kwin_scripts(
+            cfg, timeout=timeout, force=force
+        )
+        settings_changed |= kwin_scripts_changed
+        settings_changed |= _free_script_hotkeys(
+            cfg, env=apply_env, timeout=timeout
+        )
         settings_changed |= _apply_user_dirs(cfg, timeout=timeout, force=force)
         settings_changed |= _apply_konsole_profile(
             cfg, timeout=timeout, force=force
@@ -1121,7 +1313,7 @@ def task(ctx: Context) -> TaskResult:
     kwinrc_changed = any(
         record.file == "kwinrc" for record in cfg.kconfig
     ) and settings_changed
-    if virtual_keyboard_changed or kwinrc_changed:
+    if virtual_keyboard_changed or kwinrc_changed or kwin_scripts_changed:
         reload_error = _reload_kwin(cfg, timeout=timeout, env=apply_env)
         if reload_error is not None:
             return TaskResult(success=False, error=reload_error)
