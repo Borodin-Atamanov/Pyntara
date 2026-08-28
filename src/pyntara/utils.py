@@ -17,6 +17,8 @@ import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from pyntara import logger
+
 # apt must never ask questions; every package operation runs noninteractive.
 # The single definition lives here so tasks cannot diverge.
 APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
@@ -137,6 +139,7 @@ def run_command(
     check: bool = True,
     capture: bool = False,
     input: str | None = None,
+    log_command: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command without a shell and control its outcome.
 
@@ -146,29 +149,59 @@ def run_command(
     returncode itself. A command that exceeds the timeout raises
     TimeoutExpired. The optional input feeds the process stdin, so a
     caller can pass data that is too large for a command argument.
+
+    log_command=True reports the command through the logger: the line
+    `  run : <command>` before the process and `  /run: <exit_code>
+    <seconds>s <command>` after it, mirrored to the journal, so every
+    command in the install log carries its duration and exit code (project
+    rules, Task progress output). A call that must not print its command,
+    because the command line carries a secret, passes log_command=False:
+    logging secret values is forbidden.
     """
 
     env = dict(os.environ)
     if extra_env:
         env.update(extra_env)
-    if capture:
-        return subprocess.run(
-            list(command),
-            env=env,
-            timeout=timeout,
-            check=check,
-            capture_output=True,
-            text=True,
-            input=input,
+    command_list = list(command)
+    command_text = " ".join(command_list)
+    if log_command:
+        logger.log_run_start(command_text)
+    start = time.perf_counter()
+    try:
+        if capture:
+            result = subprocess.run(
+                command_list,
+                env=env,
+                timeout=timeout,
+                check=check,
+                capture_output=True,
+                text=True,
+                input=input,
+            )
+        else:
+            result = subprocess.run(
+                command_list,
+                env=env,
+                timeout=timeout,
+                check=check,
+                text=True,
+                input=input,
+            )
+    except subprocess.CalledProcessError as exc:
+        if log_command:
+            logger.log_run_end(
+                command_text, exc.returncode, time.perf_counter() - start
+            )
+        raise
+    except subprocess.TimeoutExpired:
+        if log_command:
+            logger.log_run_end(command_text, None, time.perf_counter() - start)
+        raise
+    if log_command:
+        logger.log_run_end(
+            command_text, result.returncode, time.perf_counter() - start
         )
-    return subprocess.run(
-        list(command),
-        env=env,
-        timeout=timeout,
-        check=check,
-        text=True,
-        input=input,
-    )
+    return result
 
 
 def service_is_enabled(name: str, timeout: float) -> bool:

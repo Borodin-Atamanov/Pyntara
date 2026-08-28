@@ -44,6 +44,7 @@ After sync, launch: uv run pyntara (no timeout).
 
 All programs run in maximum verbosity, non-interactive mode.  
 Every significant command is wrapped in time so the user sees execution duration.  
+The engine mirrors this in run_command: every command is reported with the lines `  run : <command>` and `  /run: <exit_code> <seconds>s <command>`, so the install log shows the duration and exit code of every command.
 Trivial commands (echo, mkdir, cd) are not wrapped.
 
 ## No timeout on Pyntara

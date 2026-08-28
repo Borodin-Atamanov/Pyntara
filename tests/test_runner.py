@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from support import make_config, make_context
 
@@ -93,3 +95,15 @@ def test_run_tasks_continues_after_failure(monkeypatch: pytest.MonkeyPatch) -> N
     assert results[0][1].success is False
     assert results[0][1].skipped is True
     assert results[1][1].success is True
+
+
+def test_run_tasks_reports_task_duration(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_load(name: str) -> object:
+        return lambda ctx: TaskResult(success=True, message="ok")
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    task_runner.run_tasks(_ctx(), ["cli_tools"])
+    captured = capsys.readouterr().out
+    assert re.search(r"\[done\] cli_tools in \d+\.\d{3}s: ok", captured)

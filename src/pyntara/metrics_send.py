@@ -229,8 +229,12 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     accepts (a forced POST there is answered with 405 and an HTML
     page). The endpoint, the key and the name travel as separate argv
     entries and the command runs without a shell, so no metacharacter
-    in them is interpreted. The Base64 content travels through stdin
-    as --data-urlencode data@-: a payload argument would hit the
+    in them is interpreted. The command line carries the shared auth
+    key as an argv entry, so the call passes log_command=False: printing
+    the command would leak the key into the log and the journal, and
+    logging secret values is forbidden (project rules). The Base64
+    content travels through stdin as --data-urlencode data@-: a payload
+    argument would hit the
     kernel argv length limit (E2BIG) for files larger than about 96
     KiB. The process bound equals the configured curl timeout: curl's
     own --max-time is the effective limit, the process bound is a
@@ -267,7 +271,12 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     ]
     try:
         result = run_command(
-            command, timeout=timeout, check=False, capture=True, input=data
+            command,
+            timeout=timeout,
+            check=False,
+            capture=True,
+            input=data,
+            log_command=False,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         _log(f"google script channel: sending {entry.name} failed: {exc}", priority=3)

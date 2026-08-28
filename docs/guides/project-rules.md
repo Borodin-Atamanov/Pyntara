@@ -18,7 +18,7 @@ When the agent runs a long-running or large-output command from the repository, 
 Before each new task the engine prints an empty line, then the task title.  
 After the title there is a pause of engine.task_start_delay_seconds (the config/ directory), so the user sees which task starts.  
 The task then runs and its output streams in real time, showing what is being done.  
-After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status and the details from the result.
+After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status, the details from the result and the task execution duration.
 
 ### Task progress output
 
@@ -31,9 +31,11 @@ A state check is printed as one line with the check result.
 A decision is printed as a line explaining the chosen branch, including the value the decision is based on.  
 Lines are printed to stdout with `flush=True`, so they reach the inst.sh tee log immediately.
 
+Every command that runs through run_command is framed by two tracking lines: `  run : <command>` before the process and `  /run: <exit_code> <seconds>s <command>` after it, so walls of subprocess output stay attributed to the command that produced them. The duration is printed with three decimal places.
+
 ### Central logging
 
-The system journal is the primary destination for all own messages: the engine mirrors them with the identifier pyntara-engine, the installer with pyntara-install. The file log is residual: it persists the full stream for offline review. All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the journal without the console timestamp; subprocess output streams from run_command and stays out of the journal.
+The system journal is the primary destination for all own messages: the engine mirrors them with the identifier pyntara-engine, the installer with pyntara-install. The file log is residual: it persists the full stream for offline review. All engine messages go through src/pyntara/logger.py: task progress through log_progress, task banners through log_task_start, result lines through log_result_line, status and error lines through log_event. Task modules never print directly and never copy logging code. Every helper mirrors the message into the journal without the console timestamp; subprocess output streams from run_command and stays out of the journal, while the run_command tracking lines (run and /run) are mirrored to the journal like other engine messages. A command whose line carries a secret runs with log_command=False and is never printed: logging secret values is forbidden.
 
 Journal message priority is passed to the logging helpers as an optional numeric parameter, a syslog level. The engine configuration in the [engine] table holds the two levels: progress_priority (7, debug) for every message reporting an action inside a task, and error_priority (3, error) for serious failures. A task reads both from its engine config and passes them explicitly to log_progress, so the levels stay configurable without code changes. The priority is passed as a number, never embedded in the message text and never parsed from it.
 

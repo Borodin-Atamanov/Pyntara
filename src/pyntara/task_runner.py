@@ -67,8 +67,10 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     result) pairs in run order. A task that is not implemented is skipped; a
     task that reports a failure or raises is converted into a completed
     result with the reason in warnings, so no task failure ever stops the
-    run. The entry point prints the final summary, so each outcome appears
-    twice: next to the task and in the summary.
+    run. The outcome line carries the task execution duration, measured
+    around the task call without the start delay. The entry point prints
+    the final summary, so each outcome appears twice: next to the task and
+    in the summary.
     """
 
     results: list[tuple[str, TaskResult]] = []
@@ -93,11 +95,13 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             results.append((name, result))
             continue
         time.sleep(ctx.config.engine.task_start_delay_seconds)
+        start = time.monotonic()
         try:
             result = task(ctx)
         except Exception as exc:  # noqa: BLE001 - a raising task must not kill the run
             result = TaskResult(success=False, error=str(exc))
+        duration_seconds = time.monotonic() - start
         result = _warn_result(result)
-        log_result_line(name, result)
+        log_result_line(name, result, duration_seconds=duration_seconds)
         results.append((name, result))
     return results

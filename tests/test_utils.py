@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from typing import Any
 
@@ -101,6 +102,103 @@ def test_run_command_omits_input_by_default(
     # Without input the subprocess default (None) is used, so the
     # explicit argument never carries a payload.
     assert captured["kwargs"].get("input") is None
+
+
+def test_run_command_logs_start_and_end_lines(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 7, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(["apt-get", "install", "-y", "python3-venv"], timeout=1800)
+    captured = capsys.readouterr().out
+    assert "  run : apt-get install -y python3-venv" in captured
+    assert re.search(
+        r"^  /run: 7 \d+\.\d{3}s apt-get install -y python3-venv$",
+        captured,
+        re.MULTILINE,
+    )
+
+
+def test_run_command_logs_capture_queries(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(["dpkg-query", "-W"], timeout=1800, capture=True)
+    captured = capsys.readouterr().out
+    assert "  run : dpkg-query -W" in captured
+    assert re.search(
+        r"^  /run: 0 \d+\.\d{3}s dpkg-query -W$", captured, re.MULTILINE
+    )
+
+
+def test_run_command_suppresses_log_on_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(
+        ["curl", "--data-urlencode", "pass=secret"],
+        timeout=1800,
+        log_command=False,
+    )
+    captured = capsys.readouterr().out
+    assert captured == ""
+
+
+def test_run_command_logs_end_on_check_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(5, command)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    with pytest.raises(subprocess.CalledProcessError):
+        run_command(["apt-get", "install", "-y", "x"], timeout=1800)
+    captured = capsys.readouterr().out
+    assert "  run : apt-get install -y x" in captured
+    assert re.search(
+        r"^  /run: 5 \d+\.\d{3}s apt-get install -y x$",
+        captured,
+        re.MULTILINE,
+    )
+
+
+def test_run_command_mirrors_tracking_lines_to_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journaled: list[str] = []
+    monkeypatch.setattr(
+        "pyntara.logger._send_to_journal",
+        lambda message, priority=6: journaled.append(message),
+    )
+
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 3, "", "")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    run_command(["true"], timeout=1800)
+    assert "run : true" in journaled
+    assert any(
+        re.match(r"^/run: 3 \d+\.\d{3}s true$", message)
+        for message in journaled
+    )
 
 
 class ProquintTests:

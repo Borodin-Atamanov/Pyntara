@@ -291,6 +291,19 @@ def test_log_result_line_prints_warnings(
     assert _wait_for(identifier, "[warn] cli_tools: cannot apply hotkey")
 
 
+def test_log_result_line_shows_duration(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    logger.log_result_line(
+        "cli_tools",
+        TaskResult(success=True, message="installed"),
+        duration_seconds=12.345,
+        to_journal=False,
+    )
+    captured = capsys.readouterr()
+    assert "[done] cli_tools in 12.345s: installed" in captured.out
+
+
 def test_log_result_line_skip_never_invents_not_implemented(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

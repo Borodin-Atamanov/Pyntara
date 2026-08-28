@@ -181,16 +181,20 @@ def log_result_line(
     name: str,
     result: TaskResult,
     *,
+    duration_seconds: float | None = None,
     to_journal: bool = True,
     priority: int = 6,
 ) -> None:
     """Print one task outcome line immediately after the task finishes.
 
     Uses the same prefixes as the final summary in the entry point, so the
-    per-task report and the summary read consistently. to_journal=False
-    prints to the console only; the summary repeats these lines and must
-    not duplicate them in the journal. The journal line carries the given
-    syslog priority, informational by default.
+    per-task report and the summary read consistently. duration_seconds is
+    the wall time of the task execution and is shown in the line as
+    ` in <seconds>s` with three decimal places; a task that did not run
+    passes None and shows no duration. to_journal=False prints to the
+    console only; the summary repeats these lines and must not duplicate
+    them in the journal. The journal line carries the given syslog
+    priority, informational by default.
     """
 
     if result.skipped:
@@ -199,11 +203,16 @@ def log_result_line(
             line = f"{line}: {result.message}"
     elif result.success:
         line = f"[done] {name}"
+        if duration_seconds is not None:
+            line = f"{line} in {duration_seconds:.3f}s"
         if result.message:
             line = f"{line}: {result.message}"
     else:
         detail = result.error or "unknown error"
-        line = f"[failed] {name}: {detail}"
+        line = f"[failed] {name}"
+        if duration_seconds is not None:
+            line = f"{line} in {duration_seconds:.3f}s"
+        line = f"{line}: {detail}"
     print(line)
     if to_journal:
         _send_to_journal(line, priority=priority)
@@ -233,3 +242,41 @@ def log_event(
     print(message, file=stream)
     if to_journal:
         _send_to_journal(message, priority=priority)
+
+
+def log_run_start(command: str, *, priority: int = 6) -> None:
+    """Print the uniform command start line and mirror it to the journal.
+
+    The line `  run : <command>` opens every command that runs through
+    run_command, so walls of subprocess output in the install log are
+    attributed to the command that produced them (project rules, Task
+    progress output). The journal copy carries the plain text without the
+    leading indent at the given syslog priority, informational by default.
+    """
+
+    print(f"  run : {command}", flush=True)
+    _send_to_journal(f"run : {command}", priority=priority)
+
+
+def log_run_end(
+    command: str,
+    exit_code: int | None,
+    duration_seconds: float,
+    *,
+    priority: int = 6,
+) -> None:
+    """Print the uniform command end line and mirror it to the journal.
+
+    The line `  /run: <exit_code> <seconds>s <command>` closes the command
+    opened by log_run_start with its exit code and duration, so every
+    command reports how it ended even when run_command raises. exit_code
+    is None when the command was killed by its timeout, and the line then
+    shows the word timeout. The duration is printed with three decimal
+    places; the journal copy carries the plain text without the leading
+    indent at the given syslog priority.
+    """
+
+    code_text = "timeout" if exit_code is None else str(exit_code)
+    line = f"  /run: {code_text} {duration_seconds:.3f}s {command}"
+    print(line, flush=True)
+    _send_to_journal(line[2:], priority=priority)
