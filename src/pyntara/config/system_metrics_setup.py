@@ -87,7 +87,10 @@ class SystemMetricsSetupConfig:
     the senders; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
     command_path being the system path of the generated
-    commit_system_metrics command file. system_metrics_dir is the root
+    commit_system_metrics command file;
+    vault_backup_file_name is the committed artifact name of the runtime
+    vault backup, with {hostname} replaced by the machine hostname at
+    commit time. system_metrics_dir is the root
     of the System Metrics queue, system_metrics_dir_mode and
     queue_file_mode are the strict file modes of the queue directories
     and entries, max_queue_file_size_bytes is the per-entry size limit,
@@ -127,6 +130,7 @@ class SystemMetricsSetupConfig:
     venv_dir: Path
     system_config_path: Path
     command_path: Path
+    vault_backup_file_name: str
     system_metrics_dir: Path
     system_metrics_dir_mode: int
     queue_file_mode: int
@@ -342,7 +346,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     backoff_multiplier is an integer of at least 2, so the pause always
     grows. python_version is a non-empty string; error_priority is a
     syslog level between 0 and 7; venv_dir, system_config_path,
-    command_path,
+    command_path, vault_backup_file_name,
     system_metrics_dir, spool_dir and every unit name, journal
     identifier, queue directory name and spool temp prefix are non-empty
     strings; system_metrics_dir_mode, queue_file_mode, spool_dir_mode
@@ -411,6 +415,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.command_path must be a non-empty string"
         )
+    vault_backup_file_name = _nonempty_string_field(
+        raw.get("vault_backup_file_name"),
+        "system_metrics_setup.vault_backup_file_name",
+    )
     system_metrics_dir = raw.get("system_metrics_dir")
     if not isinstance(system_metrics_dir, str) or not system_metrics_dir:
         raise ConfigError(
@@ -498,6 +506,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         venv_dir=Path(venv_dir),
         system_config_path=Path(system_config_path),
         command_path=Path(command_path),
+        vault_backup_file_name=vault_backup_file_name,
         system_metrics_dir=Path(system_metrics_dir),
         system_metrics_dir_mode=_octal_mode_field(
             raw.get("system_metrics_dir_mode"),

@@ -134,12 +134,15 @@ def test_reports_start_failure(
     assert "cannot start collector service" in result.error
 
 
-def test_catalog_has_initial_collect_last_in_every_mode() -> None:
-    # The task must run after every other default task of a mode, so the
-    # collector sees the i2pd and yggdrasil address files already written.
+def test_catalog_has_initial_collect_before_final_commit_in_every_mode() -> None:
+    # The collector must run after every other default task of a mode, so
+    # it sees the i2pd and yggdrasil address files already written. It
+    # runs right before the final commit_final_system_metrics task, which
+    # is the true last task of the catalog.
     for mode in ALL_MODES:
         defaults = task_catalog.default_tasks(mode, REAL_TASKS)
-        assert defaults[-1] == "system_metrics_initial_collect"
+        assert defaults[-2] == "system_metrics_initial_collect"
+        assert defaults[-1] == "commit_final_system_metrics"
 
 
 def test_catalog_depends_on_system_metrics_setup() -> None:

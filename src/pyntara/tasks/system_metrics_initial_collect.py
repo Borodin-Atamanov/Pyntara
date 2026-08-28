@@ -2,8 +2,9 @@
 
 The System Metrics collector service is deployed by the system_metrics_setup
 task and normally starts only through its timer after the first boot
-(docs/spec/system-metrics.md, section Report collector). This task runs
-last in the catalog and starts the already installed collector service once,
+(docs/spec/system-metrics.md, section Report collector). The task runs
+right before the final commit_final_system_metrics task of the catalog
+and starts the already installed collector service once,
 so the network report reaches the queue right after provisioning instead of
 waiting for the boot run. The start is non-blocking (systemctl start
 --no-block): the collector may wait up to its retry window inside the

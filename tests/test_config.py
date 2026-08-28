@@ -269,6 +269,7 @@ error_priority = 3
 venv_dir = "/usr/local/lib/pyntara/venv"
 system_config_path = "/etc/pyntara/config.toml"
 command_path = "/usr/local/bin/commit_system_metrics"
+vault_backup_file_name = "{hostname}.kdbx"
 system_metrics_dir = "/var/lib/pyntara/metrics"
 system_metrics_dir_mode = "0700"
 queue_file_mode = "0600"
@@ -720,6 +721,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.system_metrics_setup.venv_dir == Path("/usr/local/lib/pyntara/venv")
     assert config.system_metrics_setup.system_config_path == Path("/etc/pyntara/config.toml")
     assert config.system_metrics_setup.command_path == Path("/usr/local/bin/commit_system_metrics")
+    assert config.system_metrics_setup.vault_backup_file_name == "{hostname}.kdbx"
     assert config.system_metrics_setup.system_metrics_dir == Path("/var/lib/pyntara/metrics")
     assert config.system_metrics_setup.system_metrics_dir_mode == 0o700
     assert config.system_metrics_setup.queue_file_mode == 0o600

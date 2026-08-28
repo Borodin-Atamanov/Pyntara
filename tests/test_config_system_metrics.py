@@ -91,6 +91,16 @@ from pyntara.config import load_config
             'command_path = "/usr/local/bin/commit_system_metrics"',
             'command_path = ""',
         ),
+        # system_metrics_setup vault_backup_file_name is a number, not a string
+        base_config().replace(
+            'vault_backup_file_name = "{hostname}.kdbx"',
+            "vault_backup_file_name = 1",
+        ),
+        # system_metrics_setup vault_backup_file_name is an empty string
+        base_config().replace(
+            'vault_backup_file_name = "{hostname}.kdbx"',
+            'vault_backup_file_name = ""',
+        ),
         # system_metrics_setup system_metrics_dir is a number, not a string
         base_config().replace(
             'system_metrics_dir = "/var/lib/pyntara/metrics"',

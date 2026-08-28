@@ -31,6 +31,12 @@ system_config_path = "/etc/pyntara/config.toml"
 # the spool path and the journal identifier embedded, so any user can
 # commit without config access and without root privileges.
 command_path = "/usr/local/bin/commit_system_metrics"
+# Name of the runtime vault backup that the final task
+# commit_final_system_metrics commits into System Metrics after the run.
+# The {hostname} placeholder is replaced with the machine hostname at
+# commit time, so the sent file is named <hostname>.kdbx
+# (docs/spec/system-metrics.md, section Runtime vault backup).
+vault_backup_file_name = "{hostname}.kdbx"
 # Root directory of the System Metrics queue on the target machine. The
 # ingest service moves committed files from the spool into main_outbox
 # inside this directory; the deployed service fans them out into the

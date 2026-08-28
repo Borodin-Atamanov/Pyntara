@@ -261,6 +261,7 @@ def base_config() -> str:
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'
+        'vault_backup_file_name = "{hostname}.kdbx"\n'
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'

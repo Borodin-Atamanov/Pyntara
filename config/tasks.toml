@@ -119,3 +119,9 @@ name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]
 modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "commit_final_system_metrics"
+description = "Commit the runtime vault into System Metrics as a backup file."
+depends = ["system_metrics_setup"]
+modes = ["minimal", "server", "desktop"]
