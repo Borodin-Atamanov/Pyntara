@@ -349,19 +349,9 @@ key = "ShowText"
 value = "false"
 type = "bool"
 
-[[kde_settings.kconfig]]
-file = "kwinrc"
-group = ["Effect-mousemark"]
-key = "Arrowdrawcontrol"
-value = "false"
-type = "bool"
-
-[[kde_settings.kconfig]]
-file = "kwinrc"
-group = ["Effect-mousemark"]
-key = "Freedrawshift"
-value = "false"
-type = "bool"
+# The mousemark effect modifiers use KWin defaults: Shift+Meta for free
+# draw (Freedrawshift=true, Freedrawmeta=true) and Ctrl+Meta for arrows
+# (Arrowdrawcontrol=true, Arrowdrawmeta=true). No explicit entries needed.
 
 [[kde_settings.kconfig]]
 file = "kwinrc"
@@ -601,10 +591,17 @@ key = "InvertWindow"
 value = "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window"
 
 # kglobalshortcutsrc: the keyboard layout switch and the window switcher.
-# The Spanish layout switch primary key is Meta+E. The window switching
-# uses Alt+Tab as the primary switcher and Meta+Tab as the alternative,
-# matching the recorded setup; the task unbinds conflicts on the primary
-# keys.
+# The Spanish layout switch primary key is Meta+E. The manage activities
+# alternate key Meta+Q is cleared so it does not conflict with any layout
+# shortcut. The window switching uses Alt+Tab as the primary switcher and
+# Meta+Tab as the alternative, matching the recorded setup; the task
+# unbinds conflicts on the primary keys.
+[[kde_settings.kconfig]]
+file = "kglobalshortcutsrc"
+group = ["kwin"]
+key = "manage activities"
+value = "none,none,Show Activity Switcher"
+
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["KDE Keyboard Layout Switcher"]

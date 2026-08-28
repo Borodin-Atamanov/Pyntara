@@ -1014,7 +1014,10 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
     changed |= settings_changed
 
-    if virtual_keyboard_changed:
+    kwinrc_changed = any(
+        record.file == "kwinrc" for record in cfg.kconfig
+    ) and settings_changed
+    if virtual_keyboard_changed or kwinrc_changed:
         reload_error = _reload_kwin(cfg, timeout=timeout, env=apply_env)
         if reload_error is not None:
             return TaskResult(success=False, error=reload_error)
