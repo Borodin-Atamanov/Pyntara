@@ -18,6 +18,7 @@ packages = [
     # file operations
     "tree", # tree: displays an indented directory tree, in color
     "rsync", # rsync: fast, versatile, remote and local file-copying tool
+    "trash-cli", # trash
 
     # storage monitoring
     "lsof", # lsof: utility to list open files
