@@ -12,10 +12,11 @@ port is derived deterministically from the hostname, and when the server
 cannot grant it the thread asks for a random port and records the granted
 one, so the port stays stable across reconnects. A dropped connection is
 re-established after the geometric backoff, and every granted-port change
-is reported through the commit_system_metrics command, so the operator
-always knows the current remote port of the machine. A vault without the
+is saved to the state file and triggers a fresh System Metrics
+collection, so the network report carries the current remote port of the
+machine (docs/spec/port-forwarding-setup.md). A vault without the
 server group or the passphrase entry makes the service exit cleanly and
-connect to nothing (docs/spec/port-forwarding-setup.md).
+connect to nothing.
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 
 from pykeepass import PyKeePass
@@ -52,11 +52,6 @@ SUCCESS_RE = re.compile(r"remote forward success for: listen (\d+)")
 # A requested fixed port that is taken on the server makes ssh exit with
 # this error line; the service then asks for a random port instead.
 FAILED_RE = re.compile(r"remote port forwarding failed for listen port")
-# Telemetry commit retries: the commit command rejects a name that is
-# still pending in the spool, and the ingest moves spool entries quickly,
-# so a short bounded retry closes the gap without losing the update.
-COMMIT_RETRY_ATTEMPTS = 3
-COMMIT_RETRY_DELAY_SECONDS = 2
 
 
 def desired_port(cfg: Config, hostname: str) -> int:
@@ -389,71 +384,40 @@ def save_state(path: Path, state: dict[str, dict[str, int]]) -> None:
         _log(f"cannot save the port-forwarding state {path}: {exc}")
 
 
-def commit_report(cfg: Config, state: dict[str, dict[str, int]]) -> None:
-    """Commit the current forwarding state through the metrics command.
+def trigger_collector(cfg: Config) -> None:
+    """Trigger a fresh System Metrics collection after a port change.
 
-    The report is a JSON document named by the configured template with
-    the hostname substituted; it carries every current remote port, so
-    the operator can reach the machine at the reported addresses. A
-    failed commit is retried a bounded number of times and then logged,
-    so a transient spool collision never loses the update silently.
+    The assigned ports live in the state file read by the collector's
+    port_forwarding module, so a port change only needs the collector to
+    re-run: systemctl start --no-block returns immediately, the
+    collector collects, commits and sends the network report on its own,
+    and its non-blocking flock skips the trigger when a collection is
+    already running. A failed trigger is logged; the next daily
+    collection still carries the current ports.
     """
 
-    pf = cfg.port_forwarding_setup
-    metrics_config = cfg.system_metrics_setup
-    hostname = socket.gethostname()
-    report_name = pf.report_file_name.format(hostname=hostname)
-    report_path = Path(tempfile.gettempdir()) / report_name
-    report = {
-        "generated_at": datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S"),
-        "hostname": hostname,
-        "port_forwarding": [
-            {
-                "server": server,
-                "local_port": int(local_port),
-                "remote_port": remote_port,
-            }
-            for server, ports in state.items()
-            for local_port, remote_port in ports.items()
-        ],
-    }
+    collector_service = cfg.system_metrics_setup.collector.service_unit_name
     try:
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        result = subprocess.run(
+            ["systemctl", "start", "--no-block", collector_service],
+            capture_output=True,
+            text=True,
+            timeout=cfg.port_forwarding_setup.connect_timeout_seconds,
+            check=False,
         )
-        os.chmod(report_path, 0o600)
-    except OSError as exc:
-        _log(f"cannot write the port-forwarding report: {exc}", priority=pf.error_priority)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _log(
+            f"cannot trigger the metrics collector: {exc}",
+            priority=cfg.port_forwarding_setup.error_priority,
+        )
         return
-    for attempt in range(COMMIT_RETRY_ATTEMPTS):
-        try:
-            result = subprocess.run(
-                [str(metrics_config.command_path), str(report_path)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            _log(f"cannot commit the port-forwarding report: {exc}")
-            time.sleep(COMMIT_RETRY_DELAY_SECONDS)
-            continue
-        if result.returncode == 0:
-            try:
-                report_path.unlink()
-            except OSError:
-                pass
-            _log(f"port-forwarding report committed: {report_name}")
-            return
-        time.sleep(COMMIT_RETRY_DELAY_SECONDS)
-    _log(
-        f"cannot commit the port-forwarding report after {COMMIT_RETRY_ATTEMPTS} attempts",
-        priority=pf.error_priority,
-    )
-    try:
-        report_path.unlink()
-    except OSError:
-        pass
+    if result.returncode != 0:
+        _log(
+            f"cannot trigger the metrics collector: exited {result.returncode}",
+            priority=cfg.port_forwarding_setup.error_priority,
+        )
+        return
+    _log("metrics collector triggered for a fresh network report")
 
 
 def run_forward_loop(
@@ -537,11 +501,14 @@ def run_forward_loop(
                 )
                 continue
             port = granted if granted is not None else remote_port
+            changed_port = False
             with lock:
                 if state.get(server, {}).get(str(local_port)) != port:
                     state.setdefault(server, {})[str(local_port)] = port
                     save_state(pf.state_file_path, state)
-                    commit_report(cfg, state)
+                    changed_port = True
+            if changed_port:
+                trigger_collector(cfg)
             _log(f"{server}: forwarding local port {local_port} to remote port {port}")
             connected_at = time.monotonic()
             proc.wait()

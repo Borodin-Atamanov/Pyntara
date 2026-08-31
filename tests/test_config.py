@@ -276,7 +276,6 @@ backoff_base_seconds = 2
 backoff_multiplier = 2
 backoff_max_seconds = 1024
 state_file_path = "/var/lib/pyntara/port_forwarding_state.json"
-report_file_name = "port_forwarding-{hostname}.json"
 service_unit_name = "auto_port_forwarding.service"
 service_restart_seconds = 30
 journal_identifier = "auto_port_forwarding"

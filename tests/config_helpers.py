@@ -230,7 +230,6 @@ def base_config() -> str:
         "backoff_multiplier = 2\n"
         "backoff_max_seconds = 1024\n"
         'state_file_path = "/var/lib/pyntara/port_forwarding_state.json"\n'
-        'report_file_name = "port_forwarding-{hostname}.json"\n'
         'service_unit_name = "auto_port_forwarding.service"\n'
         "service_restart_seconds = 30\n"
         'journal_identifier = "auto_port_forwarding"\n'

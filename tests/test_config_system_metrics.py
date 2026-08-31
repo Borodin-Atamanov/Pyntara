@@ -403,6 +403,11 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "nextdns"\n'
         'command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]\n'
+        '[[system_metrics_setup.collector.network_modules]]\n'
+        'name = "port_forwarding"\n'
+        'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
+        '"pyntara.port_forwarding_state", '
+        '"/var/lib/pyntara/port_forwarding_state.json"]\n'
         "[[system_metrics_setup.collector.system_modules]]",
     )
     config = load_config(write_config(tmp_path, content))
@@ -414,6 +419,7 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "yggdrasil",
         "tor_onion",
         "nextdns",
+        "port_forwarding",
     ]
     by_name = {module.name: module for module in modules}
     assert by_name["i2pd"].command == (
@@ -440,6 +446,12 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "cat",
         "/var/lib/pyntara/nextdns_profile_id",
     )
+    assert by_name["port_forwarding"].command == (
+        "/usr/local/lib/pyntara/venv/bin/python",
+        "-m",
+        "pyntara.port_forwarding_state",
+        "/var/lib/pyntara/port_forwarding_state.json",
+    )
 
 
 def test_nextdns_module_path_matches_nextdns_config() -> None:
@@ -457,4 +469,24 @@ def test_nextdns_module_path_matches_nextdns_config() -> None:
     assert nextdns_module.command == (
         "cat",
         str(config.nextdns_setup_system_wide.profile_id_file_path),
+    )
+
+
+def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
+    # The port_forwarding collector module reads the state file whose
+    # path lives in the [port_forwarding_setup] table. The two config
+    # files must not drift apart: the module command path must equal the
+    # configured state_file_path, so a rename in one file is caught here
+    # instead of silently breaking the telemetry.
+    repo_root = Path(__file__).resolve().parents[1]
+    config = load_config(repo_root / "config")
+    modules = config.system_metrics_setup.collector.network_modules
+    port_forwarding_module = next(
+        module for module in modules if module.name == "port_forwarding"
+    )
+    assert port_forwarding_module.command == (
+        "/usr/local/lib/pyntara/venv/bin/python",
+        "-m",
+        "pyntara.port_forwarding_state",
+        str(config.port_forwarding_setup.state_file_path),
     )

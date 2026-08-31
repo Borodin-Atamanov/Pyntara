@@ -230,6 +230,17 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address"
 name = "nextdns"
 command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 
+# The port_forwarding module prints the assigned remote ports from the
+# root-only state file of the auto_port_forwarding service, so every
+# network report carries the current forwarding state. The path must
+# match port_forwarding_setup.state_file_path in
+# config/port_forwarding_setup.toml; the collector test guards the two
+# config files against drifting apart. A machine without the state file
+# reports an empty module instead of an error.
+[[system_metrics_setup.collector.network_modules]]
+name = "port_forwarding"
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/var/lib/pyntara/port_forwarding_state.json"]
+
 # System modules: console commands whose full output forms the system
 # section of the report. Their status never affects ready_percent and
 # the waiting.

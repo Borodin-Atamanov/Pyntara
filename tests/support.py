@@ -540,7 +540,6 @@ def make_config(
     port_forwarding_state_file_path: Path = Path(
         "/var/lib/pyntara/port_forwarding_state.json"
     ),
-    port_forwarding_report_file_name: str = "port_forwarding-{hostname}.json",
     port_forwarding_service_unit_name: str = "auto_port_forwarding.service",
     port_forwarding_service_restart_seconds: int = 30,
     port_forwarding_journal_identifier: str = "auto_port_forwarding",
@@ -949,7 +948,6 @@ def make_config(
             backoff_multiplier=port_forwarding_backoff_multiplier,
             backoff_max_seconds=port_forwarding_backoff_max_seconds,
             state_file_path=port_forwarding_state_file_path,
-            report_file_name=port_forwarding_report_file_name,
             service_unit_name=port_forwarding_service_unit_name,
             service_restart_seconds=port_forwarding_service_restart_seconds,
             journal_identifier=port_forwarding_journal_identifier,

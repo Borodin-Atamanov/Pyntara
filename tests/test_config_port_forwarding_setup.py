@@ -28,7 +28,6 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
     assert section.state_file_path == Path(
         "/var/lib/pyntara/port_forwarding_state.json"
     )
-    assert section.report_file_name == "port_forwarding-{hostname}.json"
     assert section.service_unit_name == "auto_port_forwarding.service"
     assert section.service_restart_seconds == 30
     assert section.journal_identifier == "auto_port_forwarding"
@@ -53,7 +52,6 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             "backoff_multiplier = 2\n"
             "backoff_max_seconds = 1024\n"
             'state_file_path = "/var/lib/pyntara/port_forwarding_state.json"\n'
-            'report_file_name = "port_forwarding-{hostname}.json"\n'
             'service_unit_name = "auto_port_forwarding.service"\n'
             "service_restart_seconds = 30\n"
             'journal_identifier = "auto_port_forwarding"\n'

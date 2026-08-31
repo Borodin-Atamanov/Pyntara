@@ -31,7 +31,7 @@ A dropped connection is re-established after the geometric backoff from the conf
 
 ## Telemetry
 
-Every granted-port change is saved to the root-only state file and reported through the commit_system_metrics command as a JSON report named by the configured template with the hostname substituted. The report carries every current remote port per server, so the operator can reach the machine at the reported addresses; on a reconnect that lands on a new port a fresh report is committed, and the send pipeline of System Metrics delivers it. The commit is retried a bounded number of times, because the command rejects a name that is still pending in the spool.
+The assigned remote ports live in the root-only state file. The System Metrics collector carries a port_forwarding network module that reads the state file, so every network report shows the current ports per server; a machine without the state file reports an empty module instead of an error. On a granted-port change the service saves the state and triggers a fresh collection through systemctl start --no-block on the collector service, so the network report is regenerated with the new ports and sent through the existing pipeline. The collector's non-blocking flock skips the trigger when a collection is already running; the daily collection still carries the current ports. No separate telemetry file is produced.
 
 ## Update flow
 

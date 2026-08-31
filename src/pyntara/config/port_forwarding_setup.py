@@ -37,10 +37,10 @@ class PortForwardingSetupConfig:
     connect_timeout_seconds tune the ssh connection; backoff_base_seconds,
     backoff_multiplier and backoff_max_seconds drive the reconnect pauses.
     state_file_path is the root-only JSON file that records the assigned
-    remote ports; report_file_name names the telemetry report committed on
-    every port change, with {hostname} replaced at commit time.
-    service_unit_name and service_restart_seconds configure the deployed
-    service unit; journal_identifier and error_priority control logging.
+    remote ports; the System Metrics collector reads it into the network
+    report. service_unit_name and service_restart_seconds configure the
+    deployed service unit; journal_identifier and error_priority control
+    logging.
     """
 
     vault_group_title: str
@@ -55,7 +55,6 @@ class PortForwardingSetupConfig:
     backoff_multiplier: int
     backoff_max_seconds: int
     state_file_path: Path
-    report_file_name: str
     service_unit_name: str
     service_restart_seconds: int
     journal_identifier: str
@@ -136,9 +135,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     state_file_path = Path(
         _nonempty_string_field(raw.get("state_file_path"), section + "state_file_path")
     )
-    report_file_name = _nonempty_string_field(
-        raw.get("report_file_name"), section + "report_file_name"
-    )
     service_unit_name = _nonempty_string_field(
         raw.get("service_unit_name"), section + "service_unit_name"
     )
@@ -166,7 +162,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         backoff_multiplier=backoff_multiplier,
         backoff_max_seconds=backoff_max_seconds,
         state_file_path=state_file_path,
-        report_file_name=report_file_name,
         service_unit_name=service_unit_name,
         service_restart_seconds=service_restart_seconds,
         journal_identifier=journal_identifier,

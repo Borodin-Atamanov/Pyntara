@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 from pykeepass import PyKeePass, create_database
-from support import make_config
+from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
 from pyntara.port_forwarding import (
@@ -25,6 +25,7 @@ from pyntara.port_forwarding import (
     read_server_addresses,
     run_forward_loop,
     start_forward,
+    trigger_collector,
 )
 
 VAULT_PASSWORD = "vault-secret"
@@ -74,26 +75,6 @@ def _fake_bin(tmp_path: Path) -> Path:
     return bindir
 
 
-def _fake_commit_dir(tmp_path: Path) -> tuple[Path, Path]:
-    """Create the fake commit command and its log path.
-
-    The log path is embedded into the script, so the command needs no
-    environment variable to record commits.
-    """
-
-    bindir = tmp_path / "commitbin"
-    bindir.mkdir()
-    log = tmp_path / "commit.log"
-    script = (
-        "#!/usr/bin/env bash\n"
-        "# Fake commit_system_metrics: append the report to the log.\n"
-        f'cat "$1" >> "{log}"\n'
-        f'echo "REPORT_END" >> "{log}"\n'
-    )
-    _write_executable(bindir / "commit_system_metrics", script)
-    return bindir, log
-
-
 def _agent_env(bindir: Path, **extra: str) -> dict[str, str]:
     """An environment that resolves ssh through the fake bin directory."""
 
@@ -130,23 +111,6 @@ def _make_vault(tmp_path: Path) -> PyKeePass:
     )
     kp.save()
     return kp
-
-
-def _count_reports(log: Path) -> int:
-    """The number of committed reports in the fake commit log."""
-
-    try:
-        return log.read_text(encoding="utf-8").count("REPORT_END")
-    except OSError:
-        return 0
-
-
-def _last_report(log: Path) -> dict[str, object]:
-    """The last committed report JSON from the fake commit log."""
-
-    blocks = log.read_text(encoding="utf-8").split("REPORT_END")
-    nonempty = [b for b in blocks if b.strip()]
-    return json.loads(nonempty[-1].strip())
 
 
 class TestDesiredPort:
@@ -240,17 +204,21 @@ class TestRunForwardLoop:
     ) -> None:
         self.tmp = tmp_path
         self.bindir = _fake_bin(tmp_path)
-        commit_bin, self.commit_log = _fake_commit_dir(tmp_path)
         self.state_path = tmp_path / "state.json"
         self.key = tmp_path / "key"
         self.config = make_config(
             task_data_root=tmp_path,
             port_forwarding_connect_timeout_seconds=1,
             port_forwarding_state_file_path=self.state_path,
-            system_metrics_command_path=commit_bin / "commit_system_metrics",
         )
         monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
-        monkeypatch.setattr(pf.tempfile, "gettempdir", lambda: str(tmp_path))
+
+        # A port change triggers the metrics collector instead of sending
+        # a separate report; the trigger is recorded by a fake.
+        self.triggers: list[object] = []
+        monkeypatch.setattr(
+            pf, "trigger_collector", lambda cfg: self.triggers.append(cfg)
+        )
 
         # Distinguish the reconnect pauses (>= 1s) from the stderr-watch
         # sleeps (0.2s): each pause is recorded and the second one stops
@@ -273,10 +241,10 @@ class TestRunForwardLoop:
                 self.config, state, lock, "server", 30222, 30222, self.key, env
             )
 
-    def test_connects_records_and_commits(self) -> None:
+    def test_connects_records_and_triggers_collector(self) -> None:
         # A free desired port: the loop records it, saves the state and
-        # commits one report, then waits the first backoff pause after
-        # the fake connection drops.
+        # triggers one collector run, then waits the first backoff pause
+        # after the fake connection drops.
         state: dict[str, dict[str, int]] = {}
         self._run(state, _agent_env(self.bindir))
         recorded = state["server"]["30222"]
@@ -284,12 +252,7 @@ class TestRunForwardLoop:
         assert json.loads(self.state_path.read_text(encoding="utf-8"))["server"][
             "30222"
         ] == recorded
-        assert _count_reports(self.commit_log) == 1
-        report = _last_report(self.commit_log)
-        assert report["hostname"] == "testhost"
-        assert report["port_forwarding"] == [
-            {"server": "server", "local_port": 30222, "remote_port": recorded}
-        ]
+        assert len(self.triggers) == 1
 
     def test_busy_desired_port_falls_back_to_random(self) -> None:
         # A busy desired port makes the loop ask for a random port and
@@ -298,13 +261,12 @@ class TestRunForwardLoop:
         env = _agent_env(self.bindir, FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_PORT="45678")
         self._run(state, env)
         assert state["server"]["30222"] == 45678
-        assert _count_reports(self.commit_log) == 1
-        assert _last_report(self.commit_log)["port_forwarding"][0]["remote_port"] == 45678
+        assert len(self.triggers) == 1
 
-    def test_reconnect_with_new_port_recommits(self) -> None:
+    def test_reconnect_with_new_port_triggers_again(self) -> None:
         # A reconnect that lands on a new random port updates the state
-        # and commits a fresh report, so telemetry always carries the
-        # current port.
+        # and triggers a fresh collection, so the network report always
+        # carries the current port.
         grant_file = self.tmp / "grant.txt"
         grant_file.write_text("10000\n", encoding="utf-8")
         env = _agent_env(
@@ -313,25 +275,54 @@ class TestRunForwardLoop:
         state: dict[str, dict[str, int]] = {}
         self._run(state, env)
         assert state["server"]["30222"] == 10001
-        assert _count_reports(self.commit_log) == 2
-        reports = [
-            json.loads(block.strip())
-            for block in self.commit_log.read_text(encoding="utf-8").split("REPORT_END")
-            if block.strip()
-        ]
-        ports = [r["port_forwarding"][0]["remote_port"] for r in reports]
-        assert ports == [10000, 10001]
+        assert len(self.triggers) == 2
 
     def test_keeps_recorded_port_stable_across_reconnects(self) -> None:
         # A reconnect with a free recorded port keeps it, so the operator
-        # address does not change; no extra report is committed.
+        # address does not change; no collection is triggered.
         grant_file = self.tmp / "grant.txt"
         grant_file.write_text("20000\n", encoding="utf-8")
         env = _agent_env(self.bindir, FAKE_SSH_GRANT_FILE=str(grant_file))
         state: dict[str, dict[str, int]] = {"server": {"30222": 20000}}
         self._run(state, env)
         assert state["server"]["30222"] == 20000
-        assert _count_reports(self.commit_log) == 0
+        assert len(self.triggers) == 0
+
+
+class TestTriggerCollector:
+    def test_starts_collector_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The trigger starts the collector service without blocking, so
+        # the supervisor thread keeps monitoring the tunnel.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> object:
+            calls.append(list(command))
+            return FakeProc(0)
+
+        monkeypatch.setattr(pf.subprocess, "run", fake_run)
+        config = make_config()
+        trigger_collector(config)
+        assert calls == [
+            [
+                "systemctl",
+                "start",
+                "--no-block",
+                "system_metrics_collector.service",
+            ]
+        ]
+
+    def test_failed_trigger_is_logged_not_raised(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A failed trigger is journaled, never raised, so the supervisor
+        # thread keeps running; the next daily collection still carries
+        # the current ports.
+        def fake_run(command: list[str], **kwargs: object) -> object:
+            return FakeProc(1)
+
+        monkeypatch.setattr(pf.subprocess, "run", fake_run)
+        config = make_config()
+        trigger_collector(config)
 
 
 class TestMain:

@@ -41,11 +41,9 @@ backoff_base_seconds = 2
 backoff_multiplier = 2
 backoff_max_seconds = 1024
 # Path of the root-only JSON file that records the assigned remote ports
-# per server, so a service restart keeps the ports stable.
+# per server, so a service restart keeps the ports stable and the System
+# Metrics collector reads them into the network report.
 state_file_path = "/var/lib/pyntara/port_forwarding_state.json"
-# Name of the telemetry report committed on every assigned-port change,
-# with {hostname} replaced at commit time.
-report_file_name = "port_forwarding-{hostname}.json"
 # Name of the deployed service unit file.
 service_unit_name = "auto_port_forwarding.service"
 # Seconds systemd waits before restarting the service after a failure.
