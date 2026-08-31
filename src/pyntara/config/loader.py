@@ -19,6 +19,10 @@ from .nextdns_setup_system_wide import (
     NextdnsSetupSystemWideConfig,
     _nextdns_setup_system_wide_table,
 )
+from .port_forwarding_setup import (
+    PortForwardingSetupConfig,
+    _port_forwarding_setup_table,
+)
 from .ssh import (
     SshClientSetupConfig,
     SshDaemonSetupConfig,
@@ -74,6 +78,7 @@ class Config:
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
+    port_forwarding_setup: PortForwardingSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
@@ -131,6 +136,17 @@ def load_config(path: Path) -> Config:
             "system_metrics_setup.google_script_key_entry_title must name an "
             "entry of the [vault_structure] table"
         )
+    port_forwarding_setup = _port_forwarding_setup_table(
+        data.get("port_forwarding_setup")
+    )
+    if not any(
+        entry.title == port_forwarding_setup.passphrase_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "port_forwarding_setup.passphrase_entry_title must name an entry "
+            "of the [vault_structure] table"
+        )
     three_x_ui = data.get("three_x_ui_xray_setup")
     if isinstance(three_x_ui, dict):
         vault_entry_title = three_x_ui.get("vault_entry_title")
@@ -170,6 +186,7 @@ def load_config(path: Path) -> Config:
         nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
             data.get("nextdns_setup_system_wide")
         ),
+        port_forwarding_setup=port_forwarding_setup,
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

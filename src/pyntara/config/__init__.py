@@ -35,6 +35,7 @@ from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .kde_settings import KConfigRecord, KdeSettingsConfig
 from .loader import Config, load_config
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
+from .port_forwarding_setup import PortForwardingSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
@@ -75,6 +76,7 @@ __all__ = [
     "KdeSettingsConfig",
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
+    "PortForwardingSetupConfig",
     "SshClientSetupConfig",
     "SshDaemonSetupConfig",
     "SshDirective",

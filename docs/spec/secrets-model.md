@@ -14,6 +14,8 @@ The structure of both vault files is described in the [vault_structure] table of
 
 The google_script_key entry carries the System Metrics Google Drive web app credentials: the username field holds the Apps Script project script ID, the url field holds the web app deployment endpoint, from which the deployment ID is extracted with the system_metrics_setup.google_script_deployment_url_regex pattern, the password field holds the shared auth key. The deploy helper reads all three and substitutes the auth key into the deployed script template: google_drive_script.js ships as a template whose __GOOGLE_SCRIPT_KEY__ placeholder the deploy step replaces; the System Metrics client sends files to the url. Both consumers take the entry title from system_metrics_setup.google_script_key_entry_title and the URL pattern from system_metrics_setup.google_script_deployment_url_regex in the config/ directory, the single source of truth.
 
+Two optional data subgroups are part of the structure: NextDNS and port_forwarding_servers. Both are data, not structure: the regeneration tooling creates the groups but never fills or deletes their entries, so the accounts and server addresses survive every regeneration run. The port_forwarding_servers group carries one entry per port-forwarding server with the address in the url field; the ssh_passphase_for_port_forwarding entry carries the passphrase of the port-forwarding private key. Both the group and the entry exist only in the production vault, never in the default vault: a runtime vault without them makes the auto_port_forwarding service connect to nothing.
+
 ## Vault regeneration
 
 The script secrets/regenerate_vault_by_config.py creates or updates a vault file from the [vault_structure] table of the config/ directory. Run it with the project interpreter, for example .venv/bin/python secrets/regenerate_vault_by_config.py secrets/default.vault; invoked directly, the script re-executes itself with the project virtualenv interpreter. The vault password comes from the first available source in this order:
@@ -28,7 +30,7 @@ The vault file is absent or empty: the vault is created from the config, with ev
 --overwrite is given: the vault is recreated from the config; existing entries outside the config are lost.  
 Otherwise the vault is opened with the password and the entries missing from the root group are added; every existing entry is kept.
 
-Newly created entries carry exactly the configured fields; a missing password field leaves the entry password empty for manual filling. The script exits with code 0 on success and no-op, 1 on any error, 2 on invalid usage; with no arguments it prints its usage help.
+Newly created entries carry exactly the configured fields; a missing password field leaves the entry password empty for manual filling. An entry with the optional generated_password field, value proquint-N, receives a freshly generated password of N proquint words joined by dashes on creation, so the production secret is never copied into another vault; an existing entry keeps its password. The script exits with code 0 on success and no-op, 1 on any error, 2 on invalid usage; with no arguments it prints its usage help.
 
 ## Password prompt
 

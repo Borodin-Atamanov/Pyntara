@@ -7,10 +7,17 @@ happens in loader.py where the full Config is assembled.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from ._fields import ConfigError, _int_field, _octal_mode_field
+
+# Value format of the optional generated_password field of a vault
+# structure entry: "proquint-N" asks the regeneration tooling to generate
+# a random password of N proquint words joined by dashes when it creates
+# the entry, so the production secret is never copied into another vault.
+GENERATED_PASSWORD_RE = re.compile(r"^proquint-[1-9][0-9]*$")
 
 
 @dataclass(frozen=True)
@@ -19,10 +26,14 @@ class VaultEntry:
 
     title names the KeePass entry; notes carries the explanatory text that
     the regeneration tooling stores in the notes field of the entry.
+    generated_password, when set, asks the regeneration tooling to
+    generate the password when it creates the entry, in the format
+    "proquint-N".
     """
 
     title: str
     notes: str
+    generated_password: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,12 +102,12 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
         if not isinstance(entry_raw, dict):
             raise ConfigError("[vault_structure] entries must be tables")
         unknown = sorted(
-            name for name in entry_raw if name not in ("title", "notes")
+            name for name in entry_raw if name not in ("title", "notes", "generated_password")
         )
         if unknown:
             raise ConfigError(
                 f"[vault_structure] entry {index + 1} names unknown field(s) "
-                f"{', '.join(unknown)}; expected title, notes"
+                f"{', '.join(unknown)}; expected title, notes, generated_password"
             )
         title = entry_raw.get("title")
         if not isinstance(title, str) or not title:
@@ -111,7 +122,28 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
             raise ConfigError(
                 f"[vault_structure] entry {title}: notes must be a non-empty string"
             )
-        entries.append(VaultEntry(title=title, notes=notes))
+        generated_password = entry_raw.get("generated_password")
+        if generated_password is not None and not isinstance(
+            generated_password, str
+        ):
+            raise ConfigError(
+                f"[vault_structure] entry {title}: generated_password must be "
+                "a string like 'proquint-7'"
+            )
+        if generated_password is not None and not GENERATED_PASSWORD_RE.match(
+            generated_password
+        ):
+            raise ConfigError(
+                f"[vault_structure] entry {title}: generated_password must "
+                "match 'proquint-N' with a positive word count"
+            )
+        entries.append(
+            VaultEntry(
+                title=title,
+                notes=notes,
+                generated_password=generated_password,
+            )
+        )
     groups_raw = raw.get("groups")
     if groups_raw is None:
         groups: tuple[VaultEntry, ...] = ()

@@ -29,6 +29,17 @@ PRIVATE_KEY_BYTES = (
 )
 PUBLIC_KEY_LINE = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake Pyntara_mesh"
 
+PF_PRIVATE_KEY_BYTES = (
+    b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
+    b"fake encrypted port-forwarding key material\n"
+    b"-----END OPENSSH PRIVATE KEY-----\n"
+)
+PF_PUBLIC_KEY_LINE = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePf Pyntara_port_forwarding"
+)
+PF_OPTIONS = 'restrict,port-forwarding,permitlisten="*"'
+PF_AUTHORIZED_LINE = f"{PF_OPTIONS} {PF_PUBLIC_KEY_LINE}"
+
 DROPIN_HEADER = "# Managed by the Pyntara ssh_daemon_setup task."
 
 DEFAULT_DIRECTIVES = (
@@ -135,6 +146,12 @@ def _install_fixtures(
     data_dir.mkdir(parents=True)
     (data_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
     (data_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
+    (data_dir / cfg.port_forwarding_private_key_file_name).write_bytes(
+        PF_PRIVATE_KEY_BYTES
+    )
+    (data_dir / cfg.port_forwarding_public_key_file_name).write_text(
+        PF_PUBLIC_KEY_LINE + "\n"
+    )
     monkeypatch.setattr(ssh_daemon_setup, "SSH_DATA_DIR", data_dir)
     return data_dir
 
@@ -272,8 +289,15 @@ def _deploy_keys_directories(ctx: Context, tmp_path: Path) -> list[Path]:
         ssh_dir.mkdir(parents=True, exist_ok=True)
         (ssh_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
         (ssh_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
+        (ssh_dir / cfg.port_forwarding_private_key_file_name).write_bytes(
+            PF_PRIVATE_KEY_BYTES
+        )
+        (ssh_dir / cfg.port_forwarding_public_key_file_name).write_text(
+            PF_PUBLIC_KEY_LINE + "\n"
+        )
         (ssh_dir / "authorized_keys").write_text(
-            PUBLIC_KEY_LINE + "\n", encoding="utf-8"
+            PUBLIC_KEY_LINE + "\n" + PF_AUTHORIZED_LINE + "\n",
+            encoding="utf-8",
         )
     return directories
 
@@ -407,12 +431,21 @@ def test_writes_dropin_and_deploys_keys(
         assert (ssh_dir / cfg.public_key_file_name).read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n"
         )
+        assert (ssh_dir / cfg.port_forwarding_private_key_file_name).read_bytes() == (
+            PF_PRIVATE_KEY_BYTES
+        )
+        assert (
+            ssh_dir / cfg.port_forwarding_public_key_file_name
+        ).read_text(encoding="utf-8") == (PF_PUBLIC_KEY_LINE + "\n")
         assert (ssh_dir / "authorized_keys").read_text(encoding="utf-8") == (
-            PUBLIC_KEY_LINE + "\n"
+            PUBLIC_KEY_LINE + "\n" + PF_AUTHORIZED_LINE + "\n"
         )
         assert (ssh_dir.stat().st_mode & 0o777) == 0o700
         assert (ssh_dir / cfg.private_key_file_name).stat().st_mode & 0o777 == 0o600
         assert (ssh_dir / cfg.public_key_file_name).stat().st_mode & 0o777 == 0o644
+        assert (
+            ssh_dir / cfg.port_forwarding_private_key_file_name
+        ).stat().st_mode & 0o777 == 0o600
         assert (ssh_dir / "authorized_keys").stat().st_mode & 0o777 == 0o600
 
 
@@ -439,6 +472,7 @@ def test_authorized_keys_has_no_duplicates_on_rerun(
     for ssh_dir in directories:
         lines = (ssh_dir / "authorized_keys").read_text(encoding="utf-8").splitlines()
         assert lines.count(PUBLIC_KEY_LINE) == 1
+        assert lines.count(PF_AUTHORIZED_LINE) == 1
 
 
 def test_missing_user_is_skipped(
@@ -491,6 +525,23 @@ def test_missing_key_files_are_an_error(
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
     assert "missing in" in (result.error or "")
+
+
+def test_missing_port_forwarding_key_files_are_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A port-forwarding key file missing from the repository data
+    # directory stops the task, so no machine deploys a half mesh.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    _install_fake(monkeypatch)
+    cfg = ctx.config.ssh_daemon_setup
+    (Path(ssh_daemon_setup.SSH_DATA_DIR) / cfg.port_forwarding_private_key_file_name).unlink()
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is False
+    assert "port-forwarding key files" in (result.error or "")
 
 
 def test_empty_directives_removes_dropin(

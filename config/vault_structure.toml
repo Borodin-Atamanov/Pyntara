@@ -29,6 +29,15 @@ notes = "Credentials of the System Metrics Google Drive web app. The username fi
 title = "three_x_ui_credentials"
 notes = "Credentials of the 3x-ui Xray panel on this machine. The username field carries the panel admin username, the password field carries the panel admin password, the url field carries the panel base URL (http://127.0.0.1:PORT/BASE_PATH). Additional values are stored in the notes field as key=value lines: XUI_PANEL_PORT, XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE. Consumed by the three_x_ui_xray_setup task stage 2, which reads the credentials from /etc/x-ui/install-result.env and writes them into this entry on first run."
 
+[[vault_structure.entries]]
+title = "ssh_passphase_for_port_forwarding"
+generated_password = "proquint-7"
+notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The value exists only in the production vault, never in the default vault: when the regeneration tooling creates the entry in a vault that lacks it, it generates a fresh password of 7 proquint words joined by dashes, so the production secret is never copied."
+
 [[vault_structure.groups]]
 title = "NextDNS"
 notes = "NextDNS profile accounts, one entry per profile. The username field holds the 6-hex profile ID, the title pairs the ID with a proquint name, other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the accounts survive every vault regeneration. Consumed by the nextdns_setup_system_wide task, which derives one profile per machine hostname."
+
+[[vault_structure.groups]]
+title = "port_forwarding_servers"
+notes = "Port-forwarding server addresses, one entry per server. The url field holds the address (ipv4, ipv6 or a url), other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the addresses survive every vault regeneration. The data exists only in the production vault, never in the default vault: a runtime vault without the group makes the auto_port_forwarding service connect to nothing. Consumed by the auto_port_forwarding service."

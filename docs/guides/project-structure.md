@@ -49,8 +49,9 @@ src/pyntara/config_edit.py — Line-level config editing helpers (see [Configura
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.  
 src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel address from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.  
 src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.  
-src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.  
-src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.  
+src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.
+src/pyntara/port_forwarding.py — Long-running Auto Port Forwarding service: keeps reverse ssh tunnels to the vault port-forwarding servers, records the granted remote ports and reports them through the metrics command. Runs as `python -m pyntara.port_forwarding`.
+src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
 src/pyntara/tor_address.py — Deployed address command: prints the Tor onion address from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address`.  
 src/pyntara/yggdrasil.py — Shared Yggdrasil helpers: parse the node self address from yggdrasilctl JSON output. Imported by yggdrasil_service_setup and yggdrasil_address.  
@@ -86,8 +87,9 @@ three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupCon
 tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup  
 ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup  
 ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  
-nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide  
-system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup  
+nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
+port_forwarding_setup -> config/port_forwarding_setup.py -> PortForwardingSetupConfig -> port_forwarding_setup
+system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
 vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  
 local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup  
 tasks -> config/tasks.py -> tuple[TaskConfig, ...] -> task_catalog.py

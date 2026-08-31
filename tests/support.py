@@ -27,6 +27,7 @@ from pyntara.config import (
     KdeSettingsConfig,
     LocalVaultSetupConfig,
     NextdnsSetupSystemWideConfig,
+    PortForwardingSetupConfig,
     SshClientSetupConfig,
     SshDaemonSetupConfig,
     SshDirective,
@@ -432,6 +433,11 @@ def make_config(
     ssh_daemon_dropin_file_mode: int = 0o644,
     ssh_daemon_private_key_file_name: str = "id_ed25519",
     ssh_daemon_public_key_file_name: str = "id_ed25519.pub",
+    ssh_daemon_port_forwarding_private_key_file_name: str = "id_ed25519_pf",
+    ssh_daemon_port_forwarding_public_key_file_name: str = "id_ed25519_pf.pub",
+    ssh_daemon_port_forwarding_authorized_keys_options: str = (
+        'restrict,port-forwarding,permitlisten="*"'
+    ),
     ssh_daemon_private_key_file_mode: int = 0o600,
     ssh_daemon_public_key_file_mode: int = 0o644,
     ssh_daemon_authorized_keys_file_mode: int = 0o600,
@@ -439,6 +445,7 @@ def make_config(
     ssh_daemon_root_ssh_dir: Path = Path("/root/.ssh"),
     ssh_daemon_users: tuple[str, ...] = ("i", "j", "k"),
     ssh_daemon_directives: tuple[SshDirective, ...] = (
+        SshDirective(name="Port", value="30222"),
         SshDirective(name="PubkeyAuthentication", value="yes"),
     ),
     ssh_client_ssh_config_path: Path = Path("/etc/ssh/ssh_config"),
@@ -519,6 +526,25 @@ def make_config(
     nextdns_profile_id_file_path: Path = Path("/var/lib/pyntara/nextdns_profile_id"),
     nextdns_profile_id_file_mode: int = 0o644,
     nextdns_error_priority: int = 3,
+    port_forwarding_vault_group_title: str = "port_forwarding_servers",
+    port_forwarding_passphrase_entry_title: str = "ssh_passphase_for_port_forwarding",
+    port_forwarding_remote_ssh_user: str = "i",
+    port_forwarding_desired_port_min: int = 40000,
+    port_forwarding_desired_port_max: int = 49999,
+    port_forwarding_server_alive_interval_seconds: int = 61,
+    port_forwarding_server_alive_count_max: int = 3,
+    port_forwarding_connect_timeout_seconds: int = 31,
+    port_forwarding_backoff_base_seconds: int = 2,
+    port_forwarding_backoff_multiplier: int = 2,
+    port_forwarding_backoff_max_seconds: int = 1024,
+    port_forwarding_state_file_path: Path = Path(
+        "/var/lib/pyntara/port_forwarding_state.json"
+    ),
+    port_forwarding_report_file_name: str = "port_forwarding-{hostname}.json",
+    port_forwarding_service_unit_name: str = "auto_port_forwarding.service",
+    port_forwarding_service_restart_seconds: int = 30,
+    port_forwarding_journal_identifier: str = "auto_port_forwarding",
+    port_forwarding_error_priority: int = 3,
     vault_entries: tuple[tuple[str, str], ...] = (
         ("password_salt", "Salt for deterministic password derivation."),
         ("pyntara_local_vault_password", "Password for the runtime secret vault."),
@@ -821,6 +847,15 @@ def make_config(
             dropin_file_mode=ssh_daemon_dropin_file_mode,
             private_key_file_name=ssh_daemon_private_key_file_name,
             public_key_file_name=ssh_daemon_public_key_file_name,
+            port_forwarding_private_key_file_name=(
+                ssh_daemon_port_forwarding_private_key_file_name
+            ),
+            port_forwarding_public_key_file_name=(
+                ssh_daemon_port_forwarding_public_key_file_name
+            ),
+            port_forwarding_authorized_keys_options=(
+                ssh_daemon_port_forwarding_authorized_keys_options
+            ),
             private_key_file_mode=ssh_daemon_private_key_file_mode,
             public_key_file_mode=ssh_daemon_public_key_file_mode,
             authorized_keys_file_mode=ssh_daemon_authorized_keys_file_mode,
@@ -898,6 +933,27 @@ def make_config(
             profile_id_file_path=nextdns_profile_id_file_path,
             profile_id_file_mode=nextdns_profile_id_file_mode,
             error_priority=nextdns_error_priority,
+        ),
+        port_forwarding_setup=PortForwardingSetupConfig(
+            vault_group_title=port_forwarding_vault_group_title,
+            passphrase_entry_title=port_forwarding_passphrase_entry_title,
+            remote_ssh_user=port_forwarding_remote_ssh_user,
+            desired_port_min=port_forwarding_desired_port_min,
+            desired_port_max=port_forwarding_desired_port_max,
+            server_alive_interval_seconds=(
+                port_forwarding_server_alive_interval_seconds
+            ),
+            server_alive_count_max=port_forwarding_server_alive_count_max,
+            connect_timeout_seconds=port_forwarding_connect_timeout_seconds,
+            backoff_base_seconds=port_forwarding_backoff_base_seconds,
+            backoff_multiplier=port_forwarding_backoff_multiplier,
+            backoff_max_seconds=port_forwarding_backoff_max_seconds,
+            state_file_path=port_forwarding_state_file_path,
+            report_file_name=port_forwarding_report_file_name,
+            service_unit_name=port_forwarding_service_unit_name,
+            service_restart_seconds=port_forwarding_service_restart_seconds,
+            journal_identifier=port_forwarding_journal_identifier,
+            error_priority=port_forwarding_error_priority,
         ),
         local_vault_setup=LocalVaultSetupConfig(
             source_vault_production=local_vault_source_production,

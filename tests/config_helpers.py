@@ -196,6 +196,9 @@ def base_config() -> str:
         'dropin_file_mode = "0644"\n'
         'private_key_file_name = "id_ed25519"\n'
         'public_key_file_name = "id_ed25519.pub"\n'
+        'port_forwarding_private_key_file_name = "id_ed25519_pf"\n'
+        'port_forwarding_public_key_file_name = "id_ed25519_pf.pub"\n'
+        'port_forwarding_authorized_keys_options = \'restrict,port-forwarding,permitlisten="*"\'\n'
         'private_key_file_mode = "0600"\n'
         'public_key_file_mode = "0644"\n'
         'authorized_keys_file_mode = "0600"\n'
@@ -213,6 +216,24 @@ def base_config() -> str:
         'vault_group_title = "NextDNS"\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
         'profile_id_file_mode = "0644"\n'
+        "error_priority = 3\n"
+        "[port_forwarding_setup]\n"
+        'vault_group_title = "port_forwarding_servers"\n'
+        'passphrase_entry_title = "ssh_passphase_for_port_forwarding"\n'
+        'remote_ssh_user = "i"\n'
+        "desired_port_min = 40000\n"
+        "desired_port_max = 49999\n"
+        "server_alive_interval_seconds = 61\n"
+        "server_alive_count_max = 3\n"
+        "connect_timeout_seconds = 31\n"
+        "backoff_base_seconds = 2\n"
+        "backoff_multiplier = 2\n"
+        "backoff_max_seconds = 1024\n"
+        'state_file_path = "/var/lib/pyntara/port_forwarding_state.json"\n'
+        'report_file_name = "port_forwarding-{hostname}.json"\n'
+        'service_unit_name = "auto_port_forwarding.service"\n'
+        "service_restart_seconds = 30\n"
+        'journal_identifier = "auto_port_forwarding"\n'
         "error_priority = 3\n"
         "[dnsproxy_setup]\n"
         'github_repo = "AdguardTeam/dnsproxy"\n'
@@ -308,6 +329,8 @@ def base_config() -> str:
         'notes = "Google script credentials."\n'
         '[[vault_structure.entries]]\ntitle = "three_x_ui_credentials"\n'
         'notes = "3x-ui panel credentials."\n'
+        '[[vault_structure.entries]]\ntitle = "ssh_passphase_for_port_forwarding"\n'
+        'generated_password = "proquint-7"\nnotes = "Port forwarding key passphrase."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'

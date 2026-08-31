@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -35,6 +36,18 @@ DEFAULT_ENTRIES: list[dict[str, Any]] = [
 DEFAULT_GROUPS: list[dict[str, Any]] = [
     {"title": "NextDNS", "notes": "NextDNS profile accounts."},
 ]
+
+PASSPHRASE_ENTRY: dict[str, Any] = {
+    "title": "ssh_passphase_for_port_forwarding",
+    "generated_password": "proquint-7",
+    "notes": "Port forwarding key passphrase.",
+}
+
+# One proquint word is five letters, consonant-vowel-consonant-vowel-
+# consonant, from the draft-rayner-proquint alphabet.
+PROQUINT_WORD_RE = re.compile(
+    r"^[b-df-hj-np-tv-z][aiou][b-df-hj-np-tv-z][aiou][b-df-hj-np-tv-z]$"
+)
 
 VAULT_PASSWORD = "vault-secret"
 
@@ -159,6 +172,100 @@ def test_creates_vault_when_file_absent(
     assert script is not None
     assert script.notes == "Auth key of the System Metrics Google Drive web app."
     assert not script.password
+
+
+def test_generated_password_entry_gets_proquint_password(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An entry with generated_password "proquint-7" receives a freshly
+    # generated password of seven proquint words joined by dashes, so the
+    # production secret is never copied into another vault.
+    _prepare(gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES + [PASSPHRASE_ENTRY])
+    vault_path = tmp_path / "vault.kdbx"
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    entry = kp.find_entries(
+        title="ssh_passphase_for_port_forwarding",
+        group=kp.root_group,
+        recursive=False,
+        first=True,
+    )
+    assert entry is not None
+    assert entry.password
+    parts = entry.password.split("-")
+    assert len(parts) == 7
+    assert all(PROQUINT_WORD_RE.match(part) for part in parts)
+
+
+def test_update_keeps_existing_generated_entry_password(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A generated-password entry that already exists keeps its value, so
+    # the manually maintained production passphrase survives an update.
+    _prepare(gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES + [PASSPHRASE_ENTRY])
+    vault_path = tmp_path / "vault.kdbx"
+    create_database(str(vault_path), password=VAULT_PASSWORD)
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    kp.add_entry(
+        kp.root_group,
+        "ssh_passphase_for_port_forwarding",
+        "",
+        "manual-production-passphrase",
+        None,
+        "Port forwarding key passphrase.",
+    )
+    kp.save()
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp2 = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    entry = kp2.find_entries(
+        title="ssh_passphase_for_port_forwarding",
+        group=kp2.root_group,
+        recursive=False,
+        first=True,
+    )
+    assert entry is not None
+    assert entry.password == "manual-production-passphrase"
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        # generated_password with an invalid word count
+        {
+            "title": "bad",
+            "generated_password": "proquint-0",
+            "notes": "x",
+        },
+        # generated_password with an invalid spec
+        {
+            "title": "bad",
+            "generated_password": "dice-7",
+            "notes": "x",
+        },
+        # both password and generated_password set
+        {
+            "title": "bad",
+            "password": "manual",
+            "generated_password": "proquint-7",
+            "notes": "x",
+        },
+        # generated_password is not a string
+        {
+            "title": "bad",
+            "generated_password": 7,
+            "notes": "x",
+        },
+    ],
+)
+def test_generated_password_wrong_config_raises(
+    gen: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry: dict[str, Any],
+) -> None:
+    _prepare(gen, tmp_path, monkeypatch, entries=[entry])
+    vault_path = tmp_path / "vault.kdbx"
+    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
 
 
 def test_creates_vault_when_file_empty(

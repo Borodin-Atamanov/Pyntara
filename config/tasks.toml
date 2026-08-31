@@ -67,6 +67,12 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "port_forwarding_setup"
+description = "Deploy the Auto Port Forwarding service that keeps reverse ssh tunnels to the vault port-forwarding servers."
+depends = ["ssh_daemon_setup", "local_vault_setup", "system_metrics_setup", "hostname"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "kde_keyboard_setup"
 description = "Configure KDE keyboard layouts and the layout indicator."
 depends = []

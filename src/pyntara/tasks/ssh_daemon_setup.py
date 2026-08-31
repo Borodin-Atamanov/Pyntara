@@ -184,17 +184,22 @@ def _deploy_keys(
     private_bytes: bytes,
     public_bytes: bytes,
     public_line: str,
+    pf_private_bytes: bytes,
+    pf_public_bytes: bytes,
+    pf_public_line: str,
     cfg: SshDaemonSetupConfig,
     uid: int,
     gid: int,
 ) -> bool:
-    """Deploy the keys into one .ssh directory; True when anything changed.
+    """Deploy the main and port-forwarding key pairs; True when changed.
 
     The .ssh directory is created with the configured mode and owned by
     the user, the private and public key files are written with their
-    configured modes and the public key line is guaranteed in
-    authorized_keys. The private key stays encrypted, because it is
-    copied as is from the repository.
+    configured modes and the public key lines are guaranteed in
+    authorized_keys. Both private keys stay encrypted, because they are
+    copied as is from the repository; the port-forwarding public key
+    line carries the configured restriction prefix, so that key can only
+    open reverse tunnels.
     """
 
     changed = False
@@ -220,6 +225,30 @@ def _deploy_keys(
     if _ensure_authorized_key(
         ssh_dir / "authorized_keys",
         public_line,
+        cfg.authorized_keys_file_mode,
+        uid,
+        gid,
+    ):
+        changed = True
+    if _write_bytes_if_different(
+        ssh_dir / cfg.port_forwarding_private_key_file_name,
+        pf_private_bytes,
+        cfg.private_key_file_mode,
+        uid,
+        gid,
+    ):
+        changed = True
+    if _write_bytes_if_different(
+        ssh_dir / cfg.port_forwarding_public_key_file_name,
+        pf_public_bytes,
+        cfg.public_key_file_mode,
+        uid,
+        gid,
+    ):
+        changed = True
+    if _ensure_authorized_key(
+        ssh_dir / "authorized_keys",
+        pf_public_line,
         cfg.authorized_keys_file_mode,
         uid,
         gid,
@@ -301,6 +330,8 @@ def task(ctx: Context) -> TaskResult:
 
     private_source = SSH_DATA_DIR / cfg.private_key_file_name
     public_source = SSH_DATA_DIR / cfg.public_key_file_name
+    pf_private_source = SSH_DATA_DIR / cfg.port_forwarding_private_key_file_name
+    pf_public_source = SSH_DATA_DIR / cfg.port_forwarding_public_key_file_name
     if not private_source.is_file() or not public_source.is_file():
         return TaskResult(
             success=False,
@@ -309,9 +340,25 @@ def task(ctx: Context) -> TaskResult:
                 f"{cfg.public_key_file_name} missing in {SSH_DATA_DIR}"
             ),
         )
+    if not pf_private_source.is_file() or not pf_public_source.is_file():
+        return TaskResult(
+            success=False,
+            error=(
+                f"port-forwarding key files "
+                f"{cfg.port_forwarding_private_key_file_name} and "
+                f"{cfg.port_forwarding_public_key_file_name} "
+                f"missing in {SSH_DATA_DIR}"
+            ),
+        )
     private_bytes = private_source.read_bytes()
     public_bytes = public_source.read_bytes()
     public_line = public_bytes.decode("utf-8").strip()
+    pf_private_bytes = pf_private_source.read_bytes()
+    pf_public_bytes = pf_public_source.read_bytes()
+    pf_public_line = (
+        f"{cfg.port_forwarding_authorized_keys_options} "
+        f"{pf_public_bytes.decode('utf-8').strip()}"
+    )
 
     changed = False
 
@@ -400,6 +447,9 @@ def task(ctx: Context) -> TaskResult:
         private_bytes,
         public_bytes,
         public_line,
+        pf_private_bytes,
+        pf_public_bytes,
+        pf_public_line,
         cfg,
         0,
         0,
@@ -419,6 +469,9 @@ def task(ctx: Context) -> TaskResult:
             private_bytes,
             public_bytes,
             public_line,
+            pf_private_bytes,
+            pf_public_bytes,
+            pf_public_line,
             cfg,
             record.pw_uid,
             record.pw_gid,

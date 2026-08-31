@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import re
 import sys
 import tempfile
 import tomllib
@@ -75,6 +76,7 @@ except ModuleNotFoundError:
 # the config reading.
 from pyntara.config import ConfigError
 from pyntara.config.loader import render_config_source
+from pyntara.utils import proquint_encode
 
 # KeePass entry fields that a [vault_structure] entry may name. The config
 # names must equal the database field names one-to-one, no mapping; any
@@ -82,6 +84,14 @@ from pyntara.config.loader import render_config_source
 # values that are not structure (url, password) are maintained directly in
 # the vault databases, not in the config.
 VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
+
+# The optional generated_password field of an entry, a generation
+# instruction rather than a database field: "proquint-N" asks the script
+# to generate a random password of N proquint words joined by dashes when
+# it creates the entry, so the production secret is never copied into
+# another vault.
+GENERATED_PASSWORD_FIELD = "generated_password"
+GENERATED_PASSWORD_RE = re.compile(r"^proquint-([1-9][0-9]*)$")
 
 CONFIG_PATH = REPO_ROOT / "config"
 EXIT_OK = 0
@@ -145,12 +155,14 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
     for index, entry_raw in enumerate(entries_raw):
         if not isinstance(entry_raw, dict):
             raise ScriptError(f"[vault_structure] entry {index + 1} must be a table")
-        unknown = sorted(name for name in entry_raw if name not in VAULT_FIELD_NAMES)
+        unknown = sorted(
+            name for name in entry_raw if name not in VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,)
+        )
         if unknown:
             raise ScriptError(
                 f"[vault_structure] entry {index + 1} names unknown field(s) "
                 f"{', '.join(unknown)}; expected one of "
-                f"{', '.join(VAULT_FIELD_NAMES)}"
+                f"{', '.join(VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,))}"
             )
         title = entry_raw.get("title")
         if not isinstance(title, str) or not title:
@@ -162,7 +174,7 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
             raise ScriptError(f"[vault_structure] duplicate entry title: {title}")
         seen_titles.add(title)
         fields: dict[str, str] = {}
-        for name in VAULT_FIELD_NAMES:
+        for name in VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,):
             value = entry_raw.get(name)
             if value is None:
                 continue
@@ -172,6 +184,17 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
                     "a string"
                 )
             fields[name] = value
+        generated = fields.get(GENERATED_PASSWORD_FIELD)
+        if generated is not None and not GENERATED_PASSWORD_RE.match(generated):
+            raise ScriptError(
+                f"[vault_structure] entry {title}: generated_password must "
+                "match 'proquint-N' with a positive word count"
+            )
+        if generated is not None and "password" in fields:
+            raise ScriptError(
+                f"[vault_structure] entry {title}: cannot set both password "
+                "and generated_password"
+            )
         entries.append(fields)
     return entries
 
@@ -306,19 +329,41 @@ def _save_and_swap(
     print(f"saved: {vault_path} opens with the provided password")
 
 
+def _generated_password(fields: dict[str, str]) -> str | None:
+    """A freshly generated password for the entry, or None.
+
+    An entry with generated_password "proquint-N" receives a random
+    password of N proquint words joined by dashes, so the production
+    secret is never copied into another vault. The word count is taken
+    from the validated spec.
+    """
+
+    spec = fields.get(GENERATED_PASSWORD_FIELD)
+    if spec is None:
+        return None
+    match = GENERATED_PASSWORD_RE.match(spec)
+    if match is None:
+        raise ScriptError(
+            f"entry {fields['title']}: invalid generated_password spec {spec!r}"
+        )
+    word_count = int(match.group(1))
+    return proquint_encode(os.urandom(2 * word_count))
+
+
 def _add_entry(kp: PyKeePass, fields: dict[str, str]) -> None:
     """Add one entry to the root group from the configured fields.
 
     The configured field names are the add_entry parameters, so the
-    one-to-one mapping is applied verbatim; absent optional fields stay
-    empty or None.
+    one-to-one mapping is applied verbatim; a generated_password spec is
+    replaced by a freshly generated password, and absent optional fields
+    stay empty or None.
     """
 
     kp.add_entry(
         kp.root_group,
         title=fields["title"],
         username=fields.get("username", ""),
-        password=fields.get("password", ""),
+        password=_generated_password(fields) or fields.get("password", ""),
         url=fields.get("url"),
         notes=fields.get("notes"),
     )
@@ -355,9 +400,17 @@ def _ensure_group(
 
 
 def _report_empty_entries(entries: list[dict[str, str]]) -> None:
-    """List the entries without a password value; they need manual filling."""
+    """List the entries without a password value; they need manual filling.
 
-    empty = [fields["title"] for fields in entries if not fields.get("password")]
+    Entries with a generated_password spec are skipped: they receive a
+    generated password on creation and are never empty.
+    """
+
+    empty = [
+        fields["title"]
+        for fields in entries
+        if not fields.get("password") and not fields.get(GENERATED_PASSWORD_FIELD)
+    ]
     if empty:
         print(
             "note: entries with an empty password value, fill them in "

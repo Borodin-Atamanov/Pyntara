@@ -46,6 +46,20 @@ dropin_file_mode = "0644"
 # automatically without -i or ssh-add.
 private_key_file_name = "id_ed25519"
 public_key_file_name = "id_ed25519.pub"
+# Repository file names of the port-forwarding key pair, deployed in
+# parallel with the main pair to the same .ssh directories. The key is
+# dedicated to reverse ssh tunnels only: its private key stays
+# passphrase-protected, its public key line in authorized_keys carries
+# the restriction prefix below. Consumed by the auto_port_forwarding
+# service, which unlocks the private key with the vault passphrase.
+port_forwarding_private_key_file_name = "id_ed25519_pf"
+port_forwarding_public_key_file_name = "id_ed25519_pf.pub"
+# Restriction prefix of the port-forwarding public key line in
+# authorized_keys: restrict disables every capability, port-forwarding
+# re-enables only port forwarding, permitlisten allows any listen port
+# on the server side, so the key can only open reverse tunnels and
+# nothing else.
+port_forwarding_authorized_keys_options = 'restrict,port-forwarding,permitlisten="*"'
 # File modes of the deployed key files, as octal strings: the private
 # key stays readable only by its owner, the public key is world-readable.
 private_key_file_mode = "0600"

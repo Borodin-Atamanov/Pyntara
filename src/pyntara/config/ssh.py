@@ -48,7 +48,13 @@ class SshDaemonSetupConfig:
     authorized_keys_file_mode for the authorized_keys file; the public
     key is appended to authorized_keys without duplicates. directives
     are the sshd_config keywords guaranteed by the task, rendered into
-    the drop-in in order. package_status_timeout_seconds bounds the
+    the drop-in in order. The port-forwarding key pair is deployed the
+    same way in parallel with the main pair: its file names come from
+    port_forwarding_private_key_file_name and
+    port_forwarding_public_key_file_name, and its public key line in
+    authorized_keys carries port_forwarding_authorized_keys_options,
+    the restriction prefix that permits only port forwarding.
+    package_status_timeout_seconds bounds the
     dpkg status query, install_retries is the retry count of the
     package install, start_check_attempts and
     start_check_retry_delay_seconds bound the loop that waits for the
@@ -74,6 +80,9 @@ class SshDaemonSetupConfig:
     root_ssh_dir: Path
     users: tuple[str, ...]
     directives: tuple[SshDirective, ...]
+    port_forwarding_private_key_file_name: str
+    port_forwarding_public_key_file_name: str
+    port_forwarding_authorized_keys_options: str
 
 
 @dataclass(frozen=True)
@@ -237,6 +246,18 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         users=tuple(users_raw),
         directives=_ssh_directives_field(
             raw.get("directives"), "ssh_daemon_setup.directives"
+        ),
+        port_forwarding_private_key_file_name=_nonempty_string_field(
+            raw.get("port_forwarding_private_key_file_name"),
+            "ssh_daemon_setup.port_forwarding_private_key_file_name",
+        ),
+        port_forwarding_public_key_file_name=_nonempty_string_field(
+            raw.get("port_forwarding_public_key_file_name"),
+            "ssh_daemon_setup.port_forwarding_public_key_file_name",
+        ),
+        port_forwarding_authorized_keys_options=_nonempty_string_field(
+            raw.get("port_forwarding_authorized_keys_options"),
+            "ssh_daemon_setup.port_forwarding_authorized_keys_options",
         ),
     )
 

@@ -226,6 +226,9 @@ sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"
 dropin_file_mode = "0644"
 private_key_file_name = "id_ed25519"
 public_key_file_name = "id_ed25519.pub"
+port_forwarding_private_key_file_name = "id_ed25519_pf"
+port_forwarding_public_key_file_name = "id_ed25519_pf.pub"
+port_forwarding_authorized_keys_options = 'restrict,port-forwarding,permitlisten="*"'
 private_key_file_mode = "0600"
 public_key_file_mode = "0644"
 authorized_keys_file_mode = "0600"
@@ -258,6 +261,25 @@ value = "no"
 vault_group_title = "NextDNS"
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"
+error_priority = 3
+
+[port_forwarding_setup]
+vault_group_title = "port_forwarding_servers"
+passphrase_entry_title = "ssh_passphase_for_port_forwarding"
+remote_ssh_user = "i"
+desired_port_min = 40000
+desired_port_max = 49999
+server_alive_interval_seconds = 61
+server_alive_count_max = 3
+connect_timeout_seconds = 31
+backoff_base_seconds = 2
+backoff_multiplier = 2
+backoff_max_seconds = 1024
+state_file_path = "/var/lib/pyntara/port_forwarding_state.json"
+report_file_name = "port_forwarding-{hostname}.json"
+service_unit_name = "auto_port_forwarding.service"
+service_restart_seconds = 30
+journal_identifier = "auto_port_forwarding"
 error_priority = 3
 
 [system_metrics_setup]
@@ -349,6 +371,11 @@ notes = "Google Drive web app credentials for System Metrics."
 [[vault_structure.entries]]
 title = "three_x_ui_credentials"
 notes = "3x-ui panel credentials on this machine."
+
+[[vault_structure.entries]]
+title = "ssh_passphase_for_port_forwarding"
+generated_password = "proquint-7"
+notes = "Passphrase of the port-forwarding key."
 
 [dnsproxy_setup]
 github_repo = "AdguardTeam/dnsproxy"
@@ -688,6 +715,14 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.ssh_daemon_setup.dropin_file_mode == 0o644
     assert config.ssh_daemon_setup.private_key_file_name == "id_ed25519"
     assert config.ssh_daemon_setup.public_key_file_name == "id_ed25519.pub"
+    assert (
+        config.ssh_daemon_setup.port_forwarding_private_key_file_name
+        == "id_ed25519_pf"
+    )
+    assert (
+        config.ssh_daemon_setup.port_forwarding_authorized_keys_options
+        == 'restrict,port-forwarding,permitlisten="*"'
+    )
     assert config.ssh_daemon_setup.private_key_file_mode == 0o600
     assert config.ssh_daemon_setup.public_key_file_mode == 0o644
     assert config.ssh_daemon_setup.authorized_keys_file_mode == 0o600

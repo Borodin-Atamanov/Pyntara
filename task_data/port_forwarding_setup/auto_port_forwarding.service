@@ -1,0 +1,15 @@
+[Unit]
+Description=Auto port forwarding
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
+StandardOutput=null
+Restart=on-failure
+RestartSec=$restart_seconds
+$exec_lines
+
+[Install]
+WantedBy=multi-user.target

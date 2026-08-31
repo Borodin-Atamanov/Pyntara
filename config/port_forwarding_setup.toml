@@ -1,0 +1,56 @@
+[port_forwarding_setup]
+# Auto port forwarding parameters (docs/spec/port-forwarding-setup.md).
+# The task deploys the auto_port_forwarding service that, at system
+# start, opens the runtime vault, reads the port-forwarding server
+# addresses and the passphrase of the port-forwarding key, unlocks the
+# key in a dedicated ssh-agent and keeps a reverse ssh tunnel to every
+# server, forwarding the local SSH daemon port. The forwarded local port
+# itself is not configured here: it is the ssh_daemon_setup Port
+# directive, the single source of truth. The key pair lives in
+# task_data/ssh_daemon_setup/ and is deployed by the ssh_daemon_setup
+# task, which also guarantees the restricted public key line in
+# authorized_keys.
+# Title of the vault subgroup that carries the port-forwarding server
+# addresses, one entry per server with the address in the url field. The
+# address may be ipv4, ipv6 or a url. The group is data: the
+# regeneration tooling creates it but never fills or deletes entries.
+vault_group_title = "port_forwarding_servers"
+# Title of the vault entry that carries the passphrase of the deployed
+# port-forwarding private key. The value must name an entry of the
+# [vault_structure] table. The entry exists only in the production
+# vault; a vault without it makes the service connect to nothing.
+passphrase_entry_title = "ssh_passphase_for_port_forwarding"
+# User the service connects as on every port-forwarding server.
+remote_ssh_user = "i"
+# Lower and upper bound of the deterministic desired remote port, derived
+# as a function of the machine hostname. When the desired port is busy on
+# the server, the service asks for a random port instead and records it.
+desired_port_min = 40000
+desired_port_max = 49999
+# ssh keepalive: seconds between alive probes and the number of missed
+# probes before the connection is considered dead.
+server_alive_interval_seconds = 61
+server_alive_count_max = 3
+# Seconds a single ssh connection attempt may take before it is given up.
+connect_timeout_seconds = 31
+# Reconnect backoff after a dropped connection: the pause after the first
+# drop is backoff_base_seconds, every further consecutive drop multiplies
+# the pause by backoff_multiplier until backoff_max_seconds, all whole
+# seconds.
+backoff_base_seconds = 2
+backoff_multiplier = 2
+backoff_max_seconds = 1024
+# Path of the root-only JSON file that records the assigned remote ports
+# per server, so a service restart keeps the ports stable.
+state_file_path = "/var/lib/pyntara/port_forwarding_state.json"
+# Name of the telemetry report committed on every assigned-port change,
+# with {hostname} replaced at commit time.
+report_file_name = "port_forwarding-{hostname}.json"
+# Name of the deployed service unit file.
+service_unit_name = "auto_port_forwarding.service"
+# Seconds systemd waits before restarting the service after a failure.
+service_restart_seconds = 30
+# Journal identifier of the service.
+journal_identifier = "auto_port_forwarding"
+# Syslog priority of a serious failure, 0 to 7.
+error_priority = 3

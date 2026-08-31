@@ -106,16 +106,52 @@ def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
 
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
-    # four entries including the three cross-checked titles.
+    # five entries including the cross-checked titles.
     config = load_config(write_config(tmp_path, base_config()))
     assert [entry.title for entry in config.vault_structure.entries] == [
         "password_salt",
         "pyntara_local_vault_password",
         "google_script_key",
         "three_x_ui_credentials",
+        "ssh_passphase_for_port_forwarding",
     ]
     # The groups array is optional: the base config has none.
     assert config.vault_structure.groups == ()
+
+
+def test_load_config_generated_password_parses(tmp_path: Path) -> None:
+    # The optional generated_password field of an entry is carried into the
+    # typed entry; the base config sets proquint-7 for the passphrase entry.
+    config = load_config(write_config(tmp_path, base_config()))
+    entry = next(
+        e
+        for e in config.vault_structure.entries
+        if e.title == "ssh_passphase_for_port_forwarding"
+    )
+    assert entry.generated_password == "proquint-7"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # generated_password is a number, not a string
+        base_config().replace(
+            'generated_password = "proquint-7"', "generated_password = 7"
+        ),
+        # generated_password has an invalid word count
+        base_config().replace(
+            'generated_password = "proquint-7"', 'generated_password = "proquint-0"'
+        ),
+        # generated_password has an invalid spec
+        base_config().replace(
+            'generated_password = "proquint-7"', 'generated_password = "dice-7"'
+        ),
+    ],
+)
+def test_load_config_generated_password_wrong_types_raise(
+    tmp_path: Path, content: str
+) -> None:
+    assert_config_error(tmp_path, content)
 
 
 @pytest.mark.parametrize(
