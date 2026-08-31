@@ -17,8 +17,8 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
     assert section.vault_group_title == "port_forwarding_servers"
     assert section.passphrase_entry_title == "ssh_passphase_for_port_forwarding"
     assert section.remote_ssh_user == "i"
-    assert section.desired_port_min == 40000
-    assert section.desired_port_max == 49999
+    assert section.desired_port_min == 32768
+    assert section.desired_port_max == 60999
     assert section.server_alive_interval_seconds == 61
     assert section.server_alive_count_max == 3
     assert section.connect_timeout_seconds == 31
@@ -43,8 +43,8 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             'vault_group_title = "port_forwarding_servers"\n'
             'passphrase_entry_title = "ssh_passphase_for_port_forwarding"\n'
             'remote_ssh_user = "i"\n'
-            "desired_port_min = 40000\n"
-            "desired_port_max = 49999\n"
+            "desired_port_min = 32768\n"
+            "desired_port_max = 60999\n"
             "server_alive_interval_seconds = 61\n"
             "server_alive_count_max = 3\n"
             "connect_timeout_seconds = 31\n"
@@ -71,14 +71,14 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
         # remote_ssh_user is empty
         lambda c: c.replace('remote_ssh_user = "i"', 'remote_ssh_user = ""'),
         # desired_port_min is zero
-        lambda c: c.replace("desired_port_min = 40000", "desired_port_min = 0"),
+        lambda c: c.replace("desired_port_min = 32768", "desired_port_min = 0"),
         # desired_port_max is out of the TCP port space
         lambda c: c.replace(
-            "desired_port_max = 49999", "desired_port_max = 70000"
+            "desired_port_max = 60999", "desired_port_max = 70000"
         ),
         # desired_port_min exceeds desired_port_max
         lambda c: c.replace(
-            "desired_port_min = 40000", "desired_port_min = 50000"
+            "desired_port_min = 32768", "desired_port_min = 61000"
         ),
         # server_alive_interval_seconds is zero
         lambda c: c.replace(

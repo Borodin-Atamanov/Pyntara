@@ -221,8 +221,8 @@ def base_config() -> str:
         'vault_group_title = "port_forwarding_servers"\n'
         'passphrase_entry_title = "ssh_passphase_for_port_forwarding"\n'
         'remote_ssh_user = "i"\n'
-        "desired_port_min = 40000\n"
-        "desired_port_max = 49999\n"
+        "desired_port_min = 32768\n"
+        "desired_port_max = 60999\n"
         "server_alive_interval_seconds = 61\n"
         "server_alive_count_max = 3\n"
         "connect_timeout_seconds = 31\n"

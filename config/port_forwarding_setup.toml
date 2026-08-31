@@ -23,10 +23,14 @@ passphrase_entry_title = "ssh_passphase_for_port_forwarding"
 # User the service connects as on every port-forwarding server.
 remote_ssh_user = "i"
 # Lower and upper bound of the deterministic desired remote port, derived
-# as a function of the machine hostname. When the desired port is busy on
-# the server, the service asks for a random port instead and records it.
-desired_port_min = 40000
-desired_port_max = 49999
+# as a function of the machine hostname. The defaults are the Linux kernel
+# ephemeral port range, so a desired port that is free on the server falls
+# in the same zone the kernel assigns random ports from. When the desired
+# port is busy on the server, the service asks for a random port instead
+# and records it; the server may grant any port, the bounds do not
+# constrain the granted one.
+desired_port_min = 32768
+desired_port_max = 60999
 # ssh keepalive: seconds between alive probes and the number of missed
 # probes before the connection is considered dead.
 server_alive_interval_seconds = 61
