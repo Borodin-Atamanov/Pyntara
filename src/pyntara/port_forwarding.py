@@ -14,7 +14,9 @@ one, so the port stays stable across reconnects. A dropped connection is
 re-established after the geometric backoff, and every granted-port change
 is saved to the state file and triggers a fresh System Metrics
 collection, so the network report carries the current remote port of the
-machine (docs/spec/port-forwarding-setup.md). A vault without the
+machine (docs/spec/port-forwarding-setup.md). A server whose address is
+a local address of the machine itself, taken from ip -o addr, is
+skipped, so the machine never tunnels onto itself. A vault without the
 server group or the passphrase entry makes the service exit cleanly and
 connect to nothing.
 """
@@ -32,6 +34,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pykeepass import PyKeePass
 
@@ -83,6 +86,73 @@ def read_server_addresses(kp: PyKeePass, group_title: str) -> list[str]:
     if group is None:
         return []
     return [entry.url.strip() for entry in group.entries if entry.url and entry.url.strip()]
+
+
+def own_addresses() -> set[str]:
+    """The machine's own IP addresses from ip -o addr, or an empty set.
+
+    The addresses come from the local interfaces, both families, so a
+    server address that appears here is the machine itself. A failed or
+    missing ip call yields an empty set, so the filter then keeps every
+    server: that errs toward forwarding instead of dropping a real
+    server.
+    """
+
+    try:
+        result = subprocess.run(
+            ["ip", "-o", "addr", "show"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0:
+        return set()
+    own: set[str] = set()
+    for line in result.stdout.splitlines():
+        match = re.search(r"\binet6?\s+([0-9a-fA-F:.]+)", line)
+        if match:
+            own.add(match.group(1))
+    return own
+
+
+def _host_from_address(address: str) -> str:
+    """The host of a server address, with a url scheme stripped.
+
+    A url like https://vpn.example.com resolves to vpn.example.com; a
+    bare ipv4, ipv6 or hostname is returned unchanged. The host is what
+    the comparison with the machine's own addresses operates on.
+    """
+
+    if "://" in address:
+        parsed = urlparse(address)
+        if parsed.hostname:
+            return parsed.hostname
+    return address
+
+
+def filter_own_servers(
+    servers: list[str], own: set[str]
+) -> tuple[list[str], list[str]]:
+    """Split servers into connectable and own-machine ones.
+
+    own carries the machine's own IP addresses from own_addresses; a
+    server whose normalized address is in own is the machine itself and
+    must not get a reverse tunnel, so it is returned in the skipped
+    list. Every other server is returned in the kept list, forwarded as
+    usual.
+    """
+
+    kept: list[str] = []
+    skipped: list[str] = []
+    for server in servers:
+        if _host_from_address(server) in own:
+            skipped.append(server)
+        else:
+            kept.append(server)
+    return kept, skipped
 
 
 def read_passphrase(kp: PyKeePass, entry_title: str) -> str | None:
@@ -561,11 +631,15 @@ def main() -> None:
         )
         raise SystemExit(1)
     servers = read_server_addresses(kp, pf.vault_group_title)
+    own = own_addresses()
+    servers, skipped = filter_own_servers(servers, own)
+    if skipped:
+        _log(f"skipping own server address(es): {', '.join(skipped)}")
     passphrase = read_passphrase(kp, pf.passphrase_entry_title)
     if not servers:
         _log(
-            f"vault group {pf.vault_group_title!r} is absent or empty, "
-            "connecting to nothing"
+            "no port-forwarding servers to connect to: the vault group is "
+            "empty or lists only this machine"
         )
         return
     if not passphrase:

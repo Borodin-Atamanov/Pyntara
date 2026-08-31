@@ -21,6 +21,8 @@ from support import FakeProc, make_config
 import pyntara.port_forwarding as pf
 from pyntara.port_forwarding import (
     desired_port,
+    filter_own_servers,
+    own_addresses,
     read_passphrase,
     read_server_addresses,
     run_forward_loop,
@@ -128,6 +130,58 @@ class TestDesiredPort:
             desired_port(config, hostname) for hostname in ("aaa-babab", "bbb-babab")
         }
         assert len(ports) == 2
+
+
+class TestOwnServers:
+    def test_own_addresses_parses_both_families(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stdout = (
+            "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever\n"
+            "1: lo    inet6 ::1/128 scope host \\       valid_lft forever\n"
+            "2: eth0    inet 192.168.1.5/24 brd 192.168.1.255 scope global "
+            "dynamic eth0\\       valid_lft 86399sec preferred_lft 86399sec\n"
+            "3: wlan0    inet6 fe80::1234:abcd/64 scope link \\       valid_lft "
+            "forever\n"
+        )
+        monkeypatch.setattr(
+            pf.subprocess, "run", lambda *args, **kwargs: FakeProc(0, stdout)
+        )
+        assert own_addresses() == {
+            "127.0.0.1",
+            "::1",
+            "192.168.1.5",
+            "fe80::1234:abcd",
+        }
+
+    def test_own_addresses_failure_keeps_everything(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A failed ip call must not drop any server: the empty set errs
+        # toward forwarding, never toward skipping a real server.
+        monkeypatch.setattr(
+            pf.subprocess, "run", lambda *args, **kwargs: FakeProc(1, "")
+        )
+        assert own_addresses() == set()
+
+    def test_filter_own_servers_splits_by_matching_address(self) -> None:
+        own = {"127.0.0.1", "192.168.1.5", "fe80::1"}
+        servers = [
+            "192.168.1.5",
+            "169.58.51.98",
+            "2001:db8::1",
+            "https://192.168.1.5",
+            "https://vpn.example.com",
+        ]
+        kept, skipped = filter_own_servers(servers, own)
+        assert kept == ["169.58.51.98", "2001:db8::1", "https://vpn.example.com"]
+        assert skipped == ["192.168.1.5", "https://192.168.1.5"]
+
+    def test_filter_own_servers_empty_own_keeps_everything(self) -> None:
+        servers = ["169.58.51.98", "https://vpn.example.com"]
+        kept, skipped = filter_own_servers(servers, set())
+        assert kept == servers
+        assert skipped == []
 
 
 class TestVaultReads:
