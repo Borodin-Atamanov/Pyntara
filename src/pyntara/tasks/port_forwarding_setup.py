@@ -13,8 +13,9 @@ install log instead of surfacing at the first reboot; on a vault
 without the port-forwarding data the service exits cleanly right after
 the start, which is the intended no-op state, not a failure. The task is
 idempotent: it skips when the unit file matches its source and the
-service is enabled; force mode rewrites the unit and restarts the
-service.
+service is enabled; force mode rewrites the unit, removes the
+port-forwarding state file so the service re-derives the desired remote
+port from the hostname, and restarts the service.
 """
 
 from __future__ import annotations
@@ -136,8 +137,10 @@ def task(ctx: Context) -> TaskResult:
     depends on the machine vault content and is verified after a start.
     Otherwise the task writes the unit, reloads systemd, enables the
     service and starts it, and verifies that the started service is not
-    in the failed state. A missing template is a broken deployment and an
-    error.
+    in the failed state. Force mode also removes the port-forwarding
+    state file before the restart, so the service re-derives the desired
+    remote port from the hostname and re-forwards. A missing template is
+    a broken deployment and an error.
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
@@ -194,6 +197,23 @@ def task(ctx: Context) -> TaskResult:
             )
         _log(f"service {service_name} enabled")
         changed = True
+
+    if force:
+        state_path = pf.state_file_path
+        if state_path.exists():
+            try:
+                state_path.unlink()
+            except OSError as exc:
+                return TaskResult(
+                    success=False,
+                    changed=changed,
+                    error=(
+                        "cannot remove the port-forwarding state "
+                        f"{state_path}: {exc}"
+                    ),
+                )
+            _log(f"port-forwarding state {state_path} removed for a fresh port")
+            changed = True
 
     try:
         run_command(["systemctl", "restart", service_name], timeout=timeout)

@@ -60,6 +60,7 @@ def _install_fixtures(
         task_data_root=tmp_path,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
+        port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
     )
     ctx = make_context(task_data_root=tmp_path, config=config)
     return systemd_dir, venv_python, system_config, ctx
@@ -176,6 +177,47 @@ def test_force_rewrites_and_restarts(
         ctx.config.port_forwarding_setup.service_restart_seconds,
     )
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
+    assert any(command[1] == "restart" for command in calls)
+
+
+def test_force_resets_state_for_a_fresh_port(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Force mode removes the recorded port state before the restart, so
+    # the service re-derives the desired port from the hostname.
+    _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    state_path = ctx.config.port_forwarding_setup.state_file_path
+    state_path.write_text(
+        '{"169.58.51.98": {"30222": 46132}}\n', encoding="utf-8"
+    )
+    calls = _install_fake(monkeypatch, enabled=True, active=True)
+    force_ctx = make_context(
+        task_data_root=tmp_path,
+        force_tasks=frozenset({"port_forwarding_setup"}),
+        config=ctx.config,
+    )
+    result = port_forwarding_setup.task(force_ctx)
+    assert result.success
+    assert result.changed
+    assert not state_path.exists()
+    assert any(command[1] == "restart" for command in calls)
+
+
+def test_non_force_keeps_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A plain deploy must not touch the recorded ports, so the tunnel
+    # stays stable across a routine restart.
+    _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    state_path = ctx.config.port_forwarding_setup.state_file_path
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        '{"169.58.51.98": {"30222": 46132}}\n', encoding="utf-8"
+    )
+    calls = _install_fake(monkeypatch, active=True)
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert state_path.exists()
     assert any(command[1] == "restart" for command in calls)
 
 

@@ -39,7 +39,7 @@ The server list is read from the runtime vault once at service start and is neve
 
 ## Idempotency
 
-The task is idempotent: it is done when the unit file matches its template and the service is enabled. It writes the unit, reloads systemd, enables and starts the service otherwise, and verifies that the started service is not in the failed state; an inactive service after a start is the intended no-op state of a machine without port-forwarding data, not a failure. Force mode rewrites the unit and restarts the service, but never touches the keys, which are owned by the ssh_daemon_setup task.
+The task is idempotent: it is done when the unit file matches its template and the service is enabled. It writes the unit, reloads systemd, enables and starts the service otherwise, and verifies that the started service is not in the failed state; an inactive service after a start is the intended no-op state of a machine without port-forwarding data, not a failure. Force mode rewrites the unit, removes the port-forwarding state file so the service re-derives the desired remote port from the hostname and re-forwards, and restarts the service; it never touches the keys, which are owned by the ssh_daemon_setup task. The desired port is a deterministic function of the hostname, so the recalculated result is stable. A plain deploy never touches the state file, so a routine restart keeps the recorded ports.
 
 ## Parameters
 
