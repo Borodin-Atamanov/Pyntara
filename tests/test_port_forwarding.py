@@ -20,6 +20,7 @@ from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
 from pyntara.port_forwarding import (
+    _normalize_host,
     desired_port,
     filter_own_servers,
     own_addresses,
@@ -182,6 +183,27 @@ class TestOwnServers:
         kept, skipped = filter_own_servers(servers, set())
         assert kept == servers
         assert skipped == []
+
+    def test_filter_own_servers_matches_any_written_variant(self) -> None:
+        own = {"205:6f71:2cee:2d23:615e:8f2b:bc79:4fdb"}
+        servers = [
+            "205:6f71:2cee:2d23:615e:8f2b:bc79:4fdb",
+            "0205:6F71:2CEE:2D23:615E:8F2B:BC79:4FDB",
+            "205:6f71:2cee:2d23:615e:8f2b:bc79:4fdb%eth0",
+            "169.58.51.98",
+        ]
+        kept, skipped = filter_own_servers(servers, own)
+        assert kept == ["169.58.51.98"]
+        assert skipped == servers[:-1]
+
+    def test_normalize_host(self) -> None:
+        assert _normalize_host("0205:6F71:2CEE:2D23:615E:8F2B:BC79:4FDB") == (
+            "205:6f71:2cee:2d23:615e:8f2b:bc79:4fdb"
+        )
+        assert _normalize_host("2001:0DB8:0:0:0:0:0:1") == "2001:db8::1"
+        assert _normalize_host("FE80::1%eth0") == "fe80::1"
+        assert _normalize_host("192.168.1.5") == "192.168.1.5"
+        assert _normalize_host("vpn.example.com") == "vpn.example.com"
 
 
 class TestVaultReads:

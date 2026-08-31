@@ -24,6 +24,7 @@ connect to nothing.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -88,6 +89,28 @@ def read_server_addresses(kp: PyKeePass, group_title: str) -> list[str]:
     return [entry.url.strip() for entry in group.entries if entry.url and entry.url.strip()]
 
 
+def _normalize_host(host: str) -> str:
+    """The canonical form of a host for address comparison.
+
+    The interface zone is not part of the address, so it is stripped
+    first; an ipv6 or ipv4 address is normalized to its canonical
+    compressed lowercase form, so any written variant of the same
+    address compares equal. A bare hostname is returned lowercased,
+    unchanged otherwise.
+    """
+
+    host = host.split("%", 1)[0]
+    try:
+        return str(ipaddress.IPv6Address(host))
+    except ValueError:
+        pass
+    try:
+        return str(ipaddress.IPv4Address(host))
+    except ValueError:
+        pass
+    return host.lower()
+
+
 def own_addresses() -> set[str]:
     """The machine's own IP addresses from ip -o addr, or an empty set.
 
@@ -114,7 +137,7 @@ def own_addresses() -> set[str]:
     for line in result.stdout.splitlines():
         match = re.search(r"\binet6?\s+([0-9a-fA-F:.]+)", line)
         if match:
-            own.add(match.group(1))
+            own.add(_normalize_host(match.group(1)))
     return own
 
 
@@ -148,7 +171,7 @@ def filter_own_servers(
     kept: list[str] = []
     skipped: list[str] = []
     for server in servers:
-        if _host_from_address(server) in own:
+        if _normalize_host(_host_from_address(server)) in own:
             skipped.append(server)
         else:
             kept.append(server)
