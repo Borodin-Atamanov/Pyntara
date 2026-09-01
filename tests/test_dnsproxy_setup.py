@@ -7,6 +7,7 @@ from typing import Any
 from support import FakeProc, make_config, make_context
 
 from pyntara.tasks import dnsproxy_setup as task_module
+from pyntara.utils import curl_flags
 
 PASSWORD = "password"
 
@@ -514,3 +515,41 @@ def test_release_asset_selection_rejects_unsupported_architecture() -> None:
         assert "unsupported" in str(error)
     else:
         raise AssertionError("unsupported architecture was accepted")
+
+
+def test_release_and_download_curls_carry_configured_flags(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # The release query and the binary download run through curl with the
+    # configured --max-time and --retry flags, so a slow or flaky network
+    # gets a long window and retries instead of failing after a short
+    # fixed timeout.
+    config = make_config(
+        task_data_root=tmp_path,
+        dnsproxy_download_dir=tmp_path / "download",
+        dnsproxy_binary_path=tmp_path / "dnsproxy",
+        dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
+        dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
+        dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
+    )
+    expected_flags = curl_flags(
+        config.engine.curl_timeout_seconds, config.engine.curl_retries
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        command = list(command)
+        calls.append(command)
+        return FakeProc(0, '{"tag_name": "v0.84.1"}')
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    release = task_module._release_json(
+        "AdguardTeam/dnsproxy",
+        config.engine.command_timeout_seconds,
+        config.engine.curl_timeout_seconds,
+        config.engine.curl_retries,
+    )
+    assert release["tag_name"] == "v0.84.1"
+    curl_calls = [call for call in calls if call[0] == "curl"]
+    assert curl_calls
+    assert all(flag in curl_calls[0] for flag in expected_flags)

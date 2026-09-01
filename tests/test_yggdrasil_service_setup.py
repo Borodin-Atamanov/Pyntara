@@ -20,6 +20,7 @@ from support import make_config, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import yggdrasil_service_setup
+from pyntara.utils import curl_flags
 
 # The newest release tag and the version without the leading v; the asset
 # and the version output use the bare version.
@@ -331,6 +332,16 @@ def test_already_configured_skips(
     assert result.success is True
     assert result.changed is False
     assert result.message == "already configured"
+    expected_flags = curl_flags(
+        ctx.config.engine.curl_timeout_seconds, ctx.config.engine.curl_retries
+    )
+    release_calls = [
+        call
+        for call in calls
+        if call[0] == "curl" and "releases/latest" in " ".join(call)
+    ]
+    assert release_calls
+    assert all(flag in release_calls[0] for flag in expected_flags)
     assert not any(call[0] == "apt-get" for call in calls)
     assert not any(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")

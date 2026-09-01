@@ -101,7 +101,6 @@ def test_load_config_rustdesk_values(tmp_path: Path) -> None:
     assert rustdesk.install_timeout_seconds == 600
     assert rustdesk.apt_update_timeout_seconds == 600
     assert rustdesk.install_retries == 2
-    assert rustdesk.api_timeout_seconds == 30
     assert rustdesk.start_check_attempts == 10
     assert rustdesk.start_check_retry_delay_seconds == 1.0
     assert rustdesk.options == (

@@ -763,6 +763,18 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
+    if ! grep -q -- "--max-time 777" "$curl_calls"; then
+        echo "curl not called with the configured --max-time" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q -- "--retry 13" "$curl_calls"; then
+        echo "curl not called with the configured --retry" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
     rm -rf "$tmp"
 }
 

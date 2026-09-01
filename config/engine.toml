@@ -14,6 +14,13 @@ task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
 # Seconds a provisioning command may run before it is killed.
 command_timeout_seconds = 1800
+# Per-attempt timeout of a download or release query curl call, in
+# seconds. curl aborts a single attempt that exceeds it; the process
+# bound stays command_timeout_seconds.
+curl_timeout_seconds = 777
+# How many times curl retries a download or release query on transient
+# errors (timeouts, refused connections, HTTP 5xx) before giving up.
+curl_retries = 13
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

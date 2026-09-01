@@ -36,7 +36,6 @@ class RustdeskSetupConfig:
     the primary desktop user, whose identity file force mode removes to
     regenerate the machine ID; install_timeout_seconds,
     apt_update_timeout_seconds and install_retries bound the deb install;
-    api_timeout_seconds bounds the GitHub releases API call;
     start_check_attempts and start_check_retry_delay_seconds are the
     readiness loop after the service start; options are the client
     options applied through rustdesk --option
@@ -55,7 +54,6 @@ class RustdeskSetupConfig:
     install_timeout_seconds: int
     apt_update_timeout_seconds: int
     install_retries: int
-    api_timeout_seconds: float
     start_check_attempts: int
     start_check_retry_delay_seconds: float
     options: tuple[RustdeskOptionConfig, ...]
@@ -147,9 +145,6 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
         ),
         install_retries=_int_field(
             raw.get("install_retries"), "rustdesk_setup.install_retries"
-        ),
-        api_timeout_seconds=_float_field(
-            raw.get("api_timeout_seconds"), "rustdesk_setup.api_timeout_seconds"
         ),
         start_check_attempts=_int_field(
             raw.get("start_check_attempts"),

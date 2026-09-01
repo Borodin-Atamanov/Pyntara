@@ -22,6 +22,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    curl_flags,
     dpkg_architecture,
     ensure_root_owner,
     run_command,
@@ -98,7 +99,9 @@ def discover_dns_servers(
     )
 
 
-def _release_json(repo: str, timeout: float) -> dict[str, object]:
+def _release_json(
+    repo: str, timeout: float, curl_timeout: float, retries: int
+) -> dict[str, object]:
     result = run_command(
         [
             "curl",
@@ -106,6 +109,7 @@ def _release_json(repo: str, timeout: float) -> dict[str, object]:
             "--silent",
             "--show-error",
             "--location",
+            *curl_flags(curl_timeout, retries),
             f"https://api.github.com/repos/{repo}/releases/latest",
         ],
         check=False,
@@ -160,7 +164,12 @@ def _version_from_tag(tag: str) -> str:
 
 
 def _download_binary(
-    cfg: DnsproxySetupConfig, url: str, name: str, timeout: float
+    cfg: DnsproxySetupConfig,
+    url: str,
+    name: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
 ) -> Path:
     cfg.download_dir.mkdir(parents=True, exist_ok=True)
     archive = cfg.download_dir / name
@@ -173,6 +182,7 @@ def _download_binary(
             "--location",
             "--output",
             str(archive),
+            *curl_flags(curl_timeout, retries),
             url,
         ],
         timeout=timeout,
@@ -763,6 +773,8 @@ def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
 def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    curl_timeout = ctx.config.engine.curl_timeout_seconds
+    curl_retries = ctx.config.engine.curl_retries
     error_priority = ctx.config.engine.error_priority
     progress_priority = ctx.config.engine.progress_priority
     profile_id = _read_profile_id(cfg)
@@ -776,7 +788,9 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
     try:
-        release = _release_json(cfg.github_repo, timeout)
+        release = _release_json(
+            cfg.github_repo, timeout, curl_timeout, curl_retries
+        )
         tag = str(release["tag_name"])
         asset_name, asset_url = _asset_for_architecture(
             release, dpkg_architecture(timeout)
@@ -797,7 +811,9 @@ def task(ctx: Context) -> TaskResult:
     cut_over = False
     try:
         if installed != target_version:
-            staged = _download_binary(cfg, asset_url, asset_name, timeout)
+            staged = _download_binary(
+                cfg, asset_url, asset_name, timeout, curl_timeout, curl_retries
+            )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)
             ensure_root_owner(cfg.binary_path)

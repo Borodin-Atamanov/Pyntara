@@ -28,6 +28,8 @@ VALID_TOML = """\
 task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
 command_timeout_seconds = 1800
+curl_timeout_seconds = 777
+curl_retries = 13
 error_priority = 3
 progress_priority = 7
 process_check_timeout_seconds = 5
@@ -308,7 +310,6 @@ config_dir = "/home/i/.config/rustdesk"
 install_timeout_seconds = 600
 apt_update_timeout_seconds = 600
 install_retries = 2
-api_timeout_seconds = 30
 start_check_attempts = 10
 start_check_retry_delay_seconds = 1.0
 
@@ -506,6 +507,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     config_path.write_text(VALID_TOML, encoding="utf-8")
     config = load_config(config_path)
     assert config.engine.task_data_root == Path("/var/lib/pyntara/task-data")
+    assert config.engine.curl_timeout_seconds == 777
+    assert config.engine.curl_retries == 13
     assert config.engine.notice_timeout == 7
     assert config.engine.command_timeout_seconds == 1800
     assert config.engine.process_check_timeout_seconds == 5
@@ -541,7 +544,6 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.rustdesk_setup.password_words == 6
     assert config.rustdesk_setup.password_separator == " "
     assert config.rustdesk_setup.config_dir == Path("/home/i/.config/rustdesk")
-    assert config.rustdesk_setup.api_timeout_seconds == 30
     assert config.rustdesk_setup.start_check_attempts == 10
     assert config.rustdesk_setup.options == (
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),

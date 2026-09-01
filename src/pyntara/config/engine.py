@@ -20,6 +20,8 @@ class EngineConfig:
     task_data_root: Path
     notice_timeout: int
     command_timeout_seconds: int
+    curl_timeout_seconds: int
+    curl_retries: int
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int
@@ -55,12 +57,22 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if not 0 <= progress_priority <= 7:
         raise ConfigError("engine.progress_priority must be between 0 and 7")
+    curl_timeout_seconds = _int_field(
+        raw.get("curl_timeout_seconds"), "engine.curl_timeout_seconds"
+    )
+    if curl_timeout_seconds <= 0:
+        raise ConfigError("engine.curl_timeout_seconds must be positive")
+    curl_retries = _int_field(raw.get("curl_retries"), "engine.curl_retries")
+    if curl_retries < 0:
+        raise ConfigError("engine.curl_retries must not be negative")
     return EngineConfig(
         task_data_root=Path(task_data_root),
         notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
         command_timeout_seconds=_int_field(
             raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
         ),
+        curl_timeout_seconds=curl_timeout_seconds,
+        curl_retries=curl_retries,
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(

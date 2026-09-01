@@ -25,6 +25,16 @@ from pyntara.config import load_config
         base_config().replace(
             "command_timeout_seconds = 1800", 'command_timeout_seconds = "1800"'
         ),
+        # curl_timeout_seconds is a string, not an integer
+        base_config().replace(
+            "curl_timeout_seconds = 777", 'curl_timeout_seconds = "777"'
+        ),
+        # curl_timeout_seconds is zero
+        base_config().replace("curl_timeout_seconds = 777", "curl_timeout_seconds = 0"),
+        # curl_retries is a string, not an integer
+        base_config().replace("curl_retries = 13", 'curl_retries = "13"'),
+        # curl_retries is negative
+        base_config().replace("curl_retries = 13", "curl_retries = -1"),
         # process_check_timeout_seconds is a string, not an integer
         base_config().replace(
             "process_check_timeout_seconds = 5", 'process_check_timeout_seconds = "5"'

@@ -25,6 +25,7 @@ from support import make_config, make_context
 from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
+from pyntara.utils import curl_flags
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
 
@@ -301,6 +302,16 @@ def test_already_configured_does_not_run_installer(
     assert result.success is True
     assert result.changed is True  # stage 3 created inbound
     assert result.message == "already configured"
+    expected_flags = curl_flags(
+        ctx.config.engine.curl_timeout_seconds, ctx.config.engine.curl_retries
+    )
+    release_calls = [
+        call
+        for call in calls
+        if call[0] == "curl" and "releases/latest" in " ".join(call)
+    ]
+    assert release_calls
+    assert all(flag in release_calls[0] for flag in expected_flags)
     assert not any(call[0] == "bash" for call in calls)
 
 

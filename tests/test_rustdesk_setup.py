@@ -20,6 +20,7 @@ from pyntara import task_catalog
 from pyntara.config import Config, RustdeskOptionConfig, load_config
 from pyntara.context import Context
 from pyntara.tasks import rustdesk_setup
+from pyntara.utils import curl_flags
 
 # The real catalog and config from the repository; the mode-membership
 # and dependency tests use them so they cover the actual task set.
@@ -217,7 +218,18 @@ def test_installed_latest_is_unchanged(
     result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
     assert result.success is True
     assert result.changed is False
-    # the release lookup runs, but no download or install happens
+    # the release lookup runs with the configured curl timeout and
+    # retries, but no download or install happens
+    expected_flags = curl_flags(
+        config.engine.curl_timeout_seconds, config.engine.curl_retries
+    )
+    release_calls = [
+        call
+        for call in calls
+        if call[0] == "curl" and "releases/latest" in " ".join(call)
+    ]
+    assert release_calls
+    assert all(flag in release_calls[0] for flag in expected_flags)
     assert not any(call[0] == "curl" and "--output" in call for call in calls)
     assert not any(call[0] == "apt-get" for call in calls)
 

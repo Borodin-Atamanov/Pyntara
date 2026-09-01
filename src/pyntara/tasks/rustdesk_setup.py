@@ -45,6 +45,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
+    curl_flags,
     dpkg_architecture,
     ensure_root_owner,
     install_package_once,
@@ -121,7 +122,9 @@ def _select_asset(
     return (name, url) if url else None
 
 
-def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
+def _fetch_release_json(
+    repo: str, timeout: float, curl_timeout: float, retries: int
+) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
     Raises RuntimeError when the request fails or the payload is not
@@ -131,7 +134,14 @@ def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
 
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     result = run_command(
-        ["curl", "--fail", "--silent", "--show-error", url],
+        [
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            *curl_flags(curl_timeout, retries),
+            url,
+        ],
         check=False,
         capture=True,
         timeout=timeout,
@@ -171,7 +181,14 @@ def _installed_version(timeout: float) -> str | None:
     return match.group(1) if match else None
 
 
-def _download_deb(download_dir: Path, name: str, url: str, timeout: float) -> None:
+def _download_deb(
+    download_dir: Path,
+    name: str,
+    url: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
+) -> None:
     """Download the package into the download directory.
 
     Raises RuntimeError when curl fails, so the caller reports the
@@ -189,6 +206,7 @@ def _download_deb(download_dir: Path, name: str, url: str, timeout: float) -> No
                 "--show-error",
                 "--output",
                 str(download_dir / name),
+                *curl_flags(curl_timeout, retries),
                 url,
             ],
             timeout=timeout,
@@ -465,11 +483,15 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.rustdesk_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    curl_timeout = ctx.config.engine.curl_timeout_seconds
+    curl_retries = ctx.config.engine.curl_retries
     force = "rustdesk_setup" in ctx.force_tasks
     changed = False
 
     try:
-        release = _fetch_release_json(cfg.github_repo, cfg.api_timeout_seconds)
+        release = _fetch_release_json(
+            cfg.github_repo, timeout, curl_timeout, curl_retries
+        )
         tag = _normalized_version(_release_tag(release))
     except (RuntimeError, TypeError) as exc:
         return TaskResult(success=False, error=str(exc))
@@ -495,7 +517,9 @@ def task(ctx: Context) -> TaskResult:
         name, url = selected
         _log(f"downloading rustdesk {tag} deb")
         try:
-            _download_deb(cfg.download_dir, name, url, timeout)
+            _download_deb(
+                cfg.download_dir, name, url, timeout, curl_timeout, curl_retries
+            )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))
         _log("installing rustdesk deb")

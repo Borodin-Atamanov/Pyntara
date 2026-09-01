@@ -72,6 +72,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    curl_flags,
     ensure_port_free,
     install_package_once,
     package_is_installed,
@@ -110,7 +111,9 @@ def _release_tag(release: dict[str, object]) -> str:
     return tag
 
 
-def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
+def _fetch_release_json(
+    repo: str, timeout: float, curl_timeout: float, retries: int
+) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
     Raises RuntimeError when the request fails or the payload is not
@@ -120,7 +123,14 @@ def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
 
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     result = run_command(
-        ["curl", "--fail", "--silent", "--show-error", url],
+        [
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            *curl_flags(curl_timeout, retries),
+            url,
+        ],
         check=False,
         capture=True,
         timeout=timeout,
@@ -166,7 +176,10 @@ def _installed_version(
 
 
 def _download_installer(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    cfg: ThreeXuiXraySetupConfig,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
 ) -> Path:
     """Download the official installer into a temporary file.
 
@@ -182,16 +195,11 @@ def _download_installer(
                 "curl",
                 "--fail",
                 "--location",
-                "--retry",
-                "15",
-                "--retry-delay",
-                "3",
-                "--retry-all-errors",
-                "--retry-connrefused",
                 "--silent",
                 "--show-error",
                 "--output",
                 str(script_path),
+                *curl_flags(curl_timeout, retries),
                 cfg.install_script_url,
             ],
             timeout=timeout,
@@ -1304,10 +1312,14 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.three_x_ui_xray_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    curl_timeout = ctx.config.engine.curl_timeout_seconds
+    curl_retries = ctx.config.engine.curl_retries
     force = "three_x_ui_xray_setup" in ctx.force_tasks
 
     try:
-        release = _fetch_release_json(cfg.github_repo, timeout)
+        release = _fetch_release_json(
+            cfg.github_repo, timeout, curl_timeout, curl_retries
+        )
         tag = _release_tag(release)
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
@@ -1383,7 +1395,9 @@ def task(ctx: Context) -> TaskResult:
 
         _log(f"downloading installer {cfg.install_script_url}")
         try:
-            script_path = _download_installer(cfg, timeout)
+            script_path = _download_installer(
+                cfg, timeout, curl_timeout, curl_retries
+            )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))
         _log("installer downloaded")

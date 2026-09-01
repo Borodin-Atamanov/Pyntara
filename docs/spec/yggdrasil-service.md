@@ -70,7 +70,7 @@ Outside force mode, when the configuration already carries peers and the saved a
 
 ## Parameters
 
-All parameters live in the [yggdrasil_service_setup] table of the config/ directory.
+All parameters live in the [yggdrasil_service_setup] table of the config/ directory. The release query, the package download and the peer list download run with the engine-wide curl_timeout_seconds and curl_retries from the [engine] table.
 
 The live connection check after the final restart uses the geometric backoff connection_wait_base_seconds, connection_wait_multiplier and connection_wait_max_seconds, mirroring the address save retry: a pause never exceeds the remaining budget up to connection_wait_max_seconds.
 

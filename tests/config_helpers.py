@@ -27,7 +27,8 @@ def base_config() -> str:
 
     return (
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
-        "command_timeout_seconds = 1800\nerror_priority = 3\n"
+        "command_timeout_seconds = 1800\ncurl_timeout_seconds = 777\n"
+        "curl_retries = 13\nerror_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
@@ -296,7 +297,6 @@ def base_config() -> str:
         "install_timeout_seconds = 600\n"
         "apt_update_timeout_seconds = 600\n"
         "install_retries = 2\n"
-        "api_timeout_seconds = 30\n"
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1.0\n"
         '[[rustdesk_setup.options]]\n'

@@ -180,6 +180,8 @@ def make_config(
     task_data_root: Path = Path("/tmp"),
     notice_timeout: int = 7,
     command_timeout_seconds: int = 1800,
+    curl_timeout_seconds: int = 777,
+    curl_retries: int = 13,
     error_priority: int = 3,
     progress_priority: int = 7,
     process_check_timeout_seconds: int = 5,
@@ -392,7 +394,6 @@ def make_config(
     rustdesk_install_timeout_seconds: int = 600,
     rustdesk_apt_update_timeout_seconds: int = 600,
     rustdesk_install_retries: int = 2,
-    rustdesk_api_timeout_seconds: float = 30,
     rustdesk_start_check_attempts: int = 10,
     rustdesk_start_check_retry_delay_seconds: float = 1.0,
     rustdesk_options: tuple[RustdeskOptionConfig, ...] = (
@@ -596,6 +597,8 @@ def make_config(
             task_data_root=task_data_root,
             notice_timeout=notice_timeout,
             command_timeout_seconds=command_timeout_seconds,
+            curl_timeout_seconds=curl_timeout_seconds,
+            curl_retries=curl_retries,
             error_priority=error_priority,
             progress_priority=progress_priority,
             process_check_timeout_seconds=process_check_timeout_seconds,
@@ -1017,7 +1020,6 @@ def make_config(
             install_timeout_seconds=rustdesk_install_timeout_seconds,
             apt_update_timeout_seconds=rustdesk_apt_update_timeout_seconds,
             install_retries=rustdesk_install_retries,
-            api_timeout_seconds=rustdesk_api_timeout_seconds,
             start_check_attempts=rustdesk_start_check_attempts,
             start_check_retry_delay_seconds=(
                 rustdesk_start_check_retry_delay_seconds

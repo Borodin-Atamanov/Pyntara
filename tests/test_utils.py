@@ -10,6 +10,7 @@ import pytest
 from support import FakeProc as _FakeProc
 
 from pyntara.utils import (
+    curl_flags,
     ensure_port_free,
     port_listener_pid,
     proquint_decode,
@@ -20,6 +21,19 @@ from pyntara.utils import (
     service_main_pid,
     trim_whitespace,
 )
+
+
+def test_curl_flags_returns_retry_and_timeout_flags() -> None:
+    flags = curl_flags(777, 13)
+    assert flags == [
+        "--max-time",
+        "777",
+        "--retry",
+        "13",
+        "--retry-delay",
+        "3",
+        "--retry-connrefused",
+    ]
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:

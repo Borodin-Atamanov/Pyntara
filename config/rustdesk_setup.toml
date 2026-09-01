@@ -35,8 +35,6 @@ install_timeout_seconds = 600
 apt_update_timeout_seconds = 600
 # Install attempts after the first one.
 install_retries = 2
-# Seconds the GitHub releases API call may take.
-api_timeout_seconds = 30
 # Readiness loop after the service start: attempts and the pause between
 # them, in seconds. The rustdesk service becomes active when its root
 # --service process starts, but the per-session --server process that

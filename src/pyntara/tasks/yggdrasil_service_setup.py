@@ -69,6 +69,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     backoff_delay,
+    curl_flags,
     dpkg_architecture,
     ensure_root_owner,
     install_package_once,
@@ -146,7 +147,9 @@ def _select_asset(
     return (name, url) if url else None
 
 
-def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
+def _fetch_release_json(
+    repo: str, timeout: float, curl_timeout: float, retries: int
+) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
     Raises RuntimeError when the request fails or the payload is not
@@ -156,7 +159,14 @@ def _fetch_release_json(repo: str, timeout: float) -> dict[str, object]:
 
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     result = run_command(
-        ["curl", "--fail", "--silent", "--show-error", url],
+        [
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            *curl_flags(curl_timeout, retries),
+            url,
+        ],
         check=False,
         capture=True,
         timeout=timeout,
@@ -198,7 +208,12 @@ def _installed_version(timeout: float) -> str | None:
 
 
 def _download_asset(
-    download_dir: Path, name: str, url: str, timeout: float
+    download_dir: Path,
+    name: str,
+    url: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
 ) -> None:
     """Download the package into the download directory.
 
@@ -217,6 +232,7 @@ def _download_asset(
                 "--show-error",
                 "--output",
                 str(download_dir / name),
+                *curl_flags(curl_timeout, retries),
                 url,
             ],
             timeout=timeout,
@@ -403,7 +419,12 @@ def _parse_md_peers(text: str) -> list[str]:
     )
 
 
-def _download_peers(cfg: YggdrasilServiceSetupConfig, timeout: float) -> list[str]:
+def _download_peers(
+    cfg: YggdrasilServiceSetupConfig,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
+) -> list[str]:
     """Download and parse the public-peers list; save it next to the config.
 
     Downloads the repository tarball with curl, extracts every markdown
@@ -425,6 +446,7 @@ def _download_peers(cfg: YggdrasilServiceSetupConfig, timeout: float) -> list[st
                 "--show-error",
                 "--output",
                 tmp_name,
+                *curl_flags(curl_timeout, retries),
                 cfg.peers_tarball_url,
             ],
             timeout=timeout,
@@ -809,6 +831,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.yggdrasil_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    curl_timeout = ctx.config.engine.curl_timeout_seconds
+    curl_retries = ctx.config.engine.curl_retries
     force = "yggdrasil_service_setup" in ctx.force_tasks
     warnings: list[str] = []
 
@@ -830,7 +854,9 @@ def task(ctx: Context) -> TaskResult:
     _log(f"reading dpkg architecture: {arch}")
 
     try:
-        release = _fetch_release_json(cfg.github_repo, timeout)
+        release = _fetch_release_json(
+            cfg.github_repo, timeout, curl_timeout, curl_retries
+        )
         tag = _release_tag(release)
     except RuntimeError as exc:
         warnings.append(str(exc))
@@ -892,7 +918,14 @@ def task(ctx: Context) -> TaskResult:
     if needs_install:
         _log(f"downloading {asset_name} into {cfg.download_dir}")
         try:
-            _download_asset(cfg.download_dir, asset_name, asset_url, timeout)
+            _download_asset(
+                cfg.download_dir,
+                asset_name,
+                asset_url,
+                timeout,
+                curl_timeout,
+                curl_retries,
+            )
         except RuntimeError as exc:
             warnings.append(str(exc))
             return done("yggdrasil not configured", changed)
@@ -995,7 +1028,7 @@ def task(ctx: Context) -> TaskResult:
     _log(f"downloading peer list from {cfg.peers_tarball_url}")
     downloaded: list[str] | None = None
     try:
-        downloaded = _download_peers(cfg, timeout)
+        downloaded = _download_peers(cfg, timeout, curl_timeout, curl_retries)
     except RuntimeError as exc:
         _log(f"peer list download failed, using static_peers: {exc}")
     if downloaded is None:
