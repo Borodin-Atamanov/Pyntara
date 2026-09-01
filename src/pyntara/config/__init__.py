@@ -29,6 +29,7 @@ from .add_extra_repos import AddExtraReposConfig
 from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
 from .engine import EngineConfig
+from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
@@ -76,6 +77,7 @@ __all__ = [
     "ConfigError",
     "DnsproxySetupConfig",
     "EngineConfig",
+    "FfmpegSetupConfig",
     "HostnameConfig",
     "I2pdServiceSetupConfig",
     "ImagemagickSetupConfig",

@@ -1,0 +1,16 @@
+[ffmpeg_setup]
+# ffmpeg installed by the ffmpeg_setup task from the Ubuntu archive. The
+# archive on Kubuntu 26.04 and newer carries a complete GPL ffmpeg build
+# (ffmpeg pulls ffmpeg, ffprobe, ffplay and the shared libraries), so apt is
+# the whole install path: no third-party repository, no source build and no
+# version chase. The task installs whatever the archive carries without
+# checking the version or the feature set.
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are retries plus one.
+package_install_retries = 3
+
+#package set
+packages = [
+    "ffmpeg", # ffmpeg: audio and video processing tools, ffmpeg/ffprobe/ffplay
+]

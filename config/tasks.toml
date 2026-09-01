@@ -25,6 +25,12 @@ depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "ffmpeg_setup"
+description = "Install ffmpeg from the Ubuntu archive."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "swapfile_service_install"
 description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []

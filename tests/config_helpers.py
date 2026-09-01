@@ -39,6 +39,9 @@ def base_config() -> str:
         'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
+        '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
+        "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
+
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'

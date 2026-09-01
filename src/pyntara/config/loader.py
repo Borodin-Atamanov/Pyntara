@@ -11,6 +11,7 @@ from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
 from .cli_tools import CliToolsConfig, _cli_tools_table
 from .dnsproxy_setup import DnsproxySetupConfig, _dnsproxy_setup_table
 from .engine import EngineConfig, _engine_table
+from .ffmpeg_setup import FfmpegSetupConfig, _ffmpeg_setup_table
 from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
 from .imagemagick_setup import ImagemagickSetupConfig, _imagemagick_setup_table
@@ -67,6 +68,7 @@ class Config:
     dnsproxy_setup: DnsproxySetupConfig
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
+    ffmpeg_setup: FfmpegSetupConfig
     imagemagick_setup: ImagemagickSetupConfig
     kde_keyboard_setup: KdeKeyboardSetupConfig
     kde_settings: KdeSettingsConfig
@@ -166,6 +168,7 @@ def load_config(path: Path) -> Config:
         dnsproxy_setup=_dnsproxy_setup_table(data.get("dnsproxy_setup")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
+        ffmpeg_setup=_ffmpeg_setup_table(data.get("ffmpeg_setup")),
         imagemagick_setup=_imagemagick_setup_table(
             data.get("imagemagick_setup")
         ),

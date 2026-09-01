@@ -45,6 +45,11 @@ policy_path = "/etc/ImageMagick-7/policy.xml"
 package_status_timeout_seconds = 30
 package_install_retries = 3
 
+[ffmpeg_setup]
+packages = ["ffmpeg"]
+package_status_timeout_seconds = 30
+package_install_retries = 3
+
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]
 ubuntu_hosts = ["archive.ubuntu.com", "security.ubuntu.com"]
@@ -487,6 +492,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.imagemagick_setup.policy_path == Path("/etc/ImageMagick-7/policy.xml")
     assert config.imagemagick_setup.package_status_timeout_seconds == 30
     assert config.imagemagick_setup.package_install_retries == 3
+    assert config.ffmpeg_setup.packages == ("ffmpeg",)
+    assert config.ffmpeg_setup.package_status_timeout_seconds == 30
+    assert config.ffmpeg_setup.package_install_retries == 3
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",

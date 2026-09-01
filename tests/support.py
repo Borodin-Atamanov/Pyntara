@@ -20,6 +20,7 @@ from pyntara.config import (
     Config,
     DnsproxySetupConfig,
     EngineConfig,
+    FfmpegSetupConfig,
     HostnameConfig,
     I2pdServiceSetupConfig,
     ImagemagickSetupConfig,
@@ -196,6 +197,10 @@ def make_config(
     imagemagick_setup_policy_path: Path = Path("/etc/ImageMagick-7/policy.xml"),
     imagemagick_setup_retries: int = 3,
     imagemagick_setup_status_timeout: int = 30,
+
+    ffmpeg_setup_packages: tuple[str, ...] = ("ffmpeg",),
+    ffmpeg_setup_retries: int = 3,
+    ffmpeg_setup_status_timeout: int = 30,
 
     dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
     dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
@@ -582,6 +587,12 @@ def make_config(
             policy_path=imagemagick_setup_policy_path,
             package_status_timeout_seconds=imagemagick_setup_status_timeout,
             package_install_retries=imagemagick_setup_retries,
+        ),
+
+        ffmpeg_setup=FfmpegSetupConfig(
+            packages=ffmpeg_setup_packages,
+            package_status_timeout_seconds=ffmpeg_setup_status_timeout,
+            package_install_retries=ffmpeg_setup_retries,
         ),
 
         dnsproxy_setup=DnsproxySetupConfig(
