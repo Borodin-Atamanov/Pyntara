@@ -15,12 +15,14 @@ import importlib
 import json
 import subprocess
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
 
@@ -672,7 +674,9 @@ class TestProquintCredentials:
             _timeout: float,
             **kwargs: object,
         ) -> None:
-            captured.append((port, service_name, kwargs.get("service_process_name")))
+            captured.append(
+                (port, service_name, cast(str | None, kwargs.get("service_process_name")))
+            )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
@@ -705,7 +709,9 @@ class TestProquintCredentials:
             _timeout: float,
             **kwargs: object,
         ) -> None:
-            captured.append((port, service_name, kwargs.get("service_process_name")))
+            captured.append(
+                (port, service_name, cast(str | None, kwargs.get("service_process_name")))
+            )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
@@ -931,7 +937,7 @@ class TestProquintCredentials:
 class TestPanelPortConvergence:
     """Tests for bringing the panel to the configured port."""
 
-    def _cfg(self, tmp_path: Path) -> object:
+    def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
             task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
@@ -1143,7 +1149,7 @@ class TestSslReachability:
         )
         assert xui._local_ipv4(30) is None
 
-    def _cfg(self) -> object:
+    def _cfg(self) -> ThreeXuiXraySetupConfig:
         # A default three_x_ui config; the reachability helpers only read
         # the ACME port and the echo-service list, which the tests mock.
         return make_config().three_x_ui_xray_setup
@@ -1234,7 +1240,7 @@ class TestStageSsl:
 
     def _cfg(
         self, tmp_path: Path, *, ssl_enabled: bool = True
-    ) -> object:
+    ) -> ThreeXuiXraySetupConfig:
         config = make_config(
             task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
@@ -1471,7 +1477,7 @@ class TestStageSsl:
 class TestSelfSignedCert:
     """Tests for the self-signed certificate helper."""
 
-    def _cfg(self, tmp_path: Path) -> object:
+    def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
             task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
@@ -1644,11 +1650,11 @@ class TestSelfSignedCert:
         # On a rerun (target state reached, installer skipped) the task
         # runs stage 4.
         called: list[bool] = []
-        monkeypatch.setattr(
-            xui,
-            "_stage_ssl",
-            lambda _cfg, _timeout: (called.append(True), None)[1],
-        )
+
+        def _fake_stage_ssl(*args: object, **kwargs: object) -> None:
+            called.append(True)
+
+        monkeypatch.setattr(xui, "_stage_ssl", _fake_stage_ssl)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -1763,7 +1769,7 @@ class TestRewriteEnv:
 class TestTakeoverCredentials:
     """Tests for the force credential and webBasePath takeover."""
 
-    def _cfg(self, tmp_path: Path) -> object:
+    def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
             task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",

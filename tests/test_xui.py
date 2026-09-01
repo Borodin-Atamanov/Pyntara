@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -456,13 +457,18 @@ class TestBuildVlessRealityPayload:
     """Tests for build_vless_reality_payload."""
 
     def test_builds_correct_structure(self) -> None:
-        payload = xui_client.build_vless_reality_payload(
-            port=443,
-            remark="universal",
-            dest="www.google.com:443",
-            server_names=("www.google.com",),
-            private_key="priv123",
-            short_id="6ba85179e30d4fc2",
+        # The payload is a nested JSON object, so the test narrows the
+        # dict[str, object] return to a checkable shape.
+        payload = cast(
+            dict[str, Any],
+            xui_client.build_vless_reality_payload(
+                port=443,
+                remark="universal",
+                dest="www.google.com:443",
+                server_names=("www.google.com",),
+                private_key="priv123",
+                short_id="6ba85179e30d4fc2",
+            ),
         )
         assert payload["port"] == 443
         assert payload["protocol"] == "vless"
@@ -477,13 +483,18 @@ class TestBuildVlessRealityPayload:
         assert payload["sniffing"]["destOverride"] == ["http", "tls"]
 
     def test_accepts_custom_values(self) -> None:
-        payload = xui_client.build_vless_reality_payload(
-            port=8443,
-            remark="custom",
-            dest="bing.com:443",
-            server_names=("bing.com", "www.bing.com"),
-            private_key="customkey",
-            short_id="abc12345",
+        # The payload is a nested JSON object, so the test narrows the
+        # dict[str, object] return to a checkable shape.
+        payload = cast(
+            dict[str, Any],
+            xui_client.build_vless_reality_payload(
+                port=8443,
+                remark="custom",
+                dest="bing.com:443",
+                server_names=("bing.com", "www.bing.com"),
+                private_key="customkey",
+                short_id="abc12345",
+            ),
         )
         assert payload["port"] == 8443
         assert payload["remark"] == "custom"

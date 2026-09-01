@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from config_helpers import assert_config_error, base_config
 
@@ -44,7 +46,7 @@ from config_helpers import assert_config_error, base_config
     ],
 )
 def test_three_x_ui_invalid_values_raise(
-    tmp_path: pytest.TempPathFactory, content: str
+    tmp_path: Path, content: str
 ) -> None:
     # A wrong type or an out-of-range port is a config error.
     assert_config_error(tmp_path, content, "three_x_ui_xray_setup")

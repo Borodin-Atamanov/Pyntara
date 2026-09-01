@@ -103,6 +103,7 @@ def test_commits_vault_under_hostname_name(
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
+    assert result.message is not None
     assert "lusab-babad.kdbx" in result.message
     assert calls == [
         ["/usr/local/bin/commit_system_metrics", str(temp_path)]

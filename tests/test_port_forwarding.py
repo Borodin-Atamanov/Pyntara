@@ -445,7 +445,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics, "open_runtime_vault", lambda cfg: self._kp(group=False, passphrase=True)
         )
-        assert pf.main() is None
+        pf.main()
 
     def test_exits_cleanly_without_passphrase(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -455,7 +455,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics, "open_runtime_vault", lambda cfg: self._kp(group=True, passphrase=False)
         )
-        assert pf.main() is None
+        pf.main()
 
     def test_exits_nonzero_without_vault(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -494,7 +494,7 @@ class TestMain:
         )
         monkeypatch.setattr(pf, "_start_agent", lambda passphrase, key: {"PATH": "/bin"})
         monkeypatch.setattr(pf.threading, "Thread", FakeThread)
-        assert pf.main() is None
+        pf.main()
         assert len(created) == 1
         target, args = created[0]
         assert target is run_forward_loop

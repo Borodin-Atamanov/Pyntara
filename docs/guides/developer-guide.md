@@ -6,7 +6,8 @@ Clone the repository.
 Run uv sync to set up the Python environment.  
 Run uv run pytest to execute the test suite.  
 Run uv run ruff check . for linting.  
-Run uv run mypy --strict src/ for type checking.
+Run uv run mypy --strict src/ for type checking.  
+The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default.
 
 ## Testing rules
 
