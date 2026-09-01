@@ -93,6 +93,8 @@ packages = [
     "libjpeg-turbo-progs", # libjpeg-turbo-progs: jpegtran, lossless jpeg operations
     "exiftran", # exiftran: lossless jpeg rotation by EXIF
     "tesseract-ocr", # tesseract-ocr: OCR engine
+    "tesseract-ocr-eng", # tesseract-ocr-eng: English language data for tesseract
+    "tesseract-ocr-rus", # tesseract-ocr-rus: Russian language data for tesseract
     "tesseract-ocr-spa", # tesseract-ocr-spa: Spanish language data for tesseract, for eng+rus+esp recognition
     "mat2", # mat2: strip metadata from files
 
