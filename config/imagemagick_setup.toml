@@ -1,0 +1,14 @@
+[imagemagick_setup]
+# ImageMagick installed by the imagemagick_setup task from the Ubuntu
+# archive. On Kubuntu 26.04 and newer the archive already ships ImageMagick 7
+# (imagemagick -> imagemagick-7.q16), so apt is the whole install path: no
+# third-party repository, no AppImage, no source build, no version chase.
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are retries plus one.
+package_install_retries = 3
+
+#package set
+packages = [
+    "imagemagick", # imagemagick: image manipulation programs, ImageMagick 7 on Kubuntu 26.04 and newer
+]

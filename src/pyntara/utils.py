@@ -60,6 +60,50 @@ def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def install_packages(
+    packages: list[str],
+    *,
+    install_timeout: float,
+    update_timeout: float,
+    retries: int,
+    skip_update: bool,
+) -> tuple[list[str], list[tuple[str, str]], list[str]]:
+    """Install each package individually; return (installed, failures, warnings).
+
+    failures is a list of (name, reason); warnings carries non-fatal
+    problems such as a failed apt index refresh. The apt index is refreshed
+    once before the first install, so packages resolve from a fresh index;
+    skip_update=True disables the refresh for test or offline runs. Each
+    package gets one initial attempt plus `retries` retries; a package that
+    still fails is recorded and never blocks the others.
+    """
+
+    installed: list[str] = []
+    failures: list[tuple[str, str]] = []
+    warnings: list[str] = []
+    if not skip_update:
+        try:
+            run_command(
+                ["apt-get", "update"],
+                extra_env=APT_NONINTERACTIVE_ENV,
+                timeout=update_timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"apt index refresh: {exc}")
+    for package in packages:
+        ok = False
+        error = ""
+        for _ in range(retries + 1):
+            ok, error = install_package_once(package, install_timeout)
+            if ok:
+                break
+        if ok:
+            installed.append(package)
+        else:
+            failures.append((package, error))
+    return installed, failures, warnings
+
+
 def read_os_release(path: Path) -> dict[str, str]:
     """Parse an os-release file into a dict of shell-style variables.
 

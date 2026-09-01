@@ -22,6 +22,7 @@ from pyntara.config import (
     EngineConfig,
     HostnameConfig,
     I2pdServiceSetupConfig,
+    ImagemagickSetupConfig,
     KConfigRecord,
     KdeKeyboardSetupConfig,
     KdeSettingsConfig,
@@ -190,6 +191,10 @@ def make_config(
     cli_tools_threshold: int = 70,
     cli_tools_retries: int = 3,
     cli_tools_status_timeout: int = 30,
+
+    imagemagick_setup_packages: tuple[str, ...] = ("imagemagick",),
+    imagemagick_setup_retries: int = 3,
+    imagemagick_setup_status_timeout: int = 30,
 
     dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
     dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
@@ -570,6 +575,11 @@ def make_config(
             package_status_timeout_seconds=cli_tools_status_timeout,
             package_install_retries=cli_tools_retries,
             package_success_threshold_percent=cli_tools_threshold,
+        ),
+        imagemagick_setup=ImagemagickSetupConfig(
+            packages=imagemagick_setup_packages,
+            package_status_timeout_seconds=imagemagick_setup_status_timeout,
+            package_install_retries=imagemagick_setup_retries,
         ),
 
         dnsproxy_setup=DnsproxySetupConfig(

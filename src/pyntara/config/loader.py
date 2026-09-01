@@ -13,6 +13,7 @@ from .dnsproxy_setup import DnsproxySetupConfig, _dnsproxy_setup_table
 from .engine import EngineConfig, _engine_table
 from .hostname import HostnameConfig, _hostname_table
 from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
+from .imagemagick_setup import ImagemagickSetupConfig, _imagemagick_setup_table
 from .kde_keyboard_setup import KdeKeyboardSetupConfig, _kde_keyboard_setup_table
 from .kde_settings import KdeSettingsConfig, _kde_settings_table
 from .nextdns_setup_system_wide import (
@@ -66,6 +67,7 @@ class Config:
     dnsproxy_setup: DnsproxySetupConfig
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
+    imagemagick_setup: ImagemagickSetupConfig
     kde_keyboard_setup: KdeKeyboardSetupConfig
     kde_settings: KdeSettingsConfig
     swapfile_service_install: SwapfileServiceInstallConfig
@@ -164,6 +166,9 @@ def load_config(path: Path) -> Config:
         dnsproxy_setup=_dnsproxy_setup_table(data.get("dnsproxy_setup")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
+        imagemagick_setup=_imagemagick_setup_table(
+            data.get("imagemagick_setup")
+        ),
         kde_keyboard_setup=_kde_keyboard_setup_table(data.get("kde_keyboard_setup")),
         kde_settings=_kde_settings_table(data.get("kde_settings")),
         swapfile_service_install=_swapfile_service_install_table(

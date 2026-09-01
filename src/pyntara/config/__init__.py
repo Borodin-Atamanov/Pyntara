@@ -31,6 +31,7 @@ from .dnsproxy_setup import DnsproxySetupConfig
 from .engine import EngineConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
+from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .kde_settings import KConfigRecord, KdeSettingsConfig
 from .loader import Config, load_config
@@ -77,6 +78,7 @@ __all__ = [
     "EngineConfig",
     "HostnameConfig",
     "I2pdServiceSetupConfig",
+    "ImagemagickSetupConfig",
     "KConfigRecord",
     "KdeKeyboardSetupConfig",
     "KdeSettingsConfig",

@@ -19,6 +19,12 @@ depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "imagemagick_setup"
+description = "Install a modern ImageMagick 7 from the Ubuntu archive with a version gate."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "swapfile_service_install"
 description = "Calculate and configure swapfile from RAM and free disk space."
 depends = []

@@ -35,6 +35,9 @@ def base_config() -> str:
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 
+        '[imagemagick_setup]\npackages = ["imagemagick"]\n'
+        "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
+
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'
