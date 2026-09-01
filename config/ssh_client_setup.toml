@@ -58,3 +58,7 @@ value = "17"
 [[ssh_client_setup.directives]]
 name = "PreferredAuthentications"
 value = "publickey,password"
+
+[[ssh_client_setup.directives]]
+name = "StrictHostKeyChecking"
+value = "accept-new"

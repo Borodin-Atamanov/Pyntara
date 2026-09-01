@@ -34,6 +34,7 @@ DEFAULT_DIRECTIVES = (
     SshDirective(name="ServerAliveInterval", value="61"),
     SshDirective(name="ServerAliveCountMax", value="17"),
     SshDirective(name="PreferredAuthentications", value="publickey,password"),
+    SshDirective(name="StrictHostKeyChecking", value="accept-new"),
 )
 
 SSH_G_LINES = "".join(
