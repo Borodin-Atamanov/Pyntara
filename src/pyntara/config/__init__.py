@@ -46,7 +46,13 @@ from .system_metrics_setup import (
 from .tasks import TaskConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
-from .vault import LocalVaultSetupConfig, VaultEntry, VaultStructureConfig
+from .vault import (
+    LocalVaultSetupConfig,
+    VaultEntry,
+    VaultGroup,
+    VaultGroupSeed,
+    VaultStructureConfig,
+)
 from .yggdrasil_service_setup import (
     YggdrasilMulticastInterfaceConfig,
     YggdrasilServiceSetupConfig,
@@ -87,6 +93,8 @@ __all__ = [
     "ThreeXuiXraySetupConfig",
     "TorSetupConfig",
     "VaultEntry",
+    "VaultGroup",
+    "VaultGroupSeed",
     "VaultStructureConfig",
     "YggdrasilMulticastInterfaceConfig",
     "YggdrasilServiceSetupConfig",

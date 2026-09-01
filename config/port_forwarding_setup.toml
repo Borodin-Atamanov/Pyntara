@@ -13,12 +13,14 @@
 # Title of the vault subgroup that carries the port-forwarding server
 # addresses, one entry per server with the address in the url field. The
 # address may be ipv4, ipv6 or a url. The group is data: the
-# regeneration tooling creates it but never fills or deletes entries.
+# regeneration tooling creates it and fills it with its seed entries on
+# creation, then never edits them.
 vault_group_title = "port_forwarding_servers"
 # Title of the vault entry that carries the passphrase of the deployed
 # port-forwarding private key. The value must name an entry of the
-# [vault_structure] table. The entry exists only in the production
-# vault; a vault without it makes the service connect to nothing.
+# [vault_structure] table. The entry exists in every vault with a freshly
+# generated passphrase per vault; the default vault's passphrase unlocks
+# no deployed key.
 passphrase_entry_title = "ssh_passphase_for_port_forwarding"
 # User the service connects as on every port-forwarding server.
 remote_ssh_user = "i"

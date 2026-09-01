@@ -37,6 +37,39 @@ class VaultEntry:
 
 
 @dataclass(frozen=True)
+class VaultGroupSeed:
+    """One seed entry of a [vault_structure] group.
+
+    title names the KeePass entry the regeneration tooling creates inside
+    the group when it creates the group; url carries the data value (for
+    example a port-forwarding server address) and notes carries the
+    explanatory text. Seed entries are the default content of a data
+    group, so a freshly created vault mirrors the structure before the
+    real data is maintained directly in the database.
+    """
+
+    title: str
+    url: str | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class VaultGroup:
+    """One data subgroup of the [vault_structure] table.
+
+    title names the KeePass group, notes explains what it carries.
+    seed_entries are the entries the regeneration tooling creates inside
+    the group when it creates the group, so a fresh vault starts as a
+    faithful mirror; once the group exists, the tooling never touches its
+    entries.
+    """
+
+    title: str
+    notes: str
+    seed_entries: tuple[VaultGroupSeed, ...] = ()
+
+
+@dataclass(frozen=True)
 class VaultStructureConfig:
     """KeePass vault layout described in the [vault_structure] table.
 
@@ -44,12 +77,14 @@ class VaultStructureConfig:
     (docs/spec/secrets-model.md): the structure is flat, every entry lives
     in the root group and is identified by its unique title; notes
     explains what the entry carries and who consumes it. The optional
-    groups are data subgroups (NextDNS accounts): the regeneration tooling
-    creates them but never fills or deletes their entries.
+    groups are data subgroups (NextDNS accounts, port-forwarding server
+    addresses): the regeneration tooling creates them, fills each with its
+    configured seed entries on creation, and never touches the entries
+    afterwards.
     """
 
     entries: tuple[VaultEntry, ...]
-    groups: tuple[VaultEntry, ...] = ()
+    groups: tuple[VaultGroup, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -146,21 +181,23 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
         )
     groups_raw = raw.get("groups")
     if groups_raw is None:
-        groups: tuple[VaultEntry, ...] = ()
+        groups: tuple[VaultGroup, ...] = ()
     else:
         if not isinstance(groups_raw, list):
             raise ConfigError("[vault_structure] groups must be an array of tables")
-        groups_list: list[VaultEntry] = []
+        groups_list: list[VaultGroup] = []
         for index, group_raw in enumerate(groups_raw):
             if not isinstance(group_raw, dict):
                 raise ConfigError("[vault_structure] groups must be tables")
             unknown = sorted(
-                name for name in group_raw if name not in ("title", "notes")
+                name
+                for name in group_raw
+                if name not in ("title", "notes", "seed_entries")
             )
             if unknown:
                 raise ConfigError(
                     f"[vault_structure] group {index + 1} names unknown field(s) "
-                    f"{', '.join(unknown)}; expected title, notes"
+                    f"{', '.join(unknown)}; expected title, notes, seed_entries"
                 )
             title = group_raw.get("title")
             if not isinstance(title, str) or not title:
@@ -178,9 +215,79 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
                     f"[vault_structure] group {title}: notes must be a "
                     "non-empty string"
                 )
-            groups_list.append(VaultEntry(title=title, notes=notes))
+            seed_entries = _vault_group_seed_entries(group_raw, title)
+            groups_list.append(
+                VaultGroup(title=title, notes=notes, seed_entries=seed_entries)
+            )
         groups = tuple(groups_list)
     return VaultStructureConfig(entries=tuple(entries), groups=groups)
+
+
+def _vault_group_seed_entries(
+    group_raw: dict[str, object], group_title: str
+) -> tuple[VaultGroupSeed, ...]:
+    """Validate the seed_entries array of a group and build the tuple.
+
+    Seed entries are the default content of a data group, so a freshly
+    created vault mirrors the structure. Every seed entry is a table with
+    a unique non-empty title and optional string url and notes fields. url
+    is a data value, allowed here because the seed carries it into the
+    database, unlike the [vault_structure] entries whose url is rejected.
+    """
+
+    raw = group_raw.get("seed_entries")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(
+            f"[vault_structure] group {group_title}: seed_entries must be "
+            "an array of tables"
+        )
+    seed_entries: list[VaultGroupSeed] = []
+    seen_titles: set[str] = set()
+    for index, seed_raw in enumerate(raw):
+        if not isinstance(seed_raw, dict):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} must be a table"
+            )
+        unknown = sorted(
+            name for name in seed_raw if name not in ("title", "url", "notes")
+        )
+        if unknown:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} names unknown field(s) {', '.join(unknown)}; "
+                "expected title, url, notes"
+            )
+        seed_title = seed_raw.get("title")
+        if not isinstance(seed_title, str) or not seed_title:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1}: title must be a non-empty string"
+            )
+        if seed_title in seen_titles:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: duplicate seed "
+                f"entry title: {seed_title}"
+            )
+        seen_titles.add(seed_title)
+        url = seed_raw.get("url")
+        if url is not None and not isinstance(url, str):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: url must be a string"
+            )
+        seed_notes = seed_raw.get("notes")
+        if seed_notes is not None and not isinstance(seed_notes, str):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: notes must be a string"
+            )
+        seed_entries.append(
+            VaultGroupSeed(title=seed_title, url=url, notes=seed_notes)
+        )
+    return tuple(seed_entries)
 
 
 def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:

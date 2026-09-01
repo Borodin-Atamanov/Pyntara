@@ -43,6 +43,20 @@ PASSPHRASE_ENTRY: dict[str, Any] = {
     "notes": "Port forwarding key passphrase.",
 }
 
+SEEDED_GROUPS: list[dict[str, Any]] = [
+    {
+        "title": "port_forwarding_servers",
+        "notes": "Port-forwarding server addresses.",
+        "seed_entries": [
+            {
+                "title": "Server 001",
+                "url": "200:a804:881c:d5d8:6d4e:afab:e158:371",
+                "notes": "Test address.",
+            }
+        ],
+    },
+]
+
 # One proquint word is five letters, consonant-vowel-consonant-vowel-
 # consonant, from the draft-rayner-proquint alphabet.
 PROQUINT_WORD_RE = re.compile(
@@ -104,7 +118,17 @@ def _write_config(
         lines.append("")
         lines.append("[[vault_structure.groups]]")
         for name, value in group.items():
-            lines.append(f"{name} = {json.dumps(value)}")
+            if name == "seed_entries" and isinstance(value, list) and all(
+                isinstance(item, dict) for item in value
+            ):
+                # The nested tables need real TOML array-of-tables syntax;
+                # json.dumps would emit colons that TOML rejects.
+                for seed in value:
+                    lines.append("[[vault_structure.groups.seed_entries]]")
+                    for seed_name, seed_value in seed.items():
+                        lines.append(f"{seed_name} = {json.dumps(seed_value)}")
+            else:
+                lines.append(f"{name} = {json.dumps(value)}")
     for entry in entries:
         lines.append("")
         lines.append("[[vault_structure.entries]]")
@@ -646,6 +670,125 @@ def test_overwrite_recreates_group_empty(
     group2 = kp2.find_groups(name="NextDNS", first=True)
     assert group2 is not None
     assert len(group2.entries) == 0
+
+
+def test_creates_group_with_seed_entries(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A configured group with seed_entries is created with those entries
+    # inside, so a fresh vault mirrors the structure before the real data
+    # is maintained directly in the database.
+    _prepare(
+        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
+    )
+    vault_path = tmp_path / "default.vault"
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group = kp.find_groups(name="port_forwarding_servers", first=True)
+    assert group is not None
+    assert len(group.entries) == 1
+    entry = group.entries[0]
+    assert entry.title == "Server 001"
+    assert entry.url == "200:a804:881c:d5d8:6d4e:afab:e158:371"
+    assert entry.notes == "Test address."
+
+
+def test_update_keeps_existing_group_with_seed_entries(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An existing group keeps its entries: the seed entries fill only a
+    # freshly created group, never an existing one, so the production
+    # server address survives an update.
+    _prepare(
+        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
+    )
+    vault_path = tmp_path / "vault.kdbx"
+    create_database(str(vault_path), password=VAULT_PASSWORD)
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group = kp.add_group(kp.root_group, "port_forwarding_servers")
+    kp.add_entry(group, "Server 001", "", "", "169.58.51.98", "Real server.")
+    kp.save()
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp2 = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group2 = kp2.find_groups(name="port_forwarding_servers", first=True)
+    assert group2 is not None
+    assert len(group2.entries) == 1
+    assert group2.entries[0].url == "169.58.51.98"
+
+
+def test_overwrite_recreates_group_with_seed_entries(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # --overwrite discards the database and rebuilds the configured group
+    # with its seed entries, so a fresh vault mirrors the structure.
+    _prepare(
+        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
+    )
+    vault_path = tmp_path / "vault.kdbx"
+    create_database(str(vault_path), password="old-password")
+    kp = PyKeePass(str(vault_path), password="old-password")
+    group = kp.add_group(kp.root_group, "port_forwarding_servers")
+    kp.add_entry(group, "Server 001", "", "", "169.58.51.98", "Real server.")
+    kp.save()
+    assert gen.main([str(vault_path), "--overwrite"]) == gen.EXIT_OK
+    kp2 = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    group2 = kp2.find_groups(name="port_forwarding_servers", first=True)
+    assert group2 is not None
+    assert len(group2.entries) == 1
+    assert group2.entries[0].url == "200:a804:881c:d5d8:6d4e:afab:e158:371"
+
+
+@pytest.mark.parametrize(
+    "group",
+    [
+        # seed_entries is a string, not an array
+        {"title": "g", "notes": "n", "seed_entries": "Server 001"},
+        # seed entry is a string, not a table
+        {"title": "g", "notes": "n", "seed_entries": ["Server 001"]},
+        # seed entry title is missing
+        {
+            "title": "g",
+            "notes": "n",
+            "seed_entries": [{"url": "200:a804:881c:d5d8:6d4e:afab:e158:371"}],
+        },
+        # seed entry title is an empty string
+        {"title": "g", "notes": "n", "seed_entries": [{"title": ""}]},
+        # seed entry url is a number, not a string
+        {
+            "title": "g",
+            "notes": "n",
+            "seed_entries": [{"title": "Server 001", "url": 7}],
+        },
+        # seed entry names an unknown field
+        {
+            "title": "g",
+            "notes": "n",
+            "seed_entries": [{"title": "Server 001", "password": "x"}],
+        },
+        # duplicate seed entry titles
+        {
+            "title": "g",
+            "notes": "n",
+            "seed_entries": [{"title": "Server 001"}, {"title": "Server 001"}],
+        },
+    ],
+)
+def test_group_seed_entries_wrong_config_raises(
+    gen: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group: dict[str, Any],
+) -> None:
+    _prepare(
+        gen,
+        tmp_path,
+        monkeypatch,
+        entries=[{"title": "a", "notes": "n"}],
+        groups=[group],
+    )
+    vault_path = tmp_path / "default.vault"
+    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
+    assert not vault_path.exists()
 
 
 def test_duplicate_group_title_in_config_is_an_error(

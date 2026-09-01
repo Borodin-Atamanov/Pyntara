@@ -85,6 +85,18 @@ from pyntara.utils import proquint_encode
 # the vault databases, not in the config.
 VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
 
+# KeePass entry fields that a group seed entry may name. Seed entries are
+# the default content of a data group, filled in when the script creates
+# the group, so a fresh vault mirrors the structure before the real data
+# is maintained directly in the database. url is a data value, allowed
+# here because the seed carries it into the database, unlike the
+# [vault_structure] entries whose url is rejected.
+SEED_FIELD_NAMES: tuple[str, ...] = ("title", "url", "notes")
+
+# The fields a [vault_structure] group may name: the group identity, the
+# explanatory notes and the optional seed_entries array.
+GROUP_FIELD_NAMES: tuple[str, ...] = VAULT_FIELD_NAMES + ("seed_entries",)
+
 # The optional generated_password field of an entry, a generation
 # instruction rather than a database field: "proquint-N" asks the script
 # to generate a random password of N proquint words joined by dashes when
@@ -199,13 +211,16 @@ def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
     return entries
 
 
-def load_vault_groups(config_path: Path) -> list[dict[str, str]]:
+def load_vault_groups(config_path: Path) -> list[dict[str, object]]:
     """Read the [vault_structure] groups array of config.toml.
 
     A group is a table with a unique non-empty title and a non-empty notes
-    field, validated the same way as an entry. The groups describe data
-    subgroups (NextDNS accounts) that the tooling creates but never fills
-    or deletes.
+    field, validated the same way as an entry, plus an optional
+    seed_entries array: the default content the script fills into the
+    group when it creates it, so a fresh vault mirrors the structure. The
+    groups describe data subgroups (NextDNS accounts, port-forwarding
+    server addresses) that the tooling fills with seed entries on creation
+    and never edits afterwards.
     """
 
     if not config_path.exists():
@@ -224,17 +239,19 @@ def load_vault_groups(config_path: Path) -> list[dict[str, str]]:
         return []
     if not isinstance(groups_raw, list):
         raise ScriptError("[vault_structure] groups must be an array of tables")
-    groups: list[dict[str, str]] = []
+    groups: list[dict[str, object]] = []
     seen_titles: set[str] = set()
     for index, group_raw in enumerate(groups_raw):
         if not isinstance(group_raw, dict):
             raise ScriptError(f"[vault_structure] group {index + 1} must be a table")
-        unknown = sorted(name for name in group_raw if name not in VAULT_FIELD_NAMES)
+        unknown = sorted(
+            name for name in group_raw if name not in GROUP_FIELD_NAMES
+        )
         if unknown:
             raise ScriptError(
                 f"[vault_structure] group {index + 1} names unknown field(s) "
                 f"{', '.join(unknown)}; expected one of "
-                f"{', '.join(VAULT_FIELD_NAMES)}"
+                f"{', '.join(GROUP_FIELD_NAMES)}"
             )
         title = group_raw.get("title")
         if not isinstance(title, str) or not title:
@@ -250,8 +267,81 @@ def load_vault_groups(config_path: Path) -> list[dict[str, str]]:
             raise ScriptError(
                 f"[vault_structure] group {title}: notes must be a non-empty string"
             )
-        groups.append({"title": title, "notes": notes})
+        groups.append(
+            {
+                "title": title,
+                "notes": notes,
+                "seed_entries": _load_group_seed_entries(group_raw, title),
+            }
+        )
     return groups
+
+
+def _load_group_seed_entries(
+    group_raw: dict[object, object], group_title: str
+) -> list[dict[str, str]]:
+    """The validated seed_entries array of a group, or an empty list.
+
+    Each seed entry is a table with a unique non-empty title and optional
+    url and notes fields. The url field carries the data value (for
+    example the port-forwarding server address) into the freshly created
+    group, so a new vault mirrors the structure before the real data is
+    maintained directly in the database.
+    """
+
+    raw = group_raw.get("seed_entries")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ScriptError(
+            f"[vault_structure] group {group_title}: seed_entries must be "
+            "an array of tables"
+        )
+    seed_entries: list[dict[str, str]] = []
+    seen_titles: set[str] = set()
+    for index, seed_raw in enumerate(raw):
+        if not isinstance(seed_raw, dict):
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} must be a table"
+            )
+        unknown = sorted(
+            name for name in seed_raw if name not in SEED_FIELD_NAMES
+        )
+        if unknown:
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} names unknown field(s) {', '.join(unknown)}; "
+                f"expected one of {', '.join(SEED_FIELD_NAMES)}"
+            )
+        seed_title = seed_raw.get("title")
+        if not isinstance(seed_title, str) or not seed_title:
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1}: title must be a non-empty string"
+            )
+        if seed_title in seen_titles:
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: duplicate seed "
+                f"entry title: {seed_title}"
+            )
+        seen_titles.add(seed_title)
+        url = seed_raw.get("url")
+        if url is not None and not isinstance(url, str):
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: url must be a string"
+            )
+        seed_notes = seed_raw.get("notes")
+        if seed_notes is not None and not isinstance(seed_notes, str):
+            raise ScriptError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: notes must be a string"
+            )
+        seed_entries.append(
+            {"title": seed_title, "url": url or "", "notes": seed_notes or ""}
+        )
+    return seed_entries
 
 
 def resolve_password(vault_path: Path, environ: Mapping[str, str]) -> str | None:
@@ -369,25 +459,35 @@ def _add_entry(kp: PyKeePass, fields: dict[str, str]) -> None:
     )
 
 
-def _add_group(kp: PyKeePass, group: dict[str, str]) -> None:
+def _add_group(kp: PyKeePass, group: dict[str, object]) -> None:
     """Create one data subgroup named by the config.
 
     The group is created under the root with the configured title and
-    notes. It is never filled: the entries inside are data maintained
-    directly in the vault databases, so a regeneration cannot lose or
-    invent accounts.
+    notes. Its configured seed entries are created inside it, so a freshly
+    created vault mirrors the structure; after creation the group is never
+    edited, so a regeneration cannot lose or invent accounts.
     """
 
-    kp.add_group(kp.root_group, group["title"], notes=group["notes"])
+    new_group = kp.add_group(kp.root_group, group["title"], notes=group["notes"])
+    for seed in group.get("seed_entries", []):
+        kp.add_entry(
+            new_group,
+            title=seed["title"],
+            username="",
+            password="",
+            url=seed.get("url") or None,
+            notes=seed.get("notes") or None,
+        )
 
 
 def _ensure_group(
-    kp: PyKeePass, group: dict[str, str], vault_path: Path
+    kp: PyKeePass, group: dict[str, object], vault_path: Path
 ) -> bool:
     """Create the configured subgroup when it is missing; True when created.
 
     The title is the identity of the group, so an existing group with the
-    same title is kept untouched, including its entries.
+    same title is kept untouched, including its entries. A newly created
+    group receives its configured seed entries.
     """
 
     title = group["title"]

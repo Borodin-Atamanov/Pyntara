@@ -8,13 +8,16 @@
 # field names; the notes field of every entry explains what is stored
 # there, who consumes it and why.
 #
-# One optional subgroup is part of the structure: NextDNS. It carries the
-# per-profile NextDNS accounts, one entry per profile, the username field
-# holding the 6-hex profile ID and the title pairing the ID with a
-# proquint name. The subgroup is data, not structure: the regeneration
-# tooling creates the group but never fills or deletes its entries, so
-# the accounts survive every regenration run. Consumed by the
-# nextdns_setup_system_wide task, which picks one profile per machine.
+# Two optional subgroups are part of the structure: NextDNS and
+# port_forwarding_servers. NextDNS carries the per-profile NextDNS
+# accounts, one entry per profile, the username field holding the 6-hex
+# profile ID and the title pairing the ID with a proquint name. The
+# subgroups are data, not structure: the regeneration tooling creates the
+# group, fills it with its configured seed_entries on creation (only
+# port_forwarding_servers has seeds) and never fills or deletes entries
+# afterwards, so the accounts and addresses survive every regeneration
+# run. Consumed by the nextdns_setup_system_wide task, which picks one
+# profile per machine, and by the auto_port_forwarding service.
 [vault_structure]
 
 [[vault_structure.entries]]
@@ -32,7 +35,7 @@ notes = "Credentials of the 3x-ui Xray panel on this machine. The username field
 [[vault_structure.entries]]
 title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
-notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The value exists only in the production vault, never in the default vault: when the regeneration tooling creates the entry in a vault that lacks it, it generates a fresh password of 7 proquint words joined by dashes, so the production secret is never copied."
+notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The entry exists in every vault: the regeneration tooling generates a fresh password of 7 proquint words joined by dashes on creation, so the production secret is never copied and the default vault carries a passphrase that unlocks no deployed key."
 
 [[vault_structure.groups]]
 title = "NextDNS"
@@ -40,4 +43,9 @@ notes = "NextDNS profile accounts, one entry per profile. The username field hol
 
 [[vault_structure.groups]]
 title = "port_forwarding_servers"
-notes = "Port-forwarding server addresses, one entry per server. The url field holds the address (ipv4, ipv6 or a url), other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the addresses survive every vault regeneration. The data exists only in the production vault, never in the default vault: a runtime vault without the group makes the auto_port_forwarding service connect to nothing. Consumed by the auto_port_forwarding service."
+notes = "Port-forwarding server addresses, one entry per server. The url field holds the address (ipv4, ipv6 or a url), other fields are unused. The group is data: tooling creates it and fills it with its seed entries on creation, then never edits them, so the addresses survive every vault regeneration. The default vault carries the seed entry with a well-known test address, so a runtime vault derived from it mirrors the production structure while connecting to nothing real. Consumed by the auto_port_forwarding service."
+
+[[vault_structure.groups.seed_entries]]
+title = "Server 001"
+url = "200:a804:881c:d5d8:6d4e:afab:e158:371"
+notes = "Well-known test address of the default vault, mirrors the production server entry without pointing at a real server."

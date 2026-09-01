@@ -193,3 +193,62 @@ def test_load_config_vault_groups_parse(tmp_path: Path) -> None:
     assert len(config.vault_structure.groups) == 1
     assert config.vault_structure.groups[0].title == "NextDNS"
     assert config.vault_structure.groups[0].notes == "Profile accounts."
+
+
+def test_load_config_vault_group_seed_entries_parse(tmp_path: Path) -> None:
+    # A configured group with seed_entries parses them into the typed
+    # group, so the regeneration tooling can mirror the structure.
+    content = base_config().replace(
+        "[vault_structure]\n[[vault_structure.entries]]",
+        "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"port_forwarding_servers\"\n"
+        'notes = "Server addresses."\n'
+        '[[vault_structure.groups.seed_entries]]\n'
+        'title = "Server 001"\nurl = "200:a804:881c:d5d8:6d4e:afab:e158:371"\n'
+        'notes = "Test address."\n'
+        "[[vault_structure.entries]]",
+    )
+    config = load_config(write_config(tmp_path, content))
+    group = config.vault_structure.groups[0]
+    assert group.title == "port_forwarding_servers"
+    assert group.notes == "Server addresses."
+    assert len(group.seed_entries) == 1
+    seed = group.seed_entries[0]
+    assert seed.title == "Server 001"
+    assert seed.url == "200:a804:881c:d5d8:6d4e:afab:e158:371"
+    assert seed.notes == "Test address."
+
+
+@pytest.mark.parametrize(
+    "seed_block",
+    [
+        # seed_entries is a string, not an array
+        'seed_entries = "Server 001"\n',
+        # seed entry is a string, not a table
+        'seed_entries = ["Server 001"]\n',
+        # seed entry title is missing
+        (
+            "[[vault_structure.groups.seed_entries]]\n"
+            'url = "200:a804:881c:d5d8:6d4e:afab:e158:371"\n'
+        ),
+        # seed entry title is an empty string
+        '[[vault_structure.groups.seed_entries]]\ntitle = ""\n',
+        # seed entry url is a number, not a string
+        '[[vault_structure.groups.seed_entries]]\ntitle = "Server 001"\nurl = 7\n',
+        # seed entry names an unknown field
+        '[[vault_structure.groups.seed_entries]]\ntitle = "Server 001"\npassword = "x"\n',
+        # duplicate seed entry titles
+        (
+            '[[vault_structure.groups.seed_entries]]\ntitle = "Server 001"\n'
+            '[[vault_structure.groups.seed_entries]]\ntitle = "Server 001"\n'
+        ),
+    ],
+)
+def test_load_config_vault_group_seed_entries_wrong_types_raise(
+    tmp_path: Path, seed_block: str
+) -> None:
+    content = base_config().replace(
+        "[vault_structure]\n[[vault_structure.entries]]",
+        '[vault_structure]\n[[vault_structure.groups]]\ntitle = "port_forwarding_servers"\n'
+        'notes = "Server addresses."\n' + seed_block + "[[vault_structure.entries]]",
+    )
+    assert_config_error(tmp_path, content)
