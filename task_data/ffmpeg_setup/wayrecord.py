@@ -1,14 +1,22 @@
 #!/usr/bin/python3
-"""Record the Wayland screen to a file with ffmpeg.
+"""Capture the Wayland screen as raw video on stdout.
 
-The bridge: a python3-dbus client asks the xdg-desktop-portal ScreenCast
-portal for a PipeWire stream (fd plus node id), GStreamer pipewiresrc reads
-that stream, and ffmpeg encodes the raw frames into the output file. The
-screen choice is persisted through the portal restore_token, so after the
-first run (one dialog) the recording starts without asking again.
+The ffmpeg CLI cannot capture Wayland natively, so this script is a capture
+source: it asks the xdg-desktop-portal ScreenCast portal for a PipeWire
+stream (a file descriptor plus the stream node id), reads that stream with
+the GStreamer pipewiresrc element and writes raw I420 frames to stdout. The
+caller pipes the stream into ffmpeg and controls every encoding parameter:
 
-Run as the desktop user in the Wayland session. Dependencies are system
-packages: python3-dbus, gstreamer1.0-pipewire (gi bindings) and ffmpeg.
+pyntara-wayrecord | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i pipe:0 -c:v libx264 out.mp4
+
+The first run shows the KDE screen dialog once; the script saves the
+single-use restore token the portal returns and passes it back on later
+runs, so the recording starts without asking again. The token lives in the
+per-user file wayrecord_token under the pyntara config directory, or in the
+path of the PYNTARA_WAYRECORD_TOKEN environment variable. The stream
+geometry is printed to stderr so the caller can match -s and -r; stdout
+carries only raw frames. The capture stops when the pipe closes (ffmpeg
+exits) or on Ctrl+C.
 """
 
 from __future__ import annotations
@@ -17,12 +25,14 @@ import argparse
 import os
 import re
 import signal
-import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import dbus
+import gi
+
+gi.require_version("Gst", "1.0")
+
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import Gst, GLib
 
@@ -33,7 +43,8 @@ REQUEST_IFACE = "org.freedesktop.portal.Request"
 PORTAL_PERSIST_MODE_PERSISTENT = 2
 TOKEN_ENV = "PYNTARA_WAYRECORD_TOKEN"
 TOKEN_FILE_NAME = "wayrecord_token"
-VAAPI_DEVICE = "/dev/dri/renderD128"
+STREAM_FD = 1
+DEFAULT_FPS = 30
 
 
 class PortalClient:
@@ -103,7 +114,7 @@ class PortalClient:
             )
             dbus.Interface(sess, "org.freedesktop.portal.Session").Close()
         except dbus.DBusException as exc:
-            print(f"warning: cannot close portal session: {exc}")
+            print(f"warning: cannot close portal session: {exc}", file=sys.stderr)
 
 
 def token_path() -> Path:
@@ -129,67 +140,24 @@ def save_token(token: str):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(token, encoding="utf-8")
     except OSError as exc:
-        print(f"warning: cannot save restore token: {exc}")
-
-
-def default_output() -> Path:
-    videos = Path(os.environ.get("XDG_VIDEOS_DIR", Path.home() / "Videos"))
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return videos / f"wayrecord_{stamp}.mp4"
-
-
-def build_ffmpeg_command(
-    output: Path, width: int, height: int, fps: int, codec: str
-) -> list[str]:
-    """The ffmpeg command that consumes raw I420 frames from stdin."""
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "warning",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "yuv420p",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(fps),
-        "-i",
-        "pipe:0",
-    ]
-    if "vaapi" in codec:
-        cmd += [
-            "-vaapi_device",
-            VAAPI_DEVICE,
-            "-vf",
-            "format=nv12,hwupload",
-            "-c:v",
-            codec,
-            "-qp",
-            "24",
-        ]
-    else:
-        cmd += ["-c:v", codec, "-preset", "veryfast", "-crf", "23"]
-    cmd += ["-pix_fmt", "yuv420p", str(output)]
-    return cmd
+        print(f"warning: cannot save restore token: {exc}", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Record the Wayland screen to a file with ffmpeg."
+        description="Capture the Wayland screen as raw video on stdout."
     )
-    parser.add_argument("output", nargs="?", type=Path, help="output file")
-    parser.add_argument("--fps", type=int, default=30, help="frame rate")
-    parser.add_argument("--codec", default="libx264", help="ffmpeg video encoder")
     parser.add_argument(
-        "--seconds",
-        type=float,
-        default=0,
-        help="record this many seconds, then stop (0 = until Ctrl+C)",
+        "--fps",
+        type=int,
+        default=DEFAULT_FPS,
+        help="output frame rate to match in ffmpeg with -r",
     )
     args = parser.parse_args(argv)
-    output = args.output if args.output is not None else default_output()
+    fps = args.fps
+    if fps <= 0:
+        print("error: --fps must be a positive integer", file=sys.stderr)
+        return 1
 
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SessionBus()
@@ -199,24 +167,26 @@ def main(argv: list[str] | None = None) -> int:
 
     def on_create(response, results):
         if response != 0:
-            print(f"error: cannot create portal session ({response})")
+            print(
+                f"error: cannot create portal session ({response})", file=sys.stderr
+            )
             loop.quit()
             return
         state["session"] = str(results["session_handle"])
         client._session = str(state["session"])
-        print("portal session created")
+        print("portal session created", file=sys.stderr)
         client.select_sources(on_select, str(state["session"]), load_token())
 
     def on_select(response, results):
         if response != 0:
-            print(f"error: cannot select sources ({response})")
+            print(f"error: cannot select sources ({response})", file=sys.stderr)
             loop.quit()
             return
         client.start(on_start, str(state["session"]))
 
     def on_start(response, results):
         if response != 0:
-            print("error: screen sharing was not granted")
+            print("error: screen sharing was not granted", file=sys.stderr)
             loop.quit()
             return
         streams = results["streams"]
@@ -235,26 +205,35 @@ def main(argv: list[str] | None = None) -> int:
         loop.quit()
 
     client.create_session(on_create)
-    GLib.timeout_add(60000, lambda: (print("error: portal timeout"), loop.quit())[1])
+    GLib.timeout_add(
+        60000,
+        lambda: (print("error: portal timeout", file=sys.stderr), loop.quit())[1],
+    )
     loop.run()
 
     if not state.get("fd"):
         client.close_session()
-        print("error: no screen stream")
+        print("error: no screen stream", file=sys.stderr)
         return 1
 
     width = int(state["width"])
     height = int(state["height"])
-    fps = args.fps
     if not width or not height:
-        print("error: portal did not report the screen size")
         client.close_session()
+        print("error: portal did not report the screen size", file=sys.stderr)
         return 1
-    print(f"recording {width}x{height}@{fps} to {output}")
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    ffmpeg_cmd = build_ffmpeg_command(output, width, height, fps, args.codec)
-    ffmpeg = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+    print(
+        f"video stream: {width}x{height} {fps}fps format=yuv420p", file=sys.stderr
+    )
+    print(
+        "pipe into ffmpeg, e.g.: pyntara-wayrecord | ffmpeg -f rawvideo "
+        f"-pix_fmt yuv420p -s {width}x{height} -r {fps} -i pipe:0 ...",
+        file=sys.stderr,
+    )
+    print(
+        "recording started; Ctrl+C or closing the pipe stops it", file=sys.stderr
+    )
 
     Gst.init(None)
     pipeline = Gst.parse_launch(
@@ -263,10 +242,10 @@ def main(argv: list[str] | None = None) -> int:
         f"! video/x-raw,format=I420,framerate={fps}/1 ! fdsink"
     )
     fdsink = pipeline.get_by_name("fdsink0")
-    fdsink.set_property("fd", ffmpeg.stdin.fileno())
+    fdsink.set_property("fd", STREAM_FD)
     fdsink.set_property("sync", False)
 
-    stop = {"flag": False}
+    stop = {"flag": False, "code": 0}
 
     def on_signal(signum, frame):
         stop["flag"] = True
@@ -275,38 +254,37 @@ def main(argv: list[str] | None = None) -> int:
     def on_message(bus, msg):
         if msg.type == Gst.MessageType.ERROR:
             err, dbg = msg.parse_error()
-            print(f"error: capture failed: {err.message}")
+            message = err.message
+            debug = dbg or ""
+            # The reader (ffmpeg) closing the pipe ends the capture normally;
+            # a write error to stdout is that expected stop, not a failure.
+            if (
+                "Broken pipe" in message
+                or "EPIPE" in message
+                or "Broken pipe" in debug
+                or "errno 32" in debug
+            ):
+                stop["code"] = 0
+            else:
+                stop["code"] = 1
+                print(f"error: capture failed: {message}", file=sys.stderr)
             stop["flag"] = True
             loop.quit()
         return True
 
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     gbus = pipeline.get_bus()
     gbus.add_signal_watch()
     gbus.connect("message", on_message)
-    if args.seconds > 0:
-        GLib.timeout_add_seconds(
-            max(1, int(args.seconds)), lambda: (stop.__setitem__("flag", True), loop.quit())[1]
-        )
 
     pipeline.set_state(Gst.State.PLAYING)
-    print("recording started; press Ctrl+C to stop")
     loop.run()
 
     pipeline.set_state(Gst.State.NULL)
-    ffmpeg.stdin.close()
-    try:
-        ffmpeg.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        ffmpeg.terminate()
-        ffmpeg.wait(timeout=10)
     client.close_session()
-    if ffmpeg.returncode != 0:
-        print(f"error: ffmpeg exited with {ffmpeg.returncode}")
-        return 1
-    print(f"recorded {output}")
-    return 0
+    return stop["code"]
 
 
 if __name__ == "__main__":

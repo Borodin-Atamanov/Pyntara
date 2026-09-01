@@ -18,7 +18,11 @@ The task is idempotent. Every configured package that dpkg-query reports as inst
 
 The task deploys the wayrecord bridge: the script task_data/ffmpeg_setup/wayrecord.py is copied to the configured system path (pyntara-wayrecord) and made executable. The deploy is idempotent: a target file that already matches the template is left alone.
 
-pyntara-wayrecord records the Wayland screen to a file with ffmpeg. The ffmpeg CLI cannot capture Wayland natively, so the script asks the xdg-desktop-portal ScreenCast portal for a PipeWire stream (a file descriptor plus the stream node id), reads that stream with the GStreamer pipewiresrc element, and feeds the raw frames into ffmpeg, which encodes them with the chosen codec. On the first run the KDE portal shows the screen-choice dialog once; the script then saves the single-use restore token the portal returns and passes it back on later runs, so the recording starts without asking again. The token lives in the per-user file wayrecord_token under the pyntara config directory, or in the path of the PYNTARA_WAYRECORD_TOKEN environment variable. The output defaults to ~/Videos/wayrecord_TIMESTAMP.mp4; --fps, --codec (a vaapi encoder selects the VAAPI device path) and --seconds options tune the recording, and Ctrl+C stops it.
+pyntara-wayrecord is a capture source: the ffmpeg CLI cannot capture Wayland natively, so the script asks the xdg-desktop-portal ScreenCast portal for a PipeWire stream (a file descriptor plus the stream node id), reads that stream with the GStreamer pipewiresrc element and writes raw I420 frames to stdout. The caller pipes the stream into ffmpeg and controls every encoding parameter, for example:
+
+pyntara-wayrecord | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i pipe:0 -c:v libx264 out.mp4
+
+The stream geometry is printed to stderr so the caller can match -s and -r; stdout carries only raw frames. On the first run the KDE portal shows the screen-choice dialog once; the script then saves the single-use restore token the portal returns and passes it back on later runs, so the recording starts without asking again. The token lives in the per-user file wayrecord_token under the pyntara config directory, or in the path of the PYNTARA_WAYRECORD_TOKEN environment variable. The only capture option is --fps (the output frame rate to match in ffmpeg with -r, default 30). The capture stops when the pipe closes (ffmpeg exits) or on Ctrl+C.
 
 ## Parameters
 
