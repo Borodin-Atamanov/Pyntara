@@ -66,6 +66,11 @@ KWIN_SCRIPT_ACTIONS: tuple[str, ...] = (
     "Grow Window by 5px",
     "Shrink Window by 5px",
 )
+# The interpreter that runs the embedded DBus client. The python3-dbus
+# bindings install into the system Python only; the absolute path keeps
+# the client independent of the caller PATH, where the project venv
+# could shadow python3 with an interpreter that cannot see them.
+_DBUS_CLIENT_PYTHON = "/usr/bin/python3"
 
 # The kdeglobals groups and keys that carry the applied theme values.
 GENERAL_GROUP: tuple[str, ...] = ("General",)
@@ -801,7 +806,8 @@ def _release_hotkeys_live(
     The config rewrite alone only applies at the next session start; the
     running daemon holds the keys in memory, so it must release them for
     the change to apply live. The call runs through python3-dbus as the
-    target user, the package the task installs.
+    target user, the package the task installs, under the system
+    interpreter because the bindings install into the system Python only.
     """
 
     code = (
@@ -816,7 +822,7 @@ def _release_hotkeys_live(
         "    action = sys.argv[index + 1]\n"
         "    iface.setForeignShortcutKeys([group, action, group, action], empty)\n"
     )
-    command = ["python3", "-c", code]
+    command = [_DBUS_CLIENT_PYTHON, "-c", code]
     for group, action in targets:
         command.extend([group, action])
     run_command(

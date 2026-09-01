@@ -844,9 +844,9 @@ def _script_fakes(
 ) -> tuple[list[list[str]], list[list[str]]]:
     """Replace run_command for the KWin script install helpers.
 
-    The fake answers the mkdir, kreadconfig6, kwriteconfig6, python3 and
-    chown/chmod commands the install and hotkey steps run; writes and
-    live releases are recorded.
+    The fake answers the mkdir, kreadconfig6, kwriteconfig6, the system
+    python3 and chown/chmod commands the install and hotkey steps run;
+    writes and live releases are recorded.
     """
 
     writes: list[list[str]] = []
@@ -867,7 +867,7 @@ def _script_fakes(
                     key = inner[inner.index("--key") + 1]
                     current_plugins[key] = "true"
                 return _FakeProc(0, "")
-            if inner[0] == "python3":
+            if inner[0] == "/usr/bin/python3":
                 releases.append(list(command))
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
@@ -983,7 +983,7 @@ def test_free_script_hotkeys_clears_and_releases_live(
     assert cleared[0][-1] == "none,none,Switch One Desktop Up"
     assert releases
     assert releases[0][:4] == ["runuser", "-u", "i", "--"]
-    assert "python3" in releases[0]
+    assert "/usr/bin/python3" in releases[0]
 
 
 def test_free_script_hotkeys_without_session_skips_live(
