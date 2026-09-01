@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ._fields import ConfigError, _int_field
 
@@ -12,6 +13,7 @@ class FfmpegSetupConfig:
     """ffmpeg installed by the ffmpeg_setup task."""
 
     packages: tuple[str, ...]
+    wayrecord_bin_path: Path
     package_status_timeout_seconds: int
     package_install_retries: int
 
@@ -26,8 +28,12 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
         isinstance(package, str) for package in packages
     ):
         raise ConfigError("ffmpeg_setup.packages must be an array of strings")
+    wayrecord_bin_path = raw.get("wayrecord_bin_path")
+    if not isinstance(wayrecord_bin_path, str):
+        raise ConfigError("ffmpeg_setup.wayrecord_bin_path must be a string")
     return FfmpegSetupConfig(
         packages=tuple(packages),
+        wayrecord_bin_path=Path(wayrecord_bin_path),
         package_status_timeout_seconds=_int_field(
             raw.get("package_status_timeout_seconds"),
             "ffmpeg_setup.package_status_timeout_seconds",

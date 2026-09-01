@@ -26,15 +26,40 @@ TEST_PACKAGES = ("ffmpeg",)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
+WAYRECORD_CONTENT = b"#!/usr/bin/python3\nprint('wayrecord')\n"
 
-def _test_config() -> Config:
+
+def _wayrecord_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the template and the deploy target at tmp; return the target.
+
+    REPO_ROOT is monkeypatched to a fixture clone that carries the wayrecord
+    template under task_data/ffmpeg_setup/, and the target script lives in
+    the tmp tree so the real /usr/local/bin is never touched.
+    """
+
+    repo = tmp_path / "repo"
+    template_dir = repo / "task_data" / "ffmpeg_setup"
+    template_dir.mkdir(parents=True)
+    (template_dir / "wayrecord.py").write_bytes(WAYRECORD_CONTENT)
+    monkeypatch.setattr(ffmpeg_setup, "REPO_ROOT", repo)
+    return tmp_path / "bin" / "pyntara-wayrecord"
+
+
+def _test_config(wayrecord_bin_path: Path) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
-    return make_config(ffmpeg_setup_packages=TEST_PACKAGES)
+    return make_config(
+        ffmpeg_setup_packages=TEST_PACKAGES,
+        ffmpeg_setup_wayrecord_bin_path=wayrecord_bin_path,
+    )
 
 
-def _ctx(*, skip_apt_update: bool = False) -> Context:
-    return make_context(config=_test_config(), skip_apt_update=skip_apt_update)
+def _ctx(
+    wayrecord_bin_path: Path, *, skip_apt_update: bool = False
+) -> Context:
+    return make_context(
+        config=_test_config(wayrecord_bin_path), skip_apt_update=skip_apt_update
+    )
 
 
 def _install_fake(
@@ -89,20 +114,30 @@ def test_real_config_names_the_meta_package() -> None:
     # name, so dpkg-query sees it as installed.
     config = load_config(REPO_ROOT / "config")
     assert "ffmpeg" in config.ffmpeg_setup.packages
+    assert config.ffmpeg_setup.wayrecord_bin_path.name == "pyntara-wayrecord"
 
 
-def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_installed_skips_apt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
+    wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
+    wayrecord_bin_path.write_bytes(WAYRECORD_CONTENT)
+    wayrecord_bin_path.chmod(0o755)
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = ffmpeg_setup.task(_ctx())
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
     assert result.success is True
     assert result.changed is False
     assert result.message == "already installed"
     assert not any(call[0] == "apt-get" for call in calls)
 
 
-def test_installs_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_installs_missing_package(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed=set())
-    result = ffmpeg_setup.task(_ctx())
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
     assert result.success is True
     assert result.changed is True
     assert "ffmpeg" in (result.message or "")
@@ -117,10 +152,11 @@ def test_installs_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_skip_apt_update_skips_the_update(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed=set())
-    result = ffmpeg_setup.task(_ctx(skip_apt_update=True))
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path, skip_apt_update=True))
     assert result.success is True
     assert result.changed is True
     update_calls = [
@@ -129,8 +165,66 @@ def test_skip_apt_update_skips_the_update(
     assert update_calls == []
 
 
-def test_install_failure_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
     _install_fake(monkeypatch, installed=set(), install_rc=1)
-    result = ffmpeg_setup.task(_ctx())
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
     assert result.success is False
     assert "failed to install" in (result.error or "")
+
+
+def test_wayrecord_deployed_when_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
+    assert result.success is True
+    assert result.changed is True
+    assert wayrecord_bin_path.read_bytes() == WAYRECORD_CONTENT
+    assert wayrecord_bin_path.stat().st_mode & 0o777 == 0o755
+    assert "wayrecord" in (result.message or "")
+
+
+def test_wayrecord_idempotent_when_matching(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
+    wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
+    wayrecord_bin_path.write_bytes(WAYRECORD_CONTENT)
+    wayrecord_bin_path.chmod(0o755)
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
+    assert result.success is True
+    assert result.changed is False
+    assert result.message == "already installed"
+    assert wayrecord_bin_path.read_bytes() == WAYRECORD_CONTENT
+
+
+def test_wayrecord_updated_when_different(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wayrecord_bin_path = _wayrecord_env(monkeypatch, tmp_path)
+    wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
+    wayrecord_bin_path.write_bytes(b"old stale script")
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
+    assert result.success is True
+    assert result.changed is True
+    assert wayrecord_bin_path.read_bytes() == WAYRECORD_CONTENT
+
+
+def test_wayrecord_missing_template_is_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    template_dir = repo / "task_data" / "ffmpeg_setup"
+    template_dir.mkdir(parents=True)
+    monkeypatch.setattr(ffmpeg_setup, "REPO_ROOT", repo)
+    wayrecord_bin_path = tmp_path / "bin" / "pyntara-wayrecord"
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = ffmpeg_setup.task(_ctx(wayrecord_bin_path))
+    assert result.success is False
+    assert "wayrecord" in (result.error or "")

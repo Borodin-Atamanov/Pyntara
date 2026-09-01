@@ -10,7 +10,17 @@ package_status_timeout_seconds = 30
 # Retry attempts after a failed package install; total attempts are retries plus one.
 package_install_retries = 3
 
+# The wayrecord bridge records the Wayland screen through the ScreenCast
+# portal into ffmpeg: the deployed script pyntara-wayrecord asks the portal
+# for a PipeWire stream and feeds it to ffmpeg. Its runtime dependencies are
+# python3-dbus (portal client) and gstreamer1.0-pipewire (stream capture),
+# both system packages installed with the task.
+# The system path the recording script is deployed to.
+wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"
+
 #package set
 packages = [
     "ffmpeg", # ffmpeg: audio and video processing tools, ffmpeg/ffprobe/ffplay
+    "python3-dbus", # python3-dbus: D-Bus bindings, used by the wayrecord portal client
+    "gstreamer1.0-pipewire", # gstreamer1.0-pipewire: PipeWire capture element for wayrecord
 ]

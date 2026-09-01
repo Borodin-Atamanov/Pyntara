@@ -40,6 +40,7 @@ def base_config() -> str:
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
+        'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'
