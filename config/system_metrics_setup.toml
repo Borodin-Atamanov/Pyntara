@@ -98,7 +98,7 @@ google_script_dir = "google_script"
 # successfully sent entries here.
 main_sent_dir = "main_sent"
 # curl timeout of a single Google Drive channel upload, in seconds.
-google_script_timeout_seconds = 60
+google_script_timeout_seconds = 7777
 # Title of the vault entry that carries the Google Drive web app
 # credentials: url holds the endpoint, password holds the shared auth
 # key (docs/spec/secrets-model.md). The value must name an entry of the
