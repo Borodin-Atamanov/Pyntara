@@ -20,7 +20,7 @@ modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "imagemagick_setup"
-description = "Install a modern ImageMagick 7 from the Ubuntu archive with a version gate."
+description = "Install ImageMagick from the Ubuntu archive and deploy the tuned security policy."
 depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 

@@ -36,6 +36,7 @@ def base_config() -> str:
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 
         '[imagemagick_setup]\npackages = ["imagemagick"]\n'
+        'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'

@@ -8,6 +8,12 @@ package_status_timeout_seconds = 30
 # Retry attempts after a failed package install; total attempts are retries plus one.
 package_install_retries = 3
 
+# System ImageMagick security policy. The task writes the tuned policy from
+# task_data/imagemagick_setup/policy.xml over this file and saves the
+# package original once next to it as policy_path.bak (ImageMagick loads
+# only the file named policy.xml, so the backup is never picked up).
+policy_path = "/etc/ImageMagick-7/policy.xml"
+
 #package set
 packages = [
     "imagemagick", # imagemagick: image manipulation programs, ImageMagick 7 on Kubuntu 26.04 and newer

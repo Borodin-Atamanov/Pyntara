@@ -2,6 +2,14 @@
 
 Planned future work. После реализации - удаляем из этого файла.
 
+## REPO_ROOT duplication in task modules
+
+The constant REPO_ROOT = Path(__file__).resolve().parents[3] is duplicated in every task module that reads shipped files: dnsproxy_setup, i2pd_service_setup, kde_settings, local_vault_setup, nextdns_setup_system_wide, port_forwarding_setup, ssh_daemon_setup, swapfile_service_install, system_metrics_setup, zram_service, zswap_service, and now imagemagick_setup. This violates the architecture contract Configuration rule that shared values and helpers live in one module and are imported, never copied. REPO_ROOT was removed from the Approved exceptions list in docs/contracts/architecture.md on 2026-08-31, so every copy is now a recorded violation to fix.
+
+Fix: define REPO_ROOT once in src/pyntara/utils.py as Path(__file__).resolve().parents[2] (utils.py sits in src/pyntara/, one level above the tasks), then replace each local definition with from pyntara.utils import REPO_ROOT. Tests keep working unchanged: they monkeypatch the module-level name (monkeypatch.setattr(task_module, "REPO_ROOT", ...)), which still rebinds an imported attribute.
+
+Optional deeper improvement: move the repo root into Context as ctx.repo_root, computed once in the composition root pyntara.py (Path(__file__).resolve().parents[1]) and handed to tasks through Context, matching the rule that values travel to tasks through Context; tests would set it in the Context fixture. The standalone secrets/ scripts (read_google_script_credentials.py, regenerate_vault_by_config.py) stay outside the engine flow and keep a local definition. Убрать дублирование.
+
 ## Fresh install log findings
 
 Findings from the real fresh-install run captured in gitignore/pyntara_install_real_issues.log (2026-08-26). Each item names the task, the observed line and the place in the code to investigate; reproduce on the target machine and verify the implied goal live.

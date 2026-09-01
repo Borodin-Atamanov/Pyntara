@@ -26,15 +26,40 @@ TEST_PACKAGES = ("imagemagick",)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
+POLICY_CONTENT = (
+    '<policymap><policy domain="resource" name="memory" value="128GiB"/></policymap>'
+)
 
-def _test_config() -> Config:
+
+def _policy_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the template and the policy target at tmp; return the target.
+
+    REPO_ROOT is monkeypatched to a fixture clone that carries the policy
+    template under task_data/imagemagick_setup/, and the target policy file
+    lives in the tmp tree so the real /etc is never touched.
+    """
+
+    repo = tmp_path / "repo"
+    template_dir = repo / "task_data" / "imagemagick_setup"
+    template_dir.mkdir(parents=True)
+    (template_dir / "policy.xml").write_text(POLICY_CONTENT, encoding="utf-8")
+    monkeypatch.setattr(imagemagick_setup, "REPO_ROOT", repo)
+    return tmp_path / "policy.xml"
+
+
+def _test_config(policy_path: Path) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
-    return make_config(imagemagick_setup_packages=TEST_PACKAGES)
+    return make_config(
+        imagemagick_setup_packages=TEST_PACKAGES,
+        imagemagick_setup_policy_path=policy_path,
+    )
 
 
-def _ctx(*, skip_apt_update: bool = False) -> Context:
-    return make_context(config=_test_config(), skip_apt_update=skip_apt_update)
+def _ctx(*, skip_apt_update: bool = False, policy_path: Path) -> Context:
+    return make_context(
+        config=_test_config(policy_path), skip_apt_update=skip_apt_update
+    )
 
 
 def _install_fake(
@@ -91,18 +116,26 @@ def test_real_config_names_the_meta_package() -> None:
     assert "imagemagick" in config.imagemagick_setup.packages
 
 
-def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_installed_skips_apt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(_ctx())
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
     assert result.success is True
     assert result.changed is False
     assert result.message == "already installed"
     assert not any(call[0] == "apt-get" for call in calls)
 
 
-def test_installs_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_installs_missing_package(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
     calls = _install_fake(monkeypatch, installed=set())
-    result = imagemagick_setup.task(_ctx())
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
     assert result.success is True
     assert result.changed is True
     assert "imagemagick" in (result.message or "")
@@ -116,9 +149,15 @@ def test_installs_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
     assert install_calls == [["apt-get", "install", "-y", "imagemagick"]]
 
 
-def test_skip_apt_update_skips_the_update(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skip_apt_update_skips_the_update(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
     calls = _install_fake(monkeypatch, installed=set())
-    result = imagemagick_setup.task(_ctx(skip_apt_update=True))
+    result = imagemagick_setup.task(
+        _ctx(skip_apt_update=True, policy_path=policy_path)
+    )
     assert result.success is True
     assert result.changed is True
     update_calls = [
@@ -127,8 +166,56 @@ def test_skip_apt_update_skips_the_update(monkeypatch: pytest.MonkeyPatch) -> No
     assert update_calls == []
 
 
-def test_install_failure_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
     _install_fake(monkeypatch, installed=set(), install_rc=1)
-    result = imagemagick_setup.task(_ctx())
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
     assert result.success is False
     assert "failed to install" in (result.error or "")
+
+
+def test_policy_written_and_backed_up_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text("package original policy", encoding="utf-8")
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    assert result.success is True
+    assert result.changed is True
+    assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
+    backup = policy_path.with_name(f"{policy_path.name}.bak")
+    assert backup.read_text(encoding="utf-8") == "package original policy"
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    assert result.success is True
+    assert result.changed is False
+    assert backup.read_text(encoding="utf-8") == "package original policy"
+
+
+def test_policy_created_when_target_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    assert result.success is True
+    assert result.changed is True
+    assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
+    assert not policy_path.with_name(f"{policy_path.name}.bak").exists()
+
+
+def test_policy_backup_never_overwritten(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text("changed system policy", encoding="utf-8")
+    backup = policy_path.with_name(f"{policy_path.name}.bak")
+    backup.write_text("original backup", encoding="utf-8")
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    assert result.success is True
+    assert result.changed is True
+    assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
+    assert backup.read_text(encoding="utf-8") == "original backup"

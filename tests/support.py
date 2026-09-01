@@ -193,6 +193,7 @@ def make_config(
     cli_tools_status_timeout: int = 30,
 
     imagemagick_setup_packages: tuple[str, ...] = ("imagemagick",),
+    imagemagick_setup_policy_path: Path = Path("/etc/ImageMagick-7/policy.xml"),
     imagemagick_setup_retries: int = 3,
     imagemagick_setup_status_timeout: int = 30,
 
@@ -578,6 +579,7 @@ def make_config(
         ),
         imagemagick_setup=ImagemagickSetupConfig(
             packages=imagemagick_setup_packages,
+            policy_path=imagemagick_setup_policy_path,
             package_status_timeout_seconds=imagemagick_setup_status_timeout,
             package_install_retries=imagemagick_setup_retries,
         ),

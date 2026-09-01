@@ -19,16 +19,28 @@ from pyntara.config import load_config
         ),
         # packages contains a number, not strings
         base_config().replace('packages = ["imagemagick"]', "packages = [1]"),
+        # policy_path is a number, not a string
+        base_config().replace(
+            'policy_path = "/etc/ImageMagick-7/policy.xml"', "policy_path = 42"
+        ),
         # package_status_timeout_seconds of this section is a string
         base_config().replace(
-            'packages = ["imagemagick"]\npackage_status_timeout_seconds = 30\n',
-            'packages = ["imagemagick"]\npackage_status_timeout_seconds = "30"\n',
+            'packages = ["imagemagick"]\n'
+            'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            "package_status_timeout_seconds = 30\n",
+            'packages = ["imagemagick"]\n'
+            'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            'package_status_timeout_seconds = "30"\n',
         ),
         # package_install_retries is a string
         base_config().replace(
-            'packages = ["imagemagick"]\npackage_status_timeout_seconds = 30\n'
+            'packages = ["imagemagick"]\n'
+            'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            "package_status_timeout_seconds = 30\n"
             "package_install_retries = 3\n",
-            'packages = ["imagemagick"]\npackage_status_timeout_seconds = 30\n'
+            'packages = ["imagemagick"]\n'
+            'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            "package_status_timeout_seconds = 30\n"
             'package_install_retries = "3"\n',
         ),
     ],
@@ -41,5 +53,6 @@ def test_load_config_imagemagick_values(tmp_path: Path) -> None:
     # The typed values round-trip from the config document.
     config = load_config(write_config(tmp_path, base_config()))
     assert config.imagemagick_setup.packages == ("imagemagick",)
+    assert config.imagemagick_setup.policy_path == Path("/etc/ImageMagick-7/policy.xml")
     assert config.imagemagick_setup.package_status_timeout_seconds == 30
     assert config.imagemagick_setup.package_install_retries == 3

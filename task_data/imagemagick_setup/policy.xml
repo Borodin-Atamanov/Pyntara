@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policymap [
+<!ELEMENT policymap (policy)*>
+<!ATTLIST policymap xmlns CDATA #FIXED "">
+<!ELEMENT policy EMPTY>
+<!ATTLIST policy xmlns CDATA #FIXED "">
+<!ATTLIST policy domain NMTOKEN #REQUIRED>
+<!ATTLIST policy name NMTOKEN #IMPLIED>
+<!ATTLIST policy pattern CDATA #IMPLIED>
+<!ATTLIST policy rights NMTOKEN #IMPLIED>
+<!ATTLIST policy stealth NMTOKEN #IMPLIED>
+<!ATTLIST policy value CDATA #IMPLIED>
+]>
+<!--
+  Tuned ImageMagick policy for a personal workstation: maximum resource
+  limits so processing uses all physical RAM and many threads, spills to
+  disk when needed, waits at most a day and accepts very large images.
+  ImageMagick clamps memory to the machine RAM and threads to the core
+  count, so these values are safe ceilings. The security entries (indirect
+  reads and the URL/HTTPS/HTTP delegates) are kept from the default open
+  policy.
+-->
+<policymap>
+  <policy domain="Undefined" rights="none"/>
+  <policy domain="resource" name="memory" value="128GiB"/>
+  <policy domain="resource" name="map" value="256GiB"/>
+  <policy domain="resource" name="area" value="1GP"/>
+  <policy domain="resource" name="disk" value="128GiB"/>
+  <policy domain="resource" name="width" value="1MP"/>
+  <policy domain="resource" name="height" value="1MP"/>
+  <policy domain="resource" name="list-length" value="65535"/>
+  <policy domain="resource" name="file" value="131072"/>
+  <policy domain="resource" name="thread" value="128"/>
+  <policy domain="resource" name="time" value="86400"/>
+  <policy domain="resource" name="throttle" value="0"/>
+  <policy domain="path" rights="none" pattern="@*"/>
+  <policy domain="delegate" rights="none" pattern="URL"/>
+  <policy domain="delegate" rights="none" pattern="HTTPS"/>
+  <policy domain="delegate" rights="none" pattern="HTTP"/>
+</policymap>

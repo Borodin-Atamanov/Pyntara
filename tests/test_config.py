@@ -41,6 +41,7 @@ package_success_threshold_percent = 70
 
 [imagemagick_setup]
 packages = ["imagemagick"]
+policy_path = "/etc/ImageMagick-7/policy.xml"
 package_status_timeout_seconds = 30
 package_install_retries = 3
 
@@ -483,6 +484,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.cli_tools.package_install_retries == 3
     assert config.cli_tools.package_success_threshold_percent == 70
     assert config.imagemagick_setup.packages == ("imagemagick",)
+    assert config.imagemagick_setup.policy_path == Path("/etc/ImageMagick-7/policy.xml")
     assert config.imagemagick_setup.package_status_timeout_seconds == 30
     assert config.imagemagick_setup.package_install_retries == 3
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")

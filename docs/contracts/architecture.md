@@ -43,7 +43,6 @@ PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by i
 
 Approved exceptions (recorded user approvals):
 
-REPO_ROOT of every task module (Path(__file__).resolve().parents[3]): the repository clone location. It is a repository layout path (a fixed machine contract, not configuration: the clone must be locatable before the config is read) and is monkeypatched by the tests (docs/guides/developer-guide.md); the source vault paths of local_vault_setup are resolved against it.  
 The NextDNS profile ID shape: exactly six lowercase hex digits, validated by pyntara.nextdns. It is a format invariant of the NextDNS service, not a behavior of the installer, so it stays in code; every other NextDNS value (the vault group title, the profile ID file path and mode) lives in the [nextdns_setup_system_wide] config table.
 
 ## Context contract
