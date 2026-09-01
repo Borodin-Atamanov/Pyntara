@@ -41,6 +41,7 @@ packages = [
     # archivers
     "unrar", # unrar: extractor for the proprietary RAR archive format
     "unrar-free", # unrar-free: free replacement for unrar
+    "rar", # rar: proprietary RAR archiver, creates RAR archives
     "unzip", # unzip: ZIP archive extractor
     "7zip", # 7zip: modern 7-Zip archiver, replaces the removed p7zip-full
     "xz-utils", # xz-utils: XZ and LZMA compression tools
@@ -66,6 +67,7 @@ packages = [
     "traceroute", # traceroute: trace the network path to a remote host
     "whois", # whois: client for the whois directory service
     "wget", # wget: non-interactive network downloader
+    "netcat-openbsd", # netcat-openbsd: nc, arbitrary TCP and UDP connections
     "bind9-dnsutils", # bind9-dnsutils: DNS utilities dig, nslookup and host; the real package behind the transitional dnsutils
     "nload", # nload: console network traffic monitor
     "speedometer", # speedometer: console bandwidth usage meter
@@ -81,6 +83,27 @@ packages = [
     # media tools
     "mediainfo", # mediainfo: technical details of media files, codecs and streams
     "libimage-exiftool-perl", # libimage-exiftool-perl: exiftool tool for EXIF and IPTC metadata; the real package behind the virtual exiftool name
+    "mkvtoolnix", # mkvtoolnix: mkvmerge and mkvextract, MKV muxing and extraction
+    "webp", # webp: cwebp and img2webp, WebP encoder and animation
+    "libheif-examples", # libheif-examples: heif-enc and heif-convert, HEIC/HEIF encoding
+    "eyed3", # eyed3: eyeD3, mp3 tag editor
+    "jpegoptim", # jpegoptim: optimize jpeg file size
+    "jhead", # jhead: jpeg EXIF header tool, autorotate
+    "libjpeg-turbo-progs", # libjpeg-turbo-progs: jpegtran, lossless jpeg operations
+    "exiftran", # exiftran: lossless jpeg rotation by EXIF
+    "tesseract-ocr", # tesseract-ocr: OCR engine
+    "tesseract-ocr-spa", # tesseract-ocr-spa: Spanish language data for tesseract, for eng+rus+esp recognition
+    "mat2", # mat2: strip metadata from files
+
+    # pdf and documents
+    "poppler-utils", # poppler-utils: pdfunite, pdfseparate, pdfattach, pdfinfo, pdftotext, pdftoppm
+    "texlive-extra-utils", # texlive-extra-utils: pdfcrop, crop pdf margins
+    "pdftk-java", # pdftk-java: pdftk, pdf manipulation and metadata
+    "qpdf", # qpdf: pdf encryption, cleaning, normalization
+    "ghostscript", # ghostscript: gs, postscript and pdf interpreter
+    "pandoc", # pandoc: document format converter
+    "lynx", # lynx: text mode web browser, html to text
+    "calibre", # calibre: ebook-convert, ebook format conversion
 
     # automation and configuration
     "expect", # expect: automate interactive terminal programs
@@ -88,5 +111,8 @@ packages = [
 
     # small utilities
     "calc", # calc: arbitrary precision calculator
+    "bc", # bc: arbitrary precision calculator language
+    "perl", # perl: scripting language used in pipelines
+    "libc-bin", # libc-bin: iconv, text encoding conversion
     "hollywood", # hollywood: decorative fake Hollywood-style terminal activity
 ]
