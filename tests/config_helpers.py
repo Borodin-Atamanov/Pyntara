@@ -41,6 +41,7 @@ def base_config() -> str:
 
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
         'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
+        'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'

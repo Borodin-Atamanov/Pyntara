@@ -28,6 +28,7 @@ import os
 import re
 import signal
 import sys
+import time
 from pathlib import Path
 
 import dbus
@@ -36,7 +37,7 @@ import gi
 gi.require_version("Gst", "1.0")
 
 from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import Gst, GLib
+from gi.repository import GLib, Gst
 
 DESKTOP_IFACE = "org.freedesktop.portal.Desktop"
 DESKTOP_PATH = "/org/freedesktop/portal/desktop"
@@ -47,6 +48,10 @@ TOKEN_ENV = "PYNTARA_WAYRECORD_TOKEN"
 TOKEN_FILE_NAME = "wayrecord_token"
 STREAM_FD = 1
 DEFAULT_CAPS = "video/x-raw,format=I420,framerate=30/1"
+# The portal backend activates on demand and may not answer the PipeWire
+# stream request on the first try, so it is retried with a short pause.
+OPEN_PIPEWIRE_RETRIES = 3
+OPEN_PIPEWIRE_RETRY_DELAY_SECONDS = 0.5
 
 PROG = "pyntara-wayrecord"
 
@@ -151,10 +156,23 @@ class PortalClient:
 
     def open_pipewire_fd(self) -> int:
         empty_dict = dbus.Dictionary(signature="sv")
-        fd_obj = self._portal.OpenPipeWireRemote(
-            self._session, empty_dict, dbus_interface=SCREENCAST_IFACE
-        )
-        return int(fd_obj.take())
+        last_error: dbus.DBusException | None = None
+        for attempt in range(1, OPEN_PIPEWIRE_RETRIES + 1):
+            try:
+                fd_obj = self._portal.OpenPipeWireRemote(
+                    self._session, empty_dict, dbus_interface=SCREENCAST_IFACE
+                )
+                return int(fd_obj.take())
+            except dbus.DBusException as exc:
+                last_error = exc
+                if attempt < OPEN_PIPEWIRE_RETRIES:
+                    print(
+                        f"warning: portal did not return the PipeWire stream "
+                        f"(attempt {attempt}): {exc}",
+                        file=sys.stderr,
+                    )
+                    time.sleep(OPEN_PIPEWIRE_RETRY_DELAY_SECONDS)
+        raise last_error  # type: ignore[misc]
 
     def close_session(self):
         if not self._session:
@@ -207,7 +225,7 @@ def caps_geometry(
     try:
         caps = Gst.Caps.from_string(caps_string)
         structure = caps.get_structure(0)
-    except Exception:
+    except Exception:  # noqa: BLE001 - GStreamer raises GLib.Error on bad caps
         return "I420", native_width, native_height, 30, 1
     fmt = structure.get_string("format") or "I420"
     ok, width = structure.get_int("width")
@@ -267,7 +285,12 @@ def main(argv: list[str] | None = None) -> int:
         state["node_id"] = node_id
         state["width"] = width
         state["height"] = height
-        state["fd"] = client.open_pipewire_fd()
+        try:
+            state["fd"] = client.open_pipewire_fd()
+        except dbus.DBusException as exc:
+            state["error"] = f"portal did not return the PipeWire stream: {exc}"
+            loop.quit()
+            return
         loop.quit()
 
     client.create_session(on_create)
@@ -277,6 +300,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     loop.run()
 
+    if state.get("error"):
+        client.close_session()
+        print(f"error: {state['error']}", file=sys.stderr)
+        return 1
     if not state.get("fd"):
         client.close_session()
         print("error: no screen stream", file=sys.stderr)

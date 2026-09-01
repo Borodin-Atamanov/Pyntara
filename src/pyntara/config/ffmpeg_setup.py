@@ -14,6 +14,7 @@ class FfmpegSetupConfig:
 
     packages: tuple[str, ...]
     wayrecord_bin_path: Path
+    wayrecord_desktop_path: Path
     package_status_timeout_seconds: int
     package_install_retries: int
 
@@ -31,9 +32,13 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
     wayrecord_bin_path = raw.get("wayrecord_bin_path")
     if not isinstance(wayrecord_bin_path, str):
         raise ConfigError("ffmpeg_setup.wayrecord_bin_path must be a string")
+    wayrecord_desktop_path = raw.get("wayrecord_desktop_path")
+    if not isinstance(wayrecord_desktop_path, str):
+        raise ConfigError("ffmpeg_setup.wayrecord_desktop_path must be a string")
     return FfmpegSetupConfig(
         packages=tuple(packages),
         wayrecord_bin_path=Path(wayrecord_bin_path),
+        wayrecord_desktop_path=Path(wayrecord_desktop_path),
         package_status_timeout_seconds=_int_field(
             raw.get("package_status_timeout_seconds"),
             "ffmpeg_setup.package_status_timeout_seconds",

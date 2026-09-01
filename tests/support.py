@@ -206,6 +206,9 @@ def make_config(
     ffmpeg_setup_wayrecord_bin_path: Path = Path(
         "/usr/local/bin/pyntara-wayrecord"
     ),
+    ffmpeg_setup_wayrecord_desktop_path: Path = Path(
+        "/usr/share/applications/pyntara-wayrecord.desktop"
+    ),
 
     dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
     dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
@@ -615,6 +618,7 @@ def make_config(
         ffmpeg_setup=FfmpegSetupConfig(
             packages=ffmpeg_setup_packages,
             wayrecord_bin_path=ffmpeg_setup_wayrecord_bin_path,
+            wayrecord_desktop_path=ffmpeg_setup_wayrecord_desktop_path,
             package_status_timeout_seconds=ffmpeg_setup_status_timeout,
             package_install_retries=ffmpeg_setup_retries,
         ),

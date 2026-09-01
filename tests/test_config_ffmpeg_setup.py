@@ -24,23 +24,32 @@ from pyntara.config import load_config
             'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"',
             "wayrecord_bin_path = 42",
         ),
+        # wayrecord_desktop_path is a number, not a string
+        base_config().replace(
+            'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"',
+            "wayrecord_desktop_path = 42",
+        ),
         # package_status_timeout_seconds of this section is a string
         base_config().replace(
             'packages = ["ffmpeg"]\n'
             'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
+            'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
             "package_status_timeout_seconds = 30\n",
             'packages = ["ffmpeg"]\n'
             'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
+            'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
             'package_status_timeout_seconds = "30"\n',
         ),
         # package_install_retries is a string
         base_config().replace(
             'packages = ["ffmpeg"]\n'
             'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
+            'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
             "package_status_timeout_seconds = 30\n"
             "package_install_retries = 3\n",
             'packages = ["ffmpeg"]\n'
             'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
+            'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
             "package_status_timeout_seconds = 30\n"
             'package_install_retries = "3"\n',
         ),
@@ -56,6 +65,9 @@ def test_load_config_ffmpeg_values(tmp_path: Path) -> None:
     assert config.ffmpeg_setup.packages == ("ffmpeg",)
     assert config.ffmpeg_setup.wayrecord_bin_path == Path(
         "/usr/local/bin/pyntara-wayrecord"
+    )
+    assert config.ffmpeg_setup.wayrecord_desktop_path == Path(
+        "/usr/share/applications/pyntara-wayrecord.desktop"
     )
     assert config.ffmpeg_setup.package_status_timeout_seconds == 30
     assert config.ffmpeg_setup.package_install_retries == 3

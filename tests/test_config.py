@@ -49,6 +49,7 @@ package_install_retries = 3
 [ffmpeg_setup]
 packages = ["ffmpeg"]
 wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"
+wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"
 package_status_timeout_seconds = 30
 package_install_retries = 3
 
@@ -526,6 +527,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.ffmpeg_setup.packages == ("ffmpeg",)
     assert config.ffmpeg_setup.wayrecord_bin_path == Path(
         "/usr/local/bin/pyntara-wayrecord"
+    )
+    assert config.ffmpeg_setup.wayrecord_desktop_path == Path(
+        "/usr/share/applications/pyntara-wayrecord.desktop"
     )
     assert config.ffmpeg_setup.package_status_timeout_seconds == 30
     assert config.ffmpeg_setup.package_install_retries == 3
