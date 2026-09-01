@@ -88,6 +88,7 @@ packages = [
     "libheif-examples", # libheif-examples: heif-enc and heif-convert, HEIC/HEIF encoding
     "eyed3", # eyed3: eyeD3, mp3 tag editor
     "jpegoptim", # jpegoptim: optimize jpeg file size
+    "pngquant", # pngquant: lossy PNG compressor, palette reduction with dithering
     "jhead", # jhead: jpeg EXIF header tool, autorotate
     "libjpeg-turbo-progs", # libjpeg-turbo-progs: jpegtran, lossless jpeg operations
     "exiftran", # exiftran: lossless jpeg rotation by EXIF
