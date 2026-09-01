@@ -106,7 +106,7 @@ def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
 
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
-    # five entries including the cross-checked titles.
+    # six entries including the cross-checked titles.
     config = load_config(write_config(tmp_path, base_config()))
     assert [entry.title for entry in config.vault_structure.entries] == [
         "password_salt",
@@ -114,6 +114,7 @@ def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> N
         "google_script_key",
         "three_x_ui_credentials",
         "ssh_passphase_for_port_forwarding",
+        "rustdesk_password",
     ]
     # The groups array is optional: the base config has none.
     assert config.vault_structure.groups == ()

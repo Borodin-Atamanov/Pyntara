@@ -25,6 +25,7 @@ from .port_forwarding_setup import (
     PortForwardingSetupConfig,
     _port_forwarding_setup_table,
 )
+from .rustdesk_setup import RustdeskSetupConfig, _rustdesk_setup_table
 from .ssh import (
     SshClientSetupConfig,
     SshDaemonSetupConfig,
@@ -83,6 +84,7 @@ class Config:
     ssh_client_setup: SshClientSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     port_forwarding_setup: PortForwardingSetupConfig
+    rustdesk_setup: RustdeskSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
@@ -162,6 +164,15 @@ def load_config(path: Path) -> Config:
                 "three_x_ui_xray_setup.vault_entry_title must name an entry "
                 "of the [vault_structure] table"
             )
+    rustdesk_setup = _rustdesk_setup_table(data.get("rustdesk_setup"))
+    if not any(
+        entry.title == rustdesk_setup.vault_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "rustdesk_setup.vault_entry_title must name an entry of the "
+            "[vault_structure] table"
+        )
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
@@ -195,6 +206,7 @@ def load_config(path: Path) -> Config:
             data.get("nextdns_setup_system_wide")
         ),
         port_forwarding_setup=port_forwarding_setup,
+        rustdesk_setup=rustdesk_setup,
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

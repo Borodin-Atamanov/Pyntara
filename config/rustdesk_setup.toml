@@ -1,0 +1,77 @@
+[rustdesk_setup]
+# RustDesk remote desktop client: install and configure for unattended
+# access. The task installs the newest client release from the GitHub
+# releases of github_repo as a deb, registers the machine on the public
+# RustDesk rendezvous server and applies the client options below. The
+# permanent password is generated per machine (password_words random
+# proquint words joined by password_separator), stored in the runtime
+# vault entry named by vault_entry_title and applied through
+# rustdesk --password, so every machine of the fleet gets its own
+# access credential. The machine ID is written to id_file_path so the
+# System Metrics collector includes it in the network report
+# (docs/spec/rustdesk-setup.md).
+github_repo = "rustdesk/rustdesk"
+# Directory the downloaded deb is kept in during the install.
+download_dir = "/var/cache/pyntara/rustdesk"
+# File that carries the machine RustDesk ID for the network report.
+id_file_path = "/var/lib/pyntara/rustdesk_id"
+# File mode of the ID file, as an octal string.
+id_file_mode = "0644"
+# Title of the runtime vault entry that carries the permanent password.
+vault_entry_title = "rustdesk_password"
+# Name of the rustdesk system service unit.
+service_unit_name = "rustdesk.service"
+# Number of random proquint words of the permanent password.
+password_words = 6
+# Separator between the proquint words of the permanent password.
+password_separator = " "
+# Directory that holds the rustdesk client configuration of the primary
+# desktop user. Force mode removes the identity file inside it, so the
+# service generates a fresh machine ID on the next start.
+config_dir = "/home/i/.config/rustdesk"
+# Seconds a single install command may run before it is killed.
+install_timeout_seconds = 600
+# Seconds the apt index refresh may run.
+apt_update_timeout_seconds = 600
+# Install attempts after the first one.
+install_retries = 2
+# Seconds the GitHub releases API call may take.
+api_timeout_seconds = 30
+# Readiness loop after the service start: attempts and the pause between
+# them, in seconds. The rustdesk service becomes active when its root
+# --service process starts, but the per-session --server process that
+# owns the IPC and the machine ID appears a moment later.
+start_check_attempts = 10
+start_check_retry_delay_seconds = 1.0
+
+# Client options applied through rustdesk --option. Each entry is a
+# key/value pair of the rustdesk options table; the task reads the
+# current value and sets the option only when it differs, so the options
+# are idempotent.
+[[rustdesk_setup.options]]
+key = "enable-udp-punch"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "enable-ipv6-punch"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "allow-linux-headless"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "direct-server"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "direct-access-port"
+value = "21118"
+
+[[rustdesk_setup.options]]
+key = "enable-abr"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "access-mode"
+value = "password"

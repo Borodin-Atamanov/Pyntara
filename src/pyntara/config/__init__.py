@@ -38,6 +38,7 @@ from .kde_settings import KConfigRecord, KdeSettingsConfig
 from .loader import Config, load_config
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
+from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
@@ -87,6 +88,8 @@ __all__ = [
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
     "PortForwardingSetupConfig",
+    "RustdeskOptionConfig",
+    "RustdeskSetupConfig",
     "SshClientSetupConfig",
     "SshDaemonSetupConfig",
     "SshDirective",

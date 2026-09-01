@@ -17,6 +17,7 @@ from config_helpers import base_config
 
 from pyntara.config import (
     ConfigError,
+    RustdeskOptionConfig,
     SshDirective,
     YggdrasilMulticastInterfaceConfig,
     load_config,
@@ -293,6 +294,31 @@ service_restart_seconds = 30
 journal_identifier = "auto_port_forwarding"
 error_priority = 3
 
+[rustdesk_setup]
+github_repo = "rustdesk/rustdesk"
+download_dir = "/var/cache/pyntara/rustdesk"
+id_file_path = "/var/lib/pyntara/rustdesk_id"
+id_file_mode = "0644"
+vault_entry_title = "rustdesk_password"
+service_unit_name = "rustdesk.service"
+password_words = 6
+password_separator = " "
+config_dir = "/home/i/.config/rustdesk"
+install_timeout_seconds = 600
+apt_update_timeout_seconds = 600
+install_retries = 2
+api_timeout_seconds = 30
+start_check_attempts = 10
+start_check_retry_delay_seconds = 1.0
+
+[[rustdesk_setup.options]]
+key = "enable-udp-punch"
+value = "Y"
+
+[[rustdesk_setup.options]]
+key = "direct-server"
+value = "Y"
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -387,6 +413,10 @@ notes = "3x-ui panel credentials on this machine."
 title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
 notes = "Passphrase of the port-forwarding key."
+
+[[vault_structure.entries]]
+title = "rustdesk_password"
+notes = "RustDesk access password of this machine."
 
 [dnsproxy_setup]
 github_repo = "AdguardTeam/dnsproxy"
@@ -499,6 +529,20 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.ffmpeg_setup.package_status_timeout_seconds == 30
     assert config.ffmpeg_setup.package_install_retries == 3
+    assert config.rustdesk_setup.github_repo == "rustdesk/rustdesk"
+    assert config.rustdesk_setup.download_dir == Path("/var/cache/pyntara/rustdesk")
+    assert config.rustdesk_setup.id_file_path == Path("/var/lib/pyntara/rustdesk_id")
+    assert config.rustdesk_setup.id_file_mode == 0o644
+    assert config.rustdesk_setup.vault_entry_title == "rustdesk_password"
+    assert config.rustdesk_setup.password_words == 6
+    assert config.rustdesk_setup.password_separator == " "
+    assert config.rustdesk_setup.config_dir == Path("/home/i/.config/rustdesk")
+    assert config.rustdesk_setup.api_timeout_seconds == 30
+    assert config.rustdesk_setup.start_check_attempts == 10
+    assert config.rustdesk_setup.options == (
+        RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
+        RustdeskOptionConfig(key="direct-server", value="Y"),
+    )
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",

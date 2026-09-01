@@ -37,6 +37,10 @@ title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
 notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The entry exists in every vault: the regeneration tooling generates a fresh password of 7 proquint words joined by dashes on creation, so the production secret is never copied and the default vault carries a passphrase that unlocks no deployed key."
 
+[[vault_structure.entries]]
+title = "rustdesk_password"
+notes = "Permanent RustDesk access password of this machine, filled by the rustdesk_setup task on the target machine as 6 random proquint words joined by spaces. The task generates the value on first run and on force mode, writes it into this entry of the runtime vault and applies it through rustdesk --password, so every machine of the fleet gets its own credential. Consumed by the rustdesk_setup task; the operator reads it from the runtime vault backup to connect by the machine RustDesk ID."
+
 [[vault_structure.groups]]
 title = "NextDNS"
 notes = "NextDNS profile accounts, one entry per profile. The username field holds the 6-hex profile ID, the title pairs the ID with a proquint name, other fields are unused. The group is data: tooling creates it but never fills or deletes entries, so the accounts survive every vault regeneration. Consumed by the nextdns_setup_system_wide task, which derives one profile per machine hostname."

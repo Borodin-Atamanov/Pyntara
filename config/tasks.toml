@@ -133,6 +133,12 @@ depends = ["yggdrasil_service_setup", "tor_setup", "i2pd_service_setup"]
 modes = ["server", "desktop"]
 
 [[tasks]]
+name = "rustdesk_setup"
+description = "Install and configure the RustDesk remote desktop client with a per-machine password."
+depends = ["local_vault_setup"]
+modes = ["server", "desktop"]
+
+[[tasks]]
 name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]

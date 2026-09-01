@@ -282,6 +282,24 @@ def base_config() -> str:
         'kill_command = ["kill"]\n'
         'service_log_command = ["journalctl", "-u", "{unit}", "--no-pager", "-n", "20"]\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\nprofile_id_file_mode = "0644"\n'
+        "[rustdesk_setup]\n"
+        'github_repo = "rustdesk/rustdesk"\n'
+        'download_dir = "/var/cache/pyntara/rustdesk"\n'
+        'id_file_path = "/var/lib/pyntara/rustdesk_id"\n'
+        'id_file_mode = "0644"\n'
+        'vault_entry_title = "rustdesk_password"\n'
+        'service_unit_name = "rustdesk.service"\n'
+        "password_words = 6\n"
+        'password_separator = " "\n'
+        'config_dir = "/home/i/.config/rustdesk"\n'
+        "install_timeout_seconds = 600\n"
+        "apt_update_timeout_seconds = 600\n"
+        "install_retries = 2\n"
+        "api_timeout_seconds = 30\n"
+        "start_check_attempts = 10\n"
+        "start_check_retry_delay_seconds = 1.0\n"
+        '[[rustdesk_setup.options]]\n'
+        'key = "enable-udp-punch"\nvalue = "Y"\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"
@@ -338,6 +356,8 @@ def base_config() -> str:
         'notes = "3x-ui panel credentials."\n'
         '[[vault_structure.entries]]\ntitle = "ssh_passphase_for_port_forwarding"\n'
         'generated_password = "proquint-7"\nnotes = "Port forwarding key passphrase."\n'
+        '[[vault_structure.entries]]\ntitle = "rustdesk_password"\n'
+        'notes = "RustDesk access password."\n'
         '[local_vault_setup]\nsource_vault_production = "secrets/production.vault"\n'
         'source_vault_default = "secrets/default.vault"\n'
         'local_vault_path = "/var/lib/pyntara/secrets/pyntara.vault"\n'

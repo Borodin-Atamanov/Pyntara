@@ -241,6 +241,16 @@ command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 name = "port_forwarding"
 command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/var/lib/pyntara/port_forwarding_state.json"]
 
+# The rustdesk module prints the machine RustDesk ID from the file the
+# rustdesk_setup task writes after a successful install, so the network
+# report carries the ID the operator uses to connect. The path must match
+# rustdesk_setup.id_file_path in config/rustdesk_setup.toml; the
+# collector test guards the two config files against drifting apart. A
+# machine without the file reports an empty module instead of an error.
+[[system_metrics_setup.collector.network_modules]]
+name = "rustdesk"
+command = ["cat", "/var/lib/pyntara/rustdesk_id"]
+
 # System modules: console commands whose full output forms the system
 # section of the report. Their status never affects ready_percent and
 # the waiting.
