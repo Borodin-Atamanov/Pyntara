@@ -4,19 +4,21 @@
 The ffmpeg CLI cannot capture Wayland natively, so this script is a capture
 source: it asks the xdg-desktop-portal ScreenCast portal for a PipeWire
 stream (a file descriptor plus the stream node id), reads that stream with
-the GStreamer pipewiresrc element and writes raw I420 frames to stdout. The
+the GStreamer pipewiresrc element and writes raw frames to stdout. The
 caller pipes the stream into ffmpeg and controls every encoding parameter:
 
 pyntara-wayrecord | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i pipe:0 -c:v libx264 out.mp4
 
-The first run shows the KDE screen dialog once; the script saves the
-single-use restore token the portal returns and passes it back on later
-runs, so the recording starts without asking again. The token lives in the
-per-user file wayrecord_token under the pyntara config directory, or in the
-path of the PYNTARA_WAYRECORD_TOKEN environment variable. The stream
-geometry is printed to stderr so the caller can match -s and -r; stdout
-carries only raw frames. The capture stops when the pipe closes (ffmpeg
-exits) or on Ctrl+C.
+The stream format is given as one GStreamer caps string with --caps; the
+script passes it to the pipeline unchanged, so any combination of pixel
+format, size and frame rate is possible, from 120 fps to one frame per ten
+seconds (framerate=1/10). The first run shows the KDE screen dialog once;
+the script saves the single-use restore token the portal returns and passes
+it back on later runs, so the recording starts without asking again. The
+token lives in the per-user file wayrecord_token under the pyntara config
+directory, or in the path of the PYNTARA_WAYRECORD_TOKEN environment
+variable. All messages go to stderr; stdout carries only raw frames. The
+capture stops when the pipe closes (ffmpeg exits) or on Ctrl+C.
 """
 
 from __future__ import annotations
@@ -44,7 +46,56 @@ PORTAL_PERSIST_MODE_PERSISTENT = 2
 TOKEN_ENV = "PYNTARA_WAYRECORD_TOKEN"
 TOKEN_FILE_NAME = "wayrecord_token"
 STREAM_FD = 1
-DEFAULT_FPS = 30
+DEFAULT_CAPS = "video/x-raw,format=I420,framerate=30/1"
+
+PROG = "pyntara-wayrecord"
+
+DESCRIPTION = (
+    "Capture the Wayland screen as raw video on stdout.\n"
+    "Streams the screen through the ScreenCast portal and writes raw frames\n"
+    "to stdout, so the caller pipes the stream into ffmpeg and controls every\n"
+    "encoding parameter. The first run shows the screen dialog once; the\n"
+    "portal restore token is then saved and reused, so later runs start\n"
+    "without asking."
+)
+
+EXAMPLES = """
+examples:
+  record the whole screen at 30 fps (default caps):
+    pyntara-wayrecord | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i pipe:0 -c:v libx264 out.mp4
+
+  high frame rate, 120 fps:
+    pyntara-wayrecord --caps video/x-raw,format=I420,framerate=120/1 | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 120 -i pipe:0 -c:v libx264 out.mp4
+
+  one frame per ten seconds (timelapse):
+    pyntara-wayrecord --caps video/x-raw,format=I420,framerate=1/10 | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 1/10 -i pipe:0 -c:v libx264 out.mp4
+
+  smaller NV12 stream for hardware encoding:
+    pyntara-wayrecord --caps video/x-raw,format=NV12,width=1280,height=720,framerate=30/1 | ffmpeg -f rawvideo -pix_fmt nv12 -s 1280x720 -r 30 -i pipe:0 -c:v h264_vaapi out.mp4
+
+  stop by closing the pipe (for example ffmpeg -t) or with Ctrl+C
+"""
+
+
+def make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=PROG,
+        description=DESCRIPTION,
+        epilog=EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--caps",
+        default=DEFAULT_CAPS,
+        metavar="CAPS",
+        help=(
+            "GStreamer video caps for the captured stream, passed to the "
+            "pipeline unchanged. Any pixel format, size and frame rate "
+            f"combination is possible. Default: {DEFAULT_CAPS} (native size, "
+            "30 fps)."
+        ),
+    )
+    return parser
 
 
 class PortalClient:
@@ -143,21 +194,36 @@ def save_token(token: str):
         print(f"warning: cannot save restore token: {exc}", file=sys.stderr)
 
 
+def caps_geometry(
+    caps_string: str, native_width: int, native_height: int
+) -> tuple[str, int, int, int, int]:
+    """Resolve format, size and frame rate from the caps for the report.
+
+    Fields missing from the caps fall back to the native screen size and to
+    30 fps; the values only shape the stderr hint, the caps itself is passed
+    to the pipeline unchanged.
+    """
+
+    try:
+        caps = Gst.Caps.from_string(caps_string)
+        structure = caps.get_structure(0)
+    except Exception:
+        return "I420", native_width, native_height, 30, 1
+    fmt = structure.get_string("format") or "I420"
+    ok, width = structure.get_int("width")
+    width = width if ok else native_width
+    ok, height = structure.get_int("height")
+    height = height if ok else native_height
+    ok, fps_num, fps_den = structure.get_fraction("framerate")
+    if not ok:
+        fps_num, fps_den = 30, 1
+    return fmt, width, height, fps_num, fps_den
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Capture the Wayland screen as raw video on stdout."
-    )
-    parser.add_argument(
-        "--fps",
-        type=int,
-        default=DEFAULT_FPS,
-        help="output frame rate to match in ffmpeg with -r",
-    )
-    args = parser.parse_args(argv)
-    fps = args.fps
-    if fps <= 0:
-        print("error: --fps must be a positive integer", file=sys.stderr)
-        return 1
+    args = make_parser().parse_args(argv)
+    caps_string = args.caps
+    Gst.init(None)
 
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SessionBus()
@@ -216,30 +282,30 @@ def main(argv: list[str] | None = None) -> int:
         print("error: no screen stream", file=sys.stderr)
         return 1
 
-    width = int(state["width"])
-    height = int(state["height"])
-    if not width or not height:
+    native_width = int(state["width"])
+    native_height = int(state["height"])
+    if not native_width or not native_height:
         client.close_session()
         print("error: portal did not report the screen size", file=sys.stderr)
         return 1
 
-    print(
-        f"video stream: {width}x{height} {fps}fps format=yuv420p", file=sys.stderr
+    fmt, width, height, fps_num, fps_den = caps_geometry(
+        caps_string, native_width, native_height
     )
+    print(f"video caps: {caps_string}", file=sys.stderr)
+    fps_text = f"{fps_num}" if fps_den == 1 else f"{fps_num}/{fps_den}"
     print(
         "pipe into ffmpeg, e.g.: pyntara-wayrecord | ffmpeg -f rawvideo "
-        f"-pix_fmt yuv420p -s {width}x{height} -r {fps} -i pipe:0 ...",
+        f"-pix_fmt {fmt.lower()} -s {width}x{height} -r {fps_text} -i pipe:0 ...",
         file=sys.stderr,
     )
     print(
         "recording started; Ctrl+C or closing the pipe stops it", file=sys.stderr
     )
 
-    Gst.init(None)
     pipeline = Gst.parse_launch(
         f"pipewiresrc fd={state['fd']} path={state['node_id']} "
-        f"! videoconvert ! videorate "
-        f"! video/x-raw,format=I420,framerate={fps}/1 ! fdsink"
+        f"! videoconvert ! videoscale ! videorate ! {caps_string} ! fdsink"
     )
     fdsink = pipeline.get_by_name("fdsink0")
     fdsink.set_property("fd", STREAM_FD)
