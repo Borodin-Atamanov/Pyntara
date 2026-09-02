@@ -437,8 +437,9 @@ cache_enabled = true
 cache_size_bytes = 16777216
 bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]
 append_provider_dns = true
-query_log_path = "/var/log/pyntara/dnsproxy.log"
-query_log_mode = "0600"
+timeout_seconds = 55
+log_rate_limit_interval_seconds = 3777
+log_rate_limit_burst = 7777
 service_restart_seconds = 2.0
 install_retries = 3
 start_check_attempts = 5
@@ -556,6 +557,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.dnsproxy_setup.append_provider_dns is True
     assert config.dnsproxy_setup.cache_size_bytes == 16777216
+    assert config.dnsproxy_setup.timeout_seconds == 55
+    assert config.dnsproxy_setup.log_rate_limit_interval_seconds == 3777
+    assert config.dnsproxy_setup.log_rate_limit_burst == 7777
     assert config.dnsproxy_setup.verification_domain == "example.com"
     assert config.dnsproxy_setup.nmcli_active_list_command == (
         "nmcli",

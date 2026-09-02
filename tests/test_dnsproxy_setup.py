@@ -74,10 +74,11 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
         "--fallback=tls://[2606:4700:4700::1111]:853",
     ):
         assert form in command
-    assert "--output=/var/log/pyntara/dnsproxy.log" in command
     assert "--upstream-mode=load_balance" in command
+    assert "--timeout=55s" in command
     assert "--cache-size=16777216" in command
     assert "--verbose" not in command
+    assert not any(arg.startswith("--output=") for arg in command)
 
 
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
@@ -180,7 +181,6 @@ def _run_task(
         task_data_root=tmp_path,
         dnsproxy_service_unit_path=service_path,
         dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
     )
@@ -266,6 +266,17 @@ def test_task_writes_root_service_and_resolver_configuration(
     assert any(command[:2] == ["systemctl", "enable"] for command in calls)
 
 
+def test_task_renders_log_rate_limit_and_no_file_output_into_the_unit(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    result, service_path, _, _ = _run_task(tmp_path, monkeypatch)
+    assert result.success is True
+    unit = service_path.read_text(encoding="utf-8")
+    assert "LogRateLimitIntervalSec=3777" in unit
+    assert "LogRateLimitBurst=7777" in unit
+    assert "--output=" not in unit
+
+
 def test_task_appends_discovered_provider_dns_to_service_unit(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -300,7 +311,6 @@ def test_task_fails_early_without_the_nextdns_profile_file(
         task_data_root=tmp_path,
         dnsproxy_service_unit_path=service_path,
         dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
     )
@@ -528,7 +538,6 @@ def test_release_and_download_curls_carry_configured_flags(
         task_data_root=tmp_path,
         dnsproxy_download_dir=tmp_path / "download",
         dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_query_log_path=tmp_path / "dnsproxy.log",
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
     )

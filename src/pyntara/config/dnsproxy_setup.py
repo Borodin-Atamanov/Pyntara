@@ -32,10 +32,11 @@ class DnsproxySetupConfig:
     upstream_mode: str
     cache_enabled: bool
     cache_size_bytes: int
+    timeout_seconds: int
+    log_rate_limit_interval_seconds: int
+    log_rate_limit_burst: int
     bootstrap_resolvers: tuple[str, ...]
     append_provider_dns: bool
-    query_log_path: Path
-    query_log_mode: int
     service_restart_seconds: float
     install_retries: int
     start_check_attempts: int
@@ -127,18 +128,28 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     )
     if cache_size_bytes <= 0:
         raise ConfigError("dnsproxy_setup.cache_size_bytes must be positive")
+    timeout_seconds = _int_field(
+        raw.get("timeout_seconds"), "dnsproxy_setup.timeout_seconds"
+    )
+    if timeout_seconds <= 0:
+        raise ConfigError("dnsproxy_setup.timeout_seconds must be positive")
+    log_rate_limit_interval_seconds = _int_field(
+        raw.get("log_rate_limit_interval_seconds"),
+        "dnsproxy_setup.log_rate_limit_interval_seconds",
+    )
+    if log_rate_limit_interval_seconds <= 0:
+        raise ConfigError(
+            "dnsproxy_setup.log_rate_limit_interval_seconds must be positive"
+        )
+    log_rate_limit_burst = _int_field(
+        raw.get("log_rate_limit_burst"), "dnsproxy_setup.log_rate_limit_burst"
+    )
+    if log_rate_limit_burst <= 0:
+        raise ConfigError("dnsproxy_setup.log_rate_limit_burst must be positive")
     bootstrap_resolvers = _string_list(raw, "bootstrap_resolvers")
     append_provider_dns = raw.get("append_provider_dns")
     if not isinstance(append_provider_dns, bool):
         raise ConfigError("dnsproxy_setup.append_provider_dns must be a boolean")
-    query_log_path = Path(
-        _nonempty_string_field(
-            raw.get("query_log_path"), "dnsproxy_setup.query_log_path"
-        )
-    )
-    query_log_mode = _octal_mode_field(
-        raw.get("query_log_mode"), "dnsproxy_setup.query_log_mode"
-    )
     service_restart_seconds = _float_field(
         raw.get("service_restart_seconds"), "dnsproxy_setup.service_restart_seconds"
     )
@@ -231,10 +242,11 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         upstream_mode=upstream_mode,
         cache_enabled=cache_enabled,
         cache_size_bytes=cache_size_bytes,
+        timeout_seconds=timeout_seconds,
+        log_rate_limit_interval_seconds=log_rate_limit_interval_seconds,
+        log_rate_limit_burst=log_rate_limit_burst,
         bootstrap_resolvers=bootstrap_resolvers,
         append_provider_dns=append_provider_dns,
-        query_log_path=query_log_path,
-        query_log_mode=query_log_mode,
         service_restart_seconds=service_restart_seconds,
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,

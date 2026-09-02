@@ -259,7 +259,7 @@ def base_config() -> str:
         "cache_size_bytes = 16777216\n"
         'bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]\n'
         'append_provider_dns = true\n'
-        'query_log_path = "/var/log/pyntara/dnsproxy.log"\nquery_log_mode = "0600"\n'
+        "timeout_seconds = 55\nlog_rate_limit_interval_seconds = 3777\nlog_rate_limit_burst = 7777\n"
         'service_restart_seconds = 2.0\ninstall_retries = 3\n'
         'start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n'
         'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'

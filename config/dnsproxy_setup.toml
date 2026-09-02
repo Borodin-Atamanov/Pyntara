@@ -163,8 +163,13 @@ bootstrap_resolvers = [
 #   # CryptoStorm: DNSCrypt. Austria node.
 #   "94.198.41.235", "2001:ac8:29:a1::53",
 # ]
-query_log_path = "/var/log/pyntara/dnsproxy.log"
-query_log_mode = "0600"
+# Outbound DNS query timeout in seconds, passed as --timeout.
+timeout_seconds = 55
+# Journal log rate limit of the dnsproxy service in messages per
+# interval, rendered into the unit as LogRateLimitIntervalSec and
+# LogRateLimitBurst.
+log_rate_limit_interval_seconds = 3777
+log_rate_limit_burst = 7777
 service_restart_seconds = 7.0
 install_retries = 3
 start_check_attempts = 5

@@ -275,7 +275,7 @@ def _command(
     command.extend(
         (
             "--upstream-mode=" + cfg.upstream_mode,
-            "--output=" + str(cfg.query_log_path),
+            "--timeout=" + str(cfg.timeout_seconds) + "s",
         )
     )
     if cfg.cache_enabled:
@@ -294,6 +294,8 @@ def _render_service(
     return template.substitute(
         exec_start=" ".join(_command(cfg, profile_id, discovered)),
         service_restart_seconds=cfg.service_restart_seconds,
+        log_rate_limit_interval_seconds=cfg.log_rate_limit_interval_seconds,
+        log_rate_limit_burst=cfg.log_rate_limit_burst,
     )
 
 
@@ -818,11 +820,6 @@ def task(ctx: Context) -> TaskResult:
             staged.replace(cfg.binary_path)
             ensure_root_owner(cfg.binary_path)
             changed = True
-        cfg.query_log_path.parent.mkdir(parents=True, exist_ok=True)
-        if not cfg.query_log_path.exists():
-            cfg.query_log_path.touch(mode=cfg.query_log_mode)
-        cfg.query_log_path.chmod(cfg.query_log_mode)
-        ensure_root_owner(cfg.query_log_path)
         discovered = (
             discover_dns_servers(cfg, timeout)
             if cfg.append_provider_dns

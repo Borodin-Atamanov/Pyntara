@@ -2,8 +2,7 @@
 # entry per task. Each entry has a name, a human-readable description,
 # optional dependencies and the install modes it belongs to. The engine
 # computes the default task set for a mode and expands selections with
-# transitive dependencies. inst.sh never parses this file. A listed task
-# without an implemented module is skipped at run time, not a failure.
+# transitive dependencies. inst.sh never parses this file.
 # Dependencies must name tasks listed earlier in this file: this keeps
 # default task sets ordered and rules out dependency cycles.
 [[tasks]]
@@ -13,21 +12,9 @@ depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "cli_tools"
-description = "Install curated console utilities: file managers, system and media tools."
-depends = ["add_extra_repos"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "imagemagick_setup"
-description = "Install ImageMagick from the Ubuntu archive and deploy the tuned security policy."
-depends = ["add_extra_repos"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "ffmpeg_setup"
-description = "Install ffmpeg from the Ubuntu archive."
-depends = ["add_extra_repos"]
+name = "hostname"
+description = "Generate and persist random hostname."
+depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -58,12 +45,6 @@ modes = ["minimal", "server", "desktop"]
 name = "system_metrics_setup"
 description = "Deploy and run the System Metrics service with periodic vault checks."
 depends = ["local_vault_setup"]
-modes = ["minimal", "server", "desktop"]
-
-[[tasks]]
-name = "hostname"
-description = "Generate and persist random hostname."
-depends = []
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
@@ -139,9 +120,27 @@ depends = ["local_vault_setup"]
 modes = ["server", "desktop"]
 
 [[tasks]]
+name = "imagemagick_setup"
+description = "Install ImageMagick from the Ubuntu archive and deploy the tuned security policy."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "ffmpeg_setup"
+description = "Install ffmpeg from the Ubuntu archive."
+depends = ["add_extra_repos"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "cli_tools"
+description = "Install curated console utilities: file managers, system and media tools."
+depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]

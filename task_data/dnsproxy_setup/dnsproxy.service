@@ -9,6 +9,8 @@ Group=root
 ExecStart=${exec_start}
 Restart=on-failure
 RestartSec=${service_restart_seconds}
+LogRateLimitIntervalSec=${log_rate_limit_interval_seconds}
+LogRateLimitBurst=${log_rate_limit_burst}
 
 [Install]
 WantedBy=multi-user.target
