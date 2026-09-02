@@ -8,7 +8,11 @@ every matching legacy line in /etc/apt/sources.list. Third-party sources
 (chrome, vscode, onedrive and friends) are never touched, because the host
 filter only matches the official archive domains. The goal is reached when
 every Ubuntu section already lists every configured component; the task
-then skips. After a real change the apt index is refreshed once, unless
+then skips. Independent of the components work the task also keeps an apt
+drop-in that stops apt and unattended-upgrades from deleting downloaded
+.deb files after a successful install, writing it when
+add_extra_repos.keep_downloaded_debs is true and removing it when false.
+After a real change the apt index is refreshed once, unless
 ctx.skip_apt_update is set (test or offline runs). A failure is reported
 through TaskResult and never stops the run (task-model contract): the
 runner continues with the remaining tasks and the summary shows the error.
@@ -29,6 +33,15 @@ from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
 # against temporary fixtures instead of the real system (developer guide).
 LEGACY_SOURCES_FILE = Path("/etc/apt/sources.list")
 SOURCES_LIST_D = Path("/etc/apt/sources.list.d")
+# Apt drop-in that keeps downloaded .deb files after install. The task owns
+# this file completely: exact content write, removal when disabled.
+APT_KEEP_DEBS_FILE = Path("/etc/apt/apt.conf.d/99keep-debs.conf")
+APT_KEEP_DEBS_CONTENT = (
+    "# Written by pyntara add_extra_repos\n"
+    "# Keep downloaded .deb files after install for offline reinstall.\n"
+    'APT::Keep-Downloaded-Packages "true";\n'
+    'Unattended-Upgrade::Keep-Debs-After-Install "true";\n'
+)
 
 
 @dataclass(frozen=True)
@@ -209,6 +222,43 @@ def _process_file(
     return _process_legacy(path.read_text(encoding="utf-8"), configured, hosts)
 
 
+def _keep_debs_state_note(keep_debs: bool) -> str:
+    """User note for the keep-debs state applied to the apt drop-in."""
+
+    if keep_debs:
+        return "keep downloaded .deb files after install enabled"
+    return "keep downloaded .deb files after install disabled"
+
+
+def _ensure_keep_debs_dropin(keep_debs: bool) -> tuple[bool, str | None]:
+    """Bring the apt keep-debs drop-in to the configured state.
+
+    When keep_debs is true the drop-in must carry the two option lines that
+    stop apt and unattended-upgrades from deleting downloaded .deb files
+    after a successful install; when false the drop-in must not exist. The
+    current content is read before writing, so an exact match changes
+    nothing (idempotency through read-back). Returns whether the file
+    changed and an error string when the file could not be updated.
+    """
+
+    path = APT_KEEP_DEBS_FILE
+    try:
+        if not keep_debs:
+            if not path.exists():
+                return False, None
+            path.unlink()
+            return True, None
+        if (
+            path.exists()
+            and path.read_text(encoding="utf-8") == APT_KEEP_DEBS_CONTENT
+        ):
+            return False, None
+        path.write_text(APT_KEEP_DEBS_CONTENT, encoding="utf-8")
+    except OSError as exc:
+        return False, f"cannot update {path}: {exc}"
+    return True, None
+
+
 def task(ctx: Context) -> TaskResult:
     """Ensure every Ubuntu archive section lists the configured components.
 
@@ -221,7 +271,13 @@ def task(ctx: Context) -> TaskResult:
 
     configured = ctx.config.add_extra_repos.components
     hosts = ctx.config.add_extra_repos.ubuntu_hosts
+    keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
     _log(f"configured components: {' '.join(configured)}")
+    keep_changed, keep_error = _ensure_keep_debs_dropin(keep_debs)
+    if keep_error:
+        return TaskResult(success=False, error=keep_error)
+    if keep_changed:
+        _log(f"updated {APT_KEEP_DEBS_FILE}: keep downloaded .deb files")
     files = _collect_source_files()
     if not files:
         return TaskResult(success=False, error="no apt source files found")
@@ -257,7 +313,10 @@ def task(ctx: Context) -> TaskResult:
         )
     if all(state.satisfied for _, state in states):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already satisfied")
+        message = "already satisfied"
+        if keep_changed:
+            message = f"{message}; {_keep_debs_state_note(keep_debs)}"
+        return TaskResult(success=True, changed=keep_changed, message=message)
     changed_paths: list[Path] = []
     for path, state in states:
         if not state.changed:
@@ -311,6 +370,12 @@ def task(ctx: Context) -> TaskResult:
     message = (
         f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     )
+    if keep_changed:
+        message = f"{message}; {_keep_debs_state_note(keep_debs)}"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(success=True, changed=bool(changed_paths), message=message)
+    return TaskResult(
+        success=True,
+        changed=bool(changed_paths) or keep_changed,
+        message=message,
+    )

@@ -11,3 +11,7 @@ ubuntu_hosts = [
     "ports.ubuntu.com",
     "old-releases.ubuntu.com",
 ]
+# Keep downloaded .deb files in the apt cache after install. When true the
+# task writes an apt.conf.d drop-in that stops apt and unattended-upgrades
+# from deleting downloaded packages after a successful install.
+keep_downloaded_debs = true

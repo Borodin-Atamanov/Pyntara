@@ -46,7 +46,7 @@ def base_config() -> str:
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'
-        'ubuntu_hosts = ["archive.ubuntu.com"]\n'
+        'ubuntu_hosts = ["archive.ubuntu.com"]\nkeep_downloaded_debs = true\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'
         'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
         '[kde_keyboard_setup]\n'

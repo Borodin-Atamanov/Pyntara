@@ -86,6 +86,12 @@ from pyntara.config import load_config
         base_config().replace('components = ["universe"]', 'components = ["universe "]'),
         # components is an empty array
         base_config().replace('components = ["universe"]', "components = []"),
+        # keep_downloaded_debs is a string, not a boolean
+        base_config().replace(
+            "keep_downloaded_debs = true", 'keep_downloaded_debs = "true"'
+        ),
+        # keep_downloaded_debs is an integer, not a boolean
+        base_config().replace("keep_downloaded_debs = true", "keep_downloaded_debs = 1"),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -125,6 +131,19 @@ def test_load_config_deduplicates_components(tmp_path: Path) -> None:
         )
     )
     assert config.add_extra_repos.components == ("universe", "multiverse")
+
+
+def test_load_config_parses_keep_downloaded_debs(tmp_path: Path) -> None:
+    # The configured apt retention flag reaches the parsed config.
+    config = load_config(write_config(tmp_path, base_config()))
+    assert config.add_extra_repos.keep_downloaded_debs is True
+
+
+def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
+    # The apt retention setting is explicit: a missing key is rejected, not
+    # silently defaulted.
+    content = base_config().replace("keep_downloaded_debs = true\n", "")
+    assert_config_error(tmp_path, content, match="must be a boolean")
 
 
 def test_load_config_bool_not_accepted_as_timeout(tmp_path: Path) -> None:

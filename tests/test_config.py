@@ -58,6 +58,7 @@ package_install_retries = 3
 [add_extra_repos]
 components = ["universe", "restricted", "multiverse"]
 ubuntu_hosts = ["archive.ubuntu.com", "security.ubuntu.com"]
+keep_downloaded_debs = true
 
 [hostname]
 hostname_file = "/etc/hostname"

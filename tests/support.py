@@ -233,6 +233,7 @@ def make_config(
         "ports.ubuntu.com",
         "old-releases.ubuntu.com",
     ),
+    add_extra_repos_keep_downloaded_debs: bool = True,
     hostname_file: Path = Path("/etc/hostname"),
     hostname_set_hostname_command: tuple[str, ...] = (
         "hostnamectl",
@@ -695,6 +696,7 @@ def make_config(
         add_extra_repos=AddExtraReposConfig(
             components=add_extra_repos_components,
             ubuntu_hosts=add_extra_repos_ubuntu_hosts,
+            keep_downloaded_debs=add_extra_repos_keep_downloaded_debs,
         ),
         hostname=HostnameConfig(
             hostname_file=str(hostname_file),
