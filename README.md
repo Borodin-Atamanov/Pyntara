@@ -1,4 +1,4 @@
-# Pyntara 0.2.180
+# Pyntara 0.3.181
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -46,23 +46,30 @@ PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that inst
 add_extra_repos and cli_tools run before package operations. Use for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
-The developer run keeps the password in the shell environment: it asks once, exports
-PYNTARA_VAULT_PASSWORD, and skips the prompt on later runs in the same terminal when the
-variable is already set to a non-empty value. PYNTARA_SKIP_APT_UPDATE=1 sits in the script
-invocation prefix, so it reaches the installer and the engine; a flag joined with && would
-only set a shell variable and never reach the installer:
+The developer run resolves the production vault password inside one sudo invocation, so
+every step runs as root: a non-empty PYNTARA_VAULT_PASSWORD already in the environment
+wins, then a local password file is used when present (the code comment marks the path as
+an example source), and only otherwise does the run ask interactively.
+PYNTARA_SKIP_APT_UPDATE=1 sits in the script invocation prefix, so it reaches the
+installer and the engine; a flag joined with && would only set a shell variable and never
+reach the installer:
 
 ```bash
+sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE bash -c '
 if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
-    read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD
-    echo
+    if [[ -r /etc/pyntara/pass ]]; then # just example of the file with password
+        PYNTARA_VAULT_PASSWORD="$(cat /etc/pyntara/pass)"
+    else
+        read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD
+        echo
+    fi
+    export PYNTARA_VAULT_PASSWORD
 fi
-export PYNTARA_VAULT_PASSWORD
 inst="$(mktemp /tmp/pyntara.XXXXXXXXX)"
 curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
 -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh
-sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
-bash -c 'PYNTARA_SKIP_APT_UPDATE=1 bash "$1"' _ "$inst"
+PYNTARA_SKIP_APT_UPDATE=1 bash "$inst"
+'
 ```
 
 Engine values and the task catalog live in the config/ directory at the repository root,
