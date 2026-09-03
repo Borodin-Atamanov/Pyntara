@@ -195,6 +195,7 @@ def base_config() -> str:
         'address_file_mode = "0644"\n'
         "[ssh_daemon_setup]\n"
         'package_name = "openssh-server"\n'
+        'augeas_tools_package_name = "augeas-tools"\n'
         "package_status_timeout_seconds = 30\n"
         "install_retries = 3\n"
         'service_unit_name = "ssh.service"\n'
@@ -222,6 +223,9 @@ def base_config() -> str:
         'ssh_config_path = "/etc/ssh/ssh_config"\n'
         'ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"\n'
         'dropin_file_mode = "0644"\n'
+        'augeas_tools_package_name = "augeas-tools"\n'
+        "package_status_timeout_seconds = 30\n"
+        "install_retries = 3\n"
         "[nextdns_setup_system_wide]\n"
         'vault_group_title = "NextDNS"\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'

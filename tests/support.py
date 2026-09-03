@@ -458,6 +458,7 @@ def make_config(
     tor_address_file_path: Path = Path("/var/lib/pyntara/tor_ssh_address"),
     tor_address_file_mode: int = 0o644,
     ssh_daemon_package_name: str = "openssh-server",
+    ssh_daemon_augeas_tools_package_name: str = "augeas-tools",
     ssh_daemon_package_status_timeout_seconds: int = 30,
     ssh_daemon_install_retries: int = 3,
     ssh_daemon_service_unit_name: str = "ssh.service",
@@ -491,6 +492,9 @@ def make_config(
         "/etc/ssh/ssh_config.d/pyntara.conf"
     ),
     ssh_client_dropin_file_mode: int = 0o644,
+    ssh_client_augeas_tools_package_name: str = "augeas-tools",
+    ssh_client_package_status_timeout_seconds: int = 30,
+    ssh_client_install_retries: int = 3,
     ssh_client_directives: tuple[SshDirective, ...] = (SshDirective(
         name="AddressFamily", value="any"
     ),),
@@ -891,6 +895,7 @@ def make_config(
         ),
         ssh_daemon_setup=SshDaemonSetupConfig(
             package_name=ssh_daemon_package_name,
+            augeas_tools_package_name=ssh_daemon_augeas_tools_package_name,
             package_status_timeout_seconds=ssh_daemon_package_status_timeout_seconds,
             install_retries=ssh_daemon_install_retries,
             service_unit_name=ssh_daemon_service_unit_name,
@@ -923,6 +928,11 @@ def make_config(
             ssh_config_path=ssh_client_ssh_config_path,
             ssh_config_dropin_path=ssh_client_ssh_config_dropin_path,
             dropin_file_mode=ssh_client_dropin_file_mode,
+            augeas_tools_package_name=ssh_client_augeas_tools_package_name,
+            package_status_timeout_seconds=(
+                ssh_client_package_status_timeout_seconds
+            ),
+            install_retries=ssh_client_install_retries,
             directives=ssh_client_directives,
         ),
         system_metrics_setup=SystemMetricsSetupConfig(

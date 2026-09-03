@@ -42,6 +42,10 @@ PF_AUTHORIZED_LINE = f"{PF_OPTIONS} {PF_PUBLIC_KEY_LINE}"
 
 DROPIN_HEADER = "# Managed by the Pyntara ssh_daemon_setup task."
 
+# The augeas tool package name from the config defaults, used by the
+# subprocess fake to tell the main package from the augtool package.
+AUGTOOL_PACKAGE = "augeas-tools"
+
 DEFAULT_DIRECTIVES = (
     SshDirective(name="Port", value="30222"),
     SshDirective(name="PubkeyAuthentication", value="yes"),
@@ -181,6 +185,7 @@ def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
     installed: bool = True,
+    augeas_installed: bool = True,
     enabled: bool = True,
     active: bool = True,
     socket_enabled: bool = False,
@@ -193,8 +198,10 @@ def _install_fake(
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
-    dpkg reports the package state, apt-get install fails the first
-    fail_install attempts, systemctl reports the enabled and active
+    dpkg reports the main package state and, when augeas_installed is
+    False, reports the augeas package as missing too; apt-get install
+    fails the first fail_install attempts, systemctl reports the enabled
+    and active
     states of the service and the socket from the flags, sshd -T
     prints sshd_t_output, ss -tlnp reports the configured listener
     unless ss_port_ok is False, and augtool is simulated over the real
@@ -215,7 +222,10 @@ def _install_fake(
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg-query":
-            if installed:
+            present = (
+                augeas_installed if command[-1] == AUGTOOL_PACKAGE else installed
+            )
+            if present:
                 return _FakeProc(0, "install ok installed\n")
             return _FakeProc(1, "deinstall ok config-files\n")
         if command[0] == "apt-get":
@@ -796,3 +806,63 @@ def test_include_matches_relative_pattern(
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
+
+
+def test_installs_augtool_when_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The server package is installed but augtool is missing: the task
+    # installs the augeas package itself and reaches the drop-in and the
+    # key deployment instead of stopping with a warning.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    calls = _install_fake(monkeypatch, augeas_installed=False)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["apt-get", "install", "-y", AUGTOOL_PACKAGE] in calls
+    cfg = ctx.config.ssh_daemon_setup
+    assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
+        _expected_dropin_content()
+    )
+    assert (cfg.root_ssh_dir / cfg.port_forwarding_private_key_file_name).is_file()
+
+
+def test_augtool_install_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # augtool is missing and the package install fails after all retries:
+    # the task reports the failure instead of continuing without the tool.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    calls = _install_fake(monkeypatch, augeas_installed=False, fail_install=99)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is False
+    assert "cannot install" in (result.error or "")
+    assert AUGTOOL_PACKAGE in (result.error or "")
+    assert (
+        len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
+    )
+
+
+def test_augtool_install_respects_apt_update_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The augtool package install honours PYNTARA_SKIP_APT_UPDATE: the
+    # apt index is refreshed without the flag and skipped with it.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path, skip_apt_update=False)
+    _write_sshd_config(ctx)
+    calls = _install_fake(monkeypatch, augeas_installed=False)
+    ssh_daemon_setup.task(ctx)
+    assert ["apt-get", "update"] in calls
+
+    ctx_skipped = _ctx(tmp_path, skip_apt_update=True)
+    calls_skipped = _install_fake(monkeypatch, augeas_installed=False)
+    ssh_daemon_setup.task(ctx_skipped)
+    assert ["apt-get", "update"] not in calls_skipped

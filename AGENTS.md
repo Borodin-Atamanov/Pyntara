@@ -17,7 +17,7 @@ Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No sile
 Understand and use:
 Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns! Не выдумывай! Не ври!
 
-Всегда говори о себе и своих действиях в женском роде.
+Всегда говори о себе и своих действиях в женском роде, подчёркнуто широко  используй феминитивы. 
 Thins in english, answer in language of request. Если отвечаешь на руссом - обращайся ко мне "на Вы". All documentation in english.
 After finishing changes, the agent should integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
@@ -39,6 +39,8 @@ This is a single-developer project: all the code is written by you, the AI agent
 Использование внешних готовых инструментов (программ, утилит, api, модулей, сервисов) намного лучше, чем изобретение велосипедов из своего кода!
 
 На любой машине используй консоль через подключение tmux new-session -As pyntara. Сессия живёт на машине, где запускаются команды.
+
+Изменяешь код только после явного одобрения пользователя. Вопрос - требует ответа, явный приказ - действий.
 
 Если ты нарушаешь любое из правил в этом блоке, то обязана явно сообщить об этом. И исправить своё поведение.
 </instructions>

@@ -9,6 +9,7 @@ ssh -G with a fixed effective-config output.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,7 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
+    skip_apt_update: bool = True,
     directives: tuple[SshDirective, ...] = DEFAULT_DIRECTIVES,
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
@@ -55,7 +57,7 @@ def _ctx(
         install_mode="server",
         force_tasks=frozenset({"ssh_client_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
-        skip_apt_update=True,
+        skip_apt_update=skip_apt_update,
         config=make_config(
             task_data_root=tmp_path,
             ssh_client_ssh_config_path=tmp_path / "etc" / "ssh" / "ssh_config",
@@ -96,12 +98,15 @@ def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
     ssh_g_output: str = SSH_G_LINES,
+    augeas_installed: bool = True,
+    install_fails: bool = False,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
-    augtool is simulated over the real drop-in file and ssh -G prints
-    ssh_g_output; every other command is recorded and answered with
-    success.
+    augtool is simulated over the real drop-in file, ssh -G prints
+    ssh_g_output, dpkg reports the augeas package state and apt-get
+    install raises when install_fails is True; every other command is
+    recorded and answered with success.
     """
 
     calls: list[list[str]] = []
@@ -111,8 +116,14 @@ def _install_fake(
             return augtool_fake_run(command, kwargs.get("input"))
         del kwargs
         calls.append(list(command))
+        if command[0] == "dpkg-query":
+            if augeas_installed:
+                return _FakeProc(0, "install ok installed\n")
+            return _FakeProc(1, "deinstall ok config-files\n")
         if command[0] == "ssh":
             return _FakeProc(0, ssh_g_output)
+        if command[0] == "apt-get" and command[1] == "install" and install_fails:
+            raise subprocess.CalledProcessError(100, command)
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -217,6 +228,69 @@ def test_updates_changed_value(
     content = cfg.ssh_config_dropin_path.read_text(encoding="utf-8")
     assert content == _expected_dropin_content()
     assert content.count("Host *") == 1
+
+
+def test_installs_augtool_when_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # augtool is missing: the task installs the augeas package itself
+    # and then syncs the drop-in through augeas.
+    ctx = _ctx(tmp_path)
+    _write_ssh_config(ctx)
+    calls = _install_fake(monkeypatch, augeas_installed=False)
+    result = ssh_client_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert ["apt-get", "install", "-y", "augeas-tools"] in calls
+    cfg = ctx.config.ssh_client_setup
+    assert cfg.ssh_config_dropin_path.read_text(encoding="utf-8") == (
+        _expected_dropin_content()
+    )
+
+
+def test_augtool_present_skips_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # augtool is already installed: no apt install runs and the task
+    # still reaches the drop-in.
+    ctx = _ctx(tmp_path)
+    _write_ssh_config(ctx)
+    calls = _install_fake(monkeypatch)
+    result = ssh_client_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert not any(call[:2] == ["apt-get", "install"] for call in calls)
+
+
+def test_augtool_install_failure_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The augeas package install fails after all retries: the task
+    # reports the failure instead of running augeas without the tool.
+    ctx = _ctx(tmp_path)
+    _write_ssh_config(ctx)
+    _install_fake(monkeypatch, augeas_installed=False, install_fails=True)
+    result = ssh_client_setup.task(ctx)
+    assert result.success is False
+    assert "cannot install" in (result.error or "")
+    assert "augeas-tools" in (result.error or "")
+
+
+def test_augtool_install_respects_apt_update_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The augtool package install honours PYNTARA_SKIP_APT_UPDATE: the
+    # apt index is refreshed without the flag and skipped with it.
+    ctx = _ctx(tmp_path, skip_apt_update=False)
+    _write_ssh_config(ctx)
+    calls = _install_fake(monkeypatch, augeas_installed=False)
+    ssh_client_setup.task(ctx)
+    assert ["apt-get", "update"] in calls
+
+    ctx_skipped = _ctx(tmp_path)
+    calls_skipped = _install_fake(monkeypatch, augeas_installed=False)
+    ssh_client_setup.task(ctx_skipped)
+    assert ["apt-get", "update"] not in calls_skipped
 
 
 def test_empty_directives_removes_dropin(

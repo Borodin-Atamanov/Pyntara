@@ -14,6 +14,15 @@ ssh_config_path = "/etc/ssh/ssh_config"
 ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"
 # File mode of the rendered drop-in, as an octal string.
 dropin_file_mode = "0644"
+# Package that provides the augtool command line tool used to write the
+# drop-in. The task installs it itself when the tool is missing, so it
+# never waits for another task to provide augeas.
+augeas_tools_package_name = "augeas-tools"
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are
+# retries plus one.
+install_retries = 3
 
 [[ssh_client_setup.directives]]
 name = "AddressFamily"

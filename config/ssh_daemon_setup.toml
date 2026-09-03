@@ -2,10 +2,12 @@
 # SSH server parameters (docs/spec/ssh-daemon-setup.md). The task
 # installs the openssh-server package, runs ssh.service and patches the
 # daemon configuration through a drop-in, never through sshd_config
-# itself. Directives are written through augeas (augtool from
-# augeas-tools, already installed by cli_tools), which parses the real
-# syntax and updates only what differs, so the file is never blindly
-# overwritten. The pre-generated key pair lives in
+# itself. Directives are written through augeas (augtool from the
+# augeas_tools_package_name package, which the task installs itself when
+# augtool is missing), which parses the real syntax and updates only
+# what differs, so the file is never blindly overwritten. The task owns
+# the package that provides augtool and never depends on another task
+# having installed it. The pre-generated key pair lives in
 # task_data/ssh_daemon_setup/: the private key is encrypted with a strong
 # pass phrase, so it is committed to the repository as is; the task
 # copies both files to root and to every configured user and guarantees
@@ -13,6 +15,10 @@
 # set and will grow later without code changes.
 # Package that provides the SSH server daemon.
 package_name = "openssh-server"
+# Package that provides the augtool command line tool used to write the
+# drop-in. The task installs it itself when the tool is missing, so it
+# never waits for another task to provide augeas.
+augeas_tools_package_name = "augeas-tools"
 # Seconds the dpkg status query may take.
 package_status_timeout_seconds = 30
 # Retry attempts after a failed package install; total attempts are

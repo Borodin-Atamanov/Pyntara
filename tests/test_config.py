@@ -232,6 +232,7 @@ address_file_mode = "0644"
 
 [ssh_daemon_setup]
 package_name = "openssh-server"
+augeas_tools_package_name = "augeas-tools"
 package_status_timeout_seconds = 30
 install_retries = 3
 service_unit_name = "ssh.service"
@@ -265,6 +266,9 @@ value = "prohibit-password"
 ssh_config_path = "/etc/ssh/ssh_config"
 ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"
 dropin_file_mode = "0644"
+augeas_tools_package_name = "augeas-tools"
+package_status_timeout_seconds = 30
+install_retries = 3
 
 [[ssh_client_setup.directives]]
 name = "AddressFamily"
@@ -778,6 +782,7 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.tor_setup.address_file_mode == 0o644
     assert config.ssh_daemon_setup.package_name == "openssh-server"
+    assert config.ssh_daemon_setup.augeas_tools_package_name == "augeas-tools"
     assert config.ssh_daemon_setup.package_status_timeout_seconds == 30
     assert config.ssh_daemon_setup.install_retries == 3
     assert config.ssh_daemon_setup.service_unit_name == "ssh.service"
@@ -814,6 +819,9 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "/etc/ssh/ssh_config.d/pyntara.conf"
     )
     assert config.ssh_client_setup.dropin_file_mode == 0o644
+    assert config.ssh_client_setup.augeas_tools_package_name == "augeas-tools"
+    assert config.ssh_client_setup.package_status_timeout_seconds == 30
+    assert config.ssh_client_setup.install_retries == 3
     assert config.ssh_client_setup.directives == (
         SshDirective(name="AddressFamily", value="any"),
         SshDirective(name="CheckHostIP", value="no"),

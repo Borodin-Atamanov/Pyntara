@@ -58,10 +58,13 @@ class SshDaemonSetupConfig:
     dpkg status query, install_retries is the retry count of the
     package install, start_check_attempts and
     start_check_retry_delay_seconds bound the loop that waits for the
-    service to become active after a start.
+    service to become active after a start. augeas_tools_package_name
+    names the package that provides augtool, which the task installs
+    itself when the tool is missing.
     """
 
     package_name: str
+    augeas_tools_package_name: str
     package_status_timeout_seconds: int
     install_retries: int
     service_unit_name: str
@@ -95,12 +98,18 @@ class SshClientSetupConfig:
     directory in. directives are the ssh_config keywords guaranteed by
     the task, written through augeas under the Host block so they apply
     to every connection; dropin_file_mode is the file mode of the
-    drop-in.
+    drop-in. augeas_tools_package_name names the package that provides
+    augtool, which the task installs itself when the tool is missing;
+    package_status_timeout_seconds bounds the dpkg status query and
+    install_retries is the retry count of the package install.
     """
 
     ssh_config_path: Path
     ssh_config_dropin_path: Path
     dropin_file_mode: int
+    augeas_tools_package_name: str
+    package_status_timeout_seconds: int
+    install_retries: int
     directives: tuple[SshDirective, ...]
 
 
@@ -155,6 +164,10 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         raise ConfigError("[ssh_daemon_setup] section is missing or not a table")
     package_name = _nonempty_string_field(
         raw.get("package_name"), "ssh_daemon_setup.package_name"
+    )
+    augeas_tools_package_name = _nonempty_string_field(
+        raw.get("augeas_tools_package_name"),
+        "ssh_daemon_setup.augeas_tools_package_name",
     )
     package_status_timeout_seconds = _int_field(
         raw.get("package_status_timeout_seconds"),
@@ -223,6 +236,7 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         raise ConfigError("ssh_daemon_setup.users must not contain duplicates")
     return SshDaemonSetupConfig(
         package_name=package_name,
+        augeas_tools_package_name=augeas_tools_package_name,
         package_status_timeout_seconds=package_status_timeout_seconds,
         install_retries=install_retries,
         service_unit_name=service_unit_name,
@@ -288,6 +302,23 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
     dropin_file_mode = _octal_mode_field(
         raw.get("dropin_file_mode"), "ssh_client_setup.dropin_file_mode"
     )
+    augeas_tools_package_name = _nonempty_string_field(
+        raw.get("augeas_tools_package_name"),
+        "ssh_client_setup.augeas_tools_package_name",
+    )
+    package_status_timeout_seconds = _int_field(
+        raw.get("package_status_timeout_seconds"),
+        "ssh_client_setup.package_status_timeout_seconds",
+    )
+    if package_status_timeout_seconds < 1:
+        raise ConfigError(
+            "ssh_client_setup.package_status_timeout_seconds must be positive"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "ssh_client_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("ssh_client_setup.install_retries must be positive")
     directives = _ssh_directives_field(
         raw.get("directives"), "ssh_client_setup.directives"
     )
@@ -295,5 +326,8 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
         ssh_config_path=ssh_config_path,
         ssh_config_dropin_path=ssh_config_dropin_path,
         dropin_file_mode=dropin_file_mode,
+        augeas_tools_package_name=augeas_tools_package_name,
+        package_status_timeout_seconds=package_status_timeout_seconds,
+        install_retries=install_retries,
         directives=directives,
     )

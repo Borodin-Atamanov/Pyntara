@@ -15,7 +15,11 @@ import os
 import re
 from pathlib import Path
 
-from pyntara.utils import run_command
+from pyntara.utils import (
+    install_packages,
+    package_is_installed,
+    run_command,
+)
 
 # One node line of an augtool print listing.
 AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = "(?P<value>.*)"$')
@@ -260,3 +264,36 @@ def apply_owner(path: Path, uid: int, gid: int) -> None:
 
     if os.geteuid() == 0:
         os.chown(path, uid, gid)
+
+
+def ensure_augtool(
+    package_name: str,
+    *,
+    status_timeout: float,
+    install_timeout: float,
+    retries: int,
+    skip_update: bool,
+) -> str | None:
+    """Error text when augtool cannot be ensured; None when ready.
+
+    augtool comes from package_name, which the caller task installs
+    itself, so the task never waits for another task to provide the
+    tool. A package already in the installed state is left alone, so a
+    configured system is not touched and a rerun stays quiet. The
+    install goes through the shared apt helpers: the index is refreshed
+    once unless skip_update is set, and a failed install is reported
+    back to the caller.
+    """
+
+    if package_is_installed(package_name, status_timeout):
+        return None
+    _, failures, _ = install_packages(
+        [package_name],
+        install_timeout=install_timeout,
+        update_timeout=install_timeout,
+        retries=retries,
+        skip_update=skip_update,
+    )
+    if failures:
+        return f"cannot install {package_name}: {failures[0][1]}"
+    return None

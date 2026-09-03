@@ -52,7 +52,12 @@ import subprocess
 import time
 from pathlib import Path
 
-from pyntara.augeas import apply_owner, include_covers_dropin, sync_dropin
+from pyntara.augeas import (
+    apply_owner,
+    ensure_augtool,
+    include_covers_dropin,
+    sync_dropin,
+)
 from pyntara.config import SshDaemonSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -395,6 +400,16 @@ def task(ctx: Context) -> TaskResult:
                 f"{cfg.sshd_config_dropin_path.parent}"
             ),
         )
+
+    augtool_error = ensure_augtool(
+        cfg.augeas_tools_package_name,
+        status_timeout=cfg.package_status_timeout_seconds,
+        install_timeout=timeout,
+        retries=cfg.install_retries,
+        skip_update=ctx.skip_apt_update,
+    )
+    if augtool_error is not None:
+        return TaskResult(success=False, changed=changed, error=augtool_error)
 
     try:
         directives = tuple(
