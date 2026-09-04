@@ -30,6 +30,7 @@ def test_curl_flags_returns_retry_and_timeout_flags() -> None:
         "777",
         "--retry",
         "13",
+        "--retry-all-errors",
         "--retry-delay",
         "3",
         "--retry-connrefused",

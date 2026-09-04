@@ -178,11 +178,14 @@ def trim_whitespace(text: str) -> str:
 def curl_flags(timeout_seconds: float, retries: int) -> list[str]:
     """Retry and timeout flags shared by every download or release query curl.
 
-    --max-time bounds a single attempt, --retry repeats it on transient
-    errors (timeouts, refused connections and HTTP 5xx), --retry-delay
-    spaces the attempts apart. The flags are the single definition for all
-    task curl calls, so the values come from the [engine] config and never
-    diverge (architecture contract, Configuration).
+    --max-time bounds a single attempt, --retry repeats it,
+    --retry-all-errors makes every failure retryable (a transfer dropped
+    after the connection is up, exit 56, is not a retry condition for
+    --retry on its own), --retry-delay spaces the attempts apart and
+    --retry-connrefused adds refused connections to the retryable set.
+    The flags are the single definition for all task curl calls, so the
+    values come from the [engine] config and never diverge (architecture
+    contract, Configuration).
     """
 
     return [
@@ -190,6 +193,7 @@ def curl_flags(timeout_seconds: float, retries: int) -> list[str]:
         str(timeout_seconds),
         "--retry",
         str(retries),
+        "--retry-all-errors",
         "--retry-delay",
         "3",
         "--retry-connrefused",

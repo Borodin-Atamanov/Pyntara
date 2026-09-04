@@ -18,8 +18,9 @@ command_timeout_seconds = 1800
 # seconds. curl aborts a single attempt that exceeds it; the process
 # bound stays command_timeout_seconds.
 curl_timeout_seconds = 777
-# How many times curl retries a download or release query on transient
-# errors (timeouts, refused connections, HTTP 5xx) before giving up.
+# How many times curl retries a download or release query before giving
+# up. The shared curl flags add --retry-all-errors, so every failure is
+# retried, not only timeouts and HTTP 5xx.
 curl_retries = 13
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
