@@ -52,9 +52,9 @@ def _release_json(tag: str = RELEASE_TAG, arch: str = "x86_64") -> str:
 class _FakeEntry:
     """One fake KeePass entry for the fake vault."""
 
-    def __init__(self, password: str = "") -> None:
+    def __init__(self, password: str = "", username: str = "") -> None:
         self.password = password
-        self.username = ""
+        self.username = username
         self.url = None
         self.notes = ""
 
@@ -62,9 +62,13 @@ class _FakeEntry:
 class _FakeVault:
     """A fake runtime vault: one entry, saved path recorded."""
 
-    def __init__(self, password: str | None = None) -> None:
+    def __init__(
+        self, password: str | None = None, username: str = ""
+    ) -> None:
         self.root_group = object()
-        self._entry = _FakeEntry(password) if password is not None else None
+        self._entry = (
+            _FakeEntry(password, username) if password is not None else None
+        )
         self.saved_to: str | None = None
 
     def find_entries(self, **kwargs: object) -> _FakeEntry | None:
@@ -78,16 +82,25 @@ class _FakeVault:
         password: str,
         notes: str | None = None,
     ) -> None:
-        self._entry = _FakeEntry(password)
+        self._entry = _FakeEntry(password, username)
+        self._entry.notes = notes or ""
 
     def save(self, filename: str | None = None) -> None:
         self.saved_to = filename
 
 
-def _vault(monkeypatch: pytest.MonkeyPatch, password: str | None = None) -> _FakeVault:
-    """Install the fake vault as the runtime vault opener; return it."""
+def _vault(
+    monkeypatch: pytest.MonkeyPatch,
+    password: str | None = None,
+    username: str = MACHINE_ID,
+) -> _FakeVault:
+    """Install the fake vault as the runtime vault opener; return it.
 
-    fake = _FakeVault(password)
+    The stored entry carries username by default, so a fully configured
+    vault is already current and an unchanged rerun writes nothing.
+    """
+
+    fake = _FakeVault(password, username)
     monkeypatch.setattr(
         rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: fake
     )
@@ -214,10 +227,11 @@ def test_installed_latest_is_unchanged(
     config.rustdesk_setup.id_file_path.parent.mkdir(parents=True, exist_ok=True)
     config.rustdesk_setup.id_file_path.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
     calls = _fake_run(monkeypatch, installed_version=RELEASE_TAG)
-    _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
+    fake = _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
     result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
     assert result.success is True
     assert result.changed is False
+    assert fake.saved_to is None
     # the release lookup runs with the configured curl timeout and
     # retries, but no download or install happens
     expected_flags = curl_flags(
@@ -308,6 +322,8 @@ def test_generates_and_stores_password(
     assert fake.saved_to is not None
     assert fake._entry is not None
     assert PASSWORD_WORDS_RE.match(fake._entry.password)
+    # the machine ID lands in the username field of the same entry
+    assert fake._entry.username == MACHINE_ID
     # the password was applied through rustdesk --password
     assert any(
         call[0] == "rustdesk" and call[1] == "--password" for call in calls
@@ -325,6 +341,27 @@ def test_reuses_stored_password(
     assert result.success is True
     assert fake._entry is not None
     assert fake._entry.password == stored
+    assert fake._entry.username == MACHINE_ID
+    assert fake.saved_to is None
+    assert ["rustdesk", "--password", stored] in calls
+
+
+def test_fills_stored_machine_id_into_stale_vault_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _config(tmp_path=tmp_path)
+    stored = "kofub vifuf midot nudog zodum hobir"
+    calls = _fake_run(monkeypatch)
+    # an entry created before the machine ID was stored carries the
+    # password but an empty username; the first run fills the username
+    fake = _vault(monkeypatch, password=stored, username="")
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert result.changed is True
+    assert fake.saved_to is not None
+    assert fake._entry is not None
+    assert fake._entry.password == stored
+    assert fake._entry.username == MACHINE_ID
     assert ["rustdesk", "--password", stored] in calls
 
 
@@ -345,9 +382,30 @@ def test_force_regenerates_password_and_identity(
     assert not identity.exists()
     assert fake._entry is not None
     assert fake._entry.password != "old password words"
+    assert fake._entry.username == MACHINE_ID
     assert any(
         call == ["systemctl", "stop", config.rustdesk_setup.service_unit_name]
         for call in calls
+    )
+
+
+def test_force_stores_regenerated_machine_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _config(tmp_path=tmp_path)
+    # the identity reset makes the daemon report a fresh ID
+    _fake_run(monkeypatch, machine_id="99999999")
+    fake = _vault(monkeypatch, password="old words", username=MACHINE_ID)
+    result = rustdesk_setup.task(
+        _ctx(tmp_path=tmp_path, config=config, force=True)
+    )
+    assert result.success is True
+    assert fake._entry is not None
+    assert fake._entry.username == "99999999"
+    assert fake._entry.password != "old words"
+    assert (
+        config.rustdesk_setup.id_file_path.read_text(encoding="utf-8").strip()
+        == "99999999"
     )
 
 

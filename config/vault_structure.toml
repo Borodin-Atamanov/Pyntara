@@ -39,7 +39,7 @@ notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by
 
 [[vault_structure.entries]]
 title = "rustdesk_password"
-notes = "Permanent RustDesk access password of this machine, filled by the rustdesk_setup task on the target machine as 6 random proquint words joined by spaces. The task generates the value on first run and on force mode, writes it into this entry of the runtime vault and applies it through rustdesk --password, so every machine of the fleet gets its own credential. Consumed by the rustdesk_setup task; the operator reads it from the runtime vault backup to connect by the machine RustDesk ID."
+notes = "Permanent RustDesk access credentials of this machine. The password field carries the permanent password, filled by the rustdesk_setup task as 6 random proquint words joined by spaces; the username field carries the machine RustDesk ID read from rustdesk --get-id. The task generates and writes both values on first run and on force mode and applies the password through rustdesk --password, so every machine of the fleet gets its own credential. Consumed by the rustdesk_setup task; the operator reads the pair from the runtime vault backup to connect by the machine ID."
 
 [[vault_structure.groups]]
 title = "NextDNS"

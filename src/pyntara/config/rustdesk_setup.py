@@ -30,7 +30,8 @@ class RustdeskSetupConfig:
     id_file_path and id_file_mode are the location and mode of the file
     that carries the machine RustDesk ID for the network report;
     vault_entry_title is the runtime vault entry that holds the permanent
-    password; service_unit_name is the rustdesk systemd unit;
+    password and the machine RustDesk ID; service_unit_name is the
+    rustdesk systemd unit;
     password_words and password_separator define the generated permanent
     password; config_dir is the rustdesk client configuration directory of
     the primary desktop user, whose identity file force mode removes to
