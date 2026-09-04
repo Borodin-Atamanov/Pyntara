@@ -191,11 +191,12 @@ def _ctx(*, tmp_path: Path, config: Config, force: bool = False) -> Context:
     )
 
 
-def test_rustdesk_setup_in_desktop_and_server_modes() -> None:
-    # Remote control makes sense on interactive machines; the minimal
-    # mode has no desktop session to capture.
-    for mode in ("desktop", "server"):
-        assert "rustdesk_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
+def test_rustdesk_setup_in_desktop_mode_only() -> None:
+    # Remote control needs the desktop session of the primary user, so
+    # the task runs in the desktop mode only; the server and minimal
+    # modes carry no desktop session to control.
+    assert "rustdesk_setup" in task_catalog.default_tasks("desktop", REAL_TASKS)
+    assert "rustdesk_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
     assert "rustdesk_setup" not in task_catalog.default_tasks("minimal", REAL_TASKS)
 
 

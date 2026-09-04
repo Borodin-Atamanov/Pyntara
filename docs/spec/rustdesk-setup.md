@@ -1,6 +1,6 @@
 # RustDesk setup
 
-The rustdesk_setup task installs the RustDesk remote desktop client on the target machine and configures it for unattended remote access. RustDesk is an open remote desktop tool: the controlled machine registers its ID with a rendezvous server, and any RustDesk client reaches it by typing the ID and the permanent password. The task uses the public RustDesk server (the client default), so no server address or key is configured on the machines or on the controlling clients: connecting is just ID plus password. The task belongs to the server and desktop install modes.
+The rustdesk_setup task installs the RustDesk remote desktop client on the target machine and configures it for unattended remote access. RustDesk is an open remote desktop tool: the controlled machine registers its ID with a rendezvous server, and any RustDesk client reaches it by typing the ID and the permanent password. The task uses the public RustDesk server (the client default), so no server address or key is configured on the machines or on the controlling clients: connecting is just ID plus password. The task belongs to the desktop install mode.
 
 ## Release install
 
@@ -28,7 +28,7 @@ The client options come from the [rustdesk_setup.options] tables of the config a
 
 ## Wayland and headless notes
 
-Screen capture on a KDE Wayland session goes through the xdg-desktop-portal ScreenCast and works with the client's uinput keyboard and mouse devices; both are created by the root service, so no extra permissions are needed. The client cannot capture the login screen on Wayland. The allow-linux-headless option permits capture on a machine without a physical monitor, which is how a headless server machine stays controllable.
+Screen capture on a KDE Wayland session goes through the xdg-desktop-portal ScreenCast and works with the client's uinput keyboard and mouse devices; both are created by the root service, so no extra permissions are needed. The client cannot capture the login screen on Wayland. The allow-linux-headless option permits capture on a machine without a physical monitor.
 
 ## Parameters
 

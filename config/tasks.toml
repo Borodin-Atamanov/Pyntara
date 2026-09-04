@@ -117,7 +117,7 @@ modes = ["server", "desktop"]
 name = "rustdesk_setup"
 description = "Install and configure the RustDesk remote desktop client with a per-machine password."
 depends = ["local_vault_setup"]
-modes = ["server", "desktop"]
+modes = ["desktop"]
 
 [[tasks]]
 name = "imagemagick_setup"
