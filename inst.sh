@@ -182,13 +182,16 @@ fi
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 
-# curl timeout and retries of the uv installer download, mirroring the
-# [engine] curl_timeout_seconds and curl_retries config values. The
-# installer runs before the config exists, so the values live here as
-# overridable environment defaults (bootstrap contract, Runtime
-# configuration).
+# curl timeout, retries and retry bounds of the uv installer download,
+# mirroring the [engine] curl_timeout_seconds, curl_retries,
+# curl_connect_timeout_seconds and curl_retry_max_time_seconds config
+# values. The installer runs before the config exists, so the values
+# live here as overridable environment defaults (bootstrap contract,
+# Runtime configuration).
 CURL_TIMEOUT_SECONDS="${PYNTARA_CURL_TIMEOUT_SECONDS:-777}"
 CURL_RETRIES="${PYNTARA_CURL_RETRIES:-13}"
+CURL_CONNECT_TIMEOUT_SECONDS="${PYNTARA_CURL_CONNECT_TIMEOUT_SECONDS:-30}"
+CURL_RETRY_MAX_TIME_SECONDS="${PYNTARA_CURL_RETRY_MAX_TIME_SECONDS:-1500}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f install_uv &>/dev/null; then
@@ -201,7 +204,7 @@ install_uv() {
     fi
     local installer="$CACHE_DIR/uv-install.sh"
     log "Downloading uv installer to $installer"
-    run_timed curl -LsSf --max-time "$CURL_TIMEOUT_SECONDS" --retry "$CURL_RETRIES" --retry-delay 3 --retry-connrefused -o "$installer" "$UV_INSTALL_URL"
+    run_timed curl -LsSf --max-time "$CURL_TIMEOUT_SECONDS" --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" --retry "$CURL_RETRIES" --retry-all-errors --retry-delay 3 --retry-max-time "$CURL_RETRY_MAX_TIME_SECONDS" --retry-connrefused -o "$installer" "$UV_INSTALL_URL"
     log "Running uv installer"
     # The installer runs in a subprocess so its own environment changes never
     # leak into this shell. UV_CACHE_DIR is set for the child explicitly.
@@ -222,7 +225,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.3.183"
+PYNTARA_VERSION="0.3.184"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then

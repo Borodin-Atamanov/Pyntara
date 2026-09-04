@@ -1,4 +1,4 @@
-# Pyntara 0.3.183
+# Pyntara 0.3.184
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -17,7 +17,7 @@ environment:
 
 ```bash
 inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
-&& curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
+&& curl --fail --location --connect-timeout 30 --retry 15 --retry-delay 3 --retry-all-errors --retry-max-time 1500 --retry-connrefused \
 -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh \
 && sudo --preserve-env=PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
 bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
@@ -66,7 +66,7 @@ if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
     export PYNTARA_VAULT_PASSWORD
 fi
 inst="$(mktemp /tmp/pyntara.XXXXXXXXX)"
-curl --fail --location --retry 15 --retry-delay 3 --retry-all-errors --retry-connrefused \
+curl --fail --location --connect-timeout 30 --retry 15 --retry-delay 3 --retry-all-errors --retry-max-time 1500 --retry-connrefused \
 -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh
 PYNTARA_SKIP_APT_UPDATE=1 bash "$inst"
 '

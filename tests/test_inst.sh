@@ -775,6 +775,24 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
+    if ! grep -q -- "--retry-all-errors" "$curl_calls"; then
+        echo "curl not called with --retry-all-errors" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q -- "--connect-timeout 30" "$curl_calls"; then
+        echo "curl not called with the configured --connect-timeout" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q -- "--retry-max-time 1500" "$curl_calls"; then
+        echo "curl not called with the configured --retry-max-time" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
     rm -rf "$tmp"
 }
 

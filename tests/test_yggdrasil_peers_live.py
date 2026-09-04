@@ -26,14 +26,22 @@ def _cfg(tmp_path: Path):
     return make_config(
         task_data_root=tmp_path,
         yggdrasil_peers_full_path=tmp_path / "peers-full.txt",
-    ).yggdrasil_service_setup
+    )
 
 
 def test_live_download_and_parse(tmp_path: Path) -> None:
     # The real tarball downloads, the markdown files parse into peer URIs
     # and the full list lands next to the config.
-    cfg = _cfg(tmp_path)
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    config = _cfg(tmp_path)
+    cfg = config.yggdrasil_service_setup
+    peers = yggdrasil_service_setup._download_peers(
+        cfg,
+        120,
+        config.engine.curl_timeout_seconds,
+        config.engine.curl_retries,
+        config.engine.curl_connect_timeout_seconds,
+        config.engine.curl_retry_max_time_seconds,
+    )
     assert len(peers) > 50, "the public peers list should be large"
     assert cfg.peers_full_path.is_file()
     saved = cfg.peers_full_path.read_text(encoding="utf-8").splitlines()
@@ -44,8 +52,16 @@ def test_live_peer_uris_are_valid(tmp_path: Path) -> None:
     # Every downloaded peer URI has one of the known schemes and a port,
     # and a meaningful share of them resolves: dead nodes in the list are
     # expected, but the list as a whole must be live.
-    cfg = _cfg(tmp_path)
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    config = _cfg(tmp_path)
+    cfg = config.yggdrasil_service_setup
+    peers = yggdrasil_service_setup._download_peers(
+        cfg,
+        120,
+        config.engine.curl_timeout_seconds,
+        config.engine.curl_retries,
+        config.engine.curl_connect_timeout_seconds,
+        config.engine.curl_retry_max_time_seconds,
+    )
     schemes = {
         "tcp",
         "tls",
@@ -72,8 +88,16 @@ def test_live_peer_uris_are_valid(tmp_path: Path) -> None:
 def test_live_probe_pipeline(tmp_path: Path) -> None:
     # The full pipeline over real data: download, shuffle, batches and
     # best-pick selection complete without errors and produce peers.
-    cfg = _cfg(tmp_path)
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    config = _cfg(tmp_path)
+    cfg = config.yggdrasil_service_setup
+    peers = yggdrasil_service_setup._download_peers(
+        cfg,
+        120,
+        config.engine.curl_timeout_seconds,
+        config.engine.curl_retries,
+        config.engine.curl_connect_timeout_seconds,
+        config.engine.curl_retry_max_time_seconds,
+    )
     yggdrasil_service_setup.random.shuffle(peers)
     batch = peers[: cfg.peer_batch_size]
     assert len(batch) > 0
