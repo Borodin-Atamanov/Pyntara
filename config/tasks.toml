@@ -138,6 +138,12 @@ depends = ["system_metrics_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "telegram_setup"
+description = "Install the latest Telegram Desktop for the desktop user with auto-update."
+depends = []
+modes = ["desktop"]
+
+[[tasks]]
 name = "cli_tools"
 description = "Install curated console utilities: file managers, system and media tools."
 depends = ["add_extra_repos"]

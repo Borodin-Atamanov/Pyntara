@@ -328,6 +328,13 @@ value = "Y"
 key = "direct-server"
 value = "Y"
 
+[telegram_setup]
+username = "i"
+home_dir = "/home/i"
+download_dir = "/var/cache/pyntara/telegram"
+latest_url = "https://telegram.org/dl/desktop/linux"
+icon_url = "https://example.invalid/telegram/icon512.png"
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -558,6 +565,15 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.rustdesk_setup.options == (
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
         RustdeskOptionConfig(key="direct-server", value="Y"),
+    )
+    assert config.telegram_setup.username == "i"
+    assert config.telegram_setup.home_dir == "/home/i"
+    assert config.telegram_setup.download_dir == Path(
+        "/var/cache/pyntara/telegram"
+    )
+    assert config.telegram_setup.latest_url == "https://telegram.org/dl/desktop/linux"
+    assert config.telegram_setup.icon_url == (
+        "https://example.invalid/telegram/icon512.png"
     )
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (

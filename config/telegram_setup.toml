@@ -1,0 +1,25 @@
+[telegram_setup]
+# Telegram Desktop installed by the telegram_setup task for the desktop
+# user. The task installs the official static Linux build (the only build
+# with the built-in auto-update): the download link latest_url answers a
+# redirect to the newest versioned archive tsetup.<version>.tar.xz, so the
+# task never tracks a version list and takes the redirect as the single
+# source of the latest release. The archive of the installed version stays
+# in download_dir under its own name; on a rerun a present archive with the
+# name the redirect points to plus a present Telegram binary means the
+# latest release is already installed and nothing is downloaded again. The
+# files land under the home of the desktop user so the built-in updater can
+# rewrite them: the install directory is home_dir/.local/share/Telegram,
+# the launcher entry is home_dir/.local/share/applications/
+# telegramdesktop.desktop and the icon is home_dir/.local/share/icons/
+# telegram-desktop.png, all derived from home_dir (docs/spec/telegram-setup.md).
+# The user whose desktop runs the client and whose home holds the install.
+username = "i"
+home_dir = "/home/i"
+# Root cache that keeps the archive of the last installed version; the
+# archive name doubles as the idempotency record.
+download_dir = "/var/cache/pyntara/telegram"
+# Official download link that redirects to the newest tsetup archive.
+latest_url = "https://telegram.org/dl/desktop/linux"
+# Official Telegram icon downloaded for the launcher entry.
+icon_url = "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/Telegram/Resources/art/icon512.png"

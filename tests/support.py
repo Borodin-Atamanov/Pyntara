@@ -39,6 +39,7 @@ from pyntara.config import (
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
     TaskConfig,
+    TelegramSetupConfig,
     ThreeXuiXraySetupConfig,
     TorSetupConfig,
     VaultEntry,
@@ -401,6 +402,11 @@ def make_config(
     rustdesk_options: tuple[RustdeskOptionConfig, ...] = (
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
     ),
+    telegram_username: str = "i",
+    telegram_home_dir: str = "/home/i",
+    telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
+    telegram_latest_url: str = "https://telegram.org/dl/desktop/linux",
+    telegram_icon_url: str = "https://example.invalid/telegram/icon512.png",
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",
@@ -1041,6 +1047,13 @@ def make_config(
                 rustdesk_start_check_retry_delay_seconds
             ),
             options=rustdesk_options,
+        ),
+        telegram_setup=TelegramSetupConfig(
+            username=telegram_username,
+            home_dir=telegram_home_dir,
+            download_dir=telegram_download_dir,
+            latest_url=telegram_latest_url,
+            icon_url=telegram_icon_url,
         ),
         local_vault_setup=LocalVaultSetupConfig(
             source_vault_production=local_vault_source_production,

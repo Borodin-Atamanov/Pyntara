@@ -306,6 +306,12 @@ def base_config() -> str:
         "start_check_retry_delay_seconds = 1.0\n"
         '[[rustdesk_setup.options]]\n'
         'key = "enable-udp-punch"\nvalue = "Y"\n'
+        "[telegram_setup]\n"
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'download_dir = "/var/cache/pyntara/telegram"\n'
+        'latest_url = "https://telegram.org/dl/desktop/linux"\n'
+        'icon_url = "https://example.invalid/telegram/icon512.png"\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

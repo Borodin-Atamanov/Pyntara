@@ -41,6 +41,7 @@ from .system_metrics_setup import (
     _system_metrics_setup_table,
 )
 from .tasks import TaskConfig, _tasks_table
+from .telegram_setup import TelegramSetupConfig, _telegram_setup_table
 from .three_x_ui_xray_setup import (
     ThreeXuiXraySetupConfig,
     _three_x_ui_xray_setup_table,
@@ -76,6 +77,7 @@ class Config:
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
+    telegram_setup: TelegramSetupConfig
     i2pd_service_setup: I2pdServiceSetupConfig
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
@@ -190,6 +192,7 @@ def load_config(path: Path) -> Config:
         ),
         zswap_service=_zswap_service_table(data.get("zswap_service")),
         zram_service=_zram_service_table(data.get("zram_service")),
+        telegram_setup=_telegram_setup_table(data.get("telegram_setup")),
         i2pd_service_setup=_i2pd_service_setup_table(
             data.get("i2pd_service_setup")
         ),

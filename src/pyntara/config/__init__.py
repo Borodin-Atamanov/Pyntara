@@ -41,6 +41,7 @@ from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
+from .telegram_setup import TelegramSetupConfig
 from .system_metrics_setup import (
     CollectorModuleConfig,
     SystemMetricsCollectorConfig,
@@ -97,6 +98,7 @@ __all__ = [
     "SystemMetricsCollectorConfig",
     "SystemMetricsSetupConfig",
     "TaskConfig",
+    "TelegramSetupConfig",
     "ThreeXuiXraySetupConfig",
     "TorSetupConfig",
     "VaultEntry",
