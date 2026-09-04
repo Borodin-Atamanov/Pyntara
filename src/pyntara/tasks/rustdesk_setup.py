@@ -45,6 +45,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
+    CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -208,11 +209,12 @@ def _download_deb(
             [
                 "curl",
                 "--fail",
-                "--silent",
                 "--location",
                 "--show-error",
                 "--output",
                 str(download_dir / name),
+                "--write-out",
+                CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 url,
             ],

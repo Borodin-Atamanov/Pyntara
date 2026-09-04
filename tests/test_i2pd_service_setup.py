@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
@@ -290,6 +291,38 @@ def test_already_configured_skips(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
+
+
+def test_download_curl_shows_progress_and_writes_summary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A package download runs without --silent, so curl draws its live
+    # progress meter on a terminal, and carries --write-out so a one-line
+    # summary of bytes, time and speed follows the transfer.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(i2pd_service_setup, "run_command", fake_run)
+    i2pd_service_setup._download_asset(
+        tmp_path,
+        "i2pd_2.61.0-1_amd64.deb",
+        "https://example.invalid/i2pd_2.61.0-1_amd64.deb",
+        1800,
+        777,
+        13,
+        30,
+        1500,
+    )
+    assert len(calls) == 1
+    download_call = calls[0]
+    assert download_call[0] == "curl"
+    assert "--silent" not in download_call
+    assert "--show-error" in download_call
+    assert "--write-out" in download_call
+    assert i2pd_service_setup.CURL_DOWNLOAD_WRITE_OUT in download_call
 
 
 def test_missing_binary_is_treated_as_not_installed(

@@ -68,6 +68,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    CURL_DOWNLOAD_WRITE_OUT,
     backoff_delay,
     curl_flags,
     dpkg_architecture,
@@ -234,11 +235,12 @@ def _download_asset(
             [
                 "curl",
                 "--fail",
-                "--silent",
                 "--location",
                 "--show-error",
                 "--output",
                 str(download_dir / name),
+                "--write-out",
+                CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 url,
             ],
@@ -450,11 +452,12 @@ def _download_peers(
             [
                 "curl",
                 "--fail",
-                "--silent",
                 "--location",
                 "--show-error",
                 "--output",
                 tmp_name,
+                "--write-out",
+                CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 cfg.peers_tarball_url,
             ],

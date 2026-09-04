@@ -212,6 +212,17 @@ def curl_flags(
     ]
 
 
+# One-line summary curl prints after a completed download: the actual byte
+# count, total time and average speed. The leading newline separates it
+# from the progress meter, which ends without one. Download curls add
+# --write-out with this format; release query curls stay silent, because
+# their stdout is parsed as JSON.
+CURL_DOWNLOAD_WRITE_OUT = (
+    "\nDownloaded %{size_download} bytes in %{time_total}s "
+    "at %{speed_download} bytes/s\n"
+)
+
+
 def run_command(
     command: Iterable[str],
     *,

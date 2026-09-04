@@ -72,6 +72,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
     ensure_port_free,
     install_package_once,
@@ -202,10 +203,11 @@ def _download_installer(
                 "curl",
                 "--fail",
                 "--location",
-                "--silent",
                 "--show-error",
                 "--output",
                 str(script_path),
+                "--write-out",
+                CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 cfg.install_script_url,
             ],

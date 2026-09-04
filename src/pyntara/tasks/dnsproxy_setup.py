@@ -22,6 +22,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -184,11 +185,12 @@ def _download_binary(
         [
             "curl",
             "--fail",
-            "--silent",
             "--show-error",
             "--location",
             "--output",
             str(archive),
+            "--write-out",
+            CURL_DOWNLOAD_WRITE_OUT,
             *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
             url,
         ],

@@ -204,7 +204,7 @@ install_uv() {
     fi
     local installer="$CACHE_DIR/uv-install.sh"
     log "Downloading uv installer to $installer"
-    run_timed curl -LsSf --max-time "$CURL_TIMEOUT_SECONDS" --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" --retry "$CURL_RETRIES" --retry-all-errors --retry-delay 3 --retry-max-time "$CURL_RETRY_MAX_TIME_SECONDS" --retry-connrefused -o "$installer" "$UV_INSTALL_URL"
+    run_timed curl -LSf --max-time "$CURL_TIMEOUT_SECONDS" --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" --retry "$CURL_RETRIES" --retry-all-errors --retry-delay 3 --retry-max-time "$CURL_RETRY_MAX_TIME_SECONDS" --retry-connrefused --write-out "\nDownloaded %{size_download} bytes in %{time_total}s at %{speed_download} bytes/s\n" -o "$installer" "$UV_INSTALL_URL"
     log "Running uv installer"
     # The installer runs in a subprocess so its own environment changes never
     # leak into this shell. UV_CACHE_DIR is set for the child explicitly.
@@ -225,7 +225,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.3.184"
+PYNTARA_VERSION="0.3.185"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then

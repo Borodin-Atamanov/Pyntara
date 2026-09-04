@@ -63,6 +63,7 @@ from pyntara.models import TaskResult
 from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
+    CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -272,11 +273,12 @@ def _download_asset(
             [
                 "curl",
                 "--fail",
-                "--silent",
                 "--location",
                 "--show-error",
                 "--output",
                 str(download_dir / name),
+                "--write-out",
+                CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 url,
             ],
