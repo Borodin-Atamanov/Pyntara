@@ -148,7 +148,12 @@ def _select_asset(
 
 
 def _fetch_release_json(
-    repo: str, timeout: float, curl_timeout: float, retries: int
+    repo: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
@@ -164,7 +169,7 @@ def _fetch_release_json(
             "--fail",
             "--silent",
             "--show-error",
-            *curl_flags(curl_timeout, retries),
+            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
             url,
         ],
         check=False,
@@ -214,6 +219,8 @@ def _download_asset(
     timeout: float,
     curl_timeout: float,
     retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> None:
     """Download the package into the download directory.
 
@@ -232,7 +239,7 @@ def _download_asset(
                 "--show-error",
                 "--output",
                 str(download_dir / name),
-                *curl_flags(curl_timeout, retries),
+                *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 url,
             ],
             timeout=timeout,
@@ -424,6 +431,8 @@ def _download_peers(
     timeout: float,
     curl_timeout: float,
     retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> list[str]:
     """Download and parse the public-peers list; save it next to the config.
 
@@ -446,7 +455,7 @@ def _download_peers(
                 "--show-error",
                 "--output",
                 tmp_name,
-                *curl_flags(curl_timeout, retries),
+                *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 cfg.peers_tarball_url,
             ],
             timeout=timeout,
@@ -833,6 +842,8 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
+    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "yggdrasil_service_setup" in ctx.force_tasks
     warnings: list[str] = []
 
@@ -855,7 +866,12 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         release = _fetch_release_json(
-            cfg.github_repo, timeout, curl_timeout, curl_retries
+            cfg.github_repo,
+            timeout,
+            curl_timeout,
+            curl_retries,
+            connect_timeout,
+            retry_max_time,
         )
         tag = _release_tag(release)
     except RuntimeError as exc:
@@ -925,6 +941,8 @@ def task(ctx: Context) -> TaskResult:
                 timeout,
                 curl_timeout,
                 curl_retries,
+                connect_timeout,
+                retry_max_time,
             )
         except RuntimeError as exc:
             warnings.append(str(exc))
@@ -1028,7 +1046,9 @@ def task(ctx: Context) -> TaskResult:
     _log(f"downloading peer list from {cfg.peers_tarball_url}")
     downloaded: list[str] | None = None
     try:
-        downloaded = _download_peers(cfg, timeout, curl_timeout, curl_retries)
+        downloaded = _download_peers(
+            cfg, timeout, curl_timeout, curl_retries, connect_timeout, retry_max_time
+        )
     except RuntimeError as exc:
         _log(f"peer list download failed, using static_peers: {exc}")
     if downloaded is None:

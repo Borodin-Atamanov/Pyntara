@@ -123,7 +123,12 @@ def _select_asset(
 
 
 def _fetch_release_json(
-    repo: str, timeout: float, curl_timeout: float, retries: int
+    repo: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
@@ -139,7 +144,7 @@ def _fetch_release_json(
             "--fail",
             "--silent",
             "--show-error",
-            *curl_flags(curl_timeout, retries),
+            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
             url,
         ],
         check=False,
@@ -188,6 +193,8 @@ def _download_deb(
     timeout: float,
     curl_timeout: float,
     retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> None:
     """Download the package into the download directory.
 
@@ -206,7 +213,7 @@ def _download_deb(
                 "--show-error",
                 "--output",
                 str(download_dir / name),
-                *curl_flags(curl_timeout, retries),
+                *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
                 url,
             ],
             timeout=timeout,
@@ -485,12 +492,19 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
+    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "rustdesk_setup" in ctx.force_tasks
     changed = False
 
     try:
         release = _fetch_release_json(
-            cfg.github_repo, timeout, curl_timeout, curl_retries
+            cfg.github_repo,
+            timeout,
+            curl_timeout,
+            curl_retries,
+            connect_timeout,
+            retry_max_time,
         )
         tag = _normalized_version(_release_tag(release))
     except (RuntimeError, TypeError) as exc:
@@ -518,7 +532,14 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading rustdesk {tag} deb")
         try:
             _download_deb(
-                cfg.download_dir, name, url, timeout, curl_timeout, curl_retries
+                cfg.download_dir,
+                name,
+                url,
+                timeout,
+                curl_timeout,
+                curl_retries,
+                connect_timeout,
+                retry_max_time,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))

@@ -303,7 +303,10 @@ def test_already_configured_does_not_run_installer(
     assert result.changed is True  # stage 3 created inbound
     assert result.message == "already configured"
     expected_flags = curl_flags(
-        ctx.config.engine.curl_timeout_seconds, ctx.config.engine.curl_retries
+        ctx.config.engine.curl_timeout_seconds,
+        ctx.config.engine.curl_retries,
+        ctx.config.engine.curl_connect_timeout_seconds,
+        ctx.config.engine.curl_retry_max_time_seconds,
     )
     release_calls = [
         call

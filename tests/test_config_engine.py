@@ -35,6 +35,24 @@ from pyntara.config import load_config
         base_config().replace("curl_retries = 13", 'curl_retries = "13"'),
         # curl_retries is negative
         base_config().replace("curl_retries = 13", "curl_retries = -1"),
+        # curl_connect_timeout_seconds is a string, not an integer
+        base_config().replace(
+            "curl_connect_timeout_seconds = 30",
+            'curl_connect_timeout_seconds = "30"',
+        ),
+        # curl_connect_timeout_seconds is zero
+        base_config().replace(
+            "curl_connect_timeout_seconds = 30", "curl_connect_timeout_seconds = 0"
+        ),
+        # curl_retry_max_time_seconds is a string, not an integer
+        base_config().replace(
+            "curl_retry_max_time_seconds = 1500",
+            'curl_retry_max_time_seconds = "1500"',
+        ),
+        # curl_retry_max_time_seconds is zero
+        base_config().replace(
+            "curl_retry_max_time_seconds = 1500", "curl_retry_max_time_seconds = 0"
+        ),
         # process_check_timeout_seconds is a string, not an integer
         base_config().replace(
             "process_check_timeout_seconds = 5", 'process_check_timeout_seconds = "5"'

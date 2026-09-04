@@ -100,7 +100,12 @@ def discover_dns_servers(
 
 
 def _release_json(
-    repo: str, timeout: float, curl_timeout: float, retries: int
+    repo: str,
+    timeout: float,
+    curl_timeout: float,
+    retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> dict[str, object]:
     result = run_command(
         [
@@ -109,7 +114,7 @@ def _release_json(
             "--silent",
             "--show-error",
             "--location",
-            *curl_flags(curl_timeout, retries),
+            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
             f"https://api.github.com/repos/{repo}/releases/latest",
         ],
         check=False,
@@ -170,6 +175,8 @@ def _download_binary(
     timeout: float,
     curl_timeout: float,
     retries: int,
+    connect_timeout: float,
+    retry_max_time: int,
 ) -> Path:
     cfg.download_dir.mkdir(parents=True, exist_ok=True)
     archive = cfg.download_dir / name
@@ -182,7 +189,7 @@ def _download_binary(
             "--location",
             "--output",
             str(archive),
-            *curl_flags(curl_timeout, retries),
+            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
             url,
         ],
         timeout=timeout,
@@ -777,6 +784,8 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
+    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     error_priority = ctx.config.engine.error_priority
     progress_priority = ctx.config.engine.progress_priority
     profile_id = _read_profile_id(cfg)
@@ -791,7 +800,12 @@ def task(ctx: Context) -> TaskResult:
         )
     try:
         release = _release_json(
-            cfg.github_repo, timeout, curl_timeout, curl_retries
+            cfg.github_repo,
+            timeout,
+            curl_timeout,
+            curl_retries,
+            connect_timeout,
+            retry_max_time,
         )
         tag = str(release["tag_name"])
         asset_name, asset_url = _asset_for_architecture(
@@ -814,7 +828,14 @@ def task(ctx: Context) -> TaskResult:
     try:
         if installed != target_version:
             staged = _download_binary(
-                cfg, asset_url, asset_name, timeout, curl_timeout, curl_retries
+                cfg,
+                asset_url,
+                asset_name,
+                timeout,
+                curl_timeout,
+                curl_retries,
+                connect_timeout,
+                retry_max_time,
             )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)

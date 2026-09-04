@@ -24,15 +24,19 @@ from pyntara.utils import (
 
 
 def test_curl_flags_returns_retry_and_timeout_flags() -> None:
-    flags = curl_flags(777, 13)
+    flags = curl_flags(777, 13, 30, 1500)
     assert flags == [
         "--max-time",
         "777",
+        "--connect-timeout",
+        "30",
         "--retry",
         "13",
         "--retry-all-errors",
         "--retry-delay",
         "3",
+        "--retry-max-time",
+        "1500",
         "--retry-connrefused",
     ]
 

@@ -30,6 +30,8 @@ notice_timeout = 7
 command_timeout_seconds = 1800
 curl_timeout_seconds = 777
 curl_retries = 13
+curl_connect_timeout_seconds = 30
+curl_retry_max_time_seconds = 1500
 error_priority = 3
 progress_priority = 7
 process_check_timeout_seconds = 5
@@ -515,6 +517,8 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.engine.task_data_root == Path("/var/lib/pyntara/task-data")
     assert config.engine.curl_timeout_seconds == 777
     assert config.engine.curl_retries == 13
+    assert config.engine.curl_connect_timeout_seconds == 30
+    assert config.engine.curl_retry_max_time_seconds == 1500
     assert config.engine.notice_timeout == 7
     assert config.engine.command_timeout_seconds == 1800
     assert config.engine.process_check_timeout_seconds == 5

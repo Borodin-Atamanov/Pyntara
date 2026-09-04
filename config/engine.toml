@@ -22,6 +22,15 @@ curl_timeout_seconds = 777
 # up. The shared curl flags add --retry-all-errors, so every failure is
 # retried, not only timeouts and HTTP 5xx.
 curl_retries = 13
+# Seconds curl may spend establishing a connection before an attempt is
+# abandoned. A host that drops packets instead of refusing fails fast, so
+# the retry budget serves short outages instead of one long silent stall
+# (the per-attempt --max-time still bounds the whole transfer).
+curl_connect_timeout_seconds = 30
+# Total seconds curl may keep retrying before it gives up on its own. The
+# bound keeps a dead link from retrying until the outer command timeout
+# kills the process; curl reports a clear give-up error first.
+curl_retry_max_time_seconds = 1500
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

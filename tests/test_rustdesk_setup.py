@@ -221,7 +221,10 @@ def test_installed_latest_is_unchanged(
     # the release lookup runs with the configured curl timeout and
     # retries, but no download or install happens
     expected_flags = curl_flags(
-        config.engine.curl_timeout_seconds, config.engine.curl_retries
+        config.engine.curl_timeout_seconds,
+        config.engine.curl_retries,
+        config.engine.curl_connect_timeout_seconds,
+        config.engine.curl_retry_max_time_seconds,
     )
     release_calls = [
         call
