@@ -5,6 +5,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 gitignore/
+.playwright-cli/
 *.pyc
 secrets/production.password
 # Editor swap files must never reach the repository.
