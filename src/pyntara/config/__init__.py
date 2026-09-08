@@ -26,6 +26,7 @@ from ._fields import (
     ConfigError,
 )
 from .add_extra_repos import AddExtraReposConfig
+from .chrome_setup import ChromeSetupConfig
 from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
 from .engine import EngineConfig
@@ -41,13 +42,13 @@ from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
-from .telegram_setup import TelegramSetupConfig
 from .system_metrics_setup import (
     CollectorModuleConfig,
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
 )
 from .tasks import TaskConfig
+from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
 from .vault import (
@@ -73,6 +74,7 @@ __all__ = [
     "YGGDRASIL_LISTEN_SCHEMES",
     "YGGDRASIL_PEER_SCHEMES",
     "AddExtraReposConfig",
+    "ChromeSetupConfig",
     "CliToolsConfig",
     "CollectorModuleConfig",
     "Config",

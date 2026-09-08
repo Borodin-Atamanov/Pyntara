@@ -144,6 +144,12 @@ depends = []
 modes = ["desktop"]
 
 [[tasks]]
+name = "chrome_setup"
+description = "Install Google Chrome and apply the browser settings from the chromium-default-settings repository."
+depends = []
+modes = ["desktop"]
+
+[[tasks]]
 name = "cli_tools"
 description = "Install curated console utilities: file managers, system and media tools."
 depends = ["add_extra_repos"]

@@ -1,0 +1,31 @@
+[chrome_setup]
+# Google Chrome installed by the chrome_setup task for the desktop user
+# from the official Google apt repository, with the browser settings of
+# the chromium-default-settings repository applied to the standard Chrome
+# profile and a desktop entry that always starts Chrome with CDP listening
+# on the loopback address (docs/spec/chrome-setup.md). username and
+# home_dir identify the desktop user; the profile preferences are merged
+# into home_dir/.config/google-chrome/Default/Preferences, so the browser
+# settings from the repository land on top of the current profile without
+# deleting local changes. settings_repo_url and settings_repo_ref name the
+# git repository of browser settings, cloned into settings_dir; its
+# system/ tree is deployed under system_root ("/" in production) with the
+# relative paths preserved. The Google apt repository is registered through
+# the deb822 source apt_source_path with the keyring at keyring_path,
+# downloaded from google_key_url. desktop_override_path receives the
+# packaged desktop entry desktop_source_path with the CDP flags appended to
+# every Exec line: the debug port cdp_port on the address cdp_address,
+# which listens on the loopback only.
+username = "i"
+home_dir = "/home/i"
+settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
+settings_repo_ref = "main"
+settings_dir = "/var/cache/pyntara/chromium-settings"
+system_root = "/"
+apt_source_path = "/etc/apt/sources.list.d/google-chrome.sources"
+keyring_path = "/usr/share/keyrings/google-chrome.gpg"
+google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"
+desktop_source_path = "/usr/share/applications/google-chrome.desktop"
+desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
+cdp_port = 19222
+cdp_address = "127.0.0.1"

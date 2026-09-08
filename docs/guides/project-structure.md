@@ -76,6 +76,7 @@ Each TOML file in config/ has a corresponding parser module in src/pyntara/confi
 
 engine -> config/engine.py -> EngineConfig -> all tasks via Context  
 cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools  
+chrome_setup -> config/chrome_setup.py -> ChromeSetupConfig -> chrome_setup  
 add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos  
 hostname -> config/hostname.py -> HostnameConfig -> hostname  
 swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install  

@@ -312,6 +312,20 @@ def base_config() -> str:
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
+        "[chrome_setup]\n"
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"\n'
+        'settings_repo_ref = "main"\n'
+        'settings_dir = "/var/cache/pyntara/chromium-settings"\n'
+        'system_root = "/"\n'
+        'apt_source_path = "/etc/apt/sources.list.d/google-chrome.sources"\n'
+        'keyring_path = "/usr/share/keyrings/google-chrome.gpg"\n'
+        'google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"\n'
+        'desktop_source_path = "/usr/share/applications/google-chrome.desktop"\n'
+        'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n'
+        "cdp_port = 19222\n"
+        'cdp_address = "127.0.0.1"\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

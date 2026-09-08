@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pyntara.config import (
     AddExtraReposConfig,
+    ChromeSetupConfig,
     CliToolsConfig,
     CollectorModuleConfig,
     Config,
@@ -407,6 +408,27 @@ def make_config(
     telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
     telegram_latest_url: str = "https://telegram.org/dl/desktop/linux",
     telegram_icon_url: str = "https://example.invalid/telegram/icon512.png",
+    chrome_username: str = "i",
+    chrome_home_dir: str = "/home/i",
+    chrome_settings_repo_url: str = (
+        "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
+    ),
+    chrome_settings_repo_ref: str = "main",
+    chrome_settings_dir: Path = Path("/var/cache/pyntara/chromium-settings"),
+    chrome_system_root: Path = Path("/"),
+    chrome_apt_source_path: Path = Path(
+        "/etc/apt/sources.list.d/google-chrome.sources"
+    ),
+    chrome_keyring_path: Path = Path("/usr/share/keyrings/google-chrome.gpg"),
+    chrome_google_key_url: str = "https://dl.google.com/linux/linux_signing_key.pub",
+    chrome_desktop_source_path: Path = Path(
+        "/usr/share/applications/google-chrome.desktop"
+    ),
+    chrome_desktop_override_path: Path = Path(
+        "/usr/local/share/applications/google-chrome.desktop"
+    ),
+    chrome_cdp_port: int = 19222,
+    chrome_cdp_address: str = "127.0.0.1",
     yggdrasil_github_repo: str = "yggdrasil-network/yggdrasil-go",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_service_unit_name: str = "yggdrasil.service",
@@ -1054,6 +1076,21 @@ def make_config(
             download_dir=telegram_download_dir,
             latest_url=telegram_latest_url,
             icon_url=telegram_icon_url,
+        ),
+        chrome_setup=ChromeSetupConfig(
+            username=chrome_username,
+            home_dir=chrome_home_dir,
+            settings_repo_url=chrome_settings_repo_url,
+            settings_repo_ref=chrome_settings_repo_ref,
+            settings_dir=chrome_settings_dir,
+            system_root=chrome_system_root,
+            apt_source_path=chrome_apt_source_path,
+            keyring_path=chrome_keyring_path,
+            google_key_url=chrome_google_key_url,
+            desktop_source_path=chrome_desktop_source_path,
+            desktop_override_path=chrome_desktop_override_path,
+            cdp_port=chrome_cdp_port,
+            cdp_address=chrome_cdp_address,
         ),
         local_vault_setup=LocalVaultSetupConfig(
             source_vault_production=local_vault_source_production,

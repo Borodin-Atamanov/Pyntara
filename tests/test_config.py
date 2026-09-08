@@ -335,6 +335,21 @@ download_dir = "/var/cache/pyntara/telegram"
 latest_url = "https://telegram.org/dl/desktop/linux"
 icon_url = "https://example.invalid/telegram/icon512.png"
 
+[chrome_setup]
+username = "i"
+home_dir = "/home/i"
+settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
+settings_repo_ref = "main"
+settings_dir = "/var/cache/pyntara/chromium-settings"
+system_root = "/"
+apt_source_path = "/etc/apt/sources.list.d/google-chrome.sources"
+keyring_path = "/usr/share/keyrings/google-chrome.gpg"
+google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"
+desktop_source_path = "/usr/share/applications/google-chrome.desktop"
+desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
+cdp_port = 19222
+cdp_address = "127.0.0.1"
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -575,6 +590,33 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.telegram_setup.icon_url == (
         "https://example.invalid/telegram/icon512.png"
     )
+    assert config.chrome_setup.username == "i"
+    assert config.chrome_setup.home_dir == "/home/i"
+    assert config.chrome_setup.settings_repo_url == (
+        "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
+    )
+    assert config.chrome_setup.settings_repo_ref == "main"
+    assert config.chrome_setup.settings_dir == Path(
+        "/var/cache/pyntara/chromium-settings"
+    )
+    assert config.chrome_setup.system_root == Path("/")
+    assert config.chrome_setup.apt_source_path == Path(
+        "/etc/apt/sources.list.d/google-chrome.sources"
+    )
+    assert config.chrome_setup.keyring_path == Path(
+        "/usr/share/keyrings/google-chrome.gpg"
+    )
+    assert config.chrome_setup.google_key_url == (
+        "https://dl.google.com/linux/linux_signing_key.pub"
+    )
+    assert config.chrome_setup.desktop_source_path == Path(
+        "/usr/share/applications/google-chrome.desktop"
+    )
+    assert config.chrome_setup.desktop_override_path == Path(
+        "/usr/local/share/applications/google-chrome.desktop"
+    )
+    assert config.chrome_setup.cdp_port == 19222
+    assert config.chrome_setup.cdp_address == "127.0.0.1"
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",

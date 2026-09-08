@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ._fields import ConfigError
 from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
+from .chrome_setup import ChromeSetupConfig, _chrome_setup_table
 from .cli_tools import CliToolsConfig, _cli_tools_table
 from .dnsproxy_setup import DnsproxySetupConfig, _dnsproxy_setup_table
 from .engine import EngineConfig, _engine_table
@@ -67,6 +68,7 @@ class Config:
 
     engine: EngineConfig
     cli_tools: CliToolsConfig
+    chrome_setup: ChromeSetupConfig
     dnsproxy_setup: DnsproxySetupConfig
     add_extra_repos: AddExtraReposConfig
     hostname: HostnameConfig
@@ -178,6 +180,7 @@ def load_config(path: Path) -> Config:
     return Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
+        chrome_setup=_chrome_setup_table(data.get("chrome_setup")),
         dnsproxy_setup=_dnsproxy_setup_table(data.get("dnsproxy_setup")),
         add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
         hostname=_hostname_table(data.get("hostname")),
