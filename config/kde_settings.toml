@@ -581,29 +581,14 @@ group = ["kwin"]
 key = "Cube"
 value = "Meta+C,Meta+C,Toggle Cube"
 
+# Meta+D shows the desktop (Peek at Desktop), the KDE default for the
+# key. The minimizeall kwin effect stays disabled below, so its own
+# actions are never bound and do not fight for Meta+D or any other key.
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]
-key = "MinimizeAll"
-value = "Meta+D,none,Minimize all windows"
-
-[[kde_settings.kconfig]]
-file = "kglobalshortcutsrc"
-group = ["kwin"]
-key = "MinimizeAllActiveScreen"
-delete = true
-
-[[kde_settings.kconfig]]
-file = "kglobalshortcutsrc"
-group = ["kwin"]
-key = "minimizeAllOthers"
-value = "Meta+Shift+O,none,Minimize all other windows"
-
-[[kde_settings.kconfig]]
-file = "kglobalshortcutsrc"
-group = ["kwin"]
-key = "minimizeAllOthersActiveScreen"
-delete = true
+key = "Show Desktop"
+value = "Meta+D,Meta+D,Peek at Desktop"
 
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
