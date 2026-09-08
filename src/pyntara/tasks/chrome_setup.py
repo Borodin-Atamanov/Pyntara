@@ -426,7 +426,10 @@ def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | N
 
     A best-effort step: the override is picked up by the session when the
     cache is rebuilt, so a failure is a warning and the menu catches up at
-    the next login or cache rebuild.
+    the next login or cache rebuild. The command carries the
+    XDG_MENU_PREFIX of the Plasma session so the rebuild looks up
+    plasma-applications.menu instead of warning about a missing default
+    applications.menu.
     """
 
     try:
@@ -438,6 +441,7 @@ def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | N
                 "--",
                 "env",
                 f"HOME={cfg.home_dir}",
+                "XDG_MENU_PREFIX=plasma-",
                 "kbuildsycoca6",
                 "--noincremental",
             ],

@@ -32,7 +32,7 @@ The KDE menu launches Chrome through the packaged desktop entry at desktop_sourc
 
 ## Menu refresh
 
-After the override changes, the task rebuilds the KDE menu cache for the desktop user with kbuildsycoca6 as a best-effort step. A failure is a warning: the entry is picked up on the next login or cache rebuild.
+After the override changes, the task rebuilds the KDE menu cache for the desktop user with kbuildsycoca6 as a best-effort step. The command carries XDG_MENU_PREFIX=plasma- so the rebuild looks up the plasma-applications.menu of the Plasma session and does not warn about a missing default applications.menu. A failure is a warning: the entry is picked up on the next login or cache rebuild.
 
 ## Idempotency record
 

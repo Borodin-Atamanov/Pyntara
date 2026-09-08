@@ -255,7 +255,27 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
     assert CDP_FLAGS in override_text
-    assert any("kbuildsycoca6" in call for call in calls)
+    menu_calls = [call for call in calls if "kbuildsycoca6" in call]
+    assert menu_calls
+    assert "XDG_MENU_PREFIX=plasma-" in menu_calls[0]
+
+
+def test_menu_refresh_carries_the_plasma_menu_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _test_config(tmp_path).chrome_setup
+    calls = _fake_run_factory(monkeypatch)
+
+    assert chrome_setup._refresh_menu_database(cfg, timeout=60) is None
+
+    menu_calls = [call for call in calls if "kbuildsycoca6" in call]
+    assert len(menu_calls) == 1
+    command = menu_calls[0]
+    assert command[:4] == ["runuser", "-u", cfg.username, "--"]
+    assert command[4] == "env"
+    assert f"HOME={cfg.home_dir}" in command
+    assert "XDG_MENU_PREFIX=plasma-" in command
+    assert command[-2:] == ["kbuildsycoca6", "--noincremental"]
 
 
 def test_second_run_changes_nothing_when_target_reached(
