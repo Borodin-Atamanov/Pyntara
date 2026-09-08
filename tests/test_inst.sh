@@ -729,6 +729,21 @@ EOF
     rm -rf "$tmp"
 }
 
+make_isolated_tool_path() {
+    # Build a PATH prefix with the few system tools the uv install path
+    # needs. The download tests exercise install_uv, which short-circuits
+    # when uv is already on PATH, so a machine with a system uv in /usr/bin
+    # would skip them. The directory symlinks the tools the exercised code
+    # calls (date, tee, env, bash and the mock helpers mkdir, chmod,
+    # dirname) and never exposes uv.
+    local tools_dir="$1"
+    local tool
+    mkdir -p "$tools_dir"
+    for tool in date tee env bash mkdir chmod dirname; do
+        ln -s "$(command -v "$tool")" "$tools_dir/$tool"
+    done
+}
+
 inst_install_uv_downloads_then_runs_installer() {
     # The official URL is downloaded to a file, then that file is executed.
     local tmp
@@ -754,7 +769,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$out"
 exit 0
 EOF
     chmod +x "$bin/curl"
-    PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    make_isolated_tool_path "$tmp/tools"
+    PATH="$bin:$tmp/tools" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv' _ "$INSTALLER"
     if ! grep -q -- "-o $tmp/cache/uv-install.sh https://astral.sh/uv/install.sh" "$curl_calls"; then
@@ -825,8 +841,9 @@ printf '#!/bin/bash\nexit 0\n' > "$out"
 exit 0
 EOF
     chmod +x "$bin/curl"
+    make_isolated_tool_path "$tmp/tools"
     local output
-    output="$(PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    output="$(PATH="$bin:$tmp/tools" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv' _ "$INSTALLER" 2>&1)"
     assert_contains "$output" "uv installed" "installer run confirmation" || {
@@ -863,8 +880,9 @@ printf '#!/bin/bash\nexit 0\n' > "$out"
 exit 0
 EOF
     chmod +x "$bin/curl"
+    make_isolated_tool_path "$tmp/tools"
     local output
-    output="$(PATH="$bin:/usr/bin:/bin" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
+    output="$(PATH="$bin:$tmp/tools" PYNTARA_CACHE_DIR="$tmp/cache" PYNTARA_LOG_FILE="$logfile" \
         CURL_CALLS_FILE="$curl_calls" \
         bash -c 'source "$1"; install_uv; echo "PATH_MARKER:$PATH"' _ "$INSTALLER" 2>&1)"
     local path_line
