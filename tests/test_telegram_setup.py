@@ -209,6 +209,7 @@ def test_newer_release_replaces_and_removes_the_stale_archive(
     assert binary.read_bytes() == TELEGRAM_BYTES
     assert (cache / ARCHIVE_NAME).is_file()
     assert not (cache / OLD_ARCHIVE_NAME).exists()
+    assert any(call[0] == "tar" for call in calls)
 
 
 def test_force_reinstalls_when_the_latest_archive_is_cached(
@@ -272,3 +273,6 @@ def test_icon_failure_is_a_warning_when_install_is_current(
     assert result.success is True
     assert result.changed is False
     assert any("icon" in warning for warning in result.warnings)
+    # The install is current, so nothing is extracted and no archive is
+    # downloaded; only the icon curl is attempted and fails.
+    assert not any(call[0] == "tar" for call in calls)
