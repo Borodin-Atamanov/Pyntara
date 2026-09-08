@@ -14,6 +14,7 @@ Read the specific document needed for the task (contract, spec, or guide).
 
 Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity: ask or fail loudly.
 
+
 Understand and use:
 Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns! Не выдумывай! Не ври!
 
