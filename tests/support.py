@@ -30,6 +30,7 @@ from pyntara.config import (
     KdeSettingsConfig,
     LocalVaultSetupConfig,
     NextdnsSetupSystemWideConfig,
+    PlaywrightSetupConfig,
     PortForwardingSetupConfig,
     RustdeskOptionConfig,
     RustdeskSetupConfig,
@@ -215,6 +216,14 @@ def make_config(
     ffmpeg_setup_wayrecord_desktop_path: Path = Path(
         "/usr/share/applications/pyntara-wayrecord.desktop"
     ),
+
+    playwright_setup_username: str = "i",
+    playwright_setup_home_dir: str = "/home/i",
+    playwright_setup_packages: tuple[str, ...] = ("nodejs", "npm"),
+    playwright_setup_status_timeout: int = 30,
+    playwright_setup_retries: int = 3,
+    playwright_setup_cli_package: str = "@playwright/cli",
+    playwright_setup_npm_install_timeout: int = 900,
 
     dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
     dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
@@ -1076,6 +1085,15 @@ def make_config(
             download_dir=telegram_download_dir,
             latest_url=telegram_latest_url,
             icon_url=telegram_icon_url,
+        ),
+        playwright_setup=PlaywrightSetupConfig(
+            username=playwright_setup_username,
+            home_dir=playwright_setup_home_dir,
+            packages=playwright_setup_packages,
+            package_status_timeout_seconds=playwright_setup_status_timeout,
+            package_install_retries=playwright_setup_retries,
+            cli_package=playwright_setup_cli_package,
+            npm_install_timeout_seconds=playwright_setup_npm_install_timeout,
         ),
         chrome_setup=ChromeSetupConfig(
             username=chrome_username,

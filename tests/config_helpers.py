@@ -326,6 +326,14 @@ def base_config() -> str:
         'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n'
         "cdp_port = 19222\n"
         'cdp_address = "127.0.0.1"\n'
+        "[playwright_setup]\n"
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'packages = ["nodejs", "npm"]\n'
+        "package_status_timeout_seconds = 30\n"
+        "package_install_retries = 3\n"
+        'cli_package = "@playwright/cli"\n'
+        "npm_install_timeout_seconds = 900\n"
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

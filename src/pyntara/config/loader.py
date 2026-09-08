@@ -22,6 +22,7 @@ from .nextdns_setup_system_wide import (
     NextdnsSetupSystemWideConfig,
     _nextdns_setup_system_wide_table,
 )
+from .playwright_setup import PlaywrightSetupConfig, _playwright_setup_table
 from .port_forwarding_setup import (
     PortForwardingSetupConfig,
     _port_forwarding_setup_table,
@@ -87,6 +88,7 @@ class Config:
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
+    playwright_setup: PlaywrightSetupConfig
     port_forwarding_setup: PortForwardingSetupConfig
     rustdesk_setup: RustdeskSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
@@ -210,6 +212,9 @@ def load_config(path: Path) -> Config:
         ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
         nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
             data.get("nextdns_setup_system_wide")
+        ),
+        playwright_setup=_playwright_setup_table(
+            data.get("playwright_setup")
         ),
         port_forwarding_setup=port_forwarding_setup,
         rustdesk_setup=rustdesk_setup,

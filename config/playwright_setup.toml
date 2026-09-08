@@ -1,0 +1,26 @@
+[playwright_setup]
+# playwright-cli installed by the playwright_setup task for the desktop
+# user, so an agent can control the visible Google Chrome that chrome_setup
+# installs with the Chrome DevTools Protocol listener on the loopback
+# address. The task depends on add_extra_repos and chrome_setup: nodejs
+# lives in the universe component that add_extra_repos enables, and the
+# browser plus the CDP desktop entry come from chrome_setup. The task
+# installs nodejs and npm from the Ubuntu archive, then installs the npm
+# package cli_package into the user prefix home_dir/.local with
+# npm install -g --prefix run as the desktop user, so the binary lands at
+# home_dir/.local/bin/playwright-cli and no root-owned npm prefix is ever
+# used (docs/spec/playwright-setup.md). The version is not chased: npm
+# installs the latest release, and a rerun skips the install when the
+# binary is already present and answers --version.
+username = "i"
+home_dir = "/home/i"
+# The apt packages that provide the npm runtime on the target.
+packages = ["nodejs", "npm"]
+# Seconds the dpkg status query may take.
+package_status_timeout_seconds = 30
+# Retry attempts after a failed package install; total attempts are retries plus one.
+package_install_retries = 3
+# The npm package that provides the playwright-cli binary.
+cli_package = "@playwright/cli"
+# Seconds a single npm install command may run before it is killed.
+npm_install_timeout_seconds = 900

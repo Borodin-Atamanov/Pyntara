@@ -150,6 +150,12 @@ depends = []
 modes = ["desktop"]
 
 [[tasks]]
+name = "playwright_setup"
+description = "Install the playwright-cli browser control tool for the desktop user."
+depends = ["add_extra_repos", "chrome_setup"]
+modes = ["desktop"]
+
+[[tasks]]
 name = "cli_tools"
 description = "Install curated console utilities: file managers, system and media tools."
 depends = ["add_extra_repos"]

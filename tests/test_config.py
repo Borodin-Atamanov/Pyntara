@@ -350,6 +350,15 @@ desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
 cdp_port = 19222
 cdp_address = "127.0.0.1"
 
+[playwright_setup]
+username = "i"
+home_dir = "/home/i"
+packages = ["nodejs", "npm"]
+package_status_timeout_seconds = 30
+package_install_retries = 3
+cli_package = "@playwright/cli"
+npm_install_timeout_seconds = 900
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -617,6 +626,11 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     )
     assert config.chrome_setup.cdp_port == 19222
     assert config.chrome_setup.cdp_address == "127.0.0.1"
+    assert config.playwright_setup.username == "i"
+    assert config.playwright_setup.home_dir == "/home/i"
+    assert config.playwright_setup.packages == ("nodejs", "npm")
+    assert config.playwright_setup.cli_package == "@playwright/cli"
+    assert config.playwright_setup.npm_install_timeout_seconds == 900
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",

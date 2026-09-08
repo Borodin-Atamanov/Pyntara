@@ -38,6 +38,7 @@ from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .kde_settings import KConfigRecord, KdeSettingsConfig
 from .loader import Config, load_config
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
+from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
@@ -90,6 +91,7 @@ __all__ = [
     "KdeSettingsConfig",
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
+    "PlaywrightSetupConfig",
     "PortForwardingSetupConfig",
     "RustdeskOptionConfig",
     "RustdeskSetupConfig",
