@@ -10,7 +10,8 @@ repository into the root cache, deploys its system/ tree (the machine
 policy and the external extension files) under the configured system root,
 merges its Default/Preferences over the live profile of the desktop user,
 and writes a desktop entry override that appends the CDP flags to every
-Exec line of the packaged entry.
+Exec line of the packaged entry, and pins that entry to the Plasma
+taskbar of the desktop user so the Chrome button sits in the panel.
 
 The profile merge is identical in normal and force mode by design: the
 repository preferences are laid over the current profile, so the
@@ -50,6 +51,7 @@ from pyntara.utils import (
     install_package_once,
     package_is_installed,
     run_command,
+    trim_whitespace,
 )
 
 # The apt package name of Google Chrome and the process name pgrep sees
@@ -58,6 +60,14 @@ PACKAGE_NAME = "google-chrome-stable"
 CHROME_PROCESS_NAME = "chrome"
 # Mode of every deployed config and desktop file.
 FILE_MODE = 0o644
+# The Plasma taskbar pinning: the desktop user appletsrc that carries the
+# pinned launchers of the task manager widgets, the widgets whose launchers
+# list receives the Chrome button (the icons-only task manager and the
+# classic task manager), and the launcher id that resolves to the CDP
+# desktop override in the XDG applications dirs.
+APPLETSRC_FILE_NAME = "plasma-org.kde.plasma.desktop-appletsrc"
+TASKBAR_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
+PANEL_LAUNCHER_ID = "applications:google-chrome.desktop"
 # The settings repository tree deployed to the filesystem root.
 SYSTEM_TREE_REL = Path("system")
 # The repository profile file merged over the live Chrome profile.
@@ -452,13 +462,143 @@ def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | N
     return None
 
 
+def _as_user_command(cfg: ChromeSetupConfig, command: list[str]) -> list[str]:
+    """Prefix a command with runuser so it runs as the desktop user."""
+
+    return ["runuser", "-u", cfg.username, "--", *command]
+
+
+def _home_env(cfg: ChromeSetupConfig) -> dict[str, str]:
+    """Environment that points the KDE config tools at the user home."""
+
+    return {"HOME": cfg.home_dir}
+
+
+def _kreadconfig(
+    cfg: ChromeSetupConfig,
+    group_segments: tuple[str, ...],
+    key: str,
+    *,
+    timeout: float,
+) -> str:
+    """Current value of one appletsrc key of the desktop user."""
+
+    command = ["kreadconfig6", "--file", APPLETSRC_FILE_NAME]
+    for segment in group_segments:
+        command.extend(["--group", segment])
+    command.extend(["--key", key])
+    result = run_command(
+        _as_user_command(cfg, command),
+        extra_env=_home_env(cfg),
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    return trim_whitespace(result.stdout)
+
+
+def _kwriteconfig(
+    cfg: ChromeSetupConfig,
+    group_segments: tuple[str, ...],
+    key: str,
+    value: str,
+    *,
+    timeout: float,
+) -> None:
+    """Write one appletsrc key with kwriteconfig6 as the desktop user."""
+
+    command = ["kwriteconfig6", "--file", APPLETSRC_FILE_NAME]
+    for segment in group_segments:
+        command.extend(["--group", segment])
+    command.extend(["--key", key, value])
+    run_command(
+        _as_user_command(cfg, command),
+        extra_env=_home_env(cfg),
+        timeout=timeout,
+    )
+
+
+def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
+    """The Configuration/General group of every task manager applet.
+
+    Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
+    applet whose section declares one of the task manager plugins holds
+    its pinned launchers in [Configuration][General] below that section.
+    Returns the group segments of every matching applet, so a desktop
+    with both widget types or several panels pins all of them.
+    """
+
+    groups: list[tuple[str, ...]] = []
+    current: tuple[str, ...] = ()
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            current = tuple(part for part in line[1:-1].split("][") if part)
+        elif line.startswith("plugin=") and line[7:] in TASKBAR_PLUGINS:
+            groups.append(current + ("Configuration", "General"))
+    return groups
+
+
+def _pin_chrome_launcher(
+    cfg: ChromeSetupConfig, *, timeout: float
+) -> tuple[bool, str | None]:
+    """Pin the CDP Chrome launcher to the Plasma taskbars; (changed, note).
+
+    Every task manager applet of the desktop user appletsrc, icons-only
+    or classic, receives the launcher id in its pinned launchers when it
+    is missing, so the button appears in whichever taskbar exists. The
+    launcher id resolves to the CDP desktop override. A missing appletsrc
+    (the user has no Plasma panel config yet) is a note, not an error; a
+    failing read or write is reported as a note so the remaining steps
+    still run.
+    """
+
+    appletsrc_path = Path(cfg.home_dir) / ".config" / APPLETSRC_FILE_NAME
+    try:
+        groups = _taskbar_launcher_groups(
+            appletsrc_path.read_text(encoding="utf-8")
+        )
+    except OSError:
+        _log(
+            "no Plasma panel config yet; "
+            "the Chrome launcher pins after the first login"
+        )
+        return False, None
+    if not groups:
+        _log("no Plasma task manager applet found; the Chrome launcher is not pinned")
+        return False, None
+    changed = False
+    try:
+        for group in groups:
+            current = _kreadconfig(cfg, group, "launchers", timeout=timeout)
+            entries = [entry for entry in current.split(",") if entry]
+            if PANEL_LAUNCHER_ID in entries:
+                continue
+            _kwriteconfig(
+                cfg,
+                group,
+                "launchers",
+                ",".join([*entries, PANEL_LAUNCHER_ID]),
+                timeout=timeout,
+            )
+            changed = True
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ) as exc:
+        return changed, f"cannot pin the Chrome launcher: {exc}"
+    return changed, None
+
+
 def task(ctx: Context) -> TaskResult:
     """Install Chrome and apply the browser settings and the CDP entry.
 
     The target state is reached when google-chrome-stable is installed,
     the Google apt repository is registered, the settings repository is
-    current, its system/ tree and profile preferences are applied, and the
-    desktop override with the CDP flags is in place; the task then returns
+    current, its system/ tree and profile preferences are applied, the
+    desktop override with the CDP flags is in place and the Chrome
+    launcher sits in the Plasma taskbar; the task then returns
     changed=False. Force mode reinstalls Chrome and rewrites the deployed
     files; the profile merge itself is identical in both modes.
     """
@@ -538,6 +678,33 @@ def task(ctx: Context) -> TaskResult:
         menu_note = _refresh_menu_database(cfg, timeout=timeout)
         if menu_note:
             warnings.append(menu_note)
+
+    _log("pinning the Chrome launcher to the Plasma taskbar")
+    pin_changed, pin_note = _pin_chrome_launcher(cfg, timeout=timeout)
+    if pin_note:
+        warnings.append(pin_note)
+    if pin_changed:
+        messages.append("pinned the Chrome launcher to the Plasma taskbar")
+        changed = True
+        try:
+            run_command(
+                [
+                    "systemctl",
+                    "--user",
+                    "--machine",
+                    f"{cfg.username}@.host",
+                    "restart",
+                    "plasma-plasmashell.service",
+                ],
+                timeout=timeout,
+            )
+            _log("restarted the Plasma panel")
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warnings.append(f"cannot restart the Plasma panel: {exc}")
 
     if not messages:
         messages.append("browser already set up")

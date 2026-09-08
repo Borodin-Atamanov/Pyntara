@@ -50,6 +50,36 @@ DESKTOP_SOURCE = (
     "Exec=/usr/bin/google-chrome-stable\n"
 )
 CDP_FLAGS = " --remote-debugging-port=19222 --remote-debugging-address=127.0.0.1"
+# The launcher id the task pins and the appletsrc groups of the two task
+# manager widgets it appears under in the fixture.
+PINNED_LAUNCHER = "applications:google-chrome.desktop"
+ICON_TASKS_GROUP = (
+    "Containments", "2", "Applets", "5", "Configuration", "General",
+)
+TASKMANAGER_GROUP = (
+    "Containments", "7", "Applets", "9", "Configuration", "General",
+)
+# A Plasma appletsrc with one icons-only and one classic task manager in
+# two different panels, mirroring the real pinned launcher layout.
+APPLETSRC_TEXT = (
+    "[Containments][2]\n"
+    "plugin=org.kde.panel\n"
+    "\n"
+    "[Containments][2][Applets][5]\n"
+    "plugin=org.kde.plasma.icontasks\n"
+    "\n"
+    "[Containments][2][Applets][5][Configuration][General]\n"
+    "launchers=applications:org.kde.dolphin.desktop\n"
+    "\n"
+    "[Containments][7]\n"
+    "plugin=org.kde.panel\n"
+    "\n"
+    "[Containments][7][Applets][9]\n"
+    "plugin=org.kde.plasma.taskmanager\n"
+    "\n"
+    "[Containments][7][Applets][9][Configuration][General]\n"
+    "launchers=applications:org.kde.konsole.desktop\n"
+)
 
 
 def _test_config(tmp_path: Path) -> Config:
@@ -101,6 +131,60 @@ def _write_desktop_source(cfg: ChromeSetupConfig) -> None:
     source = cfg.desktop_source_path
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(DESKTOP_SOURCE, encoding="utf-8")
+
+
+def _write_appletsrc(cfg: ChromeSetupConfig, text: str = APPLETSRC_TEXT) -> None:
+    """Create the Plasma appletsrc of the desktop user."""
+
+    path = Path(cfg.home_dir) / ".config" / chrome_setup.APPLETSRC_FILE_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _pin_run_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    current: str = "",
+    fail: bool = False,
+) -> list[list[str]]:
+    """Fake run_command for the pinning helpers; return the calls.
+
+    kreadconfig6 answers the configured current launchers, kwriteconfig6
+    records the write, so the helpers run without a real Plasma config.
+    """
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[:4] == ["runuser", "-u", "i", "--"]:
+            inner = command[4:]
+            if inner and inner[0] == "kreadconfig6":
+                if fail:
+                    raise subprocess.CalledProcessError(1, command)
+                return _FakeProc(0, current)
+            if inner and inner[0] == "kwriteconfig6":
+                if fail:
+                    raise subprocess.CalledProcessError(1, command)
+                return _FakeProc(0, "")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(chrome_setup, "run_command", fake_run)
+    return calls
+
+
+def _kwrite_group(command: list[str]) -> tuple[str, ...]:
+    """The group segments of a recorded kwriteconfig6 command."""
+
+    segments: list[str] = []
+    index = 0
+    while True:
+        try:
+            index = command.index("--group", index)
+        except ValueError:
+            return tuple(segments)
+        segments.append(command[index + 1])
+        index += 2
 
 
 def _profile_path(cfg: ChromeSetupConfig) -> Path:
@@ -276,6 +360,85 @@ def test_menu_refresh_carries_the_plasma_menu_prefix(
     assert f"HOME={cfg.home_dir}" in command
     assert "XDG_MENU_PREFIX=plasma-" in command
     assert command[-2:] == ["kbuildsycoca6", "--noincremental"]
+
+
+def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
+    groups = chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT)
+    assert len(groups) == 2
+    assert ICON_TASKS_GROUP in groups
+    assert TASKMANAGER_GROUP in groups
+
+
+def test_pin_appends_launcher_to_every_taskbar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _test_config(tmp_path).chrome_setup
+    _write_appletsrc(cfg)
+    calls = _pin_run_fakes(
+        monkeypatch, current="applications:org.kde.dolphin.desktop"
+    )
+
+    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+
+    assert changed
+    assert note is None
+    writes = [call for call in calls if "kwriteconfig6" in call]
+    assert len(writes) == 2
+    write_groups = {_kwrite_group(call) for call in writes}
+    assert write_groups == {ICON_TASKS_GROUP, TASKMANAGER_GROUP}
+    expected_value = "applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER
+    assert all(call[-1] == expected_value for call in writes)
+
+
+def test_pin_is_idempotent_when_launcher_already_pinned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _test_config(tmp_path).chrome_setup
+    _write_appletsrc(cfg)
+    calls = _pin_run_fakes(
+        monkeypatch,
+        current="applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER,
+    )
+
+    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+
+    assert not changed
+    assert note is None
+    assert not any("kwriteconfig6" in call for call in calls)
+
+
+def test_pin_without_panel_config_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _test_config(tmp_path).chrome_setup
+    calls = _pin_run_fakes(monkeypatch)
+
+    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+
+    assert not changed
+    assert note is None
+    assert not calls
+
+
+def test_full_flow_pins_launcher_and_restarts_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    _write_appletsrc(cfg)
+    calls = _fake_run_factory(monkeypatch, chrome_installed=False)
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    assert "pinned the Chrome launcher to the Plasma taskbar" in (
+        result.message or ""
+    )
+    assert any("kwriteconfig6" in call for call in calls)
+    restarts = [call for call in calls if call[0] == "systemctl"]
+    assert any("plasma-plasmashell.service" in call for call in restarts)
 
 
 def test_second_run_changes_nothing_when_target_reached(

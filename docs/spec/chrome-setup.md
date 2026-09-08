@@ -1,6 +1,6 @@
 # Google Chrome setup
 
-There is a dedicated Chrome setup task: chrome_setup. The task belongs to the desktop install mode, installs Google Chrome from the official Google apt repository, applies the browser settings of the chromium-default-settings repository to the standard Chrome profile of the desktop user and writes a desktop entry override that starts Chrome with a Chrome DevTools Protocol listener bound to the loopback address. The settings repository is the single source of the browser defaults: the machine policy, the external extension files and the profile preferences are applied from it, so adding an extension to the repository is enough to roll it out on the next run.
+There is a dedicated Chrome setup task: chrome_setup. The task belongs to the desktop install mode, installs Google Chrome from the official Google apt repository, applies the browser settings of the chromium-default-settings repository to the standard Chrome profile of the desktop user and writes a desktop entry override that starts Chrome with a Chrome DevTools Protocol listener bound to the loopback address, then pins that entry to the Plasma taskbar of the desktop user. The settings repository is the single source of the browser defaults: the machine policy, the external extension files and the profile preferences are applied from it, so adding an extension to the repository is enough to roll it out on the next run.
 
 ## Why the official Google apt repository
 
@@ -34,9 +34,13 @@ The KDE menu launches Chrome through the packaged desktop entry at desktop_sourc
 
 After the override changes, the task rebuilds the KDE menu cache for the desktop user with kbuildsycoca6 as a best-effort step. The command carries XDG_MENU_PREFIX=plasma- so the rebuild looks up the plasma-applications.menu of the Plasma session and does not warn about a missing default applications.menu. A failure is a warning: the entry is picked up on the next login or cache rebuild.
 
+## Taskbar pinning
+
+The task pins the CDP desktop entry to the Plasma taskbar of the desktop user, so the button is one click away in the panel. Plasma keeps the pinned launchers in the appletsrc of the user, under the Configuration/General group of every task manager applet: the icons-only task manager (org.kde.plasma.icontasks) and the classic task manager (org.kde.plasma.taskmanager). The task finds every applet that declares one of the two plugins and appends the launcher id applications:google-chrome.desktop to its launchers list when missing, so a desktop with either widget type, or with several panels, pins the button without detecting which variant is present. The launcher id resolves through the XDG applications dirs to the CDP desktop override. A missing appletsrc (the user has not logged into a Plasma session yet) is a note: the button pins on the first login. After a change the task restarts the Plasma panel, so the button appears immediately; when the restart fails the button still appears at the next login.
+
 ## Idempotency record
 
-The target state is reached when the apt source and keyring are present, google-chrome-stable is installed, the settings repository is up to date, the system/ tree bytes match, the merged profile equals the current profile and the desktop override matches; the task then changes nothing. Force mode reinstalls Chrome and rewrites the deployed files regardless of the current bytes, and the profile merge behaves exactly as in normal mode.
+The target state is reached when the apt source and keyring are present, google-chrome-stable is installed, the settings repository is up to date, the system/ tree bytes match, the merged profile equals the current profile, the desktop override matches and the Chrome launcher sits in the taskbar launchers; the task then changes nothing. Force mode reinstalls Chrome and rewrites the deployed files regardless of the current bytes, and the profile merge behaves exactly as in normal mode.
 
 ## Parameters
 
