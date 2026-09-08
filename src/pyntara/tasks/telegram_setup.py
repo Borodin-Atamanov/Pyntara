@@ -4,14 +4,15 @@ The described goal is a Telegram Desktop that the desktop user launches
 from the application menu and that keeps itself updated. The task installs
 the official static Linux build, the only build with the built-in
 auto-update enabled: the download link configured as latest_url answers a
-redirect to the newest versioned archive tsetup.<version>.tar.xz, so the
-redirect is the single source of the latest release and no version list is
-tracked anywhere. The archive of the installed release stays in the root
-download_dir under its own name, and that name doubles as the idempotency
-record: a rerun whose cached archive name matches the redirect target and
-whose Telegram binary and launcher entry are present changes nothing, so a
-current install is never downloaded again. When the redirect points to a
-newer archive, the task downloads it, installs Telegram and its Updater
+redirect to the archive of the newest release, so the redirect is the
+single source of the latest release and no version list is tracked
+anywhere. The archive of the installed release stays in the root
+download_dir under the name the redirect gave it, and that name doubles as
+the idempotency record: a rerun whose cached archive name matches the
+redirect target and whose Telegram binary and launcher entry are present
+changes nothing, so a current install is never downloaded again. When the
+redirect points to a newer archive, the task downloads it, installs
+Telegram and its Updater
 into the install directory under the desktop user home (so the built-in
 updater can rewrite them in place), removes the stale cached archives,
 writes the launcher entry to the user applications directory and downloads
@@ -43,10 +44,10 @@ from pyntara.utils import (
     run_command,
 )
 
-# The release archive the redirect points to is named tsetup.<version>.tar.xz.
-ARCHIVE_PREFIX = "tsetup."
-ARCHIVE_SUFFIX = ".tar.xz"
-# The two files the official archive carries, under a Telegram/ prefix.
+# The archive file name is never assumed: the cache file is named by the
+# basename of the resolved url as is, and tar detects the compression by
+# itself, so a changed Telegram naming or archive format needs no code
+# change (docs/spec/telegram-setup.md).
 BINARY_NAME = "Telegram"
 UPDATER_NAME = "Updater"
 # Derived paths under the desktop user home (docs/spec/telegram-setup.md).
@@ -58,13 +59,16 @@ ICON_MODE = 0o644
 EXECUTABLE_MODE = 0o755
 
 
-def _archive_name(url: str) -> str:
-    """The archive file name of a download url; raises RuntimeError."""
+def _cache_name(url: str) -> str:
+    """The cache file name of a download url: its basename, as is.
 
-    name = url.rstrip("/").rsplit("/", 1)[-1]
-    if not (name.startswith(ARCHIVE_PREFIX) and name.endswith(ARCHIVE_SUFFIX)):
-        raise RuntimeError(f"unexpected latest download URL: {url}")
-    return name
+    The redirect is the single source of the archive name; nothing about
+    the name or the format is assumed, because the name only keys the
+    cache. A redirect that points to no usable archive fails naturally
+    later, at the download or the extraction step.
+    """
+
+    return url.rstrip("/").rsplit("/", 1)[-1]
 
 
 def _resolve_latest_url(
@@ -79,8 +83,7 @@ def _resolve_latest_url(
 
     A HEAD request follows the redirect chain and reports the final url
     through --write-out, so the newest release is discovered without
-    downloading the archive. Raises RuntimeError when the request fails or
-    the final url does not look like a tsetup archive.
+    downloading the archive. Raises RuntimeError when the request fails.
     """
 
     result = run_command(
@@ -111,7 +114,6 @@ def _resolve_latest_url(
     url = result.stdout.strip()
     if not url:
         raise RuntimeError(f"cannot resolve {latest_url}: empty download url")
-    _archive_name(url)
     return url
 
 
@@ -194,7 +196,6 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
             [
                 "tar",
                 "--extract",
-                "--xz",
                 "--file",
                 str(archive),
                 "--directory",
@@ -226,10 +227,15 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
 
 
 def _cleanup_old_archives(download_dir: Path, current_name: str) -> None:
-    """Remove every cached archive except the current one."""
+    """Remove every cached file except the current archive.
 
-    for stale in download_dir.glob(f"{ARCHIVE_PREFIX}*{ARCHIVE_SUFFIX}"):
-        if stale.name != current_name:
+    The cache directory holds only Telegram archives, so every file whose
+    name differs from the current one is a stale release from an earlier
+    scheme or a leftover partial download.
+    """
+
+    for stale in download_dir.iterdir():
+        if stale.is_file() and stale.name != current_name:
             stale.unlink(missing_ok=True)
 
 
@@ -349,7 +355,7 @@ def task(ctx: Context) -> TaskResult:
         )
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
-    name = _archive_name(url)
+    name = _cache_name(url)
     _log(f"checking the latest Telegram Desktop release: {name}")
 
     install_dir = Path(cfg.home_dir) / INSTALL_DIR_REL

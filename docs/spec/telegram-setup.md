@@ -8,13 +8,13 @@ The described goal needs the latest version and auto-update. The official static
 
 ## Release resolution and install
 
-The configured latest_url is the official download link. A request to it answers a redirect to the newest versioned archive tsetup.<version>.tar.xz, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. The download goes to a sibling .download file and is renamed only after a successful transfer, so a cached archive name always means a complete archive.
+The configured latest_url is the official download link. A request to it answers a redirect to the archive of the newest release, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. Nothing about the name or the format of the archive is assumed: the cache file is named by the basename of the resolved url as is, and tar extracts the archive and detects the compression by itself, so a changed Telegram naming or archive format needs no code change. The download goes to a sibling .download file and is renamed only after a successful transfer, so a cached archive name always means a complete archive.
 
 The archive carries two files under a Telegram/ prefix: the Telegram binary and the Updater binary. The task extracts the archive to a temporary directory and copies each file into the install directory under the desktop user home when it differs from what is already there. The install directory and its files are owned by the desktop user, which is exactly what the built-in updater needs: it replaces the two files in place when it applies a release.
 
 ## Idempotency record
 
-The archive of the last installed release stays in the root download_dir under its own name, and that name doubles as the idempotency record. A rerun compares the name the redirect resolves to with the cached archives: when the archive of the current release is present and the Telegram binary and the launcher entry exist, the latest release is already installed and the task changes nothing, so a current install is never downloaded again. When the redirect points to a newer archive, the task downloads it, installs the files, writes the launcher entry and removes every stale cached archive. The task is therefore idempotent without a separate marker file and without reading a version out of the binary.
+The archive of the last installed release stays in the root download_dir under the name the redirect gave it, and that name doubles as the idempotency record. A rerun compares the name the redirect resolves to with the cached files: when the archive of the current release is present and the Telegram binary and the launcher entry exist, the latest release is already installed and the task changes nothing, so a current install is never downloaded again. When the redirect points to a newer archive, the task downloads it, installs the files, writes the launcher entry and removes every stale cached file. The task is therefore idempotent without a separate marker file and without reading a version out of the binary.
 
 A self-update applied by the client between two provisioning runs is safe: the client fetches the same redirect the task uses, so the next run sees the archive it no longer caches, downloads it once and reinstalls the same release over itself, which the byte comparison turns into a no-op.
 
@@ -41,5 +41,5 @@ All parameters live in the [telegram_setup] table of the config/ directory.
 username - the desktop user who runs the client and owns the install
 home_dir - the home directory of that user; the install directory, the launcher entry and the icon are derived under it
 download_dir - the root cache that keeps the archive of the last installed version, whose name doubles as the idempotency record
-latest_url - the official download link that redirects to the newest tsetup archive
+latest_url - the official download link that redirects to the newest archive
 icon_url - the official Telegram icon url

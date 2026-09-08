@@ -19,10 +19,12 @@ from pyntara.config import Config, load_config
 from pyntara.context import Context
 from pyntara.tasks import telegram_setup
 
-# The release url the fake redirect resolves to and its archive name.
-FINAL_URL = "https://td.telegram.org/tlinux/tsetup.1.2.3.tar.xz"
-ARCHIVE_NAME = "tsetup.1.2.3.tar.xz"
-OLD_ARCHIVE_NAME = "tsetup.0.9.0.tar.xz"
+# The release url the fake redirect resolves to and its archive name. The
+# name mirrors the current Telegram scheme and is arbitrary to the task: no
+# name or format is assumed, the cache file takes the basename as is.
+FINAL_URL = "https://td.telegram.org/linux-x64/td-setup-linux-x64-1.2.3.tar.xz"
+ARCHIVE_NAME = "td-setup-linux-x64-1.2.3.tar.xz"
+OLD_ARCHIVE_NAME = "td-setup-linux-x64-0.9.0.tar.xz"
 
 # Sentinel bytes the fake tar puts into the extracted Telegram files and
 # the fake curl writes to every --output target.
@@ -113,10 +115,12 @@ def test_real_config_names_the_desktop_user_and_the_official_link() -> None:
     assert config.telegram_setup.icon_url.endswith("icon512.png")
 
 
-def test_archive_name_accepts_tsetup_archives_only() -> None:
-    assert telegram_setup._archive_name(FINAL_URL) == ARCHIVE_NAME
-    with pytest.raises(RuntimeError, match="unexpected latest download URL"):
-        telegram_setup._archive_name("https://example.invalid/other.tar.xz")
+def test_cache_name_takes_the_redirect_basename_as_is() -> None:
+    assert telegram_setup._cache_name(FINAL_URL) == ARCHIVE_NAME
+    # The old tsetup naming is accepted the same way: no name scheme is
+    # assumed.
+    old_url = "https://td.telegram.org/tlinux/tsetup.1.2.3.tar.xz"
+    assert telegram_setup._cache_name(old_url) == "tsetup.1.2.3.tar.xz"
 
 
 def test_desktop_content_points_at_the_installed_binary(tmp_path: Path) -> None:

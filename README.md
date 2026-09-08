@@ -1,4 +1,4 @@
-# Pyntara 0.3.194
+# Pyntara 0.3.196
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -110,7 +110,8 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/imagemagick-setup.md](docs/spec/imagemagick-setup.md) — ImageMagick install from the Ubuntu archive plus the tuned security policy, idempotent and without a version chase  
 [docs/spec/ffmpeg-setup.md](docs/spec/ffmpeg-setup.md) — ffmpeg install from the Ubuntu archive, idempotent and without a version chase  
 [docs/spec/rustdesk-setup.md](docs/spec/rustdesk-setup.md) — RustDesk remote desktop client install from GitHub releases, public server registration, per-machine password and the network report ID  
-[docs/spec/telegram-setup.md](docs/spec/telegram-setup.md) — Telegram Desktop install from the official redirect, launcher entry and the built-in auto-update  
+[docs/spec/telegram-setup.md](docs/spec/telegram-setup.md) — Telegram Desktop install from the official redirect, launcher entry and the built-in auto-update
+[docs/spec/playwright-setup.md](docs/spec/playwright-setup.md) — playwright-cli browser control install for the desktop user, over the chrome_setup CDP listener  
 Guides — how to work with the project:
 
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  
