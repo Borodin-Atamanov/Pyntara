@@ -592,21 +592,24 @@ def _clear_shortcut_conflicts(
     *,
     timeout: float,
 ) -> bool:
-    """Unbind every action that shares a primary key with a configured
-    shortcut; True when any was cleared.
+    """Unbind every action that holds a configured key in a shortcut
+    slot; True when any was cleared.
 
     A configured shortcut must win over any other action on the target
     machine, wherever that action lives. The scan reads kglobalshortcutsrc
-    and rewrites every value whose primary field matches a configured
-    primary and whose key is not one of the configured shortcuts to
-    none,none, so the key stops belonging to that action. The rewrite runs
-    through kwriteconfig6 as the target user, keeping the file owned by
-    that user. A missing file is not an error.
+    and rewrites each of the first two shortcut slots of a foreign value
+    that equals a configured primary key to none, keeping the other slot
+    and the description, so the key stops belonging to that action in any
+    slot. The rewrite runs through kwriteconfig6 as the target user,
+    keeping the file owned by that user. A missing file is not an error.
     """
 
     owned = _shortcut_primaries(cfg)
     if not owned:
         return False
+    configured_keys = {
+        record_key for record_keys in owned.values() for record_key in record_keys
+    }
     path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
     try:
         text = path.read_text(encoding="utf-8")
@@ -620,23 +623,25 @@ def _clear_shortcut_conflicts(
             group = tuple(part for part in stripped[1:-1].split("][") if part)
             continue
         key, sep, value = stripped.partition("=")
-        if not sep or "," not in value:
-            continue
-        primary = value.split(",", 1)[0]
-        if primary not in owned or key in owned[primary]:
+        if not sep or "," not in value or key in configured_keys:
             continue
         fields = value.split(",")
-        cleared = ",".join(["none", "none"] + fields[2:])
+        cleared = [
+            "none" if index < 2 and field in owned else field
+            for index, field in enumerate(fields)
+        ]
+        if cleared == fields:
+            continue
         _kwriteconfig(
             cfg,
             "kglobalshortcutsrc",
             group,
             key,
-            cleared,
+            ",".join(cleared),
             timeout=timeout,
             bool_value=False,
         )
-        _log(f"cleared conflicting shortcut {key}: {primary}")
+        _log(f"cleared conflicting shortcut {key}: {value}")
         changed = True
     return changed
 

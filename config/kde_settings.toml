@@ -560,8 +560,9 @@ value = "HFBIAX"
 # stores them in the full primary,alternate,description format, so the
 # values carry that format with the primary key from the journal. The
 # empty active screen bindings are removed instead of written. The task
-# unbinds any other action that shares a configured primary key, so a
-# configured shortcut wins over conflicts on any target machine.
+# unbinds any other action that holds a configured key in a shortcut
+# slot, so a configured shortcut wins over conflicts on any target
+# machine.
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]
@@ -621,7 +622,7 @@ value = "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window"
 # alternate key Meta+Q is cleared so it does not conflict with any layout
 # shortcut. The window switching uses Alt+Tab as the primary switcher and
 # Meta+Tab as the alternative, matching the recorded setup; the task
-# unbinds conflicts on the primary keys.
+# unbinds a configured key from any slot of another action.
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]

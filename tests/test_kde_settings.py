@@ -762,6 +762,89 @@ def test_clear_shortcut_conflicts_idempotent(
     assert writes == []
 
 
+def test_clear_shortcut_conflicts_clears_any_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A foreign action loses a configured key from its primary or its
+    # alternate slot; the other slot and the description survive, and the
+    # configured actions and the unrelated actions stay untouched.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Show Desktop=none,Meta+D,Peek at Desktop\n"
+        "Walk Through Desktops=Meta+D,Meta+Tab,Walk Through Desktops\n"
+        "ClearMouseMarks=Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks\n"
+        "[org.kde.krunner.desktop]\n"
+        "clipboard_action=Meta+Ctrl+X,Meta+Ctrl+X,Automatic Action Popup Menu\n",
+        encoding="utf-8",
+    )
+    records = (
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAll",
+            "Meta+D,none,Minimize all windows",
+            "string",
+            False,
+        ),
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "ClearMouseMarks",
+            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
+            "string",
+            False,
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    cleared = task_module._clear_shortcut_conflicts(
+        ctx.config.kde_settings, timeout=5
+    )
+    assert cleared is True
+    cleared_values = {}
+    for command in writes:
+        key = command[command.index("--key") + 1]
+        cleared_values[key] = command[-1]
+    assert cleared_values == {
+        "Show Desktop": "none,none,Peek at Desktop",
+        "Walk Through Desktops": "none,Meta+Tab,Walk Through Desktops",
+    }
+    assert "ClearMouseMarks" not in cleared_values
+    assert "clipboard_action" not in cleared_values
+
+
+def test_clear_shortcut_conflicts_any_slot_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Once both shortcut slots of the foreign action are none, a second
+    # pass changes nothing.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\nShow Desktop=none,none,Peek at Desktop\n",
+        encoding="utf-8",
+    )
+    records = (
+        KConfigRecord(
+            "kglobalshortcutsrc",
+            ("kwin",),
+            "MinimizeAll",
+            "Meta+D,none,Minimize all windows",
+            "string",
+            False,
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    cleared = task_module._clear_shortcut_conflicts(
+        ctx.config.kde_settings, timeout=5
+    )
+    assert cleared is False
+    assert writes == []
+
+
 def test_user_dirs_merged_replaces_in_place_and_keeps_others() -> None:
     # A matching directive keeps the line, a differing one is replaced in
     # place, missing directives are appended, comments and foreign keys
