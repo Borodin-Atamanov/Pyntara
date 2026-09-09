@@ -150,6 +150,8 @@ def base_config() -> str:
         "connection_wait_base_seconds = 1\n"
         "connection_wait_multiplier = 2\n"
         "connection_wait_max_seconds = 30\n"
+        'nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"\n'
+        'netplan_dir_path = "/etc/netplan"\n'
         "[[yggdrasil_service_setup.multicast_interfaces]]\n"
         'regex = ".*"\n'
         "beacon = true\n"
@@ -273,6 +275,7 @@ def base_config() -> str:
         'resolved_section = "[Resolve]"\nresolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]\n'
         'resolved_domains_directive = "Domains=~."\nmanage_networkmanager = true\n'
         'nmcli_check_command = ["nmcli", "--version"]\n'
+        'nmcli_device_status_command = ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"]\n'
         'nmcli_active_list_command = ["nmcli", "-t", "-f", "NAME,UUID,DEVICE", "connection", "show", "--active"]\n'
         'nmcli_dns_state_command = ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns", "connection", "show", "{connection}"]\n'
         'nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]\n'

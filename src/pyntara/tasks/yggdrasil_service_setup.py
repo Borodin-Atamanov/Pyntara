@@ -39,14 +39,18 @@ from the admin socket into the configured address file, the fallback of
 the deployed address command when the live query fails. The save
 retries the query with the geometric backoff while the configured retry
 budget lasts, because the admin socket is not ready immediately after a
-restart. A crashed run leaves the persistent TUN device behind with a
-saved NetworkManager connection profile, so the task cleans the leftover
-interface up before it starts the service, because otherwise yggdrasil
-panics on the already assigned address. The task is idempotent: it skips
-when the installed version equals the newest release, the configuration
-exists with a non-empty peer list, the key file exists, the saved
-address file exists and the service is enabled and active; force mode
-reruns the whole peer selection.
+restart. The task marks the yggdrasil interface as unmanaged in
+NetworkManager, so NetworkManager never assumes it as an external device
+and no other task can persist an ephemeral profile for it. A crashed run
+leaves the persistent TUN device behind with a saved NetworkManager
+connection profile, so the task cleans the leftover interface up before
+it starts the service, because otherwise yggdrasil panics on the already
+assigned address; the netplan YAML that backs the profile is moved aside
+as a .bak so it cannot regenerate the profile at the next boot. The task
+is idempotent: it skips when the installed version equals the newest
+release, the configuration exists with a non-empty peer list, the key
+file exists, the saved address file exists and the service is enabled
+and active; force mode reruns the whole peer selection.
 """
 
 from __future__ import annotations
@@ -637,6 +641,57 @@ def _pick_best_peers(
     return sorted(working, key=key)[:target_count]
 
 
+def _ensure_interface_unmanaged(
+    cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> bool:
+    """Mark the yggdrasil interface as unmanaged in NetworkManager.
+
+    NetworkManager assumes any external interface that appears with an
+    address, and a connection modify by another task can persist that
+    ephemeral assumed profile into a permanent auto-connect connection.
+    The saved profile then recreates the interface with the node address
+    before the service starts, so yggdrasil panics on the already
+    assigned address. The drop-in marks the interface as unmanaged, so
+    NetworkManager never assumes it. The write is idempotent: matching
+    content leaves the file untouched and only a real change triggers a
+    reload. True when the drop-in is in place; a machine without nmcli
+    or an unwritable drop-in directory reports False and the caller
+    keeps the warning.
+    """
+
+    body = "[keyfile]\nunmanaged-devices=interface-name:" + cfg.if_name + "\n"
+    changed = False
+    try:
+        if (
+            cfg.nm_unmanaged_conf_path.is_file()
+            and cfg.nm_unmanaged_conf_path.read_text(encoding="utf-8") == body
+        ):
+            return True
+        cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg.nm_unmanaged_conf_path.write_text(body, encoding="utf-8")
+        os.chmod(cfg.nm_unmanaged_conf_path, 0o644)
+        ensure_root_owner(cfg.nm_unmanaged_conf_path)
+        changed = True
+        _log(
+            f"marked interface {cfg.if_name} as unmanaged in "
+            "NetworkManager"
+        )
+    except OSError as exc:
+        _log(f"cannot write the NetworkManager unmanaged rule: {exc}")
+        return False
+    if changed:
+        try:
+            run_command(
+                ["nmcli", "general", "reload"],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except OSError:
+            pass
+    return True
+
+
 def _cleanup_leftover_interface(
     cfg: YggdrasilServiceSetupConfig, timeout: float
 ) -> None:
@@ -649,9 +704,12 @@ def _cleanup_leftover_interface(
     cleanup removes the interface only when no yggdrasil process owns
     it: the service is not active. The NetworkManager profile is deleted
     first, because it recreates the device otherwise, then the
-    interface. Both steps are best-effort: a missing ip or nmcli, an
-    absent profile or a failed delete leaves the interface in place and
-    the start reports its own error.
+    interface. A netplan YAML that backs the profile for the interface
+    is moved aside as a .bak, because netplan only reads *.yaml and
+    would otherwise regenerate the profile at the next boot. Every step
+    is best-effort: a missing ip or nmcli, an absent profile, a missing
+    netplan directory or a failed delete leaves the interface in place
+    and the start reports its own error.
     """
 
     try:
@@ -701,6 +759,24 @@ def _cleanup_leftover_interface(
             capture=True,
             timeout=timeout,
         )
+    except OSError:
+        pass
+    try:
+        if cfg.netplan_dir_path.is_dir():
+            marker = 'connection.interface-name: "' + cfg.if_name + '"'
+            for candidate in cfg.netplan_dir_path.glob("*.yaml"):
+                try:
+                    text = candidate.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if marker not in text:
+                    continue
+                backup = candidate.with_name(candidate.name + ".bak")
+                candidate.replace(backup)
+                _log(
+                    f"moved netplan profile {candidate.name} for interface "
+                    f"{cfg.if_name} to {backup.name}"
+                )
     except OSError:
         pass
 
@@ -992,6 +1068,13 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", changed)
         _log("service enabled")
         changed = True
+
+    if not _ensure_interface_unmanaged(cfg, timeout):
+        warnings.append(
+            f"cannot mark interface {cfg.if_name} as unmanaged in "
+            "NetworkManager; a later run may panic on an assumed "
+            "interface"
+        )
 
     # Outside force mode, when the configuration already carries peers
     # and the saved address file exists, the task never re-selects peers,

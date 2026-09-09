@@ -449,6 +449,32 @@ def _nmcli_available(cfg: DnsproxySetupConfig, timeout: float) -> bool:
     return result.returncode == 0
 
 
+def _tun_device_names(cfg: DnsproxySetupConfig, timeout: float) -> set[str]:
+    '''Device names of type tun reported by the nmcli device status.
+
+    The auto DNS sweep must never modify a tun device. NetworkManager
+    only holds such an interface as an assumed external connection, and
+    a connection modify on a netplan-managed host persists the assumed
+    profile into a permanent auto-connect profile, so the next start of
+    the owning service panics on the already assigned address. A failed
+    query returns an empty set, which makes the sweep treat every active
+    connection as a regular uplink.
+    '''
+
+    try:
+        status = run_command(
+            list(cfg.nmcli_device_status_command), capture=True, timeout=timeout
+        ).stdout
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return set()
+    names: set[str] = set()
+    for line in status.splitlines():
+        fields = line.split(":")
+        if len(fields) >= 2 and fields[1] == "tun":
+            names.add(fields[0])
+    return names
+
+
 def _disable_auto_dns_active(
     cfg: DnsproxySetupConfig, timeout: float, progress_priority: int
 ) -> list[tuple[str, str]]:
@@ -456,12 +482,15 @@ def _disable_auto_dns_active(
 
     NetworkManager is queried for the active connections by UUID, so a
     profile name repeated in the catalog cannot redirect the change to
-    the wrong profile. The loopback connection is skipped. Every active
-    connection that does not already ignore auto DNS is modified and
-    reapplied to its running device, because a profile-only change keeps
-    the DHCP-provided DNS on the per-link scope until the connection is
-    reapplied. The changed pairs are returned for the revert. A missing
-    nmcli changes nothing.
+    the wrong profile. The loopback connection is skipped. Tun devices
+    are skipped too: they carry no DHCP-provided DNS, and modifying the
+    assumed external connection of an interface owned by another service
+    would persist it as a permanent NetworkManager profile. Every other
+    active connection that does not already ignore auto DNS is modified
+    and reapplied to its running device, because a profile-only change
+    keeps the DHCP-provided DNS on the per-link scope until the
+    connection is reapplied. The changed pairs are returned for the
+    revert. A missing nmcli changes nothing.
     '''
 
     if not _nmcli_available(cfg, timeout):
@@ -470,6 +499,7 @@ def _disable_auto_dns_active(
             priority=progress_priority,
         )
         return []
+    tun_devices = _tun_device_names(cfg, timeout)
     listing = run_command(
         list(cfg.nmcli_active_list_command), capture=True, timeout=timeout
     ).stdout.splitlines()
@@ -480,6 +510,8 @@ def _disable_auto_dns_active(
             continue
         uuid = fields[1]
         device = fields[2] if len(fields) > 2 else ""
+        if device in tun_devices:
+            continue
         state = run_command(
             [
                 part.replace("{connection}", uuid)

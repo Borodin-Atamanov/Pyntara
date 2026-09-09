@@ -184,6 +184,8 @@ address_save_retry_max_seconds = 67
 connection_wait_base_seconds = 1
 connection_wait_multiplier = 2
 connection_wait_max_seconds = 30
+nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
+netplan_dir_path = "/etc/netplan"
 
 [[yggdrasil_service_setup.multicast_interfaces]]
 regex = ".*"
@@ -502,6 +504,7 @@ resolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]
 resolved_domains_directive = "Domains=~."
 manage_networkmanager = true
 nmcli_check_command = ["nmcli", "--version"]
+nmcli_device_status_command = ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"]
 nmcli_active_list_command = ["nmcli", "-t", "-f", "NAME,UUID,DEVICE", "connection", "show", "--active"]
 nmcli_dns_state_command = ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns", "connection", "show", "{connection}"]
 nmcli_modify_command = ["nmcli", "connection", "modify", "{connection}", "ipv4.ignore-auto-dns", "{value}", "ipv6.ignore-auto-dns", "{value}"]
@@ -678,6 +681,14 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         "device",
         "reapply",
         "{device}",
+    )
+    assert config.dnsproxy_setup.nmcli_device_status_command == (
+        "nmcli",
+        "-t",
+        "-f",
+        "DEVICE,TYPE",
+        "device",
+        "status",
     )
     assert config.dnsproxy_setup.kill_command == ("kill",)
     assert config.dnsproxy_setup.service_log_command == (
@@ -857,6 +868,10 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.yggdrasil_service_setup.connection_wait_base_seconds == 1
     assert config.yggdrasil_service_setup.connection_wait_multiplier == 2
     assert config.yggdrasil_service_setup.connection_wait_max_seconds == 30
+    assert config.yggdrasil_service_setup.nm_unmanaged_conf_path == Path(
+        "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
+    )
+    assert config.yggdrasil_service_setup.netplan_dir_path == Path("/etc/netplan")
     assert config.tor_setup.package_name == "tor"
     assert config.tor_setup.service_unit_name == "tor@default.service"
     assert config.tor_setup.torrc_path == Path("/etc/tor/torrc")

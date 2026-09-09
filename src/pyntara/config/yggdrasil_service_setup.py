@@ -91,6 +91,8 @@ class YggdrasilServiceSetupConfig:
     connection_wait_base_seconds: int
     connection_wait_multiplier: int
     connection_wait_max_seconds: int
+    nm_unmanaged_conf_path: Path
+    netplan_dir_path: Path
 
 
 def _yggdrasil_uri_list_field(
@@ -330,6 +332,18 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
             "yggdrasil_service_setup.connection_wait_max_seconds must be at "
             "least connection_wait_base_seconds"
         )
+    nm_unmanaged_conf_path = Path(
+        _nonempty_string_field(
+            raw.get("nm_unmanaged_conf_path"),
+            "yggdrasil_service_setup.nm_unmanaged_conf_path",
+        )
+    )
+    netplan_dir_path = Path(
+        _nonempty_string_field(
+            raw.get("netplan_dir_path"),
+            "yggdrasil_service_setup.netplan_dir_path",
+        )
+    )
     return YggdrasilServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -359,4 +373,6 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         connection_wait_base_seconds=connection_wait_base_seconds,
         connection_wait_multiplier=connection_wait_multiplier,
         connection_wait_max_seconds=connection_wait_max_seconds,
+        nm_unmanaged_conf_path=nm_unmanaged_conf_path,
+        netplan_dir_path=netplan_dir_path,
     )

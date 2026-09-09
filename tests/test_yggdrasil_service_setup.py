@@ -12,6 +12,7 @@ import shutil
 import socket
 import subprocess
 import tarfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -113,6 +114,12 @@ def _ctx(
             yggdrasil_connection_wait_base_seconds=connection_wait_base_seconds,
             yggdrasil_connection_wait_multiplier=connection_wait_multiplier,
             yggdrasil_connection_wait_max_seconds=connection_wait_max_seconds,
+            yggdrasil_nm_unmanaged_conf_path=tmp_path
+            / "etc"
+            / "NetworkManager"
+            / "conf.d"
+            / "yggdrasil-unmanaged.conf",
+            yggdrasil_netplan_dir_path=tmp_path / "etc" / "netplan",
         ),
     )
 
@@ -1151,13 +1158,97 @@ def test_cleanup_leftover_interface_without_nmcli(
     assert ["ip", "link", "del", "ygg"] in calls
 
 
+def test_ensure_interface_unmanaged_writes_dropin_and_reloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The first call writes the unmanaged rule and reloads NetworkManager;
+    # a second call with matching content changes nothing.
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    calls = _install_fake(monkeypatch, tmp_path)
+    body = "[keyfile]\nunmanaged-devices=interface-name:ygg\n"
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert cfg.nm_unmanaged_conf_path.read_text(encoding="utf-8") == body
+    assert ["nmcli", "general", "reload"] in calls
+    calls_before = len(calls)
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert len(calls) == calls_before
+
+
+def test_ensure_interface_unmanaged_rewrites_changed_dropin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A stale rule for another interface name is replaced by the current
+    # one, because the machine must not keep an old unmanaged rule.
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    calls = _install_fake(monkeypatch, tmp_path)
+    cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.nm_unmanaged_conf_path.write_text(
+        "[keyfile]\nunmanaged-devices=interface-name:old\n", encoding="utf-8"
+    )
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert "interface-name:ygg" in cfg.nm_unmanaged_conf_path.read_text(
+        encoding="utf-8"
+    )
+    assert ["nmcli", "general", "reload"] in calls
+
+
+def test_ensure_interface_unmanaged_reports_unwritable_dropin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine where the drop-in directory cannot be created reports
+    # False, so the caller keeps a warning instead of silently skipping.
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    blocker = tmp_path / "blocker"
+    blocker.write_text("file", encoding="utf-8")
+    cfg = replace(
+        cfg,
+        nm_unmanaged_conf_path=blocker / "conf.d" / "yggdrasil-unmanaged.conf",
+    )
+    _install_fake(monkeypatch, tmp_path)
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is False
+
+
+def test_cleanup_leftover_interface_moves_netplan_profile_aside(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The netplan YAML that backs the profile for the interface is moved
+    # to a .bak, because netplan only reads *.yaml and would otherwise
+    # regenerate the profile at the next boot. Unrelated netplan files
+    # are left alone.
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.yggdrasil_service_setup
+    cfg.netplan_dir_path.mkdir(parents=True, exist_ok=True)
+    polluting = cfg.netplan_dir_path / "90-NM-ef0a5cc7-7b91-4724-8ef7-cdcdce2cb85a.yaml"
+    polluting.write_text(
+        'connection.interface-name: "ygg"\n', encoding="utf-8"
+    )
+    other = cfg.netplan_dir_path / "90-NM-other.yaml"
+    other.write_text(
+        'connection.interface-name: "wlp0"\n', encoding="utf-8"
+    )
+    calls = _install_fake(
+        monkeypatch,
+        tmp_path,
+        active=False,
+        interface_exists=True,
+        nm_profile_exists=True,
+    )
+    yggdrasil_service_setup._cleanup_leftover_interface(cfg, 10)
+    assert not polluting.exists()
+    assert (cfg.netplan_dir_path / (polluting.name + ".bak")).exists()
+    assert other.exists()
+    assert ["nmcli", "connection", "delete", "ygg"] in calls
+    assert ["ip", "link", "del", "ygg"] in calls
+
+
 def test_ready_state_with_leftover_interface_cleans_and_starts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The config already has peers but the service is down and a stale
     # interface with a NetworkManager profile blocks the start: the task
-    # cleans the leftover up, starts the service and reports live
-    # connections from the existing configuration.
+    # marks the interface unmanaged, cleans the leftover up, starts the
+    # service and reports live connections from the existing
+    # configuration.
     ctx = _ctx(tmp_path)
     _write_ready_state(ctx)
     ctl_peers = json.dumps(
@@ -1182,6 +1273,10 @@ def test_ready_state_with_leftover_interface_cleans_and_starts(
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
+    cfg = ctx.config.yggdrasil_service_setup
+    assert "interface-name:ygg" in cfg.nm_unmanaged_conf_path.read_text(
+        encoding="utf-8"
+    )
     assert ["nmcli", "connection", "delete", "ygg"] in calls
     assert ["ip", "link", "del", "ygg"] in calls
     assert ["systemctl", "start", "yggdrasil.service"] in calls

@@ -50,6 +50,7 @@ class DnsproxySetupConfig:
     resolved_domains_directive: str
     manage_networkmanager: bool
     nmcli_check_command: tuple[str, ...]
+    nmcli_device_status_command: tuple[str, ...]
     nmcli_active_list_command: tuple[str, ...]
     nmcli_dns_state_command: tuple[str, ...]
     nmcli_modify_command: tuple[str, ...]
@@ -200,6 +201,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         _string_list(raw, name)
         for name in (
             "nmcli_check_command",
+            "nmcli_device_status_command",
             "nmcli_active_list_command",
             "nmcli_dns_state_command",
             "nmcli_modify_command",
@@ -260,20 +262,21 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         resolved_domains_directive=resolved_domains_directive,
         manage_networkmanager=manage_networkmanager,
         nmcli_check_command=commands[0],
-        nmcli_active_list_command=commands[1],
-        nmcli_dns_state_command=commands[2],
-        nmcli_modify_command=commands[3],
-        nmcli_reapply_command=commands[4],
-        daemon_reload_command=commands[5],
-        restart_resolved_command=commands[6],
-        resolvectl_status_command=commands[7],
-        resolvectl_dns_command=commands[8],
-        nmcli_dns_command=commands[9],
-        verification_command=commands[10],
-        ss_tcp_listen_command=commands[11],
-        ss_udp_listen_command=commands[12],
-        kill_command=commands[13],
-        service_log_command=commands[14],
+        nmcli_device_status_command=commands[1],
+        nmcli_active_list_command=commands[2],
+        nmcli_dns_state_command=commands[3],
+        nmcli_modify_command=commands[4],
+        nmcli_reapply_command=commands[5],
+        daemon_reload_command=commands[6],
+        restart_resolved_command=commands[7],
+        resolvectl_status_command=commands[8],
+        resolvectl_dns_command=commands[9],
+        nmcli_dns_command=commands[10],
+        verification_command=commands[11],
+        ss_tcp_listen_command=commands[12],
+        ss_udp_listen_command=commands[13],
+        kill_command=commands[14],
+        service_log_command=commands[15],
         verification_domain=verification_domain,
         profile_id_file_path=profile_id_file_path,
         profile_id_file_mode=profile_id_file_mode,

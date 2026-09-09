@@ -163,6 +163,7 @@ def _run_task(
     nmcli_active: str = "",
     nmcli_missing: bool = False,
     resolvectl_status_output: str = "",
+    device_status: str = "",
 ) -> tuple[Any, Path, list[list[str]], Any]:
     '''Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path, the recorded commands and the
@@ -218,6 +219,9 @@ def _run_task(
     calls: list[list[str]] = []
     state = {"ss": 0, "routedns": 0}
     active_list_command = list(config.dnsproxy_setup.nmcli_active_list_command)
+    device_status_command = list(
+        config.dnsproxy_setup.nmcli_device_status_command
+    )
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         command = list(command)
@@ -233,6 +237,8 @@ def _run_task(
                         "LISTEN 0 4096 *:53053 *:* users:((\"dnsproxy\",pid=12345,fd=9))\n",
                     )
             return FakeProc(0, "")
+        if command == device_status_command:
+            return FakeProc(0, device_status)
         if command == active_list_command:
             return FakeProc(0, nmcli_active)
         if command == list(config.dnsproxy_setup.resolvectl_status_command):
@@ -365,9 +371,17 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     active = (
         "Ataman6a:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:wlp0\n"
         "lo:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:lo\n"
-        "ygg:cccccccc-cccc-cccc-cccc-cccccccccccc:tun\n"
+        "ygg:cccccccc-cccc-cccc-cccc-cccccccccccc:ygg\n"
     )
-    result, _, calls, _ = _run_task(tmp_path, monkeypatch, nmcli_active=active)
+    status = (
+        "enp0:ethernet\n"
+        "wlp0:wifi\n"
+        "ygg:tun\n"
+        "lo:loopback\n"
+    )
+    result, _, calls, _ = _run_task(
+        tmp_path, monkeypatch, nmcli_active=active, device_status=status
+    )
     assert result.success is True
     modifies = [
         command
@@ -376,7 +390,10 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     ]
     modified_uuids = {command[3] for command in modifies}
     assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in modified_uuids
-    assert "cccccccc-cccc-cccc-cccc-cccccccccccc" in modified_uuids
+    # The tun interface is owned by another service and carries no DHCP
+    # DNS, so its assumed connection is never modified and never
+    # persisted into a permanent NetworkManager profile.
+    assert "cccccccc-cccc-cccc-cccc-cccccccccccc" not in modified_uuids
     assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" not in modified_uuids
     assert all("true" in command for command in modifies)
     reapplies = [
@@ -385,7 +402,7 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
         if command[:3] == ["nmcli", "device", "reapply"]
     ]
     assert ["nmcli", "device", "reapply", "wlp0"] in reapplies
-    assert ["nmcli", "device", "reapply", "tun"] in reapplies
+    assert not any("ygg" in command for command in reapplies)
     assert not any(command[-1] == "lo" for command in reapplies)
 
 

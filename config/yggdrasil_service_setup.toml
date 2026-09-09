@@ -83,6 +83,16 @@ address_save_retry_max_seconds = 67
 connection_wait_base_seconds = 1
 connection_wait_multiplier = 2
 connection_wait_max_seconds = 30
+# NetworkManager conf drop-in that marks the yggdrasil interface as
+# unmanaged, so NetworkManager never assumes it as an external device
+# and no other task can persist an ephemeral profile for it.
+# (docs/spec/yggdrasil-service.md).
+nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
+# Directory holding the netplan YAML files that back NetworkManager
+# connections; a leftover connection for the yggdrasil interface is
+# moved here aside as a .bak when the service is cleaned up.
+# (docs/spec/yggdrasil-service.md).
+netplan_dir_path = "/etc/netplan"
 # Multicast peer discovery: regex of interface names, beacon (advertise
 # presence) and listen (connect to discovered neighbours). One block
 # matching every interface with both switches covers the local network.

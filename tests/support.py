@@ -493,6 +493,10 @@ def make_config(
     yggdrasil_connection_wait_base_seconds: int = 1,
     yggdrasil_connection_wait_multiplier: int = 2,
     yggdrasil_connection_wait_max_seconds: int = 1,
+    yggdrasil_nm_unmanaged_conf_path: Path = Path(
+        "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
+    ),
+    yggdrasil_netplan_dir_path: Path = Path("/etc/netplan"),
     tor_package_name: str = "tor",
     tor_service_unit_name: str = "tor@default.service",
     tor_torrc_path: Path = Path("/etc/tor/torrc"),
@@ -719,6 +723,14 @@ def make_config(
             resolved_domains_directive="Domains=~.",
             manage_networkmanager=True,
             nmcli_check_command=("nmcli", "--version"),
+            nmcli_device_status_command=(
+                "nmcli",
+                "-t",
+                "-f",
+                "DEVICE,TYPE",
+                "device",
+                "status",
+            ),
             nmcli_active_list_command=(
                 "nmcli",
                 "-t",
@@ -928,6 +940,8 @@ def make_config(
             connection_wait_base_seconds=yggdrasil_connection_wait_base_seconds,
             connection_wait_multiplier=yggdrasil_connection_wait_multiplier,
             connection_wait_max_seconds=yggdrasil_connection_wait_max_seconds,
+            nm_unmanaged_conf_path=yggdrasil_nm_unmanaged_conf_path,
+            netplan_dir_path=yggdrasil_netplan_dir_path,
         ),
         tor_setup=TorSetupConfig(
             package_name=tor_package_name,
