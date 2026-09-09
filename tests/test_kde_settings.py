@@ -289,29 +289,42 @@ def test_package_install_failure_is_error(
     assert result.error is not None
 
 
-def test_apply_failure_is_error(
+def test_appearance_tool_failure_does_not_fail_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failing plasma-apply command is a fatal error result.
+    # A crashing plasma-apply tool is not fatal: the value was already
+    # written into the config and applies at the next login.
     ctx = _ctx(tmp_path)
-    _install_fakes(monkeypatch, fail_on_apply=True)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, fail_on_apply=True)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert result.error is not None
+    assert result.success is True
+    assert result.changed is True
+    lookandfeel_writes = [
+        command for command in writes if "LookAndFeelPackage" in command
+    ]
+    assert lookandfeel_writes
 
 
 def test_no_desktop_session_still_applies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Without a kwin_wayland process the themes are still applied (the
-    # config is written) and the run is not an error.
+    # Without a kwin_wayland process the appearance values are written
+    # into the config (they apply at the next login) and the GUI
+    # plasma-apply tools are not invoked, so the run is not an error.
     ctx = _ctx(tmp_path)
-    themes, schemes, _, _, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    themes, schemes, _, _, writes, _, cursorthemes = _install_fakes(
+        monkeypatch, bus_pid=""
+    )
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert themes
-    assert schemes
+    assert not themes
+    assert not schemes
+    assert not cursorthemes
+    lookandfeel_writes = [
+        command for command in writes if "LookAndFeelPackage" in command
+    ]
+    assert lookandfeel_writes
 
 
 TOUCHPAD_RC = """\

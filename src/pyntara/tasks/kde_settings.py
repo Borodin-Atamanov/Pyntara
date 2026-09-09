@@ -289,6 +289,34 @@ def _apply_env(cfg: KdeSettingsConfig, timeout: float) -> dict[str, str]:
     return env
 
 
+def _run_appearance_tool_best_effort(
+    cfg: KdeSettingsConfig,
+    *,
+    command: list[str],
+    applied_message: str,
+    timeout: float,
+    env: dict[str, str],
+) -> None:
+    """Run one plasma-apply tool live when a session is present.
+
+    The plasma-apply tools are GUI programs that need the desktop display
+    and abort on a machine without a live session (provisioning over SSH,
+    before login) or when the display environment is missing. A failure is
+    therefore reported as a progress line but never raised, because the
+    caller has already written the value into the config file and it
+    applies at the next login.
+    """
+
+    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+        _log(f"no desktop session, {applied_message} applies at the next login")
+        return
+    try:
+        run_command(_as_user_command(cfg, command), extra_env=env, timeout=timeout)
+        _log(applied_message)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        _log(f"cannot apply {applied_message} live, it is set for the next login: {exc}")
+
+
 def _apply_look_and_feel(
     cfg: KdeSettingsConfig,
     *,
@@ -296,17 +324,35 @@ def _apply_look_and_feel(
     timeout: float,
     force: bool,
 ) -> bool:
-    """Apply the configured global theme when it differs; True when applied."""
+    """Apply the configured global theme when it differs; True when applied.
+
+    The theme is written into kdeglobals with kwriteconfig6 first, so it
+    applies at the next login even without a session; plasma-apply-
+    lookandfeel then switches the running session when one exists, as a
+    best effort that never fails the task.
+    """
 
     current = _kreadconfig(cfg, "kdeglobals", KDE_GROUP, "LookAndFeelPackage", timeout)
     if not force and current == cfg.look_and_feel:
         return False
-    run_command(
-        _as_user_command(cfg, ["plasma-apply-lookandfeel", "-a", cfg.look_and_feel]),
-        extra_env=env,
+    _sync_config_value(
+        cfg,
+        "kdeglobals",
+        KDE_GROUP,
+        "LookAndFeelPackage",
+        cfg.look_and_feel,
         timeout=timeout,
+        force=force,
+        bool_value=False,
+        env=env,
     )
-    _log(f"applied global theme: {cfg.look_and_feel}")
+    _run_appearance_tool_best_effort(
+        cfg,
+        command=["plasma-apply-lookandfeel", "-a", cfg.look_and_feel],
+        applied_message=f"applied global theme: {cfg.look_and_feel}",
+        timeout=timeout,
+        env=env,
+    )
     return True
 
 
@@ -317,17 +363,35 @@ def _apply_color_scheme(
     timeout: float,
     force: bool,
 ) -> bool:
-    """Apply the configured color scheme when it differs; True when applied."""
+    """Apply the configured color scheme when it differs; True when applied.
+
+    The scheme is written into kdeglobals with kwriteconfig6 first, so it
+    applies at the next login even without a session; plasma-apply-
+    colorscheme then switches the running session when one exists, as a
+    best effort that never fails the task.
+    """
 
     current = _kreadconfig(cfg, "kdeglobals", GENERAL_GROUP, "ColorScheme", timeout)
     if not force and current == cfg.color_scheme:
         return False
-    run_command(
-        _as_user_command(cfg, ["plasma-apply-colorscheme", cfg.color_scheme]),
-        extra_env=env,
+    _sync_config_value(
+        cfg,
+        "kdeglobals",
+        GENERAL_GROUP,
+        "ColorScheme",
+        cfg.color_scheme,
         timeout=timeout,
+        force=force,
+        bool_value=False,
+        env=env,
     )
-    _log(f"applied color scheme: {cfg.color_scheme}")
+    _run_appearance_tool_best_effort(
+        cfg,
+        command=["plasma-apply-colorscheme", cfg.color_scheme],
+        applied_message=f"applied color scheme: {cfg.color_scheme}",
+        timeout=timeout,
+        env=env,
+    )
     return True
 
 
@@ -527,22 +591,36 @@ def _apply_cursor_theme(
 ) -> bool:
     """Apply the configured cursor theme; True when changed.
 
-    The cursor theme is applied with plasma-apply-cursortheme, which sets
-    the live cursor and writes cursorTheme into kcminputrc. The native
-    day and night theme switch overwrites cursorTheme with the theme
-    default whenever it applies a look and feel, so the task applies the
-    cursor theme after the kconfig records to win over that overwrite.
+    The theme is written into kcminputrc with kwriteconfig6 first, so it
+    applies at the next login even without a session; plasma-apply-
+    cursortheme then switches the running session when one exists, as a
+    best effort that never fails the task. The native day and night theme
+    switch overwrites cursorTheme with the theme default whenever it
+    applies a look and feel, so the task applies the cursor theme after
+    the kconfig records to win over that overwrite.
     """
 
     current = _kreadconfig(cfg, KCINPUTRC_FILE, MOUSE_GROUP, "cursorTheme", timeout)
     if not force and current == cfg.cursor_theme:
         return False
-    run_command(
-        _as_user_command(cfg, ["plasma-apply-cursortheme", cfg.cursor_theme]),
-        extra_env=env,
+    _sync_config_value(
+        cfg,
+        KCINPUTRC_FILE,
+        MOUSE_GROUP,
+        "cursorTheme",
+        cfg.cursor_theme,
         timeout=timeout,
+        force=force,
+        bool_value=False,
+        env=env,
     )
-    _log(f"applied cursor theme: {cfg.cursor_theme}")
+    _run_appearance_tool_best_effort(
+        cfg,
+        command=["plasma-apply-cursortheme", cfg.cursor_theme],
+        applied_message=f"applied cursor theme: {cfg.cursor_theme}",
+        timeout=timeout,
+        env=env,
+    )
     return True
 
 
