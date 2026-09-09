@@ -483,7 +483,65 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
         if "AutomaticLookAndFeelIdleInterval" in command
     ]
     assert interval_writes
-    assert interval_writes[0][-1] == "99"
+    assert "99" in interval_writes[0]
+    assert "--notify" in interval_writes[0]
+
+
+def test_live_session_notifies_watched_files_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With a live desktop session the kwinrc and kdeglobals writes carry
+    # the --notify flag so the running kwin applies them live; writes to
+    # files nobody watches stay without it.
+    ctx = make_context(
+        install_mode="desktop",
+        force_tasks=frozenset(),
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_automatic_look_and_feel=True,
+        ),
+    )
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    watched = [
+        command
+        for command in writes
+        if "kwinrc" in command or "kdeglobals" in command
+    ]
+    others = [
+        command
+        for command in writes
+        if "kwinrc" not in command and "kdeglobals" not in command
+    ]
+    assert watched
+    assert others
+    assert all("--notify" in command for command in watched)
+    assert all("--notify" not in command for command in others)
+
+
+def test_no_session_omits_notify_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without a desktop session there is no bus to notify, so the writes
+    # carry no --notify flag and apply at the next login as before.
+    ctx = make_context(
+        install_mode="desktop",
+        force_tasks=frozenset(),
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_automatic_look_and_feel=True,
+        ),
+    )
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert writes
+    assert all("--notify" not in command for command in writes)
 
 
 def test_cursor_theme_applied_when_different(
@@ -1406,7 +1464,8 @@ def test_kconfig_records_write_differing_values(
         if "StaleKey" in command and "--delete" in command
     ]
     assert layout_writes
-    assert layout_writes[0][-1] == "coverswitch"
+    assert "coverswitch" in layout_writes[0]
+    assert "--notify" in layout_writes[0]
     assert single_writes
     assert "--type" in single_writes[0] and "bool" in single_writes[0]
     assert delete_writes
@@ -1450,3 +1509,92 @@ def test_kconfig_force_writes_even_when_matching(
     assert result.success is True
     assert result.changed is True
     assert [command for command in writes if "LayoutName" in command]
+
+
+def test_desktop_count_live_removes_extra_desktops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The live count is higher than the configured Number: the task reads
+    # the desktop ids through the embedded python3-dbus client and removes
+    # the trailing extras.
+    records = (
+        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        joined = " ".join(command)
+        if ".count" in joined:
+            return _FakeProc(0, "6")
+        if task_module._DESKTOP_IDS_CLIENT in command:
+            return _FakeProc(0, "id1\nid2\nid3\nid4\nid5\nid6\n")
+        if "removeDesktop" in joined:
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {
+        "HOME": str(tmp_path),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+    error = task_module._apply_desktop_count_live(
+        ctx.config.kde_settings, timeout=30.0, env=env
+    )
+    assert error is None
+    removals = [
+        command for command in calls if "removeDesktop" in " ".join(command)
+    ]
+    removed_ids = []
+    for command in removals:
+        method_index = next(
+            index
+            for index, part in enumerate(command)
+            if part.endswith("removeDesktop")
+        )
+        removed_ids.append(command[method_index + 1])
+    assert removed_ids == ["id5", "id6"]
+
+
+def test_desktop_count_live_creates_missing_desktops_at_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The live count is lower than the configured Number: the task creates
+    # the missing desktops at the end, so existing ones keep their place.
+    records = (
+        KConfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        joined = " ".join(command)
+        if ".count" in joined:
+            return _FakeProc(0, "3")
+        if "createDesktop" in joined:
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {
+        "HOME": str(tmp_path),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+    error = task_module._apply_desktop_count_live(
+        ctx.config.kde_settings, timeout=30.0, env=env
+    )
+    assert error is None
+    creates = [
+        command for command in calls if "createDesktop" in " ".join(command)
+    ]
+    positions = []
+    for command in creates:
+        method_index = next(
+            index
+            for index, part in enumerate(command)
+            if part.endswith("createDesktop")
+        )
+        positions.append(command[method_index + 1])
+    assert positions == ["3", "4"]

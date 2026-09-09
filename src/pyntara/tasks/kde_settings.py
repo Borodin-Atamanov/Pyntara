@@ -71,6 +71,20 @@ KWIN_SCRIPT_ACTIONS: tuple[str, ...] = (
 # the client independent of the caller PATH, where the project venv
 # could shadow python3 with an interpreter that cannot see them.
 _DBUS_CLIENT_PYTHON = "/usr/bin/python3"
+# The embedded DBus client that prints the id of every virtual desktop,
+# one per line, in position order. The desktop list is a DBus property
+# of structs (position, id, name); qdbus6 cannot render that type, so the
+# task reads the ids through python3-dbus.
+_DESKTOP_IDS_CLIENT = (
+    "import dbus\n"
+    "bus = dbus.SessionBus()\n"
+    "obj = bus.get_object('org.kde.KWin', '/VirtualDesktopManager')\n"
+    "props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties')\n"
+    "data = props.Get('org.kde.KWin.VirtualDesktopManager', 'desktops')\n"
+    "for entry in data:\n"
+    "    fields = [getattr(part, 'pyobject', part) for part in entry]\n"
+    "    print(fields[1])\n"
+)
 
 # The kdeglobals groups and keys that carry the applied theme values.
 GENERAL_GROUP: tuple[str, ...] = ("General",)
@@ -105,6 +119,11 @@ CLICK_METHOD_VALUES: dict[str, str] = {
 # The idle wait, in minutes, before the native day and night theme switch
 # applies its new theme; recorded from the user's manual tuning.
 AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL = "99"
+# The KConfig files whose live owner kwin watches through the KConfig
+# notify DBus signal: a write with the --notify flag makes the running
+# kwin re-read the file and apply the change live. Other files have no
+# live watcher, so notifying them would only add bus chatter.
+NOTIFY_FILES: frozenset[str] = frozenset({KWINRC_FILE, "kdeglobals"})
 
 
 def _as_user_command(cfg: KdeSettingsConfig, command: list[str]) -> list[str]:
@@ -142,6 +161,24 @@ def _kreadconfig(
     return trim_whitespace(result.stdout)
 
 
+def _notify_flag(file_name: str, env: dict[str, str] | None) -> list[str]:
+    """The kwriteconfig6 --notify flag when the write reaches a live owner.
+
+    The flag makes kwriteconfig6 emit the KConfig change DBus signal that
+    kwin watches for kwinrc and kdeglobals, so the running kwin re-reads
+    the file and applies the change live instead of only at the next
+    login. Without the session bus in the process environment the flag is
+    a harmless no-op, so it is added only when the live environment is
+    passed and the file has a live watcher.
+    """
+
+    if env is None or "DBUS_SESSION_BUS_ADDRESS" not in env:
+        return []
+    if file_name not in NOTIFY_FILES:
+        return []
+    return ["--notify"]
+
+
 def _kwriteconfig(
     cfg: KdeSettingsConfig,
     file_name: str,
@@ -151,8 +188,14 @@ def _kwriteconfig(
     *,
     timeout: float,
     bool_value: bool,
+    env: dict[str, str] | None = None,
 ) -> None:
-    """Write one KConfig key with kwriteconfig6 as the target user."""
+    """Write one KConfig key with kwriteconfig6 as the target user.
+
+    env is the live session environment when the caller knows a desktop
+    session is running; its session bus makes the --notify flag reach the
+    live owner of the file.
+    """
 
     command = ["kwriteconfig6", "--file", file_name]
     for segment in group_segments:
@@ -162,9 +205,11 @@ def _kwriteconfig(
         command.append("--type")
         command.append("bool")
     command.append(value)
+    command.extend(_notify_flag(file_name, env))
+    write_env = env if env is not None else _home_env(cfg)
     run_command(
         _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        extra_env=write_env,
         timeout=timeout,
     )
 
@@ -176,6 +221,7 @@ def _delete_kconfig_key(
     key: str,
     *,
     timeout: float,
+    env: dict[str, str] | None = None,
 ) -> None:
     """Delete one KConfig key with kwriteconfig6 as the target user."""
 
@@ -183,9 +229,11 @@ def _delete_kconfig_key(
     for segment in group_segments:
         command.extend(["--group", segment])
     command.extend(["--key", key, "--delete"])
+    command.extend(_notify_flag(file_name, env))
+    write_env = env if env is not None else _home_env(cfg)
     run_command(
         _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        extra_env=write_env,
         timeout=timeout,
     )
 
@@ -200,8 +248,13 @@ def _sync_config_value(
     timeout: float,
     force: bool,
     bool_value: bool,
+    env: dict[str, str] | None = None,
 ) -> bool:
-    """Write the KConfig key when it differs; True when a write happened."""
+    """Write the KConfig key when it differs; True when a write happened.
+
+    env is forwarded to the write so a live session adds the --notify
+    flag for files kwin watches.
+    """
 
     current = _kreadconfig(cfg, file_name, group_segments, key, timeout)
     if not force and current == target:
@@ -214,6 +267,7 @@ def _sync_config_value(
         target,
         timeout=timeout,
         bool_value=bool_value,
+        env=env,
     )
     _log(f"set {file_name} {key}: {target}")
     return True
@@ -282,6 +336,7 @@ def _apply_automatic_look_and_feel(
     *,
     timeout: float,
     force: bool,
+    env: dict[str, str] | None = None,
 ) -> bool:
     """Enable the native day and night theme switch; True when changed.
 
@@ -301,6 +356,7 @@ def _apply_automatic_look_and_feel(
         timeout=timeout,
         force=force,
         bool_value=True,
+        env=env,
     )
     changed |= _sync_config_value(
         cfg,
@@ -311,6 +367,7 @@ def _apply_automatic_look_and_feel(
         timeout=timeout,
         force=force,
         bool_value=False,
+        env=env,
     )
     return changed
 
@@ -410,6 +467,7 @@ def _apply_virtual_keyboard(
     *,
     timeout: float,
     force: bool,
+    env: dict[str, str] | None = None,
 ) -> bool:
     """Write or remove the Wayland virtual keyboard; True when changed.
 
@@ -431,6 +489,7 @@ def _apply_virtual_keyboard(
             timeout=timeout,
             force=force,
             bool_value=False,
+            env=env,
         )
         changed |= _sync_config_value(
             cfg,
@@ -441,12 +500,18 @@ def _apply_virtual_keyboard(
             timeout=timeout,
             force=force,
             bool_value=False,
+            env=env,
         )
     else:
         current = _kreadconfig(cfg, KWINRC_FILE, WAYLAND_GROUP, "InputMethod", timeout)
         if force or current:
             _delete_kconfig_key(
-                cfg, KWINRC_FILE, WAYLAND_GROUP, "InputMethod", timeout=timeout
+                cfg,
+                KWINRC_FILE,
+                WAYLAND_GROUP,
+                "InputMethod",
+                timeout=timeout,
+                env=env,
             )
             _log("removed Wayland input method")
             changed = True
@@ -533,6 +598,7 @@ def _apply_kconfig_records(
     *,
     timeout: float,
     force: bool,
+    env: dict[str, str] | None = None,
 ) -> bool:
     """Apply every configured kconfig record; True when any changed.
 
@@ -550,7 +616,12 @@ def _apply_kconfig_records(
             if not force and not current:
                 continue
             _delete_kconfig_key(
-                cfg, record.file, record.group, record.key, timeout=timeout
+                cfg,
+                record.file,
+                record.group,
+                record.key,
+                timeout=timeout,
+                env=env,
             )
             _log(f"removed {record.file} {record.key}")
             changed = True
@@ -564,6 +635,7 @@ def _apply_kconfig_records(
             timeout=timeout,
             force=force,
             bool_value=record.type == "bool",
+            env=env,
         )
     return changed
 
@@ -720,6 +792,7 @@ def _apply_kwin_scripts(
     *,
     timeout: float,
     force: bool,
+    env: dict[str, str] | None = None,
 ) -> bool:
     """Install and enable the KWin scripts; True when anything changed.
 
@@ -759,6 +832,7 @@ def _apply_kwin_scripts(
             timeout=timeout,
             force=force,
             bool_value=True,
+            env=env,
         )
     return changed
 
@@ -1171,7 +1245,7 @@ def _apply_desktop_count_live(
     if current == target:
         return None
     if current < target:
-        for _ in range(current, target):
+        for position in range(current, target):
             try:
                 run_command(
                     _as_user_command(
@@ -1181,7 +1255,7 @@ def _apply_desktop_count_live(
                             "org.kde.KWin",
                             "/VirtualDesktopManager",
                             "org.kde.KWin.VirtualDesktopManager.createDesktop",
-                            "0",
+                            str(position),
                             "",
                         ],
                     ),
@@ -1192,21 +1266,13 @@ def _apply_desktop_count_live(
                 return f"cannot create desktop: {exc}"
         _log(f"created {target - current} desktops, live count now {target}")
     else:
-        result = run_command(
-            _as_user_command(
-                cfg,
-                [
-                    "qdbus6",
-                    "org.kde.KWin",
-                    "/VirtualDesktopManager",
-                    "org.kde.KWin.VirtualDesktopManager.desktops",
-                ],
-            ),
+        ids_result = run_command(
+            _as_user_command(cfg, [_DBUS_CLIENT_PYTHON, "-c", _DESKTOP_IDS_CLIENT]),
             extra_env=env,
             timeout=timeout,
             capture=True,
         )
-        ids = trim_whitespace(result.stdout).split("\n")
+        ids = trim_whitespace(ids_result.stdout).splitlines()
         for desktop_id in ids[-current + target:]:
             try:
                 run_command(
@@ -1277,7 +1343,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         if cfg.automatic_look_and_feel:
             settings_changed |= _apply_automatic_look_and_feel(
-                cfg, timeout=timeout, force=force
+                cfg, timeout=timeout, force=force, env=apply_env
             )
         else:
             settings_changed |= _apply_look_and_feel(
@@ -1289,11 +1355,11 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= _apply_numlock(cfg, timeout=timeout, force=force)
         settings_changed |= _apply_touchpad(cfg, timeout=timeout, force=force)
         virtual_keyboard_changed = _apply_virtual_keyboard(
-            cfg, timeout=timeout, force=force
+            cfg, timeout=timeout, force=force, env=apply_env
         )
         settings_changed |= virtual_keyboard_changed
         settings_changed |= _apply_kconfig_records(
-            cfg, timeout=timeout, force=force
+            cfg, timeout=timeout, force=force, env=apply_env
         )
         settings_changed |= _apply_theme_cursor_overrides(
             cfg, timeout=timeout, force=force
@@ -1303,7 +1369,7 @@ def task(ctx: Context) -> TaskResult:
         )
         settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
         kwin_scripts_changed = _apply_kwin_scripts(
-            cfg, timeout=timeout, force=force
+            cfg, timeout=timeout, force=force, env=apply_env
         )
         settings_changed |= kwin_scripts_changed
         settings_changed |= _free_script_hotkeys(
