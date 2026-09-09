@@ -1,0 +1,73 @@
+{
+    "speech_recognition": {
+        "engine": "whisper_cpp",
+        "language": "ru",
+        "model_size": "small",
+        "vosk_model_size": "small",
+        "whisper_model_size": "tiny",
+        "whisper_cpp_model_size": "small",
+        "vad_sensitivity": 3,
+        "silence_timeout": 4.0,
+        "stop_sound_guard_ms": 200,
+        "voice_commands_enabled": null,
+        "remote_api_url": "",
+        "remote_api_key": "",
+        "remote_api_endpoint": "/inference",
+        "remote_api_model": "whisper-1"
+    },
+    "audio": {
+        "device_index": null,
+        "device_name": null
+    },
+    "sound_effects": {
+        "enabled": true,
+        "tone": "voca"
+    },
+    "shortcuts": {
+        "toggle_recognition": "super+s",
+        "mode": "toggle"
+    },
+    "ui": {
+        "start_minimized": true,
+        "show_notifications": true,
+        "show_missing_tray_warning": true
+    },
+    "general": {
+        "autostart": true,
+        "first_run": false
+    },
+    "auto_pause": {
+        "enabled": false,
+        "apps": [],
+        "poll_interval_seconds": 5
+    },
+    "model_keepalive": {
+        "enabled": true,
+        "idle_timeout_seconds": 1800
+    },
+    "text_injection": {
+        "copy_to_clipboard": true,
+        "auto_capitalize": true,
+        "append_trailing_space": true,
+        "paste_shortcut": "auto"
+    },
+    "advanced": {
+        "power_user_mode": true,
+        "debug_logging": false,
+        "wayland_mode": false,
+        "whispercpp_no_timestamps": true,
+        "whispercpp_no_context": true,
+        "whispercpp_initial_prompt": "\u0418 \u0442\u0430\u043a\u043e\u0439 \u0432\u043e\u043f\u0440\u043e\u0441: \u043c\u043e\u0436\u0435\u043c \u043b\u0438 \u043c\u044b \u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c, \u043a\u0430\u043a \u0432 \u044d\u0442\u043e\u0439 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435 \u043c\u043e\u0436\u043d\u043e \u043f\u043e\u043f\u0440\u043e\u0431\u043e\u0432\u0430\u0442\u044c \u0437\u0430\u043f\u0438\u0441\u044b\u0432\u0430\u0442\u044c, \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0438 \u0442\u0435 \u0430\u0443\u0434\u0438\u043e\u0437\u0430\u043f\u0438\u0441\u0438, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043c\u044b \u0434\u0435\u043b\u0430\u0435\u043c, \u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0442\u0435\u043a\u0441\u0442? \u041c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c, \u0445\u043e\u0442\u044f \u0431\u044b \u043e\u0434\u043d\u043e \u0438\u0437 \u044d\u0442\u043e\u0433\u043e: \u043a\u0430\u043a\u0438\u043c-\u0442\u043e \u043f\u0440\u043e\u0441\u0442\u044b\u043c \u0441\u043f\u043e\u0441\u043e\u0431\u043e\u043c, \u043d\u0430\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u044d\u0442\u043e \u043c\u043e\u0436\u043d\u043e \u0441\u0434\u0435\u043b\u0430\u0442\u044c?",
+        "whispercpp_temperature": 0.0,
+        "whispercpp_temperature_inc": -1.0,
+        "whispercpp_entropy_thold": 2.4,
+        "whispercpp_logprob_thold": -1.0,
+        "whispercpp_no_speech_thold": 0.6,
+        "whispercpp_n_threads": 0,
+        "whispercpp_gpu_device": null
+    },
+    "updates": {
+        "channel": "stable",
+        "last_notified_version": ""
+    }
+}

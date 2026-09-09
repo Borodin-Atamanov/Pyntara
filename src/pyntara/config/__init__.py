@@ -59,6 +59,7 @@ from .vault import (
     VaultGroupSeed,
     VaultStructureConfig,
 )
+from .vocalinux_setup import VocalinuxSetupConfig
 from .yggdrasil_service_setup import (
     YggdrasilMulticastInterfaceConfig,
     YggdrasilServiceSetupConfig,
@@ -109,6 +110,7 @@ __all__ = [
     "VaultGroup",
     "VaultGroupSeed",
     "VaultStructureConfig",
+    "VocalinuxSetupConfig",
     "YggdrasilMulticastInterfaceConfig",
     "YggdrasilServiceSetupConfig",
     "ZramServiceConfig",

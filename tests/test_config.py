@@ -359,6 +359,17 @@ package_install_retries = 3
 cli_package = "@playwright/cli"
 npm_install_timeout_seconds = 900
 
+[vocalinux_setup]
+username = "i"
+home_dir = "/home/i"
+download_dir = "/var/cache/pyntara/vocalinux"
+version = "0.16.2"
+packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]
+input_group = "input"
+service_unit_name = "ydotool.service"
+package_status_timeout_seconds = 30
+package_install_retries = 3
+
 [system_metrics_setup]
 backoff_base_seconds = 2
 backoff_multiplier = 2
@@ -631,6 +642,17 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.playwright_setup.packages == ("nodejs", "npm")
     assert config.playwright_setup.cli_package == "@playwright/cli"
     assert config.playwright_setup.npm_install_timeout_seconds == 900
+    assert config.vocalinux_setup.username == "i"
+    assert config.vocalinux_setup.home_dir == "/home/i"
+    assert config.vocalinux_setup.version == "0.16.2"
+    assert config.vocalinux_setup.packages == (
+        "wtype",
+        "ydotool",
+        "wl-clipboard",
+        "libkf6config-bin",
+    )
+    assert config.vocalinux_setup.input_group == "input"
+    assert config.vocalinux_setup.service_unit_name == "ydotool.service"
     assert config.add_extra_repos.components == ("universe", "restricted", "multiverse")
     assert config.add_extra_repos.ubuntu_hosts == (
         "archive.ubuntu.com",

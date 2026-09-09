@@ -1,4 +1,4 @@
-# Pyntara 0.3.204
+# Pyntara 0.3.205
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -107,6 +107,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile  
 [docs/spec/kde-keyboard-setup.md](docs/spec/kde-keyboard-setup.md) — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon  
 [docs/spec/kde-settings.md](docs/spec/kde-settings.md) — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
+[docs/spec/vocalinux-setup.md](docs/spec/vocalinux-setup.md) — Vocalinux voice dictation from the official AppImage release, system dependencies, app config, autostart and the Meta+S consuming shortcut
 [docs/spec/imagemagick-setup.md](docs/spec/imagemagick-setup.md) — ImageMagick install from the Ubuntu archive plus the tuned security policy, idempotent and without a version chase  
 [docs/spec/ffmpeg-setup.md](docs/spec/ffmpeg-setup.md) — ffmpeg install from the Ubuntu archive, idempotent and without a version chase  
 [docs/spec/rustdesk-setup.md](docs/spec/rustdesk-setup.md) — RustDesk remote desktop client install from GitHub releases, public server registration, per-machine password and the network report ID  

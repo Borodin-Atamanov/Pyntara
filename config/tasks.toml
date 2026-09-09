@@ -78,6 +78,12 @@ depends = []
 modes = ["desktop"]
 
 [[tasks]]
+name = "vocalinux_setup"
+description = "Install Vocalinux voice dictation from the AppImage release and configure it for the desktop user."
+depends = ["add_extra_repos"]
+modes = ["desktop"]
+
+[[tasks]]
 name = "nextdns_setup_system_wide"
 description = "Select and record the machine's NextDNS profile without configuring a resolver."
 depends = ["local_vault_setup", "hostname"]

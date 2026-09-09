@@ -1,0 +1,31 @@
+[vocalinux_setup]
+# Vocalinux voice dictation installed by the vocalinux_setup task for the
+# desktop user, from the official AppImage release (the build with the
+# precompiled Vulkan pywhispercpp and the CPU fallback, bundling its own
+# CPython and GTK). The version is pinned: the task installs exactly the
+# release named by version and its asset, and an upgrade is a config
+# change, so the app config template and the verified release stay in
+# lockstep. The AppImage of the installed version stays in download_dir
+# under its asset name; on a rerun a present install file means the pinned
+# release is already installed and nothing is downloaded again. The task
+# does not download the speech model: the app config selects whisper_cpp
+# with the small model, and Vocalinux downloads the model itself on the
+# first dictation with its own pinned checksum and progress dialog.
+# The user whose desktop runs the app and whose home holds the install.
+username = "i"
+home_dir = "/home/i"
+# Root cache that keeps the AppImage of the pinned version.
+download_dir = "/var/cache/pyntara/vocalinux"
+# Pinned Vocalinux release, without the leading v of the release tag.
+version = "0.16.2"
+# System tools the app needs on the Wayland desktop plus the provider of
+# kwriteconfig6 that registers the Meta+S consuming shortcut.
+packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]
+# Group that owns /dev/input and /dev/uinput on Kubuntu.
+input_group = "input"
+# ydotool user unit enabled for the desktop user.
+service_unit_name = "ydotool.service"
+# Seconds a single package status query may run.
+package_status_timeout_seconds = 30
+# Install attempts after the first one for each package.
+package_install_retries = 3

@@ -55,6 +55,7 @@ from .vault import (
     _local_vault_setup_table,
     _vault_structure_table,
 )
+from .vocalinux_setup import VocalinuxSetupConfig, _vocalinux_setup_table
 from .yggdrasil_service_setup import (
     YggdrasilServiceSetupConfig,
     _yggdrasil_service_setup_table,
@@ -87,6 +88,7 @@ class Config:
     tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
+    vocalinux_setup: VocalinuxSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     playwright_setup: PlaywrightSetupConfig
     port_forwarding_setup: PortForwardingSetupConfig
@@ -210,6 +212,7 @@ def load_config(path: Path) -> Config:
         tor_setup=_tor_setup_table(data.get("tor_setup")),
         ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
         ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
+        vocalinux_setup=_vocalinux_setup_table(data.get("vocalinux_setup")),
         nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
             data.get("nextdns_setup_system_wide")
         ),

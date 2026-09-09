@@ -334,6 +334,16 @@ def base_config() -> str:
         "package_install_retries = 3\n"
         'cli_package = "@playwright/cli"\n'
         "npm_install_timeout_seconds = 900\n"
+        "[vocalinux_setup]\n"
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'download_dir = "/var/cache/pyntara/vocalinux"\n'
+        'version = "0.16.2"\n'
+        'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
+        'input_group = "input"\n'
+        'service_unit_name = "ydotool.service"\n'
+        "package_status_timeout_seconds = 30\n"
+        "package_install_retries = 3\n"
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"
