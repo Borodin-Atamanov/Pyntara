@@ -1312,6 +1312,47 @@ def test_apply_places_hidden_missing_file_skips(
     assert changed is False
 
 
+def test_places_xbel_hidden_tolerates_undeclared_bookmark_prefix() -> None:
+    # A Dolphin file can bind the icon namespace as ns0 while still using
+    # the bookmark: prefix undeclared; the tolerant parse still hides the
+    # matched place and serializes a well-formed file.
+    malformed = XBEL.replace(
+        'xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"',
+        'xmlns:ns0="http://www.freedesktop.org/standards/desktop-bookmarks"',
+    )
+    out = task_module._places_xbel_hidden(malformed, {"Home"})
+    assert out is not None
+    home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
+    assert "<IsHidden>true</IsHidden>" in home
+    assert 'xmlns:bookmark="http://freedesktop.org/standards/desktop-bookmarks"' in out
+
+
+def test_apply_places_hidden_unparseable_file_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Places file that even the tolerant parse cannot read skips the
+    # hiding with a message instead of failing the whole task.
+    places_dir = tmp_path / ".local/share"
+    places_dir.mkdir(parents=True, exist_ok=True)
+    (places_dir / "user-places.xbel").write_text(
+        "<xbel><bookmark>", encoding="utf-8"
+    )
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            kde_settings_home_dir=str(tmp_path),
+            kde_settings_places_hidden=("Home",),
+        ),
+    )
+    _install_fakes(monkeypatch)
+    changed = task_module._apply_places_hidden(
+        ctx.config.kde_settings, timeout=5, force=False
+    )
+    assert changed is False
+
+
 def test_touchpad_clickareas_writes_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

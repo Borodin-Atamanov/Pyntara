@@ -956,6 +956,44 @@ def _free_script_hotkeys(
     return changed
 
 
+# The namespace prefixes the Places file serializes and the URIs they
+# map to. Dolphin can write the file with the desktop-bookmarks namespace
+# bound as ns0 while still using the bookmark: prefix undeclared, which
+# strict parsers reject; declaring these prefixes keeps the parse tolerant.
+_PLACES_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("bookmark", "http://freedesktop.org/standards/desktop-bookmarks"),
+    ("kdepriv", "http://www.kde.org/kdepriv"),
+    ("mime", "http://freedesktop.org/standards/shared-mime-info"),
+)
+
+
+def _declare_missing_prefixes(current: str) -> str:
+    """current with the undeclared Places prefix declarations added.
+
+    The prefixes the task deals with are declared on the root xbel tag
+    when the document does not declare them yet, so a file that Dolphin
+    wrote without namespace processing parses under the strict parser.
+    A document that already declares the prefixes or has no xbel root
+    tag is returned unchanged.
+    """
+
+    missing = [
+        f'xmlns:{prefix}="{uri}"'
+        for prefix, uri in _PLACES_PREFIXES
+        if f"xmlns:{prefix}=" not in current
+    ]
+    if not missing:
+        return current
+    root_start = current.find("<xbel")
+    if root_start == -1:
+        return current
+    tag_end = current.find(">", root_start)
+    if tag_end == -1:
+        return current
+    injection = " " + " ".join(missing)
+    return current[:tag_end] + injection + current[tag_end:]
+
+
 def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
     """current with IsHidden=true for the hidden places; None when unchanged.
 
@@ -974,7 +1012,10 @@ def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
     ElementTree.register_namespace(
         "mime", "http://freedesktop.org/standards/shared-mime-info"
     )
-    root = ElementTree.fromstring(current)
+    try:
+        root = ElementTree.fromstring(current)
+    except ElementTree.ParseError:
+        root = ElementTree.fromstring(_declare_missing_prefixes(current))
     changed = False
     for bookmark in root.findall("bookmark"):
         if bookmark.findtext("title") not in hidden:
@@ -1020,7 +1061,11 @@ def _apply_places_hidden(
     except OSError:
         _log("no user-places.xbel found, Places hiding applies after first login")
         return False
-    content = _places_xbel_hidden(current, set(cfg.places_hidden))
+    try:
+        content = _places_xbel_hidden(current, set(cfg.places_hidden))
+    except ElementTree.ParseError as exc:
+        _log(f"cannot parse {USER_PLACES_REL}: {exc}, Places hiding skipped")
+        return False
     if content is None:
         return False
     return _write_user_file(
