@@ -462,6 +462,27 @@ def ensure_root_owner(path: Path) -> None:
         os.chown(path, 0, 0)
 
 
+def process_environment_vars(pid: str) -> dict[str, str]:
+    """The environment of a process as a dict, empty when unreadable.
+
+    Desktop processes of the logged-in user carry the session bus address
+    and the display variables, so the KDE desktop tasks read them from
+    /proc to reach a live session even when the task itself started over
+    SSH without a desktop environment.
+    """
+
+    try:
+        data = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return {}
+    result: dict[str, str] = {}
+    for entry in data.split(b"\0"):
+        key, separator, value = entry.partition(b"=")
+        if separator:
+            result[key.decode("utf-8")] = value.decode("utf-8")
+    return result
+
+
 def process_environment(pid: str) -> str | None:
     """The DBUS_SESSION_BUS_ADDRESS of a process, or None when unreadable.
 
@@ -469,14 +490,7 @@ def process_environment(pid: str) -> str | None:
     the logged-in user, so the helper is used by the KDE desktop tasks.
     """
 
-    try:
-        data = Path(f"/proc/{pid}/environ").read_bytes()
-    except OSError:
-        return None
-    for entry in data.split(b"\0"):
-        if entry.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
-            return entry.split(b"=", 1)[1].decode("utf-8")
-    return None
+    return process_environment_vars(pid).get("DBUS_SESSION_BUS_ADDRESS")
 
 
 def session_bus_address(username: str, timeout: float) -> str | None:
@@ -498,6 +512,50 @@ def session_bus_address(username: str, timeout: float) -> str | None:
     if not lines:
         return None
     return process_environment(lines[0].strip())
+
+
+# The session variables the desktop tasks copy from the running session.
+# The bus address reaches the DBus services; the display variables let a
+# Qt GUI tool connect to the running Wayland compositor, which a process
+# started over SSH lacks.
+_LIVE_SESSION_ENV_KEYS: tuple[str, ...] = (
+    "DBUS_SESSION_BUS_ADDRESS",
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+)
+
+
+def session_environment(username: str, timeout: float) -> dict[str, str]:
+    """The live desktop session variables of a user, or an empty dict.
+
+    The variables are read from the environment of the user's desktop
+    processes: plasmashell is a Wayland client of the running session and
+    carries the display connection, kwin_wayland owns the session
+    services. A run started over SSH therefore reaches a live session
+    when one exists; without any desktop process the dict is empty and
+    the caller applies the settings for the next login.
+    """
+
+    merged: dict[str, str] = {}
+    for process_name in ("plasmashell", "kwin_wayland"):
+        result = run_command(
+            ["pgrep", "-u", username, "-x", process_name],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        lines = trim_whitespace(result.stdout).splitlines()
+        if not lines:
+            continue
+        for key, value in process_environment_vars(lines[0].strip()).items():
+            if key in _LIVE_SESSION_ENV_KEYS and key not in merged:
+                merged[key] = value
+        if merged:
+            break
+    return merged
 
 
 def backoff_delay(

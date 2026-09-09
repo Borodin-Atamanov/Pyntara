@@ -57,12 +57,16 @@ def _install_fakes(
     fail_install: bool = False,
     fail_on_apply: bool = False,
     fail_on_write: bool = False,
+    fail_on_write_keys: frozenset[str] | None = None,
+    fail_on_reload: bool = False,
 ):
-    """Replace run_command, the session bus and package state.
+    """Replace run_command, the session environment and package state.
 
     currents maps a KConfig key name to its current value, so a key whose
     value matches the target skips the write or apply. bus_pid empty
-    disables the desktop session lookup.
+    disables the desktop session lookup. fail_on_write_keys fails only
+    the writes of the named keys, so one bad value leaves the others
+    alone.
     """
 
     currents = currents or {}
@@ -102,9 +106,14 @@ def _install_fakes(
             if inner[0] == "kwriteconfig6":
                 if fail_on_write:
                     raise subprocess.CalledProcessError(1, command)
+                key = inner[inner.index("--key") + 1]
+                if fail_on_write_keys and key in fail_on_write_keys:
+                    raise subprocess.CalledProcessError(1, command)
                 writes.append(list(command))
                 return _FakeProc(0, "")
             if inner[0] == "qdbus6":
+                if fail_on_reload:
+                    raise subprocess.CalledProcessError(1, command)
                 reloads.append(list(command))
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
@@ -131,11 +140,13 @@ def _install_fakes(
     monkeypatch.setattr(task_module, "install_package_once", fake_install)
     monkeypatch.setattr(
         task_module,
-        "session_bus_address",
+        "session_environment",
         (
-            lambda username, timeout: "unix:path=/run/user/1000/bus"
+            lambda username, timeout: {
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"
+            }
             if bus_pid
-            else None
+            else {}
         ),
     )
     # The system theme directory never exists, so the theme cursor
@@ -325,6 +336,94 @@ def test_no_desktop_session_still_applies(
         command for command in writes if "LookAndFeelPackage" in command
     ]
     assert lookandfeel_writes
+
+
+def test_apply_env_carries_live_session_display(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A live desktop session contributes the bus address and the display
+    # variables, so a GUI plasma-apply tool started over SSH still
+    # connects to the running compositor.
+    ctx = _ctx(tmp_path)
+    monkeypatch.setattr(
+        task_module,
+        "session_environment",
+        lambda username, timeout: {
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            "WAYLAND_DISPLAY": "wayland-0",
+            "XDG_RUNTIME_DIR": "/run/user/1000",
+            "DISPLAY": ":0",
+        },
+    )
+    env = task_module._apply_env(ctx.config.kde_settings, timeout=5)
+    assert env["HOME"] == str(tmp_path)
+    assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
+    assert env["WAYLAND_DISPLAY"] == "wayland-0"
+    assert env["XDG_RUNTIME_DIR"] == "/run/user/1000"
+
+
+def test_apply_env_without_session_has_no_bus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No live session: the environment keeps only the home directory, so
+    # the appearance values are written for the next login.
+    ctx = _ctx(tmp_path)
+    monkeypatch.setattr(task_module, "session_environment", lambda u, t: {})
+    env = task_module._apply_env(ctx.config.kde_settings, timeout=5)
+    assert env == {"HOME": str(tmp_path)}
+
+
+def test_one_config_failure_does_not_stop_other_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A single bad write (NumLock) is reported as a warning and the other
+    # independent settings still apply.
+    ctx = _ctx(tmp_path)
+    themes, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch, fail_on_write_keys=frozenset({"NumLock"})
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert themes
+    assert any("NumLock" in warning for warning in result.warnings)
+    lookandfeel_writes = [
+        command for command in writes if "LookAndFeelPackage" in command
+    ]
+    assert lookandfeel_writes
+
+
+def test_all_config_writes_failing_task_still_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every user kwriteconfig6 call fails: the task still reports success
+    # with the collected warnings instead of dying, so a rerun can fix
+    # them. The system SDDM writes do not go through runuser and still
+    # run.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, fail_on_write=True)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert result.warnings
+    assert not [command for command in writes if "LookAndFeelPackage" in command]
+    assert (
+        result.message
+        == "KDE appearance and input settings configured with warnings"
+    )
+
+
+def test_reload_failure_is_a_warning_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A failing kwin reload does not discard the applied settings: it is
+    # reported as a warning and the task still succeeds.
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, fail_on_reload=True)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert writes
+    assert result.warnings
+    assert any("reload" in warning for warning in result.warnings)
 
 
 TOUCHPAD_RC = """\
@@ -1031,11 +1130,13 @@ def _script_fakes(
     monkeypatch.setattr(task_module, "run_command", fake_run)
     monkeypatch.setattr(
         task_module,
-        "session_bus_address",
+        "session_environment",
         (
-            lambda username, timeout: "unix:path=/run/user/1000/bus"
+            lambda username, timeout: {
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"
+            }
             if session
-            else None
+            else {}
         ),
     )
     return writes, releases

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -38,7 +39,7 @@ from pyntara.utils import (
     install_package_once,
     package_is_installed,
     run_command,
-    session_bus_address,
+    session_environment,
     trim_whitespace,
 )
 
@@ -274,18 +275,18 @@ def _sync_config_value(
 
 
 def _apply_env(cfg: KdeSettingsConfig, timeout: float) -> dict[str, str]:
-    """Environment that lets the plasma-apply tools reach the session bus.
+    """Environment that lets the plasma-apply tools reach the live session.
 
-    The session bus address is read from the target user's kwin_wayland
-    process when a desktop session is running, so the theme applies live;
-    a missing session leaves the environment without the bus, the tools
-    still write the config and the theme applies after the next login.
+    The session bus address and the display variables are read from the
+    target user's desktop processes when a live session is running, so
+    the theme applies live even when the run started over SSH without a
+    desktop environment; a missing session leaves the environment without
+    them, the values are written into the config and apply after the next
+    login.
     """
 
     env = _home_env(cfg)
-    bus = session_bus_address(cfg.username, timeout)
-    if bus is not None:
-        env["DBUS_SESSION_BUS_ADDRESS"] = bus
+    env.update(session_environment(cfg.username, timeout))
     return env
 
 
@@ -677,44 +678,58 @@ def _apply_kconfig_records(
     timeout: float,
     force: bool,
     env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Apply every configured kconfig record; True when any changed.
 
     Each value record is read with kreadconfig6 and written only when it
     differs, so matching records are skipped; a delete record removes the
-    key when it is present. Force mode writes and removes regardless.
+    key when it is present. Force mode writes and removes regardless. A
+    record that fails through an external tool error is reported and the
+    remaining records still apply, because one bad value must not stop
+    the others; warnings collects the failures when given.
     """
 
     changed = False
     for record in cfg.kconfig:
-        if record.delete:
-            current = _kreadconfig(
-                cfg, record.file, record.group, record.key, timeout
-            )
-            if not force and not current:
+        try:
+            if record.delete:
+                current = _kreadconfig(
+                    cfg, record.file, record.group, record.key, timeout
+                )
+                if not force and not current:
+                    continue
+                _delete_kconfig_key(
+                    cfg,
+                    record.file,
+                    record.group,
+                    record.key,
+                    timeout=timeout,
+                    env=env,
+                )
+                _log(f"removed {record.file} {record.key}")
+                changed = True
                 continue
-            _delete_kconfig_key(
+            changed |= _sync_config_value(
                 cfg,
                 record.file,
                 record.group,
                 record.key,
+                record.value,
                 timeout=timeout,
+                force=force,
+                bool_value=record.type == "bool",
                 env=env,
             )
-            _log(f"removed {record.file} {record.key}")
-            changed = True
-            continue
-        changed |= _sync_config_value(
-            cfg,
-            record.file,
-            record.group,
-            record.key,
-            record.value,
-            timeout=timeout,
-            force=force,
-            bool_value=record.type == "bool",
-            env=env,
-        )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot apply {record.file} {record.key}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -1418,6 +1433,32 @@ def _apply_desktop_count_live(
     return None
 
 
+def _run_settings_step(
+    warnings: list[str],
+    description: str,
+    call: Callable[[], bool],
+) -> bool:
+    """Run one independent settings step; warn and continue on a failure.
+
+    A settings step that fails through an external tool error or an
+    environment error must not stop the remaining independent steps: the
+    value is left for the next run and the failure is reported as a
+    warning, so the whole task never dies because of one bad setting.
+    """
+
+    try:
+        return call()
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ) as exc:
+        warning = f"cannot {description}: {exc}"
+        _log(warning)
+        warnings.append(warning)
+        return False
+
+
 def task(ctx: Context) -> TaskResult:
     """Apply the dark appearance and the input and keyboard settings.
 
@@ -1431,8 +1472,12 @@ def task(ctx: Context) -> TaskResult:
     apply the configured cursors, and the cursor theme last, so it wins
     over the theme default the switch writes. When automatic_look_and_feel
     is set, the theme is not applied directly: the task enables the native
-    day and night switch instead, so a run never fights the switch. Any
-    failure is returned as an error TaskResult.
+    day and night switch instead, so a run never fights the switch. Each
+    settings step runs independently: a step that fails through an external
+    tool error or an environment error is reported as a warning and the
+    remaining independent steps still run, because one bad setting must
+    not stop the rest. Only a package that cannot be installed is returned
+    as an error TaskResult.
     """
 
     cfg = ctx.config.kde_settings
@@ -1451,11 +1496,25 @@ def task(ctx: Context) -> TaskResult:
             )
         changed = True
 
-    run_command(
-        _as_user_command(cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / ".config")]),
-        extra_env=_home_env(cfg),
-        timeout=timeout,
-    )
+    warnings: list[str] = []
+
+    def step(description: str, call: Callable[[], bool]) -> bool:
+        return _run_settings_step(warnings, description, call)
+
+    try:
+        run_command(
+            _as_user_command(
+                cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / ".config")]
+            ),
+            extra_env=_home_env(cfg),
+            timeout=timeout,
+        )
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ) as exc:
+        warnings.append(f"cannot create the user config directory: {exc}")
     apply_env = _apply_env(cfg, timeout)
     if "DBUS_SESSION_BUS_ADDRESS" not in apply_env:
         _log("no desktop session found, settings apply after login")
@@ -1463,51 +1522,90 @@ def task(ctx: Context) -> TaskResult:
     settings_changed = False
     virtual_keyboard_changed = False
     kwin_scripts_changed = False
-    try:
-        if cfg.automatic_look_and_feel:
-            settings_changed |= _apply_automatic_look_and_feel(
+    if cfg.automatic_look_and_feel:
+        settings_changed |= step(
+            "enable the automatic theme switch",
+            lambda: _apply_automatic_look_and_feel(
                 cfg, timeout=timeout, force=force, env=apply_env
-            )
-        else:
-            settings_changed |= _apply_look_and_feel(
-                cfg, env=apply_env, timeout=timeout, force=force
-            )
-            settings_changed |= _apply_color_scheme(
-                cfg, env=apply_env, timeout=timeout, force=force
-            )
-        settings_changed |= _apply_numlock(cfg, timeout=timeout, force=force)
-        settings_changed |= _apply_touchpad(cfg, timeout=timeout, force=force)
-        virtual_keyboard_changed = _apply_virtual_keyboard(
-            cfg, timeout=timeout, force=force, env=apply_env
+            ),
         )
-        settings_changed |= virtual_keyboard_changed
-        settings_changed |= _apply_kconfig_records(
-            cfg, timeout=timeout, force=force, env=apply_env
+    else:
+        settings_changed |= step(
+            "apply the global theme",
+            lambda: _apply_look_and_feel(
+                cfg, env=apply_env, timeout=timeout, force=force
+            ),
         )
-        settings_changed |= _apply_theme_cursor_overrides(
+        settings_changed |= step(
+            "apply the color scheme",
+            lambda: _apply_color_scheme(
+                cfg, env=apply_env, timeout=timeout, force=force
+            ),
+        )
+    settings_changed |= step(
+        "set the NumLock state",
+        lambda: _apply_numlock(cfg, timeout=timeout, force=force),
+    )
+    settings_changed |= step(
+        "set the touchpad preferences",
+        lambda: _apply_touchpad(cfg, timeout=timeout, force=force),
+    )
+    virtual_keyboard_changed = step(
+        "set the Wayland virtual keyboard",
+        lambda: _apply_virtual_keyboard(
+            cfg, timeout=timeout, force=force, env=apply_env
+        ),
+    )
+    settings_changed |= virtual_keyboard_changed
+    settings_changed |= step(
+        "apply the configured kconfig values",
+        lambda: _apply_kconfig_records(
+            cfg, timeout=timeout, force=force, env=apply_env, warnings=warnings
+        ),
+    )
+    settings_changed |= step(
+        "write the theme cursor overrides",
+        lambda: _apply_theme_cursor_overrides(
             cfg, timeout=timeout, force=force
-        )
-        settings_changed |= _apply_cursor_theme(
+        ),
+    )
+    settings_changed |= step(
+        "apply the cursor theme",
+        lambda: _apply_cursor_theme(
             cfg, env=apply_env, timeout=timeout, force=force
-        )
-        settings_changed |= _clear_shortcut_conflicts(cfg, timeout=timeout)
-        kwin_scripts_changed = _apply_kwin_scripts(
+        ),
+    )
+    settings_changed |= step(
+        "clear the conflicting shortcuts",
+        lambda: _clear_shortcut_conflicts(cfg, timeout=timeout),
+    )
+    kwin_scripts_changed = step(
+        "install and enable the kwin scripts",
+        lambda: _apply_kwin_scripts(
             cfg, timeout=timeout, force=force, env=apply_env
-        )
-        settings_changed |= kwin_scripts_changed
-        settings_changed |= _free_script_hotkeys(
-            cfg, env=apply_env, timeout=timeout
-        )
-        settings_changed |= _apply_user_dirs(cfg, timeout=timeout, force=force)
-        settings_changed |= _apply_konsole_profile(
-            cfg, timeout=timeout, force=force
-        )
-        settings_changed |= _apply_places_hidden(
-            cfg, timeout=timeout, force=force
-        )
-        settings_changed |= _apply_sddm(cfg, timeout=timeout, force=force)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(success=False, error=f"cannot apply KDE settings: {exc}")
+        ),
+    )
+    settings_changed |= kwin_scripts_changed
+    settings_changed |= step(
+        "free the kwin script hotkeys",
+        lambda: _free_script_hotkeys(cfg, env=apply_env, timeout=timeout),
+    )
+    settings_changed |= step(
+        "write the XDG user directories",
+        lambda: _apply_user_dirs(cfg, timeout=timeout, force=force),
+    )
+    settings_changed |= step(
+        "write the Konsole profile",
+        lambda: _apply_konsole_profile(cfg, timeout=timeout, force=force),
+    )
+    settings_changed |= step(
+        "hide the configured Dolphin places",
+        lambda: _apply_places_hidden(cfg, timeout=timeout, force=force),
+    )
+    settings_changed |= step(
+        "write the SDDM settings",
+        lambda: _apply_sddm(cfg, timeout=timeout, force=force),
+    )
     changed |= settings_changed
 
     kwinrc_changed = any(
@@ -1516,12 +1614,23 @@ def task(ctx: Context) -> TaskResult:
     if virtual_keyboard_changed or kwinrc_changed or kwin_scripts_changed:
         reload_error = _reload_kwin(cfg, timeout=timeout, env=apply_env)
         if reload_error is not None:
-            return TaskResult(success=False, error=reload_error)
+            _log(reload_error)
+            warnings.append(reload_error)
 
-    desktop_error = _apply_desktop_count_live(cfg, timeout=timeout, env=apply_env)
+    desktop_error = _apply_desktop_count_live(
+        cfg, timeout=timeout, env=apply_env
+    )
     if desktop_error is not None:
-        return TaskResult(success=False, error=desktop_error)
+        _log(desktop_error)
+        warnings.append(desktop_error)
 
+    if warnings:
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message="KDE appearance and input settings configured with warnings",
+            warnings=tuple(warnings),
+        )
     if not changed:
         return TaskResult(success=True, changed=False, message="already configured")
     return TaskResult(
