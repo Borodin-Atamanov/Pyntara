@@ -2,6 +2,26 @@
 
 Planned future work. После реализации - удаляем из этого файла.
 
+## Recoverable failure handling for every task
+
+A task must apply whatever it can and must not stop because of one bad step or one crashing external tool: the goal is a configured target system, so a setting that failed must never stop a setting that does not depend on it, and a task must do its configuration instead of falling at every external hiccup. The engine contract already fixes that a recoverable failure is never fatal (docs/contracts/architecture.md, Task contract; docs/contracts/task-model.md): the failure is reported in warnings, the task completes, the runner converts an error or raising task as a safety net, and the entry point exits nonzero. The remaining gap lives inside the task modules: several still wrap their whole apply phase in one try/except or return an error result, so the first failure drops the rest of the machine configuration on the target. Extend the policy to every task module.
+
+The universal rules a task module must follow:
+
+Apply the configured values one independent step at a time and guard each step. Catch the subprocess failures (a bad return code, a timeout) and the environment errors (OSError) raised inside a step, log the failed step as a progress line, collect it into the result warnings and continue with the next step.
+
+Guard each value in a loop over independent records. One failing record is reported and the remaining records still apply.
+
+Write the persistent value into its config file before the live effect. A live mechanism that crashes loses only the live switch, never the persistent value, which applies at the next login.
+
+Degrade without a live session. Live-only mechanisms (GUI apply tools, a reload, a live DBus change, notify signals) run only when a desktop session is reachable; without one the written value applies after the next login.
+
+Stop the own remaining steps only when the mechanism of the whole task is missing (its provider package cannot be installed), and report even that as a done result with warnings, never as an error result.
+
+Never raise out of task(ctx) and never return an error result for a recoverable failure.
+
+Completed exemplars to follow: kde_settings applies the policy step by step and per kconfig record (commit 79e0b48), kde_keyboard_setup guards each write and returns done with warnings. Audit every task module against the rules, add unit tests proving that a failing step keeps the independent steps running, and keep the full suite green.
+
 ## REPO_ROOT duplication in task modules
 
 The constant REPO_ROOT = Path(__file__).resolve().parents[3] is duplicated in every task module that reads shipped files: dnsproxy_setup, i2pd_service_setup, kde_settings, local_vault_setup, nextdns_setup_system_wide, port_forwarding_setup, ssh_daemon_setup, swapfile_service_install, system_metrics_setup, zram_service, zswap_service, and now imagemagick_setup. This violates the architecture contract Configuration rule that shared values and helpers live in one module and are imported, never copied. REPO_ROOT was removed from the Approved exceptions list in docs/contracts/architecture.md on 2026-08-31, so every copy is now a recorded violation to fix.

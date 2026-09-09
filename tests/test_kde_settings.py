@@ -289,15 +289,20 @@ def test_missing_packages_are_installed(
     ]
 
 
-def test_package_install_failure_is_error(
+def test_package_install_failure_returns_warnings_and_skips_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failed package install is a fatal error result.
+    # A failed package install is a recoverable failure: every package is
+    # attempted, the failures are reported as warnings, the task stops its
+    # own settings (its mechanism is incomplete) and completes as done.
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch, installed=False, fail_install=True)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert result.error is not None
+    assert result.success is True
+    assert result.changed is False
+    assert result.warnings
+    assert any("cannot install" in warning for warning in result.warnings)
+    assert result.message == "KDE appearance and input settings not configured"
 
 
 def test_appearance_tool_failure_does_not_fail_task(
@@ -1753,3 +1758,96 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         )
         positions.append(command[method_index + 1])
     assert positions == ["3", "4"]
+
+
+def test_kconfig_record_failure_keeps_other_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One record whose write fails is reported, the remaining records
+    # still apply, and the task completes as done with warnings.
+    records = (
+        KConfigRecord(
+            "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
+        ),
+        KConfigRecord(
+            "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
+        ),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch, fail_on_write_keys=frozenset({"LayoutName"})
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert any("LayoutName" in warning for warning in result.warnings)
+    single_writes = [command for command in writes if "SingleClick" in command]
+    assert single_writes
+
+
+def test_sddm_one_key_failure_keeps_other_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One system key whose write fails is reported and the remaining SDDM
+    # keys still apply.
+    writes: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        if command[0] == "kreadconfig6":
+            return _FakeProc(0, "")
+        if command[0] == "kwriteconfig6":
+            key = command[command.index("--key") + 1]
+            if key == "CursorSize":
+                raise subprocess.CalledProcessError(1, command)
+            writes.append(list(command))
+            return _FakeProc(0, "")
+        if command[0] in ("chown", "chmod"):
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    ctx = _ctx(tmp_path)
+    warnings: list[str] = []
+    changed = task_module._apply_sddm(
+        ctx.config.kde_settings, timeout=5, force=False, warnings=warnings
+    )
+    assert changed is True
+    assert any("CursorSize" in warning for warning in warnings)
+    assert any("User" in command for command in writes)
+    assert any("Font" in command for command in writes)
+    assert not any("CursorSize" in command for command in writes)
+
+
+def test_free_script_hotkeys_release_failure_is_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The config clearing succeeds; a failing live daemon release is
+    # reported as a warning and does not lose the cleared owners.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    writes: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        if command[0] == "runuser":
+            inner = command[4:]
+            if inner[0] == "kwriteconfig6":
+                writes.append(list(command))
+                return _FakeProc(0, "")
+            if inner[0] == "/usr/bin/python3":
+                raise subprocess.CalledProcessError(1, command)
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    warnings: list[str] = []
+    changed = task_module._free_script_hotkeys(
+        ctx.config.kde_settings, env=env, timeout=5, warnings=warnings
+    )
+    assert changed is True
+    assert writes
+    assert any("release" in warning for warning in warnings)

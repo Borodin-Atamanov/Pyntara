@@ -318,6 +318,33 @@ def _run_appearance_tool_best_effort(
         _log(f"cannot apply {applied_message} live, it is set for the next login: {exc}")
 
 
+def _guard_write(
+    warnings: list[str] | None,
+    description: str,
+    call: Callable[[], bool],
+) -> bool:
+    """Run one independent value write; warn and continue on a failure.
+
+    A single bad value inside a loop over independent values must not
+    drop the remaining values: the failure is reported and the loop
+    continues, so the task configures as much of the target as it can.
+    warnings collects the failures when given.
+    """
+
+    try:
+        return call()
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ) as exc:
+        warning = f"cannot {description}: {exc}"
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        return False
+
+
 def _apply_look_and_feel(
     cfg: KdeSettingsConfig,
     *,
@@ -402,6 +429,7 @@ def _apply_automatic_look_and_feel(
     timeout: float,
     force: bool,
     env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Enable the native day and night theme switch; True when changed.
 
@@ -412,27 +440,35 @@ def _apply_automatic_look_and_feel(
 
     if not cfg.automatic_look_and_feel:
         return False
-    changed = _sync_config_value(
-        cfg,
-        "kdeglobals",
-        KDE_GROUP,
-        "AutomaticLookAndFeel",
-        "true",
-        timeout=timeout,
-        force=force,
-        bool_value=True,
-        env=env,
+    changed = _guard_write(
+        warnings,
+        "enable the automatic theme switch",
+        lambda: _sync_config_value(
+            cfg,
+            "kdeglobals",
+            KDE_GROUP,
+            "AutomaticLookAndFeel",
+            "true",
+            timeout=timeout,
+            force=force,
+            bool_value=True,
+            env=env,
+        ),
     )
-    changed |= _sync_config_value(
-        cfg,
-        "kdeglobals",
-        KDE_GROUP,
-        "AutomaticLookAndFeelIdleInterval",
-        AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL,
-        timeout=timeout,
-        force=force,
-        bool_value=False,
-        env=env,
+    changed |= _guard_write(
+        warnings,
+        "set the automatic theme switch idle wait",
+        lambda: _sync_config_value(
+            cfg,
+            "kdeglobals",
+            KDE_GROUP,
+            "AutomaticLookAndFeelIdleInterval",
+            AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL,
+            timeout=timeout,
+            force=force,
+            bool_value=False,
+            env=env,
+        ),
     )
     return changed
 
@@ -485,12 +521,15 @@ def _apply_touchpad(
     *,
     timeout: float,
     force: bool,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Write the touchpad preferences to every touchpad found.
 
     The touchpad group ids are machine-specific and the target device is
     unknown, so the task applies the preferences to every libinput group
-    whose device name ends with Touchpad; no touchpad is not an error.
+    whose device name ends with Touchpad; no touchpad is not an error. A
+    group that fails to write is reported and the remaining groups still
+    apply.
     """
 
     kcminputrc = Path(cfg.home_dir) / ".config" / KCINPUTRC_FILE
@@ -504,26 +543,36 @@ def _apply_touchpad(
         return False
     changed = False
     for group in groups:
-        changed |= _sync_config_value(
-            cfg,
-            KCINPUTRC_FILE,
-            group,
-            "ClickMethod",
-            CLICK_METHOD_VALUES[cfg.touchpad_click_method],
-            timeout=timeout,
-            force=force,
-            bool_value=False,
-        )
-        changed |= _sync_config_value(
-            cfg,
-            KCINPUTRC_FILE,
-            group,
-            "DisableEventsOnExternalMouse",
-            "true" if cfg.touchpad_disable_on_external_mouse else "false",
-            timeout=timeout,
-            force=force,
-            bool_value=True,
-        )
+        try:
+            changed |= _sync_config_value(
+                cfg,
+                KCINPUTRC_FILE,
+                group,
+                "ClickMethod",
+                CLICK_METHOD_VALUES[cfg.touchpad_click_method],
+                timeout=timeout,
+                force=force,
+                bool_value=False,
+            )
+            changed |= _sync_config_value(
+                cfg,
+                KCINPUTRC_FILE,
+                group,
+                "DisableEventsOnExternalMouse",
+                "true" if cfg.touchpad_disable_on_external_mouse else "false",
+                timeout=timeout,
+                force=force,
+                bool_value=True,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot set the touchpad preferences for {group[-1]}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -533,6 +582,7 @@ def _apply_virtual_keyboard(
     timeout: float,
     force: bool,
     env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Write or remove the Wayland virtual keyboard; True when changed.
 
@@ -540,36 +590,48 @@ def _apply_virtual_keyboard(
     kwriteconfig6 tool escapes the [$e] flag the GUI writes, and
     kreadconfig6 reads both forms through the plain key, so the plain form
     keeps the comparison idempotent. The enabled locales go into
-    plasmakeyboardrc.
+    plasmakeyboardrc. Each write is guarded, so one failure is reported
+    and the other value still applies.
     """
 
     changed = False
     if cfg.virtual_keyboard_enabled:
-        changed |= _sync_config_value(
-            cfg,
-            KWINRC_FILE,
-            WAYLAND_GROUP,
-            "InputMethod",
-            cfg.virtual_keyboard_input_method,
-            timeout=timeout,
-            force=force,
-            bool_value=False,
-            env=env,
+        changed |= _guard_write(
+            warnings,
+            "set the Wayland input method",
+            lambda: _sync_config_value(
+                cfg,
+                KWINRC_FILE,
+                WAYLAND_GROUP,
+                "InputMethod",
+                cfg.virtual_keyboard_input_method,
+                timeout=timeout,
+                force=force,
+                bool_value=False,
+                env=env,
+            ),
         )
-        changed |= _sync_config_value(
-            cfg,
-            PLASMA_KEYBOARD_RC,
-            VIRTUAL_KEYBOARD_GROUP,
-            "enabledLocales",
-            ",".join(cfg.virtual_keyboard_locales),
-            timeout=timeout,
-            force=force,
-            bool_value=False,
-            env=env,
+        changed |= _guard_write(
+            warnings,
+            "set the virtual keyboard locales",
+            lambda: _sync_config_value(
+                cfg,
+                PLASMA_KEYBOARD_RC,
+                VIRTUAL_KEYBOARD_GROUP,
+                "enabledLocales",
+                ",".join(cfg.virtual_keyboard_locales),
+                timeout=timeout,
+                force=force,
+                bool_value=False,
+                env=env,
+            ),
         )
     else:
-        current = _kreadconfig(cfg, KWINRC_FILE, WAYLAND_GROUP, "InputMethod", timeout)
-        if force or current:
+        current = _kreadconfig(
+            cfg, KWINRC_FILE, WAYLAND_GROUP, "InputMethod", timeout
+        )
+
+        def remove_input_method() -> bool:
             _delete_kconfig_key(
                 cfg,
                 KWINRC_FILE,
@@ -579,7 +641,12 @@ def _apply_virtual_keyboard(
                 env=env,
             )
             _log("removed Wayland input method")
-            changed = True
+            return True
+
+        if force or current:
+            changed = _guard_write(
+                warnings, "remove the Wayland input method", remove_input_method
+            )
     return changed
 
 
@@ -630,6 +697,7 @@ def _apply_theme_cursor_overrides(
     *,
     timeout: float,
     force: bool,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Copy the configured themes with their cursor defaults; True when changed.
 
@@ -640,6 +708,8 @@ def _apply_theme_cursor_overrides(
     configured cursor theme into the copy defaults. The switch then
     applies the right cursor with the theme itself. A missing system
     theme is not an error: the packages install it before the task runs.
+    A theme that fails to copy or write is reported and the other theme
+    still applies.
     """
 
     changed = False
@@ -647,28 +717,41 @@ def _apply_theme_cursor_overrides(
         (cfg.look_and_feel, cfg.cursor_theme),
         (cfg.look_and_feel_light, cfg.cursor_theme_light),
     ):
-        source = SYSTEM_LOOK_AND_FEEL_DIR / look_and_feel
-        if not source.is_dir():
-            _log(f"no system theme {look_and_feel}, cursor override skipped")
-            continue
-        target = Path(cfg.home_dir) / USER_LOOK_AND_FEEL_REL / look_and_feel
-        if not target.is_dir():
-            shutil.copytree(source, target)
-            run_command(
-                ["chown", "-R", f"{cfg.username}:{cfg.username}", str(target)],
+        try:
+            source = SYSTEM_LOOK_AND_FEEL_DIR / look_and_feel
+            if not source.is_dir():
+                _log(f"no system theme {look_and_feel}, cursor override skipped")
+                continue
+            target = Path(cfg.home_dir) / USER_LOOK_AND_FEEL_REL / look_and_feel
+            if not target.is_dir():
+                shutil.copytree(source, target)
+                run_command(
+                    ["chown", "-R", f"{cfg.username}:{cfg.username}", str(target)],
+                    timeout=timeout,
+                )
+                _log(
+                    f"copied theme {look_and_feel} into the user look and feel "
+                    "directory"
+                )
+            changed |= _sync_config_value(
+                cfg,
+                str(target / THEME_DEFAULTS_REL),
+                ("kcminputrc", "Mouse"),
+                "cursorTheme",
+                cursor_theme,
                 timeout=timeout,
+                force=force,
+                bool_value=False,
             )
-            _log(f"copied theme {look_and_feel} into the user look and feel directory")
-        changed |= _sync_config_value(
-            cfg,
-            str(target / THEME_DEFAULTS_REL),
-            ("kcminputrc", "Mouse"),
-            "cursorTheme",
-            cursor_theme,
-            timeout=timeout,
-            force=force,
-            bool_value=False,
-        )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot write the cursor override of {look_and_feel}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -756,6 +839,7 @@ def _clear_shortcut_conflicts(
     cfg: KdeSettingsConfig,
     *,
     timeout: float,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Unbind every action that holds a configured key in a shortcut
     slot; True when any was cleared.
@@ -767,6 +851,8 @@ def _clear_shortcut_conflicts(
     and the description, so the key stops belonging to that action in any
     slot. The rewrite runs through kwriteconfig6 as the target user,
     keeping the file owned by that user. A missing file is not an error.
+    An action that fails to clear is reported and the remaining actions
+    still clear.
     """
 
     owned = _shortcut_primaries(cfg)
@@ -797,17 +883,27 @@ def _clear_shortcut_conflicts(
         ]
         if cleared == fields:
             continue
-        _kwriteconfig(
-            cfg,
-            "kglobalshortcutsrc",
-            group,
-            key,
-            ",".join(cleared),
-            timeout=timeout,
-            bool_value=False,
-        )
-        _log(f"cleared conflicting shortcut {key}: {value}")
-        changed = True
+        try:
+            _kwriteconfig(
+                cfg,
+                "kglobalshortcutsrc",
+                group,
+                key,
+                ",".join(cleared),
+                timeout=timeout,
+                bool_value=False,
+            )
+            _log(f"cleared conflicting shortcut {key}: {value}")
+            changed = True
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot clear the conflicting shortcut {key}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -886,6 +982,7 @@ def _apply_kwin_scripts(
     timeout: float,
     force: bool,
     env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Install and enable the KWin scripts; True when anything changed.
 
@@ -894,39 +991,50 @@ def _apply_kwin_scripts(
     and enabled in kwinrc [Plugins]. Files are written only when their
     content differs, so repeated runs skip matching scripts. A script
     whose template is missing is skipped entirely, so no dangling
-    kwinrc enable is written.
+    kwinrc enable is written. A script that fails to install or enable
+    is reported and the remaining scripts still apply.
     """
 
     changed = False
     for script in KWIN_SCRIPTS:
-        templates = {
-            rel_file: KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
-            for rel_file in KWIN_SCRIPT_FILES
-        }
-        if any(not template.is_file() for template in templates.values()):
-            _log(f"no kwin script template for {script}, {script} left as is")
-            continue
-        for rel_file, template in templates.items():
-            content = template.read_text(encoding="utf-8")
-            changed |= _write_user_file(
+        try:
+            templates = {
+                rel_file: KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
+                for rel_file in KWIN_SCRIPT_FILES
+            }
+            if any(not template.is_file() for template in templates.values()):
+                _log(f"no kwin script template for {script}, {script} left as is")
+                continue
+            for rel_file, template in templates.items():
+                content = template.read_text(encoding="utf-8")
+                changed |= _write_user_file(
+                    cfg,
+                    str(USER_KWIN_SCRIPTS_REL / script / rel_file),
+                    content,
+                    mode="0644",
+                    timeout=timeout,
+                    force=force,
+                )
+            changed |= _sync_config_value(
                 cfg,
-                str(USER_KWIN_SCRIPTS_REL / script / rel_file),
-                content,
-                mode="0644",
+                KWINRC_FILE,
+                ("Plugins",),
+                f"{script}Enabled",
+                "true",
                 timeout=timeout,
                 force=force,
+                bool_value=True,
+                env=env,
             )
-        changed |= _sync_config_value(
-            cfg,
-            KWINRC_FILE,
-            ("Plugins",),
-            f"{script}Enabled",
-            "true",
-            timeout=timeout,
-            force=force,
-            bool_value=True,
-            env=env,
-        )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot install or enable the kwin script {script}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -1010,6 +1118,7 @@ def _free_script_hotkeys(
     *,
     env: dict[str, str],
     timeout: float,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Clear every action that owns a script hotkey; True when changed.
 
@@ -1017,7 +1126,9 @@ def _free_script_hotkeys(
     aggressively: any action that owns one of them, wherever it lives,
     is cleared, so the script grabs the key when it registers. The
     records are rewritten as the target user; when a desktop session is
-    running the daemon releases the keys live through python3-dbus.
+    running the daemon releases the keys live through python3-dbus. An
+    action that fails to clear or release is reported and the remaining
+    actions still clear.
     """
 
     path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
@@ -1031,21 +1142,37 @@ def _free_script_hotkeys(
     changed = False
     targets: list[tuple[str, str]] = []
     for group, key, description in owners:
-        _kwriteconfig(
-            cfg,
-            "kglobalshortcutsrc",
-            group,
-            key,
-            f"none,none,{description}" if description else "none,none",
-            timeout=timeout,
-            bool_value=False,
-        )
-        _log(f"cleared {key} from {group} for the kwin script hotkeys")
-        if group:
-            targets.append((group[0], key))
-        changed = True
+        try:
+            _kwriteconfig(
+                cfg,
+                "kglobalshortcutsrc",
+                group,
+                key,
+                f"none,none,{description}" if description else "none,none",
+                timeout=timeout,
+                bool_value=False,
+            )
+            _log(f"cleared {key} from {group} for the kwin script hotkeys")
+            if group:
+                targets.append((group[0], key))
+            changed = True
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot clear {key} from {group} for the script hotkeys: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     if targets and "DBUS_SESSION_BUS_ADDRESS" in env:
-        _release_hotkeys_live(cfg, targets, env=env, timeout=timeout)
+        try:
+            _release_hotkeys_live(cfg, targets, env=env, timeout=timeout)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warning = f"cannot release the script hotkeys in the running daemon: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -1272,12 +1399,14 @@ def _apply_sddm(
     *,
     timeout: float,
     force: bool,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Write the SDDM autologin and theme; True when any changed.
 
     The values go into the system files /etc/sddm.conf and
     /etc/sddm.conf.d/20-kubuntu.conf as the root process, so they apply to
-    the login screen on every boot.
+    the login screen on every boot. Each value is guarded, so one failed
+    write is reported and the remaining values still apply.
     """
 
     changed = False
@@ -1285,28 +1414,48 @@ def _apply_sddm(
         ("User", cfg.sddm_autologin_user),
         ("Session", cfg.sddm_autologin_session),
     ):
-        changed |= _sync_system_value(
-            "/etc/sddm.conf",
-            ("Autologin",),
-            key,
-            value,
-            timeout=timeout,
-            force=force,
-        )
+        try:
+            changed |= _sync_system_value(
+                "/etc/sddm.conf",
+                ("Autologin",),
+                key,
+                value,
+                timeout=timeout,
+                force=force,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot set the SDDM autologin {key}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     for key, value in (
         ("Current", cfg.sddm_theme),
         ("CursorSize", cfg.sddm_theme_cursor_size),
         ("CursorTheme", cfg.sddm_theme_cursor_theme),
         ("Font", cfg.sddm_theme_font),
     ):
-        changed |= _sync_system_value(
-            "/etc/sddm.conf.d/20-kubuntu.conf",
-            ("Theme",),
-            key,
-            value,
-            timeout=timeout,
-            force=force,
-        )
+        try:
+            changed |= _sync_system_value(
+                "/etc/sddm.conf.d/20-kubuntu.conf",
+                ("Theme",),
+                key,
+                value,
+                timeout=timeout,
+                force=force,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot set the SDDM theme {key}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
     return changed
 
 
@@ -1476,14 +1625,17 @@ def task(ctx: Context) -> TaskResult:
     settings step runs independently: a step that fails through an external
     tool error or an environment error is reported as a warning and the
     remaining independent steps still run, because one bad setting must
-    not stop the rest. Only a package that cannot be installed is returned
-    as an error TaskResult.
+    not stop the rest. Missing packages are attempted one by one; when a
+    package cannot be installed the task reports it in its warnings and
+    stops its own settings, because its mechanism is incomplete.
     """
 
     cfg = ctx.config.kde_settings
     timeout = ctx.config.engine.command_timeout_seconds
     force = "kde_settings" in ctx.force_tasks
     changed = False
+    warnings: list[str] = []
+    packages_failed = False
 
     for package in cfg.packages:
         if package_is_installed(package, timeout):
@@ -1491,12 +1643,20 @@ def task(ctx: Context) -> TaskResult:
         _log(f"installing {package}")
         ok, error = install_package_once(package, timeout)
         if not ok:
-            return TaskResult(
-                success=False, error=f"cannot install {package}: {error}"
-            )
-        changed = True
+            packages_failed = True
+            warning = f"cannot install {package}: {error}"
+            _log(warning)
+            warnings.append(warning)
+        else:
+            changed = True
 
-    warnings: list[str] = []
+    if packages_failed:
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message="KDE appearance and input settings not configured",
+            warnings=tuple(warnings),
+        )
 
     def step(description: str, call: Callable[[], bool]) -> bool:
         return _run_settings_step(warnings, description, call)
@@ -1526,7 +1686,11 @@ def task(ctx: Context) -> TaskResult:
         settings_changed |= step(
             "enable the automatic theme switch",
             lambda: _apply_automatic_look_and_feel(
-                cfg, timeout=timeout, force=force, env=apply_env
+                cfg,
+                timeout=timeout,
+                force=force,
+                env=apply_env,
+                warnings=warnings,
             ),
         )
     else:
@@ -1548,12 +1712,18 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= step(
         "set the touchpad preferences",
-        lambda: _apply_touchpad(cfg, timeout=timeout, force=force),
+        lambda: _apply_touchpad(
+            cfg, timeout=timeout, force=force, warnings=warnings
+        ),
     )
     virtual_keyboard_changed = step(
         "set the Wayland virtual keyboard",
         lambda: _apply_virtual_keyboard(
-            cfg, timeout=timeout, force=force, env=apply_env
+            cfg,
+            timeout=timeout,
+            force=force,
+            env=apply_env,
+            warnings=warnings,
         ),
     )
     settings_changed |= virtual_keyboard_changed
@@ -1566,7 +1736,7 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "write the theme cursor overrides",
         lambda: _apply_theme_cursor_overrides(
-            cfg, timeout=timeout, force=force
+            cfg, timeout=timeout, force=force, warnings=warnings
         ),
     )
     settings_changed |= step(
@@ -1577,18 +1747,26 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= step(
         "clear the conflicting shortcuts",
-        lambda: _clear_shortcut_conflicts(cfg, timeout=timeout),
+        lambda: _clear_shortcut_conflicts(
+            cfg, timeout=timeout, warnings=warnings
+        ),
     )
     kwin_scripts_changed = step(
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
-            cfg, timeout=timeout, force=force, env=apply_env
+            cfg,
+            timeout=timeout,
+            force=force,
+            env=apply_env,
+            warnings=warnings,
         ),
     )
     settings_changed |= kwin_scripts_changed
     settings_changed |= step(
         "free the kwin script hotkeys",
-        lambda: _free_script_hotkeys(cfg, env=apply_env, timeout=timeout),
+        lambda: _free_script_hotkeys(
+            cfg, env=apply_env, timeout=timeout, warnings=warnings
+        ),
     )
     settings_changed |= step(
         "write the XDG user directories",
@@ -1604,7 +1782,9 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= step(
         "write the SDDM settings",
-        lambda: _apply_sddm(cfg, timeout=timeout, force=force),
+        lambda: _apply_sddm(
+            cfg, timeout=timeout, force=force, warnings=warnings
+        ),
     )
     changed |= settings_changed
 
