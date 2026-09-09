@@ -144,12 +144,6 @@ depends = ["system_metrics_setup"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
-name = "telegram_setup"
-description = "Install the latest Telegram Desktop for the desktop user with auto-update."
-depends = []
-modes = ["desktop"]
-
-[[tasks]]
 name = "chrome_setup"
 description = "Install Google Chrome and apply the browser settings from the chromium-default-settings repository."
 depends = []
@@ -166,6 +160,12 @@ name = "cli_tools"
 description = "Install curated console utilities: file managers, system and media tools."
 depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
+name = "telegram_setup"
+description = "Install the latest Telegram Desktop for the desktop user with auto-update."
+depends = []
+modes = ["desktop"]
 
 [[tasks]]
 name = "commit_final_system_metrics"
