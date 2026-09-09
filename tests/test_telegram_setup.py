@@ -39,20 +39,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
 
-def _test_config(tmp_path: Path, **overrides: object) -> Config:
+def _test_config(tmp_path: Path) -> Config:
     """Config whose home and cache live in the tmp tree."""
 
     return make_config(
         telegram_home_dir=str(tmp_path / "home"),
         telegram_download_dir=tmp_path / "cache",
-        **overrides,
     )
 
 
-def _ctx(tmp_path: Path, *, force: bool = False, **overrides: object) -> Context:
+def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     return make_context(
         install_mode="desktop",
-        config=_test_config(tmp_path, **overrides),
+        config=_test_config(tmp_path),
         force_tasks=frozenset({"telegram_setup"}) if force else frozenset(),
     )
 
