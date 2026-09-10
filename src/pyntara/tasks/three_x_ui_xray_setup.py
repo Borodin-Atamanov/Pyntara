@@ -815,20 +815,33 @@ def _collect_run_facts(
     that may use it; the shared helper installs nothing itself. A router
     that does not answer is reported once, and the port forwarding is
     skipped for the rest of the run instead of retrying on every port.
+    A machine that owns a public address needs neither: the address is
+    reachable directly, so the client package is not installed and the
+    router is never asked.
     """
 
     public = _public_addresses(cfg, timeout)
     local = local_addresses(timeout)
     router_address: str | None = None
-    if cfg.upnp_enabled and _ensure_upnp_client(cfg, timeout):
-        _log("looking for a UPnP router")
-        router_address = upnp.router_external_address(
-            cfg.upnp_client_command, timeout
-        )
-        if router_address is None:
-            _log("no UPnP router on this network, port forwarding is skipped")
-        else:
-            _log(f"UPnP router reports its internet address {router_address}")
+    if cfg.upnp_enabled:
+        if _machine_public_address(public, local) is not None:
+            _log(
+                "a public address sits on this machine, "
+                "the router needs no port forwarding"
+            )
+        elif _ensure_upnp_client(cfg, timeout):
+            _log("looking for a UPnP router")
+            router_address = upnp.router_external_address(
+                cfg.upnp_client_command, timeout
+            )
+            if router_address is None:
+                _log(
+                    "no UPnP router on this network, port forwarding is skipped"
+                )
+            else:
+                _log(
+                    f"UPnP router reports its internet address {router_address}"
+                )
     return _RunFacts(
         public_addresses=public,
         local_addresses=local,
@@ -936,6 +949,25 @@ def _bare_address(address: str) -> str:
     return trim_whitespace(address).strip("[]")
 
 
+def _machine_public_address(
+    addresses: PublicAddresses, local: tuple[str, ...]
+) -> str | None:
+    """The public address that really sits on this machine, or None.
+
+    An echo service reports the address the internet sees; that address
+    belongs to this machine only when it also appears among the local
+    addresses, which means nothing translates it on the way and the
+    machine is reachable from the internet directly. None when every
+    reported address belongs to a provider or to a router instead, so
+    the caller knows a NAT sits in front.
+    """
+
+    for candidate in (*addresses.ipv4, *addresses.ipv6):
+        if candidate in local:
+            return candidate
+    return None
+
+
 def _server_share_address(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
@@ -954,11 +986,10 @@ def _server_share_address(
     twice.
     """
 
-    addresses = facts.public_addresses
     local = facts.local_addresses
-    for candidate in (*addresses.ipv4, *addresses.ipv6):
-        if candidate in local:
-            return _canonical_share_address(candidate)
+    own_address = _machine_public_address(facts.public_addresses, local)
+    if own_address is not None:
+        return _canonical_share_address(own_address)
     if facts.client_address is not None:
         return _canonical_share_address(facts.client_address)
     node_address = _yggdrasil_address(full_config)
@@ -1843,7 +1874,10 @@ def task(ctx: Context) -> TaskResult:
     if rerun:
         _log("target state already reached")
         result = TaskResult(
-            success=True, changed=False, message="already configured", warnings=()
+            success=True,
+            changed=False,
+            message="target state already reached",
+            warnings=(),
         )
     else:
         # The panel binds the fixed port, so the port must be free before
@@ -2028,6 +2062,10 @@ def task(ctx: Context) -> TaskResult:
     if stage3_result is not None:
         stage3_warnings = stage3_result.warnings or ()
         stage3_changed = stage3_result.changed
+        if stage3_result.message:
+            result.message = "; ".join(
+                part for part in (result.message, stage3_result.message) if part
+            )
 
     # Stage 5: ensure the panel client and store the connection profile.
     connection_result = _stage_connection(cfg, ctx.config, timeout, facts)
@@ -2036,6 +2074,12 @@ def task(ctx: Context) -> TaskResult:
     if connection_result is not None:
         connection_warnings = connection_result.warnings or ()
         connection_changed = connection_result.changed
+        if connection_result.message:
+            result.message = "; ".join(
+                part
+                for part in (result.message, connection_result.message)
+                if part
+            )
 
     all_warnings = (
         ssl_warnings

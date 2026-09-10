@@ -358,7 +358,8 @@ def test_already_configured_does_not_run_installer(
     result = xui.task(ctx)
     assert result.success is True
     assert result.changed is True  # stage 3 created inbound
-    assert result.message == "already configured"
+    assert (result.message or "").startswith("target state already reached")
+    assert "inbound created" in (result.message or "")
     expected_flags = curl_flags(
         ctx.config.engine.curl_timeout_seconds,
         ctx.config.engine.curl_retries,
@@ -1006,6 +1007,44 @@ class TestProquintCredentials:
         result = xui.task(ctx)
         assert result.success is True
         assert order == ["stage_ssl", "sync"]
+
+    def test_result_message_names_the_changed_stages(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A rerun that changes something must say what it changed: the
+        # result used to carry only the installer state, so a run that
+        # rewrote the inbound keys and the connection profile read as if
+        # nothing had happened.
+        monkeypatch.setattr(
+            xui,
+            "_stage3",
+            lambda _cfg, _timeout: TaskResult(
+                success=True, changed=True, message="inbound share data updated"
+            ),
+        )
+        monkeypatch.setattr(
+            xui,
+            "_stage_connection",
+            lambda _cfg, _full_config, _timeout, _facts: TaskResult(
+                success=True, changed=True, message="connection profile stored"
+            ),
+        )
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.message == (
+            "target state already reached; inbound share data updated; "
+            "connection profile stored"
+        )
 
 
 class TestPanelPortConvergence:
@@ -2437,6 +2476,27 @@ class TestServerShareAddress:
             is None
         )
 
+    def test_machine_address_returns_the_address_on_an_interface(self) -> None:
+        # The reported address that also sits on an interface belongs to
+        # this machine: the machine is reachable without a forward.
+        assert (
+            xui._machine_public_address(
+                _addresses(ipv4=("190.55.165.52",), ipv6=("2001:db8::1",)),
+                ("192.168.1.5", "2001:db8::1"),
+            )
+            == "2001:db8::1"
+        )
+
+    def test_machine_address_is_none_for_a_foreign_address(self) -> None:
+        # Every reported address belongs to a provider or a router: a NAT
+        # sits in front and a forward is needed.
+        assert (
+            xui._machine_public_address(
+                _addresses(ipv4=("190.55.165.52",)), ("192.168.1.5",)
+            )
+            is None
+        )
+
 
 class TestUpnpClientPackage:
     """Tests for the package installation the task owns."""
@@ -2530,6 +2590,29 @@ class TestCollectRunFacts:
         monkeypatch.setattr(xui, "_public_addresses", lambda _c, _t: _addresses())
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: False)
+        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        assert facts.router_address is None
+
+    def test_skips_upnp_when_the_machine_owns_a_public_address(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The address an echo service reports also sits on an interface,
+        # so the machine is reachable directly: the client package is not
+        # installed and the router is never asked.
+        def fail_install(_cfg: object, _timeout: float) -> bool:
+            raise AssertionError("the UPnP client must not be installed")
+
+        def fail_router(*args: object, **kwargs: object) -> str:
+            raise AssertionError("the router must not be asked")
+
+        monkeypatch.setattr(
+            xui,
+            "_public_addresses",
+            lambda _c, _t: _addresses(ipv4=("203.0.113.5",)),
+        )
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("203.0.113.5",))
+        monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
+        monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
         assert facts.router_address is None
 
