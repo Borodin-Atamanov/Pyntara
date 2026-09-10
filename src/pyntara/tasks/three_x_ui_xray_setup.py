@@ -71,6 +71,7 @@ from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
@@ -81,6 +82,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    trim_whitespace,
 )
 
 # The x-ui binary prints its version as a bare dotted triple, e.g. 3.7.0.
@@ -637,11 +639,13 @@ def _stage_connection(
     changed = False
 
     # The share address: the panel renders the link host from it, and only
-    # the configured strategy makes the panel use it.
-    address = _detect_server_ip(cfg, timeout)
+    # the configured strategy makes the panel use it. The address comes
+    # from the public IPv4 detection, the yggdrasil node address or the
+    # value the panel already stores, in that order.
+    address = _server_share_address(cfg, full_config, inbound, timeout)
     if address is None:
         warnings.append(
-            "cannot detect the public address: panel links keep the default host"
+            "no server address available: panel links keep the default host"
         )
     elif inbound.get("shareAddr") != address:
         inbound["shareAddrStrategy"] = cfg.share_addr_strategy
@@ -712,7 +716,7 @@ def _stage_connection(
 
     notes = _connection_notes(
         cfg,
-        address or "",
+        _bare_address(address) if address else "",
         email,
         client_id,
         sub_id,
@@ -732,14 +736,14 @@ def _stage_connection(
     ):
         return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
     if entry is not None:
-        entry.username = address or ""
+        entry.username = _bare_address(address) if address else ""
         entry.url = link
         entry.notes = notes
     else:
         kp.add_entry(
             kp.root_group,
             cfg.connection_vault_entry_title,
-            address or "",
+            _bare_address(address) if address else "",
             "",
             url=link,
             notes=notes,
@@ -754,37 +758,108 @@ def _stage_connection(
     )
 
 
+def _public_addresses(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> PublicAddresses:
+    """The public addresses the configured echo services report.
+
+    The shared helper does the parallel query, so the task only decides
+    what to do with the addresses.
+    """
+
+    return fetch_public_addresses(
+        cfg.server_ip_services,
+        cfg.server_ip_timeout_seconds,
+        timeout,
+    )
+
+
 def _detect_server_ip(
     cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> str | None:
-    """The public IPv4 address from the first reachable echo service.
+    """The public IPv4 address of this machine, or None.
 
-    Each service is queried with one curl call bounded by the configured
-    server_ip_timeout_seconds; the first answer that looks like an IPv4
-    address wins. None when no service answers.
+    The SSL stage needs an IPv4 address, because a Let's Encrypt IP
+    certificate is issued for an IPv4 address; a machine whose public
+    address is IPv6 only keeps its self-signed certificate.
     """
 
-    for service in cfg.server_ip_services:
-        try:
-            result = run_command(
-                [
-                    "curl",
-                    "--silent",
-                    "--max-time",
-                    str(cfg.server_ip_timeout_seconds),
-                    service,
-                ],
-                check=False,
-                capture=True,
-                timeout=timeout,
-            )
-        except (subprocess.TimeoutExpired, OSError):
-            continue
-        if result.returncode != 0:
-            continue
-        candidate = result.stdout.strip().strip('"')
-        if IPV4_PATTERN.fullmatch(candidate):
-            return candidate
+    ipv4 = _public_addresses(cfg, timeout).ipv4
+    if ipv4:
+        return ipv4[0]
+    _log("no echo service reported a public IPv4 address")
+    return None
+
+
+def _yggdrasil_address(full_config: Config) -> str | None:
+    """The yggdrasil node address saved by the yggdrasil task, or None.
+
+    The address file is written by yggdrasil_service_setup after the node
+    joins the mesh; it is world-readable, so a machine behind NAT can use
+    its mesh address as the server address for client links.
+    """
+
+    try:
+        text = full_config.yggdrasil_service_setup.address_file_path.read_text(
+            encoding="utf-8"
+        )
+    except OSError:
+        return None
+    address = trim_whitespace(text)
+    return address or None
+
+
+def _canonical_share_address(address: str) -> str:
+    """The address in the form the panel stores in its share address.
+
+    The panel wraps an IPv6 address in brackets; writing the bracketed
+    form keeps the comparison for changed honest, because the value read
+    back from the panel equals the written one.
+    """
+
+    cleaned = trim_whitespace(address)
+    if ":" in cleaned and not cleaned.startswith("["):
+        return f"[{cleaned}]"
+    return cleaned
+
+
+def _bare_address(address: str) -> str:
+    """The address without the brackets an IPv6 share address carries.
+
+    Client configurations take the address without brackets; the panel
+    adds them only when it renders a share link.
+    """
+
+    return trim_whitespace(address).strip("[]")
+
+
+def _server_share_address(
+    cfg: ThreeXuiXraySetupConfig,
+    full_config: Config,
+    inbound: dict[str, object],
+    timeout: float,
+) -> str | None:
+    """The host a client link must carry, in the panel's own form.
+
+    Priority: the public IPv4 address, then the public IPv6 address (a
+    machine behind NAT often has none of the first but does have the
+    second), then the yggdrasil node address, then the share address the
+    panel already stores. None when none of them is available, so the
+    caller reports it instead of writing a guess.
+    """
+
+    addresses = _public_addresses(cfg, timeout)
+    detected = (*addresses.ipv4, *addresses.ipv6)
+    if detected:
+        return _canonical_share_address(detected[0])
+    node_address = _yggdrasil_address(full_config)
+    if node_address is not None:
+        _log(f"using the yggdrasil node address as the share host: {node_address}")
+        return _canonical_share_address(node_address)
+    stored = inbound.get("shareAddr")
+    if isinstance(stored, str) and trim_whitespace(stored):
+        _log("keeping the share address already stored in the panel")
+        return trim_whitespace(stored)
     return None
 
 

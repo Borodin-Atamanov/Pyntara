@@ -51,6 +51,7 @@ src/pyntara/i2pd_address.py — Deployed address command: prints the I2P tunnel 
 src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.  
 src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.
 src/pyntara/port_forwarding.py — Long-running Auto Port Forwarding service: keeps reverse ssh tunnels to the vault port-forwarding servers, records the granted remote ports in the state file and triggers a fresh System Metrics collection on every port change, so the network report carries the current ports. Runs as `python -m pyntara.port_forwarding`.
+src/pyntara/public_address.py — Shared public-address discovery: queries the configured echo services in one parallel curl call, waits for every answer and returns the unique IPv4 and IPv6 addresses with the repeats merged (docs/spec/3x-ui.md). Imported by three_x_ui_xray_setup.
 src/pyntara/port_forwarding_state.py — Deployed command that prints the assigned remote ports from the state file; the System Metrics collector runs it as the port_forwarding network module. Runs as `python -m pyntara.port_forwarding_state`.
 src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  

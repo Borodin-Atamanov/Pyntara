@@ -22,14 +22,23 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara.config import ThreeXuiXraySetupConfig
+from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
+from pyntara.public_address import PublicAddresses
 from pyntara.utils import curl_flags
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
 
 TAG = "3.7.0"
+
+
+def _addresses(
+    ipv4: tuple[str, ...] = (), ipv6: tuple[str, ...] = ()
+) -> PublicAddresses:
+    """The value the shared address helper returns in the task tests."""
+
+    return PublicAddresses(ipv4=ipv4, ipv6=ipv6)
 
 
 def _release_json(tag: str = TAG) -> str:
@@ -2163,7 +2172,14 @@ class TestConnectionStage:
             "pyntara.xui.client_links",
             lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
         )
-        monkeypatch.setattr(xui, "_detect_server_ip", lambda _c, _t: "203.0.113.5")
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
+        )
+        monkeypatch.setattr(
+            xui,
+            "fetch_public_addresses",
+            lambda _s, _q, _c: _addresses(ipv4=("203.0.113.5",)),
+        )
         monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -2199,7 +2215,14 @@ class TestConnectionStage:
             "pyntara.xui.client_links",
             lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
         )
-        monkeypatch.setattr(xui, "_detect_server_ip", lambda _c, _t: "203.0.113.5")
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
+        )
+        monkeypatch.setattr(
+            xui,
+            "fetch_public_addresses",
+            lambda _s, _q, _c: _addresses(ipv4=("203.0.113.5",)),
+        )
         monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: None)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -2216,31 +2239,145 @@ class TestConnectionStage:
 
 
 class TestDetectServerIp:
-    """Tests for the public IPv4 detection through the echo services."""
+    """Tests for the public IPv4 lookup used by the SSL stage."""
 
-    def test_bounds_each_query_with_the_configured_timeout(
+    def test_passes_the_config_values_to_the_shared_helper(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The timeout of one echo-service query comes from the config, so
-        # a slow link is not cut off after a hardcoded few seconds.
-        commands: list[list[str]] = []
+        # The task must not carry its own echo logic: it hands the
+        # configured services and timeouts to the shared helper.
+        calls: list[tuple[tuple[str, ...], int, float]] = []
 
-        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
-            commands.append(command)
-            return _FakeProc(0, "203.0.113.7\n")
+        def fake_fetch(
+            services: tuple[str, ...], query_timeout: int, command_timeout: float
+        ) -> object:
+            calls.append((services, query_timeout, command_timeout))
+            return _addresses(ipv4=("203.0.113.7",))
 
-        monkeypatch.setattr(xui, "run_command", fake_run)
+        monkeypatch.setattr(xui, "fetch_public_addresses", fake_fetch)
         cfg = make_config(
-            three_x_ui_server_ip_timeout_seconds=77
+            three_x_ui_server_ip_timeout_seconds=77,
+            three_x_ui_server_ip_services=("https://api4.ipify.org",),
         ).three_x_ui_xray_setup
         assert xui._detect_server_ip(cfg, 30.0) == "203.0.113.7"
-        assert commands[0][2:4] == ["--max-time", "77"]
+        assert calls == [(("https://api4.ipify.org",), 77, 30.0)]
 
-    def test_returns_none_when_no_service_answers(
+    def test_returns_none_when_only_ipv6_is_reported(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Every echo service timing out reports no address, so the caller
-        # can fall back instead of writing a wrong one.
-        monkeypatch.setattr(xui, "run_command", lambda *a, **k: _FakeProc(28, ""))
+        # A Let's Encrypt IP certificate needs IPv4: an IPv6-only machine
+        # reports no IPv4 address and keeps its self-signed certificate.
+        monkeypatch.setattr(
+            xui,
+            "fetch_public_addresses",
+            lambda _services, _query_timeout, _command_timeout: _addresses(
+                ipv6=("2001:db8::1",)
+            ),
+        )
         cfg = make_config().three_x_ui_xray_setup
         assert xui._detect_server_ip(cfg, 30.0) is None
+
+
+class TestServerShareAddress:
+    """Tests for the address priority used by the connection stage."""
+
+    def _inbound(self, share_addr: str = "") -> dict[str, object]:
+        return {"shareAddr": share_addr}
+
+    def _full_config(self, tmp_path: Path) -> Config:
+        """A config whose yggdrasil address file does not exist.
+
+        The file path points into the temporary directory, so the test
+        never reads the real node address of the machine it runs on.
+        """
+
+        return make_config(
+            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
+        )
+
+    def test_prefers_the_public_ipv4_address(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            xui,
+            "fetch_public_addresses",
+            lambda _s, _q, _c: _addresses(
+                ipv4=("203.0.113.5",), ipv6=("2001:db8::1",)
+            ),
+        )
+        cfg = make_config().three_x_ui_xray_setup
+        assert (
+            xui._server_share_address(
+                cfg,
+                self._full_config(tmp_path),
+                self._inbound("198.51.100.9"),
+                30.0,
+            )
+            == "203.0.113.5"
+        )
+
+    def test_uses_ipv6_in_brackets_when_no_ipv4_arrives(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel stores an IPv6 share address in brackets; writing the
+        # bracketed form keeps a rerun a no-op.
+        monkeypatch.setattr(
+            xui,
+            "fetch_public_addresses",
+            lambda _s, _q, _c: _addresses(ipv6=("2001:db8::1",)),
+        )
+        cfg = make_config().three_x_ui_xray_setup
+        assert (
+            xui._server_share_address(
+                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+            )
+            == "[2001:db8::1]"
+        )
+
+    def test_falls_back_to_the_yggdrasil_address(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            xui, "fetch_public_addresses", lambda _s, _q, _c: _addresses()
+        )
+        address_file = tmp_path / "yggdrasil_self_address"
+        address_file.write_text("2001:db8::9\n", encoding="utf-8")
+        cfg = make_config().three_x_ui_xray_setup
+        full_config = make_config(yggdrasil_address_file_path=address_file)
+        assert (
+            xui._server_share_address(
+                cfg, full_config, self._inbound(), 30.0
+            )
+            == "[2001:db8::9]"
+        )
+
+    def test_keeps_the_share_address_stored_in_the_panel(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            xui, "fetch_public_addresses", lambda _s, _q, _c: _addresses()
+        )
+        cfg = make_config().three_x_ui_xray_setup
+        assert (
+            xui._server_share_address(
+                cfg,
+                self._full_config(tmp_path),
+                self._inbound("198.51.100.9"),
+                30.0,
+            )
+            == "198.51.100.9"
+        )
+
+    def test_returns_none_without_any_source(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            xui, "fetch_public_addresses", lambda _s, _q, _c: _addresses()
+        )
+        cfg = make_config().three_x_ui_xray_setup
+        assert (
+            xui._server_share_address(
+                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+            )
+            is None
+        )
