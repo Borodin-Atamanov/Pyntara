@@ -37,6 +37,10 @@ title = "xray_connection"
 notes = "Connection profile of the Xray server on this machine, written by the three_x_ui_xray_setup task. The url field carries the canonical vless share link; the notes field carries the profile as key=value lines: SERVER_ADDRESS, SERVER_PORT, DEST, SERVER_NAME, CLIENT_EMAIL, CLIENT_ID, SUB_ID, REALITY_PUBLIC_KEY, REALITY_PRIVATE_KEY, SHORT_ID, FINGERPRINT. Consumed by the future client task that reads a server address and a vless link from the production vault."
 
 [[vault_structure.entries]]
+title = "xray_client_profile"
+notes = "Connection profile of the remote Xray server that a machine connects to as a client. The url field carries the canonical vless share link of that server and is the single source of truth the client reads; the username field repeats the server address for the operator. Filled by the operator from the connection profile that three_x_ui_xray_setup writes on the server machine, so one server profile serves every machine. Read by the future xray_client_setup task from the vault the run opened: an absent entry or an empty url means no profile is configured, and the task then configures no proxy and reports a warning."
+
+[[vault_structure.entries]]
 title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
 notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The entry exists in every vault: the regeneration tooling generates a fresh password of 7 proquint words joined by dashes on creation, so the production secret is never copied and the default vault carries a passphrase that unlocks no deployed key."
