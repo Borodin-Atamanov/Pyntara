@@ -23,7 +23,8 @@ class ChromeSetupConfig:
     desktop_override_path receives the packaged desktop entry at
     desktop_source_path with the CDP flags appended to every Exec line: the
     debug port cdp_port bound to the loopback address cdp_address
-    (docs/spec/chrome-setup.md).
+    (docs/spec/chrome-setup.md). file_mode is the mode of every deployed
+    configuration and desktop file.
     """
 
     username: str
@@ -39,3 +40,4 @@ class ChromeSetupConfig:
     desktop_override_path: Path
     cdp_port: int
     cdp_address: str
+    file_mode: int

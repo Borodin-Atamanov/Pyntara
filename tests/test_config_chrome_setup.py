@@ -84,6 +84,10 @@ CHROME_BLOCK = (
         base_config().replace("cdp_port = 19222\n", 'cdp_port = "19222"\n'),
         # cdp_address is a number, not a string
         base_config().replace('cdp_address = "127.0.0.1"\n', "cdp_address = 7\n"),
+        # file_mode is a number, not the readable octal string
+        base_config().replace('file_mode = "0644"\n', "file_mode = 420\n"),
+        # file_mode has not the four digits a mode is written with
+        base_config().replace('file_mode = "0644"\n', 'file_mode = "644"\n'),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -130,3 +134,4 @@ def test_load_config_typed_values(tmp_path: Path) -> None:
     )
     assert config.chrome_setup.cdp_port == 19222
     assert config.chrome_setup.cdp_address == "127.0.0.1"
+    assert config.chrome_setup.file_mode == 0o644

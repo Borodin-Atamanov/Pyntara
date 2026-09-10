@@ -15,7 +15,8 @@
 # downloaded from google_key_url. desktop_override_path receives the
 # packaged desktop entry desktop_source_path with the CDP flags appended to
 # every Exec line: the debug port cdp_port on the address cdp_address,
-# which listens on the loopback only.
+# which listens on the loopback only. file_mode is the mode of every
+# deployed configuration and desktop file.
 username = "i"
 home_dir = "/home/i"
 settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
@@ -29,3 +30,4 @@ desktop_source_path = "/usr/share/applications/google-chrome.desktop"
 desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
 cdp_port = 19222
 cdp_address = "127.0.0.1"
+file_mode = "0644"

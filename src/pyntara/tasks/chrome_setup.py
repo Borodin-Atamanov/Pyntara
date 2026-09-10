@@ -58,8 +58,6 @@ from pyntara.utils import (
 # for a running main browser process (comm is "chrome", not the wrapper).
 PACKAGE_NAME = "google-chrome-stable"
 CHROME_PROCESS_NAME = "chrome"
-# Mode of every deployed config and desktop file.
-FILE_MODE = 0o644
 # The Plasma taskbar pinning: the desktop user appletsrc that carries the
 # pinned launchers of the task manager widgets, the widgets whose launchers
 # list receives the Chrome button (the icons-only task manager and the
@@ -146,7 +144,7 @@ def _ensure_repository(
                     ],
                     timeout=timeout,
                 )
-            cfg.keyring_path.chmod(FILE_MODE)
+            cfg.keyring_path.chmod(cfg.file_mode)
             ensure_root_owner(cfg.keyring_path)
             changed = True
         content = _source_text(cfg.keyring_path)
@@ -156,7 +154,7 @@ def _ensure_repository(
         ):
             cfg.apt_source_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.apt_source_path.write_text(content, encoding="utf-8")
-            cfg.apt_source_path.chmod(FILE_MODE)
+            cfg.apt_source_path.chmod(cfg.file_mode)
             ensure_root_owner(cfg.apt_source_path)
             changed = True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
@@ -275,7 +273,7 @@ def _deploy_system_tree(
             if not force and target.is_file() and target.read_bytes() == path.read_bytes():
                 continue
             shutil.copyfile(path, target)
-            target.chmod(FILE_MODE)
+            target.chmod(cfg.file_mode)
             ensure_root_owner(target)
             changed = True
         except OSError as exc:
@@ -383,7 +381,7 @@ def _apply_profile_preferences(
             json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        target.chmod(FILE_MODE)
+        target.chmod(cfg.file_mode)
         _own_to_user(cfg.username, target)
     except OSError as exc:
         return False, f"cannot write the profile preferences: {exc}"
@@ -426,7 +424,7 @@ def _ensure_desktop_override(
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        target.chmod(FILE_MODE)
+        target.chmod(cfg.file_mode)
         ensure_root_owner(target)
     except OSError as exc:
         return False, f"cannot write the desktop override: {exc}"

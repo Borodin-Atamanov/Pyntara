@@ -57,3 +57,4 @@ desktop_source_path - the packaged Chrome desktop entry
 desktop_override_path - the override entry with the CDP flags  
 cdp_port - the Chrome DevTools Protocol port  
 cdp_address - the address the CDP listener binds to, the loopback  
+file_mode - the mode of every deployed configuration and desktop file  

@@ -288,6 +288,9 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
         cdp_address=_nonempty_string_field(
             raw.get("cdp_address"), "chrome_setup.cdp_address"
         ),
+        file_mode=_octal_mode_field(
+            raw.get("file_mode"), "chrome_setup.file_mode"
+        ),
     )
 
 
