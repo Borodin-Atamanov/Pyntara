@@ -19,6 +19,8 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
+from pyntara.utils import run_command
+
 
 @dataclass(frozen=True)
 class PublicAddresses:
@@ -36,6 +38,61 @@ class PublicAddresses:
         """True when no service reported any address."""
 
         return not self.ipv4 and not self.ipv6
+
+
+def local_addresses(timeout: float) -> tuple[str, ...]:
+    """Every global-scope address of the machine interfaces.
+
+    Parsed from `ip -o addr show scope global`; loopback and link-local
+    addresses fall outside that scope. The addresses tell whether an
+    address reported by an echo service really belongs to this machine (a
+    white address) or the machine sits behind NAT.
+    """
+
+    try:
+        result = run_command(
+            ["ip", "-o", "addr", "show", "scope", "global"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ()
+    addresses: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        for index, field in enumerate(fields):
+            if field not in ("inet", "inet6") or index + 1 >= len(fields):
+                continue
+            candidate = fields[index + 1].split("/", 1)[0]
+            if candidate and candidate not in addresses:
+                addresses.append(candidate)
+    return tuple(addresses)
+
+
+def default_route_address(timeout: float) -> str | None:
+    """The address the machine uses to reach the internet, or None.
+
+    The default route carries the source address of the outgoing
+    connection, which is the address behind a router that another host
+    must reach: the interface that actually leaves the local network.
+    """
+
+    try:
+        result = run_command(
+            ["ip", "-4", "route", "show", "default"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        for index, field in enumerate(fields):
+            if field == "src" and index + 1 < len(fields):
+                return fields[index + 1]
+    return None
 
 
 def _curl_command(services: tuple[str, ...], timeout_seconds: int) -> list[str]:

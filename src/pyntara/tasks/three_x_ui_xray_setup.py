@@ -71,7 +71,11 @@ from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.public_address import PublicAddresses, fetch_public_addresses
+from pyntara.public_address import (
+    PublicAddresses,
+    fetch_public_addresses,
+    local_addresses,
+)
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
@@ -833,116 +837,6 @@ def _bare_address(address: str) -> str:
     return trim_whitespace(address).strip("[]")
 
 
-def _local_addresses(timeout: float) -> tuple[str, ...]:
-    """Every global-scope address of the machine interfaces.
-
-    Parsed from `ip -o addr show scope global`; loopback and link-local
-    addresses are excluded by the scope filter. The addresses tell whether
-    an address reported by an echo service really belongs to this machine
-    (a white address) or the machine sits behind NAT.
-    """
-
-    try:
-        result = run_command(
-            ["ip", "-o", "addr", "show", "scope", "global"],
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return ()
-    addresses: list[str] = []
-    for line in result.stdout.splitlines():
-        fields = line.split()
-        for index, field in enumerate(fields):
-            if field not in ("inet", "inet6") or index + 1 >= len(fields):
-                continue
-            candidate = fields[index + 1].split("/", 1)[0]
-            if candidate and candidate not in addresses:
-                addresses.append(candidate)
-    return tuple(addresses)
-
-
-def _default_route_address(timeout: float) -> str | None:
-    """The address the machine uses to reach the internet, or None.
-
-    The default route carries the source address of the outgoing
-    connection, which is the address a UPnP mapping must point at: it is
-    the interface that actually reaches the router.
-    """
-
-    try:
-        result = run_command(
-            ["ip", "-4", "route", "show", "default"],
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    for line in result.stdout.splitlines():
-        fields = line.split()
-        for index, field in enumerate(fields):
-            if field == "src" and index + 1 < len(fields):
-                return fields[index + 1]
-    return None
-
-
-def _ensure_upnp_forwarding(
-    cfg: ThreeXuiXraySetupConfig,
-    addresses: PublicAddresses,
-    timeout: float,
-) -> str | None:
-    """Ask the router to forward the inbound port; return its address.
-
-    The port is forwarded only when the router answers UPnP at all, and
-    the router address is used only when it matches the address the echo
-    services see: a different address means the provider runs its own NAT
-    above the router, so a mapping there would forward nothing. A router
-    without UPnP, or an installed package that does not provide the
-    client, is a normal situation and is reported as a progress line, not
-    as a warning.
-    """
-
-    if not cfg.upnp_enabled:
-        return None
-    installed, error = install_package_once(cfg.upnp_package, timeout)
-    if not installed:
-        _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
-        return None
-    router_address = upnp.router_external_address(cfg.upnp_client_command, timeout)
-    if router_address is None:
-        _log("no UPnP router on this network, port forwarding skipped")
-        return None
-    internal_address = _default_route_address(timeout)
-    if internal_address is None:
-        _log("cannot read the default route address, port forwarding skipped")
-        return None
-    if not upnp.ensure_port_forwarding(
-        cfg.upnp_client_command,
-        cfg.upnp_mapping_description,
-        internal_address,
-        cfg.inbound_port,
-        "TCP",
-        timeout,
-    ):
-        _log(f"router refused the port {cfg.inbound_port} mapping")
-        return None
-    _log(
-        f"router forwards port {cfg.inbound_port} to {internal_address} "
-        f"(router address {router_address})"
-    )
-    if addresses.is_empty:
-        return router_address
-    if router_address in (*addresses.ipv4, *addresses.ipv6):
-        return router_address
-    _log(
-        "router address differs from the address the services report: "
-        "the provider runs another NAT above the router"
-    )
-    return None
-
-
 def _server_share_address(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
@@ -961,13 +855,22 @@ def _server_share_address(
     """
 
     addresses = _public_addresses(cfg, timeout)
-    local = _local_addresses(timeout)
+    local = local_addresses(timeout)
     for candidate in (*addresses.ipv4, *addresses.ipv6):
         if candidate in local:
             return _canonical_share_address(candidate)
-    forwarded = _ensure_upnp_forwarding(cfg, addresses, timeout)
-    if forwarded is not None:
-        return _canonical_share_address(forwarded)
+    if cfg.upnp_enabled:
+        forwarded = upnp.forward_inbound_port(
+            cfg.upnp_package,
+            cfg.upnp_client_command,
+            cfg.upnp_mapping_description,
+            cfg.inbound_port,
+            "TCP",
+            (*addresses.ipv4, *addresses.ipv6),
+            timeout,
+        )
+        if forwarded is not None:
+            return _canonical_share_address(forwarded)
     node_address = _yggdrasil_address(full_config)
     if node_address is not None:
         _log(f"using the yggdrasil node address as the share host: {node_address}")

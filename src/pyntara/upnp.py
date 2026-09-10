@@ -16,7 +16,9 @@ from __future__ import annotations
 import ipaddress
 import subprocess
 
-from pyntara.utils import run_command, trim_whitespace
+from pyntara.logger import log_progress
+from pyntara.public_address import default_route_address
+from pyntara.utils import install_package_once, run_command, trim_whitespace
 
 # The upnpc status output prints the router internet address as a
 # key = value line; the value is the only part we read.
@@ -111,6 +113,61 @@ def list_mappings(command: str, timeout: float) -> str:
     except (subprocess.TimeoutExpired, OSError):
         return ""
     return result.stdout
+
+
+def forward_inbound_port(
+    package: str,
+    command: str,
+    description: str,
+    port: int,
+    protocol: str,
+    observed_addresses: tuple[str, ...],
+    timeout: float,
+) -> str | None:
+    """Forward the port through the router and return its usable address.
+
+    Every task that must be reachable from the internet needs the same
+    steps, so they live here: make sure the client package exists, ask
+    the router for its internet address, forward the port to the address
+    of the default route and read the mapping back. The router address is
+    returned only when it can work, because a router that reports an
+    address different from the addresses the caller observed sits behind
+    another NAT and its mapping forwards nothing. None means no UPnP
+    router answered, the router refused the mapping, or another NAT sits
+    above it; all three are normal situations reported as progress lines,
+    never as failures.
+    """
+
+    installed, error = install_package_once(package, timeout)
+    if not installed:
+        log_progress(f"UPnP client package {package} is unavailable: {error}")
+        return None
+    router_address = router_external_address(command, timeout)
+    if router_address is None:
+        log_progress("no UPnP router on this network, port forwarding skipped")
+        return None
+    internal_address = default_route_address(timeout)
+    if internal_address is None:
+        log_progress(
+            "cannot read the default route address, port forwarding skipped"
+        )
+        return None
+    if not ensure_port_forwarding(
+        command, description, internal_address, port, protocol, timeout
+    ):
+        log_progress(f"router refused the port {port} mapping")
+        return None
+    log_progress(
+        f"router forwards port {port} to {internal_address} "
+        f"(router address {router_address})"
+    )
+    if observed_addresses and router_address not in observed_addresses:
+        log_progress(
+            "router address differs from the observed address: the provider "
+            "runs another NAT above the router"
+        )
+        return None
+    return router_address
 
 
 def ensure_port_forwarding(

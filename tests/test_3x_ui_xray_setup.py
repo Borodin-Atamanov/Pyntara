@@ -2305,9 +2305,9 @@ class TestServerShareAddress:
             "fetch_public_addresses",
             lambda _s, _q, _c: _addresses(ipv4=public),
         )
-        monkeypatch.setattr(xui, "_local_addresses", lambda _t: local)
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: local)
         monkeypatch.setattr(
-            xui, "_ensure_upnp_forwarding", lambda _c, _a, _t: forwarded
+            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: forwarded
         )
 
     def test_prefers_a_public_address_that_belongs_to_the_machine(
@@ -2403,73 +2403,64 @@ class TestServerShareAddress:
         )
 
 
-class TestUpnpForwarding:
-    """Tests for the UPnP port forwarding attempt."""
+class TestUpnpForwardingCall:
+    """Tests for the task side of the UPnP attempt."""
 
-    def test_skips_everything_when_upnp_is_disabled(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_does_not_touch_upnp_when_it_is_disabled(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        def fail_install(_package: str, _timeout: float) -> tuple[bool, str]:
-            raise AssertionError("the package must not be installed")
+        # The switch is in the config, so a machine that must not talk to
+        # its router never installs the client or asks for a mapping.
+        def fail_forward(*args: object, **kwargs: object) -> str | None:
+            raise AssertionError("UPnP must not be attempted")
 
-        monkeypatch.setattr(xui, "install_package_once", fail_install)
+        monkeypatch.setattr(
+            "pyntara.upnp.forward_inbound_port", fail_forward
+        )
+        monkeypatch.setattr(
+            xui, "fetch_public_addresses", lambda _s, _q, _c: _addresses()
+        )
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        assert xui._ensure_upnp_forwarding(cfg, _addresses(), 30.0) is None
-
-    def test_returns_the_router_address_when_the_mapping_holds(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            xui, "install_package_once", lambda _p, _t: (True, "")
+        full_config = make_config(
+            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
         )
-        monkeypatch.setattr(xui, "_default_route_address", lambda _t: "192.168.1.5")
-        monkeypatch.setattr(
-            "pyntara.upnp.router_external_address", lambda _c, _t: "190.55.165.52"
-        )
-        monkeypatch.setattr(
-            "pyntara.upnp.ensure_port_forwarding",
-            lambda _c, _d, _i, _p, _pr, _t: True,
-        )
-        cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._ensure_upnp_forwarding(
-                cfg, _addresses(ipv4=("190.55.165.52",)), 30.0
-            )
-            == "190.55.165.52"
-        )
-
-    def test_refuses_the_router_address_behind_a_provider_nat(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # The router reports a different address than the services do, so
-        # the provider runs its own NAT and the mapping forwards nothing.
-        monkeypatch.setattr(
-            xui, "install_package_once", lambda _p, _t: (True, "")
-        )
-        monkeypatch.setattr(xui, "_default_route_address", lambda _t: "192.168.1.5")
-        monkeypatch.setattr(
-            "pyntara.upnp.router_external_address", lambda _c, _t: "100.64.0.7"
-        )
-        monkeypatch.setattr(
-            "pyntara.upnp.ensure_port_forwarding",
-            lambda _c, _d, _i, _p, _pr, _t: True,
-        )
-        cfg = make_config().three_x_ui_xray_setup
-        assert (
-            xui._ensure_upnp_forwarding(
-                cfg, _addresses(ipv4=("190.55.165.52",)), 30.0
+            xui._server_share_address(
+                cfg, full_config, {"shareAddr": ""}, 30.0
             )
             is None
         )
 
-    def test_reports_no_router_without_raising(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_passes_the_config_values_to_the_shared_helper(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        calls: list[tuple[object, ...]] = []
+
+        def fake_forward(*args: object, **kwargs: object) -> str:
+            calls.append(args)
+            return "190.55.165.52"
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         monkeypatch.setattr(
-            xui, "install_package_once", lambda _p, _t: (True, "")
+            xui,
+            "fetch_public_addresses",
+            lambda _s, _q, _c: _addresses(ipv4=("190.55.165.52",)),
         )
-        monkeypatch.setattr(
-            "pyntara.upnp.router_external_address", lambda _c, _t: None
-        )
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("192.168.1.5",))
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._ensure_upnp_forwarding(cfg, _addresses(), 30.0) is None
+        full_config = make_config(
+            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
+        )
+        assert (
+            xui._server_share_address(cfg, full_config, {"shareAddr": ""}, 30.0)
+            == "190.55.165.52"
+        )
+        assert calls[0][:5] == (
+            "miniupnpc",
+            "upnpc",
+            "pyntara xray",
+            443,
+            "TCP",
+        )
+        assert calls[0][5] == ("190.55.165.52",)

@@ -14,7 +14,9 @@ import pytest
 from pyntara import public_address as public_address_module
 from pyntara.public_address import (
     PublicAddresses,
+    default_route_address,
     fetch_public_addresses,
+    local_addresses,
     parse_public_addresses,
 )
 
@@ -35,6 +37,13 @@ class _Process:
 
     def kill(self) -> None:
         self.killed = True
+
+
+class _Completed:
+    """A run_command result double carrying only the captured output."""
+
+    def __init__(self, stdout: str) -> None:
+        self.stdout = stdout
 
 
 class TestParsePublicAddresses:
@@ -62,6 +71,63 @@ class TestParsePublicAddresses:
 
     def test_empty_text_reports_nothing(self) -> None:
         assert parse_public_addresses("").is_empty is True
+
+
+class TestLocalAddresses:
+    """Tests for reading the machine interface addresses."""
+
+    def test_collects_ipv4_and_ipv6_without_repeats(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = (
+            "2: enp1s0    inet 10.10.0.1/24 brd 10.10.0.255 scope global enp1s0\n"
+            "3: wlp1s0    inet 192.168.1.5/24 scope global dynamic wlp1s0\n"
+            "3: wlp1s0    inet6 2001:db8::5/64 scope global\n"
+            "3: wlp1s0    inet6 2001:db8::5/64 scope global\n"
+        )
+        monkeypatch.setattr(
+            public_address_module,
+            "run_command",
+            lambda *a, **k: _Completed(output),
+        )
+        assert local_addresses(30.0) == ("10.10.0.1", "192.168.1.5", "2001:db8::5")
+
+    def test_reports_nothing_without_the_ip_tool(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(command: object, **kwargs: object) -> object:
+            raise OSError("ip not found")
+
+        monkeypatch.setattr(public_address_module, "run_command", fail)
+        assert local_addresses(30.0) == ()
+
+
+class TestDefaultRouteAddress:
+    """Tests for reading the address that reaches the router."""
+
+    def test_reads_the_source_address(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = (
+            "default via 192.168.1.1 dev wlp1s0 proto dhcp src 192.168.1.5 "
+            "metric 600\n"
+        )
+        monkeypatch.setattr(
+            public_address_module,
+            "run_command",
+            lambda *a, **k: _Completed(output),
+        )
+        assert default_route_address(30.0) == "192.168.1.5"
+
+    def test_reports_nothing_without_a_route(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            public_address_module,
+            "run_command",
+            lambda *a, **k: _Completed(""),
+        )
+        assert default_route_address(30.0) is None
 
 
 class TestCollectPublicAddresses:

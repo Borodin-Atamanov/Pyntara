@@ -14,6 +14,7 @@ from support import FakeProc as _FakeProc
 from pyntara import upnp as upnp_module
 from pyntara.upnp import (
     ensure_port_forwarding,
+    forward_inbound_port,
     mapping_exists,
     parse_external_address,
     parse_port_mappings,
@@ -127,3 +128,111 @@ class TestEnsurePortForwarding:
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
         assert router_external_address("upnpc", 30.0) is None
+
+
+class TestForwardInboundPort:
+    """Tests for the whole scenario shared by tasks."""
+
+    def _requirements(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        router: str | None = "190.55.165.52",
+        internal: str | None = "192.168.1.5",
+        forwarded: bool = True,
+        installed: bool = True,
+    ) -> None:
+        monkeypatch.setattr(
+            upnp_module, "install_package_once", lambda _p, _t: (installed, "")
+        )
+        monkeypatch.setattr(
+            upnp_module, "router_external_address", lambda _c, _t: router
+        )
+        monkeypatch.setattr(
+            upnp_module, "default_route_address", lambda _t: internal
+        )
+        monkeypatch.setattr(
+            upnp_module,
+            "ensure_port_forwarding",
+            lambda *_a, **_k: forwarded,
+        )
+
+    def test_returns_the_router_address_when_it_matches(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._requirements(monkeypatch)
+        assert (
+            forward_inbound_port(
+                "miniupnpc",
+                "upnpc",
+                "pyntara xray",
+                443,
+                "TCP",
+                ("190.55.165.52",),
+                30.0,
+            )
+            == "190.55.165.52"
+        )
+
+    def test_returns_the_router_address_without_observations(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Without an observed address there is nothing to compare, so the
+        # router answer is the only available source.
+        self._requirements(monkeypatch)
+        assert (
+            forward_inbound_port(
+                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
+            )
+            == "190.55.165.52"
+        )
+
+    def test_refuses_the_router_address_behind_a_provider_nat(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._requirements(monkeypatch, router="100.64.0.7")
+        assert (
+            forward_inbound_port(
+                "miniupnpc",
+                "upnpc",
+                "d",
+                443,
+                "TCP",
+                ("190.55.165.52",),
+                30.0,
+            )
+            is None
+        )
+
+    def test_returns_nothing_without_a_router(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._requirements(monkeypatch, router=None)
+        assert (
+            forward_inbound_port(
+                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
+            )
+            is None
+        )
+
+    def test_returns_nothing_when_the_mapping_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._requirements(monkeypatch, forwarded=False)
+        assert (
+            forward_inbound_port(
+                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
+            )
+            is None
+        )
+
+    def test_returns_nothing_when_the_package_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._requirements(monkeypatch, installed=False)
+        assert (
+            forward_inbound_port(
+                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
+            )
+            is None
+        )
