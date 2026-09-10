@@ -161,6 +161,8 @@ def _install_fake(
     captured_env: list[dict[str, str]] | None = None,
     mock_stage_ssl: bool = True,
     mock_takeover: bool = True,
+    mock_settings: bool = True,
+    mock_connection: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -222,6 +224,15 @@ def _install_fake(
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
         )
+    if mock_settings:
+        monkeypatch.setattr(
+            "pyntara.xui.ensure_subscription_paths",
+            lambda _cfg, _env, _timeout: (False, ""),
+        )
+    if mock_connection:
+        monkeypatch.setattr(
+            xui, "_stage_connection", lambda _cfg, _full_config, _timeout: None
+        )
     return calls
 
 
@@ -232,6 +243,8 @@ def _panel_fake(
     cert_value: str | None = None,
     mock_stage_ssl: bool = True,
     mock_takeover: bool = True,
+    mock_settings: bool = True,
+    mock_connection: bool = True,
 ) -> list[list[str]]:
     """Fake subprocess with a queryable panel; return the command calls.
 
@@ -279,6 +292,15 @@ def _panel_fake(
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
+        )
+    if mock_settings:
+        monkeypatch.setattr(
+            "pyntara.xui.ensure_subscription_paths",
+            lambda _cfg, _env, _timeout: (False, ""),
+        )
+    if mock_connection:
+        monkeypatch.setattr(
+            xui, "_stage_connection", lambda _cfg, _full_config, _timeout: None
         )
     return calls
 
@@ -1967,3 +1989,227 @@ class TestForceTakeoverWiring:
         result = xui.task(ctx)
         assert result.success is True
         assert seen == []
+
+
+class TestPanelSettingsStage:
+    """Tests for applying the panel subscription paths."""
+
+    def test_applies_subscription_paths(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel kept the default paths: the task writes the configured
+        # ones and reports the change in its message.
+        _stage2_fake(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            "pyntara.xui.ensure_subscription_paths",
+            lambda _cfg, _env, _timeout: (
+                True,
+                "subscription paths set to /s/, /j/, /c/",
+            ),
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_settings=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True
+        assert "/s/" in (result.message or "")
+
+    def test_reports_warning_when_settings_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The settings API is unreachable: the task completes with a
+        # warning and the panel keeps its default paths.
+        _stage2_fake(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            "pyntara.xui.ensure_subscription_paths",
+            lambda _cfg, _env, _timeout: (False, "cannot read panel settings"),
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_settings=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any("subscription paths" in w for w in result.warnings or ())
+
+
+class TestInboundSecurityStage:
+    """Tests for storing the REALITY public key on an existing inbound."""
+
+    def _inbound(self) -> dict[str, object]:
+        return {
+            "id": 1,
+            "port": 443,
+            "protocol": "vless",
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "dest": "www.google.com:443",
+                    "privateKey": "priv123",
+                    "shortIds": ["6ba85179e30d4fc2"],
+                },
+            },
+        }
+
+    def test_stores_the_panel_key_pair(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # An inbound created by an older install has no public key: the
+        # task takes the pair from the panel and writes it back.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._inbound()
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound",
+            lambda _c, _e, _ib, _t: (True, "inbound updated"),
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True
+        reality = inbound["streamSettings"]["realitySettings"]  # type: ignore[index]
+        assert reality["privateKey"] == "priv123"
+        assert reality["settings"] == {
+            "publicKey": "pub123",
+            "fingerprint": "chrome",
+        }
+
+    def test_reports_warning_when_the_panel_has_no_key(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel does not answer with a key pair: the task completes
+        # with a warning and the inbound keeps its state.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True, keygen_ok=False)
+        inbound = self._inbound()
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any("key pair" in w for w in result.warnings or ())
+
+
+class TestConnectionStage:
+    """Tests for the client and vault connection profile stage."""
+
+    def _inbound(self) -> dict[str, object]:
+        return {
+            "id": 2,
+            "port": 443,
+            "shareAddr": "203.0.113.5",
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "dest": "www.google.com:443",
+                    "privateKey": "priv123",
+                    "shortIds": ["6ba85179e30d4fc2"],
+                    "settings": {"publicKey": "pub123", "fingerprint": "chrome"},
+                },
+            },
+        }
+
+    def test_creates_the_client_and_stores_the_profile(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # No client yet and no vault entry: the task creates the client and
+        # writes the profile with the share link into the vault.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._inbound()
+        fake_kp = Mock()
+        fake_kp.root_group = Mock()
+        fake_kp.find_entries.return_value = None
+        fake_kp.add_entry = Mock()
+        fake_kp.save = Mock()
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr("pyntara.xui.find_client", lambda _c, _e, _m, _t: None)
+        monkeypatch.setattr(
+            "pyntara.xui.create_client",
+            lambda _c, _e, _i, _j, _m, _s, _t: (True, "client created"),
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.client_links",
+            lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
+        )
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _c, _t: "203.0.113.5")
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True
+        # Stage 2 writes the panel credentials entry first, then the
+        # connection stage writes the profile entry.
+        titles = [call.args[1] for call in fake_kp.add_entry.call_args_list]
+        assert titles == ["three_x_ui_credentials", "xray_connection"]
+
+    def test_reports_warning_when_the_vault_is_unavailable(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The runtime vault is unavailable: the client step still runs and
+        # the task completes with a warning instead of failing.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True, vault_ok=False)
+        inbound = self._inbound()
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": "a-b"}
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.client_links",
+            lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
+        )
+        monkeypatch.setattr(xui, "_detect_server_ip", lambda _c, _t: "203.0.113.5")
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: None)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any("vault unavailable" in w for w in result.warnings or ())

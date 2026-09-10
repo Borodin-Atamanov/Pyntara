@@ -172,6 +172,15 @@ def load_config(path: Path) -> Config:
                 "three_x_ui_xray_setup.vault_entry_title must name an entry "
                 "of the [vault_structure] table"
             )
+        connection_title = three_x_ui.get("connection_vault_entry_title")
+        if connection_title is not None and not any(
+            entry.title == connection_title
+            for entry in vault_structure.entries
+        ):
+            raise ConfigError(
+                "three_x_ui_xray_setup.connection_vault_entry_title must name "
+                "an entry of the [vault_structure] table"
+            )
     rustdesk_setup = _rustdesk_setup_table(data.get("rustdesk_setup"))
     if not any(
         entry.title == rustdesk_setup.vault_entry_title

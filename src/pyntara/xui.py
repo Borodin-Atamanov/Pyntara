@@ -14,6 +14,7 @@ timeout as parameters, so they are testable without a running panel.
 
 from __future__ import annotations
 
+import http.client
 import http.cookiejar
 import json
 import ssl
@@ -171,7 +172,7 @@ def _request(
             return (resp.status, body)
     except urllib.error.HTTPError as exc:
         return (exc.code, exc.read().decode("utf-8") if exc.fp else "")
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
         return (0, "")
 
 
@@ -371,6 +372,29 @@ def find_inbound_by_port(
     return None
 
 
+def _message_result(status: int, body: str, ok_default: str) -> tuple[bool, str]:
+    """Parse a panel write response into (success, message).
+
+    Status 0 means the panel was unreachable and an unparsable body is an
+    unexpected response; otherwise the panel's own msg field is reported
+    and success decides the flag. Shared by every write helper, so the
+    error wording stays identical across them.
+    """
+
+    if status == 0:
+        return False, "panel unreachable"
+    try:
+        resp = json.loads(body)
+    except json.JSONDecodeError:
+        return False, f"unexpected response (HTTP {status})"
+    if not isinstance(resp, dict):
+        return False, f"unexpected response (HTTP {status})"
+    msg = resp.get("msg", "")
+    if resp.get("success"):
+        return True, msg or ok_default
+    return False, msg or "unknown error"
+
+
 def create_inbound(
     cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
@@ -396,18 +420,7 @@ def create_inbound(
         method="POST",
         timeout=timeout,
     )
-    if status == 0:
-        return False, "panel unreachable"
-    try:
-        resp = json.loads(body)
-    except json.JSONDecodeError:
-        return False, f"unexpected response (HTTP {status})"
-    if not isinstance(resp, dict):
-        return False, f"unexpected response (HTTP {status})"
-    msg = resp.get("msg", "")
-    if resp.get("success"):
-        return True, msg or "inbound created"
-    return False, msg or "unknown error"
+    return _message_result(status, body, "inbound created")
 
 
 def generate_reality_key(
@@ -451,13 +464,19 @@ def build_vless_reality_payload(
     dest: str,
     server_names: tuple[str, ...],
     private_key: str,
+    public_key: str,
     short_id: str,
+    fingerprint: str,
 ) -> dict[str, object]:
     """Build the JSON payload for creating a VLESS+REALITY inbound.
 
     settings, streamSettings and sniffing are returned as nested JSON
-    objects (the preferred format for the panel API). The payload is
-    ready to be serialised and sent to /panel/api/inbounds/add.
+    objects (the preferred format for the panel API). The public key and
+    the fingerprint go into the nested realitySettings.settings block:
+    the panel writes pbk into share links only when it finds the public
+    key there, while the server itself needs only the private key. The
+    payload is ready to be serialised and sent to
+    /panel/api/inbounds/add.
     """
 
     return {
@@ -478,6 +497,10 @@ def build_vless_reality_payload(
                 "serverNames": list(server_names),
                 "privateKey": private_key,
                 "shortIds": [short_id],
+                "settings": {
+                    "publicKey": public_key,
+                    "fingerprint": fingerprint,
+                },
             },
         },
         "sniffing": {
@@ -486,3 +509,242 @@ def build_vless_reality_payload(
         },
         "enable": True,
     }
+
+
+def panel_settings(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> dict[str, object] | None:
+    """Read the whole panel settings document, or None on failure.
+
+    The panel serves its settings at POST /panel/api/setting/all; the
+    response obj is the full settings document. None on an unreachable
+    panel, a bad token or an unexpected response shape.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/json"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/setting/all",
+        data=b"{}",
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    if status != 200:
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    obj = data.get("obj")
+    if not isinstance(obj, dict):
+        return None
+    return obj
+
+
+def update_panel_settings(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    settings: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Persist the whole settings document through the Bearer API.
+
+    The panel writes every setting at once, so the caller reads the
+    document, changes the wanted keys and sends the whole object here.
+    A blank secret field means "unchanged", so writing back a document
+    read from /panel/api/setting/all never clears a secret. Returns
+    (success, message).
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    data = json.dumps(settings).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/json"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/setting/update",
+        data=data,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    return _message_result(status, body, "settings updated")
+
+
+def ensure_subscription_paths(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Move the panel subscription paths off the well-known defaults.
+
+    Reads the settings document, compares subPath, subJsonPath and
+    subClashPath with the configured values and writes the document back
+    only when one differs, so a rerun is a no-op. Returns (changed,
+    message); a failure returns (False, error) with changed False.
+    """
+
+    settings = panel_settings(cfg, env, timeout)
+    if settings is None:
+        return False, "cannot read panel settings"
+    wanted = {
+        "subPath": cfg.subscription_path,
+        "subJsonPath": cfg.subscription_json_path,
+        "subClashPath": cfg.subscription_clash_path,
+    }
+    if all(settings.get(key) == value for key, value in wanted.items()):
+        return False, ""
+    settings.update(wanted)
+    ok, message = update_panel_settings(cfg, env, settings, timeout)
+    if not ok:
+        return False, message
+    return True, (
+        "subscription paths set to "
+        f"{cfg.subscription_path}, {cfg.subscription_json_path}, "
+        f"{cfg.subscription_clash_path}"
+    )
+
+
+def update_inbound(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    inbound: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Replace an inbound through the Bearer API.
+
+    The panel persists the whole inbound object, so the caller reads it
+    with list_inbounds, changes the wanted keys and sends it back. The id
+    is taken from the object itself.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    data = json.dumps(inbound).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/json"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/update/{inbound.get('id')}",
+        data=data,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    return _message_result(status, body, "inbound updated")
+
+
+def find_client(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    email: str,
+    timeout: float,
+) -> dict[str, object] | None:
+    """Find a client by its email label through the Bearer API, or None.
+
+    The panel answers /panel/api/clients/get/{email} with a payload that
+    wraps the client record; the record itself is returned here. A
+    missing client, an unreachable panel and an unexpected shape are all
+    None, so the caller can create the client.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/clients/get/{urllib.parse.quote(email)}",
+        headers=_bearer_headers(env),
+        timeout=timeout,
+    )
+    if status != 200:
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    obj = data.get("obj")
+    if not isinstance(obj, dict):
+        return None
+    client = obj.get("client")
+    return client if isinstance(client, dict) else None
+
+
+def create_client(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    inbound_id: int,
+    client_id: str,
+    email: str,
+    sub_id: str,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Create one VLESS client attached to an inbound.
+
+    The credential lives in the client.id field (stored as the client
+    uuid); email is only the human label and must be unique. Returns
+    (success, message) from the panel response.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    payload = {
+        "client": {
+            "id": client_id,
+            "email": email,
+            "enable": True,
+            "subId": sub_id,
+        },
+        "inboundIds": [inbound_id],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/json"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/clients/add",
+        data=data,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    return _message_result(status, body, "client created")
+
+
+def client_links(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    email: str,
+    timeout: float,
+) -> list[str]:
+    """The share links of one client, or an empty list.
+
+    The panel renders the links through the same subscription engine the
+    panel UI uses, so the returned strings carry every connection
+    parameter including pbk and the share address.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/clients/links/{urllib.parse.quote(email)}",
+        headers=_bearer_headers(env),
+        timeout=timeout,
+    )
+    if status != 200:
+        return []
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+    obj = data.get("obj")
+    if not isinstance(obj, list):
+        return []
+    return [item for item in obj if isinstance(item, str) and item]

@@ -33,6 +33,10 @@ title = "three_x_ui_credentials"
 notes = "Credentials of the 3x-ui Xray panel on this machine. The username field carries the panel admin username, the password field carries the panel admin password, the url field carries the panel base URL (http://127.0.0.1:PORT/BASE_PATH). Additional values are stored in the notes field as key=value lines: XUI_PANEL_PORT, XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE. Consumed by the three_x_ui_xray_setup task stage 2, which reads the credentials from /etc/x-ui/install-result.env and writes them into this entry on first run."
 
 [[vault_structure.entries]]
+title = "xray_connection"
+notes = "Connection profile of the Xray server on this machine, written by the three_x_ui_xray_setup task. The url field carries the canonical vless share link; the notes field carries the profile as key=value lines: SERVER_ADDRESS, SERVER_PORT, DEST, SERVER_NAME, CLIENT_EMAIL, CLIENT_ID, SUB_ID, REALITY_PUBLIC_KEY, REALITY_PRIVATE_KEY, SHORT_ID, FINGERPRINT. Consumed by the future client task that reads a server address and a vless link from the production vault."
+
+[[vault_structure.entries]]
 title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
 notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The entry exists in every vault: the regeneration tooling generates a fresh password of 7 proquint words joined by dashes on creation, so the production secret is never copied and the default vault carries a passphrase that unlocks no deployed key."

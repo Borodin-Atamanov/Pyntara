@@ -106,13 +106,14 @@ def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
 
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
-    # six entries including the cross-checked titles.
+    # seven entries including the cross-checked titles.
     config = load_config(write_config(tmp_path, base_config()))
     assert [entry.title for entry in config.vault_structure.entries] == [
         "password_salt",
         "pyntara_local_vault_password",
         "google_script_key",
         "three_x_ui_credentials",
+        "xray_connection",
         "ssh_passphase_for_port_forwarding",
         "rustdesk_password",
     ]

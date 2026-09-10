@@ -35,6 +35,15 @@ panel_http_address = "127.0.0.1"
 # Title of the runtime vault entry that stores the panel credentials.
 # The entry must exist in the [vault_structure] table.
 vault_entry_title = "three_x_ui_credentials"
+# Title of the runtime vault entry that stores the server connection
+# profile: the client identity, the REALITY keys and the share link.
+# The entry must exist in the [vault_structure] table.
+connection_vault_entry_title = "xray_connection"
+# Share-address strategy the panel uses when it renders client links,
+# one of node, listen or custom. Only custom makes the panel use the
+# address the task writes into shareAddr; the default node renders the
+# link host as localhost.
+share_addr_strategy = "custom"
 # Stage 3: universal server inbound parameters.
 # Port for the VLESS+REALITY inbound. Required.
 inbound_port = 443
@@ -47,6 +56,19 @@ reality_dest = "www.google.com:443"
 reality_server_names = ["www.google.com"]
 # REALITY shortIds entry. Optional, default is a random 8-hex-char string.
 reality_short_id = "6ba85179e30d4fc2"
+# TLS fingerprint the REALITY client presents; the panel writes it into
+# the share link as fp=<value>.
+reality_fingerprint = "chrome"
+# Panel subscription path. The panel warns about the well-known default
+# "/sub/", so the task writes its own short path. Must start and end
+# with a slash.
+subscription_path = "/s/"
+# JSON subscription path, changed from the well-known default "/json/"
+# for the same reason. Must start and end with a slash.
+subscription_json_path = "/j/"
+# Clash subscription path, changed from the well-known default "/clash/"
+# for the same reason. Must start and end with a slash.
+subscription_clash_path = "/c/"
 # ACME HTTP-01 listener port and the certificate location mirror the
 # official installer's setup_ip_certificate layout, so the task and the
 # installer produce the same files. The fullchain and privkey paths are

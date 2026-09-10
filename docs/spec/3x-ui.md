@@ -1,6 +1,8 @@
 # 3x-ui Xray panel
 
-There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 creates the universal server inbound. Stage 4 ensures the panel serves HTTPS when ssl_enabled: a trusted Let's Encrypt IP certificate when the challenge can reach the machine, a self-signed certificate otherwise.
+There is a dedicated 3x-ui installation task: three_x_ui_xray_setup. Stage 1 installs the 3x-ui Xray panel as a system service by wrapping the official installer; it does not manage the panel credentials or create any inbound. Stage 2 reads the credentials the panel generated on first start, verifies the session through the REST API and stores them in the runtime vault. Stage 3 creates the universal server inbound and makes sure it carries the REALITY key pair the panel issues. Stage 4 ensures the panel serves HTTPS when ssl_enabled: a trusted Let's Encrypt IP certificate when the challenge can reach the machine, a self-signed certificate otherwise. Stage 5 ensures the inbound carries exactly one client and stores the complete connection profile of that client in the runtime vault, so a finished task leaves the node usable as a server.
+
+The task also moves the panel subscription paths off the well-known defaults through the panel settings API, because the panel warns about the default ones; a failure of that step is a warning, not an error, and the panel keeps working with its defaults.
 
 ## Installation mechanism
 
@@ -79,11 +81,15 @@ The inbound is created with nested JSON objects for `settings`, `streamSettings`
 
 ### Idempotency
 
-Before creating, the task calls `GET /panel/api/inbounds/list` and searches for an inbound whose `port` matches the configured `inbound_port`. When found, stage 3 returns immediately with `changed=False`. When not found, it generates a keypair, creates the inbound, and appends the REALITY keys to the vault entry notes.
+Before creating, the task calls `GET /panel/api/inbounds/list` and searches for an inbound whose `port` matches the configured `inbound_port`. When not found, it creates the inbound in one call and reports `changed=True`.
+
+When the inbound is already there, the stage never creates a second one. It still makes sure the inbound carries the REALITY data a client needs: when the nested public key block is missing, the panel issues a fresh key pair and the stage writes it with a single `POST /panel/api/inbounds/update/{id}`; the stage reports `changed=True` only when that write happened, and `changed=False` when the inbound is already complete. The `clients` array is created empty and is filled by stage 5.
 
 ### Key storage
 
-The generated private and public keys are appended to the existing vault entry notes as `REALITY_PRIVATE_KEY=<value>` and `REALITY_PUBLIC_KEY=<value>` on separate lines. When the vault is unavailable, the inbound is still created but the keys are not persisted (a warning is returned).
+The pair is issued by the panel through `GET /panel/api/server/getNewX25519Cert`: the private key is written into `realitySettings.privateKey` and the public key, together with the configured fingerprint, into the nested `realitySettings.settings` block. The panel renders `pbk` in a share link only when the public key sits in that nested block, so a key stored anywhere else produces a link a client cannot use.
+
+The live pair is read back from the inbound by stage 5 and stored in the connection profile entry of the runtime vault. The credentials entry of the panel carries panel data only; it never carries REALITY keys.
 
 ## Stage 4: HTTPS certificate
 
@@ -96,6 +102,18 @@ The self-signed certificate is generated with openssl into `self_signed_cert_dir
 On a rerun where the target state is reached and the installer is skipped, the stage queries `x-ui setting -getCert true` and does nothing when the panel already carries a trusted or foreign certificate. When the panel has none and the challenge is reachable, the stage detects the public IPv4 address from the same echo services the installer uses, frees port 80 and issues the certificate through acme.sh exactly like the installer's setup_ip_certificate: `--issue --standalone --httpport 80` with the shortlived profile, `--installcert` into `cert_dir` with a reload command that restarts x-ui, then `x-ui cert -webCert -webCertKey`. When the panel serves the task's self-signed certificate and port 80 has become reachable, the stage replaces it with a trusted one. A trusted certificate that cannot be obtained is reported honestly: the panel serves HTTPS with the self-signed certificate and the message tells how to get a trusted one (forward port 80 and re-run); the failure never fails the task.
 
 After the installer runs (and on a rerun) the task brings the panel to the configured `panel_port`: it reads the actual port from `x-ui setting -show true` and, when an earlier install left it on another port, frees the target port, sets the new one and restarts the panel. It then syncs `/etc/x-ui/install-result.env` so its `XUI_PANEL_PORT` and `XUI_ACCESS_URL` carry the real port and the real scheme (http or https), so consumers never read a stale port or a scheme the panel does not serve.
+
+## Stage 5: client and connection profile
+
+After stage 3 the task runs stage 5, which turns the node into a ready server: the inbound receives exactly one client and the runtime vault receives the complete connection profile of that client. Every step of this stage reports a warning instead of an error, so a panel that is briefly unreachable never fails an otherwise finished setup, and the profile is written only from values the panel itself reports.
+
+The share address comes first. The panel renders the host of every share link from the `shareAddr` field of the inbound, but it uses that field only when `shareAddrStrategy` is the configured `custom` value: with the default strategy the panel renders `localhost`, which is useless to a client. The stage therefore detects the public address and sets both fields on the inbound. When the address cannot be detected, the panel is left as it is and the stage reports a warning.
+
+The client identity is reused from the vault entry when one is already there: `CLIENT_EMAIL`, `CLIENT_ID` and `SUB_ID` are read back, so a rerun never adds a second client to the inbound and the identity survives an update of the panel. On a fresh run the stage generates them: the email is a 2-word proquint, the client id a 4-word proquint with dashes (it becomes the client identity the panel stores) and the subId a 6-byte proquint without a separator. The client is created through `POST /panel/api/clients/add` together with the inbound id; the email is only a label in the panel, never the credential.
+
+The profile is then built from the panel, never from local guesses: the canonical share link comes from `GET /panel/api/clients/links/{email}`, and the REALITY public key, the REALITY private key and the fingerprint come from the inbound that stage 3 produced. The link is written into the url field of the connection entry, the detected address into the username field, and the parameters a client needs into the notes field as key=value lines: SERVER_ADDRESS, SERVER_PORT, DEST, SERVER_NAME, CLIENT_EMAIL, CLIENT_ID, SUB_ID, SHORT_ID, FINGERPRINT, REALITY_PUBLIC_KEY, REALITY_PRIVATE_KEY.
+
+The entry title comes from `connection_vault_entry_title` and must name an entry of the `[vault_structure]` table, which the config loader checks. When the entry already carries exactly that link and those notes, the stage reports done without writing, so a rerun is a no-op.
 
 ### Config reference
 
@@ -110,8 +128,18 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `inbound_remark` (string, optional, default `"universal"`): display label for the inbound in the panel.  
 `reality_dest` (string, optional, default `"www.google.com:443"`): destination address and port for REALITY TLS handshake mimicry.  
 `reality_server_names` (array of strings, optional, default `["www.google.com"]`): ServerNames the REALITY handshake presents.  
-`reality_short_id` (string, optional, default `"6ba85179e30d4fc2"`): short ID for REALITY. Must be a hex string.
+`reality_short_id` (string, optional, default `"6ba85179e30d4fc2"`): short ID for REALITY. Must be a hex string.  
+`subscription_path` (string, optional, default `"/s/"`): panel subscription path, moved off the well-known default `"/sub/"` so the panel does not warn about it. Must start and end with a slash.  
+`subscription_json_path` (string, optional, default `"/j/"`): JSON subscription path, moved off the well-known default `"/json/"` for the same reason. Must start and end with a slash.  
+`subscription_clash_path` (string, optional, default `"/c/"`): Clash subscription path, moved off the well-known default `"/clash/"` for the same reason. Must start and end with a slash.  
+`reality_fingerprint` (string, optional, default `"chrome"`): the uTLS fingerprint that the REALITY settings advertise to clients and that the panel renders in the share link. Must not be empty.  
+`connection_vault_entry_title` (string, optional, default `"xray_connection"`): title of the runtime vault entry that carries the connection profile of the client. Must name an entry of the `[vault_structure]` table.  
+`share_addr_strategy` (string, optional, default `"custom"`): how the panel picks the host of the share links; one of `node`, `listen`, `custom`, and only `custom` makes the panel use the address the task sets.
 
 ### Limitations
 
-Stage 3 does not add any clients to the inbound — the `clients` array is created empty. Client management is outside the scope of this stage. The inbound is created with `enable: true` and starts accepting connections immediately after the panel applies the configuration.
+One node receives one client, not one client per person: every connection to the node shares a single identity, so the panel statistics do not separate users and revoking one person means rotating the identity for everyone. Managing a client per user, per-user limits and per-user subscription links are outside the scope of this task.
+
+The node stores a connection profile in the runtime vault; consuming that profile from another node, which means reading the vault entry and building a local proxy client out of it, is a separate task and is not part of this one.
+
+The inbound is created with `enable: true` and starts accepting connections immediately after the panel applies the configuration.

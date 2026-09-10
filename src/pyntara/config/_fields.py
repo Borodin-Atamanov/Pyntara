@@ -63,6 +63,12 @@ NUMLOCK_STATES: tuple[str, ...] = ("on", "off", "unchanged")
 CLICK_METHODS: tuple[str, ...] = ("clickfinger", "clickareas", "none")
 
 
+# Allowed values of three_x_ui_xray_setup.share_addr_strategy. The
+# vocabulary is the panel's own share-address strategy set; only custom
+# makes the panel use the share address in the links it renders.
+SHARE_ADDR_STRATEGIES: tuple[str, ...] = ("node", "listen", "custom")
+
+
 def _int_field(raw: object, name: str) -> int:
     """Validate an integer config value; bool is a subclass of int and must
     be excluded explicitly."""

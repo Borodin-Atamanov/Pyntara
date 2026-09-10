@@ -424,11 +424,52 @@ def _stage2(
     return None
 
 
-def _stage3(
+def _ensure_inbound_security(
     cfg: ThreeXuiXraySetupConfig,
-    full_config: Config,
+    env: dict[str, str],
+    inbound: dict[str, object],
     timeout: float,
-) -> TaskResult | None:
+) -> tuple[bool, tuple[str, ...]]:
+    """Ensure the inbound carries the REALITY key pair the panel needs.
+
+    The panel writes pbk into a share link only when the public key sits
+    in the nested realitySettings.settings block, so the inbound the task
+    owns must carry both halves of the pair. The pair is taken from the
+    panel itself: getNewX25519Cert returns both keys and both are written
+    back through one inbound update. An inbound that already carries the
+    public key is left alone, so a rerun is a no-op. Returns (changed,
+    warnings): a step that cannot be applied is a warning, never an error,
+    so the rest of the task continues.
+    """
+
+    stream = inbound.get("streamSettings")
+    if not isinstance(stream, dict):
+        return False, ("inbound has no stream settings",)
+    reality = stream.get("realitySettings")
+    if not isinstance(reality, dict):
+        return False, ("inbound has no REALITY settings",)
+    stored = reality.get("settings")
+    if isinstance(stored, dict) and stored.get("publicKey"):
+        return False, ()
+    keypair = xui_client.generate_reality_key(cfg, env, timeout)
+    if keypair is None:
+        return False, ("cannot read the REALITY key pair from the panel",)
+    private_key, public_key = keypair
+    reality["privateKey"] = private_key
+    reality["settings"] = {
+        "publicKey": public_key,
+        "fingerprint": cfg.reality_fingerprint,
+    }
+    stream["realitySettings"] = reality
+    inbound["streamSettings"] = stream
+    ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
+    if not ok:
+        return False, (f"inbound update failed: {message}",)
+    _log("inbound REALITY key pair issued by the panel and stored")
+    return True, ()
+
+
+def _stage3(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
     """Run stage 3: create the universal server inbound.
 
     Reads the panel credentials from install-result.env, searches for an
@@ -463,6 +504,17 @@ def _stage3(
     existing = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
     if existing is not None:
         _log(f"stage 3: inbound on port {cfg.inbound_port} already exists")
+        updated, security_warnings = _ensure_inbound_security(
+            cfg, env, existing, timeout
+        )
+        if security_warnings:
+            return TaskResult(
+                success=True, changed=updated, warnings=security_warnings
+            )
+        if updated:
+            return TaskResult(
+                success=True, changed=True, message="inbound share data updated"
+            )
         return None
     _log(f"stage 3: no inbound on port {cfg.inbound_port}, will create")
 
@@ -484,7 +536,9 @@ def _stage3(
         dest=cfg.reality_dest,
         server_names=cfg.reality_server_names,
         private_key=private_key,
+        public_key=public_key,
         short_id=cfg.reality_short_id,
+        fingerprint=cfg.reality_fingerprint,
     )
     ok, msg = xui_client.create_inbound(cfg, env, payload, timeout)
     if not ok:
@@ -496,34 +550,208 @@ def _stage3(
         )
     _log(f"stage 3: inbound created ({msg})")
 
-    # Append the REALITY keys to the vault entry notes.
-    kp = metrics.open_runtime_vault(full_config)
-    if kp is None:
-        _log("stage 3: runtime vault unavailable, keys not stored")
+    return TaskResult(success=True, changed=True, message="inbound created")
+
+
+def _notes_map(notes: str) -> dict[str, str]:
+    """Parse the key=value lines of a vault entry into a dict."""
+
+    values: dict[str, str] = {}
+    for line in notes.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+    return values
+
+
+def _connection_notes(
+    cfg: ThreeXuiXraySetupConfig,
+    address: str,
+    email: str,
+    client_id: str,
+    sub_id: str,
+    public_key: str,
+    private_key: str,
+) -> str:
+    """The connection profile as the key=value lines of the vault notes.
+
+    The canonical share link lives in the entry url field, so the notes
+    carry the parameters a client needs to build its own configuration
+    and the keys that describe the server side of the connection.
+    """
+
+    lines = [
+        f"SERVER_ADDRESS={address}",
+        f"SERVER_PORT={cfg.inbound_port}",
+        f"DEST={cfg.reality_dest}",
+        f"SERVER_NAME={cfg.reality_server_names[0]}",
+        f"CLIENT_EMAIL={email}",
+        f"CLIENT_ID={client_id}",
+        f"SUB_ID={sub_id}",
+        f"SHORT_ID={cfg.reality_short_id}",
+        f"FINGERPRINT={cfg.reality_fingerprint}",
+        f"REALITY_PUBLIC_KEY={public_key}",
+        f"REALITY_PRIVATE_KEY={private_key}",
+    ]
+    return "\n".join(lines)
+
+
+def _stage_connection(
+    cfg: ThreeXuiXraySetupConfig,
+    full_config: Config,
+    timeout: float,
+) -> TaskResult | None:
+    """Ensure the panel has a client and the vault carries its profile.
+
+    Three independent steps, each reported as a warning instead of an
+    error: the panel share address is set so rendered links carry a real
+    host, one client is ensured with an identity reused from the vault
+    entry, and the profile with the canonical share link and the REALITY
+    keys is written into that entry. Returns None when nothing changed, a
+    TaskResult carrying changed and the warnings otherwise.
+    """
+
+    try:
+        env = _panel_env(cfg, timeout)
+    except FileNotFoundError:
         return TaskResult(
             success=True,
-            changed=True,
-            message="inbound created, keys not stored (vault unavailable)",
+            changed=False,
+            warnings=("install-result.env not found: panel may not have started yet",),
         )
-    _log("stage 3: runtime vault opened")
+    except RuntimeError as exc:
+        return TaskResult(success=True, changed=False, warnings=(str(exc),))
+    _log("stage 5: read credentials from install-result.env")
 
+    inbound = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
+    if inbound is None:
+        return TaskResult(
+            success=True,
+            changed=False,
+            warnings=(
+                f"no inbound on port {cfg.inbound_port}: connection profile not stored",
+            ),
+        )
+
+    warnings: list[str] = []
+    changed = False
+
+    # The share address: the panel renders the link host from it, and only
+    # the configured strategy makes the panel use it.
+    address = _detect_server_ip(cfg, timeout)
+    if address is None:
+        warnings.append(
+            "cannot detect the public address: panel links keep the default host"
+        )
+    elif inbound.get("shareAddr") != address:
+        inbound["shareAddrStrategy"] = cfg.share_addr_strategy
+        inbound["shareAddr"] = address
+        ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
+        if ok:
+            changed = True
+            _log(f"panel share address set to {address}")
+        else:
+            address = None
+            warnings.append(f"cannot set the panel share address: {message}")
+
+    # The client identity comes from the vault entry when it is already
+    # there, so a rerun reuses the same client instead of adding another.
+    kp = metrics.open_runtime_vault(full_config)
+    stored: dict[str, str] = {}
+    if kp is None:
+        warnings.append("runtime vault unavailable: connection profile not stored")
+    else:
+        entry = kp.find_entries(
+            title=cfg.connection_vault_entry_title,
+            group=kp.root_group,
+            recursive=False,
+            first=True,
+        )
+        if entry is not None:
+            stored = _notes_map(entry.notes or "")
+    email = stored.get("CLIENT_EMAIL") or proquint_encode(os.urandom(4), "-")
+    client_id = stored.get("CLIENT_ID") or proquint_encode(os.urandom(8), "-")
+    sub_id = stored.get("SUB_ID") or proquint_encode(os.urandom(6), "")
+
+    inbound_id = inbound.get("id")
+    if not isinstance(inbound_id, int):
+        return TaskResult(
+            success=True,
+            changed=changed,
+            warnings=tuple(warnings)
+            + ("inbound has no id: connection profile not stored",),
+        )
+    if xui_client.find_client(cfg, env, email, timeout) is None:
+        ok, message = xui_client.create_client(
+            cfg, env, inbound_id, client_id, email, sub_id, timeout
+        )
+        if not ok:
+            return TaskResult(
+                success=True,
+                changed=changed,
+                warnings=tuple(warnings) + (f"cannot create the client: {message}",),
+            )
+        changed = True
+        _log(f"client ensured: {email}")
+
+    links = xui_client.client_links(cfg, env, email, timeout)
+    link = links[0] if links else ""
+    if not link:
+        warnings.append("panel returned no share link: connection profile not stored")
+    if kp is None or not link:
+        return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
+
+    stream = inbound.get("streamSettings")
+    reality_map = stream.get("realitySettings") if isinstance(stream, dict) else None
+    reality = reality_map if isinstance(reality_map, dict) else {}
+    settings_block = reality.get("settings")
+    public_key = ""
+    if isinstance(settings_block, dict):
+        public_key = str(settings_block.get("publicKey") or "")
+    private_key = str(reality.get("privateKey") or "")
+
+    notes = _connection_notes(
+        cfg,
+        address or "",
+        email,
+        client_id,
+        sub_id,
+        public_key,
+        private_key,
+    )
     entry = kp.find_entries(
-        title=cfg.vault_entry_title,
+        title=cfg.connection_vault_entry_title,
         group=kp.root_group,
         recursive=False,
         first=True,
     )
+    if (
+        entry is not None
+        and (entry.notes or "") == notes
+        and (entry.url or "") == link
+    ):
+        return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
     if entry is not None:
-        existing_notes = entry.notes or ""
-        key_lines = [f"REALITY_PRIVATE_KEY={private_key}", f"REALITY_PUBLIC_KEY={public_key}"]
-        new_notes = existing_notes + ("\n" if existing_notes else "") + "\n".join(key_lines)
-        entry.notes = new_notes
-        kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
-        _log("stage 3: REALITY keys saved to vault entry notes")
+        entry.username = address or ""
+        entry.url = link
+        entry.notes = notes
     else:
-        _log("stage 3: vault entry not found, keys not stored")
-
-    return TaskResult(success=True, changed=True, message="inbound created")
+        kp.add_entry(
+            kp.root_group,
+            cfg.connection_vault_entry_title,
+            address or "",
+            "",
+            url=link,
+            notes=notes,
+        )
+    kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
+    _log(f"connection profile stored in {cfg.connection_vault_entry_title}")
+    return TaskResult(
+        success=True,
+        changed=True,
+        message="connection profile stored",
+        warnings=tuple(warnings),
+    )
 
 
 def _detect_server_ip(
@@ -1297,6 +1525,30 @@ def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | Non
     return None
 
 
+def _stage_settings(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> tuple[bool, str] | None:
+    """Move the panel subscription paths off the well-known defaults.
+
+    Runs after stage 2, when the panel credentials are readable. Returns
+    None when the paths already match the config, and (True, message)
+    after writing them. Raises RuntimeError with the reason when the
+    panel is unreachable or the write fails, so the caller reports a
+    warning and the rest of the task continues.
+    """
+
+    try:
+        env = _panel_env(cfg, timeout)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise RuntimeError(str(exc)) from None
+    changed, message = xui_client.ensure_subscription_paths(cfg, env, timeout)
+    if not changed and not message:
+        return None
+    if not changed:
+        raise RuntimeError(message)
+    return True, message
+
+
 def task(ctx: Context) -> TaskResult:
     """Wrap the official 3x-ui installer; done when the same version runs.
 
@@ -1523,19 +1775,63 @@ def task(ctx: Context) -> TaskResult:
     if stage2_result is not None:
         stage2_warnings = stage2_result.warnings or ()
 
+    # Panel settings: move the subscription paths off the well-known
+    # defaults so the panel does not warn about them. A failure here is a
+    # warning, not an error: the panel keeps working with the defaults.
+    settings_changed = False
+    settings_warnings: tuple[str, ...] = ()
+    settings_result: tuple[bool, str] | None = None
+    try:
+        settings_result = _stage_settings(cfg, timeout)
+    except RuntimeError as exc:
+        settings_warnings = (f"panel subscription paths not set: {exc}",)
+    if settings_result is not None:
+        settings_changed = settings_result[0]
+        if settings_result[1]:
+            _log(f"subscription paths: {settings_result[1]}")
+            result.message = "; ".join(
+                part for part in (result.message, settings_result[1]) if part
+            )
+
     # Stage 3: create the universal server inbound.
-    stage3_result = _stage3(cfg, ctx.config, timeout)
+    stage3_result = _stage3(cfg, timeout)
     stage3_warnings: tuple[str, ...] = ()
     stage3_changed = False
     if stage3_result is not None:
         stage3_warnings = stage3_result.warnings or ()
         stage3_changed = stage3_result.changed
 
-    all_warnings = ssl_warnings + stage2_warnings + stage3_warnings
-    if all_warnings or ssl_changed or stage3_changed:
+    # Stage 5: ensure the panel client and store the connection profile.
+    connection_result = _stage_connection(cfg, ctx.config, timeout)
+    connection_warnings: tuple[str, ...] = ()
+    connection_changed = False
+    if connection_result is not None:
+        connection_warnings = connection_result.warnings or ()
+        connection_changed = connection_result.changed
+
+    all_warnings = (
+        ssl_warnings
+        + stage2_warnings
+        + settings_warnings
+        + stage3_warnings
+        + connection_warnings
+    )
+    if (
+        all_warnings
+        or ssl_changed
+        or settings_changed
+        or stage3_changed
+        or connection_changed
+    ):
         return TaskResult(
             success=True,
-            changed=result.changed or ssl_changed or stage3_changed,
+            changed=(
+                result.changed
+                or ssl_changed
+                or settings_changed
+                or stage3_changed
+                or connection_changed
+            ),
             message=result.message,
             warnings=all_warnings or (),
         )

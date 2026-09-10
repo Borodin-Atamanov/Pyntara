@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ._fields import (
+    SHARE_ADDR_STRATEGIES,
     ConfigError,
     _bool_field,
     _int_field,
@@ -51,11 +52,17 @@ class ThreeXuiXraySetupConfig:
     ssl_enabled: bool
     panel_http_address: str
     vault_entry_title: str
+    connection_vault_entry_title: str
+    share_addr_strategy: str
     inbound_port: int
     inbound_remark: str
     reality_dest: str
     reality_server_names: tuple[str, ...]
     reality_short_id: str
+    reality_fingerprint: str
+    subscription_path: str
+    subscription_json_path: str
+    subscription_clash_path: str
     acme_port: int
     cert_dir: Path
     cert_fullchain: Path
@@ -138,6 +145,19 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("vault_entry_title"),
         "three_x_ui_xray_setup.vault_entry_title",
     )
+    connection_vault_entry_title = _nonempty_string_field(
+        raw.get("connection_vault_entry_title"),
+        "three_x_ui_xray_setup.connection_vault_entry_title",
+    )
+    share_addr_strategy = _nonempty_string_field(
+        raw.get("share_addr_strategy"),
+        "three_x_ui_xray_setup.share_addr_strategy",
+    )
+    if share_addr_strategy not in SHARE_ADDR_STRATEGIES:
+        raise ConfigError(
+            "three_x_ui_xray_setup.share_addr_strategy must be one of "
+            + ", ".join(SHARE_ADDR_STRATEGIES)
+        )
     inbound_port = _int_field(
         raw.get("inbound_port"),
         "three_x_ui_xray_setup.inbound_port",
@@ -161,6 +181,22 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     reality_short_id = _nonempty_string_field(
         raw.get("reality_short_id"),
         "three_x_ui_xray_setup.reality_short_id",
+    )
+    reality_fingerprint = _nonempty_string_field(
+        raw.get("reality_fingerprint"),
+        "three_x_ui_xray_setup.reality_fingerprint",
+    )
+    subscription_path = _subscription_path_field(
+        raw.get("subscription_path"),
+        "three_x_ui_xray_setup.subscription_path",
+    )
+    subscription_json_path = _subscription_path_field(
+        raw.get("subscription_json_path"),
+        "three_x_ui_xray_setup.subscription_json_path",
+    )
+    subscription_clash_path = _subscription_path_field(
+        raw.get("subscription_clash_path"),
+        "three_x_ui_xray_setup.subscription_clash_path",
     )
     acme_port = _int_field(
         raw.get("acme_port"),
@@ -197,11 +233,17 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,
         vault_entry_title=vault_entry_title,
+        connection_vault_entry_title=connection_vault_entry_title,
+        share_addr_strategy=share_addr_strategy,
         inbound_port=inbound_port,
         inbound_remark=inbound_remark,
         reality_dest=reality_dest,
         reality_server_names=reality_server_names,
         reality_short_id=reality_short_id,
+        reality_fingerprint=reality_fingerprint,
+        subscription_path=subscription_path,
+        subscription_json_path=subscription_json_path,
+        subscription_clash_path=subscription_clash_path,
         acme_port=acme_port,
         cert_dir=cert_dir,
         cert_fullchain=cert_dir / "fullchain.pem",
@@ -211,3 +253,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
         server_ip_services=server_ip_services,
     )
+
+
+def _subscription_path_field(value: object, name: str) -> str:
+    """A panel subscription path: a non-empty string wrapped in slashes.
+
+    The panel warns about its well-known defaults (/sub/, /json/,
+    /clash/), so the task writes its own paths. A value without the
+    leading and trailing slash would be normalized differently by the
+    panel and is rejected here.
+    """
+
+    text = _nonempty_string_field(value, name)
+    if len(text) < 3 or not text.startswith("/") or not text.endswith("/"):
+        raise ConfigError(f"{name} must start and end with a slash")
+    return text

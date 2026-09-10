@@ -204,11 +204,17 @@ panel_port = 35353
 ssl_enabled = true
 panel_http_address = "127.0.0.1"
 vault_entry_title = "three_x_ui_credentials"
+connection_vault_entry_title = "xray_connection"
+share_addr_strategy = "custom"
 inbound_port = 443
 inbound_remark = "universal"
 reality_dest = "www.google.com:443"
 reality_server_names = ["www.google.com"]
 reality_short_id = "6ba85179e30d4fc2"
+reality_fingerprint = "chrome"
+subscription_path = "/s/"
+subscription_json_path = "/j/"
+subscription_clash_path = "/c/"
 acme_port = 80
 cert_dir = "/root/cert/ip"
 self_signed_cert_dir = "/root/cert/selfsigned"
@@ -461,6 +467,10 @@ notes = "Google Drive web app credentials for System Metrics."
 [[vault_structure.entries]]
 title = "three_x_ui_credentials"
 notes = "3x-ui panel credentials on this machine."
+
+[[vault_structure.entries]]
+title = "xray_connection"
+notes = "Xray server connection profile."
 
 [[vault_structure.entries]]
 title = "ssh_passphase_for_port_forwarding"
@@ -797,6 +807,12 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert config.three_x_ui_xray_setup.install_result_env_path == Path(
         "/etc/x-ui/install-result.env"
     )
+    assert config.three_x_ui_xray_setup.reality_fingerprint == "chrome"
+    assert config.three_x_ui_xray_setup.subscription_path == "/s/"
+    assert config.three_x_ui_xray_setup.subscription_json_path == "/j/"
+    assert config.three_x_ui_xray_setup.subscription_clash_path == "/c/"
+    assert config.three_x_ui_xray_setup.connection_vault_entry_title == "xray_connection"
+    assert config.three_x_ui_xray_setup.share_addr_strategy == "custom"
     assert config.three_x_ui_xray_setup.acme_port == 80
     assert config.three_x_ui_xray_setup.cert_dir == Path("/root/cert/ip")
     assert config.three_x_ui_xray_setup.cert_fullchain == Path(
