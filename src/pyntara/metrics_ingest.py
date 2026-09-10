@@ -30,7 +30,13 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    ingest_spool(cfg)
+    try:
+        ingest_spool(cfg)
+    except Exception as exc:  # noqa: BLE001 - an incomplete config reports one line, never a traceback
+        print(
+            f"error: the ingest could not run with this config: {exc}",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

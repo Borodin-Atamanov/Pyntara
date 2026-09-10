@@ -113,12 +113,29 @@ def main() -> None:
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
     metrics = cfg.system_metrics_setup
+    if (
+        metrics.backoff_base_seconds is None
+        or metrics.backoff_multiplier is None
+        or metrics.backoff_max_seconds is None
+    ):
+        # Without the retry schedule the loop has nothing to pace: report it
+        # once and stop, instead of raising inside the first cycle.
+        print(
+            "error: the config has no retry schedule for the metrics "
+            "service, nothing to do",
+            file=sys.stderr,
+        )
+        return
     failed_cycles = 0
     while True:
-        pyntara.metrics_send.dispatch_entries(cfg)
-        attempts, sent = pyntara.metrics_send.send_google_queue(
-            cfg, single_random=failed_cycles > 0
-        )
+        try:
+            pyntara.metrics_send.dispatch_entries(cfg)
+            attempts, sent = pyntara.metrics_send.send_google_queue(
+                cfg, single_random=failed_cycles > 0
+            )
+        except Exception as exc:  # noqa: BLE001 - a broken cycle must not kill the service
+            print(f"error: the cycle failed: {exc}", file=sys.stderr)
+            attempts, sent = 0, 0
         if sent > 0 or attempts == 0:
             failed_cycles = 0
         else:

@@ -255,13 +255,21 @@ def main() -> None:
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
     collector = cfg.system_metrics_setup.collector
-    lock = _acquire_lock(collector.lock_file_path)
-    if lock is None:
-        _log("another collector instance is running, exiting")
-        return
-    report = collect_until_ready(cfg)
-    if not _commit_report(cfg, report):
-        raise SystemExit(1)
+    try:
+        lock = _acquire_lock(collector.lock_file_path)
+        if lock is None:
+            _log("another collector instance is running, exiting")
+            return
+        report = collect_until_ready(cfg)
+        if not _commit_report(cfg, report):
+            raise SystemExit(1)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - an incomplete config reports one line, never a traceback
+        print(
+            f"error: the collector could not run with this config: {exc}",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

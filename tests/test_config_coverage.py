@@ -1,15 +1,15 @@
 """Coverage guards for the config sources.
 
 The repository config/ directory is the single source of truth for the
-values the engine and the deployed service use, and the test suite keeps
-two copies of it: the shared document in config_helpers.py that the
-wrong-type tests mutate, and VALID_TOML in test_config.py that the
-end-to-end cases load. Nothing else compares the three: a section that lost
-its parser, a key that no parser reads, or a copy that fell behind the real
-config would stay invisible until the target machine refused to run or
-silently ignored a setting (architecture contract, Configuration).
+values the engine and the deployed service use. The test suite keeps one
+copy of it, the shared document in config_helpers.py that the tests mutate
+and assert on, with values chosen to make the tests fast and readable.
+Nothing else compares the two: a section that lost its check, a key that
+nobody reads, or a copy that fell behind the real config would stay
+invisible until the target machine met it (architecture contract,
+Configuration).
 
-These tests read the real config directory and compare all three forms.
+These tests read the real config directory and compare the two forms.
 """
 
 from __future__ import annotations
@@ -19,22 +19,13 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
-import pytest
 from config_helpers import base_config, load_checked_config
 from support import make_config
-from test_config import VALID_TOML
 
 from pyntara.config import Config
 from pyntara.config.loader import render_config_source
 
 REPOSITORY_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
-
-# The test documents, by name, so a failing guard names the copy that fell
-# behind instead of only saying that something did.
-TEST_DOCUMENTS: dict[str, str] = {
-    "config_helpers.base_config": base_config(),
-    "test_config.VALID_TOML": VALID_TOML,
-}
 
 # Keys of the repository config that the test document leaves out because
 # the parser treats them as optional, each documented as such next to the
@@ -88,12 +79,6 @@ def _section_field_names(section: object) -> set[str]:
     if not is_dataclass(section):
         return set()
     return {field.name for field in fields(section)}
-
-
-def _document_by_name(document_name: str) -> dict[str, Any]:
-    """The parsed TOML of a test document."""
-
-    return tomllib.loads(TEST_DOCUMENTS[document_name])
 
 
 def test_repository_config_directory_loads() -> None:
@@ -161,49 +146,36 @@ def test_every_repository_config_file_is_not_empty() -> None:
         )
 
 
-@pytest.mark.parametrize("document_name", sorted(TEST_DOCUMENTS))
-def test_test_document_sections_match_the_repository_config(
-    document_name: str,
-) -> None:
+def test_test_document_sections_match_the_repository_config() -> None:
     repository = _top_level_tables(_repository_config_document())
-    document = _top_level_tables(_document_by_name(document_name))
+    document = _top_level_tables(tomllib.loads(base_config()))
     assert sorted(document) == sorted(repository)
 
 
-@pytest.mark.parametrize("document_name", sorted(TEST_DOCUMENTS))
-def test_test_document_keys_come_from_the_repository_config(
-    document_name: str,
-) -> None:
-    # A test document must not invent a key: a test-only key would make the
-    # suite pass on a config the real loader would reject.
+def test_test_document_keys_come_from_the_repository_config() -> None:
+    # The test document must not invent a key: a test-only key would make the
+    # suite pass on a config the shipped one does not have.
     repository = _top_level_tables(_repository_config_document())
-    document = _top_level_tables(_document_by_name(document_name))
+    document = _top_level_tables(tomllib.loads(base_config()))
     invented: list[str] = []
     for section_name, table in document.items():
         for key in sorted(set(table) - set(repository.get(section_name, {}))):
             invented.append(f"[{section_name}] {key}")
-    assert not invented, (
-        f"{document_name} keys with no config key: {invented}"
-    )
+    assert not invented, f"test document keys with no config key: {invented}"
 
 
-@pytest.mark.parametrize("document_name", sorted(TEST_DOCUMENTS))
-def test_test_document_leaves_out_only_recorded_optional_keys(
-    document_name: str,
-) -> None:
+def test_test_document_leaves_out_only_recorded_optional_keys() -> None:
     # Every other key of the real config must be mirrored, so a test cannot
     # silently run on an older shape of the config.
     repository = _top_level_tables(_repository_config_document())
-    document = _top_level_tables(_document_by_name(document_name))
+    document = _top_level_tables(tomllib.loads(base_config()))
     absent: list[str] = []
     for section_name, table in repository.items():
         optional = OPTIONAL_SECTION_KEYS.get(section_name, frozenset())
         missing = set(table) - set(document.get(section_name, {})) - optional
         for key in sorted(missing):
             absent.append(f"[{section_name}] {key}")
-    assert not absent, (
-        f"config keys missing from {document_name}: {absent}"
-    )
+    assert not absent, f"config keys missing from the test document: {absent}"
 
 
 def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:

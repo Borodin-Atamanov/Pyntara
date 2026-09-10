@@ -135,6 +135,15 @@ def _build_value(field_type: object, raw: object) -> Any:
         return None
     if field_type is Path and isinstance(raw, str):
         return Path(raw)
+    if (
+        field_type is int
+        and isinstance(raw, str)
+        and len(raw) == 4
+        and all(character in "01234567" for character in raw)
+    ):
+        # TOML has no octal literal, so a file mode is written as a string of
+        # four octal digits and read as the int that chmod expects.
+        return int(raw, 8)
     return raw
 
 
