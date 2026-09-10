@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 
 from ._fields import ConfigError
@@ -119,6 +119,41 @@ def render_config_source(path: Path) -> str:
     raise ConfigError(f"config file not found: {path}")
 
 
+def assert_config_has_no_unknown_content(
+    data: dict[str, object], config: Config
+) -> None:
+    """Reject a config table or key that no parser reads.
+
+    Every top-level table must be a section of Config, and every key of a
+    section must be a field of that section dataclass. Without this check a
+    misspelled section name or key is ignored without a word, its values
+    never reach any task, and the user sees a configured and a working
+    system apart (architecture contract, Configuration).
+    """
+
+    unknown_sections = sorted(
+        name for name in data if name not in Config.__dataclass_fields__
+    )
+    if unknown_sections:
+        raise ConfigError(
+            f"unknown config section(s): {', '.join(unknown_sections)}"
+        )
+    for section_name in Config.__dataclass_fields__:
+        raw_section = data.get(section_name)
+        section = getattr(config, section_name)
+        if not isinstance(raw_section, dict) or not is_dataclass(section):
+            continue
+        known_keys = {field.name for field in fields(section)}
+        unknown_keys = sorted(
+            key for key in raw_section if key not in known_keys
+        )
+        if unknown_keys:
+            raise ConfigError(
+                f"[{section_name}] has unknown key(s): "
+                f"{', '.join(unknown_keys)}"
+            )
+
+
 def load_config(path: Path) -> Config:
     """Read and validate the config at path. Raises ConfigError on any
     problem."""
@@ -190,7 +225,7 @@ def load_config(path: Path) -> Config:
             "rustdesk_setup.vault_entry_title must name an entry of the "
             "[vault_structure] table"
         )
-    return Config(
+    config = Config(
         engine=_engine_table(data.get("engine")),
         cli_tools=_cli_tools_table(data.get("cli_tools")),
         chrome_setup=_chrome_setup_table(data.get("chrome_setup")),
@@ -235,3 +270,5 @@ def load_config(path: Path) -> Config:
         local_vault_setup=local_vault_setup,
         tasks=_tasks_table(data.get("tasks")),
     )
+    assert_config_has_no_unknown_content(data, config)
+    return config

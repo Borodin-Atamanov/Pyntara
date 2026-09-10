@@ -128,6 +128,17 @@ tor.py              onion_address_from_hostname_file
 
 ssh.py              ssh_port_from_directives
 
+## Adding a value to an existing section
+
+This is the common case: the section already has a parser, so two files of the package carry the value, plus the test document and the specification text.
+
+Add the key with a comment to the section file in config/ (config/<section>.toml).  
+Add the field to the frozen dataclass in src/pyntara/config/<section>.py and read it in the _<section>_table parser through a validator from src/pyntara/config/_fields.py.  
+Add the same key to both copies of the test configuration: the shared document in tests/config_helpers.py, whose absence fails the config tests of that section, and VALID_TOML in tests/test_config.py, which the end-to-end loading cases parse. The factory in tests/support.py needs no edit at all: every section it builds derives from the shared document.  
+Describe the value in the Parameters section of the matching document in docs/spec/.
+
+No change to loader.py is needed for a value: the section already has a parser. A key that no parser reads is a ConfigError, and so is a section that no parser knows, so a forgotten wiring fails at once instead of silently doing nothing. [Config coverage guards](#config-coverage-guards) hold both properties.
+
 ## Adding a new config section
 
 Create config/<name>.toml with the values and comments.  
@@ -135,3 +146,11 @@ Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table 
 Add the dataclass field to the Config class in loader.py.  
 Wire the parser in load_config() in loader.py.  
 Export the dataclass from config/__init__.py.
+
+A new section also needs a line in the shared test document in tests/config_helpers.py, because the loader rejects a section that no parser knows and a key that no parser reads. [Config coverage guards](#config-coverage-guards) name the offender.
+
+## Config coverage guards
+
+tests/test_config_coverage.py reads the real config/ directory and compares the three forms of the configuration: the repository config, the two test copies (the shared document in tests/config_helpers.py and VALID_TOML in tests/test_config.py) and the Config the loader builds from each of them.
+
+The guards are: every section of the repository config has a Config field and a parser, every Config field has a section, every key of a section is read by its parser, every config file contributes a table, a section field is either a key or a recorded derived field, and each test copy mirrors the sections and keys of the repository config except the keys the parsers document as optional.

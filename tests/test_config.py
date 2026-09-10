@@ -1176,3 +1176,32 @@ def test_load_config_empty_directory_raises(tmp_path: Path) -> None:
     config_dir.mkdir()
     with pytest.raises(ConfigError):
         load_config(config_dir)
+
+
+def test_load_config_unknown_section_raises(tmp_path: Path) -> None:
+    # A misspelled section name must not be ignored: its values would never
+    # reach a task, and the user would see a configured system that is not
+    # (architecture contract, Configuration).
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        base_config() + '\n[hostname_typo]\nhostname_file = "/etc/hostname"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="unknown config section"):
+        load_config(config_path)
+
+
+def test_load_config_unknown_key_raises(tmp_path: Path) -> None:
+    # A misspelled key inside a known section must not be ignored either:
+    # the value would silently do nothing while the correct setting stays
+    # unset in the file.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        base_config().replace(
+            'hostname_file = "/etc/hostname"',
+            'hostname_file = "/etc/hostname"\nhostname_file_typo = "x"',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_config(config_path)

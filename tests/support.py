@@ -11,46 +11,22 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 
+from config_helpers import base_config
+
 from pyntara.config import (
-    AddExtraReposConfig,
-    ChromeSetupConfig,
-    CliToolsConfig,
     CollectorModuleConfig,
     Config,
-    DnsproxySetupConfig,
-    EngineConfig,
-    FfmpegSetupConfig,
-    HostnameConfig,
-    I2pdServiceSetupConfig,
-    ImagemagickSetupConfig,
     KConfigRecord,
-    KdeKeyboardSetupConfig,
-    KdeSettingsConfig,
-    LocalVaultSetupConfig,
-    NextdnsSetupSystemWideConfig,
-    PlaywrightSetupConfig,
-    PortForwardingSetupConfig,
     RustdeskOptionConfig,
-    RustdeskSetupConfig,
-    SshClientSetupConfig,
-    SshDaemonSetupConfig,
     SshDirective,
-    SwapfileServiceInstallConfig,
-    SystemMetricsCollectorConfig,
-    SystemMetricsSetupConfig,
     TaskConfig,
-    TelegramSetupConfig,
-    ThreeXuiXraySetupConfig,
-    TorSetupConfig,
     VaultEntry,
-    VaultStructureConfig,
-    VocalinuxSetupConfig,
     YggdrasilMulticastInterfaceConfig,
-    YggdrasilServiceSetupConfig,
-    ZramServiceConfig,
-    ZswapServiceConfig,
+    load_config,
 )
 from pyntara.context import Context
 
@@ -177,6 +153,28 @@ def augtool_fake_run(command: list[str], input_: str | None) -> FakeProc:
                 file_path.write_text("\n".join(content) + "\n", encoding="utf-8")
             out_lines.append("Saved 1 file(s)")
     return FakeProc(0, "\n".join(out_lines) + "\n")
+
+
+_BASE_CONFIG: Config | None = None
+
+
+def _base_config() -> Config:
+    """Return the Config parsed from the shared test document.
+
+    The document is the single form of the test configuration and goes
+    through the same loader as the deployed config, so its cross-checks
+    hold here exactly as they do on the target machine. A section field
+    added to the real config therefore reaches the tests without an edit
+    in this module. The parse runs once per test session.
+    """
+
+    global _BASE_CONFIG
+    if _BASE_CONFIG is None:
+        with tempfile.TemporaryDirectory() as directory:
+            document_path = Path(directory) / "config.toml"
+            document_path.write_text(base_config(), encoding="utf-8")
+            _BASE_CONFIG = load_config(document_path)
+    return _BASE_CONFIG
 
 
 def make_config(
@@ -660,18 +658,16 @@ def make_config(
     port_forwarding_service_restart_seconds: int = 30,
     port_forwarding_journal_identifier: str = "auto_port_forwarding",
     port_forwarding_error_priority: int = 3,
-    vault_entries: tuple[tuple[str, str], ...] = (
-        ("password_salt", "Salt for deterministic password derivation."),
-        ("pyntara_local_vault_password", "Password for the runtime secret vault."),
-        ("telegram_bot_token", "Telegram bot token for System Metrics."),
-        ("google_script_key", "Google Drive web app credentials for System Metrics."),
-    ),
+    vault_entries: tuple[tuple[str, str], ...] | None = None,
     tasks: tuple[TaskConfig, ...] = (),
 ) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
-    return Config(
-        engine=EngineConfig(
+    base = _base_config()
+    return replace(
+        base,
+        engine=replace(
+            base.engine,
             task_data_root=task_data_root,
             notice_timeout=notice_timeout,
             command_timeout_seconds=command_timeout_seconds,
@@ -687,20 +683,23 @@ def make_config(
             task_start_delay_seconds=task_start_delay_seconds,
             desktop_detect_processes=engine_desktop_detect_processes,
         ),
-        cli_tools=CliToolsConfig(
+        cli_tools=replace(
+            base.cli_tools,
             packages=cli_tools_packages,
             package_status_timeout_seconds=cli_tools_status_timeout,
             package_install_retries=cli_tools_retries,
             package_success_threshold_percent=cli_tools_threshold,
         ),
-        imagemagick_setup=ImagemagickSetupConfig(
+        imagemagick_setup=replace(
+            base.imagemagick_setup,
             packages=imagemagick_setup_packages,
             policy_path=imagemagick_setup_policy_path,
             package_status_timeout_seconds=imagemagick_setup_status_timeout,
             package_install_retries=imagemagick_setup_retries,
         ),
 
-        ffmpeg_setup=FfmpegSetupConfig(
+        ffmpeg_setup=replace(
+            base.ffmpeg_setup,
             packages=ffmpeg_setup_packages,
             wayrecord_bin_path=ffmpeg_setup_wayrecord_bin_path,
             wayrecord_desktop_path=ffmpeg_setup_wayrecord_desktop_path,
@@ -708,7 +707,8 @@ def make_config(
             package_install_retries=ffmpeg_setup_retries,
         ),
 
-        dnsproxy_setup=DnsproxySetupConfig(
+        dnsproxy_setup=replace(
+            base.dnsproxy_setup,
             github_repo="AdguardTeam/dnsproxy",
             download_dir=dnsproxy_download_dir,
             binary_path=dnsproxy_binary_path,
@@ -783,16 +783,19 @@ def make_config(
             profile_id_file_path=dnsproxy_profile_id_file_path,
             profile_id_file_mode=0o644,
         ),
-        add_extra_repos=AddExtraReposConfig(
+        add_extra_repos=replace(
+            base.add_extra_repos,
             components=add_extra_repos_components,
             ubuntu_hosts=add_extra_repos_ubuntu_hosts,
             keep_downloaded_debs=add_extra_repos_keep_downloaded_debs,
         ),
-        hostname=HostnameConfig(
+        hostname=replace(
+            base.hostname,
             hostname_file=str(hostname_file),
             set_hostname_command=hostname_set_hostname_command,
         ),
-        kde_keyboard_setup=KdeKeyboardSetupConfig(
+        kde_keyboard_setup=replace(
+            base.kde_keyboard_setup,
             packages=kde_keyboard_setup_packages,
             username=kde_keyboard_setup_username,
             home_dir=kde_keyboard_setup_home_dir,
@@ -814,7 +817,8 @@ def make_config(
                 else {}
             ),
         ),
-        kde_settings=KdeSettingsConfig(
+        kde_settings=replace(
+            base.kde_settings,
             packages=kde_settings_packages,
             username=kde_settings_username,
             home_dir=kde_settings_home_dir,
@@ -852,7 +856,8 @@ def make_config(
             places_hidden=kde_settings_places_hidden,
             kconfig=kde_settings_kconfig,
         ),
-        swapfile_service_install=SwapfileServiceInstallConfig(
+        swapfile_service_install=replace(
+            base.swapfile_service_install,
             swapfile_path=swapfile_path,
             ram_multiplier=swapfile_ram_multiplier,
             ram_extra_mb=swapfile_ram_extra_mb,
@@ -861,7 +866,8 @@ def make_config(
             size_tolerance_mb=swapfile_size_tolerance_mb,
             service_unit_name=swapfile_service_unit_name,
         ),
-        zswap_service=ZswapServiceConfig(
+        zswap_service=replace(
+            base.zswap_service,
             enabled=zswap_enabled,
             compressor=zswap_compressor,
             max_pool_percent=zswap_max_pool_percent,
@@ -869,7 +875,8 @@ def make_config(
             shrinker_enabled=zswap_shrinker_enabled,
             service_unit_name=zswap_service_unit_name,
         ),
-        zram_service=ZramServiceConfig(
+        zram_service=replace(
+            base.zram_service,
             compressor=zram_compressor,
             swap_priority=zram_swap_priority,
             memory_fraction_percent=zram_memory_fraction_percent,
@@ -879,7 +886,8 @@ def make_config(
             reset_busy_attempts=zram_reset_busy_attempts,
             reset_busy_retry_delay_seconds=zram_reset_busy_retry_delay_seconds,
         ),
-        i2pd_service_setup=I2pdServiceSetupConfig(
+        i2pd_service_setup=replace(
+            base.i2pd_service_setup,
             github_repo=i2pd_github_repo,
             download_dir=i2pd_download_dir,
             service_unit_name=i2pd_service_unit_name,
@@ -899,7 +907,8 @@ def make_config(
             address_file_path=i2pd_address_file_path,
             address_file_mode=i2pd_address_file_mode,
         ),
-        three_x_ui_xray_setup=ThreeXuiXraySetupConfig(
+        three_x_ui_xray_setup=replace(
+            base.three_x_ui_xray_setup,
             github_repo=three_x_ui_github_repo,
             install_script_url=three_x_ui_install_script_url,
             install_dir=three_x_ui_install_dir,
@@ -943,7 +952,8 @@ def make_config(
             upnp_client_command=three_x_ui_upnp_client_command,
             upnp_mapping_description=three_x_ui_upnp_mapping_description,
         ),
-        yggdrasil_service_setup=YggdrasilServiceSetupConfig(
+        yggdrasil_service_setup=replace(
+            base.yggdrasil_service_setup,
             github_repo=yggdrasil_github_repo,
             download_dir=yggdrasil_download_dir,
             service_unit_name=yggdrasil_service_unit_name,
@@ -975,7 +985,8 @@ def make_config(
             nm_unmanaged_conf_path=yggdrasil_nm_unmanaged_conf_path,
             netplan_dir_path=yggdrasil_netplan_dir_path,
         ),
-        tor_setup=TorSetupConfig(
+        tor_setup=replace(
+            base.tor_setup,
             package_name=tor_package_name,
             service_unit_name=tor_service_unit_name,
             torrc_path=tor_torrc_path,
@@ -995,7 +1006,8 @@ def make_config(
             address_file_path=tor_address_file_path,
             address_file_mode=tor_address_file_mode,
         ),
-        ssh_daemon_setup=SshDaemonSetupConfig(
+        ssh_daemon_setup=replace(
+            base.ssh_daemon_setup,
             package_name=ssh_daemon_package_name,
             augeas_tools_package_name=ssh_daemon_augeas_tools_package_name,
             package_status_timeout_seconds=ssh_daemon_package_status_timeout_seconds,
@@ -1026,7 +1038,8 @@ def make_config(
             users=ssh_daemon_users,
             directives=ssh_daemon_directives,
         ),
-        ssh_client_setup=SshClientSetupConfig(
+        ssh_client_setup=replace(
+            base.ssh_client_setup,
             ssh_config_path=ssh_client_ssh_config_path,
             ssh_config_dropin_path=ssh_client_ssh_config_dropin_path,
             dropin_file_mode=ssh_client_dropin_file_mode,
@@ -1037,7 +1050,8 @@ def make_config(
             install_retries=ssh_client_install_retries,
             directives=ssh_client_directives,
         ),
-        system_metrics_setup=SystemMetricsSetupConfig(
+        system_metrics_setup=replace(
+            base.system_metrics_setup,
             backoff_base_seconds=system_metrics_backoff_base_seconds,
             backoff_multiplier=system_metrics_backoff_multiplier,
             backoff_max_seconds=system_metrics_backoff_max_seconds,
@@ -1072,7 +1086,8 @@ def make_config(
             google_script_deployment_url_regex=(
                 system_metrics_google_script_deployment_url_regex
             ),
-            collector=SystemMetricsCollectorConfig(
+            collector=replace(
+                base.system_metrics_setup.collector,
                 boot_delay_seconds=system_metrics_collector_boot_delay_seconds,
                 daily_send_time=system_metrics_collector_daily_send_time,
                 threshold_percent=system_metrics_collector_threshold_percent,
@@ -1089,19 +1104,26 @@ def make_config(
                 system_modules=system_metrics_collector_system_modules,
             ),
         ),
-        vault_structure=VaultStructureConfig(
-            entries=tuple(
-                VaultEntry(title=title, notes=notes)
-                for title, notes in vault_entries
-            )
+        vault_structure=replace(
+            base.vault_structure,
+            entries=(
+                base.vault_structure.entries
+                if vault_entries is None
+                else tuple(
+                    VaultEntry(title=title, notes=notes)
+                    for title, notes in vault_entries
+                )
+            ),
         ),
-        nextdns_setup_system_wide=NextdnsSetupSystemWideConfig(
+        nextdns_setup_system_wide=replace(
+            base.nextdns_setup_system_wide,
             vault_group_title=nextdns_vault_group_title,
             profile_id_file_path=nextdns_profile_id_file_path,
             profile_id_file_mode=nextdns_profile_id_file_mode,
             error_priority=nextdns_error_priority,
         ),
-        port_forwarding_setup=PortForwardingSetupConfig(
+        port_forwarding_setup=replace(
+            base.port_forwarding_setup,
             vault_group_title=port_forwarding_vault_group_title,
             passphrase_entry_title=port_forwarding_passphrase_entry_title,
             remote_ssh_user=port_forwarding_remote_ssh_user,
@@ -1121,7 +1143,8 @@ def make_config(
             journal_identifier=port_forwarding_journal_identifier,
             error_priority=port_forwarding_error_priority,
         ),
-        vocalinux_setup=VocalinuxSetupConfig(
+        vocalinux_setup=replace(
+            base.vocalinux_setup,
             username=vocalinux_username,
             home_dir=vocalinux_home_dir,
             download_dir=vocalinux_download_dir,
@@ -1134,7 +1157,8 @@ def make_config(
             ),
             package_install_retries=vocalinux_package_install_retries,
         ),
-        rustdesk_setup=RustdeskSetupConfig(
+        rustdesk_setup=replace(
+            base.rustdesk_setup,
             github_repo=rustdesk_github_repo,
             download_dir=rustdesk_download_dir,
             id_file_path=rustdesk_id_file_path,
@@ -1153,14 +1177,16 @@ def make_config(
             ),
             options=rustdesk_options,
         ),
-        telegram_setup=TelegramSetupConfig(
+        telegram_setup=replace(
+            base.telegram_setup,
             username=telegram_username,
             home_dir=telegram_home_dir,
             download_dir=telegram_download_dir,
             latest_url=telegram_latest_url,
             icon_url=telegram_icon_url,
         ),
-        playwright_setup=PlaywrightSetupConfig(
+        playwright_setup=replace(
+            base.playwright_setup,
             username=playwright_setup_username,
             home_dir=playwright_setup_home_dir,
             packages=playwright_setup_packages,
@@ -1169,7 +1195,8 @@ def make_config(
             cli_package=playwright_setup_cli_package,
             npm_install_timeout_seconds=playwright_setup_npm_install_timeout,
         ),
-        chrome_setup=ChromeSetupConfig(
+        chrome_setup=replace(
+            base.chrome_setup,
             username=chrome_username,
             home_dir=chrome_home_dir,
             settings_repo_url=chrome_settings_repo_url,
@@ -1184,7 +1211,8 @@ def make_config(
             cdp_port=chrome_cdp_port,
             cdp_address=chrome_cdp_address,
         ),
-        local_vault_setup=LocalVaultSetupConfig(
+        local_vault_setup=replace(
+            base.local_vault_setup,
             source_vault_production=local_vault_source_production,
             source_vault_default=local_vault_source_default,
             local_vault_path=local_vault_path,
