@@ -247,3 +247,20 @@ def test_main_caps_pause_at_maximum(
     with pytest.raises(KeyboardInterrupt):
         main()
     assert pauses == [2, 4, 8, 16, 16]
+
+
+def test_main_reports_a_config_without_the_retry_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Without the retry schedule the loop has nothing to pace. The service
+    # reports it once and stops instead of raising inside the first cycle,
+    # so the loop is never entered.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
+    main()
+    captured = capsys.readouterr()
+    assert "no retry schedule" in captured.err
+    assert "Traceback" not in captured.err

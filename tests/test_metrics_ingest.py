@@ -53,3 +53,19 @@ def test_main_missing_config_argument_exits_one(
         main()
     assert exc.value.code == 1
     assert "config path" in capsys.readouterr().err
+
+
+def test_main_reports_a_config_without_the_queue_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # An incomplete config cannot name the spool and the queue: the ingest
+    # reports one line and never lets a traceback reach the path unit.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics_ingest", str(config_path)])
+    main()
+    captured = capsys.readouterr()
+    assert "error: the ingest could not run with this config:" in captured.err
+    assert "Traceback" not in captured.err

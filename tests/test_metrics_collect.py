@@ -424,6 +424,23 @@ def test_main_missing_config_argument_raises(
     assert exc.value.code == 1
 
 
+def test_main_reports_a_config_without_the_collector_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # An incomplete config leaves the collector paths absent. The deployed
+    # service must report that in one line and never let a traceback reach
+    # the unit, so a half written config stays readable in the journal.
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics_collect", str(config_path)])
+    metrics_collect.main()
+    captured = capsys.readouterr()
+    assert "error: the collector could not run with this config:" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_main_collects_and_commits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

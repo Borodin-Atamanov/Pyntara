@@ -66,10 +66,8 @@ except ModuleNotFoundError:
         sys.exit(1)
     raise
 
-# The joined config text and its ConfigError come from the shared loader,
-# the same single source the engine uses; the script never re-implements
-# the config reading.
-from pyntara.config import ConfigError  # noqa: E402
+# The joined config text comes from the shared loader, the same single source
+# the engine uses; the script never re-implements the config reading.
 from pyntara.config.loader import render_config_source  # noqa: E402
 
 
@@ -93,8 +91,6 @@ def _google_script_config() -> tuple[str, re.Pattern[str]]:
     config_path = REPO_ROOT / "config"
     try:
         data = tomllib.loads(render_config_source(config_path))
-    except ConfigError as exc:
-        raise ScriptError(str(exc)) from None
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ScriptError(
             f"cannot read config file {config_path}: {exc}"

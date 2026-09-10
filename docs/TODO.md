@@ -68,5 +68,11 @@ Remaining, most value first: REPO_ROOT (duplication, tracked above and blocked w
 
 ## Leftovers of the config split
 
-Three small items from the split of reading and checking (commits f92b8e5 and a69df8f). The deployed metrics services report an incomplete config in one line instead of a traceback, but no test covers that path: the verification was a manual run against an almost empty config. The vocabulary constants that only the checks use still live in src/pyntara/config/_fields.py, while every other check moved to tests/config_checks.py; MODES stays because production reads it. The two scripts in secrets/ still catch the ConfigError that the runtime reader no longer raises, and their comments still describe the old loader.
+Items from the split of reading and checking (commits f92b8e5 and a69df8f).
+
+Done 2026-09-10: the deployed metrics services report an incomplete config in one line instead of a traceback, and tests/test_metrics_collect.py, tests/test_metrics_ingest.py and tests/test_metrics.py now cover that path with the real reader on a document that holds only [engine]. The probe shows the line a user reads: "error: the collector could not run with this config: 'NoneType' object has no attribute 'parent'". It is honest but names a Python attribute instead of the value that is missing, so a service that names the configured values it cannot find is open and needs a decision.
+
+Done 2026-09-10: the two scripts in secrets/ no longer catch the ConfigError that the runtime reader never raises, and their comments describe the loader as it is now.
+
+Remaining: the vocabulary constants that only the checks use still live in src/pyntara/config/_fields.py, while every other check moved to tests/config_checks.py; MODES stays because production reads it.
 
