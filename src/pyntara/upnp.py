@@ -1,14 +1,15 @@
 """Shared UPnP port-forwarding helpers around the miniupnpc client.
 
-The module wraps the external upnpc utility instead of implementing the
-UPnP IGD protocol: upnpc lists the existing mappings, reports the address
-the router sees on its internet side and asks the router for a mapping.
-A machine behind such a router can then be reached from the internet even
-though its own interface carries a private address.
+The module wraps the external upnpc utility, which the calling task
+installs before it runs, instead of implementing the UPnP IGD protocol:
+upnpc lists the existing mappings, reports the address the router sees on
+its internet side and asks the router for a mapping. A machine behind
+such a router can then be reached from the internet even though its own
+interface carries a private address.
 
-Everything is best effort: a router without UPnP is a normal situation
-and not a failure, so a missing utility or a router that stays silent
-reports no mapping instead of raising.
+The module installs nothing and knows no package names: it runs the
+command it is given. Everything is best effort, so a missing utility or
+a router that stays silent reports no mapping instead of raising.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import subprocess
 
 from pyntara.logger import log_progress
 from pyntara.public_address import default_route_address
-from pyntara.utils import install_package_once, run_command, trim_whitespace
+from pyntara.utils import run_command, trim_whitespace
 
 # The upnpc status output prints the router internet address as a
 # key = value line; the value is the only part we read.
@@ -116,7 +117,6 @@ def list_mappings(command: str, timeout: float) -> str:
 
 
 def forward_inbound_port(
-    package: str,
     command: str,
     description: str,
     port: int,
@@ -127,21 +127,19 @@ def forward_inbound_port(
     """Forward the port through the router and return its usable address.
 
     Every task that must be reachable from the internet needs the same
-    steps, so they live here: make sure the client package exists, ask
-    the router for its internet address, forward the port to the address
-    of the default route and read the mapping back. The router address is
-    returned only when it can work, because a router that reports an
-    address different from the addresses the caller observed sits behind
-    another NAT and its mapping forwards nothing. None means no UPnP
-    router answered, the router refused the mapping, or another NAT sits
-    above it; all three are normal situations reported as progress lines,
-    never as failures.
+    steps, so they live here: ask the router for its internet address,
+    forward the port to the address of the default route and read the
+    mapping back. The caller installs the client package before calling,
+    exactly as it installs its other packages; a machine without that
+    package simply gets no address here. The router address is returned
+    only when it can work, because a router that reports an address
+    different from the addresses the caller observed sits behind another
+    NAT and its mapping forwards nothing. None means the utility is
+    missing, no UPnP router answered, the router refused the mapping, or
+    another NAT sits above it; all four are normal situations reported as
+    progress lines, never as failures.
     """
 
-    installed, error = install_package_once(package, timeout)
-    if not installed:
-        log_progress(f"UPnP client package {package} is unavailable: {error}")
-        return None
     router_address = router_external_address(command, timeout)
     if router_address is None:
         log_progress("no UPnP router on this network, port forwarding skipped")

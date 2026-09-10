@@ -2403,6 +2403,46 @@ class TestServerShareAddress:
         )
 
 
+class TestUpnpClientPackage:
+    """Tests for the package installation the task owns."""
+
+    def test_skips_installation_when_the_package_is_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail_install(_package: str, _timeout: float) -> tuple[bool, str]:
+            raise AssertionError("apt must not run for an installed package")
+
+        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: True)
+        monkeypatch.setattr(xui, "install_package_once", fail_install)
+        cfg = make_config().three_x_ui_xray_setup
+        assert xui._ensure_upnp_client(cfg, 30.0) is True
+
+    def test_installs_the_configured_package_through_the_shared_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        installed: list[str] = []
+
+        def fake_install(package: str, _timeout: float) -> tuple[bool, str]:
+            installed.append(package)
+            return (True, "")
+
+        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: False)
+        monkeypatch.setattr(xui, "install_package_once", fake_install)
+        cfg = make_config(three_x_ui_upnp_package="miniupnpc").three_x_ui_xray_setup
+        assert xui._ensure_upnp_client(cfg, 30.0) is True
+        assert installed == ["miniupnpc"]
+
+    def test_reports_failure_without_raising(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: False)
+        monkeypatch.setattr(
+            xui, "install_package_once", lambda _p, _t: (False, "no candidate")
+        )
+        cfg = make_config().three_x_ui_xray_setup
+        assert xui._ensure_upnp_client(cfg, 30.0) is False
+
+
 class TestUpnpForwardingCall:
     """Tests for the task side of the UPnP attempt."""
 
@@ -2456,11 +2496,5 @@ class TestUpnpForwardingCall:
             xui._server_share_address(cfg, full_config, {"shareAddr": ""}, 30.0)
             == "190.55.165.52"
         )
-        assert calls[0][:5] == (
-            "miniupnpc",
-            "upnpc",
-            "pyntara xray",
-            443,
-            "TCP",
-        )
-        assert calls[0][5] == ("190.55.165.52",)
+        assert calls[0][:4] == ("upnpc", "pyntara xray", 443, "TCP")
+        assert calls[0][4] == ("190.55.165.52",)

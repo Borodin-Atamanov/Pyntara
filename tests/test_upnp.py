@@ -140,11 +140,7 @@ class TestForwardInboundPort:
         router: str | None = "190.55.165.52",
         internal: str | None = "192.168.1.5",
         forwarded: bool = True,
-        installed: bool = True,
     ) -> None:
-        monkeypatch.setattr(
-            upnp_module, "install_package_once", lambda _p, _t: (installed, "")
-        )
         monkeypatch.setattr(
             upnp_module, "router_external_address", lambda _c, _t: router
         )
@@ -163,7 +159,6 @@ class TestForwardInboundPort:
         self._requirements(monkeypatch)
         assert (
             forward_inbound_port(
-                "miniupnpc",
                 "upnpc",
                 "pyntara xray",
                 443,
@@ -181,9 +176,7 @@ class TestForwardInboundPort:
         # router answer is the only available source.
         self._requirements(monkeypatch)
         assert (
-            forward_inbound_port(
-                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
-            )
+            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0)
             == "190.55.165.52"
         )
 
@@ -193,7 +186,6 @@ class TestForwardInboundPort:
         self._requirements(monkeypatch, router="100.64.0.7")
         assert (
             forward_inbound_port(
-                "miniupnpc",
                 "upnpc",
                 "d",
                 443,
@@ -209,10 +201,7 @@ class TestForwardInboundPort:
     ) -> None:
         self._requirements(monkeypatch, router=None)
         assert (
-            forward_inbound_port(
-                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
-            )
-            is None
+            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
         )
 
     def test_returns_nothing_when_the_mapping_is_refused(
@@ -220,19 +209,18 @@ class TestForwardInboundPort:
     ) -> None:
         self._requirements(monkeypatch, forwarded=False)
         assert (
-            forward_inbound_port(
-                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
-            )
-            is None
+            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
         )
 
-    def test_returns_nothing_when_the_package_is_missing(
+    def test_returns_nothing_when_the_program_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._requirements(monkeypatch, installed=False)
+        # The caller installs the program; the helper only runs it, so a
+        # machine without it gets no address instead of an exception.
+        def fail(command: list[str], **kwargs: Any) -> _FakeProc:
+            raise FileNotFoundError("upnpc not found")
+
+        monkeypatch.setattr(upnp_module, "run_command", fail)
         assert (
-            forward_inbound_port(
-                "miniupnpc", "upnpc", "d", 443, "TCP", (), 30.0
-            )
-            is None
+            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
         )

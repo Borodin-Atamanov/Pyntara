@@ -861,7 +861,6 @@ def _server_share_address(
             return _canonical_share_address(candidate)
     if cfg.upnp_enabled:
         forwarded = upnp.forward_inbound_port(
-            cfg.upnp_package,
             cfg.upnp_client_command,
             cfg.upnp_mapping_description,
             cfg.inbound_port,
@@ -1392,6 +1391,27 @@ def _issue_ip_certificate(
     return True, "certificate issued"
 
 
+def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+    """True when the UPnP client program is present, installing it if needed.
+
+    The port forwarding uses the external upnpc tool, exactly like the
+    self-signed certificate uses openssl: the package is installed here,
+    next to the other packages the task needs, so the shared helper only
+    runs a program that exists. A machine where the package cannot be
+    installed keeps working without port forwarding, so the failure is a
+    progress line and never a warning.
+    """
+
+    if package_is_installed(cfg.upnp_package, timeout):
+        return True
+    installed, error = install_package_once(cfg.upnp_package, timeout)
+    if not installed:
+        _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
+        return False
+    _log(f"UPnP client package {cfg.upnp_package} installed")
+    return True
+
+
 def _ensure_openssl(timeout: float) -> bool:
     """True when the openssl binary is present, installing it if needed.
 
@@ -1906,6 +1926,11 @@ def task(ctx: Context) -> TaskResult:
         stage3_changed = stage3_result.changed
 
     # Stage 5: ensure the panel client and store the connection profile.
+    # The UPnP client is installed here, before the stage that may use it,
+    # exactly like the other packages this task needs; the helper itself
+    # only runs the command.
+    if cfg.upnp_enabled:
+        _ensure_upnp_client(cfg, timeout)
     connection_result = _stage_connection(cfg, ctx.config, timeout)
     connection_warnings: tuple[str, ...] = ()
     connection_changed = False
