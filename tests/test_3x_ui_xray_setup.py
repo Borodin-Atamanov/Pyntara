@@ -26,6 +26,7 @@ from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.public_address import PublicAddresses
+from pyntara.tasks.three_x_ui_xray_setup import _RunFacts as RunFacts
 from pyntara.utils import curl_flags
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
@@ -156,6 +157,23 @@ def _ctx(
     )
 
 
+def _facts(
+    public: tuple[str, ...] = (),
+    local: tuple[str, ...] = (),
+    router: str | None = None,
+    client: str | None = None,
+    public_ipv6: tuple[str, ...] = (),
+) -> RunFacts:
+    """Run facts for tests: no network, no router unless asked."""
+
+    return RunFacts(
+        public_addresses=PublicAddresses(ipv4=public, ipv6=public_ipv6),
+        local_addresses=local,
+        router_address=router,
+        client_address=client,
+    )
+
+
 def _install_fake(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -227,8 +245,10 @@ def _install_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -240,7 +260,9 @@ def _install_fake(
         )
     if mock_connection:
         monkeypatch.setattr(
-            xui, "_stage_connection", lambda _cfg, _full_config, _timeout: None
+            xui,
+            "_stage_connection",
+            lambda _cfg, _full_config, _timeout, _facts: None,
         )
     return calls
 
@@ -296,8 +318,10 @@ def _panel_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -309,7 +333,9 @@ def _panel_fake(
         )
     if mock_connection:
         monkeypatch.setattr(
-            xui, "_stage_connection", lambda _cfg, _full_config, _timeout: None
+            xui,
+            "_stage_connection",
+            lambda _cfg, _full_config, _timeout, _facts: None,
         )
     return calls
 
@@ -825,11 +851,11 @@ class TestProquintCredentials:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: False)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _t, _facts: False)
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _cfg, _timeout: TaskResult(
+            lambda _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=True,
                 message="panel serves HTTPS with a self-signed certificate",
@@ -876,7 +902,7 @@ class TestProquintCredentials:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _t, _facts: True)
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
@@ -910,11 +936,11 @@ class TestProquintCredentials:
         # The HTTPS stage returns a warning (a trusted certificate could
         # not be issued): the task result carries it, so the incomplete
         # configuration stays visible.
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _t, _facts: True)
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _cfg, _timeout: TaskResult(
+            lambda _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=False,
                 warnings=(
@@ -953,7 +979,9 @@ class TestProquintCredentials:
         # scheme in the file reflects the certificate the stage set.
         order: list[str] = []
 
-        def fake_stage_ssl(_cfg: object, _timeout: float) -> None:
+        def fake_stage_ssl(
+            _cfg: object, _timeout: float, _facts: object
+        ) -> None:
             order.append("stage_ssl")
 
         def fake_sync(_cfg: object, _timeout: float) -> bool:
@@ -1083,7 +1111,7 @@ class TestPanelPortConvergence:
     ) -> None:
         # A rerun finds the panel on an old port and migrates it to the
         # configured one, reporting a change.
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout: None)
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _f: None)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         calls = _panel_fake(monkeypatch, show_port="35905")
@@ -1203,28 +1231,6 @@ class TestSslReachability:
         assert xui._is_private_ipv4("192.168.1.1") is True
         assert xui._is_private_ipv4("203.0.113.5") is False
 
-    def test_local_ipv4_parses_first_inet(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command",
-            lambda *a, **k: _FakeProc(
-                0,
-                "3: wlp86s0 inet 192.168.187.146/24 brd 192.168.187.255 "
-                "scope global dynamic\n",
-            ),
-        )
-        assert xui._local_ipv4(30) == "192.168.187.146"
-
-    def test_local_ipv4_none_on_empty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command",
-            lambda *a, **k: _FakeProc(0, ""),
-        )
-        assert xui._local_ipv4(30) is None
-
     def _cfg(self) -> ThreeXuiXraySetupConfig:
         # A default three_x_ui config; the reachability helpers only read
         # the ACME port and the echo-service list, which the tests mock.
@@ -1233,34 +1239,43 @@ class TestSslReachability:
     def test_ssl_reachable_public_address(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A public address on the interface allows the attempt directly.
-        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "203.0.113.5")
-        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _cfg, _t: False)
-        assert xui._ssl_reachable(self._cfg(), 30) is True
+        # A public address on the interface allows the attempt directly
+        # and the port-80 probe is never run.
+        def fail_probe(*args: object, **kwargs: object) -> bool:
+            raise AssertionError("the port-80 probe must not run")
+
+        monkeypatch.setattr(xui, "_probe_port_80_forward", fail_probe)
+        facts = _facts(local=("203.0.113.5",))
+        assert xui._ssl_reachable(self._cfg(), 30, facts) is True
 
     def test_ssl_reachable_private_with_forward(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Behind NAT with a confirmed port-80 forward: attempt SSL.
-        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "192.168.1.10")
-        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _cfg, _t: True)
-        assert xui._ssl_reachable(self._cfg(), 30) is True
+        monkeypatch.setattr(
+            xui, "_probe_port_80_forward", lambda *_a, **_k: True
+        )
+        facts = _facts(local=("192.168.1.10",))
+        assert xui._ssl_reachable(self._cfg(), 30, facts) is True
 
     def test_ssl_reachable_private_without_forward(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Behind NAT without a forward: skip SSL.
-        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: "192.168.1.10")
-        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _cfg, _t: False)
-        assert xui._ssl_reachable(self._cfg(), 30) is False
+        monkeypatch.setattr(
+            xui, "_probe_port_80_forward", lambda *_a, **_k: False
+        )
+        facts = _facts(local=("192.168.1.10",))
+        assert xui._ssl_reachable(self._cfg(), 30, facts) is False
 
     def test_ssl_reachable_unknown_local_address(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Unknown local address: the attempt is allowed, never skipped.
-        monkeypatch.setattr(xui, "_local_ipv4", lambda _t: None)
-        monkeypatch.setattr(xui, "_probe_port_80_forward", lambda _cfg, _t: False)
-        assert xui._ssl_reachable(self._cfg(), 30) is True
+        monkeypatch.setattr(
+            xui, "_probe_port_80_forward", lambda *_a, **_k: False
+        )
+        assert xui._ssl_reachable(self._cfg(), 30, _facts()) is True
 
     def test_probe_port_80_forward_confirmed(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1268,12 +1283,6 @@ class TestSslReachability:
         # The temporary listener answers a connection through the public
         # address: the forward is confirmed.
         fake_proc = Mock()
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
-        )
-        monkeypatch.setattr(
-            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
-        )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
             lambda *a, **k: fake_proc,
@@ -1283,7 +1292,8 @@ class TestSslReachability:
             "pyntara.tasks.three_x_ui_xray_setup.run_command",
             lambda *a, **k: _FakeProc(0, "ok"),
         )
-        assert xui._probe_port_80_forward(self._cfg(), 30) is True
+        facts = _facts(public=("203.0.113.5",))
+        assert xui._probe_port_80_forward(self._cfg(), 30, facts) is True
         fake_proc.terminate.assert_called_once()
 
     def test_probe_port_80_forward_not_confirmed(
@@ -1291,12 +1301,6 @@ class TestSslReachability:
     ) -> None:
         # The connection fails (no forward): not confirmed.
         fake_proc = Mock()
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
-        )
-        monkeypatch.setattr(
-            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
-        )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
             lambda *a, **k: fake_proc,
@@ -1306,31 +1310,25 @@ class TestSslReachability:
             "pyntara.tasks.three_x_ui_xray_setup.run_command",
             lambda *a, **k: _FakeProc(7, ""),
         )
-        assert xui._probe_port_80_forward(self._cfg(), 30) is False
+        facts = _facts(public=("203.0.113.5",))
+        assert xui._probe_port_80_forward(self._cfg(), 30, facts) is False
         fake_proc.terminate.assert_called_once()
 
     def test_probe_port_80_forward_needs_public_ip(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # No public address: the probe cannot confirm a forward.
-        monkeypatch.setattr(xui, "_detect_server_ip", lambda _cfg, _t: None)
-        assert xui._probe_port_80_forward(self._cfg(), 30) is False
+        assert xui._probe_port_80_forward(self._cfg(), 30, _facts()) is False
 
     def test_probe_port_80_forward_uses_the_configured_timeouts(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The probe timeouts and the listener pause come from the config:
         # a few hardcoded seconds report a working service as unreachable
-        # on a slow link.
+        # on a slow link, and the port-80 probe has its own budget.
         sleeps: list[int] = []
         commands: list[list[str]] = []
         fake_proc = Mock()
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
-        )
-        monkeypatch.setattr(
-            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
-        )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
             lambda *a, **k: fake_proc,
@@ -1345,55 +1343,16 @@ class TestSslReachability:
             "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
         )
         cfg = make_config(
-            three_x_ui_probe_timeout_seconds=90,
+            three_x_ui_probe_port_80_timeout_seconds=90,
             three_x_ui_probe_listener_start_seconds=4,
         ).three_x_ui_xray_setup
-        assert xui._probe_port_80_forward(cfg, 30) is True
+        facts = _facts(public=("203.0.113.5",))
+        assert xui._probe_port_80_forward(cfg, 30, facts) is True
         assert sleeps == [4]
         command = commands[0]
         assert command[command.index("--connect-timeout") + 1] == "90"
         assert command[command.index("--max-time") + 1] == "90"
-        fake_proc.wait.assert_called_once_with(timeout=90)
-
-    def test_probe_port_80_forward_asks_the_router_through_upnp(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # A router with UPnP opens the ACME port, so a trusted certificate
-        # no longer depends on a manual port-forward rule.
-        calls: list[tuple[object, ...]] = []
-        fake_proc = Mock()
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
-        )
-
-        def fake_forward(*args: object, **kwargs: object) -> None:
-            calls.append(args)
-
-        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
-        monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
-            lambda *a, **k: fake_proc,
-        )
-        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
-        monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command",
-            lambda *a, **k: _FakeProc(0, "ok"),
-        )
-        assert xui._probe_port_80_forward(self._cfg(), 30) is True
-        assert calls[0][:4] == ("upnpc", "pyntara xray", 80, "TCP")
-
-    def test_probe_port_80_forward_skips_upnp_when_disabled(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        def fail_forward(*args: object, **kwargs: object) -> None:
-            raise AssertionError("UPnP must not be attempted")
-
-        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _t: None
-        )
-        cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        assert xui._probe_port_80_forward(cfg, 30) is False
+        fake_proc.wait.assert_called_once_with(timeout=cfg.probe_timeout_seconds)
 
 
 class TestStageSsl:
@@ -1412,7 +1371,9 @@ class TestStageSsl:
 
     def test_stage_ssl_skipped_when_disabled(self, tmp_path: Path) -> None:
         # ssl_enabled=False disables the whole stage.
-        assert xui._stage_ssl(self._cfg(tmp_path, ssl_enabled=False), 30) is None
+        assert (
+            xui._stage_ssl(self._cfg(tmp_path, ssl_enabled=False), 30, _facts()) is None
+        )
 
     def test_stage_ssl_does_nothing_when_cert_exists(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1423,7 +1384,7 @@ class TestStageSsl:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
-        assert xui._stage_ssl(self._cfg(tmp_path), 30) is None
+        assert xui._stage_ssl(self._cfg(tmp_path), 30, _facts()) is None
 
     def test_stage_ssl_installs_self_signed_when_no_ip(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1431,13 +1392,15 @@ class TestStageSsl:
         # No public address can be detected, so a trusted certificate is
         # impossible: the stage installs a self-signed one.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
-        monkeypatch.setattr(xui, "_detect_server_ip", lambda _cfg, _timeout: None)
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout: (True, "self-signed certificate configured"),
+            lambda _cfg, _timeout, _facts: (
+                True,
+                "self-signed certificate configured",
+            ),
         )
-        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1448,16 +1411,17 @@ class TestStageSsl:
         # The machine is behind NAT without a port-80 forward: the stage
         # installs a self-signed certificate instead of leaving HTTP.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _timeout: "203.0.113.5"
-        )
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: False)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: False)
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout: (True, "self-signed certificate configured"),
+            lambda _cfg, _timeout, _facts: (
+                True,
+                "self-signed certificate configured",
+            ),
         )
-        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        facts = _facts(public=("203.0.113.5",))
+        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1472,8 +1436,8 @@ class TestStageSsl:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: str(cfg.self_signed_cert_fullchain),
         )
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: False)
-        assert xui._stage_ssl(cfg, 30) is None
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: False)
+        assert xui._stage_ssl(cfg, 30, _facts()) is None
 
     def test_stage_ssl_upgrades_self_signed_when_reachable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1485,17 +1449,15 @@ class TestStageSsl:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: str(cfg.self_signed_cert_fullchain),
         )
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: True)
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _timeout: "203.0.113.5"
-        )
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: True)
         monkeypatch.setattr(
             xui,
             "_issue_ip_certificate",
             lambda _cfg, ip, _timeout: (True, "certificate issued"),
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
-        result = xui._stage_ssl(cfg, 30)
+        facts = _facts(public=("203.0.113.5",))
+        result = xui._stage_ssl(cfg, 30, facts)
         assert result is not None
         assert result.changed is True
         assert result.message == "SSL certificate configured"
@@ -1503,8 +1465,8 @@ class TestStageSsl:
     def test_stage_ssl_issues_cert_when_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # No certificate and port 80 reachable: the stage detects the IP,
-        # frees the ACME port and issues the certificate.
+        # No certificate and port 80 reachable: the stage frees the ACME
+        # port and issues the certificate for the detected address.
         seen: dict[str, object] = {}
 
         def fake_issue(_cfg: object, ip: str, _timeout: float) -> tuple[bool, str]:
@@ -1512,13 +1474,11 @@ class TestStageSsl:
             return True, "certificate issued"
 
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _timeout: "203.0.113.5"
-        )
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: True)
         monkeypatch.setattr(xui, "_issue_ip_certificate", fake_issue)
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
-        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        facts = _facts(public=("203.0.113.5",))
+        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert seen["ip"] == "203.0.113.5"
@@ -1528,17 +1488,15 @@ class TestStageSsl:
     ) -> None:
         # acme.sh fails to issue the certificate: the stage warns.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
-        monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _timeout: "203.0.113.5"
-        )
-        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: True)
         monkeypatch.setattr(
             xui,
             "_issue_ip_certificate",
             lambda _cfg, ip, _timeout: (False, "port 80 unreachable"),
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
-        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        facts = _facts(public=("203.0.113.5",))
+        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is False
         assert any("SSL certificate setup failed" in w for w in result.warnings or ())
@@ -1550,16 +1508,15 @@ class TestStageSsl:
         # (openssl unavailable): the stage warns that the panel stays on
         # HTTP.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
-        monkeypatch.setattr(xui, "_detect_server_ip", lambda _cfg, _timeout: None)
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout: (
+            lambda _cfg, _timeout, _facts: (
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
             ),
         )
-        result = xui._stage_ssl(self._cfg(tmp_path), 30)
+        result = xui._stage_ssl(self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is False
         assert any("panel serves HTTP" in w for w in result.warnings or ())
@@ -1672,7 +1629,7 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xui._ensure_self_signed_cert(cfg, 30)
+        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is True
         assert message == "self-signed certificate configured"
         assert any(
@@ -1711,7 +1668,7 @@ class TestSelfSignedCert:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, message = xui._ensure_self_signed_cert(cfg, 30)
+        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert message == ""
         assert not any(command[:2] == ["openssl", "req"] for command in calls)
@@ -1740,7 +1697,7 @@ class TestSelfSignedCert:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: "/root/cert/ip/fullchain.pem",
         )
-        ok, message = xui._ensure_self_signed_cert(cfg, 30)
+        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert message == ""
         assert calls == []
@@ -1760,7 +1717,7 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xui._ensure_self_signed_cert(cfg, 30)
+        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert "openssl unavailable" in message
 
@@ -1798,7 +1755,7 @@ class TestSelfSignedCert:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, _ = xui._ensure_self_signed_cert(cfg, 30)
+        ok, _ = xui._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is True
         assert any(
             command[0] == "openssl" and command[1] == "req" for command in calls
@@ -1836,14 +1793,15 @@ class TestSelfSignedCert:
         # A rerun that issues the missing certificate reports changed.
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _timeout: None)
         monkeypatch.setattr(
-            xui, "_detect_server_ip", lambda _cfg, _timeout: "203.0.113.5"
-        )
-        monkeypatch.setattr(
-            xui,
-            "_issue_ip_certificate",
+            xui, "_issue_ip_certificate",
             lambda _cfg, ip, _timeout: (True, "certificate issued"),
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        monkeypatch.setattr(
+            xui,
+            "_collect_run_facts",
+            lambda _cfg, _t: _facts(public=("203.0.113.5",)),
+        )
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -2353,41 +2311,17 @@ class TestConnectionStage:
 class TestDetectServerIp:
     """Tests for the public IPv4 lookup used by the SSL stage."""
 
-    def test_passes_the_config_values_to_the_shared_helper(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # The task must not carry its own echo logic: it hands the
-        # configured services and timeouts to the shared helper.
-        calls: list[tuple[tuple[str, ...], int, float]] = []
+    def test_returns_the_first_public_ipv4_of_the_run_facts(self) -> None:
+        # The addresses are collected once per run, so the helper only
+        # picks the first public IPv4: no further query is made.
+        facts = _facts(public=("203.0.113.7", "203.0.113.8"))
+        assert xui._detect_server_ip(facts) == "203.0.113.7"
 
-        def fake_fetch(
-            services: tuple[str, ...], query_timeout: int, command_timeout: float
-        ) -> object:
-            calls.append((services, query_timeout, command_timeout))
-            return _addresses(ipv4=("203.0.113.7",))
-
-        monkeypatch.setattr(xui, "fetch_public_addresses", fake_fetch)
-        cfg = make_config(
-            three_x_ui_server_ip_timeout_seconds=77,
-            three_x_ui_server_ip_services=("https://api4.ipify.org",),
-        ).three_x_ui_xray_setup
-        assert xui._detect_server_ip(cfg, 30.0) == "203.0.113.7"
-        assert calls == [(("https://api4.ipify.org",), 77, 30.0)]
-
-    def test_returns_none_when_only_ipv6_is_reported(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_none_when_only_ipv6_is_reported(self) -> None:
         # A Let's Encrypt IP certificate needs IPv4: an IPv6-only machine
         # reports no IPv4 address and keeps its self-signed certificate.
-        monkeypatch.setattr(
-            xui,
-            "fetch_public_addresses",
-            lambda _services, _query_timeout, _command_timeout: _addresses(
-                ipv6=("2001:db8::1",)
-            ),
-        )
-        cfg = make_config().three_x_ui_xray_setup
-        assert xui._detect_server_ip(cfg, 30.0) is None
+        facts = _facts(public_ipv6=("2001:db8::1",))
+        assert xui._detect_server_ip(facts) is None
 
 
 class TestServerShareAddress:
@@ -2407,113 +2341,98 @@ class TestServerShareAddress:
             yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
         )
 
-    def _mock_sources(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        public: tuple[str, ...] = (),
-        local: tuple[str, ...] = (),
-        forwarded: str | None = None,
-    ) -> None:
-        """Replace the three address sources with fixed values."""
-
-        monkeypatch.setattr(
-            xui,
-            "fetch_public_addresses",
-            lambda _s, _q, _c: _addresses(ipv4=public),
-        )
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: local)
-        monkeypatch.setattr(
-            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: forwarded
-        )
-
     def test_prefers_a_public_address_that_belongs_to_the_machine(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, tmp_path: Path
     ) -> None:
         # A white address really sits on an interface: nothing else is
         # consulted, because the machine is reachable directly.
-        self._mock_sources(
-            monkeypatch, public=("203.0.113.5",), local=("203.0.113.5", "10.0.0.1")
-        )
+        facts = _facts(public=("203.0.113.5",), local=("203.0.113.5", "10.0.0.1"))
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xui._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+                cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "203.0.113.5"
         )
 
     def test_uses_the_yggdrasil_address_for_a_foreign_public_address(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, tmp_path: Path
     ) -> None:
         # The reported address belongs to the provider NAT, not to this
         # machine, so a mesh address beats a private one.
-        self._mock_sources(
-            monkeypatch, public=("190.55.165.52",), local=("192.168.1.5",)
-        )
+        facts = _facts(public=("190.55.165.52",), local=("192.168.1.5",))
         address_file = tmp_path / "yggdrasil_self_address"
         address_file.write_text("2001:db8::9\n", encoding="utf-8")
         cfg = make_config().three_x_ui_xray_setup
         full_config = make_config(yggdrasil_address_file_path=address_file)
         assert (
-            xui._server_share_address(cfg, full_config, self._inbound(), 30.0)
+            xui._server_share_address(cfg, full_config, self._inbound(), facts)
             == "[2001:db8::9]"
         )
 
-    def test_uses_the_router_address_when_upnp_forwards_the_port(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_uses_the_client_address_when_upnp_forwards_the_port(
+        self, tmp_path: Path
     ) -> None:
-        # UPnP opened the port, so the router address is reachable.
-        self._mock_sources(
-            monkeypatch,
+        # UPnP opened the port, so the address the forwarding returned is
+        # the one a client can reach.
+        facts = _facts(
             public=("190.55.165.52",),
             local=("192.168.1.5",),
-            forwarded="190.55.165.52",
+            router="190.55.165.52",
+            client="190.55.165.52",
         )
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xui._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+                cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "190.55.165.52"
         )
 
-    def test_uses_the_local_address_when_nothing_else_answers(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_ignores_a_client_address_that_is_not_forwarded(
+        self, tmp_path: Path
     ) -> None:
-        # No white address, no UPnP, no yggdrasil: the server still works
-        # for the local network instead of writing no address at all.
-        self._mock_sources(monkeypatch, local=("192.168.1.5",))
+        # The router answered but the mapping is not in place: the run
+        # facts carry no client address, so the local address is used.
+        facts = _facts(public=("190.55.165.52",), local=("192.168.1.5",))
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xui._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+                cfg, self._full_config(tmp_path), self._inbound(), facts
+            )
+            == "192.168.1.5"
+        )
+
+    def test_uses_the_local_address_when_nothing_else_answers(
+        self, tmp_path: Path
+    ) -> None:
+        # No white address, no UPnP, no yggdrasil: the server still works
+        # for the local network instead of writing no address at all.
+        facts = _facts(local=("192.168.1.5",))
+        cfg = make_config().three_x_ui_xray_setup
+        assert (
+            xui._server_share_address(
+                cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "192.168.1.5"
         )
 
     def test_keeps_the_share_address_stored_in_the_panel(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, tmp_path: Path
     ) -> None:
-        self._mock_sources(monkeypatch)
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xui._server_share_address(
-                cfg,
-                self._full_config(tmp_path),
-                self._inbound("198.51.100.9"),
-                30.0,
+                cfg, self._full_config(tmp_path), self._inbound("198.51.100.9"), _facts()
             )
             == "198.51.100.9"
         )
 
-    def test_returns_none_without_any_source(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        self._mock_sources(monkeypatch)
+    def test_returns_none_without_any_source(self, tmp_path: Path) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xui._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), 30.0
+                cfg, self._full_config(tmp_path), self._inbound(), _facts()
             )
             is None
         )
@@ -2559,37 +2478,88 @@ class TestUpnpClientPackage:
         assert xui._ensure_upnp_client(cfg, 30.0) is False
 
 
-class TestUpnpForwardingCall:
-    """Tests for the task side of the UPnP attempt."""
+class TestCollectRunFacts:
+    """Tests for the once-per-run address and router collection."""
 
-    def test_does_not_touch_upnp_when_it_is_disabled(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_collects_addresses_and_asks_the_router_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # One query per source: the stages read the facts instead of
+        # asking again, which keeps a run short.
+        router_calls: list[float] = []
+        monkeypatch.setattr(
+            xui, "_public_addresses", lambda _c, _t: _addresses(ipv4=("203.0.113.5",))
+        )
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("10.0.0.1",))
+        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: True)
+
+        def fake_router(command: str, timeout: float) -> str:
+            router_calls.append(timeout)
+            return "190.55.165.52"
+
+        monkeypatch.setattr("pyntara.upnp.router_external_address", fake_router)
+        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        assert facts.public_addresses.ipv4 == ("203.0.113.5",)
+        assert facts.local_addresses == ("10.0.0.1",)
+        assert facts.router_address == "190.55.165.52"
+        assert facts.client_address is None
+        assert router_calls == [30.0]
+
+    def test_does_not_ask_the_router_when_upnp_is_disabled(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The switch is in the config, so a machine that must not talk to
         # its router never installs the client or asks for a mapping.
-        def fail_forward(*args: object, **kwargs: object) -> str | None:
-            raise AssertionError("UPnP must not be attempted")
+        def fail_install(_cfg: object, _timeout: float) -> bool:
+            raise AssertionError("the UPnP client must not be installed")
 
-        monkeypatch.setattr(
-            "pyntara.upnp.forward_inbound_port", fail_forward
-        )
-        monkeypatch.setattr(
-            xui, "fetch_public_addresses", lambda _s, _q, _c: _addresses()
-        )
+        def fail_router(*args: object, **kwargs: object) -> str:  # pragma: no cover
+            raise AssertionError("the router must not be asked")
+
+        monkeypatch.setattr(xui, "_public_addresses", lambda _c, _t: _addresses())
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
+        monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
+        monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        full_config = make_config(
-            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
-        )
-        assert (
-            xui._server_share_address(
-                cfg, full_config, {"shareAddr": ""}, 30.0
-            )
-            is None
-        )
+        facts = xui._collect_run_facts(cfg, 30.0)
+        assert facts.router_address is None
 
-    def test_passes_the_config_values_to_the_shared_helper(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_reports_no_router_when_the_client_cannot_be_installed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(xui, "_public_addresses", lambda _c, _t: _addresses())
+        monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
+        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: False)
+        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        assert facts.router_address is None
+
+
+class TestForwardUpnpPorts:
+    """Tests for the port forwarding the task asks the router for."""
+
+    def test_forwards_the_client_port_and_the_acme_port(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Both ports are forwarded through the router address already
+        # read for this run, so the router is never asked twice.
+        calls: list[tuple[object, ...]] = []
+
+        def fake_forward(*args: object, **kwargs: object) -> str:
+            calls.append(args)
+            return "190.55.165.52"
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
+        cfg = make_config().three_x_ui_xray_setup
+        facts = _facts(public=("190.55.165.52",), router="190.55.165.52")
+        assert xui._forward_upnp_ports(cfg, facts, 30.0) == "190.55.165.52"
+        assert calls[0][:4] == ("upnpc", "pyntara xray", cfg.inbound_port, "TCP")
+        assert calls[0][4] == ("190.55.165.52",)
+        assert calls[0][6] == "190.55.165.52"
+        assert calls[1][:4] == ("upnpc", "pyntara xray", cfg.acme_port, "TCP")
+        assert calls[1][6] == "190.55.165.52"
+
+    def test_skips_the_acme_port_when_ssl_is_disabled(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         calls: list[tuple[object, ...]] = []
 
@@ -2598,19 +2568,18 @@ class TestUpnpForwardingCall:
             return "190.55.165.52"
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
-        monkeypatch.setattr(
-            xui,
-            "fetch_public_addresses",
-            lambda _s, _q, _c: _addresses(ipv4=("190.55.165.52",)),
-        )
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("192.168.1.5",))
+        cfg = make_config(three_x_ui_ssl_enabled=False).three_x_ui_xray_setup
+        facts = _facts(router="190.55.165.52")
+        xui._forward_upnp_ports(cfg, facts, 30.0)
+        assert [call[2] for call in calls] == [cfg.inbound_port]
+
+    def test_does_nothing_without_a_router(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No UPnP router on this network: no mapping is attempted at all.
+        def fail_forward(*args: object, **kwargs: object) -> str:
+            raise AssertionError("the mapping must not be attempted")
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
         cfg = make_config().three_x_ui_xray_setup
-        full_config = make_config(
-            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
-        )
-        assert (
-            xui._server_share_address(cfg, full_config, {"shareAddr": ""}, 30.0)
-            == "190.55.165.52"
-        )
-        assert calls[0][:4] == ("upnpc", "pyntara xray", 443, "TCP")
-        assert calls[0][4] == ("190.55.165.52",)
+        assert xui._forward_upnp_ports(cfg, _facts(), 30.0) is None

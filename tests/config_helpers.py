@@ -186,6 +186,7 @@ def base_config() -> str:
         "server_ip_timeout_seconds = 60\n"
         'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
         "probe_timeout_seconds = 60\n"
+        "probe_port_80_timeout_seconds = 10\n"
         "probe_listener_start_seconds = 1\n"
         "upnp_enabled = true\n"
         'upnp_package = "miniupnpc"\n'

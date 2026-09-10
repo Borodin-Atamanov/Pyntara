@@ -13,10 +13,15 @@ install_dir = "/usr/local/x-ui"
 # Name of the systemd service unit the official installer creates.
 service_unit_name = "x-ui.service"
 # Timeout in seconds of one readiness probe: the curl call that checks
-# the panel HTTP listener and the self-test that checks whether external
-# port 80 reaches this machine. A short value reports a working service
-# as unreachable on a slow link, so the probe is generous.
+# the panel HTTP listener. A short value reports a working service as
+# unreachable on a slow link, so the probe is generous.
 probe_timeout_seconds = 60
+# Timeout in seconds of the self-test that asks whether external port 80
+# reaches this machine. The probe talks to the machine's own public
+# address, so a dropped packet means no port forward and waiting longer
+# only wastes time: this probe is deliberately shorter than a request to
+# a real server.
+probe_port_80_timeout_seconds = 10
 # Seconds to wait after starting the temporary listener of the port 80
 # self-test, so the listener is bound before the probe call runs.
 probe_listener_start_seconds = 1

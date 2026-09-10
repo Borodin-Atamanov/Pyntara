@@ -123,6 +123,7 @@ def forward_inbound_port(
     protocol: str,
     observed_addresses: tuple[str, ...],
     timeout: float,
+    router_address: str | None = None,
 ) -> str | None:
     """Forward the port through the router and return its usable address.
 
@@ -131,16 +132,20 @@ def forward_inbound_port(
     forward the port to the address of the default route and read the
     mapping back. The caller installs the client package before calling,
     exactly as it installs its other packages; a machine without that
-    package simply gets no address here. The router address is returned
-    only when it can work, because a router that reports an address
-    different from the addresses the caller observed sits behind another
-    NAT and its mapping forwards nothing. None means the utility is
-    missing, no UPnP router answered, the router refused the mapping, or
-    another NAT sits above it; all four are normal situations reported as
-    progress lines, never as failures.
+    package simply gets no address here. router_address carries an
+    address the caller already read from the router, so a caller that
+    forwards several ports reads the router once instead of once per
+    port; None makes the call read it here. The router address is
+    returned only when it can work, because a router that reports an
+    address different from the addresses the caller observed sits behind
+    another NAT and its mapping forwards nothing. None means the utility
+    is missing, no UPnP router answered, the router refused the mapping,
+    or another NAT sits above it; all four are normal situations reported
+    as progress lines, never as failures.
     """
 
-    router_address = router_external_address(command, timeout)
+    if router_address is None:
+        router_address = router_external_address(command, timeout)
     if router_address is None:
         log_progress("no UPnP router on this network, port forwarding skipped")
         return None

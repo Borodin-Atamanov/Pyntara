@@ -223,6 +223,7 @@ self_signed_cert_dir = "/root/cert/selfsigned"
 server_ip_timeout_seconds = 60
 server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]
 probe_timeout_seconds = 60
+probe_port_80_timeout_seconds = 10
 probe_listener_start_seconds = 1
 upnp_enabled = true
 upnp_package = "miniupnpc"

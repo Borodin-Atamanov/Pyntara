@@ -63,6 +63,7 @@ import re
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from pyntara import metrics, upnp
@@ -612,10 +613,27 @@ def _connection_notes(
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class _RunFacts:
+    """Values collected once per run and reused by every stage.
+
+    public_addresses and local_addresses come from one query each instead
+    of one query per stage, and the router address is read from the UPnP
+    router once per run: a router that does not answer at all is not asked
+    again for every port, which keeps a machine without UPnP fast.
+    """
+
+    public_addresses: PublicAddresses
+    local_addresses: tuple[str, ...]
+    router_address: str | None
+    client_address: str | None = None
+
+
 def _stage_connection(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
     timeout: float,
+    facts: _RunFacts,
 ) -> TaskResult | None:
     """Ensure the panel has a client and the vault carries its profile.
 
@@ -656,7 +674,7 @@ def _stage_connection(
     # the configured strategy makes the panel use it. The address comes
     # from the public IPv4 detection, the yggdrasil node address or the
     # value the panel already stores, in that order.
-    address = _server_share_address(cfg, full_config, inbound, timeout)
+    address = _server_share_address(cfg, full_config, inbound, facts)
     if address is None:
         warnings.append(
             "no server address available: panel links keep the default host"
@@ -788,17 +806,88 @@ def _public_addresses(
     )
 
 
-def _detect_server_ip(
+def _collect_run_facts(
     cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> _RunFacts:
+    """Collect the addresses and the router address once for this run.
+
+    The UPnP client package is installed here, before the first stage
+    that may use it; the shared helper installs nothing itself. A router
+    that does not answer is reported once, and the port forwarding is
+    skipped for the rest of the run instead of retrying on every port.
+    """
+
+    public = _public_addresses(cfg, timeout)
+    local = local_addresses(timeout)
+    router_address: str | None = None
+    if cfg.upnp_enabled and _ensure_upnp_client(cfg, timeout):
+        _log("looking for a UPnP router")
+        router_address = upnp.router_external_address(
+            cfg.upnp_client_command, timeout
+        )
+        if router_address is None:
+            _log("no UPnP router on this network, port forwarding is skipped")
+        else:
+            _log(f"UPnP router reports its internet address {router_address}")
+    return _RunFacts(
+        public_addresses=public,
+        local_addresses=local,
+        router_address=router_address,
+    )
+
+
+def _forward_upnp_ports(
+    cfg: ThreeXuiXraySetupConfig, facts: _RunFacts, timeout: float
 ) -> str | None:
+    """Forward the inbound and the ACME port once, and report the host.
+
+    The inbound port makes the node reachable for its clients; the ACME
+    port makes a trusted certificate possible. Both use the router
+    address already read for this run, so the router is asked once. The
+    returned address is the one a client link may use, or None when the
+    mapping is not in place or another NAT sits above the router.
+    """
+
+    if facts.router_address is None:
+        return None
+    observed = (*facts.public_addresses.ipv4, *facts.public_addresses.ipv6)
+    _log(f"asking the router to forward port {cfg.inbound_port} for clients")
+    client_address = upnp.forward_inbound_port(
+        cfg.upnp_client_command,
+        cfg.upnp_mapping_description,
+        cfg.inbound_port,
+        "TCP",
+        observed,
+        timeout,
+        facts.router_address,
+    )
+    if cfg.ssl_enabled:
+        _log(
+            f"asking the router to forward port {cfg.acme_port} "
+            "for the certificate challenge"
+        )
+        upnp.forward_inbound_port(
+            cfg.upnp_client_command,
+            cfg.upnp_mapping_description,
+            cfg.acme_port,
+            "TCP",
+            (),
+            timeout,
+            facts.router_address,
+        )
+    return client_address
+
+
+def _detect_server_ip(facts: _RunFacts) -> str | None:
     """The public IPv4 address of this machine, or None.
 
     The SSL stage needs an IPv4 address, because a Let's Encrypt IP
     certificate is issued for an IPv4 address; a machine whose public
-    address is IPv6 only keeps its self-signed certificate.
+    address is IPv6 only keeps its self-signed certificate. The address
+    comes from the run facts, so no further query is made.
     """
 
-    ipv4 = _public_addresses(cfg, timeout).ipv4
+    ipv4 = facts.public_addresses.ipv4
     if ipv4:
         return ipv4[0]
     _log("no echo service reported a public IPv4 address")
@@ -851,7 +940,7 @@ def _server_share_address(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
     inbound: dict[str, object],
-    timeout: float,
+    facts: _RunFacts,
 ) -> str | None:
     """The host a client link must carry, in the panel's own form.
 
@@ -861,25 +950,17 @@ def _server_share_address(
     node reaches it over the mesh), then the LAN address of this machine,
     then the share address the panel already stores. None when none of
     them is available, so the caller reports it instead of writing a
-    guess.
+    guess. Every value comes from the run facts, so nothing is queried
+    twice.
     """
 
-    addresses = _public_addresses(cfg, timeout)
-    local = local_addresses(timeout)
+    addresses = facts.public_addresses
+    local = facts.local_addresses
     for candidate in (*addresses.ipv4, *addresses.ipv6):
         if candidate in local:
             return _canonical_share_address(candidate)
-    if cfg.upnp_enabled:
-        forwarded = upnp.forward_inbound_port(
-            cfg.upnp_client_command,
-            cfg.upnp_mapping_description,
-            cfg.inbound_port,
-            "TCP",
-            (*addresses.ipv4, *addresses.ipv6),
-            timeout,
-        )
-        if forwarded is not None:
-            return _canonical_share_address(forwarded)
+    if facts.client_address is not None:
+        return _canonical_share_address(facts.client_address)
     node_address = _yggdrasil_address(full_config)
     if node_address is not None:
         _log(f"using the yggdrasil node address as the share host: {node_address}")
@@ -913,31 +994,8 @@ def _is_private_ipv4(address: str) -> bool:
     return parts[0] == "192" and parts[1] == "168"
 
 
-def _local_ipv4(timeout: float) -> str | None:
-    """The machine's own global-scope IPv4 address, or None.
-
-    Parsed from `ip -4 -o addr show scope global`; the first inet
-    address wins. None when ip is unavailable or no address is found.
-    """
-
-    try:
-        result = run_command(
-            ["ip", "-4", "-o", "addr", "show", "scope", "global"],
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    for line in result.stdout.splitlines():
-        match = re.search(r"\binet\s+(\d{1,3}(?:\.\d{1,3}){3})/\d+", line)
-        if match:
-            return match.group(1)
-    return None
-
-
 def _probe_port_80_forward(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
 ) -> bool:
     """True when external port 80 is forwarded back to this machine.
 
@@ -948,24 +1006,9 @@ def _probe_port_80_forward(
     treated as not confirmed.
     """
 
-    public_ip = _detect_server_ip(cfg, timeout)
+    public_ip = _detect_server_ip(facts)
     if public_ip is None:
         return False
-    if cfg.upnp_enabled:
-        # A router with UPnP can open the ACME port, so a trusted
-        # certificate stops being tied to a manual port-forward rule.
-        _log(
-            f"asking the router to forward port {cfg.acme_port} "
-            "through UPnP for the certificate challenge"
-        )
-        upnp.forward_inbound_port(
-            cfg.upnp_client_command,
-            cfg.upnp_mapping_description,
-            cfg.acme_port,
-            "TCP",
-            (),
-            timeout,
-        )
     _log(
         f"probing whether external port {cfg.acme_port} reaches "
         f"{public_ip} here"
@@ -986,9 +1029,9 @@ def _probe_port_80_forward(
                     "curl",
                     "--silent",
                     "--connect-timeout",
-                    str(cfg.probe_timeout_seconds),
+                    str(cfg.probe_port_80_timeout_seconds),
                     "--max-time",
-                    str(cfg.probe_timeout_seconds),
+                    str(cfg.probe_port_80_timeout_seconds),
                     f"http://{public_ip}:{cfg.acme_port}/",
                 ],
                 check=False,
@@ -1011,7 +1054,9 @@ def _probe_port_80_forward(
             listener.kill()
 
 
-def _ssl_reachable(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _ssl_reachable(
+    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+) -> bool:
     """Whether the Let's Encrypt HTTP-01 challenge can be served.
 
     A machine with a public address on an interface (a VPS) serves the
@@ -1021,10 +1066,10 @@ def _ssl_reachable(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     so a working setup is never skipped by accident.
     """
 
-    local_ip = _local_ipv4(timeout)
-    if local_ip is None or not _is_private_ipv4(local_ip):
+    local = facts.local_addresses
+    if not local or not _is_private_ipv4(local[0]):
         return True
-    return _probe_port_80_forward(cfg, timeout)
+    return _probe_port_80_forward(cfg, timeout, facts)
 
 
 def _actual_panel_port(
@@ -1472,7 +1517,7 @@ def _ensure_openssl(timeout: float) -> bool:
 
 
 def _certificate_subject_name(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
 ) -> str:
     """The CN for the self-signed certificate: a known address if any.
 
@@ -1481,9 +1526,9 @@ def _certificate_subject_name(
     way, so the subject only labels it and does not affect the handshake.
     """
 
-    ip = _detect_server_ip(cfg, timeout)
-    if ip is None:
-        ip = _local_ipv4(timeout)
+    ip = _detect_server_ip(facts)
+    if ip is None and facts.local_addresses:
+        ip = facts.local_addresses[0]
     return ip or "3x-ui"
 
 
@@ -1518,7 +1563,7 @@ def _self_signed_not_expired(
 
 
 def _ensure_self_signed_cert(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
 ) -> tuple[bool, str]:
     """Ensure the panel serves HTTPS with a self-signed certificate.
 
@@ -1553,7 +1598,7 @@ def _ensure_self_signed_cert(
                 "openssl unavailable: cannot generate a self-signed certificate",
             )
         cfg.self_signed_cert_dir.mkdir(parents=True, exist_ok=True)
-        subject = _certificate_subject_name(cfg, timeout)
+        subject = _certificate_subject_name(cfg, timeout, facts)
         try:
             run_command(
                 [
@@ -1639,7 +1684,9 @@ def _issue_trusted_cert(
     )
 
 
-def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
+def _stage_ssl(
+    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+) -> TaskResult | None:
     """Ensure the panel serves HTTPS; returns a TaskResult when changed.
 
     When ssl_enabled is set, the panel must serve HTTPS, never plain
@@ -1664,17 +1711,17 @@ def _stage_ssl(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | Non
     if cert == self_signed:
         # Our self-signed certificate is installed; only a now-reachable
         # port 80 justifies replacing it with a trusted one.
-        if not _ssl_reachable(cfg, timeout):
+        if not _ssl_reachable(cfg, timeout, facts):
             _log("self-signed certificate already configured")
             return None
-        ip = _detect_server_ip(cfg, timeout)
+        ip = _detect_server_ip(facts)
         if ip is not None:
             return _issue_trusted_cert(cfg, ip, timeout)
         return None
-    ip = _detect_server_ip(cfg, timeout)
-    if ip is not None and _ssl_reachable(cfg, timeout):
+    ip = _detect_server_ip(facts)
+    if ip is not None and _ssl_reachable(cfg, timeout, facts):
         return _issue_trusted_cert(cfg, ip, timeout)
-    ok, message = _ensure_self_signed_cert(cfg, timeout)
+    ok, message = _ensure_self_signed_cert(cfg, timeout, facts)
     if ok:
         return TaskResult(
             success=True,
@@ -1750,12 +1797,11 @@ def task(ctx: Context) -> TaskResult:
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "three_x_ui_xray_setup" in ctx.force_tasks
 
-    # The UPnP client is installed before the first step that may use it
-    # (the SSL stage forwards the ACME port), exactly like the other
-    # packages this task needs; the helper itself only runs the command.
-    if cfg.upnp_enabled:
-        _log(f"checking the UPnP client package {cfg.upnp_package}")
-        _ensure_upnp_client(cfg, timeout)
+    # Addresses and the UPnP router are read once per run: the stages below
+    # reuse them, so a machine without UPnP is not asked about its router
+    # for every port and the echo services are queried once.
+    facts = _collect_run_facts(cfg, timeout)
+    facts = replace(facts, client_address=_forward_upnp_ports(cfg, facts, timeout))
 
     _log(f"querying the latest release of {cfg.github_repo}")
     try:
@@ -1823,7 +1869,7 @@ def task(ctx: Context) -> TaskResult:
         # the installer skips the certificate and the panel gets a
         # self-signed one after the install (stage 4), never plain HTTP.
         if cfg.ssl_enabled:
-            ssl_attempt = _ssl_reachable(cfg, timeout)
+            ssl_attempt = _ssl_reachable(cfg, timeout, facts)
 
         # The installer's SSL step runs the ACME HTTP-01 challenge on
         # port 80 and fails in non-interactive mode when the port is
@@ -1934,7 +1980,7 @@ def task(ctx: Context) -> TaskResult:
     # is reachable, a self-signed one otherwise) before stage 2, so the
     # stored scheme and url are correct on the first run. The stage may
     # restart the panel, so the listener is polled again after it.
-    ssl_result = _stage_ssl(cfg, timeout)
+    ssl_result = _stage_ssl(cfg, timeout, facts)
     ssl_warnings: tuple[str, ...] = ()
     ssl_changed = False
     if ssl_result is not None:
@@ -1984,7 +2030,7 @@ def task(ctx: Context) -> TaskResult:
         stage3_changed = stage3_result.changed
 
     # Stage 5: ensure the panel client and store the connection profile.
-    connection_result = _stage_connection(cfg, ctx.config, timeout)
+    connection_result = _stage_connection(cfg, ctx.config, timeout, facts)
     connection_warnings: tuple[str, ...] = ()
     connection_changed = False
     if connection_result is not None:
