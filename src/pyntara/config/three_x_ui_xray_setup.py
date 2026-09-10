@@ -74,6 +74,10 @@ class ThreeXuiXraySetupConfig:
     self_signed_cert_privkey: Path
     server_ip_timeout_seconds: int
     server_ip_services: tuple[str, ...]
+    upnp_enabled: bool
+    upnp_package: str
+    upnp_client_command: str
+    upnp_mapping_description: str
 
 
 def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
@@ -232,6 +236,22 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("server_ip_services"),
         "three_x_ui_xray_setup.server_ip_services",
     )
+    upnp_enabled = _bool_field(
+        raw.get("upnp_enabled"),
+        "three_x_ui_xray_setup.upnp_enabled",
+    )
+    upnp_package = _nonempty_string_field(
+        raw.get("upnp_package"),
+        "three_x_ui_xray_setup.upnp_package",
+    )
+    upnp_client_command = _nonempty_string_field(
+        raw.get("upnp_client_command"),
+        "three_x_ui_xray_setup.upnp_client_command",
+    )
+    upnp_mapping_description = _nonempty_string_field(
+        raw.get("upnp_mapping_description"),
+        "three_x_ui_xray_setup.upnp_mapping_description",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -264,6 +284,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
         server_ip_timeout_seconds=server_ip_timeout_seconds,
         server_ip_services=server_ip_services,
+        upnp_enabled=upnp_enabled,
+        upnp_package=upnp_package,
+        upnp_client_command=upnp_client_command,
+        upnp_mapping_description=upnp_mapping_description,
     )
 
 

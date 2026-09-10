@@ -54,6 +54,10 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "self_signed_cert_privkey": Path("/root/cert/selfsigned/privkey.pem"),
         "server_ip_timeout_seconds": 60,
         "server_ip_services": ("https://api4.ipify.org",),
+        "upnp_enabled": True,
+        "upnp_package": "miniupnpc",
+        "upnp_client_command": "upnpc",
+        "upnp_mapping_description": "pyntara xray",
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]

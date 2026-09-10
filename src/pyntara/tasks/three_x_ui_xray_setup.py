@@ -65,7 +65,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pyntara import metrics
+from pyntara import metrics, upnp
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
@@ -833,6 +833,116 @@ def _bare_address(address: str) -> str:
     return trim_whitespace(address).strip("[]")
 
 
+def _local_addresses(timeout: float) -> tuple[str, ...]:
+    """Every global-scope address of the machine interfaces.
+
+    Parsed from `ip -o addr show scope global`; loopback and link-local
+    addresses are excluded by the scope filter. The addresses tell whether
+    an address reported by an echo service really belongs to this machine
+    (a white address) or the machine sits behind NAT.
+    """
+
+    try:
+        result = run_command(
+            ["ip", "-o", "addr", "show", "scope", "global"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ()
+    addresses: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        for index, field in enumerate(fields):
+            if field not in ("inet", "inet6") or index + 1 >= len(fields):
+                continue
+            candidate = fields[index + 1].split("/", 1)[0]
+            if candidate and candidate not in addresses:
+                addresses.append(candidate)
+    return tuple(addresses)
+
+
+def _default_route_address(timeout: float) -> str | None:
+    """The address the machine uses to reach the internet, or None.
+
+    The default route carries the source address of the outgoing
+    connection, which is the address a UPnP mapping must point at: it is
+    the interface that actually reaches the router.
+    """
+
+    try:
+        result = run_command(
+            ["ip", "-4", "route", "show", "default"],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        for index, field in enumerate(fields):
+            if field == "src" and index + 1 < len(fields):
+                return fields[index + 1]
+    return None
+
+
+def _ensure_upnp_forwarding(
+    cfg: ThreeXuiXraySetupConfig,
+    addresses: PublicAddresses,
+    timeout: float,
+) -> str | None:
+    """Ask the router to forward the inbound port; return its address.
+
+    The port is forwarded only when the router answers UPnP at all, and
+    the router address is used only when it matches the address the echo
+    services see: a different address means the provider runs its own NAT
+    above the router, so a mapping there would forward nothing. A router
+    without UPnP, or an installed package that does not provide the
+    client, is a normal situation and is reported as a progress line, not
+    as a warning.
+    """
+
+    if not cfg.upnp_enabled:
+        return None
+    installed, error = install_package_once(cfg.upnp_package, timeout)
+    if not installed:
+        _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
+        return None
+    router_address = upnp.router_external_address(cfg.upnp_client_command, timeout)
+    if router_address is None:
+        _log("no UPnP router on this network, port forwarding skipped")
+        return None
+    internal_address = _default_route_address(timeout)
+    if internal_address is None:
+        _log("cannot read the default route address, port forwarding skipped")
+        return None
+    if not upnp.ensure_port_forwarding(
+        cfg.upnp_client_command,
+        cfg.upnp_mapping_description,
+        internal_address,
+        cfg.inbound_port,
+        "TCP",
+        timeout,
+    ):
+        _log(f"router refused the port {cfg.inbound_port} mapping")
+        return None
+    _log(
+        f"router forwards port {cfg.inbound_port} to {internal_address} "
+        f"(router address {router_address})"
+    )
+    if addresses.is_empty:
+        return router_address
+    if router_address in (*addresses.ipv4, *addresses.ipv6):
+        return router_address
+    _log(
+        "router address differs from the address the services report: "
+        "the provider runs another NAT above the router"
+    )
+    return None
+
+
 def _server_share_address(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
@@ -841,21 +951,30 @@ def _server_share_address(
 ) -> str | None:
     """The host a client link must carry, in the panel's own form.
 
-    Priority: the public IPv4 address, then the public IPv6 address (a
-    machine behind NAT often has none of the first but does have the
-    second), then the yggdrasil node address, then the share address the
-    panel already stores. None when none of them is available, so the
-    caller reports it instead of writing a guess.
+    Priority: a public address that really belongs to this machine, then
+    the router address when UPnP forwards the port to us, then the
+    yggdrasil node address (better than a LAN address, because another
+    node reaches it over the mesh), then the LAN address of this machine,
+    then the share address the panel already stores. None when none of
+    them is available, so the caller reports it instead of writing a
+    guess.
     """
 
     addresses = _public_addresses(cfg, timeout)
-    detected = (*addresses.ipv4, *addresses.ipv6)
-    if detected:
-        return _canonical_share_address(detected[0])
+    local = _local_addresses(timeout)
+    for candidate in (*addresses.ipv4, *addresses.ipv6):
+        if candidate in local:
+            return _canonical_share_address(candidate)
+    forwarded = _ensure_upnp_forwarding(cfg, addresses, timeout)
+    if forwarded is not None:
+        return _canonical_share_address(forwarded)
     node_address = _yggdrasil_address(full_config)
     if node_address is not None:
         _log(f"using the yggdrasil node address as the share host: {node_address}")
         return _canonical_share_address(node_address)
+    if local:
+        _log(f"using the local address as the share host: {local[0]}")
+        return _canonical_share_address(local[0])
     stored = inbound.get("shareAddr")
     if isinstance(stored, str) and trim_whitespace(stored):
         _log("keeping the share address already stored in the panel")

@@ -94,3 +94,17 @@ server_ip_services = [
     "https://4.ident.me",
     "https://check-host.net/ip",
 ]
+# UPnP port forwarding through the miniupnpc client. When the machine
+# sits behind a router with UPnP IGD, the task asks the router to forward
+# the inbound port and then uses the router internet address for client
+# links, so a machine behind NAT becomes reachable from the internet
+# without a manual rule. A router without UPnP is a normal situation:
+# the attempt is skipped quietly and the address falls back further.
+upnp_enabled = true
+# Package that provides the upnpc client.
+upnp_package = "miniupnpc"
+# Name of the upnpc binary the task runs.
+upnp_client_command = "upnpc"
+# Description of the created mapping, shown in the router interface so
+# the user can tell which rule belongs to Pyntara.
+upnp_mapping_description = "pyntara xray"

@@ -184,6 +184,10 @@ def base_config() -> str:
         'self_signed_cert_dir = "/root/cert/selfsigned"\n'
         "server_ip_timeout_seconds = 60\n"
         'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
+        "upnp_enabled = true\n"
+        'upnp_package = "miniupnpc"\n'
+        'upnp_client_command = "upnpc"\n'
+        'upnp_mapping_description = "pyntara xray"\n'
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'
