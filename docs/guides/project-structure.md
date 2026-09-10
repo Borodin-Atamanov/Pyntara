@@ -38,7 +38,7 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 src/pyntara/__init__.py — Package version and public exports.  
 src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py and inst.sh through config_edit.replace_line_by_string. Consumed by hooks/pre-commit.  
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
-src/pyntara/config/ — Config.toml loading: Config frozen dataclass, load_config, ConfigError. Split by config section: one module per *_table parser and its dataclass, shared field helpers in _fields.py, whole-config assembly in loader.py, public surface re-exported from the package __init__.  
+src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the vocabulary constants in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks live in tests/config_checks.py.  
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  
 src/pyntara/models.py — TaskResult dataclass.  
 src/pyntara/context.py — Context frozen dataclass.  
@@ -74,7 +74,7 @@ One module per task, each exposing task(ctx) -> TaskResult. Task names come from
 
 ## Config section map
 
-Each TOML file in config/ has a corresponding parser module in src/pyntara/config/ and a frozen dataclass. The parser is wired in loader.py and the dataclass is exported from config/__init__.py. Tasks receive the whole Config through Context and access their section by name.
+Each TOML file in config/ has a corresponding module in src/pyntara/config/ with a frozen dataclass, read by the runtime reader through the field names of that dataclass. The checks of a section live in tests/config_checks.py. Tasks receive the whole Config through Context and access their section by name.
 
 engine -> config/engine.py -> EngineConfig -> all tasks via Context  
 cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools  
@@ -130,27 +130,28 @@ ssh.py              ssh_port_from_directives
 
 ## Adding a value to an existing section
 
-This is the common case: the section already has a parser, so two files of the package carry the value, plus the test document and the specification text.
+This is the common case: the section already exists, so a value touches the section file, its dataclass and the checks.
 
 Add the key with a comment to the section file in config/ (config/<section>.toml).  
-Add the field to the frozen dataclass in src/pyntara/config/<section>.py and read it in the _<section>_table parser through a validator from src/pyntara/config/_fields.py.  
-Add the same key to both copies of the test configuration: the shared document in tests/config_helpers.py, whose absence fails the config tests of that section, and VALID_TOML in tests/test_config.py, which the end-to-end loading cases parse. The factory in tests/support.py needs no edit at all: every section it builds derives from the shared document.  
+Add the field to the frozen dataclass in src/pyntara/config/<section>.py. The runtime reader takes the value of the key with the same name, so nothing else in the package changes and loader.py is never touched.  
+Add the check of the new value to tests/config_checks.py next to the other checks of that section, and add the key to both test documents: the shared document in tests/config_helpers.py, which the section tests parse, and VALID_TOML in tests/test_config.py, which the end-to-end cases parse. The factory in tests/support.py needs no edit at all: every section it builds derives from the shared document.  
 Describe the value in the Parameters section of the matching document in docs/spec/.
 
-No change to loader.py is needed for a value: the section already has a parser. A key that no parser reads is a ConfigError, and so is a section that no parser knows, so a forgotten wiring fails at once instead of silently doing nothing. [Config coverage guards](#config-coverage-guards) hold both properties.
+Nothing breaks on a machine when a step is forgotten, because the run reads what is there and invents no value. The test suite is what catches the omission, during development.
 
 ## Adding a new config section
 
 Create config/<name>.toml with the values and comments.  
-Create src/pyntara/config/<name>.py with a frozen dataclass and a _<name>_table parser function.  
+Create src/pyntara/config/<name>.py with a frozen dataclass.  
 Add the dataclass field to the Config class in loader.py.  
-Wire the parser in load_config() in loader.py.  
 Export the dataclass from config/__init__.py.
 
-A new section also needs a line in the shared test document in tests/config_helpers.py, because the loader rejects a section that no parser knows and a key that no parser reads. [Config coverage guards](#config-coverage-guards) name the offender.
+A new section needs no parser and no change to the reader: the runtime reader builds every section from the field names of its dataclass. The checks of the new section go to tests/config_checks.py, and the key set has to be mirrored in both test documents, because the coverage guard fails while the test copies and the repository config disagree.
 
 ## Config coverage guards
 
-tests/test_config_coverage.py reads the real config/ directory and compares the three forms of the configuration: the repository config, the two test copies (the shared document in tests/config_helpers.py and VALID_TOML in tests/test_config.py) and the Config the loader builds from each of them.
+tests/config_checks.py holds the strict checks of the config: the types, the allowed sets, the ranges, the cross-checks between sections and the task catalog rules. They are the checks that used to run inside the package; nothing in the package checks anything now.
 
-The guards are: every section of the repository config has a Config field and a parser, every Config field has a section, every key of a section is read by its parser, every config file contributes a table, a section field is either a key or a recorded derived field, and each test copy mirrors the sections and keys of the repository config except the keys the parsers document as optional.
+tests/test_config_coverage.py applies those checks to the repository config and compares the forms of the configuration: the repository config, the two test copies (the shared document in tests/config_helpers.py and VALID_TOML in tests/test_config.py) and the Config the checks build from each of them.
+
+The guards are: the shipped config passes every check, every section of the repository config has a Config field, every Config field has a section, every key of a section is read by its check, every config file contributes a table, a section field is either a key or a recorded derived field, each test copy mirrors the sections and keys of the repository config except the keys the checks document as optional, and the factory config passes the same checks as any other.

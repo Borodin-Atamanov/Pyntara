@@ -6,9 +6,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -417,7 +420,7 @@ def test_load_config_rejects_duplicate_ssh_directive_names(tmp_path: Path) -> No
 def test_load_config_accepts_empty_ssh_directives(tmp_path: Path) -> None:
     # An empty directives list is valid: the drop-in is then removed by
     # the task instead of rendered.
-    config = load_config(
+    config = load_checked_config(
         write_config(
             tmp_path,
             base_config().replace(

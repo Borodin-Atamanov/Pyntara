@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -61,7 +64,7 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 
 def test_load_config_playwright_values(tmp_path: Path) -> None:
     # The typed values round-trip from the config document.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.playwright_setup.username == "i"
     assert config.playwright_setup.home_dir == "/home/i"
     assert config.playwright_setup.packages == ("nodejs", "npm")

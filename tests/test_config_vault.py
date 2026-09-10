@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -107,7 +110,7 @@ def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
     # seven entries including the cross-checked titles.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert [entry.title for entry in config.vault_structure.entries] == [
         "password_salt",
         "pyntara_local_vault_password",
@@ -124,7 +127,7 @@ def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> N
 def test_load_config_generated_password_parses(tmp_path: Path) -> None:
     # The optional generated_password field of an entry is carried into the
     # typed entry; the base config sets proquint-7 for the passphrase entry.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     entry = next(
         e
         for e in config.vault_structure.entries
@@ -191,7 +194,7 @@ def test_load_config_vault_groups_parse(tmp_path: Path) -> None:
         "[vault_structure]\n[[vault_structure.entries]]",
         "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"NextDNS\"\nnotes = \"Profile accounts.\"\n[[vault_structure.entries]]",
     )
-    config = load_config(write_config(tmp_path, content))
+    config = load_checked_config(write_config(tmp_path, content))
     assert len(config.vault_structure.groups) == 1
     assert config.vault_structure.groups[0].title == "NextDNS"
     assert config.vault_structure.groups[0].notes == "Profile accounts."
@@ -209,7 +212,7 @@ def test_load_config_vault_group_seed_entries_parse(tmp_path: Path) -> None:
         'notes = "Test address."\n'
         "[[vault_structure.entries]]",
     )
-    config = load_config(write_config(tmp_path, content))
+    config = load_checked_config(write_config(tmp_path, content))
     group = config.vault_structure.groups[0]
     assert group.title == "port_forwarding_servers"
     assert group.notes == "Server addresses."

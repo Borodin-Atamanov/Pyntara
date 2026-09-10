@@ -6,13 +6,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     section = config.port_forwarding_setup
     assert section.vault_group_title == "port_forwarding_servers"
     assert section.passphrase_entry_title == "ssh_passphase_for_port_forwarding"

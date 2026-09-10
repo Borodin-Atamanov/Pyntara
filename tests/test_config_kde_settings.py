@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -119,7 +122,7 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 
 def test_load_config_kde_settings_values(tmp_path: Path) -> None:
     # The typed values round-trip from the config document.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.kde_settings.packages == ("plasma-workspace", "libkf6config-bin")
     assert config.kde_settings.username == "i"
     assert config.kde_settings.home_dir == "/home/i"
@@ -147,7 +150,7 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
 
 def test_load_config_kde_settings_places_hidden(tmp_path: Path) -> None:
     # The hidden Places panel entries round-trip and default to empty.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.kde_settings.places_hidden == ()
     anchor = 'sddm_theme_font = "Noto Sans,20"\n[swapfile_service_install]'
     content = base_config().replace(
@@ -156,7 +159,7 @@ def test_load_config_kde_settings_places_hidden(tmp_path: Path) -> None:
         'places_hidden = ["Home", "Desktop", "Documents"]\n'
         "[swapfile_service_install]",
     )
-    config = load_config(write_config(tmp_path, content))
+    config = load_checked_config(write_config(tmp_path, content))
     assert config.kde_settings.places_hidden == (
         "Home",
         "Desktop",
@@ -209,7 +212,7 @@ group = ["TabBox"]
 key = "StaleKey"
 delete = true
 """
-    config = load_config(write_config(tmp_path, _kde_settings_with_kconfig(records)))
+    config = load_checked_config(write_config(tmp_path, _kde_settings_with_kconfig(records)))
     assert config.kde_settings.kconfig[0].file == "kwinrc"
     assert config.kde_settings.kconfig[0].group == ("TabBox",)
     assert config.kde_settings.kconfig[0].key == "LayoutName"
@@ -225,7 +228,7 @@ delete = true
 
 def test_load_config_kde_settings_no_kconfig_is_empty(tmp_path: Path) -> None:
     # Without the kconfig list the field defaults to an empty tuple.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.kde_settings.kconfig == ()
 
 

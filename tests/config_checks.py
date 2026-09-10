@@ -1,0 +1,3406 @@
+"""Strict checks of the config documents, test side only.
+
+The runtime reads the config and uses the values as they are: it never
+checks, never stops and never invents a value. Every condition that used to
+guard the run lives here instead, so a broken config fails the test suite
+during development and never on the target machine (architecture contract,
+Configuration). The parsers below are the checks that used to run inside the
+package, with their logic unchanged.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from pyntara.config import (
+    I2PD_LOG_LEVELS,
+    MODES,
+    SEND_ORDERS,
+    TOR_LOG_LEVELS,
+    YGGDRASIL_LISTEN_SCHEMES,
+    YGGDRASIL_PEER_SCHEMES,
+    AddExtraReposConfig,
+    ChromeSetupConfig,
+    CliToolsConfig,
+    CollectorModuleConfig,
+    Config,
+    ConfigError,
+    DnsproxySetupConfig,
+    EngineConfig,
+    FfmpegSetupConfig,
+    HostnameConfig,
+    I2pdServiceSetupConfig,
+    ImagemagickSetupConfig,
+    KConfigRecord,
+    KdeKeyboardSetupConfig,
+    KdeSettingsConfig,
+    LocalVaultSetupConfig,
+    NextdnsSetupSystemWideConfig,
+    PlaywrightSetupConfig,
+    PortForwardingSetupConfig,
+    RustdeskOptionConfig,
+    RustdeskSetupConfig,
+    SshClientSetupConfig,
+    SshDaemonSetupConfig,
+    SshDirective,
+    SwapfileServiceInstallConfig,
+    SystemMetricsCollectorConfig,
+    SystemMetricsSetupConfig,
+    TaskConfig,
+    TelegramSetupConfig,
+    ThreeXuiXraySetupConfig,
+    TorSetupConfig,
+    VaultEntry,
+    VaultGroup,
+    VaultGroupSeed,
+    VaultStructureConfig,
+    VocalinuxSetupConfig,
+    YggdrasilMulticastInterfaceConfig,
+    YggdrasilServiceSetupConfig,
+    ZramServiceConfig,
+    ZswapServiceConfig,
+)
+from pyntara.config._fields import (
+    CLICK_METHODS,
+    NUMLOCK_STATES,
+    SHARE_ADDR_STRATEGIES,
+)
+from pyntara.config.kde_settings import KCONFIG_TYPES
+from pyntara.config.vault import GENERATED_PASSWORD_RE
+
+
+def _int_field(raw: object, name: str) -> int:
+    """Validate an integer config value; bool is a subclass of int and must
+    be excluded explicitly."""
+
+    if not isinstance(raw, int) or isinstance(raw, bool):
+        raise ConfigError(f"{name} must be an integer")
+    return raw
+
+
+def _float_field(raw: object, name: str) -> float:
+    """Validate a numeric config value; bool is a subclass of int and must
+    be excluded explicitly."""
+
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ConfigError(f"{name} must be a number")
+    value = float(raw)
+    if value < 0:
+        raise ConfigError(f"{name} must not be negative")
+    return value
+
+
+def _octal_mode_field(raw: object, name: str) -> int:
+    """Parse one octal file mode string like "0700" into an int.
+
+    TOML has no octal literals, so the modes are configured as strings
+    and converted here; a value that is not four octal digits is a
+    config error.
+    """
+
+    if not isinstance(raw, str) or len(raw) != 4:
+        raise ConfigError(f"{name} must be an octal string like '0700'")
+    try:
+        parsed = int(raw, 8)
+    except ValueError:
+        raise ConfigError(f"{name} must be an octal string like '0700'") from None
+    return parsed
+
+
+def _nonempty_string_field(raw: object, name: str) -> str:
+    """Validate a non-empty string config value."""
+
+    if not isinstance(raw, str) or not raw:
+        raise ConfigError(f"{name} must be a non-empty string")
+    return raw
+
+
+def _string_list(raw: object, name: str) -> tuple[str, ...]:
+    """Validate a non-empty array of non-empty strings."""
+
+    if not isinstance(raw, list) or not raw:
+        raise ConfigError(f"{name} must be a non-empty array of strings")
+    if not all(isinstance(part, str) and part.strip() for part in raw):
+        raise ConfigError(f"{name} must be non-empty strings")
+    return tuple(part.strip() for part in raw)
+
+
+def _bool_field(raw: object, name: str) -> bool:
+    """Validate a boolean config value."""
+
+    if not isinstance(raw, bool):
+        raise ConfigError(f"{name} must be a boolean")
+    return raw
+
+
+def _string_map(raw: object, name: str) -> dict[str, str]:
+    """Validate a table of non-empty strings keyed by non-empty strings.
+
+    The keys and values are stripped of surrounding whitespace. An empty
+    table is allowed (it means the feature the map configures is off).
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a table of strings")
+    result: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"{name} keys must be non-empty strings")
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{name} values must be non-empty strings")
+        result[key.strip()] = value.strip()
+    return result
+
+
+def _enum_field(raw: object, name: str, allowed: tuple[str, ...]) -> str:
+    """Validate a config value restricted to an allowed vocabulary."""
+
+    if not isinstance(raw, str) or raw not in allowed:
+        raise ConfigError(f"{name} must be one of {', '.join(allowed)}")
+    return raw
+
+
+
+
+
+# from add_extra_repos.py
+
+
+def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
+    """Validate the [add_extra_repos] table and build AddExtraReposConfig.
+
+    Components are non-empty strings without whitespace, deduplicated while
+    preserving their configured order. An empty list is invalid: an empty
+    component set would make the task trivially satisfied.
+    keep_downloaded_debs is a required boolean, never silently defaulted.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[add_extra_repos] section is missing or not a table")
+    components = raw.get("components")
+    if not isinstance(components, list) or not components:
+        raise ConfigError(
+            "add_extra_repos.components must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(component, str)
+        and component
+        and component == component.strip()
+        and " " not in component
+        for component in components
+    ):
+        raise ConfigError(
+            "add_extra_repos.components must be non-empty strings without whitespace"
+        )
+    unique: list[str] = []
+    seen: set[str] = set()
+    for component in components:
+        if component not in seen:
+            seen.add(component)
+            unique.append(component)
+    ubuntu_hosts = raw.get("ubuntu_hosts")
+    if not isinstance(ubuntu_hosts, list) or not ubuntu_hosts:
+        raise ConfigError(
+            "add_extra_repos.ubuntu_hosts must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(host, str) and host and host == host.strip()
+        for host in ubuntu_hosts
+    ):
+        raise ConfigError(
+            "add_extra_repos.ubuntu_hosts must be non-empty strings"
+        )
+    keep_downloaded_debs = _bool_field(
+        raw.get("keep_downloaded_debs"), "add_extra_repos.keep_downloaded_debs"
+    )
+    return AddExtraReposConfig(
+        components=tuple(unique),
+        ubuntu_hosts=tuple(ubuntu_hosts),
+        keep_downloaded_debs=keep_downloaded_debs,
+    )
+
+
+
+
+
+# from chrome_setup.py
+
+
+def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
+    """Validate the [chrome_setup] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[chrome_setup] section is missing or not a table")
+    cdp_port = _int_field(raw.get("cdp_port"), "chrome_setup.cdp_port")
+    if cdp_port <= 0:
+        raise ConfigError("chrome_setup.cdp_port must be positive")
+    return ChromeSetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "chrome_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "chrome_setup.home_dir"
+        ),
+        settings_repo_url=_nonempty_string_field(
+            raw.get("settings_repo_url"), "chrome_setup.settings_repo_url"
+        ),
+        settings_repo_ref=_nonempty_string_field(
+            raw.get("settings_repo_ref"), "chrome_setup.settings_repo_ref"
+        ),
+        settings_dir=Path(
+            _nonempty_string_field(
+                raw.get("settings_dir"), "chrome_setup.settings_dir"
+            )
+        ),
+        system_root=Path(
+            _nonempty_string_field(
+                raw.get("system_root"), "chrome_setup.system_root"
+            )
+        ),
+        apt_source_path=Path(
+            _nonempty_string_field(
+                raw.get("apt_source_path"), "chrome_setup.apt_source_path"
+            )
+        ),
+        keyring_path=Path(
+            _nonempty_string_field(
+                raw.get("keyring_path"), "chrome_setup.keyring_path"
+            )
+        ),
+        google_key_url=_nonempty_string_field(
+            raw.get("google_key_url"), "chrome_setup.google_key_url"
+        ),
+        desktop_source_path=Path(
+            _nonempty_string_field(
+                raw.get("desktop_source_path"),
+                "chrome_setup.desktop_source_path",
+            )
+        ),
+        desktop_override_path=Path(
+            _nonempty_string_field(
+                raw.get("desktop_override_path"),
+                "chrome_setup.desktop_override_path",
+            )
+        ),
+        cdp_port=cdp_port,
+        cdp_address=_nonempty_string_field(
+            raw.get("cdp_address"), "chrome_setup.cdp_address"
+        ),
+    )
+
+
+
+
+
+# from cli_tools.py
+
+
+def _cli_tools_table(raw: object) -> CliToolsConfig:
+    """Validate the [cli_tools] table and build CliToolsConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[cli_tools] section is missing or not a table")
+    packages = raw.get("packages")
+    if not isinstance(packages, list) or not all(
+        isinstance(package, str) for package in packages
+    ):
+        raise ConfigError("cli_tools.packages must be an array of strings")
+    package_success_threshold_percent = _int_field(
+        raw.get("package_success_threshold_percent"),
+        "cli_tools.package_success_threshold_percent",
+    )
+    if not 0 <= package_success_threshold_percent <= 100:
+        raise ConfigError(
+            "cli_tools.package_success_threshold_percent must be between 0 and 100"
+        )
+    return CliToolsConfig(
+        packages=tuple(packages),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "cli_tools.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"), "cli_tools.package_install_retries"
+        ),
+        package_success_threshold_percent=package_success_threshold_percent,
+    )
+
+
+
+
+
+# from dnsproxy_setup.py
+
+
+def _dnsproxy_string_list(raw: dict[str, object], name: str) -> tuple[str, ...]:
+    value = raw.get(name)
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, str) or not item.strip() for item in value)
+    ):
+        raise ConfigError(f"dnsproxy_setup.{name} must be a non-empty array of strings")
+    return tuple(item.strip() for item in value)
+
+
+def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
+    # Validate the dnsproxy_setup table.
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[dnsproxy_setup] section is missing or not a table")
+    github_repo = _nonempty_string_field(
+        raw.get("github_repo"), "dnsproxy_setup.github_repo"
+    )
+    download_dir = Path(
+        _nonempty_string_field(raw.get("download_dir"), "dnsproxy_setup.download_dir")
+    )
+    binary_path = Path(
+        _nonempty_string_field(raw.get("binary_path"), "dnsproxy_setup.binary_path")
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "dnsproxy_setup.service_unit_name"
+    )
+    service_unit_path = Path(
+        _nonempty_string_field(raw.get("service_unit_path"), "dnsproxy_setup.service_unit_path")
+    )
+    service_template_path = Path(
+        _nonempty_string_field(
+            raw.get("service_template_path"), "dnsproxy_setup.service_template_path"
+        )
+    )
+    listen_addresses = _dnsproxy_string_list(raw, "listen_addresses")
+    listen_port = _int_field(raw.get("listen_port"), "dnsproxy_setup.listen_port")
+    if not 1 <= listen_port <= 65535:
+        raise ConfigError("dnsproxy_setup.listen_port must be between 1 and 65535")
+    endpoint_values = tuple(
+        _nonempty_string_field(raw.get(name), f"dnsproxy_setup.{name}")
+        for name in ("doh_url_format", "dot_host_format", "doq_host_format")
+    )
+    if any("{profile_id}" not in value for value in endpoint_values):
+        raise ConfigError("dnsproxy_setup endpoint formats must contain {profile_id}")
+    upstream_mode = _nonempty_string_field(
+        raw.get("upstream_mode"), "dnsproxy_setup.upstream_mode"
+    )
+    if upstream_mode not in ("load_balance", "parallel", "fastest_addr"):
+        raise ConfigError("dnsproxy_setup.upstream_mode has an unsupported value")
+    cache_enabled = raw.get("cache_enabled")
+    if not isinstance(cache_enabled, bool):
+        raise ConfigError("dnsproxy_setup.cache_enabled must be a boolean")
+    cache_size_bytes = _int_field(
+        raw.get("cache_size_bytes"), "dnsproxy_setup.cache_size_bytes"
+    )
+    if cache_size_bytes <= 0:
+        raise ConfigError("dnsproxy_setup.cache_size_bytes must be positive")
+    timeout_seconds = _int_field(
+        raw.get("timeout_seconds"), "dnsproxy_setup.timeout_seconds"
+    )
+    if timeout_seconds <= 0:
+        raise ConfigError("dnsproxy_setup.timeout_seconds must be positive")
+    log_rate_limit_interval_seconds = _int_field(
+        raw.get("log_rate_limit_interval_seconds"),
+        "dnsproxy_setup.log_rate_limit_interval_seconds",
+    )
+    if log_rate_limit_interval_seconds <= 0:
+        raise ConfigError(
+            "dnsproxy_setup.log_rate_limit_interval_seconds must be positive"
+        )
+    log_rate_limit_burst = _int_field(
+        raw.get("log_rate_limit_burst"), "dnsproxy_setup.log_rate_limit_burst"
+    )
+    if log_rate_limit_burst <= 0:
+        raise ConfigError("dnsproxy_setup.log_rate_limit_burst must be positive")
+    bootstrap_resolvers = _dnsproxy_string_list(raw, "bootstrap_resolvers")
+    append_provider_dns = raw.get("append_provider_dns")
+    if not isinstance(append_provider_dns, bool):
+        raise ConfigError("dnsproxy_setup.append_provider_dns must be a boolean")
+    service_restart_seconds = _float_field(
+        raw.get("service_restart_seconds"), "dnsproxy_setup.service_restart_seconds"
+    )
+    if service_restart_seconds < 0:
+        raise ConfigError("dnsproxy_setup.service_restart_seconds must not be negative")
+    install_retries = _int_field(
+        raw.get("install_retries"), "dnsproxy_setup.install_retries"
+    )
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"), "dnsproxy_setup.start_check_attempts"
+    )
+    if install_retries < 1 or start_check_attempts < 1:
+        raise ConfigError("dnsproxy_setup retry and readiness values must be positive")
+    start_delay = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "dnsproxy_setup.start_check_retry_delay_seconds",
+    )
+    if start_delay <= 0:
+        raise ConfigError(
+            "dnsproxy_setup.start_check_retry_delay_seconds must be positive"
+        )
+    resolved_conf_dir = Path(
+        _nonempty_string_field(
+            raw.get("resolved_conf_dir"), "dnsproxy_setup.resolved_conf_dir"
+        )
+    )
+    resolved_dropin_file_name = _nonempty_string_field(
+        raw.get("resolved_dropin_file_name"), "dnsproxy_setup.resolved_dropin_file_name"
+    )
+    resolved_dropin_file_mode = _octal_mode_field(
+        raw.get("resolved_dropin_file_mode"), "dnsproxy_setup.resolved_dropin_file_mode"
+    )
+    resolved_dropin_header = _nonempty_string_field(
+        raw.get("resolved_dropin_header"), "dnsproxy_setup.resolved_dropin_header"
+    )
+    resolved_section = _nonempty_string_field(
+        raw.get("resolved_section"), "dnsproxy_setup.resolved_section"
+    )
+    resolved_dns_directives = _dnsproxy_string_list(raw, "resolved_dns_directives")
+    resolved_domains_directive = _nonempty_string_field(
+        raw.get("resolved_domains_directive"),
+        "dnsproxy_setup.resolved_domains_directive",
+    )
+    manage_networkmanager = raw.get("manage_networkmanager")
+    if not isinstance(manage_networkmanager, bool):
+        raise ConfigError("dnsproxy_setup.manage_networkmanager must be a boolean")
+    commands = tuple(
+        _dnsproxy_string_list(raw, name)
+        for name in (
+            "nmcli_check_command",
+            "nmcli_device_status_command",
+            "nmcli_active_list_command",
+            "nmcli_dns_state_command",
+            "nmcli_modify_command",
+            "nmcli_reapply_command",
+            "daemon_reload_command",
+            "restart_resolved_command",
+            "resolvectl_status_command",
+            "resolvectl_dns_command",
+            "nmcli_dns_command",
+            "verification_command",
+            "ss_tcp_listen_command",
+            "ss_udp_listen_command",
+            "kill_command",
+            "service_log_command",
+        )
+    )
+    verification_domain = _nonempty_string_field(
+        raw.get("verification_domain"), "dnsproxy_setup.verification_domain"
+    )
+    profile_id_file_path = Path(
+        _nonempty_string_field(
+            raw.get("profile_id_file_path"), "dnsproxy_setup.profile_id_file_path"
+        )
+    )
+    profile_id_file_mode = _octal_mode_field(
+        raw.get("profile_id_file_mode"), "dnsproxy_setup.profile_id_file_mode"
+    )
+    return DnsproxySetupConfig(
+        github_repo=github_repo,
+        download_dir=download_dir,
+        binary_path=binary_path,
+        service_unit_name=service_unit_name,
+        service_unit_path=service_unit_path,
+        service_template_path=service_template_path,
+        listen_addresses=listen_addresses,
+        listen_port=listen_port,
+        doh_url_format=endpoint_values[0],
+        dot_host_format=endpoint_values[1],
+        doq_host_format=endpoint_values[2],
+        upstream_mode=upstream_mode,
+        cache_enabled=cache_enabled,
+        cache_size_bytes=cache_size_bytes,
+        timeout_seconds=timeout_seconds,
+        log_rate_limit_interval_seconds=log_rate_limit_interval_seconds,
+        log_rate_limit_burst=log_rate_limit_burst,
+        bootstrap_resolvers=bootstrap_resolvers,
+        append_provider_dns=append_provider_dns,
+        service_restart_seconds=service_restart_seconds,
+        install_retries=install_retries,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_delay,
+        resolved_conf_dir=resolved_conf_dir,
+        resolved_dropin_file_name=resolved_dropin_file_name,
+        resolved_dropin_file_mode=resolved_dropin_file_mode,
+        resolved_dropin_header=resolved_dropin_header,
+        resolved_section=resolved_section,
+        resolved_dns_directives=resolved_dns_directives,
+        resolved_domains_directive=resolved_domains_directive,
+        manage_networkmanager=manage_networkmanager,
+        nmcli_check_command=commands[0],
+        nmcli_device_status_command=commands[1],
+        nmcli_active_list_command=commands[2],
+        nmcli_dns_state_command=commands[3],
+        nmcli_modify_command=commands[4],
+        nmcli_reapply_command=commands[5],
+        daemon_reload_command=commands[6],
+        restart_resolved_command=commands[7],
+        resolvectl_status_command=commands[8],
+        resolvectl_dns_command=commands[9],
+        nmcli_dns_command=commands[10],
+        verification_command=commands[11],
+        ss_tcp_listen_command=commands[12],
+        ss_udp_listen_command=commands[13],
+        kill_command=commands[14],
+        service_log_command=commands[15],
+        verification_domain=verification_domain,
+        profile_id_file_path=profile_id_file_path,
+        profile_id_file_mode=profile_id_file_mode,
+    )
+
+
+
+
+
+# from engine.py
+
+
+def _engine_table(raw: object) -> EngineConfig:
+    """Validate the [engine] table and build EngineConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[engine] section is missing or not a table")
+    task_data_root = raw.get("task_data_root")
+    if not isinstance(task_data_root, str):
+        raise ConfigError("engine.task_data_root must be a string")
+    desktop_detect_processes = raw.get("desktop_detect_processes")
+    if not isinstance(desktop_detect_processes, list) or not desktop_detect_processes:
+        raise ConfigError(
+            "engine.desktop_detect_processes must be a non-empty array of strings"
+        )
+    if not all(
+        isinstance(process, str) and process and process == process.strip()
+        for process in desktop_detect_processes
+    ):
+        raise ConfigError(
+            "engine.desktop_detect_processes must be non-empty strings"
+        )
+    error_priority = _int_field(raw.get("error_priority"), "engine.error_priority")
+    if not 0 <= error_priority <= 7:
+        raise ConfigError("engine.error_priority must be between 0 and 7")
+    progress_priority = _int_field(
+        raw.get("progress_priority"), "engine.progress_priority"
+    )
+    if not 0 <= progress_priority <= 7:
+        raise ConfigError("engine.progress_priority must be between 0 and 7")
+    curl_timeout_seconds = _int_field(
+        raw.get("curl_timeout_seconds"), "engine.curl_timeout_seconds"
+    )
+    if curl_timeout_seconds <= 0:
+        raise ConfigError("engine.curl_timeout_seconds must be positive")
+    curl_download_timeout_seconds = _int_field(
+        raw.get("curl_download_timeout_seconds"),
+        "engine.curl_download_timeout_seconds",
+    )
+    if curl_download_timeout_seconds <= 0:
+        raise ConfigError("engine.curl_download_timeout_seconds must be positive")
+    curl_retries = _int_field(raw.get("curl_retries"), "engine.curl_retries")
+    if curl_retries < 0:
+        raise ConfigError("engine.curl_retries must not be negative")
+    curl_retry_delay_seconds = _int_field(
+        raw.get("curl_retry_delay_seconds"), "engine.curl_retry_delay_seconds"
+    )
+    if curl_retry_delay_seconds < 1:
+        raise ConfigError("engine.curl_retry_delay_seconds must be positive")
+    curl_connect_timeout_seconds = _int_field(
+        raw.get("curl_connect_timeout_seconds"),
+        "engine.curl_connect_timeout_seconds",
+    )
+    if curl_connect_timeout_seconds <= 0:
+        raise ConfigError("engine.curl_connect_timeout_seconds must be positive")
+    curl_retry_max_time_seconds = _int_field(
+        raw.get("curl_retry_max_time_seconds"),
+        "engine.curl_retry_max_time_seconds",
+    )
+    if curl_retry_max_time_seconds <= 0:
+        raise ConfigError("engine.curl_retry_max_time_seconds must be positive")
+    return EngineConfig(
+        task_data_root=Path(task_data_root),
+        notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
+        command_timeout_seconds=_int_field(
+            raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
+        ),
+        curl_timeout_seconds=curl_timeout_seconds,
+        curl_download_timeout_seconds=curl_download_timeout_seconds,
+        curl_retries=curl_retries,
+        curl_retry_delay_seconds=curl_retry_delay_seconds,
+        curl_connect_timeout_seconds=curl_connect_timeout_seconds,
+        curl_retry_max_time_seconds=curl_retry_max_time_seconds,
+        error_priority=error_priority,
+        progress_priority=progress_priority,
+        process_check_timeout_seconds=_int_field(
+            raw.get("process_check_timeout_seconds"),
+            "engine.process_check_timeout_seconds",
+        ),
+        task_start_delay_seconds=_float_field(
+            raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
+        ),
+        desktop_detect_processes=tuple(desktop_detect_processes),
+    )
+
+
+
+
+
+# from ffmpeg_setup.py
+
+
+def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
+    """Validate the [ffmpeg_setup] table and build FfmpegSetupConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[ffmpeg_setup] section is missing or not a table")
+    packages = raw.get("packages")
+    if not isinstance(packages, list) or not all(
+        isinstance(package, str) for package in packages
+    ):
+        raise ConfigError("ffmpeg_setup.packages must be an array of strings")
+    wayrecord_bin_path = raw.get("wayrecord_bin_path")
+    if not isinstance(wayrecord_bin_path, str):
+        raise ConfigError("ffmpeg_setup.wayrecord_bin_path must be a string")
+    wayrecord_desktop_path = raw.get("wayrecord_desktop_path")
+    if not isinstance(wayrecord_desktop_path, str):
+        raise ConfigError("ffmpeg_setup.wayrecord_desktop_path must be a string")
+    return FfmpegSetupConfig(
+        packages=tuple(packages),
+        wayrecord_bin_path=Path(wayrecord_bin_path),
+        wayrecord_desktop_path=Path(wayrecord_desktop_path),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "ffmpeg_setup.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"),
+            "ffmpeg_setup.package_install_retries",
+        ),
+    )
+
+
+
+
+
+# from hostname.py
+
+
+def _hostname_table(raw: object) -> HostnameConfig:
+    """Validate the [hostname] table and build HostnameConfig.
+
+    hostname_file is a non-empty string; set_hostname_command is a
+    non-empty array of non-empty strings.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[hostname] section is missing or not a table")
+    hostname_file = _nonempty_string_field(
+        raw.get("hostname_file"), "hostname.hostname_file"
+    )
+    command = raw.get("set_hostname_command")
+    if not isinstance(command, list) or not command:
+        raise ConfigError(
+            "hostname.set_hostname_command must be a non-empty array of strings"
+        )
+    if not all(isinstance(part, str) and part.strip() for part in command):
+        raise ConfigError(
+            "hostname.set_hostname_command must be non-empty strings"
+        )
+    return HostnameConfig(
+        hostname_file=hostname_file,
+        set_hostname_command=tuple(part.strip() for part in command),
+    )
+
+
+
+
+
+# from i2pd_service_setup.py
+
+
+def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
+    """Validate the [i2pd_service_setup] table and build the config.
+
+    github_repo, download_dir, service_unit_name and config_path are
+    non-empty strings; log_level is one of the I2PD_LOG_LEVELS values;
+    bandwidth is a positive integer in kilobytes per second and share is
+    an integer percentage between 0 and 100; http_enabled and
+    socks_proxy_enabled are strict booleans; install_retries and
+    start_check_attempts are positive integers;
+    start_check_retry_delay_seconds is positive, so the readiness loop
+    always waits between attempts. tunnels_config_path and
+    tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
+    are non-empty strings; address_file_path is a non-empty string and
+    address_file_mode is an octal mode string.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[i2pd_service_setup] section is missing or not a table")
+    github_repo = _nonempty_string_field(
+        raw.get("github_repo"), "i2pd_service_setup.github_repo"
+    )
+    download_dir = Path(
+        _nonempty_string_field(
+            raw.get("download_dir"), "i2pd_service_setup.download_dir"
+        )
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "i2pd_service_setup.service_unit_name"
+    )
+    config_path = Path(
+        _nonempty_string_field(
+            raw.get("config_path"), "i2pd_service_setup.config_path"
+        )
+    )
+    log_level = raw.get("log_level")
+    if log_level not in I2PD_LOG_LEVELS:
+        raise ConfigError(
+            "i2pd_service_setup.log_level must be one of "
+            + ", ".join(I2PD_LOG_LEVELS)
+        )
+    bandwidth = _int_field(
+        raw.get("bandwidth"), "i2pd_service_setup.bandwidth"
+    )
+    if bandwidth < 1:
+        raise ConfigError("i2pd_service_setup.bandwidth must be positive")
+    share = _int_field(raw.get("share"), "i2pd_service_setup.share")
+    if share < 0 or share > 100:
+        raise ConfigError(
+            "i2pd_service_setup.share must be between 0 and 100"
+        )
+    http_enabled = raw.get("http_enabled")
+    if not isinstance(http_enabled, bool):
+        raise ConfigError("i2pd_service_setup.http_enabled must be a boolean")
+    socks_proxy_enabled = raw.get("socks_proxy_enabled")
+    if not isinstance(socks_proxy_enabled, bool):
+        raise ConfigError(
+            "i2pd_service_setup.socks_proxy_enabled must be a boolean"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "i2pd_service_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("i2pd_service_setup.install_retries must be positive")
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"), "i2pd_service_setup.start_check_attempts"
+    )
+    if start_check_attempts < 1:
+        raise ConfigError(
+            "i2pd_service_setup.start_check_attempts must be positive"
+        )
+    start_check_retry_delay_seconds = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "i2pd_service_setup.start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "i2pd_service_setup.start_check_retry_delay_seconds must be positive"
+        )
+    tunnels_config_path = Path(
+        _nonempty_string_field(
+            raw.get("tunnels_config_path"), "i2pd_service_setup.tunnels_config_path"
+        )
+    )
+    tunnel_name = _nonempty_string_field(
+        raw.get("tunnel_name"), "i2pd_service_setup.tunnel_name"
+    )
+    tunnel_host = _nonempty_string_field(
+        raw.get("tunnel_host"), "i2pd_service_setup.tunnel_host"
+    )
+    tunnel_keys_path = Path(
+        _nonempty_string_field(
+            raw.get("tunnel_keys_path"), "i2pd_service_setup.tunnel_keys_path"
+        )
+    )
+    address_file_path = Path(
+        _nonempty_string_field(
+            raw.get("address_file_path"), "i2pd_service_setup.address_file_path"
+        )
+    )
+    address_file_mode = _octal_mode_field(
+        raw.get("address_file_mode"), "i2pd_service_setup.address_file_mode"
+    )
+    return I2pdServiceSetupConfig(
+        github_repo=github_repo,
+        download_dir=download_dir,
+        service_unit_name=service_unit_name,
+        config_path=config_path,
+        log_level=log_level,
+        bandwidth=bandwidth,
+        share=share,
+        http_enabled=http_enabled,
+        socks_proxy_enabled=socks_proxy_enabled,
+        install_retries=install_retries,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        tunnels_config_path=tunnels_config_path,
+        tunnel_name=tunnel_name,
+        tunnel_host=tunnel_host,
+        tunnel_keys_path=tunnel_keys_path,
+        address_file_path=address_file_path,
+        address_file_mode=address_file_mode,
+    )
+
+
+
+
+
+# from imagemagick_setup.py
+
+
+def _imagemagick_setup_table(raw: object) -> ImagemagickSetupConfig:
+    """Validate the [imagemagick_setup] table and build ImagemagickSetupConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[imagemagick_setup] section is missing or not a table")
+    packages = raw.get("packages")
+    if not isinstance(packages, list) or not all(
+        isinstance(package, str) for package in packages
+    ):
+        raise ConfigError("imagemagick_setup.packages must be an array of strings")
+    policy_path = raw.get("policy_path")
+    if not isinstance(policy_path, str):
+        raise ConfigError("imagemagick_setup.policy_path must be a string")
+    return ImagemagickSetupConfig(
+        packages=tuple(packages),
+        policy_path=Path(policy_path),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "imagemagick_setup.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"),
+            "imagemagick_setup.package_install_retries",
+        ),
+    )
+
+
+
+
+
+# from kde_keyboard_setup.py
+
+
+def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
+    """Validate the [kde_keyboard_setup] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[kde_keyboard_setup] section is missing or not a table")
+    return KdeKeyboardSetupConfig(
+        packages=_string_list(raw.get("packages"), "kde_keyboard_setup.packages"),
+        username=_nonempty_string_field(
+            raw.get("username"), "kde_keyboard_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "kde_keyboard_setup.home_dir"
+        ),
+        config_dir=_nonempty_string_field(
+            raw.get("config_dir"), "kde_keyboard_setup.config_dir"
+        ),
+        kxkbrc_file_name=_nonempty_string_field(
+            raw.get("kxkbrc_file_name"), "kde_keyboard_setup.kxkbrc_file_name"
+        ),
+        appletsrc_file_name=_nonempty_string_field(
+            raw.get("appletsrc_file_name"),
+            "kde_keyboard_setup.appletsrc_file_name",
+        ),
+        applet_plugin=_nonempty_string_field(
+            raw.get("applet_plugin"), "kde_keyboard_setup.applet_plugin"
+        ),
+        layouts=_string_list(raw.get("layouts"), "kde_keyboard_setup.layouts"),
+        switch_option=_nonempty_string_field(
+            raw.get("switch_option"), "kde_keyboard_setup.switch_option"
+        ),
+        reset_old_options=_bool_field(
+            raw.get("reset_old_options"), "kde_keyboard_setup.reset_old_options"
+        ),
+        switch_mode=_nonempty_string_field(
+            raw.get("switch_mode"), "kde_keyboard_setup.switch_mode"
+        ),
+        use_layout_switching=_bool_field(
+            raw.get("use_layout_switching"),
+            "kde_keyboard_setup.use_layout_switching",
+        ),
+        indicator_display_style=_nonempty_string_field(
+            raw.get("indicator_display_style"),
+            "kde_keyboard_setup.indicator_display_style",
+        ),
+        kwin_reload_command=_string_list(
+            raw.get("kwin_reload_command"), "kde_keyboard_setup.kwin_reload_command"
+        ),
+        panel_restart_command=_string_list(
+            raw.get("panel_restart_command"),
+            "kde_keyboard_setup.panel_restart_command",
+        ),
+        layout_switch_shortcuts=_string_map(
+            raw.get("layout_switch_shortcuts", {}),
+            "kde_keyboard_setup.layout_switch_shortcuts",
+        ),
+    )
+
+
+
+
+
+# from kde_settings.py
+
+
+def _kde_settings_table(raw: object) -> KdeSettingsConfig:
+    """Validate the [kde_settings] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[kde_settings] section is missing or not a table")
+    return KdeSettingsConfig(
+        packages=_string_list(raw.get("packages"), "kde_settings.packages"),
+        username=_nonempty_string_field(
+            raw.get("username"), "kde_settings.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "kde_settings.home_dir"
+        ),
+        user_dirs=_string_map(raw.get("user_dirs"), "kde_settings.user_dirs"),
+        places_hidden=(
+            _string_list(raw["places_hidden"], "kde_settings.places_hidden")
+            if "places_hidden" in raw
+            else ()
+        ),
+        color_scheme=_nonempty_string_field(
+            raw.get("color_scheme"), "kde_settings.color_scheme"
+        ),
+        look_and_feel=_nonempty_string_field(
+            raw.get("look_and_feel"), "kde_settings.look_and_feel"
+        ),
+        look_and_feel_light=_nonempty_string_field(
+            raw.get("look_and_feel_light"), "kde_settings.look_and_feel_light"
+        ),
+        automatic_look_and_feel=_bool_field(
+            raw.get("automatic_look_and_feel"),
+            "kde_settings.automatic_look_and_feel",
+        ),
+        cursor_theme=_nonempty_string_field(
+            raw.get("cursor_theme"), "kde_settings.cursor_theme"
+        ),
+        cursor_theme_light=_nonempty_string_field(
+            raw.get("cursor_theme_light"), "kde_settings.cursor_theme_light"
+        ),
+        numlock_on_boot=_enum_field(
+            raw.get("numlock_on_boot"),
+            "kde_settings.numlock_on_boot",
+            NUMLOCK_STATES,
+        ),
+        touchpad_click_method=_enum_field(
+            raw.get("touchpad_click_method"),
+            "kde_settings.touchpad_click_method",
+            CLICK_METHODS,
+        ),
+        touchpad_disable_on_external_mouse=_bool_field(
+            raw.get("touchpad_disable_on_external_mouse"),
+            "kde_settings.touchpad_disable_on_external_mouse",
+        ),
+        virtual_keyboard_enabled=_bool_field(
+            raw.get("virtual_keyboard_enabled"),
+            "kde_settings.virtual_keyboard_enabled",
+        ),
+        virtual_keyboard_input_method=_nonempty_string_field(
+            raw.get("virtual_keyboard_input_method"),
+            "kde_settings.virtual_keyboard_input_method",
+        ),
+        virtual_keyboard_locales=_string_list(
+            raw.get("virtual_keyboard_locales"),
+            "kde_settings.virtual_keyboard_locales",
+        ),
+        kwin_reload_command=_string_list(
+            raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
+        ),
+        sddm_autologin_user=_nonempty_string_field(
+            raw.get("sddm_autologin_user"), "kde_settings.sddm_autologin_user"
+        ),
+        sddm_autologin_session=_nonempty_string_field(
+            raw.get("sddm_autologin_session"),
+            "kde_settings.sddm_autologin_session",
+        ),
+        sddm_theme=_nonempty_string_field(
+            raw.get("sddm_theme"), "kde_settings.sddm_theme"
+        ),
+        sddm_theme_cursor_size=_nonempty_string_field(
+            raw.get("sddm_theme_cursor_size"),
+            "kde_settings.sddm_theme_cursor_size",
+        ),
+        sddm_theme_cursor_theme=_nonempty_string_field(
+            raw.get("sddm_theme_cursor_theme"),
+            "kde_settings.sddm_theme_cursor_theme",
+        ),
+        sddm_theme_font=_nonempty_string_field(
+            raw.get("sddm_theme_font"), "kde_settings.sddm_theme_font"
+        ),
+        kconfig=_kconfig_records(raw.get("kconfig")),
+    )
+
+
+def _kconfig_record(raw: object, index: int) -> KConfigRecord:
+    """Validate one [[kde_settings.kconfig]] record."""
+
+    name = f"kde_settings.kconfig[{index}]"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a table")
+    file_name = _nonempty_string_field(raw.get("file"), f"{name}.file")
+    group = _string_list(raw.get("group"), f"{name}.group")
+    key = _nonempty_string_field(raw.get("key"), f"{name}.key")
+    delete = _bool_field(raw.get("delete", False), f"{name}.delete")
+    if delete:
+        if raw.get("value") is not None:
+            raise ConfigError(f"{name} must not have a value when delete is true")
+        value = ""
+    else:
+        value = _nonempty_string_field(raw.get("value"), f"{name}.value")
+    value_type = _enum_field(
+        raw.get("type", "string"), f"{name}.type", KCONFIG_TYPES
+    )
+    return KConfigRecord(
+        file=file_name,
+        group=group,
+        key=key,
+        value=value,
+        type=value_type,
+        delete=delete,
+    )
+
+
+def _kconfig_records(raw: object) -> tuple[KConfigRecord, ...]:
+    """Validate the [[kde_settings.kconfig]] records; empty when absent."""
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError("[kde_settings] kconfig must be an array of tables")
+    return tuple(_kconfig_record(record, index) for index, record in enumerate(raw))
+
+
+
+
+
+# from nextdns_setup_system_wide.py
+
+
+def _nextdns_setup_system_wide_table(
+    raw: object,
+) -> NextdnsSetupSystemWideConfig:
+    """Validate the [nextdns_setup_system_wide] table and build the config.
+
+    Every value is required and typed: the vault group title and the
+    profile ID file path are non-empty strings; profile_id_file_mode is
+    an octal string and error_priority is an integer 0-7.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[nextdns_setup_system_wide] section is missing or not a table"
+        )
+    vault_group_title = _nonempty_string_field(
+        raw.get("vault_group_title"), "nextdns_setup_system_wide.vault_group_title"
+    )
+    profile_id_file_path = _nonempty_string_field(
+        raw.get("profile_id_file_path"),
+        "nextdns_setup_system_wide.profile_id_file_path",
+    )
+    profile_id_file_mode = _octal_mode_field(
+        raw.get("profile_id_file_mode"),
+        "nextdns_setup_system_wide.profile_id_file_mode",
+    )
+    error_priority = _int_field(
+        raw.get("error_priority"), "nextdns_setup_system_wide.error_priority"
+    )
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "nextdns_setup_system_wide.error_priority must be between 0 and 7"
+        )
+    return NextdnsSetupSystemWideConfig(
+        vault_group_title=vault_group_title,
+        profile_id_file_path=Path(profile_id_file_path),
+        profile_id_file_mode=profile_id_file_mode,
+        error_priority=error_priority,
+    )
+
+
+
+
+
+# from playwright_setup.py
+
+
+def _playwright_setup_table(raw: object) -> PlaywrightSetupConfig:
+    """Validate the [playwright_setup] table and build PlaywrightSetupConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[playwright_setup] section is missing or not a table")
+    packages = raw.get("packages")
+    if not isinstance(packages, list) or not all(
+        isinstance(package, str) for package in packages
+    ):
+        raise ConfigError("playwright_setup.packages must be an array of strings")
+    return PlaywrightSetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "playwright_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "playwright_setup.home_dir"
+        ),
+        packages=tuple(packages),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "playwright_setup.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"),
+            "playwright_setup.package_install_retries",
+        ),
+        cli_package=_nonempty_string_field(
+            raw.get("cli_package"), "playwright_setup.cli_package"
+        ),
+        npm_install_timeout_seconds=_int_field(
+            raw.get("npm_install_timeout_seconds"),
+            "playwright_setup.npm_install_timeout_seconds",
+        ),
+    )
+
+
+
+
+
+# from port_forwarding_setup.py
+
+
+def _positive_int_field(raw: object, name: str) -> int:
+    """Validate a positive integer config value."""
+
+    value = _int_field(raw, name)
+    if value <= 0:
+        raise ConfigError(f"{name} must be a positive integer")
+    return value
+
+
+def _port_field(raw: object, name: str) -> int:
+    """Validate a TCP port config value from 1 to 65535."""
+
+    value = _int_field(raw, name)
+    if not 1 <= value <= 65535:
+        raise ConfigError(f"{name} must be a TCP port from 1 to 65535")
+    return value
+
+
+def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
+    """Validate the [port_forwarding_setup] table and build the config.
+
+    Every value is required and typed. The desired port range must be
+    ordered and inside the TCP port space; the backoff values are
+    positive integers, the reconnect pause grows geometrically by the
+    multiplier until the ceiling; error_priority is an integer 0-7.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[port_forwarding_setup] section is missing or not a table"
+        )
+    section = "port_forwarding_setup."
+    vault_group_title = _nonempty_string_field(
+        raw.get("vault_group_title"), section + "vault_group_title"
+    )
+    passphrase_entry_title = _nonempty_string_field(
+        raw.get("passphrase_entry_title"), section + "passphrase_entry_title"
+    )
+    remote_ssh_user = _nonempty_string_field(
+        raw.get("remote_ssh_user"), section + "remote_ssh_user"
+    )
+    desired_port_min = _port_field(
+        raw.get("desired_port_min"), section + "desired_port_min"
+    )
+    desired_port_max = _port_field(
+        raw.get("desired_port_max"), section + "desired_port_max"
+    )
+    if desired_port_min > desired_port_max:
+        raise ConfigError(
+            "port_forwarding_setup.desired_port_min must not exceed "
+            "desired_port_max"
+        )
+    server_alive_interval_seconds = _positive_int_field(
+        raw.get("server_alive_interval_seconds"),
+        section + "server_alive_interval_seconds",
+    )
+    server_alive_count_max = _positive_int_field(
+        raw.get("server_alive_count_max"), section + "server_alive_count_max"
+    )
+    connect_timeout_seconds = _positive_int_field(
+        raw.get("connect_timeout_seconds"), section + "connect_timeout_seconds"
+    )
+    backoff_base_seconds = _positive_int_field(
+        raw.get("backoff_base_seconds"), section + "backoff_base_seconds"
+    )
+    backoff_multiplier = _positive_int_field(
+        raw.get("backoff_multiplier"), section + "backoff_multiplier"
+    )
+    backoff_max_seconds = _positive_int_field(
+        raw.get("backoff_max_seconds"), section + "backoff_max_seconds"
+    )
+    state_file_path = Path(
+        _nonempty_string_field(raw.get("state_file_path"), section + "state_file_path")
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), section + "service_unit_name"
+    )
+    service_restart_seconds = _positive_int_field(
+        raw.get("service_restart_seconds"), section + "service_restart_seconds"
+    )
+    journal_identifier = _nonempty_string_field(
+        raw.get("journal_identifier"), section + "journal_identifier"
+    )
+    error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "port_forwarding_setup.error_priority must be between 0 and 7"
+        )
+    return PortForwardingSetupConfig(
+        vault_group_title=vault_group_title,
+        passphrase_entry_title=passphrase_entry_title,
+        remote_ssh_user=remote_ssh_user,
+        desired_port_min=desired_port_min,
+        desired_port_max=desired_port_max,
+        server_alive_interval_seconds=server_alive_interval_seconds,
+        server_alive_count_max=server_alive_count_max,
+        connect_timeout_seconds=connect_timeout_seconds,
+        backoff_base_seconds=backoff_base_seconds,
+        backoff_multiplier=backoff_multiplier,
+        backoff_max_seconds=backoff_max_seconds,
+        state_file_path=state_file_path,
+        service_unit_name=service_unit_name,
+        service_restart_seconds=service_restart_seconds,
+        journal_identifier=journal_identifier,
+        error_priority=error_priority,
+    )
+
+
+
+
+
+# from rustdesk_setup.py
+
+
+def _rustdesk_options(raw: object) -> tuple[RustdeskOptionConfig, ...]:
+    """Validate the [rustdesk_setup.options] array of tables.
+
+    Every option is a table with a non-empty key and a non-empty value; a
+    missing array means no options. Duplicate keys are a config error, so
+    the task never applies the same option twice with different values.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError("[rustdesk_setup] options must be an array of tables")
+    result: list[RustdeskOptionConfig] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigError("[rustdesk_setup] option entries must be tables")
+        key = entry.get("key")
+        value = entry.get("value")
+        if not isinstance(key, str) or not key:
+            raise ConfigError("[rustdesk_setup] option key must be a non-empty string")
+        if not isinstance(value, str) or not value:
+            raise ConfigError("[rustdesk_setup] option value must be a non-empty string")
+        if key in seen:
+            raise ConfigError(f"[rustdesk_setup] duplicate option key: {key}")
+        seen.add(key)
+        result.append(RustdeskOptionConfig(key=key, value=value))
+    return tuple(result)
+
+
+def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
+    """Validate the [rustdesk_setup] table and build RustdeskSetupConfig."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[rustdesk_setup] section is missing or not a table")
+    github_repo = raw.get("github_repo")
+    if not isinstance(github_repo, str) or not github_repo:
+        raise ConfigError("rustdesk_setup.github_repo must be a non-empty string")
+    download_dir = raw.get("download_dir")
+    if not isinstance(download_dir, str):
+        raise ConfigError("rustdesk_setup.download_dir must be a string")
+    id_file_path = raw.get("id_file_path")
+    if not isinstance(id_file_path, str):
+        raise ConfigError("rustdesk_setup.id_file_path must be a string")
+    vault_entry_title = raw.get("vault_entry_title")
+    if not isinstance(vault_entry_title, str) or not vault_entry_title:
+        raise ConfigError(
+            "rustdesk_setup.vault_entry_title must be a non-empty string"
+        )
+    service_unit_name = raw.get("service_unit_name")
+    if not isinstance(service_unit_name, str) or not service_unit_name:
+        raise ConfigError(
+            "rustdesk_setup.service_unit_name must be a non-empty string"
+        )
+    config_dir = raw.get("config_dir")
+    if not isinstance(config_dir, str):
+        raise ConfigError("rustdesk_setup.config_dir must be a string")
+    password_separator = raw.get("password_separator")
+    if not isinstance(password_separator, str) or not password_separator:
+        raise ConfigError(
+            "rustdesk_setup.password_separator must be a non-empty string"
+        )
+    return RustdeskSetupConfig(
+        github_repo=github_repo,
+        download_dir=Path(download_dir),
+        id_file_path=Path(id_file_path),
+        id_file_mode=_octal_mode_field(
+            raw.get("id_file_mode"), "rustdesk_setup.id_file_mode"
+        ),
+        vault_entry_title=vault_entry_title,
+        service_unit_name=service_unit_name,
+        password_words=_int_field(
+            raw.get("password_words"), "rustdesk_setup.password_words"
+        ),
+        password_separator=password_separator,
+        config_dir=Path(config_dir),
+        install_timeout_seconds=_int_field(
+            raw.get("install_timeout_seconds"),
+            "rustdesk_setup.install_timeout_seconds",
+        ),
+        apt_update_timeout_seconds=_int_field(
+            raw.get("apt_update_timeout_seconds"),
+            "rustdesk_setup.apt_update_timeout_seconds",
+        ),
+        install_retries=_int_field(
+            raw.get("install_retries"), "rustdesk_setup.install_retries"
+        ),
+        start_check_attempts=_int_field(
+            raw.get("start_check_attempts"),
+            "rustdesk_setup.start_check_attempts",
+        ),
+        start_check_retry_delay_seconds=_float_field(
+            raw.get("start_check_retry_delay_seconds"),
+            "rustdesk_setup.start_check_retry_delay_seconds",
+        ),
+        options=_rustdesk_options(raw.get("options")),
+    )
+
+
+
+
+
+# from ssh.py
+
+
+def _ssh_directives_field(raw: object, name: str) -> tuple[SshDirective, ...]:
+    """Validate one directive array of the ssh daemon table.
+
+    A missing array means no directives: the drop-in is then removed
+    instead of rendered. Every directive is a table with a unique
+    non-empty keyword and a non-empty value string.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of tables")
+    directives: list[SshDirective] = []
+    seen_names: set[str] = set()
+    for index, directive_raw in enumerate(raw):
+        if not isinstance(directive_raw, dict):
+            raise ConfigError(f"{name} must be an array of tables")
+        directive_name = directive_raw.get("name")
+        if not isinstance(directive_name, str) or not directive_name:
+            raise ConfigError(
+                f"{name}[{index}] name must be a non-empty string"
+            )
+        if directive_name in seen_names:
+            raise ConfigError(
+                f"{name} directive names must be unique: {directive_name}"
+            )
+        seen_names.add(directive_name)
+        value = directive_raw.get("value")
+        if not isinstance(value, str) or not value:
+            raise ConfigError(
+                f"{name}[{index}] value must be a non-empty string"
+            )
+        directives.append(SshDirective(name=directive_name, value=value))
+    return tuple(directives)
+
+
+def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
+    """Validate the [ssh_daemon_setup] table and build the config.
+
+    package_name, service_unit_name, the key file names and the paths
+    are non-empty strings; the timeouts and retries are positive
+    integers; start_check_retry_delay_seconds is positive; the file
+    modes are octal strings; users is a non-empty array of unique
+    non-empty names; directives are validated by
+    _ssh_directives_field.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[ssh_daemon_setup] section is missing or not a table")
+    package_name = _nonempty_string_field(
+        raw.get("package_name"), "ssh_daemon_setup.package_name"
+    )
+    augeas_tools_package_name = _nonempty_string_field(
+        raw.get("augeas_tools_package_name"),
+        "ssh_daemon_setup.augeas_tools_package_name",
+    )
+    package_status_timeout_seconds = _int_field(
+        raw.get("package_status_timeout_seconds"),
+        "ssh_daemon_setup.package_status_timeout_seconds",
+    )
+    if package_status_timeout_seconds < 1:
+        raise ConfigError(
+            "ssh_daemon_setup.package_status_timeout_seconds must be positive"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "ssh_daemon_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("ssh_daemon_setup.install_retries must be positive")
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "ssh_daemon_setup.service_unit_name"
+    )
+    socket_unit_name = _nonempty_string_field(
+        raw.get("socket_unit_name"), "ssh_daemon_setup.socket_unit_name"
+    )
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"), "ssh_daemon_setup.start_check_attempts"
+    )
+    if start_check_attempts < 1:
+        raise ConfigError("ssh_daemon_setup.start_check_attempts must be positive")
+    start_check_retry_delay_seconds = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "ssh_daemon_setup.start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "ssh_daemon_setup.start_check_retry_delay_seconds must be positive"
+        )
+    sshd_config_path = Path(
+        _nonempty_string_field(
+            raw.get("sshd_config_path"), "ssh_daemon_setup.sshd_config_path"
+        )
+    )
+    sshd_config_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("sshd_config_dropin_path"),
+            "ssh_daemon_setup.sshd_config_dropin_path",
+        )
+    )
+    private_key_file_name = _nonempty_string_field(
+        raw.get("private_key_file_name"),
+        "ssh_daemon_setup.private_key_file_name",
+    )
+    public_key_file_name = _nonempty_string_field(
+        raw.get("public_key_file_name"), "ssh_daemon_setup.public_key_file_name"
+    )
+
+    def _file_mode_field(name: str) -> int:
+        """Parse one octal file mode string like "0700" into an int."""
+
+        return _octal_mode_field(raw.get(name), f"ssh_daemon_setup.{name}")
+
+    users_raw = raw.get("users")
+    if not isinstance(users_raw, list) or not users_raw:
+        raise ConfigError(
+            "ssh_daemon_setup.users must be a non-empty array of strings"
+        )
+    if not all(isinstance(user, str) and user for user in users_raw):
+        raise ConfigError("ssh_daemon_setup.users must be non-empty strings")
+    if len(set(users_raw)) != len(users_raw):
+        raise ConfigError("ssh_daemon_setup.users must not contain duplicates")
+    return SshDaemonSetupConfig(
+        package_name=package_name,
+        augeas_tools_package_name=augeas_tools_package_name,
+        package_status_timeout_seconds=package_status_timeout_seconds,
+        install_retries=install_retries,
+        service_unit_name=service_unit_name,
+        socket_unit_name=socket_unit_name,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        sshd_config_path=Path(sshd_config_path),
+        sshd_config_dropin_path=Path(sshd_config_dropin_path),
+        dropin_file_mode=_file_mode_field("dropin_file_mode"),
+        private_key_file_name=private_key_file_name,
+        public_key_file_name=public_key_file_name,
+        private_key_file_mode=_file_mode_field("private_key_file_mode"),
+        public_key_file_mode=_file_mode_field("public_key_file_mode"),
+        authorized_keys_file_mode=_file_mode_field("authorized_keys_file_mode"),
+        ssh_dir_mode=_file_mode_field("ssh_dir_mode"),
+        root_ssh_dir=Path(
+            _nonempty_string_field(
+                raw.get("root_ssh_dir"), "ssh_daemon_setup.root_ssh_dir"
+            )
+        ),
+        users=tuple(users_raw),
+        directives=_ssh_directives_field(
+            raw.get("directives"), "ssh_daemon_setup.directives"
+        ),
+        port_forwarding_private_key_file_name=_nonempty_string_field(
+            raw.get("port_forwarding_private_key_file_name"),
+            "ssh_daemon_setup.port_forwarding_private_key_file_name",
+        ),
+        port_forwarding_public_key_file_name=_nonempty_string_field(
+            raw.get("port_forwarding_public_key_file_name"),
+            "ssh_daemon_setup.port_forwarding_public_key_file_name",
+        ),
+        port_forwarding_authorized_keys_options=_nonempty_string_field(
+            raw.get("port_forwarding_authorized_keys_options"),
+            "ssh_daemon_setup.port_forwarding_authorized_keys_options",
+        ),
+    )
+
+
+def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
+    """Validate the [ssh_client_setup] table and build the config.
+
+    ssh_config_path and ssh_config_dropin_path are non-empty strings;
+    dropin_file_mode is an octal string; directives are validated by
+    _ssh_directives_field.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[ssh_client_setup] section is missing or not a table"
+        )
+    ssh_config_path = Path(
+        _nonempty_string_field(
+            raw.get("ssh_config_path"), "ssh_client_setup.ssh_config_path"
+        )
+    )
+    ssh_config_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("ssh_config_dropin_path"),
+            "ssh_client_setup.ssh_config_dropin_path",
+        )
+    )
+    dropin_file_mode = _octal_mode_field(
+        raw.get("dropin_file_mode"), "ssh_client_setup.dropin_file_mode"
+    )
+    augeas_tools_package_name = _nonempty_string_field(
+        raw.get("augeas_tools_package_name"),
+        "ssh_client_setup.augeas_tools_package_name",
+    )
+    package_status_timeout_seconds = _int_field(
+        raw.get("package_status_timeout_seconds"),
+        "ssh_client_setup.package_status_timeout_seconds",
+    )
+    if package_status_timeout_seconds < 1:
+        raise ConfigError(
+            "ssh_client_setup.package_status_timeout_seconds must be positive"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "ssh_client_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("ssh_client_setup.install_retries must be positive")
+    directives = _ssh_directives_field(
+        raw.get("directives"), "ssh_client_setup.directives"
+    )
+    return SshClientSetupConfig(
+        ssh_config_path=ssh_config_path,
+        ssh_config_dropin_path=ssh_config_dropin_path,
+        dropin_file_mode=dropin_file_mode,
+        augeas_tools_package_name=augeas_tools_package_name,
+        package_status_timeout_seconds=package_status_timeout_seconds,
+        install_retries=install_retries,
+        directives=directives,
+    )
+
+
+
+
+
+# from swapfile_service_install.py
+
+
+def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig:
+    """Validate the [swapfile_service_install] table and build the config.
+
+    swapfile_path is a non-empty string; ram_multiplier is a non-negative
+    number; ram_extra_mb is a non-negative integer; disk_fraction must be
+    greater than zero and at most one, so the swap size always stays finite
+    and positive when RAM and disk are present. swapfile_mode is an octal
+    string like "0600"; size_tolerance_mb is a non-negative integer.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[swapfile_service_install] section is missing or not a table"
+        )
+    swapfile_path = raw.get("swapfile_path")
+    if not isinstance(swapfile_path, str) or not swapfile_path:
+        raise ConfigError(
+            "swapfile_service_install.swapfile_path must be a non-empty string"
+        )
+    ram_multiplier = _float_field(
+        raw.get("ram_multiplier"), "swapfile_service_install.ram_multiplier"
+    )
+    ram_extra_mb = _int_field(
+        raw.get("ram_extra_mb"), "swapfile_service_install.ram_extra_mb"
+    )
+    if ram_extra_mb < 0:
+        raise ConfigError(
+            "swapfile_service_install.ram_extra_mb must not be negative"
+        )
+    disk_fraction = _float_field(
+        raw.get("disk_fraction"), "swapfile_service_install.disk_fraction"
+    )
+    if not 0 < disk_fraction <= 1:
+        raise ConfigError(
+            "swapfile_service_install.disk_fraction must be between 0 (exclusive) and 1"
+        )
+    size_tolerance_mb = _int_field(
+        raw.get("size_tolerance_mb"), "swapfile_service_install.size_tolerance_mb"
+    )
+    if size_tolerance_mb < 0:
+        raise ConfigError(
+            "swapfile_service_install.size_tolerance_mb must not be negative"
+        )
+    return SwapfileServiceInstallConfig(
+        swapfile_path=Path(swapfile_path),
+        ram_multiplier=ram_multiplier,
+        ram_extra_mb=ram_extra_mb,
+        disk_fraction=disk_fraction,
+        swapfile_mode=_octal_mode_field(
+            raw.get("swapfile_mode"), "swapfile_service_install.swapfile_mode"
+        ),
+        size_tolerance_mb=size_tolerance_mb,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "swapfile_service_install.service_unit_name",
+        ),
+    )
+
+
+
+
+
+# from system_metrics_setup.py
+
+
+def _daily_time_field(raw: object, name: str) -> str:
+    """Validate a time of day "HH:MM" or "HH:MM:SS"; return "HH:MM:SS".
+
+    The normalized form feeds the OnCalendar directive of the collector
+    timer directly, so the config may use the short form and the renderer
+    never has to guess the seconds.
+    """
+
+    if not isinstance(raw, str) or not raw:
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'")
+    parts = raw.split(":")
+    if len(parts) not in (2, 3):
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'")
+    try:
+        values = [int(part) for part in parts]
+    except ValueError:
+        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'") from None
+    hour, minute, second = (
+        values[0],
+        values[1],
+        values[2] if len(values) == 3 else 0,
+    )
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        raise ConfigError(f"{name} must be a valid time of day")
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
+
+
+def _collector_modules_field(
+    raw: object, name: str
+) -> tuple[CollectorModuleConfig, ...]:
+    """Validate one module array of the collector table.
+
+    A missing array means no modules of that kind: an empty network
+    module list is valid, because the readiness percentage is then 100
+    by construction and only the system modules are collected. Every
+    module is a table with a unique non-empty name and a non-empty
+    command array of non-empty strings; the command is never a shell
+    line.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of tables")
+    modules: list[CollectorModuleConfig] = []
+    seen_names: set[str] = set()
+    for index, module_raw in enumerate(raw):
+        if not isinstance(module_raw, dict):
+            raise ConfigError(f"{name} must be an array of tables")
+        module_name = module_raw.get("name")
+        if not isinstance(module_name, str) or not module_name:
+            raise ConfigError(f"{name}[{index}] name must be a non-empty string")
+        if module_name in seen_names:
+            raise ConfigError(f"{name} module names must be unique: {module_name}")
+        seen_names.add(module_name)
+        command = module_raw.get("command")
+        if not isinstance(command, list) or not command:
+            raise ConfigError(
+                f"{name}[{index}] command must be a non-empty array of strings"
+            )
+        if not all(isinstance(part, str) and part for part in command):
+            raise ConfigError(
+                f"{name}[{index}] command must be non-empty strings"
+            )
+        modules.append(CollectorModuleConfig(name=module_name, command=tuple(command)))
+    return tuple(modules)
+
+
+def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig:
+    """Validate the [system_metrics_setup.collector] table and build the
+    config.
+
+    The section is mandatory. boot_delay_seconds is a non-negative
+    integer; daily_send_time is a time of day "HH:MM" or "HH:MM:SS"
+    normalized to "HH:MM:SS"; threshold_percent is an integer between 0
+    and 100; retry_base_seconds is positive, retry_multiplier is at
+    least 2 and retry_max_seconds is not below retry_base_seconds;
+    command_timeout_seconds is positive; the unit names, the journal
+    identifier, the report file name are non-empty strings and
+    lock_file_path is a non-empty string. The module arrays are
+    optional; every module is a table with a unique non-empty name and a
+    non-empty command array of non-empty strings.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[system_metrics_setup.collector] section is missing or not a table"
+        )
+    boot_delay_seconds = _int_field(
+        raw.get("boot_delay_seconds"),
+        "system_metrics_setup.collector.boot_delay_seconds",
+    )
+    if boot_delay_seconds < 0:
+        raise ConfigError(
+            "system_metrics_setup.collector.boot_delay_seconds must not be negative"
+        )
+    threshold_percent = _int_field(
+        raw.get("threshold_percent"),
+        "system_metrics_setup.collector.threshold_percent",
+    )
+    if not 0 <= threshold_percent <= 100:
+        raise ConfigError(
+            "system_metrics_setup.collector.threshold_percent must be between 0 and 100"
+        )
+    retry_base_seconds = _int_field(
+        raw.get("retry_base_seconds"),
+        "system_metrics_setup.collector.retry_base_seconds",
+    )
+    if retry_base_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_base_seconds must be positive"
+        )
+    retry_multiplier = _int_field(
+        raw.get("retry_multiplier"),
+        "system_metrics_setup.collector.retry_multiplier",
+    )
+    if retry_multiplier < 2:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_multiplier must be at least 2"
+        )
+    retry_max_seconds = _int_field(
+        raw.get("retry_max_seconds"),
+        "system_metrics_setup.collector.retry_max_seconds",
+    )
+    if retry_max_seconds < retry_base_seconds:
+        raise ConfigError(
+            "system_metrics_setup.collector.retry_max_seconds must be at least "
+            "retry_base_seconds"
+        )
+    command_timeout_seconds = _int_field(
+        raw.get("command_timeout_seconds"),
+        "system_metrics_setup.collector.command_timeout_seconds",
+    )
+    if command_timeout_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.collector.command_timeout_seconds must be positive"
+        )
+    return SystemMetricsCollectorConfig(
+        boot_delay_seconds=boot_delay_seconds,
+        daily_send_time=_daily_time_field(
+            raw.get("daily_send_time"),
+            "system_metrics_setup.collector.daily_send_time",
+        ),
+        threshold_percent=threshold_percent,
+        retry_base_seconds=retry_base_seconds,
+        retry_multiplier=retry_multiplier,
+        retry_max_seconds=retry_max_seconds,
+        command_timeout_seconds=command_timeout_seconds,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "system_metrics_setup.collector.service_unit_name",
+        ),
+        timer_unit_name=_nonempty_string_field(
+            raw.get("timer_unit_name"),
+            "system_metrics_setup.collector.timer_unit_name",
+        ),
+        journal_identifier=_nonempty_string_field(
+            raw.get("journal_identifier"),
+            "system_metrics_setup.collector.journal_identifier",
+        ),
+        lock_file_path=Path(
+            _nonempty_string_field(
+                raw.get("lock_file_path"),
+                "system_metrics_setup.collector.lock_file_path",
+            )
+        ),
+        report_file_name=_nonempty_string_field(
+            raw.get("report_file_name"),
+            "system_metrics_setup.collector.report_file_name",
+        ),
+        network_modules=_collector_modules_field(
+            raw.get("network_modules"),
+            "system_metrics_setup.collector.network_modules",
+        ),
+        system_modules=_collector_modules_field(
+            raw.get("system_modules"),
+            "system_metrics_setup.collector.system_modules",
+        ),
+    )
+
+
+def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
+    """Validate the [system_metrics_setup] table and build the config.
+
+    backoff_base_seconds and backoff_max_seconds are positive integers
+    and backoff_max_seconds is not below backoff_base_seconds;
+    backoff_multiplier is an integer of at least 2, so the pause always
+    grows. python_version is a non-empty string; error_priority is a
+    syslog level between 0 and 7; venv_dir, system_config_path,
+    command_path, vault_backup_file_name,
+    system_metrics_dir, spool_dir and every unit name, journal
+    identifier, queue directory name and spool temp prefix are non-empty
+    strings; system_metrics_dir_mode, queue_file_mode, spool_dir_mode
+    and command_file_mode are octal strings; max_queue_file_size_bytes,
+    queue_file_suffix_length, queue_link_attempts and
+    google_script_timeout_seconds are positive integers; send_order is
+    one of the SEND_ORDERS values; google_script_dir, main_sent_dir and
+    google_script_key_entry_title are non-empty strings;
+    google_script_deployment_url_regex is a non-empty string that
+    compiles as a regular expression with exactly one capture group.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[system_metrics_setup] section is missing or not a table"
+        )
+    backoff_base_seconds = _int_field(
+        raw.get("backoff_base_seconds"),
+        "system_metrics_setup.backoff_base_seconds",
+    )
+    if backoff_base_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.backoff_base_seconds must be positive"
+        )
+    backoff_multiplier = _int_field(
+        raw.get("backoff_multiplier"),
+        "system_metrics_setup.backoff_multiplier",
+    )
+    if backoff_multiplier < 2:
+        raise ConfigError(
+            "system_metrics_setup.backoff_multiplier must be at least 2"
+        )
+    backoff_max_seconds = _int_field(
+        raw.get("backoff_max_seconds"),
+        "system_metrics_setup.backoff_max_seconds",
+    )
+    if backoff_max_seconds < backoff_base_seconds:
+        raise ConfigError(
+            "system_metrics_setup.backoff_max_seconds must be at least "
+            "backoff_base_seconds"
+        )
+    python_version = raw.get("python_version")
+    if not isinstance(python_version, str) or not python_version:
+        raise ConfigError(
+            "system_metrics_setup.python_version must be a non-empty string"
+        )
+    error_priority = _int_field(
+        raw.get("error_priority"), "system_metrics_setup.error_priority"
+    )
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "system_metrics_setup.error_priority must be between 0 and 7"
+        )
+    venv_dir = raw.get("venv_dir")
+    if not isinstance(venv_dir, str) or not venv_dir:
+        raise ConfigError(
+            "system_metrics_setup.venv_dir must be a non-empty string"
+        )
+    system_config_path = raw.get("system_config_path")
+    if not isinstance(system_config_path, str) or not system_config_path:
+        raise ConfigError(
+            "system_metrics_setup.system_config_path must be a non-empty string"
+        )
+    command_path = raw.get("command_path")
+    if not isinstance(command_path, str) or not command_path:
+        raise ConfigError(
+            "system_metrics_setup.command_path must be a non-empty string"
+        )
+    vault_backup_file_name = _nonempty_string_field(
+        raw.get("vault_backup_file_name"),
+        "system_metrics_setup.vault_backup_file_name",
+    )
+    system_metrics_dir = raw.get("system_metrics_dir")
+    if not isinstance(system_metrics_dir, str) or not system_metrics_dir:
+        raise ConfigError(
+            "system_metrics_setup.system_metrics_dir must be a non-empty string"
+        )
+    max_queue_file_size_bytes = _int_field(
+        raw.get("max_queue_file_size_bytes"),
+        "system_metrics_setup.max_queue_file_size_bytes",
+    )
+    if max_queue_file_size_bytes < 1:
+        raise ConfigError(
+            "system_metrics_setup.max_queue_file_size_bytes must be positive"
+        )
+    send_order = raw.get("send_order")
+    if send_order not in SEND_ORDERS:
+        raise ConfigError(
+            "system_metrics_setup.send_order must be one of "
+            + ", ".join(SEND_ORDERS)
+        )
+    queue_file_suffix_length = _int_field(
+        raw.get("queue_file_suffix_length"),
+        "system_metrics_setup.queue_file_suffix_length",
+    )
+    if queue_file_suffix_length < 1:
+        raise ConfigError(
+            "system_metrics_setup.queue_file_suffix_length must be positive"
+        )
+    queue_link_attempts = _int_field(
+        raw.get("queue_link_attempts"),
+        "system_metrics_setup.queue_link_attempts",
+    )
+    if queue_link_attempts < 1:
+        raise ConfigError(
+            "system_metrics_setup.queue_link_attempts must be positive"
+        )
+    google_script_dir = _nonempty_string_field(
+        raw.get("google_script_dir"),
+        "system_metrics_setup.google_script_dir",
+    )
+    main_sent_dir = _nonempty_string_field(
+        raw.get("main_sent_dir"),
+        "system_metrics_setup.main_sent_dir",
+    )
+    google_script_timeout_seconds = _int_field(
+        raw.get("google_script_timeout_seconds"),
+        "system_metrics_setup.google_script_timeout_seconds",
+    )
+    if google_script_timeout_seconds < 1:
+        raise ConfigError(
+            "system_metrics_setup.google_script_timeout_seconds must be positive"
+        )
+    google_script_key_entry_title = _nonempty_string_field(
+        raw.get("google_script_key_entry_title"),
+        "system_metrics_setup.google_script_key_entry_title",
+    )
+    google_script_deployment_url_regex = raw.get(
+        "google_script_deployment_url_regex"
+    )
+    if (
+        not isinstance(google_script_deployment_url_regex, str)
+        or not google_script_deployment_url_regex
+    ):
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "be a non-empty string"
+        )
+    try:
+        compiled_url_regex = re.compile(google_script_deployment_url_regex)
+    except re.error as exc:
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex is not "
+            f"a valid regular expression: {exc}"
+        ) from None
+    if compiled_url_regex.groups != 1:
+        raise ConfigError(
+            "system_metrics_setup.google_script_deployment_url_regex must "
+            "contain exactly one capture group"
+        )
+    return SystemMetricsSetupConfig(
+        backoff_base_seconds=backoff_base_seconds,
+        backoff_multiplier=backoff_multiplier,
+        backoff_max_seconds=backoff_max_seconds,
+        python_version=python_version,
+        error_priority=error_priority,
+        venv_dir=Path(venv_dir),
+        system_config_path=Path(system_config_path),
+        command_path=Path(command_path),
+        vault_backup_file_name=vault_backup_file_name,
+        system_metrics_dir=Path(system_metrics_dir),
+        system_metrics_dir_mode=_octal_mode_field(
+            raw.get("system_metrics_dir_mode"),
+            "system_metrics_setup.system_metrics_dir_mode",
+        ),
+        queue_file_mode=_octal_mode_field(
+            raw.get("queue_file_mode"), "system_metrics_setup.queue_file_mode"
+        ),
+        max_queue_file_size_bytes=max_queue_file_size_bytes,
+        send_order=send_order,
+        queue_file_suffix_length=queue_file_suffix_length,
+        spool_dir=Path(
+            _nonempty_string_field(
+                raw.get("spool_dir"), "system_metrics_setup.spool_dir"
+            )
+        ),
+        spool_dir_mode=_octal_mode_field(
+            raw.get("spool_dir_mode"), "system_metrics_setup.spool_dir_mode"
+        ),
+        command_file_mode=_octal_mode_field(
+            raw.get("command_file_mode"),
+            "system_metrics_setup.command_file_mode",
+        ),
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"),
+            "system_metrics_setup.service_unit_name",
+        ),
+        ingest_service_unit_name=_nonempty_string_field(
+            raw.get("ingest_service_unit_name"),
+            "system_metrics_setup.ingest_service_unit_name",
+        ),
+        ingest_path_unit_name=_nonempty_string_field(
+            raw.get("ingest_path_unit_name"),
+            "system_metrics_setup.ingest_path_unit_name",
+        ),
+        service_journal_identifier=_nonempty_string_field(
+            raw.get("service_journal_identifier"),
+            "system_metrics_setup.service_journal_identifier",
+        ),
+        commit_journal_identifier=_nonempty_string_field(
+            raw.get("commit_journal_identifier"),
+            "system_metrics_setup.commit_journal_identifier",
+        ),
+        main_outbox_dir=_nonempty_string_field(
+            raw.get("main_outbox_dir"),
+            "system_metrics_setup.main_outbox_dir",
+        ),
+        temp_dir=_nonempty_string_field(
+            raw.get("temp_dir"), "system_metrics_setup.temp_dir"
+        ),
+        spool_temp_prefix=_nonempty_string_field(
+            raw.get("spool_temp_prefix"),
+            "system_metrics_setup.spool_temp_prefix",
+        ),
+        queue_link_attempts=queue_link_attempts,
+        google_script_dir=google_script_dir,
+        main_sent_dir=main_sent_dir,
+        google_script_timeout_seconds=google_script_timeout_seconds,
+        google_script_key_entry_title=google_script_key_entry_title,
+        google_script_deployment_url_regex=google_script_deployment_url_regex,
+        collector=_system_metrics_collector_table(raw.get("collector")),
+    )
+
+
+
+
+
+# from tasks.py
+
+
+def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
+    """Validate the [[tasks]] section and build the task catalog.
+
+    The catalog is non-empty; names are unique Python identifiers; every
+    dependency names a task listed earlier in the file, which also rules out
+    dependency cycles and keeps default task sets ordered; modes are known
+    install modes without duplicates. An empty modes list is allowed: the
+    task stays in the catalog but belongs to no install mode, so it never
+    runs in a default task set and only runs when selected explicitly.
+    """
+
+    if not isinstance(raw, list):
+        raise ConfigError("[tasks] section is missing or not an array of tables")
+    result: list[TaskConfig] = []
+    seen_names: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigError("[tasks] entries must be tables")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name or not name.isidentifier():
+            raise ConfigError("[tasks] task name must be a non-empty identifier")
+        if name in seen_names:
+            raise ConfigError(f"[tasks] duplicate task name: {name}")
+        seen_names.add(name)
+        description = entry.get("description")
+        if not isinstance(description, str):
+            raise ConfigError(f"[tasks] task {name}: description must be a string")
+        depends_raw = entry.get("depends", [])
+        if not isinstance(depends_raw, list) or not all(
+            isinstance(dep, str) for dep in depends_raw
+        ):
+            raise ConfigError(
+                f"[tasks] task {name}: depends must be an array of strings"
+            )
+        known_names = {task.name for task in result}
+        for dep in depends_raw:
+            if dep not in known_names:
+                raise ConfigError(
+                    f"[tasks] task {name}: dependency {dep!r} must be listed earlier"
+                )
+        modes_raw = entry.get("modes")
+        if not isinstance(modes_raw, list):
+            raise ConfigError(f"[tasks] task {name}: modes must be an array")
+        if not all(isinstance(mode, str) for mode in modes_raw):
+            raise ConfigError(f"[tasks] task {name}: modes must be strings")
+        for mode in modes_raw:
+            if mode not in MODES:
+                raise ConfigError(
+                    f"[tasks] task {name}: unknown install mode {mode!r}"
+                )
+        if len(set(modes_raw)) != len(modes_raw):
+            raise ConfigError(f"[tasks] task {name}: duplicate mode entries")
+        result.append(
+            TaskConfig(
+                name=name,
+                description=description,
+                depends=tuple(depends_raw),
+                modes=tuple(modes_raw),
+            )
+        )
+    if not result:
+        raise ConfigError("[tasks] section must contain at least one task")
+    return tuple(result)
+
+
+
+
+
+# from telegram_setup.py
+
+
+def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
+    """Validate the [telegram_setup] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[telegram_setup] section is missing or not a table")
+    return TelegramSetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "telegram_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "telegram_setup.home_dir"
+        ),
+        download_dir=Path(
+            _nonempty_string_field(
+                raw.get("download_dir"), "telegram_setup.download_dir"
+            )
+        ),
+        latest_url=_nonempty_string_field(
+            raw.get("latest_url"), "telegram_setup.latest_url"
+        ),
+        icon_url=_nonempty_string_field(
+            raw.get("icon_url"), "telegram_setup.icon_url"
+        ),
+    )
+
+
+
+
+
+# from three_x_ui_xray_setup.py
+
+
+def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
+    """Validate the [three_x_ui_xray_setup] table and build the config.
+
+    github_repo, install_script_url, install_dir, service_unit_name,
+    install_result_env_path, panel_http_address and vault_entry_title are
+    non-empty strings; start_check_attempts is positive and
+    start_check_retry_delay_seconds is non-negative.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[three_x_ui_xray_setup] section is missing or not a table"
+        )
+    github_repo = _nonempty_string_field(
+        raw.get("github_repo"), "three_x_ui_xray_setup.github_repo"
+    )
+    install_script_url = _nonempty_string_field(
+        raw.get("install_script_url"),
+        "three_x_ui_xray_setup.install_script_url",
+    )
+    install_dir = Path(
+        _nonempty_string_field(
+            raw.get("install_dir"), "three_x_ui_xray_setup.install_dir"
+        )
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"),
+        "three_x_ui_xray_setup.service_unit_name",
+    )
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"),
+        "three_x_ui_xray_setup.start_check_attempts",
+    )
+    if start_check_attempts < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.start_check_attempts must be positive"
+        )
+    start_check_retry_delay_seconds = _int_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "three_x_ui_xray_setup.start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds < 0:
+        raise ConfigError(
+            "three_x_ui_xray_setup.start_check_retry_delay_seconds "
+            "must not be negative"
+        )
+    install_result_env_path = Path(
+        _nonempty_string_field(
+            raw.get("install_result_env_path"),
+            "three_x_ui_xray_setup.install_result_env_path",
+        )
+    )
+    panel_port = _int_field(
+        raw.get("panel_port"),
+        "three_x_ui_xray_setup.panel_port",
+    )
+    if panel_port < 1 or panel_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.panel_port must be between 1 and 65535"
+        )
+    ssl_enabled = _bool_field(
+        raw.get("ssl_enabled"),
+        "three_x_ui_xray_setup.ssl_enabled",
+    )
+    panel_http_address = _nonempty_string_field(
+        raw.get("panel_http_address"),
+        "three_x_ui_xray_setup.panel_http_address",
+    )
+    vault_entry_title = _nonempty_string_field(
+        raw.get("vault_entry_title"),
+        "three_x_ui_xray_setup.vault_entry_title",
+    )
+    connection_vault_entry_title = _nonempty_string_field(
+        raw.get("connection_vault_entry_title"),
+        "three_x_ui_xray_setup.connection_vault_entry_title",
+    )
+    share_addr_strategy = _nonempty_string_field(
+        raw.get("share_addr_strategy"),
+        "three_x_ui_xray_setup.share_addr_strategy",
+    )
+    if share_addr_strategy not in SHARE_ADDR_STRATEGIES:
+        raise ConfigError(
+            "three_x_ui_xray_setup.share_addr_strategy must be one of "
+            + ", ".join(SHARE_ADDR_STRATEGIES)
+        )
+    inbound_port = _int_field(
+        raw.get("inbound_port"),
+        "three_x_ui_xray_setup.inbound_port",
+    )
+    if inbound_port < 1 or inbound_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.inbound_port must be between 1 and 65535"
+        )
+    inbound_remark = _nonempty_string_field(
+        raw.get("inbound_remark"),
+        "three_x_ui_xray_setup.inbound_remark",
+    )
+    reality_dest = _nonempty_string_field(
+        raw.get("reality_dest"),
+        "three_x_ui_xray_setup.reality_dest",
+    )
+    reality_server_names = _string_list(
+        raw.get("reality_server_names"),
+        "three_x_ui_xray_setup.reality_server_names",
+    )
+    reality_short_id = _nonempty_string_field(
+        raw.get("reality_short_id"),
+        "three_x_ui_xray_setup.reality_short_id",
+    )
+    reality_fingerprint = _nonempty_string_field(
+        raw.get("reality_fingerprint"),
+        "three_x_ui_xray_setup.reality_fingerprint",
+    )
+    subscription_path = _subscription_path_field(
+        raw.get("subscription_path"),
+        "three_x_ui_xray_setup.subscription_path",
+    )
+    subscription_json_path = _subscription_path_field(
+        raw.get("subscription_json_path"),
+        "three_x_ui_xray_setup.subscription_json_path",
+    )
+    subscription_clash_path = _subscription_path_field(
+        raw.get("subscription_clash_path"),
+        "three_x_ui_xray_setup.subscription_clash_path",
+    )
+    acme_port = _int_field(
+        raw.get("acme_port"),
+        "three_x_ui_xray_setup.acme_port",
+    )
+    if acme_port < 1 or acme_port > 65535:
+        raise ConfigError(
+            "three_x_ui_xray_setup.acme_port must be between 1 and 65535"
+        )
+    cert_dir = Path(
+        _nonempty_string_field(
+            raw.get("cert_dir"), "three_x_ui_xray_setup.cert_dir"
+        )
+    )
+    self_signed_cert_dir = Path(
+        _nonempty_string_field(
+            raw.get("self_signed_cert_dir"),
+            "three_x_ui_xray_setup.self_signed_cert_dir",
+        )
+    )
+    server_ip_timeout_seconds = _int_field(
+        raw.get("server_ip_timeout_seconds"),
+        "three_x_ui_xray_setup.server_ip_timeout_seconds",
+    )
+    if server_ip_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.server_ip_timeout_seconds must be positive"
+        )
+    probe_timeout_seconds = _int_field(
+        raw.get("probe_timeout_seconds"),
+        "three_x_ui_xray_setup.probe_timeout_seconds",
+    )
+    if probe_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.probe_timeout_seconds must be positive"
+        )
+    probe_port_80_timeout_seconds = _int_field(
+        raw.get("probe_port_80_timeout_seconds"),
+        "three_x_ui_xray_setup.probe_port_80_timeout_seconds",
+    )
+    if probe_port_80_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.probe_port_80_timeout_seconds must be positive"
+        )
+    probe_listener_start_seconds = _int_field(
+        raw.get("probe_listener_start_seconds"),
+        "three_x_ui_xray_setup.probe_listener_start_seconds",
+    )
+    if probe_listener_start_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.probe_listener_start_seconds "
+            "must be positive"
+        )
+    server_ip_services = _string_list(
+        raw.get("server_ip_services"),
+        "three_x_ui_xray_setup.server_ip_services",
+    )
+    upnp_enabled = _bool_field(
+        raw.get("upnp_enabled"),
+        "three_x_ui_xray_setup.upnp_enabled",
+    )
+    upnp_package = _nonempty_string_field(
+        raw.get("upnp_package"),
+        "three_x_ui_xray_setup.upnp_package",
+    )
+    upnp_client_command = _nonempty_string_field(
+        raw.get("upnp_client_command"),
+        "three_x_ui_xray_setup.upnp_client_command",
+    )
+    upnp_mapping_description = _nonempty_string_field(
+        raw.get("upnp_mapping_description"),
+        "three_x_ui_xray_setup.upnp_mapping_description",
+    )
+    return ThreeXuiXraySetupConfig(
+        github_repo=github_repo,
+        install_script_url=install_script_url,
+        install_dir=install_dir,
+        service_unit_name=service_unit_name,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        install_result_env_path=install_result_env_path,
+        panel_port=panel_port,
+        ssl_enabled=ssl_enabled,
+        panel_http_address=panel_http_address,
+        vault_entry_title=vault_entry_title,
+        connection_vault_entry_title=connection_vault_entry_title,
+        share_addr_strategy=share_addr_strategy,
+        inbound_port=inbound_port,
+        inbound_remark=inbound_remark,
+        reality_dest=reality_dest,
+        reality_server_names=reality_server_names,
+        reality_short_id=reality_short_id,
+        reality_fingerprint=reality_fingerprint,
+        subscription_path=subscription_path,
+        subscription_json_path=subscription_json_path,
+        subscription_clash_path=subscription_clash_path,
+        acme_port=acme_port,
+        cert_dir=cert_dir,
+        cert_fullchain=cert_dir / "fullchain.pem",
+        cert_privkey=cert_dir / "privkey.pem",
+        self_signed_cert_dir=self_signed_cert_dir,
+        self_signed_cert_fullchain=self_signed_cert_dir / "fullchain.pem",
+        self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
+        server_ip_timeout_seconds=server_ip_timeout_seconds,
+        server_ip_services=server_ip_services,
+        probe_timeout_seconds=probe_timeout_seconds,
+        probe_port_80_timeout_seconds=probe_port_80_timeout_seconds,
+        probe_listener_start_seconds=probe_listener_start_seconds,
+        upnp_enabled=upnp_enabled,
+        upnp_package=upnp_package,
+        upnp_client_command=upnp_client_command,
+        upnp_mapping_description=upnp_mapping_description,
+    )
+
+
+def _subscription_path_field(value: object, name: str) -> str:
+    """A panel subscription path: a non-empty string wrapped in slashes.
+
+    The panel warns about its well-known defaults (/sub/, /json/,
+    /clash/), so the task writes its own paths. A value without the
+    leading and trailing slash would be normalized differently by the
+    panel and is rejected here.
+    """
+
+    text = _nonempty_string_field(value, name)
+    if len(text) < 3 or not text.startswith("/") or not text.endswith("/"):
+        raise ConfigError(f"{name} must start and end with a slash")
+    return text
+
+
+
+
+
+# from tor_setup.py
+
+
+def _tor_setup_table(raw: object) -> TorSetupConfig:
+    """Validate the [tor_setup] table and build the config.
+
+    package_name, service_unit_name, torrc_path, torrc_dropin_path,
+    torrc_include_path, hidden_service_dir and tor_user are non-empty
+    strings; dropin_file_mode, hidden_service_dir_mode and
+    address_file_mode are octal strings; log_level is one of the
+    TOR_LOG_LEVELS values; socks_port and onion_ssh_port are port numbers
+    between 1 and 65535; num_introduction_points, install_retries and
+    start_check_attempts are positive integers;
+    start_check_retry_delay_seconds is positive, so the readiness loop
+    always waits between attempts; address_file_path is a non-empty
+    string.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[tor_setup] section is missing or not a table")
+    package_name = _nonempty_string_field(
+        raw.get("package_name"), "tor_setup.package_name"
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "tor_setup.service_unit_name"
+    )
+    torrc_path = Path(
+        _nonempty_string_field(raw.get("torrc_path"), "tor_setup.torrc_path")
+    )
+    torrc_dropin_path = Path(
+        _nonempty_string_field(
+            raw.get("torrc_dropin_path"), "tor_setup.torrc_dropin_path"
+        )
+    )
+    torrc_include_path = _nonempty_string_field(
+        raw.get("torrc_include_path"), "tor_setup.torrc_include_path"
+    )
+    dropin_file_mode = _octal_mode_field(
+        raw.get("dropin_file_mode"), "tor_setup.dropin_file_mode"
+    )
+    hidden_service_dir = Path(
+        _nonempty_string_field(
+            raw.get("hidden_service_dir"), "tor_setup.hidden_service_dir"
+        )
+    )
+    hidden_service_dir_mode = _octal_mode_field(
+        raw.get("hidden_service_dir_mode"),
+        "tor_setup.hidden_service_dir_mode",
+    )
+    tor_user = _nonempty_string_field(
+        raw.get("tor_user"), "tor_setup.tor_user"
+    )
+    socks_port = _int_field(raw.get("socks_port"), "tor_setup.socks_port")
+    if not 1 <= socks_port <= 65535:
+        raise ConfigError("tor_setup.socks_port must be between 1 and 65535")
+    onion_ssh_port = _int_field(
+        raw.get("onion_ssh_port"), "tor_setup.onion_ssh_port"
+    )
+    if not 1 <= onion_ssh_port <= 65535:
+        raise ConfigError(
+            "tor_setup.onion_ssh_port must be between 1 and 65535"
+        )
+    num_introduction_points = _int_field(
+        raw.get("num_introduction_points"),
+        "tor_setup.num_introduction_points",
+    )
+    if num_introduction_points < 1:
+        raise ConfigError(
+            "tor_setup.num_introduction_points must be positive"
+        )
+    log_level = _nonempty_string_field(
+        raw.get("log_level"), "tor_setup.log_level"
+    )
+    if log_level not in TOR_LOG_LEVELS:
+        raise ConfigError(
+            f"tor_setup.log_level must be one of {', '.join(TOR_LOG_LEVELS)}"
+        )
+    install_retries = _int_field(
+        raw.get("install_retries"), "tor_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError("tor_setup.install_retries must be positive")
+    start_check_attempts = _int_field(
+        raw.get("start_check_attempts"), "tor_setup.start_check_attempts"
+    )
+    if start_check_attempts < 1:
+        raise ConfigError(
+            "tor_setup.start_check_attempts must be positive"
+        )
+    start_check_retry_delay_seconds = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        "tor_setup.start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "tor_setup.start_check_retry_delay_seconds must be positive"
+        )
+    address_file_path = Path(
+        _nonempty_string_field(
+            raw.get("address_file_path"), "tor_setup.address_file_path"
+        )
+    )
+    address_file_mode = _octal_mode_field(
+        raw.get("address_file_mode"), "tor_setup.address_file_mode"
+    )
+    return TorSetupConfig(
+        package_name=package_name,
+        service_unit_name=service_unit_name,
+        torrc_path=torrc_path,
+        torrc_dropin_path=torrc_dropin_path,
+        torrc_include_path=torrc_include_path,
+        dropin_file_mode=dropin_file_mode,
+        hidden_service_dir=hidden_service_dir,
+        hidden_service_dir_mode=hidden_service_dir_mode,
+        tor_user=tor_user,
+        socks_port=socks_port,
+        onion_ssh_port=onion_ssh_port,
+        num_introduction_points=num_introduction_points,
+        log_level=log_level,
+        install_retries=install_retries,
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        address_file_path=address_file_path,
+        address_file_mode=address_file_mode,
+    )
+
+
+
+
+
+# from vault.py
+
+
+def _vault_structure_table(raw: object) -> VaultStructureConfig:
+    """Validate the [vault_structure] table and build VaultStructureConfig.
+
+    The section is mandatory and non-empty; every entry is a table with a
+    unique non-empty title and a non-empty notes field. The structure is
+    flat by contract, so the parser reads entries directly from the table
+    and rejects unknown field names: url and any other per-entry value
+    live in the vault database, not in the config. The optional groups
+    array describes the data subgroups (NextDNS accounts): a group is a
+    table with a unique non-empty title and notes, validated the same way
+    as an entry.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[vault_structure] section is missing or not a table")
+    entries_raw = raw.get("entries")
+    if not isinstance(entries_raw, list) or not entries_raw:
+        raise ConfigError(
+            "[vault_structure] entries must be a non-empty array of tables"
+        )
+    entries: list[VaultEntry] = []
+    seen_titles: set[str] = set()
+    for index, entry_raw in enumerate(entries_raw):
+        if not isinstance(entry_raw, dict):
+            raise ConfigError("[vault_structure] entries must be tables")
+        unknown = sorted(
+            name for name in entry_raw if name not in ("title", "notes", "generated_password")
+        )
+        if unknown:
+            raise ConfigError(
+                f"[vault_structure] entry {index + 1} names unknown field(s) "
+                f"{', '.join(unknown)}; expected title, notes, generated_password"
+            )
+        title = entry_raw.get("title")
+        if not isinstance(title, str) or not title:
+            raise ConfigError(
+                "[vault_structure] entry title must be a non-empty string"
+            )
+        if title in seen_titles:
+            raise ConfigError(f"[vault_structure] duplicate entry title: {title}")
+        seen_titles.add(title)
+        notes = entry_raw.get("notes")
+        if not isinstance(notes, str) or not notes:
+            raise ConfigError(
+                f"[vault_structure] entry {title}: notes must be a non-empty string"
+            )
+        generated_password = entry_raw.get("generated_password")
+        if generated_password is not None and not isinstance(
+            generated_password, str
+        ):
+            raise ConfigError(
+                f"[vault_structure] entry {title}: generated_password must be "
+                "a string like 'proquint-7'"
+            )
+        if generated_password is not None and not GENERATED_PASSWORD_RE.match(
+            generated_password
+        ):
+            raise ConfigError(
+                f"[vault_structure] entry {title}: generated_password must "
+                "match 'proquint-N' with a positive word count"
+            )
+        entries.append(
+            VaultEntry(
+                title=title,
+                notes=notes,
+                generated_password=generated_password,
+            )
+        )
+    groups_raw = raw.get("groups")
+    if groups_raw is None:
+        groups: tuple[VaultGroup, ...] = ()
+    else:
+        if not isinstance(groups_raw, list):
+            raise ConfigError("[vault_structure] groups must be an array of tables")
+        groups_list: list[VaultGroup] = []
+        for index, group_raw in enumerate(groups_raw):
+            if not isinstance(group_raw, dict):
+                raise ConfigError("[vault_structure] groups must be tables")
+            unknown = sorted(
+                name
+                for name in group_raw
+                if name not in ("title", "notes", "seed_entries")
+            )
+            if unknown:
+                raise ConfigError(
+                    f"[vault_structure] group {index + 1} names unknown field(s) "
+                    f"{', '.join(unknown)}; expected title, notes, seed_entries"
+                )
+            title = group_raw.get("title")
+            if not isinstance(title, str) or not title:
+                raise ConfigError(
+                    "[vault_structure] group title must be a non-empty string"
+                )
+            if title in seen_titles:
+                raise ConfigError(
+                    f"[vault_structure] duplicate group title: {title}"
+                )
+            seen_titles.add(title)
+            notes = group_raw.get("notes")
+            if not isinstance(notes, str) or not notes:
+                raise ConfigError(
+                    f"[vault_structure] group {title}: notes must be a "
+                    "non-empty string"
+                )
+            seed_entries = _vault_group_seed_entries(group_raw, title)
+            groups_list.append(
+                VaultGroup(title=title, notes=notes, seed_entries=seed_entries)
+            )
+        groups = tuple(groups_list)
+    return VaultStructureConfig(entries=tuple(entries), groups=groups)
+
+
+def _vault_group_seed_entries(
+    group_raw: dict[str, object], group_title: str
+) -> tuple[VaultGroupSeed, ...]:
+    """Validate the seed_entries array of a group and build the tuple.
+
+    Seed entries are the default content of a data group, so a freshly
+    created vault mirrors the structure. Every seed entry is a table with
+    a unique non-empty title and optional string url and notes fields. url
+    is a data value, allowed here because the seed carries it into the
+    database, unlike the [vault_structure] entries whose url is rejected.
+    """
+
+    raw = group_raw.get("seed_entries")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(
+            f"[vault_structure] group {group_title}: seed_entries must be "
+            "an array of tables"
+        )
+    seed_entries: list[VaultGroupSeed] = []
+    seen_titles: set[str] = set()
+    for index, seed_raw in enumerate(raw):
+        if not isinstance(seed_raw, dict):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} must be a table"
+            )
+        unknown = sorted(
+            name for name in seed_raw if name not in ("title", "url", "notes")
+        )
+        if unknown:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1} names unknown field(s) {', '.join(unknown)}; "
+                "expected title, url, notes"
+            )
+        seed_title = seed_raw.get("title")
+        if not isinstance(seed_title, str) or not seed_title:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{index + 1}: title must be a non-empty string"
+            )
+        if seed_title in seen_titles:
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: duplicate seed "
+                f"entry title: {seed_title}"
+            )
+        seen_titles.add(seed_title)
+        url = seed_raw.get("url")
+        if url is not None and not isinstance(url, str):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: url must be a string"
+            )
+        seed_notes = seed_raw.get("notes")
+        if seed_notes is not None and not isinstance(seed_notes, str):
+            raise ConfigError(
+                f"[vault_structure] group {group_title}: seed entry "
+                f"{seed_title}: notes must be a string"
+            )
+        seed_entries.append(
+            VaultGroupSeed(title=seed_title, url=url, notes=seed_notes)
+        )
+    return tuple(seed_entries)
+
+
+def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
+    """Validate the [local_vault_setup] table and build the config.
+
+    Source vault paths and the entry title are non-empty strings; the
+    source paths are repository-root relative, the target paths absolute
+    (the fixed locations from docs/spec/secrets-model.md).
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[local_vault_setup] section is missing or not a table")
+    source_vault_production = raw.get("source_vault_production")
+    if not isinstance(source_vault_production, str) or not source_vault_production:
+        raise ConfigError(
+            "local_vault_setup.source_vault_production must be a non-empty string"
+        )
+    source_vault_default = raw.get("source_vault_default")
+    if not isinstance(source_vault_default, str) or not source_vault_default:
+        raise ConfigError(
+            "local_vault_setup.source_vault_default must be a non-empty string"
+        )
+    local_vault_path = raw.get("local_vault_path")
+    if not isinstance(local_vault_path, str) or not local_vault_path:
+        raise ConfigError(
+            "local_vault_setup.local_vault_path must be a non-empty string"
+        )
+    pass_file_path = raw.get("pass_file_path")
+    if not isinstance(pass_file_path, str) or not pass_file_path:
+        raise ConfigError(
+            "local_vault_setup.pass_file_path must be a non-empty string"
+        )
+    vault_password_entry_title = raw.get("vault_password_entry_title")
+    if not isinstance(vault_password_entry_title, str) or not vault_password_entry_title:
+        raise ConfigError(
+            "local_vault_setup.vault_password_entry_title must be a non-empty string"
+        )
+
+    def _file_mode_field(name: str) -> int:
+        """Parse one octal file mode string like "0700" into an int."""
+
+        return _octal_mode_field(raw.get(name), f"local_vault_setup.{name}")
+
+    error_priority = _int_field(
+        raw.get("error_priority"), "local_vault_setup.error_priority"
+    )
+    if not 0 <= error_priority <= 7:
+        raise ConfigError(
+            "local_vault_setup.error_priority must be between 0 and 7"
+        )
+    return LocalVaultSetupConfig(
+        source_vault_production=Path(source_vault_production),
+        source_vault_default=Path(source_vault_default),
+        local_vault_path=Path(local_vault_path),
+        pass_file_path=Path(pass_file_path),
+        vault_password_entry_title=vault_password_entry_title,
+        secrets_dir_mode=_file_mode_field("secrets_dir_mode"),
+        local_vault_file_mode=_file_mode_field("local_vault_file_mode"),
+        pass_dir_mode=_file_mode_field("pass_dir_mode"),
+        pass_file_mode=_file_mode_field("pass_file_mode"),
+        error_priority=error_priority,
+    )
+
+
+
+
+
+# from vocalinux_setup.py
+
+
+def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
+    """Validate the [vocalinux_setup] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[vocalinux_setup] section is missing or not a table")
+    return VocalinuxSetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "vocalinux_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "vocalinux_setup.home_dir"
+        ),
+        download_dir=Path(
+            _nonempty_string_field(
+                raw.get("download_dir"), "vocalinux_setup.download_dir"
+            )
+        ),
+        version=_nonempty_string_field(
+            raw.get("version"), "vocalinux_setup.version"
+        ),
+        packages=_string_list(raw.get("packages"), "vocalinux_setup.packages"),
+        input_group=_nonempty_string_field(
+            raw.get("input_group"), "vocalinux_setup.input_group"
+        ),
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "vocalinux_setup.service_unit_name"
+        ),
+        package_status_timeout_seconds=_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "vocalinux_setup.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"),
+            "vocalinux_setup.package_install_retries",
+        ),
+    )
+
+
+
+
+
+# from yggdrasil_service_setup.py
+
+
+def _yggdrasil_uri_list_field(
+    raw: object, name: str, schemes: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Validate an array of yggdrasil URIs with allowed schemes.
+
+    A missing array means an empty list. Every entry is a non-empty
+    string whose scheme is in schemes; the scheme is everything before
+    the first colon, so a malformed URI without a colon is rejected.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of strings")
+    result: list[str] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, str) or not entry:
+            raise ConfigError(f"{name}[{index}] must be a non-empty string")
+        scheme = entry.split(":", 1)[0].casefold()
+        if scheme not in schemes:
+            raise ConfigError(
+                f"{name}[{index}] scheme {scheme} is not supported, "
+                f"allowed: {', '.join(schemes)}"
+            )
+        result.append(entry)
+    return tuple(result)
+
+
+def _yggdrasil_multicast_field(
+    raw: object, name: str
+) -> tuple[YggdrasilMulticastInterfaceConfig, ...]:
+    """Validate the multicast_interfaces array of the yggdrasil table.
+
+    A missing array means no multicast discovery. Every entry is a table
+    with a non-empty regex string and strict boolean beacon and listen
+    switches.
+    """
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(f"{name} must be an array of tables")
+    result: list[YggdrasilMulticastInterfaceConfig] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{name} must be an array of tables")
+        regex = entry.get("regex")
+        if not isinstance(regex, str) or not regex:
+            raise ConfigError(f"{name}[{index}] regex must be a non-empty string")
+        beacon = entry.get("beacon")
+        if not isinstance(beacon, bool):
+            raise ConfigError(f"{name}[{index}] beacon must be a boolean")
+        listen = entry.get("listen")
+        if not isinstance(listen, bool):
+            raise ConfigError(f"{name}[{index}] listen must be a boolean")
+        result.append(
+            YggdrasilMulticastInterfaceConfig(
+                regex=regex, beacon=beacon, listen=listen
+            )
+        )
+    return tuple(result)
+
+
+def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
+    """Validate the [yggdrasil_service_setup] table and build the config.
+
+    github_repo, download_dir, service_unit_name, config_path,
+    private_key_path, if_name, admin_listen and peers_tarball_url are
+    non-empty strings; install_retries, if_mtu, peer_batch_size and
+    peer_target_count are positive integers; if_mtu stays within the
+    yggdrasil range; config_file_mode, private_key_file_mode and
+    address_file_mode are octal strings; listen and static_peers are URI
+    arrays with the allowed schemes; multicast_interfaces is the
+    multicast block array; peer_probe_timeout_seconds is positive and
+    peer_max_batches is non-negative; address_file_path is a non-empty
+    string; address_save_retry_base_seconds is positive,
+    address_save_retry_multiplier is at least 2 and
+    address_save_retry_max_seconds is not below the base.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[yggdrasil_service_setup] section is missing or not a table"
+        )
+    github_repo = _nonempty_string_field(
+        raw.get("github_repo"), "yggdrasil_service_setup.github_repo"
+    )
+    download_dir = Path(
+        _nonempty_string_field(
+            raw.get("download_dir"), "yggdrasil_service_setup.download_dir"
+        )
+    )
+    service_unit_name = _nonempty_string_field(
+        raw.get("service_unit_name"), "yggdrasil_service_setup.service_unit_name"
+    )
+    install_retries = _int_field(
+        raw.get("install_retries"), "yggdrasil_service_setup.install_retries"
+    )
+    if install_retries < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.install_retries must be positive"
+        )
+    config_path = Path(
+        _nonempty_string_field(
+            raw.get("config_path"), "yggdrasil_service_setup.config_path"
+        )
+    )
+    private_key_path = Path(
+        _nonempty_string_field(
+            raw.get("private_key_path"), "yggdrasil_service_setup.private_key_path"
+        )
+    )
+    config_file_mode = _octal_mode_field(
+        raw.get("config_file_mode"), "yggdrasil_service_setup.config_file_mode"
+    )
+    private_key_file_mode = _octal_mode_field(
+        raw.get("private_key_file_mode"),
+        "yggdrasil_service_setup.private_key_file_mode",
+    )
+    if_name = _nonempty_string_field(
+        raw.get("if_name"), "yggdrasil_service_setup.if_name"
+    )
+    if_mtu = _int_field(raw.get("if_mtu"), "yggdrasil_service_setup.if_mtu")
+    if not 1280 <= if_mtu <= 65535:
+        raise ConfigError(
+            "yggdrasil_service_setup.if_mtu must be between 1280 and 65535"
+        )
+    admin_listen = _nonempty_string_field(
+        raw.get("admin_listen"), "yggdrasil_service_setup.admin_listen"
+    )
+    listen = _yggdrasil_uri_list_field(
+        raw.get("listen"), "yggdrasil_service_setup.listen", YGGDRASIL_LISTEN_SCHEMES
+    )
+    multicast_interfaces = _yggdrasil_multicast_field(
+        raw.get("multicast_interfaces"),
+        "yggdrasil_service_setup.multicast_interfaces",
+    )
+    peers_full_path = Path(
+        _nonempty_string_field(
+            raw.get("peers_full_path"), "yggdrasil_service_setup.peers_full_path"
+        )
+    )
+    peers_tarball_url = _nonempty_string_field(
+        raw.get("peers_tarball_url"), "yggdrasil_service_setup.peers_tarball_url"
+    )
+    peer_batch_size = _int_field(
+        raw.get("peer_batch_size"), "yggdrasil_service_setup.peer_batch_size"
+    )
+    if peer_batch_size < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.peer_batch_size must be positive"
+        )
+    peer_target_count = _int_field(
+        raw.get("peer_target_count"), "yggdrasil_service_setup.peer_target_count"
+    )
+    if peer_target_count < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.peer_target_count must be positive"
+        )
+    peer_probe_timeout_seconds = _float_field(
+        raw.get("peer_probe_timeout_seconds"),
+        "yggdrasil_service_setup.peer_probe_timeout_seconds",
+    )
+    if peer_probe_timeout_seconds <= 0:
+        raise ConfigError(
+            "yggdrasil_service_setup.peer_probe_timeout_seconds must be positive"
+        )
+    peer_max_batches = _int_field(
+        raw.get("peer_max_batches"), "yggdrasil_service_setup.peer_max_batches"
+    )
+    if peer_max_batches < 0:
+        raise ConfigError(
+            "yggdrasil_service_setup.peer_max_batches must not be negative"
+        )
+    static_peers = _yggdrasil_uri_list_field(
+        raw.get("static_peers"),
+        "yggdrasil_service_setup.static_peers",
+        YGGDRASIL_PEER_SCHEMES,
+    )
+    address_file_path = Path(
+        _nonempty_string_field(
+            raw.get("address_file_path"), "yggdrasil_service_setup.address_file_path"
+        )
+    )
+    address_file_mode = _octal_mode_field(
+        raw.get("address_file_mode"), "yggdrasil_service_setup.address_file_mode"
+    )
+    address_save_retry_base_seconds = _int_field(
+        raw.get("address_save_retry_base_seconds"),
+        "yggdrasil_service_setup.address_save_retry_base_seconds",
+    )
+    if address_save_retry_base_seconds < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_base_seconds must be positive"
+        )
+    address_save_retry_multiplier = _int_field(
+        raw.get("address_save_retry_multiplier"),
+        "yggdrasil_service_setup.address_save_retry_multiplier",
+    )
+    if address_save_retry_multiplier < 2:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_multiplier must be at least 2"
+        )
+    address_save_retry_max_seconds = _int_field(
+        raw.get("address_save_retry_max_seconds"),
+        "yggdrasil_service_setup.address_save_retry_max_seconds",
+    )
+    if address_save_retry_max_seconds < address_save_retry_base_seconds:
+        raise ConfigError(
+            "yggdrasil_service_setup.address_save_retry_max_seconds must be at "
+            "least address_save_retry_base_seconds"
+        )
+    connection_wait_base_seconds = _int_field(
+        raw.get("connection_wait_base_seconds"),
+        "yggdrasil_service_setup.connection_wait_base_seconds",
+    )
+    if connection_wait_base_seconds < 1:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_base_seconds must be positive"
+        )
+    connection_wait_multiplier = _int_field(
+        raw.get("connection_wait_multiplier"),
+        "yggdrasil_service_setup.connection_wait_multiplier",
+    )
+    if connection_wait_multiplier < 2:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_multiplier must be at least 2"
+        )
+    connection_wait_max_seconds = _int_field(
+        raw.get("connection_wait_max_seconds"),
+        "yggdrasil_service_setup.connection_wait_max_seconds",
+    )
+    if connection_wait_max_seconds < connection_wait_base_seconds:
+        raise ConfigError(
+            "yggdrasil_service_setup.connection_wait_max_seconds must be at "
+            "least connection_wait_base_seconds"
+        )
+    nm_unmanaged_conf_path = Path(
+        _nonempty_string_field(
+            raw.get("nm_unmanaged_conf_path"),
+            "yggdrasil_service_setup.nm_unmanaged_conf_path",
+        )
+    )
+    netplan_dir_path = Path(
+        _nonempty_string_field(
+            raw.get("netplan_dir_path"),
+            "yggdrasil_service_setup.netplan_dir_path",
+        )
+    )
+    return YggdrasilServiceSetupConfig(
+        github_repo=github_repo,
+        download_dir=download_dir,
+        service_unit_name=service_unit_name,
+        install_retries=install_retries,
+        config_path=config_path,
+        private_key_path=private_key_path,
+        config_file_mode=config_file_mode,
+        private_key_file_mode=private_key_file_mode,
+        if_name=if_name,
+        if_mtu=if_mtu,
+        admin_listen=admin_listen,
+        listen=listen,
+        multicast_interfaces=multicast_interfaces,
+        peers_full_path=peers_full_path,
+        peers_tarball_url=peers_tarball_url,
+        peer_batch_size=peer_batch_size,
+        peer_target_count=peer_target_count,
+        peer_probe_timeout_seconds=peer_probe_timeout_seconds,
+        peer_max_batches=peer_max_batches,
+        static_peers=static_peers,
+        address_file_path=address_file_path,
+        address_file_mode=address_file_mode,
+        address_save_retry_base_seconds=address_save_retry_base_seconds,
+        address_save_retry_multiplier=address_save_retry_multiplier,
+        address_save_retry_max_seconds=address_save_retry_max_seconds,
+        connection_wait_base_seconds=connection_wait_base_seconds,
+        connection_wait_multiplier=connection_wait_multiplier,
+        connection_wait_max_seconds=connection_wait_max_seconds,
+        nm_unmanaged_conf_path=nm_unmanaged_conf_path,
+        netplan_dir_path=netplan_dir_path,
+    )
+
+
+
+
+
+# from zram_service.py
+
+
+def _zram_service_table(raw: object) -> ZramServiceConfig:
+    """Validate the [zram_service] table and build ZramServiceConfig.
+
+    compressor is a non-empty string; swap_priority is a positive swap
+    priority; memory_fraction_percent is a percentage between 1 and 100;
+    fallback_cpu_count is at least 1; alignment_bytes is positive, because
+    the zram driver rejects a non-positive or unaligned disksize;
+    reset_busy_attempts is at least 1 and
+    reset_busy_retry_delay_seconds is positive.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[zram_service] section is missing or not a table")
+    compressor = raw.get("compressor")
+    if not isinstance(compressor, str) or not compressor:
+        raise ConfigError("zram_service.compressor must be a non-empty string")
+    swap_priority = _int_field(
+        raw.get("swap_priority"), "zram_service.swap_priority"
+    )
+    if swap_priority < 1:
+        raise ConfigError("zram_service.swap_priority must be positive")
+    memory_fraction_percent = _int_field(
+        raw.get("memory_fraction_percent"),
+        "zram_service.memory_fraction_percent",
+    )
+    if not 1 <= memory_fraction_percent <= 100:
+        raise ConfigError(
+            "zram_service.memory_fraction_percent must be between 1 and 100"
+        )
+    fallback_cpu_count = _int_field(
+        raw.get("fallback_cpu_count"), "zram_service.fallback_cpu_count"
+    )
+    if fallback_cpu_count < 1:
+        raise ConfigError("zram_service.fallback_cpu_count must be at least 1")
+    alignment_bytes = _int_field(
+        raw.get("alignment_bytes"), "zram_service.alignment_bytes"
+    )
+    if alignment_bytes < 1:
+        raise ConfigError("zram_service.alignment_bytes must be positive")
+    reset_busy_attempts = _int_field(
+        raw.get("reset_busy_attempts"), "zram_service.reset_busy_attempts"
+    )
+    if reset_busy_attempts < 1:
+        raise ConfigError(
+            "zram_service.reset_busy_attempts must be at least 1"
+        )
+    reset_busy_retry_delay_seconds = _float_field(
+        raw.get("reset_busy_retry_delay_seconds"),
+        "zram_service.reset_busy_retry_delay_seconds",
+    )
+    if reset_busy_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "zram_service.reset_busy_retry_delay_seconds must be positive"
+        )
+    return ZramServiceConfig(
+        compressor=compressor,
+        swap_priority=swap_priority,
+        memory_fraction_percent=memory_fraction_percent,
+        fallback_cpu_count=fallback_cpu_count,
+        alignment_bytes=alignment_bytes,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "zram_service.service_unit_name"
+        ),
+        reset_busy_attempts=reset_busy_attempts,
+        reset_busy_retry_delay_seconds=reset_busy_retry_delay_seconds,
+    )
+
+
+
+
+
+# from zswap_service.py
+
+
+def _zswap_service_table(raw: object) -> ZswapServiceConfig:
+    """Validate the [zswap_service] table and build ZswapServiceConfig.
+
+    enabled and shrinker_enabled are strict booleans; compressor is a
+    non-empty string; max_pool_percent and accept_threshold_percent are
+    integers between 1 and 100, the meaningful range for a percentage that
+    the kernel accepts on the sysfs attributes. A pool ceiling of zero
+    would disable zswap entirely, so it is rejected here.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[zswap_service] section is missing or not a table")
+    enabled = raw.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ConfigError("zswap_service.enabled must be a boolean")
+    compressor = raw.get("compressor")
+    if not isinstance(compressor, str) or not compressor:
+        raise ConfigError("zswap_service.compressor must be a non-empty string")
+    max_pool_percent = _int_field(
+        raw.get("max_pool_percent"), "zswap_service.max_pool_percent"
+    )
+    if not 1 <= max_pool_percent <= 100:
+        raise ConfigError(
+            "zswap_service.max_pool_percent must be between 1 and 100"
+        )
+    accept_threshold_percent = _int_field(
+        raw.get("accept_threshold_percent"),
+        "zswap_service.accept_threshold_percent",
+    )
+    if not 1 <= accept_threshold_percent <= 100:
+        raise ConfigError(
+            "zswap_service.accept_threshold_percent must be between 1 and 100"
+        )
+    shrinker_enabled = raw.get("shrinker_enabled")
+    if not isinstance(shrinker_enabled, bool):
+        raise ConfigError("zswap_service.shrinker_enabled must be a boolean")
+    return ZswapServiceConfig(
+        enabled=enabled,
+        compressor=compressor,
+        max_pool_percent=max_pool_percent,
+        accept_threshold_percent=accept_threshold_percent,
+        shrinker_enabled=shrinker_enabled,
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "zswap_service.service_unit_name"
+        ),
+    )
+
+
+def strict_config_from_document(document: dict[str, Any]) -> Config:
+    """Build the Config with every check the package used to run.
+
+    The test suite calls this instead of the runtime reader: a config that
+    breaks a rule fails here, during development, and never on a machine.
+    """
+
+    vault_structure = _vault_structure_table(document.get("vault_structure"))
+    local_vault_setup = _local_vault_setup_table(document.get("local_vault_setup"))
+    system_metrics_setup = _system_metrics_setup_table(
+        document.get("system_metrics_setup")
+    )
+    if not any(
+        entry.title == local_vault_setup.vault_password_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "local_vault_setup.vault_password_entry_title must name an entry "
+            "of the [vault_structure] table"
+        )
+    if not any(
+        entry.title == system_metrics_setup.google_script_key_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "system_metrics_setup.google_script_key_entry_title must name an "
+            "entry of the [vault_structure] table"
+        )
+    port_forwarding_setup = _port_forwarding_setup_table(
+        document.get("port_forwarding_setup")
+    )
+    if not any(
+        entry.title == port_forwarding_setup.passphrase_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "port_forwarding_setup.passphrase_entry_title must name an entry "
+            "of the [vault_structure] table"
+        )
+    three_x_ui = document.get("three_x_ui_xray_setup")
+    if isinstance(three_x_ui, dict):
+        vault_entry_title = three_x_ui.get("vault_entry_title")
+        if vault_entry_title is not None and not any(
+            entry.title == vault_entry_title
+            for entry in vault_structure.entries
+        ):
+            raise ConfigError(
+                "three_x_ui_xray_setup.vault_entry_title must name an entry "
+                "of the [vault_structure] table"
+            )
+        connection_title = three_x_ui.get("connection_vault_entry_title")
+        if connection_title is not None and not any(
+            entry.title == connection_title
+            for entry in vault_structure.entries
+        ):
+            raise ConfigError(
+                "three_x_ui_xray_setup.connection_vault_entry_title must name "
+                "an entry of the [vault_structure] table"
+            )
+    rustdesk_setup = _rustdesk_setup_table(document.get("rustdesk_setup"))
+    if not any(
+        entry.title == rustdesk_setup.vault_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "rustdesk_setup.vault_entry_title must name an entry of the "
+            "[vault_structure] table"
+        )
+    config = Config(
+        engine=_engine_table(document.get("engine")),
+        cli_tools=_cli_tools_table(document.get("cli_tools")),
+        chrome_setup=_chrome_setup_table(document.get("chrome_setup")),
+        dnsproxy_setup=_dnsproxy_setup_table(document.get("dnsproxy_setup")),
+        add_extra_repos=_add_extra_repos_table(document.get("add_extra_repos")),
+        hostname=_hostname_table(document.get("hostname")),
+        ffmpeg_setup=_ffmpeg_setup_table(document.get("ffmpeg_setup")),
+        imagemagick_setup=_imagemagick_setup_table(
+            document.get("imagemagick_setup")
+        ),
+        kde_keyboard_setup=_kde_keyboard_setup_table(document.get("kde_keyboard_setup")),
+        kde_settings=_kde_settings_table(document.get("kde_settings")),
+        swapfile_service_install=_swapfile_service_install_table(
+            document.get("swapfile_service_install")
+        ),
+        zswap_service=_zswap_service_table(document.get("zswap_service")),
+        zram_service=_zram_service_table(document.get("zram_service")),
+        telegram_setup=_telegram_setup_table(document.get("telegram_setup")),
+        i2pd_service_setup=_i2pd_service_setup_table(
+            document.get("i2pd_service_setup")
+        ),
+        yggdrasil_service_setup=_yggdrasil_service_setup_table(
+            document.get("yggdrasil_service_setup")
+        ),
+        three_x_ui_xray_setup=_three_x_ui_xray_setup_table(
+            document.get("three_x_ui_xray_setup")
+        ),
+        tor_setup=_tor_setup_table(document.get("tor_setup")),
+        ssh_daemon_setup=_ssh_daemon_setup_table(document.get("ssh_daemon_setup")),
+        ssh_client_setup=_ssh_client_setup_table(document.get("ssh_client_setup")),
+        vocalinux_setup=_vocalinux_setup_table(document.get("vocalinux_setup")),
+        nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
+            document.get("nextdns_setup_system_wide")
+        ),
+        playwright_setup=_playwright_setup_table(
+            document.get("playwright_setup")
+        ),
+        port_forwarding_setup=port_forwarding_setup,
+        rustdesk_setup=rustdesk_setup,
+        system_metrics_setup=system_metrics_setup,
+        vault_structure=vault_structure,
+        local_vault_setup=local_vault_setup,
+        tasks=_tasks_table(document.get("tasks")),
+    )
+    return config

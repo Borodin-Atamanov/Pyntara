@@ -24,7 +24,6 @@ from pyntara import task_catalog
 from pyntara.config import (
     MODES,
     Config,
-    ConfigError,
     EngineConfig,
     TaskConfig,
     load_config,
@@ -110,33 +109,30 @@ def _env_flag(name: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes")
 
 
-def _load_config_or_exit() -> Config:
-    """Load config.toml; a missing or invalid file stops the run.
+def _load_config() -> Config:
+    """Read config.toml and return it, whatever it holds.
 
-    The config is the single source of truth for the Python part, so a
-    broken file has no safe fallback: without it the engine cannot know
-    what to provision. The failure is reported and the program exits.
+    The read never fails: a value that is not in the document reaches the
+    run as an absent value, the task that needed it reports what it could
+    not do, and the run continues. A broken config never stops the run
+    (architecture contract, Configuration).
     """
 
-    try:
-        return load_config(CONFIG_PATH)
-    except ConfigError as exc:
-        log_event(f"Error! {exc}", to_stderr=True)
-        raise typer.Exit(1) from exc
+    return load_config(CONFIG_PATH)
 
 
-def _warn_and_continue(message: str, notice_timeout: int) -> None:
+def _warn_and_continue(message: str, notice_timeout: int | None) -> None:
     """Show an error notice with a visible countdown, then continue.
 
     General resilience rule: an invalid environment value must never stop the
     run. The notice names the problem and the applied fallback, waits a
     visible countdown (plain numbers, no unit letters) so the user can
     interrupt with Ctrl-C and fix the environment, then returns and the run
-    continues.
+    continues. An absent notice timeout means no countdown at all.
     """
 
     log_event(f"Error! {message}", to_stderr=True)
-    for remaining in range(notice_timeout, 0, -1):
+    for remaining in range(notice_timeout or 0, 0, -1):
         print(f"\r{remaining} ", end="", flush=True, file=sys.stderr)
         time.sleep(1)
     # The final carriage return ends the countdown line cleanly.
@@ -216,7 +212,7 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 
 
 def _resolve_task_names(
-    mode: str, notice_timeout: int, tasks: tuple[TaskConfig, ...]
+    mode: str, notice_timeout: int | None, tasks: tuple[TaskConfig, ...]
 ) -> list[str]:
     """Task set from PYNTARA_TASKS, or the resolved mode defaults.
 
@@ -243,7 +239,7 @@ def _resolve_task_names(
 
 
 def _resolve_force_tasks(
-    names: list[str], notice_timeout: int, tasks: tuple[TaskConfig, ...]
+    names: list[str], notice_timeout: int | None, tasks: tuple[TaskConfig, ...]
 ) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
@@ -283,7 +279,15 @@ def _resolve_force_tasks(
 def run() -> None:
     """Run the Pyntara provisioning engine."""
 
-    cfg = _load_config_or_exit()
+    cfg = _load_config()
+    if not cfg.tasks:
+        # Without the catalog there is nothing to run, so the run reports the
+        # state instead of finishing as if the machine were provisioned.
+        log_event(
+            "Error! the config has no [[tasks]] catalog, nothing to run",
+            to_stderr=True,
+        )
+        raise typer.Exit(1)
     mode = _resolve_mode(cfg.engine)
     names = _resolve_task_names(mode, cfg.engine.notice_timeout, cfg.tasks)
     force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout, cfg.tasks)

@@ -99,6 +99,11 @@ def _google_script_config() -> tuple[str, re.Pattern[str]]:
         raise ScriptError(
             f"cannot read config file {config_path}: {exc}"
         ) from exc
+    if not data:
+        # The reader never fails, so an unreadable or absent config arrives
+        # here as a document without values: the tool names it instead of
+        # reporting a missing key of a file it never read.
+        raise ScriptError(f"config file not found or empty: {config_path}")
     try:
         section = data["system_metrics_setup"]
         title = section["google_script_key_entry_title"]

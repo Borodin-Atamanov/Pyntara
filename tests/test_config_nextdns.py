@@ -6,13 +6,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     section = config.nextdns_setup_system_wide
     assert section.vault_group_title == "NextDNS"
     assert section.profile_id_file_path == Path(

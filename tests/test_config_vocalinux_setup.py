@@ -5,9 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
-from pyntara.config import ConfigError, load_config
+from pyntara.config import ConfigError
 
 SECTION = (
     "[vocalinux_setup]\n"
@@ -37,7 +42,7 @@ def _section_variant(content: str) -> str:
 def test_valid_section_loads(tmp_path: Path) -> None:
     """A valid [vocalinux_setup] section loads into the config."""
 
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     setup = config.vocalinux_setup
     assert setup.username == "i"
     assert setup.home_dir == "/home/i"
@@ -110,4 +115,4 @@ def test_missing_section_raises(tmp_path: Path) -> None:
     """A document without the section is a ConfigError."""
 
     with pytest.raises(ConfigError):
-        load_config(write_config(tmp_path, base_config().replace(SECTION, "")))
+        load_checked_config(write_config(tmp_path, base_config().replace(SECTION, "")))

@@ -5,15 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 def test_load_config_i2pd_traffic_limit_values(tmp_path: Path) -> None:
     # The typed traffic limit values: bandwidth in kilobytes per second
     # and the transit share in percent.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.i2pd_service_setup.bandwidth == 12500
     assert config.i2pd_service_setup.share == 1
 

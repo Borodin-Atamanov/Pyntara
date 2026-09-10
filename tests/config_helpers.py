@@ -11,11 +11,14 @@ mutates it with a targeted replace.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
+from config_checks import strict_config_from_document
 
-from pyntara.config import ConfigError, load_config
+from pyntara.config import Config, ConfigError
+from pyntara.config.loader import render_config_source
 
 
 def base_config() -> str:
@@ -442,6 +445,23 @@ def write_config(tmp_path: Path, content: str) -> Path:
     return config_path
 
 
+def load_checked_config(path: Path) -> Config:
+    """Read the config through the strict checks of the test suite.
+
+    The runtime reader never fails, so a test that asserts a config rule
+    asks the checks instead: they are the same conditions that used to run
+    inside the package (tests/config_checks.py).
+    """
+
+    if not path.exists():
+        raise ConfigError(f"config file not found: {path}")
+    try:
+        document = tomllib.loads(render_config_source(path))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"cannot read config file {path}: {exc}") from exc
+    return strict_config_from_document(document)
+
+
 def assert_config_error(
     tmp_path: Path, content: str, match: str | None = None
 ) -> None:
@@ -453,7 +473,7 @@ def assert_config_error(
 
     if match is None:
         with pytest.raises(ConfigError):
-            load_config(write_config(tmp_path, content))
+            load_checked_config(write_config(tmp_path, content))
     else:
         with pytest.raises(ConfigError, match=match):
-            load_config(write_config(tmp_path, content))
+            load_checked_config(write_config(tmp_path, content))

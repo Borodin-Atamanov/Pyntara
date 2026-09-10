@@ -9,7 +9,7 @@ from support import make_config
 from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
-from pyntara.config import Config, ConfigError, load_config
+from pyntara.config import Config, load_config
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
@@ -549,14 +549,18 @@ def test_run_skip_apt_update_zero_is_false(
     assert _captured_skip_flag(monkeypatch, "0") is False
 
 
-def test_run_fails_when_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The config file is mandatory: without it the engine cannot know what
-    # to provision, so the run stops with an error and a nonzero exit code.
-    def missing_config(path: Path) -> Config:
-        raise ConfigError("config file not found: config.toml")
-
+def test_run_reports_when_config_has_no_task_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A config without the [[tasks]] catalog leaves nothing to run. The run
+    # reports the state and exits nonzero instead of crashing or claiming
+    # success for a machine it could not provision (architecture contract,
+    # Configuration). The reader itself never fails.
     _clear_env(monkeypatch)
-    monkeypatch.setattr("pyntara.pyntara.load_config", missing_config)
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config",
+        lambda path: load_config(Path("/nonexistent-config")),
+    )
     result = runner.invoke(app, [])
     assert result.exit_code == 1
-    assert "config file not found" in result.output
+    assert "no [[tasks]] catalog" in result.output

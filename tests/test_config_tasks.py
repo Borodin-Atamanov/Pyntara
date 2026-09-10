@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -78,7 +81,7 @@ def test_load_config_accepts_empty_modes(tmp_path: Path) -> None:
     # An empty modes list keeps the task in the catalog but in no install
     # mode, so it never runs in a default task set and only runs when
     # selected explicitly.
-    config = load_config(
+    config = load_checked_config(
         write_config(
             tmp_path,
             base_config().replace('modes = ["minimal"]', "modes = []"),

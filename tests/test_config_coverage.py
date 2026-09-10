@@ -20,11 +20,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from config_helpers import base_config
+from config_helpers import base_config, load_checked_config
 from support import make_config
 from test_config import VALID_TOML
 
-from pyntara.config import Config, load_config
+from pyntara.config import Config
 from pyntara.config.loader import render_config_source
 
 REPOSITORY_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -97,10 +97,11 @@ def _document_by_name(document_name: str) -> dict[str, Any]:
 
 
 def test_repository_config_directory_loads() -> None:
-    # The whole config of the installed system, loaded the way the engine
-    # and the deployed service load it. A broken value never reaches a
-    # target machine unnoticed again.
-    config = load_config(REPOSITORY_CONFIG_DIR)
+    # The whole config of the installed system, checked the way the test
+    # suite checks everything: every rule of every section holds, so a
+    # broken value never reaches a target machine unnoticed again. The
+    # runtime itself only reads and never checks.
+    config = load_checked_config(REPOSITORY_CONFIG_DIR)
     assert isinstance(config, Config)
     assert config.engine.notice_timeout > 0
 
@@ -125,7 +126,7 @@ def test_every_config_field_has_a_repository_section() -> None:
 def test_every_repository_section_key_is_read_by_its_parser() -> None:
     # A key the parser never reads is silently ignored, which is the exact
     # failure the strictness in the loader and this test exist to prevent.
-    config = load_config(REPOSITORY_CONFIG_DIR)
+    config = load_checked_config(REPOSITORY_CONFIG_DIR)
     unread: list[str] = []
     for section_name, table in _top_level_tables(
         _repository_config_document()
@@ -138,7 +139,7 @@ def test_every_repository_section_key_is_read_by_its_parser() -> None:
 
 def test_section_fields_are_keys_or_recorded_derived_fields() -> None:
     # A field with no key and no derivation is a value nobody can configure.
-    config = load_config(REPOSITORY_CONFIG_DIR)
+    config = load_checked_config(REPOSITORY_CONFIG_DIR)
     underivable: list[str] = []
     for section_name, table in _top_level_tables(
         _repository_config_document()

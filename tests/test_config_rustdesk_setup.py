@@ -5,9 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
-from pyntara.config import RustdeskOptionConfig, load_config
+from pyntara.config import RustdeskOptionConfig
 
 
 @pytest.mark.parametrize(
@@ -87,7 +92,7 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 
 def test_load_config_rustdesk_values(tmp_path: Path) -> None:
     # The typed values round-trip from the config document.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     rustdesk = config.rustdesk_setup
     assert rustdesk.github_repo == "rustdesk/rustdesk"
     assert rustdesk.download_dir == Path("/var/cache/pyntara/rustdesk")
@@ -114,5 +119,5 @@ def test_load_config_empty_options(tmp_path: Path) -> None:
         '[[rustdesk_setup.options]]\nkey = "enable-udp-punch"\nvalue = "Y"\n',
         "",
     )
-    config = load_config(write_config(tmp_path, content))
+    config = load_checked_config(write_config(tmp_path, content))
     assert config.rustdesk_setup.options == ()

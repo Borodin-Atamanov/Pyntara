@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -157,7 +160,7 @@ def test_load_config_threshold_out_of_range_raises(
 
 def test_load_config_deduplicates_components(tmp_path: Path) -> None:
     # Duplicate components are removed while the configured order is kept.
-    config = load_config(
+    config = load_checked_config(
         write_config(
             tmp_path,
             base_config().replace(
@@ -171,7 +174,7 @@ def test_load_config_deduplicates_components(tmp_path: Path) -> None:
 
 def test_load_config_parses_keep_downloaded_debs(tmp_path: Path) -> None:
     # The configured apt retention flag reaches the parsed config.
-    config = load_config(write_config(tmp_path, base_config()))
+    config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.add_extra_repos.keep_downloaded_debs is True
 
 

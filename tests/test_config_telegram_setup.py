@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -76,7 +79,7 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
 
 def test_load_config_typed_values(tmp_path: Path) -> None:
     config_path = write_config(tmp_path, base_config())
-    config = load_config(config_path)
+    config = load_checked_config(config_path)
     assert config.telegram_setup.username == "i"
     assert config.telegram_setup.home_dir == "/home/i"
     assert config.telegram_setup.download_dir == Path("/var/cache/pyntara/telegram")

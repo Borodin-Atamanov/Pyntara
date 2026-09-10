@@ -65,7 +65,7 @@ mandatory return-code checking
 All setup tasks must be idempotent.  
 Re-runs must not break the system and must not overwrite already generated secrets.  
 Plaintext secret storage is forbidden (including code and logs).  
-External inputs (including the config/ directory) are validated by explicit checks in the loading code: the config/ package type-checks, range-checks and cross-checks every value (task dependency names, vault entry titles, file modes) and raises ConfigError on any violation, which stops the run.  
+External inputs (including the config/ directory) are validated by explicit checks, and those checks belong to the test suite: the runtime reader takes every value as it is, without checking anything and without stopping the run. Every rule of the config lives in tests/config_checks.py, and tests/test_config_coverage.py applies it to the shipped config/ directory during development.  
 Internal structures without external validation use frozen dataclasses.  
 All package-install operations and other operations must have timeouts.  
 Tasks must also have reasonable large timeouts configured.  

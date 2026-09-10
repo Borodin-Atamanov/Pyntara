@@ -13,14 +13,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import base_config
+from config_helpers import base_config, load_checked_config
 
 from pyntara.config import (
     ConfigError,
     RustdeskOptionConfig,
     SshDirective,
     YggdrasilMulticastInterfaceConfig,
-    load_config,
 )
 
 VALID_TOML = """\
@@ -578,7 +577,7 @@ modes = ["minimal", "server", "desktop"]
 def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(VALID_TOML, encoding="utf-8")
-    config = load_config(config_path)
+    config = load_checked_config(config_path)
     assert config.engine.task_data_root == Path("/var/lib/pyntara/task-data")
     assert config.engine.curl_timeout_seconds == 777
     assert config.engine.curl_download_timeout_seconds == 7777
@@ -1116,21 +1115,21 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
 
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
-        load_config(tmp_path / "missing.toml")
+        load_checked_config(tmp_path / "missing.toml")
 
 
 def test_load_config_invalid_toml_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text("[engine\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot read"):
-        load_config(config_path)
+        load_checked_config(config_path)
 
 
 def test_load_config_missing_section_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text("[engine]\nnotice_timeout = 7\n", encoding="utf-8")
     with pytest.raises(ConfigError):
-        load_config(config_path)
+        load_checked_config(config_path)
 
 
 def test_load_config_directory_joins_files(tmp_path: Path) -> None:
@@ -1147,7 +1146,7 @@ def test_load_config_directory_joins_files(tmp_path: Path) -> None:
     (config_dir / "rest.toml").write_text(
         text[split_at:], encoding="utf-8"
     )
-    config = load_config(config_dir)
+    config = load_checked_config(config_dir)
     assert config.engine.notice_timeout == 7
     assert config.cli_tools.package_install_retries == 3
     assert config.tasks[0].name == "users"
@@ -1166,42 +1165,14 @@ def test_load_config_directory_duplicate_table_raises(tmp_path: Path) -> None:
         '[engine]\nnotice_timeout = 7\n', encoding="utf-8"
     )
     with pytest.raises(ConfigError, match="cannot read"):
-        load_config(config_dir)
+        load_checked_config(config_dir)
 
 
 def test_load_config_empty_directory_raises(tmp_path: Path) -> None:
     # An empty directory renders an empty document: no section exists, so
-    # the first parser reports the missing table.
+    # the first check reports the missing table.
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     with pytest.raises(ConfigError):
-        load_config(config_dir)
+        load_checked_config(config_dir)
 
-
-def test_load_config_unknown_section_raises(tmp_path: Path) -> None:
-    # A misspelled section name must not be ignored: its values would never
-    # reach a task, and the user would see a configured system that is not
-    # (architecture contract, Configuration).
-    config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        base_config() + '\n[hostname_typo]\nhostname_file = "/etc/hostname"\n',
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigError, match="unknown config section"):
-        load_config(config_path)
-
-
-def test_load_config_unknown_key_raises(tmp_path: Path) -> None:
-    # A misspelled key inside a known section must not be ignored either:
-    # the value would silently do nothing while the correct setting stays
-    # unset in the file.
-    config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        base_config().replace(
-            'hostname_file = "/etc/hostname"',
-            'hostname_file = "/etc/hostname"\nhostname_file_typo = "x"',
-        ),
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigError, match="unknown key"):
-        load_config(config_path)

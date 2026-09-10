@@ -1,72 +1,61 @@
-"""Whole-config assembly: the Config dataclass and load_config."""
+"""Config reading: the Config dataclass and load_config.
+
+The reader is total by design. It reads the document, builds every section
+from the keys that are there and returns. A missing file, an unreadable
+file, broken TOML, an unknown section, an unknown key or a value of an
+unexpected type never stops the run: a key that is not in the document
+leaves its field without a value, the task that needed it reports what it
+could not do, and the run continues (architecture contract, Configuration).
+
+Nothing is checked here and no value is invented here. The strict checks of
+the config live in the test suite, which validates the shipped config/
+directory during development, so the target machine only reads.
+"""
 
 from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
+from typing import Any, get_args, get_origin, get_type_hints
 
-from ._fields import ConfigError
-from .add_extra_repos import AddExtraReposConfig, _add_extra_repos_table
-from .chrome_setup import ChromeSetupConfig, _chrome_setup_table
-from .cli_tools import CliToolsConfig, _cli_tools_table
-from .dnsproxy_setup import DnsproxySetupConfig, _dnsproxy_setup_table
-from .engine import EngineConfig, _engine_table
-from .ffmpeg_setup import FfmpegSetupConfig, _ffmpeg_setup_table
-from .hostname import HostnameConfig, _hostname_table
-from .i2pd_service_setup import I2pdServiceSetupConfig, _i2pd_service_setup_table
-from .imagemagick_setup import ImagemagickSetupConfig, _imagemagick_setup_table
-from .kde_keyboard_setup import KdeKeyboardSetupConfig, _kde_keyboard_setup_table
-from .kde_settings import KdeSettingsConfig, _kde_settings_table
-from .nextdns_setup_system_wide import (
-    NextdnsSetupSystemWideConfig,
-    _nextdns_setup_system_wide_table,
-)
-from .playwright_setup import PlaywrightSetupConfig, _playwright_setup_table
-from .port_forwarding_setup import (
-    PortForwardingSetupConfig,
-    _port_forwarding_setup_table,
-)
-from .rustdesk_setup import RustdeskSetupConfig, _rustdesk_setup_table
-from .ssh import (
-    SshClientSetupConfig,
-    SshDaemonSetupConfig,
-    _ssh_client_setup_table,
-    _ssh_daemon_setup_table,
-)
-from .swapfile_service_install import (
-    SwapfileServiceInstallConfig,
-    _swapfile_service_install_table,
-)
-from .system_metrics_setup import (
-    SystemMetricsSetupConfig,
-    _system_metrics_setup_table,
-)
-from .tasks import TaskConfig, _tasks_table
-from .telegram_setup import TelegramSetupConfig, _telegram_setup_table
-from .three_x_ui_xray_setup import (
-    ThreeXuiXraySetupConfig,
-    _three_x_ui_xray_setup_table,
-)
-from .tor_setup import TorSetupConfig, _tor_setup_table
-from .vault import (
-    LocalVaultSetupConfig,
-    VaultStructureConfig,
-    _local_vault_setup_table,
-    _vault_structure_table,
-)
-from .vocalinux_setup import VocalinuxSetupConfig, _vocalinux_setup_table
-from .yggdrasil_service_setup import (
-    YggdrasilServiceSetupConfig,
-    _yggdrasil_service_setup_table,
-)
-from .zram_service import ZramServiceConfig, _zram_service_table
-from .zswap_service import ZswapServiceConfig, _zswap_service_table
+from .add_extra_repos import AddExtraReposConfig
+from .chrome_setup import ChromeSetupConfig
+from .cli_tools import CliToolsConfig
+from .dnsproxy_setup import DnsproxySetupConfig
+from .engine import EngineConfig
+from .ffmpeg_setup import FfmpegSetupConfig
+from .hostname import HostnameConfig
+from .i2pd_service_setup import I2pdServiceSetupConfig
+from .imagemagick_setup import ImagemagickSetupConfig
+from .kde_keyboard_setup import KdeKeyboardSetupConfig
+from .kde_settings import KdeSettingsConfig
+from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
+from .playwright_setup import PlaywrightSetupConfig
+from .port_forwarding_setup import PortForwardingSetupConfig
+from .rustdesk_setup import RustdeskSetupConfig
+from .ssh import SshClientSetupConfig, SshDaemonSetupConfig
+from .swapfile_service_install import SwapfileServiceInstallConfig
+from .system_metrics_setup import SystemMetricsSetupConfig
+from .tasks import TaskConfig
+from .telegram_setup import TelegramSetupConfig
+from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
+from .tor_setup import TorSetupConfig
+from .vault import LocalVaultSetupConfig, VaultStructureConfig
+from .vocalinux_setup import VocalinuxSetupConfig
+from .yggdrasil_service_setup import YggdrasilServiceSetupConfig
+from .zram_service import ZramServiceConfig
+from .zswap_service import ZswapServiceConfig
 
 
 @dataclass(frozen=True)
 class Config:
-    """Validated content of config.toml."""
+    """Content of the config document, value by value as it was read.
+
+    Every field holds the value of the key with its name, or None when the
+    key is not in the document. The field names are the description of what
+    the code reads from the config.
+    """
 
     engine: EngineConfig
     cli_tools: CliToolsConfig
@@ -102,11 +91,10 @@ class Config:
 def render_config_source(path: Path) -> str:
     """Return the TOML text of the config at path.
 
-    A single file is returned as is; a directory is joined from its *.toml
-    files in sorted order. The directory form is the repository layout,
-    one file per top-level section; the deployed system config is always
-    the joined single file. A path that is neither a file nor a directory
-    is a ConfigError.
+    A file is returned as it is; a directory is joined from its *.toml files
+    in sorted order, which is the repository layout, one file per top-level
+    section. A path that is neither yields an empty document, so the run
+    continues with every value absent instead of stopping.
     """
 
     if path.is_file():
@@ -116,159 +104,74 @@ def render_config_source(path: Path) -> str:
             child.read_text(encoding="utf-8")
             for child in sorted(path.glob("*.toml"))
         )
-    raise ConfigError(f"config file not found: {path}")
+    return ""
 
 
-def assert_config_has_no_unknown_content(
-    data: dict[str, object], config: Config
-) -> None:
-    """Reject a config table or key that no parser reads.
+def _build_value(field_type: object, raw: object) -> Any:
+    """Return one raw value shaped the way its field declares it.
 
-    Every top-level table must be a section of Config, and every key of a
-    section must be a field of that section dataclass. Without this check a
-    misspelled section name or key is ignored without a word, its values
-    never reach any task, and the user sees a configured and a working
-    system apart (architecture contract, Configuration).
+    A nested table becomes its dataclass, a section that is not in the
+    document becomes a dataclass whose values are all absent, an array of
+    tables becomes a tuple of them, a list becomes the tuple the field
+    declares, and a text value of a path field becomes a Path. Anything else
+    is handed over exactly as it was read.
     """
 
-    unknown_sections = sorted(
-        name for name in data if name not in Config.__dataclass_fields__
-    )
-    if unknown_sections:
-        raise ConfigError(
-            f"unknown config section(s): {', '.join(unknown_sections)}"
-        )
-    for section_name in Config.__dataclass_fields__:
-        raw_section = data.get(section_name)
-        section = getattr(config, section_name)
-        if not isinstance(raw_section, dict) or not is_dataclass(section):
-            continue
-        known_keys = {field.name for field in fields(section)}
-        unknown_keys = sorted(
-            key for key in raw_section if key not in known_keys
-        )
-        if unknown_keys:
-            raise ConfigError(
-                f"[{section_name}] has unknown key(s): "
-                f"{', '.join(unknown_keys)}"
+    if isinstance(field_type, type) and is_dataclass(field_type):
+        return _build_section(field_type, raw)
+    if get_origin(field_type) is tuple:
+        if not isinstance(raw, list):
+            return ()
+        arguments = get_args(field_type)
+        element_type = arguments[0] if arguments else None
+        if isinstance(element_type, type) and is_dataclass(element_type):
+            return tuple(
+                _build_section(element_type, item)
+                for item in raw
+                if isinstance(item, dict)
             )
+        return tuple(raw)
+    if raw is None:
+        return None
+    if field_type is Path and isinstance(raw, str):
+        return Path(raw)
+    return raw
+
+
+def _build_section(section_type: Any, raw: object) -> Any:
+    """Build one section dataclass from the raw table with its name.
+
+    Every field takes the value of the key with the same name. A table that
+    is not there, or is not a table at all, leaves every field without a
+    value.
+    """
+
+    table: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    hints = get_type_hints(section_type)
+    return section_type(
+        **{
+            field.name: _build_value(hints.get(field.name), table.get(field.name))
+            for field in fields(section_type)
+        }
+    )
+
+
+def build_config_from_document(document: dict[str, Any]) -> Config:
+    """Build the Config from an already parsed config document."""
+
+    return _build_section(Config, document)  # type: ignore[no-any-return]
 
 
 def load_config(path: Path) -> Config:
-    """Read and validate the config at path. Raises ConfigError on any
-    problem."""
+    """Read the config at path and return it.
 
-    if not path.exists():
-        raise ConfigError(f"config file not found: {path}")
+    The read never fails: a path that does not exist, a file that cannot be
+    read and a document that is not valid TOML all yield a Config whose
+    values are absent.
+    """
+
     try:
-        data = tomllib.loads(render_config_source(path))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ConfigError(f"cannot read config file {path}: {exc}") from exc
-    vault_structure = _vault_structure_table(data.get("vault_structure"))
-    local_vault_setup = _local_vault_setup_table(data.get("local_vault_setup"))
-    system_metrics_setup = _system_metrics_setup_table(
-        data.get("system_metrics_setup")
-    )
-    if not any(
-        entry.title == local_vault_setup.vault_password_entry_title
-        for entry in vault_structure.entries
-    ):
-        raise ConfigError(
-            "local_vault_setup.vault_password_entry_title must name an entry "
-            "of the [vault_structure] table"
-        )
-    if not any(
-        entry.title == system_metrics_setup.google_script_key_entry_title
-        for entry in vault_structure.entries
-    ):
-        raise ConfigError(
-            "system_metrics_setup.google_script_key_entry_title must name an "
-            "entry of the [vault_structure] table"
-        )
-    port_forwarding_setup = _port_forwarding_setup_table(
-        data.get("port_forwarding_setup")
-    )
-    if not any(
-        entry.title == port_forwarding_setup.passphrase_entry_title
-        for entry in vault_structure.entries
-    ):
-        raise ConfigError(
-            "port_forwarding_setup.passphrase_entry_title must name an entry "
-            "of the [vault_structure] table"
-        )
-    three_x_ui = data.get("three_x_ui_xray_setup")
-    if isinstance(three_x_ui, dict):
-        vault_entry_title = three_x_ui.get("vault_entry_title")
-        if vault_entry_title is not None and not any(
-            entry.title == vault_entry_title
-            for entry in vault_structure.entries
-        ):
-            raise ConfigError(
-                "three_x_ui_xray_setup.vault_entry_title must name an entry "
-                "of the [vault_structure] table"
-            )
-        connection_title = three_x_ui.get("connection_vault_entry_title")
-        if connection_title is not None and not any(
-            entry.title == connection_title
-            for entry in vault_structure.entries
-        ):
-            raise ConfigError(
-                "three_x_ui_xray_setup.connection_vault_entry_title must name "
-                "an entry of the [vault_structure] table"
-            )
-    rustdesk_setup = _rustdesk_setup_table(data.get("rustdesk_setup"))
-    if not any(
-        entry.title == rustdesk_setup.vault_entry_title
-        for entry in vault_structure.entries
-    ):
-        raise ConfigError(
-            "rustdesk_setup.vault_entry_title must name an entry of the "
-            "[vault_structure] table"
-        )
-    config = Config(
-        engine=_engine_table(data.get("engine")),
-        cli_tools=_cli_tools_table(data.get("cli_tools")),
-        chrome_setup=_chrome_setup_table(data.get("chrome_setup")),
-        dnsproxy_setup=_dnsproxy_setup_table(data.get("dnsproxy_setup")),
-        add_extra_repos=_add_extra_repos_table(data.get("add_extra_repos")),
-        hostname=_hostname_table(data.get("hostname")),
-        ffmpeg_setup=_ffmpeg_setup_table(data.get("ffmpeg_setup")),
-        imagemagick_setup=_imagemagick_setup_table(
-            data.get("imagemagick_setup")
-        ),
-        kde_keyboard_setup=_kde_keyboard_setup_table(data.get("kde_keyboard_setup")),
-        kde_settings=_kde_settings_table(data.get("kde_settings")),
-        swapfile_service_install=_swapfile_service_install_table(
-            data.get("swapfile_service_install")
-        ),
-        zswap_service=_zswap_service_table(data.get("zswap_service")),
-        zram_service=_zram_service_table(data.get("zram_service")),
-        telegram_setup=_telegram_setup_table(data.get("telegram_setup")),
-        i2pd_service_setup=_i2pd_service_setup_table(
-            data.get("i2pd_service_setup")
-        ),
-        yggdrasil_service_setup=_yggdrasil_service_setup_table(
-            data.get("yggdrasil_service_setup")
-        ),
-        three_x_ui_xray_setup=_three_x_ui_xray_setup_table(
-            data.get("three_x_ui_xray_setup")
-        ),
-        tor_setup=_tor_setup_table(data.get("tor_setup")),
-        ssh_daemon_setup=_ssh_daemon_setup_table(data.get("ssh_daemon_setup")),
-        ssh_client_setup=_ssh_client_setup_table(data.get("ssh_client_setup")),
-        vocalinux_setup=_vocalinux_setup_table(data.get("vocalinux_setup")),
-        nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
-            data.get("nextdns_setup_system_wide")
-        ),
-        playwright_setup=_playwright_setup_table(
-            data.get("playwright_setup")
-        ),
-        port_forwarding_setup=port_forwarding_setup,
-        rustdesk_setup=rustdesk_setup,
-        system_metrics_setup=system_metrics_setup,
-        vault_structure=vault_structure,
-        local_vault_setup=local_vault_setup,
-        tasks=_tasks_table(data.get("tasks")),
-    )
-    assert_config_has_no_unknown_content(data, config)
-    return config
+        document = tomllib.loads(render_config_source(path))
+    except (OSError, tomllib.TOMLDecodeError):
+        document = {}
+    return build_config_from_document(document)

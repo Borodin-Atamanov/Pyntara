@@ -1,16 +1,21 @@
-"""Configuration loading from config.toml.
+"""Configuration reading from config.toml.
 
-The loader is split into a package by config section: each *_table parser
-and its dataclass live in the module of the section (engine.py,
-cli_tools.py, ...), the shared field helpers and the vocabulary constants
-live in _fields.py, and loader.py assembles the whole Config. This file
+The package is split by config section: each section module holds its
+frozen dataclass, the vocabulary constants live in _fields.py, and loader.py
+reads the document into the Config with the runtime reader. This file
 re-exports the public surface, so `from pyntara.config import ...` keeps
 working unchanged.
 
-The file at the repository root is the single source of truth for the
-Python part of the engine. A missing or invalid file stops the run: there
-are no defaults (architecture contract, Configuration). The composition root
-loads the config once and hands it to every task through Context.
+The config/ directory at the repository root is the single source of truth
+for the Python part of the engine. Reading is total: a missing file, broken
+TOML, an unknown section or key, an absent value and a value of an
+unexpected type never stop the run, and no value is invented. No rule of the
+config is checked while the run works; every rule lives in the test suite
+(tests/config_checks.py, applied to the shipped config/ directory by
+tests/test_config_coverage.py), so a broken config fails during development
+and never on a machine (architecture contract, Configuration). The
+composition root reads the config once and hands it to every task through
+Context.
 """
 
 from __future__ import annotations

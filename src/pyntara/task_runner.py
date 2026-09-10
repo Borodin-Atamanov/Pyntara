@@ -94,7 +94,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             log_result_line(name, result)
             results.append((name, result))
             continue
-        time.sleep(ctx.config.engine.task_start_delay_seconds)
+        time.sleep(ctx.config.engine.task_start_delay_seconds or 0)
         start = time.monotonic()
         try:
             result = task(ctx)

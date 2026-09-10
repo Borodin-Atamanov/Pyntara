@@ -1,18 +1,10 @@
 """[i2pd_service_setup] table: i2pd installation parameters."""
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
-from ._fields import (
-    I2PD_LOG_LEVELS,
-    ConfigError,
-    _float_field,
-    _int_field,
-    _nonempty_string_field,
-    _octal_mode_field,
-)
 
 
 @dataclass(frozen=True)
@@ -68,127 +60,3 @@ class I2pdServiceSetupConfig:
     tunnel_keys_path: Path
     address_file_path: Path
     address_file_mode: int
-
-
-def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
-    """Validate the [i2pd_service_setup] table and build the config.
-
-    github_repo, download_dir, service_unit_name and config_path are
-    non-empty strings; log_level is one of the I2PD_LOG_LEVELS values;
-    bandwidth is a positive integer in kilobytes per second and share is
-    an integer percentage between 0 and 100; http_enabled and
-    socks_proxy_enabled are strict booleans; install_retries and
-    start_check_attempts are positive integers;
-    start_check_retry_delay_seconds is positive, so the readiness loop
-    always waits between attempts. tunnels_config_path and
-    tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
-    are non-empty strings; address_file_path is a non-empty string and
-    address_file_mode is an octal mode string.
-    """
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[i2pd_service_setup] section is missing or not a table")
-    github_repo = _nonempty_string_field(
-        raw.get("github_repo"), "i2pd_service_setup.github_repo"
-    )
-    download_dir = Path(
-        _nonempty_string_field(
-            raw.get("download_dir"), "i2pd_service_setup.download_dir"
-        )
-    )
-    service_unit_name = _nonempty_string_field(
-        raw.get("service_unit_name"), "i2pd_service_setup.service_unit_name"
-    )
-    config_path = Path(
-        _nonempty_string_field(
-            raw.get("config_path"), "i2pd_service_setup.config_path"
-        )
-    )
-    log_level = raw.get("log_level")
-    if log_level not in I2PD_LOG_LEVELS:
-        raise ConfigError(
-            "i2pd_service_setup.log_level must be one of "
-            + ", ".join(I2PD_LOG_LEVELS)
-        )
-    bandwidth = _int_field(
-        raw.get("bandwidth"), "i2pd_service_setup.bandwidth"
-    )
-    if bandwidth < 1:
-        raise ConfigError("i2pd_service_setup.bandwidth must be positive")
-    share = _int_field(raw.get("share"), "i2pd_service_setup.share")
-    if share < 0 or share > 100:
-        raise ConfigError(
-            "i2pd_service_setup.share must be between 0 and 100"
-        )
-    http_enabled = raw.get("http_enabled")
-    if not isinstance(http_enabled, bool):
-        raise ConfigError("i2pd_service_setup.http_enabled must be a boolean")
-    socks_proxy_enabled = raw.get("socks_proxy_enabled")
-    if not isinstance(socks_proxy_enabled, bool):
-        raise ConfigError(
-            "i2pd_service_setup.socks_proxy_enabled must be a boolean"
-        )
-    install_retries = _int_field(
-        raw.get("install_retries"), "i2pd_service_setup.install_retries"
-    )
-    if install_retries < 1:
-        raise ConfigError("i2pd_service_setup.install_retries must be positive")
-    start_check_attempts = _int_field(
-        raw.get("start_check_attempts"), "i2pd_service_setup.start_check_attempts"
-    )
-    if start_check_attempts < 1:
-        raise ConfigError(
-            "i2pd_service_setup.start_check_attempts must be positive"
-        )
-    start_check_retry_delay_seconds = _float_field(
-        raw.get("start_check_retry_delay_seconds"),
-        "i2pd_service_setup.start_check_retry_delay_seconds",
-    )
-    if start_check_retry_delay_seconds <= 0:
-        raise ConfigError(
-            "i2pd_service_setup.start_check_retry_delay_seconds must be positive"
-        )
-    tunnels_config_path = Path(
-        _nonempty_string_field(
-            raw.get("tunnels_config_path"), "i2pd_service_setup.tunnels_config_path"
-        )
-    )
-    tunnel_name = _nonempty_string_field(
-        raw.get("tunnel_name"), "i2pd_service_setup.tunnel_name"
-    )
-    tunnel_host = _nonempty_string_field(
-        raw.get("tunnel_host"), "i2pd_service_setup.tunnel_host"
-    )
-    tunnel_keys_path = Path(
-        _nonempty_string_field(
-            raw.get("tunnel_keys_path"), "i2pd_service_setup.tunnel_keys_path"
-        )
-    )
-    address_file_path = Path(
-        _nonempty_string_field(
-            raw.get("address_file_path"), "i2pd_service_setup.address_file_path"
-        )
-    )
-    address_file_mode = _octal_mode_field(
-        raw.get("address_file_mode"), "i2pd_service_setup.address_file_mode"
-    )
-    return I2pdServiceSetupConfig(
-        github_repo=github_repo,
-        download_dir=download_dir,
-        service_unit_name=service_unit_name,
-        config_path=config_path,
-        log_level=log_level,
-        bandwidth=bandwidth,
-        share=share,
-        http_enabled=http_enabled,
-        socks_proxy_enabled=socks_proxy_enabled,
-        install_retries=install_retries,
-        start_check_attempts=start_check_attempts,
-        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
-        tunnels_config_path=tunnels_config_path,
-        tunnel_name=tunnel_name,
-        tunnel_host=tunnel_host,
-        tunnel_keys_path=tunnel_keys_path,
-        address_file_path=address_file_path,
-        address_file_mode=address_file_mode,
-    )

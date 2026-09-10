@@ -1,11 +1,10 @@
 """[vocalinux_setup] table: the Vocalinux voice dictation app."""
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
-from ._fields import ConfigError, _int_field, _nonempty_string_field, _string_list
 
 
 @dataclass(frozen=True)
@@ -37,41 +36,3 @@ class VocalinuxSetupConfig:
     service_unit_name: str
     package_status_timeout_seconds: int
     package_install_retries: int
-
-
-def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
-    """Validate the [vocalinux_setup] table and build the config."""
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[vocalinux_setup] section is missing or not a table")
-    return VocalinuxSetupConfig(
-        username=_nonempty_string_field(
-            raw.get("username"), "vocalinux_setup.username"
-        ),
-        home_dir=_nonempty_string_field(
-            raw.get("home_dir"), "vocalinux_setup.home_dir"
-        ),
-        download_dir=Path(
-            _nonempty_string_field(
-                raw.get("download_dir"), "vocalinux_setup.download_dir"
-            )
-        ),
-        version=_nonempty_string_field(
-            raw.get("version"), "vocalinux_setup.version"
-        ),
-        packages=_string_list(raw.get("packages"), "vocalinux_setup.packages"),
-        input_group=_nonempty_string_field(
-            raw.get("input_group"), "vocalinux_setup.input_group"
-        ),
-        service_unit_name=_nonempty_string_field(
-            raw.get("service_unit_name"), "vocalinux_setup.service_unit_name"
-        ),
-        package_status_timeout_seconds=_int_field(
-            raw.get("package_status_timeout_seconds"),
-            "vocalinux_setup.package_status_timeout_seconds",
-        ),
-        package_install_retries=_int_field(
-            raw.get("package_install_retries"),
-            "vocalinux_setup.package_install_retries",
-        ),
-    )

@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from config_helpers import assert_config_error, base_config, write_config
-
-from pyntara.config import load_config
+from config_helpers import (
+    assert_config_error,
+    base_config,
+    load_checked_config,
+    write_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -410,7 +413,7 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         '"/var/lib/pyntara/port_forwarding_state.json"]\n'
         "[[system_metrics_setup.collector.system_modules]]",
     )
-    config = load_config(write_config(tmp_path, content))
+    config = load_checked_config(write_config(tmp_path, content))
     modules = config.system_metrics_setup.collector.network_modules
     assert [module.name for module in modules] == [
         "ipv4",
@@ -461,7 +464,7 @@ def test_nextdns_module_path_matches_nextdns_config() -> None:
     # configured profile_id_file_path, so a rename in one file is caught
     # here instead of silently breaking the telemetry.
     repo_root = Path(__file__).resolve().parents[1]
-    config = load_config(repo_root / "config")
+    config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
     nextdns_module = next(
         module for module in modules if module.name == "nextdns"
@@ -479,7 +482,7 @@ def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
     # configured state_file_path, so a rename in one file is caught here
     # instead of silently breaking the telemetry.
     repo_root = Path(__file__).resolve().parents[1]
-    config = load_config(repo_root / "config")
+    config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
     port_forwarding_module = next(
         module for module in modules if module.name == "port_forwarding"
