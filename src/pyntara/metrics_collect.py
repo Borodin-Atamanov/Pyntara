@@ -34,7 +34,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from pyntara.config import CollectorModuleConfig, Config, load_config
+from pyntara.config import (
+    CollectorModuleConfig,
+    Config,
+    absent_config_keys,
+    describe_absent_config_keys,
+    load_config,
+)
+
+# The config keys the collector service reads, by table. A key the collector
+# starts reading is added to this list: the deployed service reports the keys
+# it cannot find in words, so the journal of a machine shows config keys and
+# not a Python error. Nothing is judged here and no key is required to have a
+# particular shape: the rules of the config live in tests/config_checks.py.
+COLLECTOR_SECTION_KEYS = ("command_path", "error_priority")
+COLLECTOR_TABLE_KEYS = (
+    "lock_file_path",
+    "report_file_name",
+    "command_timeout_seconds",
+    "network_modules",
+    "system_modules",
+    "threshold_percent",
+    "retry_base_seconds",
+    "retry_multiplier",
+    "retry_max_seconds",
+)
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay, trim_whitespace
 
@@ -254,7 +278,23 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    collector = cfg.system_metrics_setup.collector
+    metrics = cfg.system_metrics_setup
+    collector = metrics.collector
+    absent = describe_absent_config_keys(
+        (
+            (
+                "system_metrics_setup",
+                absent_config_keys(metrics, COLLECTOR_SECTION_KEYS),
+            ),
+            (
+                "system_metrics_setup.collector",
+                absent_config_keys(collector, COLLECTOR_TABLE_KEYS),
+            ),
+        )
+    )
+    if absent:
+        print(f"error: the collector cannot run: {absent}", file=sys.stderr)
+        return
     try:
         lock = _acquire_lock(collector.lock_file_path)
         if lock is None:
@@ -265,9 +305,9 @@ def main() -> None:
             raise SystemExit(1)
     except SystemExit:
         raise
-    except Exception as exc:  # noqa: BLE001 - an incomplete config reports one line, never a traceback
+    except Exception as exc:  # noqa: BLE001 - a failed run reports one line, never a traceback
         print(
-            f"error: the collector could not run with this config: {exc}",
+            f"error: the collector failed: {exc}",
             file=sys.stderr,
         )
 

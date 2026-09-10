@@ -15,6 +15,7 @@ directory during development, so the target machine only reads.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin, get_type_hints
@@ -184,3 +185,34 @@ def load_config(path: Path) -> Config:
     except (OSError, tomllib.TOMLDecodeError):
         document = {}
     return build_config_from_document(document)
+
+
+def absent_config_keys(section: Any, keys: Sequence[str]) -> tuple[str, ...]:
+    """Return the keys of a section whose value the document does not hold.
+
+    The reader hands over None for a value that is not in the document, so a
+    deployed service can name the keys it cannot find instead of failing on a
+    Python error. Only None counts: an array the document does not have is
+    indistinguishable from an empty array, and a value of a wrong type is a
+    value the document holds. Nothing is judged here, every rule of the
+    config lives in the test suite (architecture contract, Configuration), and
+    the service passes the keys it reads, so the report names no other key.
+    """
+
+    return tuple(key for key in keys if getattr(section, key, None) is None)
+
+
+def describe_absent_config_keys(
+    groups: Sequence[tuple[str, tuple[str, ...]]],
+) -> str:
+    """Return one clause per table whose keys hold no value.
+
+    The clause names the table once and then the keys, so a service reports
+    "[system_metrics_setup] has no spool_dir, temp_dir" instead of repeating
+    the table name before every key. An empty result means every key of every
+    table holds a value.
+    """
+
+    return "; ".join(
+        f"[{table}] has no {', '.join(keys)}" for table, keys in groups if keys
+    )

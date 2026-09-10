@@ -429,15 +429,45 @@ def test_main_reports_a_config_without_the_collector_values(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # An incomplete config leaves the collector paths absent. The deployed
-    # service must report that in one line and never let a traceback reach
-    # the unit, so a half written config stays readable in the journal.
+    # An incomplete config leaves the collector keys absent. The deployed
+    # service names the keys and never lets a traceback reach the unit, so a
+    # half written config stays readable in the journal.
     config_path = tmp_path / "config.toml"
     config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["pyntara.metrics_collect", str(config_path)])
     metrics_collect.main()
     captured = capsys.readouterr()
-    assert "error: the collector could not run with this config:" in captured.err
+    assert captured.err == (
+        "error: the collector cannot run: [system_metrics_setup] has no "
+        "command_path, error_priority; [system_metrics_setup.collector] has no "
+        "lock_file_path, report_file_name, command_timeout_seconds, "
+        "threshold_percent, retry_base_seconds, retry_multiplier, "
+        "retry_max_seconds\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_main_reports_a_failed_run_in_one_line(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A failure while the collector works is also reported in one line, so
+    # the journal never carries a traceback of the deployed service.
+    def fail(cfg: object) -> dict[str, object]:
+        del cfg
+        raise RuntimeError("no space left on device")
+
+    monkeypatch.setattr("pyntara.metrics_collect.collect_until_ready", fail)
+    monkeypatch.setattr(
+        "pyntara.metrics_collect.load_config", lambda path: _config(tmp_path)
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+    )
+    metrics_collect.main()
+    captured = capsys.readouterr()
+    assert "error: the collector failed: no space left on device" in captured.err
     assert "Traceback" not in captured.err
 
 

@@ -24,9 +24,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-
 
 def task(ctx: Context) -> TaskResult:
     """Start the collector service once; skip when the unit is not deployed.

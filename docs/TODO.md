@@ -70,7 +70,7 @@ Remaining, most value first: REPO_ROOT (duplication, tracked above and blocked w
 
 Items from the split of reading and checking (commits f92b8e5 and a69df8f).
 
-Done 2026-09-10: the deployed metrics services report an incomplete config in one line instead of a traceback, and tests/test_metrics_collect.py, tests/test_metrics_ingest.py and tests/test_metrics.py now cover that path with the real reader on a document that holds only [engine]. The probe shows the line a user reads: "error: the collector could not run with this config: 'NoneType' object has no attribute 'parent'". It is honest but names a Python attribute instead of the value that is missing, so a service that names the configured values it cannot find is open and needs a decision.
+Done 2026-09-10: the deployed metrics services report an incomplete config in one line instead of a traceback, and tests/test_metrics_collect.py, tests/test_metrics_ingest.py and tests/test_metrics.py now cover that path with the real reader on a document that holds only [engine]. Each service names the keys it reads and cannot find, clause by clause per table, instead of showing a Python error: "error: the ingest cannot run: [system_metrics_setup] has no spool_dir, spool_temp_prefix, ...". The keys a service reads live in one list in its own module, absent_config_keys and describe_absent_config_keys do the rest, and an absent array is not reported because the reader cannot tell it from an empty one.
 
 Done 2026-09-10: the two scripts in secrets/ no longer catch the ConfigError that the runtime reader never raises, and their comments describe the loader as it is now.
 

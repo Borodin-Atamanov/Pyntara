@@ -255,12 +255,19 @@ def test_main_reports_a_config_without_the_retry_schedule(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Without the retry schedule the loop has nothing to pace. The service
-    # reports it once and stops instead of raising inside the first cycle,
-    # so the loop is never entered.
+    # names the keys the config does not hold and stops, so the loop is
+    # never entered and the journal carries no traceback.
     config_path = tmp_path / "config.toml"
     config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     main()
     captured = capsys.readouterr()
-    assert "no retry schedule" in captured.err
+    assert captured.err == (
+        "error: the metrics service cannot run: [system_metrics_setup] has no "
+        "backoff_base_seconds, backoff_multiplier, backoff_max_seconds, "
+        "error_priority, system_metrics_dir, system_metrics_dir_mode, "
+        "main_outbox_dir, google_script_dir, main_sent_dir, send_order, "
+        "max_queue_file_size_bytes, queue_file_suffix_length, "
+        "google_script_key_entry_title, google_script_timeout_seconds\n"
+    )
     assert "Traceback" not in captured.err

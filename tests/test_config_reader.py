@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyntara.config import Config, load_config
+from pyntara.config import (
+    Config,
+    absent_config_keys,
+    describe_absent_config_keys,
+    load_config,
+)
 
 
 def _write(tmp_path: Path, content: str) -> Path:
@@ -120,3 +125,81 @@ def test_nested_tables_become_their_dataclasses(tmp_path: Path) -> None:
     )
     assert config.tasks[0].name == "users"
     assert config.tasks[0].modes == ("minimal",)
+
+
+def test_absent_config_keys_names_the_values_a_section_does_not_hold(
+    tmp_path: Path,
+) -> None:
+    # The deployed services name the keys they cannot find, so the journal of
+    # a machine shows config keys and not a Python error.
+    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
+    assert absent_config_keys(config.engine, ("notice_timeout",)) == ()
+    assert absent_config_keys(
+        config.engine, ("notice_timeout", "task_data_root", "curl_retries")
+    ) == ("task_data_root", "curl_retries")
+
+
+def test_absent_config_keys_ignores_a_key_of_a_wrong_type(tmp_path: Path) -> None:
+    # A value of a wrong type is a value the document holds: naming it as
+    # absent would be a lie, and no rule is applied here.
+    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = "seven"\n'))
+    assert absent_config_keys(config.engine, ("notice_timeout",)) == ()
+
+
+def test_absent_config_keys_ignores_an_empty_array(tmp_path: Path) -> None:
+    # An array the document does not have cannot be told from an empty array,
+    # so an empty one is not reported as absent.
+    config = load_config(
+        _write(tmp_path, "[engine]\ndesktop_detect_processes = []\n")
+    )
+    assert config.engine.desktop_detect_processes == ()
+    assert absent_config_keys(config.engine, ("desktop_detect_processes",)) == ()
+
+
+def test_absent_config_keys_ignores_a_missing_section(tmp_path: Path) -> None:
+    # A section that is not in the document keeps an object with absent
+    # values, so a service reads a section the same way in every case.
+    config = load_config(_write(tmp_path, "[engine]\nnotice_timeout = 7\n"))
+    assert absent_config_keys(
+        config.system_metrics_setup.collector, ("lock_file_path",)
+    ) == ("lock_file_path",)
+
+
+def test_describe_absent_config_keys_names_each_table_once(
+    tmp_path: Path,
+) -> None:
+    # The clause names the table and then the keys, so a long list stays
+    # readable, and a table without absent keys is left out.
+    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
+    described = describe_absent_config_keys(
+        (
+            (
+                "system_metrics_setup",
+                absent_config_keys(
+                    config.system_metrics_setup, ("spool_dir", "temp_dir")
+                ),
+            ),
+            (
+                "system_metrics_setup.collector",
+                absent_config_keys(config.system_metrics_setup.collector, ()),
+            ),
+        )
+    )
+    assert described == "[system_metrics_setup] has no spool_dir, temp_dir"
+
+
+def test_describe_absent_config_keys_says_nothing_when_all_keys_are_there(
+    tmp_path: Path,
+) -> None:
+    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
+    assert (
+        describe_absent_config_keys(
+            (
+                (
+                    "engine",
+                    absent_config_keys(config.engine, ("notice_timeout",)),
+                ),
+            )
+        )
+        == ""
+    )

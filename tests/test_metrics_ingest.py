@@ -61,11 +61,39 @@ def test_main_reports_a_config_without_the_queue_values(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # An incomplete config cannot name the spool and the queue: the ingest
-    # reports one line and never lets a traceback reach the path unit.
+    # names the absent keys and never lets a traceback reach the path unit.
     config_path = tmp_path / "config.toml"
     config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["pyntara.metrics_ingest", str(config_path)])
     main()
     captured = capsys.readouterr()
-    assert "error: the ingest could not run with this config:" in captured.err
+    assert captured.err == (
+        "error: the ingest cannot run: [system_metrics_setup] has no spool_dir, "
+        "spool_temp_prefix, system_metrics_dir, system_metrics_dir_mode, "
+        "main_outbox_dir, temp_dir, max_queue_file_size_bytes, queue_file_mode, "
+        "queue_file_suffix_length, queue_link_attempts\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_main_reports_a_failed_ingest_in_one_line(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A failure while the ingest works is also reported in one line.
+    config = make_config(task_data_root=tmp_path)
+
+    def fail(cfg: Config) -> list[Path]:
+        del cfg
+        raise OSError("the spool is not readable")
+
+    monkeypatch.setattr("pyntara.metrics_ingest.load_config", lambda path: config)
+    monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", fail)
+    monkeypatch.setattr(
+        "sys.argv", ["pyntara.metrics_ingest", str(tmp_path / "config.toml")]
+    )
+    main()
+    captured = capsys.readouterr()
+    assert "error: the ingest failed: the spool is not readable" in captured.err
     assert "Traceback" not in captured.err
