@@ -47,7 +47,7 @@ def base_config() -> str:
 
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
         'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
-        'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\n'
+        'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\nwayrecord_file_mode = "0755"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'
@@ -332,7 +332,7 @@ def base_config() -> str:
         'home_dir = "/home/i"\n'
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
-        'icon_url = "https://example.invalid/telegram/icon512.png"\n'
+        'icon_url = "https://example.invalid/telegram/icon512.png"\nlauncher_file_mode = "0644"\nicon_file_mode = "0644"\nexecutable_file_mode = "0755"\n'
         "[chrome_setup]\n"
         'username = "i"\n'
         'home_dir = "/home/i"\n'
@@ -365,6 +365,7 @@ def base_config() -> str:
         'service_unit_name = "ydotool.service"\n'
         "package_status_timeout_seconds = 30\n"
         "package_install_retries = 3\n"
+        'user_file_mode = "0644"\nexecutable_file_mode = "0755"\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

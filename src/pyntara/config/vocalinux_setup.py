@@ -36,3 +36,5 @@ class VocalinuxSetupConfig:
     service_unit_name: str
     package_status_timeout_seconds: int
     package_install_retries: int
+    user_file_mode: int
+    executable_file_mode: int

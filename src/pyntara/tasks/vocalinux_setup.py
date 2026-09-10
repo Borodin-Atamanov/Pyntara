@@ -70,9 +70,6 @@ ECHO_GROUP = "net.local.echo.desktop"
 ECHO_ACTION = "_launch"
 ECHO_SHORTCUT = "Meta+S"
 
-USER_FILE_MODE = "0644"
-EXECUTABLE_MODE = "0755"
-
 
 def _as_user_command(cfg: VocalinuxSetupConfig, command: list[str]) -> list[str]:
     """Prefix a command with runuser so it runs as the target user."""
@@ -114,7 +111,7 @@ def _write_user_file(
     rel_path: str,
     content: str,
     *,
-    mode: str,
+    file_mode: int,
     timeout: float,
     force: bool,
 ) -> bool:
@@ -123,7 +120,8 @@ def _write_user_file(
     The parent directory is created as the target user, the content is
     written by the root process and then chowned and chmodded to the target
     user, so the file keeps the user ownership a desktop config file needs.
-    A file that already holds the content is skipped.
+    A file that already holds the content is skipped. file_mode is the
+    configured mode, applied in its octal form.
     """
 
     target = Path(cfg.home_dir) / rel_path
@@ -141,7 +139,7 @@ def _write_user_file(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)
-    run_command(["chmod", mode, str(target)], timeout=timeout)
+    run_command(["chmod", f"{file_mode:o}", str(target)], timeout=timeout)
     _log(f"wrote {target}")
     return True
 
@@ -305,7 +303,9 @@ def _install_appimage(
     except OSError as exc:
         return False, f"cannot install {target}: {exc}"
     run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)
-    run_command(["chmod", EXECUTABLE_MODE, str(target)], timeout=timeout)
+    run_command(
+        ["chmod", f"{cfg.executable_file_mode:o}", str(target)], timeout=timeout
+    )
     trash_dir = Path(cfg.home_dir) / ".local" / "share" / "Trash" / "files"
     for stale in install_dir.glob("Vocalinux-*.AppImage"):
         if stale.name == asset_name:
@@ -490,7 +490,7 @@ def task(ctx: Context) -> TaskResult:
         cfg,
         str(CONFIG_REL),
         CONFIG_TEMPLATE.read_text(encoding="utf-8"),
-        mode=USER_FILE_MODE,
+        file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
     )
@@ -502,7 +502,7 @@ def task(ctx: Context) -> TaskResult:
         cfg,
         str(AUTOSTART_REL),
         _autostart_content(appimage_path),
-        mode=USER_FILE_MODE,
+        file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
     )
@@ -520,7 +520,7 @@ def task(ctx: Context) -> TaskResult:
         cfg,
         str(ECHO_DESKTOP_REL),
         ECHO_DESKTOP_TEMPLATE.read_text(encoding="utf-8"),
-        mode=USER_FILE_MODE,
+        file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
     )

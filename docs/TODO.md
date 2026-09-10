@@ -52,3 +52,19 @@ Done: inst.sh: the first apt attempt always fails on a fresh system. Seen in git
 
 Done: Logging: the KDE tasks must log their detailed actions. kde_keyboard_setup and kde_settings currently write too little about what they do. The hotkey warning shows only 'daemon reports []' with no expected value and no shortcut (src/pyntara/tasks/kde_keyboard_setup.py line 403), and kde_settings writes conflicting keys without explanation, seen in gitignore/pyntara_install_real_issues.log: PowerProfile set to performance then power-saver, LidAction set three times. Detail the KDE tasks' own progress: log each setting with its target value, log the applied result, and add a final verification line showing the resulting state. Важно не показывать ключи, куда мы пишем, например, разные версии энергосбережения, для разных режимов: через батарейку, от сети, мало энергии. Аналогично по всем другим действиям - полностью показываем, что делаем, полные пути к ключам.
 
+## File mode constants inside task modules
+
+The rule that every value lives in config/ (architecture contract, Configuration) is still broken by file modes inside task modules: vocalinux_setup (USER_FILE_MODE = "0644", EXECUTABLE_MODE = "0755"), ffmpeg_setup (WAYRECORD_MODE = 0o755), telegram_setup (LAUNCHER_MODE = 0o644, ICON_MODE = 0o644, EXECUTABLE_MODE = 0o755). The representation is inconsistent too: some are written as the readable string "0644", some as 0o644. chrome_setup was fixed on 2026-09-10 (commit 6e2a3ce) by moving the mode to [chrome_setup] file_mode = "0644".
+
+Fix: add a mode value to the three sections, read it in the tasks where the mode is applied, add the checks in tests/config_checks.py, the keys in the shared test document and the Parameters lines in the specs. Keep the readable string form that the checks demand, so a human reads 0644 in the config and the runtime reader turns it into the int chmod expects.
+
+## Values outside config/ are not classified by a written rule
+
+166 module-level constants live in 36 modules outside src/pyntara/config/. Some of them are values that belong in config/ (paths, file modes, unit file names, journal identifiers, external repository names), and some are code that stays (regular expressions, encoding alphabets, marker strings). The boundary between the two is written in no document, so every discovery needs a fresh decision from the user. The REPO_ROOT duplication is already tracked above; the rest is unclassified.
+
+Fix: state the boundary in docs/contracts/architecture.md under Configuration, record there the exceptions that stay in code, then classify the 166 constants once and move the values that do not remain.
+
+## Leftovers of the config split
+
+Three small items from the split of reading and checking (commits f92b8e5 and a69df8f). The deployed metrics services report an incomplete config in one line instead of a traceback, but no test covers that path: the verification was a manual run against an almost empty config. The vocabulary constants that only the checks use still live in src/pyntara/config/_fields.py, while every other check moved to tests/config_checks.py; MODES stays because production reads it. The two scripts in secrets/ still catch the ConfigError that the runtime reader no longer raises, and their comments still describe the old loader.
+

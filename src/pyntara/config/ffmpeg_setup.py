@@ -14,5 +14,6 @@ class FfmpegSetupConfig:
     packages: tuple[str, ...]
     wayrecord_bin_path: Path
     wayrecord_desktop_path: Path
+    wayrecord_file_mode: int
     package_status_timeout_seconds: int
     package_install_retries: int

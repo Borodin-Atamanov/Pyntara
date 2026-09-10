@@ -21,6 +21,9 @@ package_install_retries = 3
 wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"
 # The desktop entry that grants the screencast interface to the engine.
 wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"
+# The mode of the built recording engine: it is executed by the user, so it
+# needs the executable bits and nothing wider.
+wayrecord_file_mode = "0755"
 
 #package set
 packages = [

@@ -666,6 +666,9 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
         packages=tuple(packages),
         wayrecord_bin_path=Path(wayrecord_bin_path),
         wayrecord_desktop_path=Path(wayrecord_desktop_path),
+        wayrecord_file_mode=_octal_mode_field(
+            raw.get("wayrecord_file_mode"), "ffmpeg_setup.wayrecord_file_mode"
+        ),
         package_status_timeout_seconds=_int_field(
             raw.get("package_status_timeout_seconds"),
             "ffmpeg_setup.package_status_timeout_seconds",
@@ -2192,6 +2195,16 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
         icon_url=_nonempty_string_field(
             raw.get("icon_url"), "telegram_setup.icon_url"
         ),
+        launcher_file_mode=_octal_mode_field(
+            raw.get("launcher_file_mode"), "telegram_setup.launcher_file_mode"
+        ),
+        icon_file_mode=_octal_mode_field(
+            raw.get("icon_file_mode"), "telegram_setup.icon_file_mode"
+        ),
+        executable_file_mode=_octal_mode_field(
+            raw.get("executable_file_mode"),
+            "telegram_setup.executable_file_mode",
+        ),
     )
 
 
@@ -2872,6 +2885,13 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
         package_install_retries=_int_field(
             raw.get("package_install_retries"),
             "vocalinux_setup.package_install_retries",
+        ),
+        user_file_mode=_octal_mode_field(
+            raw.get("user_file_mode"), "vocalinux_setup.user_file_mode"
+        ),
+        executable_file_mode=_octal_mode_field(
+            raw.get("executable_file_mode"),
+            "vocalinux_setup.executable_file_mode",
         ),
     )
 

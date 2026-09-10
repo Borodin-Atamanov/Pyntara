@@ -53,6 +53,14 @@ from config_helpers import (
             'icon_url = "https://example.invalid/telegram/icon512.png"',
             'icon_url = ""',
         ),
+        # executable_file_mode is a number, not the readable octal string
+        base_config().replace(
+            'executable_file_mode = "0755"\n', "executable_file_mode = 493\n"
+        ),
+        # launcher_file_mode has not the four digits a mode is written with
+        base_config().replace(
+            'launcher_file_mode = "0644"\n', 'launcher_file_mode = "644"\n'
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -69,6 +77,9 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
+        'launcher_file_mode = "0644"\n'
+        'icon_file_mode = "0644"\n'
+        'executable_file_mode = "0755"\n'
     )
     assert_config_error(
         tmp_path,
@@ -87,3 +98,6 @@ def test_load_config_typed_values(tmp_path: Path) -> None:
     assert config.telegram_setup.icon_url == (
         "https://example.invalid/telegram/icon512.png"
     )
+    assert config.telegram_setup.launcher_file_mode == 0o644
+    assert config.telegram_setup.icon_file_mode == 0o644
+    assert config.telegram_setup.executable_file_mode == 0o755

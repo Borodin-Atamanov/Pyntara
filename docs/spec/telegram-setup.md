@@ -43,3 +43,6 @@ home_dir - the home directory of that user; the install directory, the launcher 
 download_dir - the root cache that keeps the archive of the last installed version, whose name doubles as the idempotency record
 latest_url - the official download link that redirects to the newest archive
 icon_url - the official Telegram icon url
+launcher_file_mode - the mode of the written launcher entry
+icon_file_mode - the mode of the downloaded icon
+executable_file_mode - the mode of the installed binaries

@@ -28,3 +28,6 @@ class TelegramSetupConfig:
     download_dir: Path
     latest_url: str
     icon_url: str
+    launcher_file_mode: int
+    icon_file_mode: int
+    executable_file_mode: int

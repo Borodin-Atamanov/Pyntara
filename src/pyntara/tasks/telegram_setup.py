@@ -54,9 +54,6 @@ UPDATER_NAME = "Updater"
 INSTALL_DIR_REL = Path(".local/share/Telegram")
 LAUNCHER_REL = Path(".local/share/applications/telegramdesktop.desktop")
 ICON_REL = Path(".local/share/icons/telegram-desktop.png")
-LAUNCHER_MODE = 0o644
-ICON_MODE = 0o644
-EXECUTABLE_MODE = 0o755
 
 
 def _cache_name(url: str) -> str:
@@ -222,7 +219,7 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
             target = install_dir / name
             if not (target.is_file() and filecmp.cmp(source, target, shallow=False)):
                 shutil.copyfile(source, target)
-            target.chmod(EXECUTABLE_MODE)
+            target.chmod(cfg.executable_file_mode)
             _own_to_user(cfg.username, target)
     except OSError as exc:
         raise RuntimeError(
@@ -273,7 +270,7 @@ def _ensure_launcher(cfg: TelegramSetupConfig) -> tuple[bool, str | None]:
             return False, None
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        path.chmod(LAUNCHER_MODE)
+        path.chmod(cfg.launcher_file_mode)
         _own_to_user(cfg.username, path)
         _own_to_user(cfg.username, path.parent)
     except OSError as exc:
@@ -321,7 +318,7 @@ def _ensure_icon(
             ],
             timeout=timeout,
         )
-        path.chmod(ICON_MODE)
+        path.chmod(cfg.icon_file_mode)
         _own_to_user(cfg.username, path)
         _own_to_user(cfg.username, path.parent)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:

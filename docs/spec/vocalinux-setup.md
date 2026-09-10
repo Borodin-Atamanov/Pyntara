@@ -52,6 +52,6 @@ download_dir - the root cache that keeps the AppImage of the pinned version
 version - the pinned Vocalinux release, without the leading v of the release tag
 packages - the system tools the app needs on Wayland plus the kwriteconfig6 provider
 input_group - the group that owns /dev/input and /dev/uinput on Kubuntu
-service_unit_name - the ydotool user unit enabled for the desktop user
-package_status_timeout_seconds - seconds a single package status query may run
+service_unit_name - the ydotool user unit enabled for the desktop useruser_file_mode - the mode of the written app config and autostart entry  
+executable_file_mode - the mode of the installed AppImage  package_status_timeout_seconds - seconds a single package status query may run
 package_install_retries - install attempts after the first one for each package

@@ -25,6 +25,8 @@ SECTION = (
     'service_unit_name = "ydotool.service"\n'
     "package_status_timeout_seconds = 30\n"
     "package_install_retries = 3\n"
+    'user_file_mode = "0644"\n'
+    'executable_file_mode = "0755"\n'
 )
 
 
@@ -51,6 +53,8 @@ def test_valid_section_loads(tmp_path: Path) -> None:
     assert setup.packages == ("wtype", "ydotool", "wl-clipboard", "libkf6config-bin")
     assert setup.input_group == "input"
     assert setup.service_unit_name == "ydotool.service"
+    assert setup.user_file_mode == 0o644
+    assert setup.executable_file_mode == 0o755
     assert setup.package_status_timeout_seconds == 30
     assert setup.package_install_retries == 3
 
@@ -102,6 +106,12 @@ def test_valid_section_loads(tmp_path: Path) -> None:
         SECTION.replace(
             "package_install_retries = 3\n",
             "package_install_retries = true\n",
+        ),
+        # user_file_mode is a number, not the readable octal string
+        SECTION.replace('user_file_mode = "0644"\n', "user_file_mode = 420\n"),
+        # executable_file_mode has not the four digits a mode is written with
+        SECTION.replace(
+            'executable_file_mode = "0755"\n', 'executable_file_mode = "755"\n'
         ),
     ],
 )

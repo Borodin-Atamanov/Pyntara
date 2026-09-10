@@ -35,7 +35,6 @@ from pyntara.utils import install_packages, package_is_installed, run_command
 # The templates live in the repository clone; REPO_ROOT is monkeypatched by
 # the tests to point at a fixture (docs/guides/developer-guide.md).
 REPO_ROOT = Path(__file__).resolve().parents[3]
-WAYRECORD_MODE = 0o755
 
 
 def _wayrecord_sources() -> list[Path]:
@@ -45,7 +44,9 @@ def _wayrecord_sources() -> list[Path]:
     return [base / "wayrecord.c", base / "zkde-screencast-client.c"]
 
 
-def _build_wayrecord(binary_path: Path, timeout: float) -> tuple[bool, str | None]:
+def _build_wayrecord(
+    binary_path: Path, file_mode: int, timeout: float
+) -> tuple[bool, str | None]:
     """Compile the engine and install it; return (changed, error).
 
     The build flags come from pkg-config; the binary is compiled to a
@@ -95,7 +96,7 @@ def _build_wayrecord(binary_path: Path, timeout: float) -> tuple[bool, str | Non
             build_path.unlink(missing_ok=True)
             return False, None
         build_path.replace(binary_path)
-        binary_path.chmod(WAYRECORD_MODE)
+        binary_path.chmod(file_mode)
     except OSError as exc:
         build_path.unlink(missing_ok=True)
         return False, f"cannot install wayrecord engine: {exc}"
@@ -180,7 +181,7 @@ def task(ctx: Context) -> TaskResult:
                 success=False, changed=bool(installed_packages), error=detail
             )
     engine_changed, engine_error = _build_wayrecord(
-        cfg.wayrecord_bin_path, install_timeout
+        cfg.wayrecord_bin_path, cfg.wayrecord_file_mode, install_timeout
     )
     if engine_error:
         return TaskResult(

@@ -29,3 +29,7 @@ service_unit_name = "ydotool.service"
 package_status_timeout_seconds = 30
 # Install attempts after the first one for each package.
 package_install_retries = 3
+# Modes of the deployed files: the app config and the autostart entry are read
+# by the app and the desktop, the AppImage is executed by the user.
+user_file_mode = "0644"
+executable_file_mode = "0755"

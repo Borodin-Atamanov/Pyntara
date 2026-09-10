@@ -33,5 +33,6 @@ All parameters live in the [ffmpeg_setup] table of the config/ directory.
 packages - the package names to install, the meta package ffmpeg first, then the engine build toolchain
 wayrecord_bin_path - the system path the wayrecord capture engine is built to
 wayrecord_desktop_path - the desktop entry that grants the screencast interface to the engine
+wayrecord_file_mode - the mode of the built recording engine
 package_status_timeout_seconds - seconds the dpkg status query may take
 package_install_retries - retry attempts after a failed package install
