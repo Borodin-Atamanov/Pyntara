@@ -951,6 +951,25 @@ def _probe_port_80_forward(
     public_ip = _detect_server_ip(cfg, timeout)
     if public_ip is None:
         return False
+    if cfg.upnp_enabled:
+        # A router with UPnP can open the ACME port, so a trusted
+        # certificate stops being tied to a manual port-forward rule.
+        _log(
+            f"asking the router to forward port {cfg.acme_port} "
+            "through UPnP for the certificate challenge"
+        )
+        upnp.forward_inbound_port(
+            cfg.upnp_client_command,
+            cfg.upnp_mapping_description,
+            cfg.acme_port,
+            "TCP",
+            (),
+            timeout,
+        )
+    _log(
+        f"probing whether external port {cfg.acme_port} reaches "
+        f"{public_ip} here"
+    )
     try:
         listener = subprocess.Popen(
             ["python3", "-m", "http.server", str(cfg.acme_port), "--bind", "0.0.0.0"],
@@ -977,7 +996,12 @@ def _probe_port_80_forward(
                 timeout=timeout,
             )
         except (subprocess.TimeoutExpired, OSError):
+            _log(f"port {cfg.acme_port} did not answer: no forward confirmed")
             return False
+        if result.returncode != 0:
+            _log(f"port {cfg.acme_port} did not answer: no forward confirmed")
+        else:
+            _log(f"port {cfg.acme_port} answered: the forward is confirmed")
         return result.returncode == 0
     finally:
         listener.terminate()
@@ -1048,6 +1072,7 @@ def _converge_panel_port(
         return False, "cannot read panel port"
     if actual == str(cfg.panel_port):
         return False, None
+    _log(f"moving the panel from port {actual} to {cfg.panel_port}")
     try:
         ensure_port_free(
             cfg.panel_port,
@@ -1094,6 +1119,10 @@ def _wait_panel_http(
 
     attempts = cfg.start_check_attempts
     retry_delay_seconds = cfg.start_check_retry_delay_seconds
+    _log(
+        f"waiting for the panel HTTP listener on port {cfg.panel_port} "
+        f"(up to {attempts} checks)"
+    )
     web_path = ""
     try:
         env = xui_client.parse_install_result_env(Path(cfg.install_result_env_path))
@@ -1220,6 +1249,7 @@ def _sync_install_result_env(
             new_url += f"/{web_path}"
         if url != new_url:
             updates["XUI_ACCESS_URL"] = new_url
+    _log(f"syncing {env_path} with the real panel port and scheme")
     return _rewrite_env(env_path, updates)
 
 
@@ -1434,7 +1464,10 @@ def _ensure_openssl(timeout: float) -> bool:
 
     if package_is_installed("openssl", timeout):
         return True
+    _log("openssl is missing, installing the package")
     ok, _ = install_package_once("openssl", timeout)
+    if ok:
+        _log("openssl installed")
     return ok
 
 
@@ -1513,6 +1546,7 @@ def _ensure_self_signed_cert(
         _log("self-signed certificate already configured")
         return False, ""
     if needs_generation:
+        _log("generating a self-signed certificate")
         if not _ensure_openssl(timeout):
             return (
                 False,
@@ -1716,6 +1750,14 @@ def task(ctx: Context) -> TaskResult:
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "three_x_ui_xray_setup" in ctx.force_tasks
 
+    # The UPnP client is installed before the first step that may use it
+    # (the SSL stage forwards the ACME port), exactly like the other
+    # packages this task needs; the helper itself only runs the command.
+    if cfg.upnp_enabled:
+        _log(f"checking the UPnP client package {cfg.upnp_package}")
+        _ensure_upnp_client(cfg, timeout)
+
+    _log(f"querying the latest release of {cfg.github_repo}")
     try:
         release = _fetch_release_json(
             cfg.github_repo,
@@ -1731,6 +1773,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest release: {tag}")
 
+    _log("reading the installed panel version")
     installed_version = _installed_version(cfg, timeout)
     _log(
         f"checking installed version: {installed_version or 'not installed'}"
@@ -1941,11 +1984,6 @@ def task(ctx: Context) -> TaskResult:
         stage3_changed = stage3_result.changed
 
     # Stage 5: ensure the panel client and store the connection profile.
-    # The UPnP client is installed here, before the stage that may use it,
-    # exactly like the other packages this task needs; the helper itself
-    # only runs the command.
-    if cfg.upnp_enabled:
-        _ensure_upnp_client(cfg, timeout)
     connection_result = _stage_connection(cfg, ctx.config, timeout)
     connection_warnings: tuple[str, ...] = ()
     connection_changed = False

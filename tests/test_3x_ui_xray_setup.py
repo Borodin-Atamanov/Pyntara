@@ -1272,6 +1272,9 @@ class TestSslReachability:
             xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
         )
         monkeypatch.setattr(
+            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
+        )
+        monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
             lambda *a, **k: fake_proc,
         )
@@ -1290,6 +1293,9 @@ class TestSslReachability:
         fake_proc = Mock()
         monkeypatch.setattr(
             xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
+        )
+        monkeypatch.setattr(
+            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
         )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
@@ -1323,6 +1329,9 @@ class TestSslReachability:
             xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
         )
         monkeypatch.setattr(
+            "pyntara.upnp.forward_inbound_port", lambda *_a, **_k: None
+        )
+        monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
             lambda *a, **k: fake_proc,
         )
@@ -1345,6 +1354,46 @@ class TestSslReachability:
         assert command[command.index("--connect-timeout") + 1] == "90"
         assert command[command.index("--max-time") + 1] == "90"
         fake_proc.wait.assert_called_once_with(timeout=90)
+
+    def test_probe_port_80_forward_asks_the_router_through_upnp(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A router with UPnP opens the ACME port, so a trusted certificate
+        # no longer depends on a manual port-forward rule.
+        calls: list[tuple[object, ...]] = []
+        fake_proc = Mock()
+        monkeypatch.setattr(
+            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
+        )
+
+        def fake_forward(*args: object, **kwargs: object) -> None:
+            calls.append(args)
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
+            lambda *a, **k: fake_proc,
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            lambda *a, **k: _FakeProc(0, "ok"),
+        )
+        assert xui._probe_port_80_forward(self._cfg(), 30) is True
+        assert calls[0][:4] == ("upnpc", "pyntara xray", 80, "TCP")
+
+    def test_probe_port_80_forward_skips_upnp_when_disabled(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        def fail_forward(*args: object, **kwargs: object) -> None:
+            raise AssertionError("UPnP must not be attempted")
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
+        monkeypatch.setattr(
+            xui, "_detect_server_ip", lambda _cfg, _t: None
+        )
+        cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
+        assert xui._probe_port_80_forward(cfg, 30) is False
 
 
 class TestStageSsl:
