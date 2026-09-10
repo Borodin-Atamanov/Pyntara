@@ -107,6 +107,7 @@ def _release_json(
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> dict[str, object]:
     result = run_command(
         [
@@ -115,7 +116,9 @@ def _release_json(
             "--silent",
             "--show-error",
             "--location",
-            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+            *curl_flags(
+                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
+            ),
             f"https://api.github.com/repos/{repo}/releases/latest",
         ],
         check=False,
@@ -174,10 +177,11 @@ def _download_binary(
     url: str,
     name: str,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> Path:
     cfg.download_dir.mkdir(parents=True, exist_ok=True)
     archive = cfg.download_dir / name
@@ -191,7 +195,13 @@ def _download_binary(
             str(archive),
             "--write-out",
             CURL_DOWNLOAD_WRITE_OUT,
-            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+            *curl_flags(
+                download_timeout,
+                retries,
+                connect_timeout,
+                retry_max_time,
+                retry_delay,
+            ),
             url,
         ],
         timeout=timeout,
@@ -817,7 +827,9 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
+    download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     error_priority = ctx.config.engine.error_priority
@@ -840,6 +852,7 @@ def task(ctx: Context) -> TaskResult:
             curl_retries,
             connect_timeout,
             retry_max_time,
+            retry_delay,
         )
         tag = str(release["tag_name"])
         asset_name, asset_url = _asset_for_architecture(
@@ -866,10 +879,11 @@ def task(ctx: Context) -> TaskResult:
                 asset_url,
                 asset_name,
                 timeout,
-                curl_timeout,
+                download_timeout,
                 curl_retries,
                 connect_timeout,
                 retry_max_time,
+                retry_delay,
             )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)

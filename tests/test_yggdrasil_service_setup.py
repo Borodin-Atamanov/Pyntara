@@ -344,6 +344,7 @@ def test_already_configured_skips(
         ctx.config.engine.curl_retries,
         ctx.config.engine.curl_connect_timeout_seconds,
         ctx.config.engine.curl_retry_max_time_seconds,
+        ctx.config.engine.curl_retry_delay_seconds,
     )
     release_calls = [
         call

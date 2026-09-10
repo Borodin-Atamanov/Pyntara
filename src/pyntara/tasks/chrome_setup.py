@@ -94,10 +94,11 @@ def _source_text(keyring_path: Path) -> str:
 def _ensure_repository(
     cfg: ChromeSetupConfig,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> tuple[bool, str | None]:
     """Register the Google apt source and its keyring; (changed, error).
 
@@ -125,10 +126,11 @@ def _ensure_repository(
                         "--write-out",
                         CURL_DOWNLOAD_WRITE_OUT,
                         *curl_flags(
-                            curl_timeout,
+                            download_timeout,
                             retries,
                             connect_timeout,
                             retry_max_time,
+                            retry_delay,
                         ),
                         cfg.google_key_url,
                     ],
@@ -605,8 +607,9 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.chrome_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    curl_timeout = ctx.config.engine.curl_timeout_seconds
+    download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "chrome_setup" in ctx.force_tasks
@@ -618,10 +621,11 @@ def task(ctx: Context) -> TaskResult:
     repo_changed, error = _ensure_repository(
         cfg,
         timeout,
-        curl_timeout,
+        download_timeout,
         curl_retries,
         connect_timeout,
         retry_max_time,
+        retry_delay,
     )
     if error:
         return TaskResult(success=False, changed=changed, error=error)

@@ -23,7 +23,7 @@ from pyntara.config import load_config
         base_config().replace('task_data_root = "/tmp"', "task_data_root = 42"),
         # command_timeout_seconds is a string, not an integer
         base_config().replace(
-            "command_timeout_seconds = 1800", 'command_timeout_seconds = "1800"'
+            "command_timeout_seconds = 8000", 'command_timeout_seconds = "8000"'
         ),
         # curl_timeout_seconds is a string, not an integer
         base_config().replace(
@@ -31,27 +31,45 @@ from pyntara.config import load_config
         ),
         # curl_timeout_seconds is zero
         base_config().replace("curl_timeout_seconds = 777", "curl_timeout_seconds = 0"),
+        # curl_download_timeout_seconds is a string, not an integer
+        base_config().replace(
+            "curl_download_timeout_seconds = 7777",
+            'curl_download_timeout_seconds = "7777"',
+        ),
+        # curl_download_timeout_seconds is zero
+        base_config().replace(
+            "curl_download_timeout_seconds = 7777",
+            "curl_download_timeout_seconds = 0",
+        ),
         # curl_retries is a string, not an integer
-        base_config().replace("curl_retries = 13", 'curl_retries = "13"'),
+        base_config().replace("curl_retries = 17", 'curl_retries = "17"'),
         # curl_retries is negative
-        base_config().replace("curl_retries = 13", "curl_retries = -1"),
+        base_config().replace("curl_retries = 17", "curl_retries = -1"),
+        # curl_retry_delay_seconds is a string, not an integer
+        base_config().replace(
+            "curl_retry_delay_seconds = 3", 'curl_retry_delay_seconds = "3"'
+        ),
+        # curl_retry_delay_seconds is zero
+        base_config().replace(
+            "curl_retry_delay_seconds = 3", "curl_retry_delay_seconds = 0"
+        ),
         # curl_connect_timeout_seconds is a string, not an integer
         base_config().replace(
-            "curl_connect_timeout_seconds = 30",
-            'curl_connect_timeout_seconds = "30"',
+            "curl_connect_timeout_seconds = 60",
+            'curl_connect_timeout_seconds = "60"',
         ),
         # curl_connect_timeout_seconds is zero
         base_config().replace(
-            "curl_connect_timeout_seconds = 30", "curl_connect_timeout_seconds = 0"
+            "curl_connect_timeout_seconds = 60", "curl_connect_timeout_seconds = 0"
         ),
         # curl_retry_max_time_seconds is a string, not an integer
         base_config().replace(
-            "curl_retry_max_time_seconds = 1500",
-            'curl_retry_max_time_seconds = "1500"',
+            "curl_retry_max_time_seconds = 7777",
+            'curl_retry_max_time_seconds = "7777"',
         ),
         # curl_retry_max_time_seconds is zero
         base_config().replace(
-            "curl_retry_max_time_seconds = 1500", "curl_retry_max_time_seconds = 0"
+            "curl_retry_max_time_seconds = 7777", "curl_retry_max_time_seconds = 0"
         ),
         # process_check_timeout_seconds is a string, not an integer
         base_config().replace(

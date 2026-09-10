@@ -238,10 +238,11 @@ def _install_appimage(
     cfg: VocalinuxSetupConfig,
     *,
     timeout: float,
-    curl_timeout_seconds: float,
+    curl_download_timeout_seconds: float,
     curl_retries: int,
     curl_connect_timeout_seconds: float,
     curl_retry_max_time_seconds: int,
+    curl_retry_delay_seconds: int,
     force: bool,
 ) -> tuple[bool, str | None]:
     """Install the pinned AppImage under the user home; (changed, error).
@@ -286,12 +287,12 @@ def _install_appimage(
                     "--write-out",
                     CURL_DOWNLOAD_WRITE_OUT,
                     *curl_flags(
-                        curl_timeout_seconds,
+                        curl_download_timeout_seconds,
                         curl_retries,
                         curl_connect_timeout_seconds,
                         curl_retry_max_time_seconds,
-                    ),
-                    url,
+                        curl_retry_delay_seconds,
+                    ),                    url,
                 ],
                 timeout=timeout,
             )
@@ -446,10 +447,11 @@ def task(ctx: Context) -> TaskResult:
     appimage_changed, appimage_error = _install_appimage(
         cfg,
         timeout=timeout,
-        curl_timeout_seconds=engine.curl_timeout_seconds,
+        curl_download_timeout_seconds=engine.curl_download_timeout_seconds,
         curl_retries=engine.curl_retries,
         curl_connect_timeout_seconds=engine.curl_connect_timeout_seconds,
         curl_retry_max_time_seconds=engine.curl_retry_max_time_seconds,
+        curl_retry_delay_seconds=engine.curl_retry_delay_seconds,
         force=force,
     )
     if appimage_error:

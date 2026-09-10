@@ -27,9 +27,10 @@ def base_config() -> str:
 
     return (
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
-        "command_timeout_seconds = 1800\ncurl_timeout_seconds = 777\n"
-        "curl_retries = 13\ncurl_connect_timeout_seconds = 30\n"
-        "curl_retry_max_time_seconds = 1500\nerror_priority = 3\n"
+        "command_timeout_seconds = 8000\ncurl_timeout_seconds = 777\n"
+        "curl_download_timeout_seconds = 7777\ncurl_retries = 17\n"
+        "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
+        "curl_retry_max_time_seconds = 7777\nerror_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
@@ -184,6 +185,8 @@ def base_config() -> str:
         'self_signed_cert_dir = "/root/cert/selfsigned"\n'
         "server_ip_timeout_seconds = 60\n"
         'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
+        "probe_timeout_seconds = 60\n"
+        "probe_listener_start_seconds = 1\n"
         "upnp_enabled = true\n"
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'

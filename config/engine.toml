@@ -12,25 +12,39 @@
 task_data_root = "/var/lib/pyntara/task-data"
 # Seconds the resilience notice stays visible.
 notice_timeout = 7
-# Seconds a provisioning command may run before it is killed.
-command_timeout_seconds = 1800
-# Per-attempt timeout of a download or release query curl call, in
-# seconds. curl aborts a single attempt that exceeds it; the process
-# bound stays command_timeout_seconds.
+# Seconds a provisioning command may run before it is killed. The bound
+# stays above the longest single download, so curl reports its own give-up
+# instead of being killed from outside.
+command_timeout_seconds = 8000
+# Per-attempt timeout in seconds of a curl call that queries metadata, for
+# example the releases API. A simple request to a server gets at least
+# 60 seconds before it is called unreachable.
 curl_timeout_seconds = 777
+# Per-attempt timeout in seconds of a curl call that downloads a file. A
+# download carries megabytes and a slow link must still finish it, so the
+# download budget is far larger than the metadata budget.
+curl_download_timeout_seconds = 7777
 # How many times curl retries a download or release query before giving
 # up. The shared curl flags add --retry-all-errors, so every failure is
 # retried, not only timeouts and HTTP 5xx.
-curl_retries = 13
+curl_retries = 17
+# Seconds curl waits before the next attempt of a download or release
+# query. Three seconds give a flapping server or a short outage the time
+# to answer again without stalling the whole retry budget.
+curl_retry_delay_seconds = 3
 # Seconds curl may spend establishing a connection before an attempt is
 # abandoned. A host that drops packets instead of refusing fails fast, so
 # the retry budget serves short outages instead of one long silent stall
-# (the per-attempt --max-time still bounds the whole transfer).
-curl_connect_timeout_seconds = 30
+# (the per-attempt --max-time still bounds the whole transfer). A simple
+# request to a server gets at least 60 seconds before it is called
+# unreachable.
+curl_connect_timeout_seconds = 60
 # Total seconds curl may keep retrying before it gives up on its own. The
 # bound keeps a dead link from retrying until the outer command timeout
-# kills the process; curl reports a clear give-up error first.
-curl_retry_max_time_seconds = 1500
+# kills the process; curl reports a clear give-up error first. It matches
+# the download budget, so a retry of a large download is not cut short by
+# the total window.
+curl_retry_max_time_seconds = 7777
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

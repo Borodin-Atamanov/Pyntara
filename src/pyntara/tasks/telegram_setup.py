@@ -78,6 +78,7 @@ def _resolve_latest_url(
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> str:
     """The download url the latest_url redirect resolves to.
 
@@ -99,7 +100,7 @@ def _resolve_latest_url(
             "--write-out",
             "%{url_effective}",
             *curl_flags(
-                curl_timeout, retries, connect_timeout, retry_max_time
+                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
             ),
             latest_url,
         ],
@@ -122,10 +123,11 @@ def _download_archive(
     url: str,
     name: str,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> None:
     """Download the archive into download_dir under its final name.
 
@@ -148,7 +150,11 @@ def _download_archive(
                 "--write-out",
                 CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(
-                    curl_timeout, retries, connect_timeout, retry_max_time
+                    download_timeout,
+                    retries,
+                    connect_timeout,
+                    retry_max_time,
+                    retry_delay,
                 ),
                 url,
             ],
@@ -278,10 +284,11 @@ def _ensure_launcher(cfg: TelegramSetupConfig) -> tuple[bool, str | None]:
 def _ensure_icon(
     cfg: TelegramSetupConfig,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> tuple[bool, str | None]:
     """Download the configured icon when missing; return (changed, error).
 
@@ -304,7 +311,11 @@ def _ensure_icon(
                 "--output",
                 str(path),
                 *curl_flags(
-                    curl_timeout, retries, connect_timeout, retry_max_time
+                    download_timeout,
+                    retries,
+                    connect_timeout,
+                    retry_max_time,
+                    retry_delay,
                 ),
                 cfg.icon_url,
             ],
@@ -336,7 +347,9 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.telegram_setup
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
+    download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "telegram_setup" in ctx.force_tasks
@@ -352,6 +365,7 @@ def task(ctx: Context) -> TaskResult:
             curl_retries,
             connect_timeout,
             retry_max_time,
+            retry_delay,
         )
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
@@ -377,10 +391,11 @@ def task(ctx: Context) -> TaskResult:
                     url,
                     name,
                     timeout,
-                    curl_timeout,
+                    download_timeout,
                     curl_retries,
                     connect_timeout,
                     retry_max_time,
+                    retry_delay,
                 )
             except RuntimeError as exc:
                 return TaskResult(success=False, changed=changed, error=str(exc))
@@ -403,10 +418,11 @@ def task(ctx: Context) -> TaskResult:
     icon_changed, icon_error = _ensure_icon(
         cfg,
         timeout,
-        curl_timeout,
+        download_timeout,
         curl_retries,
         connect_timeout,
         retry_max_time,
+        retry_delay,
     )
     if icon_error:
         warnings.append(icon_error)

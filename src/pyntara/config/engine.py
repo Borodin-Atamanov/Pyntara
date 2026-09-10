@@ -21,7 +21,9 @@ class EngineConfig:
     notice_timeout: int
     command_timeout_seconds: int
     curl_timeout_seconds: int
+    curl_download_timeout_seconds: int
     curl_retries: int
+    curl_retry_delay_seconds: int
     curl_connect_timeout_seconds: int
     curl_retry_max_time_seconds: int
     error_priority: int
@@ -64,9 +66,20 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if curl_timeout_seconds <= 0:
         raise ConfigError("engine.curl_timeout_seconds must be positive")
+    curl_download_timeout_seconds = _int_field(
+        raw.get("curl_download_timeout_seconds"),
+        "engine.curl_download_timeout_seconds",
+    )
+    if curl_download_timeout_seconds <= 0:
+        raise ConfigError("engine.curl_download_timeout_seconds must be positive")
     curl_retries = _int_field(raw.get("curl_retries"), "engine.curl_retries")
     if curl_retries < 0:
         raise ConfigError("engine.curl_retries must not be negative")
+    curl_retry_delay_seconds = _int_field(
+        raw.get("curl_retry_delay_seconds"), "engine.curl_retry_delay_seconds"
+    )
+    if curl_retry_delay_seconds < 1:
+        raise ConfigError("engine.curl_retry_delay_seconds must be positive")
     curl_connect_timeout_seconds = _int_field(
         raw.get("curl_connect_timeout_seconds"),
         "engine.curl_connect_timeout_seconds",
@@ -86,7 +99,9 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
         ),
         curl_timeout_seconds=curl_timeout_seconds,
+        curl_download_timeout_seconds=curl_download_timeout_seconds,
         curl_retries=curl_retries,
+        curl_retry_delay_seconds=curl_retry_delay_seconds,
         curl_connect_timeout_seconds=curl_connect_timeout_seconds,
         curl_retry_max_time_seconds=curl_retry_max_time_seconds,
         error_priority=error_priority,

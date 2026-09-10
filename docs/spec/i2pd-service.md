@@ -86,6 +86,6 @@ The router traffic is limited by two parameters rendered into the main configura
 
 ## Parameters
 
-All parameters live in the [i2pd_service_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl_timeout_seconds and curl_retries from the [engine] table.
+All parameters live in the [i2pd_service_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl settings from the [engine] table: curl_timeout_seconds for the metadata query, curl_download_timeout_seconds for the download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds for the retries.
 
 The task belongs to the server and desktop modes and depends on add_extra_repos, so the apt index has the components and the package dependencies resolve.

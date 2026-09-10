@@ -193,6 +193,7 @@ def _fetch_release_json(
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
@@ -208,7 +209,9 @@ def _fetch_release_json(
             "--fail",
             "--silent",
             "--show-error",
-            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+            *curl_flags(
+                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
+            ),
             url,
         ],
         check=False,
@@ -256,10 +259,11 @@ def _download_asset(
     name: str,
     url: str,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> None:
     """Download the package into the download directory.
 
@@ -279,7 +283,13 @@ def _download_asset(
                 str(download_dir / name),
                 "--write-out",
                 CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+                *curl_flags(
+                    download_timeout,
+                    retries,
+                    connect_timeout,
+                    retry_max_time,
+                    retry_delay,
+                ),
                 url,
             ],
             timeout=timeout,
@@ -434,7 +444,9 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.i2pd_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
+    download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "i2pd_service_setup" in ctx.force_tasks
@@ -474,6 +486,7 @@ def task(ctx: Context) -> TaskResult:
             curl_retries,
             connect_timeout,
             retry_max_time,
+            retry_delay,
         )
         tag = _release_tag(release)
     except RuntimeError as exc:
@@ -558,10 +571,11 @@ def task(ctx: Context) -> TaskResult:
                 asset_name,
                 asset_url,
                 timeout,
-                curl_timeout,
+                download_timeout,
                 curl_retries,
                 connect_timeout,
                 retry_max_time,
+                retry_delay,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))

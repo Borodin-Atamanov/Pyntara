@@ -74,6 +74,8 @@ class ThreeXuiXraySetupConfig:
     self_signed_cert_privkey: Path
     server_ip_timeout_seconds: int
     server_ip_services: tuple[str, ...]
+    probe_timeout_seconds: int
+    probe_listener_start_seconds: int
     upnp_enabled: bool
     upnp_package: str
     upnp_client_command: str
@@ -232,6 +234,23 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raise ConfigError(
             "three_x_ui_xray_setup.server_ip_timeout_seconds must be positive"
         )
+    probe_timeout_seconds = _int_field(
+        raw.get("probe_timeout_seconds"),
+        "three_x_ui_xray_setup.probe_timeout_seconds",
+    )
+    if probe_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.probe_timeout_seconds must be positive"
+        )
+    probe_listener_start_seconds = _int_field(
+        raw.get("probe_listener_start_seconds"),
+        "three_x_ui_xray_setup.probe_listener_start_seconds",
+    )
+    if probe_listener_start_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.probe_listener_start_seconds "
+            "must be positive"
+        )
     server_ip_services = _string_list(
         raw.get("server_ip_services"),
         "three_x_ui_xray_setup.server_ip_services",
@@ -284,6 +303,8 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
         server_ip_timeout_seconds=server_ip_timeout_seconds,
         server_ip_services=server_ip_services,
+        probe_timeout_seconds=probe_timeout_seconds,
+        probe_listener_start_seconds=probe_listener_start_seconds,
         upnp_enabled=upnp_enabled,
         upnp_package=upnp_package,
         upnp_client_command=upnp_client_command,

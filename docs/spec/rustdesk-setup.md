@@ -32,4 +32,4 @@ Screen capture on a KDE Wayland session goes through the xdg-desktop-portal Scre
 
 ## Parameters
 
-All parameters live in the [rustdesk_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl_timeout_seconds and curl_retries from the [engine] table.
+All parameters live in the [rustdesk_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl settings from the [engine] table: curl_timeout_seconds for the metadata query, curl_download_timeout_seconds for the download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds for the retries.

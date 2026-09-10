@@ -563,6 +563,7 @@ def test_release_and_download_curls_carry_configured_flags(
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     calls: list[list[str]] = []
 
@@ -579,6 +580,7 @@ def test_release_and_download_curls_carry_configured_flags(
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     assert release["tag_name"] == "v0.84.1"
     curl_calls = [call for call in calls if call[0] == "curl"]

@@ -240,6 +240,7 @@ def test_installed_latest_is_unchanged(
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     release_calls = [
         call

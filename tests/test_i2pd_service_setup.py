@@ -278,6 +278,7 @@ def test_already_configured_skips(
         ctx.config.engine.curl_retries,
         ctx.config.engine.curl_connect_timeout_seconds,
         ctx.config.engine.curl_retry_max_time_seconds,
+        ctx.config.engine.curl_retry_delay_seconds,
     )
     release_calls = [
         call
@@ -310,11 +311,12 @@ def test_download_curl_shows_progress_and_writes_summary(
         tmp_path,
         "i2pd_2.61.0-1_amd64.deb",
         "https://example.invalid/i2pd_2.61.0-1_amd64.deb",
-        1800,
-        777,
-        13,
-        30,
-        1500,
+        8000,
+        7777,
+        17,
+        60,
+        7777,
+        3,
     )
     assert len(calls) == 1
     download_call = calls[0]

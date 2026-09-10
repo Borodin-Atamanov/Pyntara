@@ -12,6 +12,14 @@ install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/inst
 install_dir = "/usr/local/x-ui"
 # Name of the systemd service unit the official installer creates.
 service_unit_name = "x-ui.service"
+# Timeout in seconds of one readiness probe: the curl call that checks
+# the panel HTTP listener and the self-test that checks whether external
+# port 80 reaches this machine. A short value reports a working service
+# as unreachable on a slow link, so the probe is generous.
+probe_timeout_seconds = 60
+# Seconds to wait after starting the temporary listener of the port 80
+# self-test, so the listener is bound before the probe call runs.
+probe_listener_start_seconds = 1
 # Readiness loop after the installer runs: attempts and pause between
 # two is-active checks.
 start_check_attempts = 10

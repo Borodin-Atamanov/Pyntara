@@ -338,6 +338,7 @@ def test_already_configured_does_not_run_installer(
         ctx.config.engine.curl_retries,
         ctx.config.engine.curl_connect_timeout_seconds,
         ctx.config.engine.curl_retry_max_time_seconds,
+        ctx.config.engine.curl_retry_delay_seconds,
     )
     release_calls = [
         call
@@ -1160,6 +1161,36 @@ class TestPanelPortConvergence:
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         assert xui._wait_panel_http(self._cfg(tmp_path), 30) is False
 
+    def test_wait_panel_http_uses_the_configured_attempts_and_timeout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The probe timeout, the attempts and the pause come from the
+        # config, so a slow link is not reported as an unreachable panel.
+        commands: list[list[str]] = []
+        sleeps: list[int] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            commands.append(command)
+            return _FakeProc(7, "")
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda seconds: sleeps.append(seconds))
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_install_result_env_path=tmp_path / "missing.env",
+            three_x_ui_probe_timeout_seconds=90,
+            three_x_ui_start_check_attempts=3,
+            three_x_ui_start_check_retry_delay_seconds=2,
+        )
+        cfg = config.three_x_ui_xray_setup
+        assert xui._wait_panel_http(cfg, 30) is False
+        assert len(commands) == 3
+        assert sleeps == [2, 2, 2]
+        assert commands[0][commands[0].index("--max-time") + 1] == "90"
+
 
 class TestSslReachability:
     """Tests for deciding whether the HTTP-01 challenge can be served."""
@@ -1278,6 +1309,42 @@ class TestSslReachability:
         # No public address: the probe cannot confirm a forward.
         monkeypatch.setattr(xui, "_detect_server_ip", lambda _cfg, _t: None)
         assert xui._probe_port_80_forward(self._cfg(), 30) is False
+
+    def test_probe_port_80_forward_uses_the_configured_timeouts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The probe timeouts and the listener pause come from the config:
+        # a few hardcoded seconds report a working service as unreachable
+        # on a slow link.
+        sleeps: list[int] = []
+        commands: list[list[str]] = []
+        fake_proc = Mock()
+        monkeypatch.setattr(
+            xui, "_detect_server_ip", lambda _cfg, _t: "203.0.113.5"
+        )
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.subprocess.Popen",
+            lambda *a, **k: fake_proc,
+        )
+        monkeypatch.setattr(xui.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            commands.append(command)
+            return _FakeProc(0, "ok")
+
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+        )
+        cfg = make_config(
+            three_x_ui_probe_timeout_seconds=90,
+            three_x_ui_probe_listener_start_seconds=4,
+        ).three_x_ui_xray_setup
+        assert xui._probe_port_80_forward(cfg, 30) is True
+        assert sleeps == [4]
+        command = commands[0]
+        assert command[command.index("--connect-timeout") + 1] == "90"
+        assert command[command.index("--max-time") + 1] == "90"
+        fake_proc.wait.assert_called_once_with(timeout=90)
 
 
 class TestStageSsl:

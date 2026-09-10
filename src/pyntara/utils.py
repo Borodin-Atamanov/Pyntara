@@ -180,6 +180,7 @@ def curl_flags(
     retries: int,
     connect_timeout_seconds: float,
     retry_max_time_seconds: int,
+    retry_delay_seconds: int,
 ) -> list[str]:
     """Retry and timeout flags shared by every download or release query curl.
 
@@ -205,7 +206,7 @@ def curl_flags(
         str(retries),
         "--retry-all-errors",
         "--retry-delay",
-        "3",
+        str(retry_delay_seconds),
         "--retry-max-time",
         str(retry_max_time_seconds),
         "--retry-connrefused",

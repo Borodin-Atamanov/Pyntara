@@ -54,6 +54,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "self_signed_cert_privkey": Path("/root/cert/selfsigned/privkey.pem"),
         "server_ip_timeout_seconds": 60,
         "server_ip_services": ("https://api4.ipify.org",),
+        "probe_timeout_seconds": 60,
+        "probe_listener_start_seconds": 1,
         "upnp_enabled": True,
         "upnp_package": "miniupnpc",
         "upnp_client_command": "upnpc",

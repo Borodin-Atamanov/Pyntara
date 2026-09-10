@@ -14,7 +14,7 @@ Before the installer runs, the task frees the fixed panel port and, when the SSL
 
 ## Version resolution
 
-The newest release tag comes from the GitHub releases API of the configured repository, the endpoint https://api.github.com/repos/{github_repo}/releases/latest. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is a task error. The release query and the installer download run with the engine-wide curl_timeout_seconds and curl_retries. The tag carries a leading v; the version comparison strips it on both sides.
+The newest release tag comes from the GitHub releases API of the configured repository, the endpoint https://api.github.com/repos/{github_repo}/releases/latest. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is a task error. The release query and the installer download run with the engine-wide curl settings: curl_timeout_seconds bounds one metadata query, curl_download_timeout_seconds bounds one file download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds shape the retry behaviour. The tag carries a leading v; the version comparison strips it on both sides.
 
 The installed version comes from the x-ui binary in the install directory run with -v: the first dotted version triple in the combined stdout and stderr output. A missing binary, a nonzero exit or a hung query reports the version as not installed, so the task runs the installer.
 

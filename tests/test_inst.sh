@@ -779,14 +779,20 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q -- "--max-time 777" "$curl_calls"; then
+    if ! grep -q -- "--max-time 7777" "$curl_calls"; then
         echo "curl not called with the configured --max-time" >&2
         cat "$curl_calls" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q -- "--retry 13" "$curl_calls"; then
+    if ! grep -q -- "--retry 17" "$curl_calls"; then
         echo "curl not called with the configured --retry" >&2
+        cat "$curl_calls" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -q -- "--retry-delay 3" "$curl_calls"; then
+        echo "curl not called with the configured --retry-delay" >&2
         cat "$curl_calls" >&2
         rm -rf "$tmp"
         return 1
@@ -797,13 +803,13 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q -- "--connect-timeout 30" "$curl_calls"; then
+    if ! grep -q -- "--connect-timeout 60" "$curl_calls"; then
         echo "curl not called with the configured --connect-timeout" >&2
         cat "$curl_calls" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q -- "--retry-max-time 1500" "$curl_calls"; then
+    if ! grep -q -- "--retry-max-time 7777" "$curl_calls"; then
         echo "curl not called with the configured --retry-max-time" >&2
         cat "$curl_calls" >&2
         rm -rf "$tmp"

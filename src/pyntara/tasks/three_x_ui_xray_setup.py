@@ -125,6 +125,7 @@ def _fetch_release_json(
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> dict[str, object]:
     """The latest release payload from the GitHub releases API.
 
@@ -140,7 +141,9 @@ def _fetch_release_json(
             "--fail",
             "--silent",
             "--show-error",
-            *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+            *curl_flags(
+                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
+            ),
             url,
         ],
         check=False,
@@ -190,10 +193,11 @@ def _installed_version(
 def _download_installer(
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
-    curl_timeout: float,
+    download_timeout: float,
     retries: int,
     connect_timeout: float,
     retry_max_time: int,
+    retry_delay: int,
 ) -> Path:
     """Download the official installer into a temporary file.
 
@@ -214,7 +218,13 @@ def _download_installer(
                 str(script_path),
                 "--write-out",
                 CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(curl_timeout, retries, connect_timeout, retry_max_time),
+                *curl_flags(
+                    download_timeout,
+                    retries,
+                    connect_timeout,
+                    retry_max_time,
+                    retry_delay,
+                ),
                 cfg.install_script_url,
             ],
             timeout=timeout,
@@ -950,16 +960,16 @@ def _probe_port_80_forward(
     except OSError:
         return False
     try:
-        time.sleep(1)
+        time.sleep(cfg.probe_listener_start_seconds)
         try:
             result = run_command(
                 [
                     "curl",
                     "--silent",
                     "--connect-timeout",
-                    "5",
+                    str(cfg.probe_timeout_seconds),
                     "--max-time",
-                    "8",
+                    str(cfg.probe_timeout_seconds),
                     f"http://{public_ip}:{cfg.acme_port}/",
                 ],
                 check=False,
@@ -972,7 +982,7 @@ def _probe_port_80_forward(
     finally:
         listener.terminate()
         try:
-            listener.wait(timeout=3)
+            listener.wait(timeout=cfg.probe_timeout_seconds)
         except subprocess.TimeoutExpired:
             listener.kill()
 
@@ -1068,9 +1078,6 @@ def _converge_panel_port(
 def _wait_panel_http(
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
-    *,
-    attempts: int = 20,
-    retry_delay_seconds: float = 0.5,
 ) -> bool:
     """True when the panel answers HTTP on the configured port.
 
@@ -1080,9 +1087,13 @@ def _wait_panel_http(
     false login failure. The scheme follows the configured certificate
     and TLS is not verified, mirroring the API client. An unreadable
     install-result.env leaves the web base path empty, which still
-    detects the listener.
+    detects the listener. The number of attempts, the pause between them
+    and the probe timeout come from the config: a slow link must not be
+    reported as an unreachable panel.
     """
 
+    attempts = cfg.start_check_attempts
+    retry_delay_seconds = cfg.start_check_retry_delay_seconds
     web_path = ""
     try:
         env = xui_client.parse_install_result_env(Path(cfg.install_result_env_path))
@@ -1103,7 +1114,7 @@ def _wait_panel_http(
                     "curl",
                     "--silent",
                     "--max-time",
-                    "2",
+                    str(cfg.probe_timeout_seconds),
                     "--insecure",
                     "--output",
                     "/dev/null",
@@ -1698,7 +1709,9 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.three_x_ui_xray_setup
     timeout = ctx.config.engine.command_timeout_seconds
     curl_timeout = ctx.config.engine.curl_timeout_seconds
+    download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
+    retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = "three_x_ui_xray_setup" in ctx.force_tasks
@@ -1711,6 +1724,7 @@ def task(ctx: Context) -> TaskResult:
             curl_retries,
             connect_timeout,
             retry_max_time,
+            retry_delay,
         )
         tag = _release_tag(release)
     except RuntimeError as exc:
@@ -1790,10 +1804,11 @@ def task(ctx: Context) -> TaskResult:
             script_path = _download_installer(
                 cfg,
                 timeout,
-                curl_timeout,
+                download_timeout,
                 curl_retries,
                 connect_timeout,
                 retry_max_time,
+                retry_delay,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))

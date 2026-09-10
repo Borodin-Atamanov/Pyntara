@@ -27,11 +27,13 @@ VALID_TOML = """\
 [engine]
 task_data_root = "/var/lib/pyntara/task-data"
 notice_timeout = 7
-command_timeout_seconds = 1800
+command_timeout_seconds = 8000
 curl_timeout_seconds = 777
-curl_retries = 13
-curl_connect_timeout_seconds = 30
-curl_retry_max_time_seconds = 1500
+curl_download_timeout_seconds = 7777
+curl_retries = 17
+curl_retry_delay_seconds = 3
+curl_connect_timeout_seconds = 60
+curl_retry_max_time_seconds = 7777
 error_priority = 3
 progress_priority = 7
 process_check_timeout_seconds = 5
@@ -220,6 +222,8 @@ cert_dir = "/root/cert/ip"
 self_signed_cert_dir = "/root/cert/selfsigned"
 server_ip_timeout_seconds = 60
 server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]
+probe_timeout_seconds = 60
+probe_listener_start_seconds = 1
 upnp_enabled = true
 upnp_package = "miniupnpc"
 upnp_client_command = "upnpc"
@@ -576,11 +580,13 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     config = load_config(config_path)
     assert config.engine.task_data_root == Path("/var/lib/pyntara/task-data")
     assert config.engine.curl_timeout_seconds == 777
-    assert config.engine.curl_retries == 13
-    assert config.engine.curl_connect_timeout_seconds == 30
-    assert config.engine.curl_retry_max_time_seconds == 1500
+    assert config.engine.curl_download_timeout_seconds == 7777
+    assert config.engine.curl_retries == 17
+    assert config.engine.curl_retry_delay_seconds == 3
+    assert config.engine.curl_connect_timeout_seconds == 60
+    assert config.engine.curl_retry_max_time_seconds == 7777
     assert config.engine.notice_timeout == 7
-    assert config.engine.command_timeout_seconds == 1800
+    assert config.engine.command_timeout_seconds == 8000
     assert config.engine.process_check_timeout_seconds == 5
     assert config.engine.task_start_delay_seconds == 0.5
     assert config.engine.desktop_detect_processes == (

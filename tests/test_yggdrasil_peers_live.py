@@ -37,10 +37,11 @@ def test_live_download_and_parse(tmp_path: Path) -> None:
     peers = yggdrasil_service_setup._download_peers(
         cfg,
         120,
-        config.engine.curl_timeout_seconds,
+        config.engine.curl_download_timeout_seconds,
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     assert len(peers) > 50, "the public peers list should be large"
     assert cfg.peers_full_path.is_file()
@@ -57,10 +58,11 @@ def test_live_peer_uris_are_valid(tmp_path: Path) -> None:
     peers = yggdrasil_service_setup._download_peers(
         cfg,
         120,
-        config.engine.curl_timeout_seconds,
+        config.engine.curl_download_timeout_seconds,
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     schemes = {
         "tcp",
@@ -93,10 +95,11 @@ def test_live_probe_pipeline(tmp_path: Path) -> None:
     peers = yggdrasil_service_setup._download_peers(
         cfg,
         120,
-        config.engine.curl_timeout_seconds,
+        config.engine.curl_download_timeout_seconds,
         config.engine.curl_retries,
         config.engine.curl_connect_timeout_seconds,
         config.engine.curl_retry_max_time_seconds,
+        config.engine.curl_retry_delay_seconds,
     )
     yggdrasil_service_setup.random.shuffle(peers)
     batch = peers[: cfg.peer_batch_size]
