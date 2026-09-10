@@ -200,9 +200,9 @@ def _install_fixtures(
         collector_timer_template,
     )
     monkeypatch.setattr(system_metrics_setup, "COMMAND_TEMPLATE_PATH", command_template)
-    monkeypatch.setattr(system_metrics_setup, "SYSTEMD_UNIT_DIR", systemd_dir)
     config = make_config(
         task_data_root=tmp_path,
+        systemd_unit_dir=systemd_dir,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
         system_metrics_command_path=command_path,

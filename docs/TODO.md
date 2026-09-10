@@ -54,15 +54,17 @@ Done: Logging: the KDE tasks must log their detailed actions. kde_keyboard_setup
 
 ## File mode constants inside task modules
 
-The rule that every value lives in config/ (architecture contract, Configuration) is still broken by file modes inside task modules: vocalinux_setup (USER_FILE_MODE = "0644", EXECUTABLE_MODE = "0755"), ffmpeg_setup (WAYRECORD_MODE = 0o755), telegram_setup (LAUNCHER_MODE = 0o644, ICON_MODE = 0o644, EXECUTABLE_MODE = 0o755). The representation is inconsistent too: some are written as the readable string "0644", some as 0o644. chrome_setup was fixed on 2026-09-10 (commit 6e2a3ce) by moving the mode to [chrome_setup] file_mode = "0644".
-
-Fix: add a mode value to the three sections, read it in the tasks where the mode is applied, add the checks in tests/config_checks.py, the keys in the shared test document and the Parameters lines in the specs. Keep the readable string form that the checks demand, so a human reads 0644 in the config and the runtime reader turns it into the int chmod expects.
+Done 2026-09-10. The rule that every value lives in config/ (architecture contract, Configuration) was broken by file modes inside task modules: vocalinux_setup (USER_FILE_MODE = "0644", EXECUTABLE_MODE = "0755"), ffmpeg_setup (WAYRECORD_MODE = 0o755), telegram_setup (LAUNCHER_MODE = 0o644, ICON_MODE = 0o644, EXECUTABLE_MODE = 0o755). chrome_setup was fixed on 2026-09-10 (commit 6e2a3ce), ffmpeg_setup, telegram_setup and vocalinux_setup in commit c5fb4e0: each mode lives in its own section as a readable string of four octal digits (file_mode = "0644"), the runtime reader turns it into the int chmod expects, and the checks demand the readable form.
 
 ## Values outside config/ are not classified by a written rule
 
-166 module-level constants live in 36 modules outside src/pyntara/config/. Some of them are values that belong in config/ (paths, file modes, unit file names, journal identifiers, external repository names), and some are code that stays (regular expressions, encoding alphabets, marker strings). The boundary between the two is written in no document, so every discovery needs a fresh decision from the user. The REPO_ROOT duplication is already tracked above; the rest is unclassified.
+The rule is written in docs/contracts/architecture.md (Configuration) since 2026-09-10: almost every text the run uses belongs in config/, including paths, commands, unit and journal names, external endpoints, file contents the run writes and regular expressions. The reason is manageability and understanding, not mutability, so a value goes into config/ whether or not it ever changes; a given value is written once in config/ and read where it is needed, a computed value is computed once in a shared place and imported. No finding needs a fresh decision from the user any more, the work is mechanical.
 
-Fix: state the boundary in docs/contracts/architecture.md under Configuration, record there the exceptions that stay in code, then classify the 166 constants once and move the values that do not remain.
+The audit of the 36 modules outside src/pyntara/config/ counted 51 value candidates, 43 strings that carry a judgement or a message, 43 regular expressions, 9 algorithm tables and 14 copies of REPO_ROOT.
+
+Done 2026-09-10: SYSTEMD_UNIT_DIR, the same /etc/systemd/system path in six task modules (zram_service, swapfile_service_install, zswap_service, system_metrics_setup, system_metrics_initial_collect, port_forwarding_setup), is one [engine] value systemd_unit_dir read through ctx.config.engine.systemd_unit_dir.
+
+Remaining, most value first: REPO_ROOT (duplication, tracked above and blocked while the shared checkout has src/pyntara/utils.py dirty), the 51 value candidates section by section, then the judgement strings and the regular expressions.
 
 ## Leftovers of the config split
 

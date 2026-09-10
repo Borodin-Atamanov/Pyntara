@@ -37,7 +37,6 @@ from pyntara.utils import run_command, service_is_enabled
 # against temporary fixtures instead of the real system (developer guide).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "zram_service" / "zram.service"
-SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 MEMINFO_PATH = Path("/proc/meminfo")
 CPUINFO_PATH = Path("/proc/cpuinfo")
 SYS_BLOCK_PATH = Path("/sys/block")
@@ -507,9 +506,10 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"
         )
-    _log(f"writing unit file {SYSTEMD_UNIT_DIR / service_name}")
+    unit_dir = ctx.config.engine.systemd_unit_dir
+    _log(f"writing unit file {unit_dir / service_name}")
     try:
-        _write_unit_file(SYSTEMD_UNIT_DIR, service_name, content)
+        _write_unit_file(unit_dir, service_name, content)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot write unit file: {exc}"

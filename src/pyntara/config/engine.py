@@ -13,10 +13,12 @@ class EngineConfig:
 
     desktop_detect_processes are the process names whose presence marks a
     desktop session in the default mode detection; the list lives here so
-    the detection is configurable without code changes.
+    the detection is configurable without code changes. systemd_unit_dir is
+    the one directory the tasks that deploy a systemd unit write it to.
     """
 
     task_data_root: Path
+    systemd_unit_dir: Path
     notice_timeout: int
     command_timeout_seconds: int
     curl_timeout_seconds: int

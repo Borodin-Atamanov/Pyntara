@@ -40,7 +40,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "port_forwarding_setup" / "auto_port_forwarding.service"
 )
-SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 
 
 def _render_service_unit(
@@ -74,10 +73,10 @@ def _render_service_unit(
     )
 
 
-def _unit_matches(name: str, expected: str) -> bool:
+def _unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
     """True when the deployed unit file equals the expected content."""
 
-    unit_path = SYSTEMD_UNIT_DIR / name
+    unit_path = unit_dir / name
     try:
         if not unit_path.is_file():
             return False
@@ -86,11 +85,11 @@ def _unit_matches(name: str, expected: str) -> bool:
         return False
 
 
-def _write_unit(name: str, content: str) -> None:
+def _write_unit(unit_dir: Path, name: str, content: str) -> None:
     """Write the rendered unit file into the systemd unit directory."""
 
-    SYSTEMD_UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    (SYSTEMD_UNIT_DIR / name).write_text(content, encoding="utf-8")
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    (unit_dir / name).write_text(content, encoding="utf-8")
 
 
 def _service_is_failed(service_name: str, timeout: float) -> bool:
@@ -160,7 +159,8 @@ def task(ctx: Context) -> TaskResult:
             success=False,
             error=f"cannot read the service template: {exc}",
         )
-    unit_ok = _unit_matches(service_name, unit)
+    unit_dir = ctx.config.engine.systemd_unit_dir
+    unit_ok = _unit_matches(unit_dir, service_name, unit)
     _log(f"checking unit {service_name}: {'ok' if unit_ok else 'missing or stale'}")
     enabled = service_is_enabled(service_name, timeout)
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
@@ -174,7 +174,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     if not unit_ok or force:
         try:
-            _write_unit(service_name, unit)
+            _write_unit(unit_dir, service_name, unit)
         except OSError as exc:
             return TaskResult(
                 success=False, changed=changed, error=f"cannot write unit {service_name}: {exc}"

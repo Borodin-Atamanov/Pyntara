@@ -180,6 +180,7 @@ def _base_config() -> Config:
 def make_config(
     *,
     task_data_root: Path = Path("/tmp"),
+    systemd_unit_dir: Path = Path("/etc/systemd/system"),
     notice_timeout: int = 7,
     command_timeout_seconds: int = 8000,
     curl_timeout_seconds: int = 777,
@@ -669,6 +670,7 @@ def make_config(
         engine=replace(
             base.engine,
             task_data_root=task_data_root,
+            systemd_unit_dir=systemd_unit_dir,
             notice_timeout=notice_timeout,
             command_timeout_seconds=command_timeout_seconds,
             curl_timeout_seconds=curl_timeout_seconds,

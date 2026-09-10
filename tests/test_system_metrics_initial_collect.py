@@ -34,7 +34,7 @@ def _ctx(tmp_path: Path) -> Context:
         force_tasks=frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(task_data_root=tmp_path),
+        config=make_config(task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"),
     )
 
 
@@ -57,9 +57,6 @@ def _install_fixtures(
         (systemd_dir / "system_metrics_collector.service").write_text(
             "[Unit]\nDescription=fixture\n", encoding="utf-8"
         )
-    monkeypatch.setattr(
-        system_metrics_initial_collect, "SYSTEMD_UNIT_DIR", systemd_dir
-    )
     return systemd_dir
 
 

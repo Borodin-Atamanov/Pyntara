@@ -29,7 +29,7 @@ def base_config() -> str:
     """
 
     return (
-        '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
+        '[engine]\ntask_data_root = "/tmp"\nsystemd_unit_dir = "/etc/systemd/system"\nnotice_timeout = 7\n'
         "command_timeout_seconds = 8000\ncurl_timeout_seconds = 777\n"
         "curl_download_timeout_seconds = 7777\ncurl_retries = 17\n"
         "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"

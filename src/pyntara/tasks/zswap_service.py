@@ -32,7 +32,6 @@ from pyntara.utils import run_command, service_is_enabled
 # against temporary fixtures instead of the real system (developer guide).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "zswap_service" / "zswap.service"
-SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 ZSWAP_PARAMS_DIR = Path("/sys/module/zswap/parameters")
 
 # The five parameters of kernel 7.0, in the order the task writes them:
@@ -201,9 +200,10 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"
         )
-    _log(f"writing unit file {SYSTEMD_UNIT_DIR / service_name}")
+    unit_dir = ctx.config.engine.systemd_unit_dir
+    _log(f"writing unit file {unit_dir / service_name}")
     try:
-        _write_unit_file(SYSTEMD_UNIT_DIR, service_name, content)
+        _write_unit_file(unit_dir, service_name, content)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot write unit file: {exc}"

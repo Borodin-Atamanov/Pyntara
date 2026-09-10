@@ -24,6 +24,10 @@ from config_helpers import (
         base_config().replace('packages = ["mc"]', "packages = [1, 2]"),
         # task_data_root is a number, not a string
         base_config().replace('task_data_root = "/tmp"', "task_data_root = 42"),
+        # systemd_unit_dir is a number, not a string
+        base_config().replace(
+            'systemd_unit_dir = "/etc/systemd/system"', "systemd_unit_dir = 42"
+        ),
         # command_timeout_seconds is a string, not an integer
         base_config().replace(
             "command_timeout_seconds = 8000", 'command_timeout_seconds = "8000"'

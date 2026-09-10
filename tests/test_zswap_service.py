@@ -63,6 +63,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
         skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
+            systemd_unit_dir=tmp_path / "systemd",
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -94,7 +95,6 @@ def _install_fixtures(
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     monkeypatch.setattr(zswap_service, "PARAM_PATHS", paths)
     monkeypatch.setattr(zswap_service, "TEMPLATE_PATH", template)
-    monkeypatch.setattr(zswap_service, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     return {"params_dir": params_dir, "template": template}
 
 

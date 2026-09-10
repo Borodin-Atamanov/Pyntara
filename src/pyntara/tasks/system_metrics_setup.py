@@ -88,7 +88,6 @@ COLLECTOR_TIMER_TEMPLATE_PATH = (
 COMMAND_TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "system_metrics_setup" / "commit_system_metrics.sh"
 )
-SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 
 
 def _venv_package_version(venv_python: Path, timeout: float) -> str | None:
@@ -328,10 +327,10 @@ def _render_commit_command(
     )
 
 
-def _unit_matches(name: str, expected: str) -> bool:
+def _unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
     """True when the deployed unit file equals the expected content."""
 
-    unit_path = SYSTEMD_UNIT_DIR / name
+    unit_path = unit_dir / name
     try:
         if not unit_path.is_file():
             return False
@@ -340,11 +339,11 @@ def _unit_matches(name: str, expected: str) -> bool:
         return False
 
 
-def _write_unit(name: str, content: str) -> None:
+def _write_unit(unit_dir: Path, name: str, content: str) -> None:
     """Write the rendered unit file into the systemd unit directory."""
 
-    SYSTEMD_UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    (SYSTEMD_UNIT_DIR / name).write_text(content, encoding="utf-8")
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    (unit_dir / name).write_text(content, encoding="utf-8")
 
 
 def _command_file_matches(command_path: Path, expected: str, mode: int) -> bool:
@@ -468,13 +467,18 @@ def task(ctx: Context) -> TaskResult:
         f"(venv {venv_version or 'none'}, repository {__version__})"
     )
     config_ok = _system_config_matches(system_config_path)
-    service_unit_ok = _unit_matches(service_name, service_unit)
-    ingest_service_unit_ok = _unit_matches(ingest_service_name, ingest_service_unit)
-    ingest_path_unit_ok = _unit_matches(ingest_path_name, ingest_path_unit)
-    collector_service_unit_ok = _unit_matches(
-        collector_service_name, collector_service_unit
+    unit_dir = ctx.config.engine.systemd_unit_dir
+    service_unit_ok = _unit_matches(unit_dir, service_name, service_unit)
+    ingest_service_unit_ok = _unit_matches(
+        unit_dir, ingest_service_name, ingest_service_unit
     )
-    collector_timer_unit_ok = _unit_matches(collector_timer_name, collector_timer_unit)
+    ingest_path_unit_ok = _unit_matches(unit_dir, ingest_path_name, ingest_path_unit)
+    collector_service_unit_ok = _unit_matches(
+        unit_dir, collector_service_name, collector_service_unit
+    )
+    collector_timer_unit_ok = _unit_matches(
+        unit_dir, collector_timer_name, collector_timer_unit
+    )
     service_enabled = service_is_enabled(service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
@@ -559,11 +563,11 @@ def task(ctx: Context) -> TaskResult:
     )
     if not all(unit_states) or force:
         for name, content in units:
-            if not force and _unit_matches(name, content):
+            if not force and _unit_matches(unit_dir, name, content):
                 continue
             _log(f"writing unit {name}")
             try:
-                _write_unit(name, content)
+                _write_unit(unit_dir, name, content)
             except OSError as exc:
                 return TaskResult(
                     success=False,

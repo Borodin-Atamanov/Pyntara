@@ -56,6 +56,7 @@ def _ctx(
         skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
+            systemd_unit_dir=tmp_path / "systemd",
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -116,7 +117,6 @@ def _install_fixtures(
     hot_add = _FakeHotAdd(sys_block, read_interface=read_interface)
     monkeypatch.setattr(zram_service, "ZRAM_HOT_ADD_PATH", hot_add)
     monkeypatch.setattr(zram_service, "ZRAM_HOT_REMOVE_PATH", hot_remove)
-    monkeypatch.setattr(zram_service, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     return {
         "sys_block": sys_block,
         "hot_add": hot_add,

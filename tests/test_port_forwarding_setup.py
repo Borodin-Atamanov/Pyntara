@@ -54,10 +54,10 @@ def _install_fixtures(
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(port_forwarding_setup, "REPO_ROOT", repo)
     monkeypatch.setattr(port_forwarding_setup, "TEMPLATE_PATH", template)
-    monkeypatch.setattr(port_forwarding_setup, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
     config = make_config(
         task_data_root=tmp_path,
+        systemd_unit_dir=systemd_dir,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
         port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
@@ -253,10 +253,9 @@ def test_missing_template_is_error(
     missing = task_data / "auto_port_forwarding.service"
     monkeypatch.setattr(port_forwarding_setup, "REPO_ROOT", repo)
     monkeypatch.setattr(port_forwarding_setup, "TEMPLATE_PATH", missing)
-    monkeypatch.setattr(port_forwarding_setup, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     ctx = make_context(
         task_data_root=tmp_path,
-        config=make_config(task_data_root=tmp_path),
+        config=make_config(task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"),
     )
     result = port_forwarding_setup.task(ctx)
     assert not result.success

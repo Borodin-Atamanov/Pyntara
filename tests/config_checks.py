@@ -564,6 +564,9 @@ def _engine_table(raw: object) -> EngineConfig:
     task_data_root = raw.get("task_data_root")
     if not isinstance(task_data_root, str):
         raise ConfigError("engine.task_data_root must be a string")
+    systemd_unit_dir = raw.get("systemd_unit_dir")
+    if not isinstance(systemd_unit_dir, str):
+        raise ConfigError("engine.systemd_unit_dir must be a string")
     desktop_detect_processes = raw.get("desktop_detect_processes")
     if not isinstance(desktop_detect_processes, list) or not desktop_detect_processes:
         raise ConfigError(
@@ -617,6 +620,7 @@ def _engine_table(raw: object) -> EngineConfig:
         raise ConfigError("engine.curl_retry_max_time_seconds must be positive")
     return EngineConfig(
         task_data_root=Path(task_data_root),
+        systemd_unit_dir=Path(systemd_unit_dir),
         notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
         command_timeout_seconds=_int_field(
             raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"

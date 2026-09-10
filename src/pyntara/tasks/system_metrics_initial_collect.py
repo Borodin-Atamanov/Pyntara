@@ -18,7 +18,6 @@ the task skips. A failed start is an error: the install log must show it
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -27,9 +26,6 @@ from pyntara.utils import run_command
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-# The systemd unit directory is a fixed machine contract (architecture
-# contract, Configuration), shared with the system_metrics_setup task.
-SYSTEMD_UNIT_DIR = Path("/etc/systemd/system")
 
 
 def task(ctx: Context) -> TaskResult:
@@ -44,7 +40,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     service_name = ctx.config.system_metrics_setup.collector.service_unit_name
-    unit_path = SYSTEMD_UNIT_DIR / service_name
+    unit_path = ctx.config.engine.systemd_unit_dir / service_name
     if not unit_path.is_file():
         _log(f"collector unit {unit_path} not deployed, skipping")
         return TaskResult(
