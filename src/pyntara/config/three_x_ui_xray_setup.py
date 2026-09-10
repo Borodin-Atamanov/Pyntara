@@ -38,7 +38,9 @@ class ThreeXuiXraySetupConfig:
     install_result_env_path is the file the panel writes on first start
     with the generated credentials; panel_http_address is the host for
     REST API calls; vault_entry_title names the runtime vault entry
-    where the credentials are stored.
+    where the credentials are stored. server_ip_services lists the echo
+    services queried for the public IPv4 address and
+    server_ip_timeout_seconds bounds one such query.
     """
 
     github_repo: str
@@ -70,6 +72,7 @@ class ThreeXuiXraySetupConfig:
     self_signed_cert_dir: Path
     self_signed_cert_fullchain: Path
     self_signed_cert_privkey: Path
+    server_ip_timeout_seconds: int
     server_ip_services: tuple[str, ...]
 
 
@@ -217,6 +220,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.self_signed_cert_dir",
         )
     )
+    server_ip_timeout_seconds = _int_field(
+        raw.get("server_ip_timeout_seconds"),
+        "three_x_ui_xray_setup.server_ip_timeout_seconds",
+    )
+    if server_ip_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.server_ip_timeout_seconds must be positive"
+        )
     server_ip_services = _string_list(
         raw.get("server_ip_services"),
         "three_x_ui_xray_setup.server_ip_services",
@@ -251,6 +262,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         self_signed_cert_dir=self_signed_cert_dir,
         self_signed_cert_fullchain=self_signed_cert_dir / "fullchain.pem",
         self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
+        server_ip_timeout_seconds=server_ip_timeout_seconds,
         server_ip_services=server_ip_services,
     )
 

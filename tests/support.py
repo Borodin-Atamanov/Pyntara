@@ -394,6 +394,7 @@ def make_config(
     three_x_ui_acme_port: int = 80,
     three_x_ui_cert_dir: Path = Path("/root/cert/ip"),
     three_x_ui_self_signed_cert_dir: Path = Path("/root/cert/selfsigned"),
+    three_x_ui_server_ip_timeout_seconds: int = 60,
     three_x_ui_server_ip_services: tuple[str, ...] = (
         "https://api4.ipify.org",
         "https://ipv4.icanhazip.com",
@@ -921,6 +922,7 @@ def make_config(
             self_signed_cert_privkey=(
                 three_x_ui_self_signed_cert_dir / "privkey.pem"
             ),
+            server_ip_timeout_seconds=three_x_ui_server_ip_timeout_seconds,
             server_ip_services=three_x_ui_server_ip_services,
         ),
         yggdrasil_service_setup=YggdrasilServiceSetupConfig(

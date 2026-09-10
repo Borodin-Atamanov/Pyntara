@@ -182,6 +182,7 @@ def base_config() -> str:
         "acme_port = 80\n"
         'cert_dir = "/root/cert/ip"\n'
         'self_signed_cert_dir = "/root/cert/selfsigned"\n'
+        "server_ip_timeout_seconds = 60\n"
         'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
         "[tor_setup]\n"
         'package_name = "tor"\n'

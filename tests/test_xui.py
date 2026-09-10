@@ -52,6 +52,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             "/root/cert/selfsigned/fullchain.pem"
         ),
         "self_signed_cert_privkey": Path("/root/cert/selfsigned/privkey.pem"),
+        "server_ip_timeout_seconds": 60,
         "server_ip_services": ("https://api4.ipify.org",),
     }
     defaults.update(overrides)

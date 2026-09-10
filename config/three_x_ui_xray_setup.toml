@@ -79,6 +79,11 @@ cert_dir = "/root/cert/ip"
 # challenge cannot reach the machine (behind NAT without a port-80
 # forward), so the panel still serves HTTPS instead of plain HTTP.
 self_signed_cert_dir = "/root/cert/selfsigned"
+# Timeout in seconds of a single echo-service query used to detect the
+# public IPv4 address (curl --max-time). A short value makes the
+# detection fail on a slow link, so the timeout lets a slow answer
+# arrive instead of discarding the address.
+server_ip_timeout_seconds = 60
 # Echo services that report the public IPv4 address, in the order the
 # official installer tries them.
 server_ip_services = [

@@ -759,14 +759,21 @@ def _detect_server_ip(
 ) -> str | None:
     """The public IPv4 address from the first reachable echo service.
 
-    Each service is queried with a short curl call; the first answer
-    that looks like an IPv4 address wins. None when no service answers.
+    Each service is queried with one curl call bounded by the configured
+    server_ip_timeout_seconds; the first answer that looks like an IPv4
+    address wins. None when no service answers.
     """
 
     for service in cfg.server_ip_services:
         try:
             result = run_command(
-                ["curl", "--silent", "--max-time", "3", service],
+                [
+                    "curl",
+                    "--silent",
+                    "--max-time",
+                    str(cfg.server_ip_timeout_seconds),
+                    service,
+                ],
                 check=False,
                 capture=True,
                 timeout=timeout,

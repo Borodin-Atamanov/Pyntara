@@ -218,6 +218,7 @@ subscription_clash_path = "/c/"
 acme_port = 80
 cert_dir = "/root/cert/ip"
 self_signed_cert_dir = "/root/cert/selfsigned"
+server_ip_timeout_seconds = 60
 server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]
 
 [tor_setup]

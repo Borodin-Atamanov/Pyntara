@@ -67,6 +67,18 @@ from config_helpers import assert_config_error, base_config
             'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]',
             "server_ip_services = []",
         ),
+        # server_ip_timeout_seconds is a string, not an integer
+        base_config().replace(
+            "server_ip_timeout_seconds = 60", 'server_ip_timeout_seconds = "60"'
+        ),
+        # server_ip_timeout_seconds is zero
+        base_config().replace(
+            "server_ip_timeout_seconds = 60", "server_ip_timeout_seconds = 0"
+        ),
+        # server_ip_timeout_seconds is negative
+        base_config().replace(
+            "server_ip_timeout_seconds = 60", "server_ip_timeout_seconds = -1"
+        ),
     ],
 )
 def test_three_x_ui_invalid_values_raise(

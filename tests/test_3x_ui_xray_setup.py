@@ -2213,3 +2213,34 @@ class TestConnectionStage:
         result = xui.task(ctx)
         assert result.success is True
         assert any("vault unavailable" in w for w in result.warnings or ())
+
+
+class TestDetectServerIp:
+    """Tests for the public IPv4 detection through the echo services."""
+
+    def test_bounds_each_query_with_the_configured_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The timeout of one echo-service query comes from the config, so
+        # a slow link is not cut off after a hardcoded few seconds.
+        commands: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            commands.append(command)
+            return _FakeProc(0, "203.0.113.7\n")
+
+        monkeypatch.setattr(xui, "run_command", fake_run)
+        cfg = make_config(
+            three_x_ui_server_ip_timeout_seconds=77
+        ).three_x_ui_xray_setup
+        assert xui._detect_server_ip(cfg, 30.0) == "203.0.113.7"
+        assert commands[0][2:4] == ["--max-time", "77"]
+
+    def test_returns_none_when_no_service_answers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Every echo service timing out reports no address, so the caller
+        # can fall back instead of writing a wrong one.
+        monkeypatch.setattr(xui, "run_command", lambda *a, **k: _FakeProc(28, ""))
+        cfg = make_config().three_x_ui_xray_setup
+        assert xui._detect_server_ip(cfg, 30.0) is None

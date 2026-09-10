@@ -107,7 +107,7 @@ After the installer runs (and on a rerun) the task brings the panel to the confi
 
 After stage 3 the task runs stage 5, which turns the node into a ready server: the inbound receives exactly one client and the runtime vault receives the complete connection profile of that client. Every step of this stage reports a warning instead of an error, so a panel that is briefly unreachable never fails an otherwise finished setup, and the profile is written only from values the panel itself reports.
 
-The share address comes first. The panel renders the host of every share link from the `shareAddr` field of the inbound, but it uses that field only when `shareAddrStrategy` is the configured `custom` value: with the default strategy the panel renders `localhost`, which is useless to a client. The stage therefore detects the public address and sets both fields on the inbound. When the address cannot be detected, the panel is left as it is and the stage reports a warning.
+The share address comes first. The panel renders the host of every share link from the `shareAddr` field of the inbound, but it uses that field only when `shareAddrStrategy` is the configured `custom` value: with the default strategy the panel renders `localhost`, which is useless to a client. The stage therefore detects the public address and sets both fields on the inbound. Each echo service is queried with one curl call bounded by `server_ip_timeout_seconds`, so a slow link still reports the address instead of discarding it. When the address cannot be detected, the panel is left as it is and the stage reports a warning.
 
 The client identity is reused from the vault entry when one is already there: `CLIENT_EMAIL`, `CLIENT_ID` and `SUB_ID` are read back, so a rerun never adds a second client to the inbound and the identity survives an update of the panel. On a fresh run the stage generates them: the email is a 2-word proquint, the client id a 4-word proquint with dashes (it becomes the client identity the panel stores) and the subId a 6-byte proquint without a separator. The client is created through `POST /panel/api/clients/add` together with the inbound id; the email is only a label in the panel, never the credential.
 
@@ -124,6 +124,7 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `cert_dir` (path, optional, default `/root/cert/ip`): directory of the trusted Let's Encrypt certificate; the config loader derives the fullchain and privkey paths from it.  
 `self_signed_cert_dir` (path, optional, default `/root/cert/selfsigned`): directory of the self-signed fallback certificate.  
 `server_ip_services` (array of strings, optional): echo services that report the public IPv4 address, tried in order until one answers.  
+`server_ip_timeout_seconds` (integer, optional, default `60`): timeout of one echo-service query. Must be positive; the value must let a slow link answer, so a query is never cut off after a few seconds.  
 `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.  
 `inbound_remark` (string, optional, default `"universal"`): display label for the inbound in the panel.  
 `reality_dest` (string, optional, default `"www.google.com:443"`): destination address and port for REALITY TLS handshake mimicry.  
