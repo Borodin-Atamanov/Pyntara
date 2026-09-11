@@ -14,6 +14,7 @@ These tests read the real config directory and compare the two forms.
 
 from __future__ import annotations
 
+import importlib
 import tomllib
 from dataclasses import fields, is_dataclass
 from pathlib import Path
@@ -22,7 +23,11 @@ from typing import Any
 from config_helpers import base_config, load_checked_config
 from support import make_config
 
-from pyntara.config import Config
+from pyntara.config import (
+    Config,
+    SystemMetricsCollectorConfig,
+    SystemMetricsSetupConfig,
+)
 from pyntara.config.loader import render_config_source
 
 REPOSITORY_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -51,6 +56,20 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
 }
+
+# The config keys each deployed metrics component reads, with the table they
+# belong to: the list is written in the module of the component, and the
+# component names the keys it cannot find instead of showing a Python error.
+COMPONENT_KEY_LISTS: tuple[tuple[str, str, type[Any]], ...] = (
+    ("pyntara.metrics_collect", "COLLECTOR_SECTION_KEYS", SystemMetricsSetupConfig),
+    (
+        "pyntara.metrics_collect",
+        "COLLECTOR_TABLE_KEYS",
+        SystemMetricsCollectorConfig,
+    ),
+    ("pyntara.metrics_ingest", "INGEST_CONFIG_KEYS", SystemMetricsSetupConfig),
+    ("pyntara.metrics", "SERVICE_CONFIG_KEYS", SystemMetricsSetupConfig),
+)
 
 
 def _top_level_tables(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -176,6 +195,25 @@ def test_test_document_leaves_out_only_recorded_optional_keys() -> None:
         for key in sorted(missing):
             absent.append(f"[{section_name}] {key}")
     assert not absent, f"config keys missing from the test document: {absent}"
+
+
+def test_component_key_lists_name_keys_of_their_table() -> None:
+    # Each list is written in the module of the component that reads those
+    # keys, and the component reports an incomplete config by naming them.
+    # A name that is not a key of the table it belongs to would make that
+    # report point at a value nobody can set, while the key that truly
+    # prevented the run would stay unnamed. The reverse direction is not
+    # provable here: a component reads its keys through the shared modules
+    # it calls (the ingest delegates to metrics_commit.ingest_spool), so the
+    # list cannot be derived from one module source, and a key read without
+    # being listed still meets the catch-all line of the component.
+    unknown: list[str] = []
+    for module_name, list_name, table_type in COMPONENT_KEY_LISTS:
+        module = importlib.import_module(module_name)
+        names = set(getattr(module, list_name))
+        for name in sorted(names - _section_field_names(table_type)):
+            unknown.append(f"{module_name}.{list_name}: {table_type.__name__}.{name}")
+    assert not unknown, f"component key lists naming no config key: {unknown}"
 
 
 def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:

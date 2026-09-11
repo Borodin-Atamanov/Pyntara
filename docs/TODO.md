@@ -80,3 +80,7 @@ Done 2026-09-10: the two scripts in secrets/ no longer catch the ConfigError tha
 
 Remaining: the vocabulary constants that only the checks use still live in src/pyntara/config/_fields.py, while every other check moved to tests/config_checks.py; MODES stays because production reads it.
 
+Done 2026-09-10: the four config key lists of the deployed metrics components (COLLECTOR_SECTION_KEYS, COLLECTOR_TABLE_KEYS, INGEST_CONFIG_KEYS, SERVICE_CONFIG_KEYS) are checked against the tables they belong to, so a renamed or mistyped key can no longer make the one-line report point at a value nobody can set.
+
+Remaining: the same lists are not proven complete, and the components that name their keys in an inline tuple instead of a module list (public_address_report, i2pd_address, tor_address, yggdrasil_address) are not covered at all. Proving that a component lists every key it reads would mean following how each config object is bound, through the shared modules the component calls; a key read without being listed costs the specific error line only, because the catch-all line of the component still reports the run.
+
