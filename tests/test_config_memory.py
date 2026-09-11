@@ -66,6 +66,26 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             'service_unit_name = "zswap.service"', "service_unit_name = 1"
         ),
+        # zswap parameters_dir_path is an empty string
+        base_config().replace(
+            'parameters_dir_path = "/sys/module/zswap/parameters"',
+            'parameters_dir_path = ""',
+        ),
+        # zswap parameter_names is a string, not an array
+        base_config().replace(
+            'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]',
+            'parameter_names = "enabled"',
+        ),
+        # zswap parameter_names is an empty array
+        base_config().replace(
+            'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]',
+            "parameter_names = []",
+        ),
+        # zswap unit_template_file_name is an empty string
+        base_config().replace(
+            'unit_template_file_name = "zswap.service"',
+            'unit_template_file_name = ""',
+        ),
         # zram service_unit_name is an empty string
         base_config().replace(
             'service_unit_name = "zram.service"', 'service_unit_name = ""'

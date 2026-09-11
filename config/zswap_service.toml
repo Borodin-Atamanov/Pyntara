@@ -16,5 +16,18 @@ max_pool_percent = 12
 accept_threshold_percent = 87
 # Whether the shrinker proactively writes cold pages to the backing swap.
 shrinker_enabled = true
+# Kernel attribute directory of the zswap module. It is a config value and
+# the only path of the task, so the tests point it at a fixture instead of
+# replacing a module constant.
+parameters_dir_path = "/sys/module/zswap/parameters"
+# Parameter names of that directory, in the order the task writes them:
+# enable the cache first, then the compressor, the pool ceiling, the
+# re-accept threshold and the shrinker. The value of a parameter is the key
+# of this section with the same name, so a parameter the kernel drops is
+# removed here and not in the code; a boolean key is written as Y or N.
+parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]
+# Name of the oneshot unit template under task_data/zswap_service/ of the
+# clone, rendered with the expanded ExecStart block.
+unit_template_file_name = "zswap.service"
 # Name of the systemd oneshot service unit that repeats the writes at boot.
 service_unit_name = "zswap.service"

@@ -294,6 +294,7 @@ def make_config(
     swapfile_path: Path = Path("/swapfile"),
     swapfile_ram_multiplier: float = 2.0,
     swapfile_mode: int = 0o600,
+    zswap_parameters_dir_path: Path = Path("/sys/module/zswap/parameters"),
     zram_reset_busy_attempts: int = 5,
     zram_reset_busy_retry_delay_seconds: float = 0.5,
     i2pd_download_dir: Path = Path("/var/lib/pyntara/i2pd-download"),
@@ -564,6 +565,10 @@ def make_config(
             swapfile_path=swapfile_path,
             ram_multiplier=swapfile_ram_multiplier,
             swapfile_mode=swapfile_mode,
+        ),
+        zswap_service=replace(
+            base.zswap_service,
+            parameters_dir_path=zswap_parameters_dir_path,
         ),
         zram_service=replace(
             base.zram_service,

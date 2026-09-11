@@ -197,7 +197,11 @@ def base_config() -> str:
         'service_unit_name = "swapfile.service"\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        'shrinker_enabled = true\nservice_unit_name = "zswap.service"\n'
+        'shrinker_enabled = true\n'
+        'parameters_dir_path = "/sys/module/zswap/parameters"\n'
+        'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]\n'
+        'unit_template_file_name = "zswap.service"\n'
+        'service_unit_name = "zswap.service"\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'

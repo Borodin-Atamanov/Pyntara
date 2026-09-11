@@ -28,55 +28,45 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, service_is_enabled, task_data_dir
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-ZSWAP_PARAMS_DIR = Path("/sys/module/zswap/parameters")
 
-# The five parameters of kernel 7.0, in the order the task writes them:
-# enable the cache first, then the compressor, the pool ceiling, the
-# re-accept threshold and the shrinker.
-PARAM_ORDER = (
-    "enabled",
-    "compressor",
-    "max_pool_percent",
-    "accept_threshold_percent",
-    "shrinker_enabled",
-)
-PARAM_PATHS = {
-    "enabled": ZSWAP_PARAMS_DIR / "enabled",
-    "compressor": ZSWAP_PARAMS_DIR / "compressor",
-    "max_pool_percent": ZSWAP_PARAMS_DIR / "max_pool_percent",
-    "accept_threshold_percent": ZSWAP_PARAMS_DIR / "accept_threshold_percent",
-    "shrinker_enabled": ZSWAP_PARAMS_DIR / "shrinker_enabled",
-}
+def _parameter_paths(cfg: ZswapServiceConfig) -> dict[str, Path]:
+    """The kernel attribute file of every configured parameter."""
+
+    return {
+        name: cfg.parameters_dir_path / name for name in cfg.parameter_names
+    }
 
 
 def _target_values(cfg: ZswapServiceConfig) -> dict[str, str]:
     """Canonical target values keyed by parameter name.
 
-    Boolean parameters use the Y/N spelling the sysfs attributes report,
-    so the rendered unit, the idempotency comparison and the read-back
-    verification all share one representation.
+    The value of a parameter is the key of the section with the same name:
+    a boolean key is written as the Y/N spelling the sysfs attributes
+    report, a number and a string as they are, so the rendered unit, the
+    idempotency comparison and the read-back verification all share one
+    representation.
     """
 
-    return {
-        "enabled": "Y" if cfg.enabled else "N",
-        "compressor": cfg.compressor,
-        "max_pool_percent": str(cfg.max_pool_percent),
-        "accept_threshold_percent": str(cfg.accept_threshold_percent),
-        "shrinker_enabled": "Y" if cfg.shrinker_enabled else "N",
-    }
+    values: dict[str, str] = {}
+    for name in cfg.parameter_names:
+        value = getattr(cfg, name)
+        if isinstance(value, bool):
+            values[name] = "Y" if value else "N"
+        else:
+            values[name] = str(value)
+    return values
 
 
-def _normalize(name: str, value: str) -> str:
+def _normalize(expected: str, value: str) -> str:
     """Canonical spelling of one read-back value.
 
-    Boolean parameters are reported by the kernel as Y or N but also
-    accept 1 and 0; normalization maps every accepted spelling to the
-    canonical Y/N form so the comparison never depends on kernel quirks.
+    A boolean attribute is reported by the kernel as Y or N but also
+    accepts 1 and 0; the expected value decides whether the attribute is a
+    boolean, so the comparison maps every accepted spelling to the
+    canonical Y/N form and never depends on kernel quirks.
     """
 
-    if name in ("enabled", "shrinker_enabled"):
+    if expected in ("Y", "N"):
         return "Y" if value.upper() in ("Y", "1") else "N"
     return value
 
@@ -100,7 +90,9 @@ def _write_sysfs(path: Path, value: str) -> None:
     path.write_text(value, encoding="utf-8")
 
 
-def _render_unit(template_path: Path, target: dict[str, str]) -> str:
+def _render_unit(
+    template_path: Path, target: dict[str, str], paths: dict[str, Path]
+) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
     One ExecStart line per parameter writes the exact configured value, so
@@ -110,8 +102,8 @@ def _render_unit(template_path: Path, target: dict[str, str]) -> str:
     """
 
     lines = [
-        f"ExecStart=/bin/sh -c 'echo {target[name]} > {PARAM_PATHS[name]}'"
-        for name in PARAM_ORDER
+        f"ExecStart=/bin/sh -c 'echo {value} > {paths[name]}'"
+        for name, value in target.items()
     ]
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(exec_lines="\n".join(lines))
@@ -143,18 +135,19 @@ def task(ctx: Context) -> TaskResult:
     force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
     target = _target_values(cfg)
+    paths = _parameter_paths(cfg)
 
     current: dict[str, str | None] = {}
-    for name in PARAM_ORDER:
-        value = _read_value(PARAM_PATHS[name])
+    for name in cfg.parameter_names:
+        value = _read_value(paths[name])
         current[name] = value
         shown = "absent" if value is None else value
-        _log(f"reading {PARAM_PATHS[name]}: {shown}")
+        _log(f"reading {paths[name]}: {shown}")
 
     mismatches: list[str] = []
-    for name in PARAM_ORDER:
+    for name in cfg.parameter_names:
         value = current[name]
-        if value is None or _normalize(name, value) != target[name]:
+        if value is None or _normalize(target[name], value) != target[name]:
             mismatches.append(name)
 
     enabled = service_is_enabled(service_name, timeout)
@@ -168,11 +161,11 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=True, changed=False, message="already configured")
 
     changed = False
-    for name in PARAM_ORDER:
+    for name in cfg.parameter_names:
         if force or name in mismatches:
-            _log(f"writing {PARAM_PATHS[name]}: {target[name]}")
+            _log(f"writing {paths[name]}: {target[name]}")
             try:
-                _write_sysfs(PARAM_PATHS[name], target[name])
+                _write_sysfs(paths[name], target[name])
             except OSError as exc:
                 return TaskResult(success=False, error=f"cannot write {name}: {exc}")
             changed = True
@@ -180,9 +173,9 @@ def task(ctx: Context) -> TaskResult:
     if changed:
         _log("verifying zswap parameters")
         problems: list[str] = []
-        for name in PARAM_ORDER:
-            value = _read_value(PARAM_PATHS[name])
-            if value is None or _normalize(name, value) != target[name]:
+        for name in cfg.parameter_names:
+            value = _read_value(paths[name])
+            if value is None or _normalize(target[name], value) != target[name]:
                 problems.append(f"{name} mismatch")
         if problems:
             return TaskResult(success=False, changed=True, error="; ".join(problems))
@@ -191,10 +184,13 @@ def task(ctx: Context) -> TaskResult:
     if not enabled:
         changed = True
 
-    template_path = task_data_dir(ctx.repo_root, ctx.task_name) / "zswap.service"
+    template_path = (
+        task_data_dir(ctx.repo_root, ctx.task_name)
+        / cfg.unit_template_file_name
+    )
     _log(f"rendering unit template from {template_path}")
     try:
-        content = _render_unit(template_path, target)
+        content = _render_unit(template_path, target, paths)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"

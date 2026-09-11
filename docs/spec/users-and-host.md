@@ -31,10 +31,10 @@ The zram_service task configures the devices immediately and installs a systemd 
 ## Zswap
 
 Zswap is a compressed cache for swap pages: pages that are being swapped out are compressed into a RAM pool before they reach the backing swapfile, trading CPU cycles for reduced swap I/O.
-The zswap_service task writes the parameters into /sys/module/zswap/parameters immediately and installs a systemd oneshot service that repeats the writes at every boot.
+The zswap_service task writes the parameters into the kernel attribute directory named by parameters_dir_path immediately and installs a systemd oneshot service that repeats the writes at every boot.
 Zswap requires a backing swap device, so the task depends on swapfile_service_install.
 
-The values are aggressive, matching the ZRAM philosophy. All parameters live in the [zswap_service] table of the config/ directory: compressor, max_pool_percent, accept_threshold_percent, shrinker_enabled and the service unit name.
+The values are aggressive, matching the ZRAM philosophy. All parameters live in the [zswap_service] table of the config/ directory: parameters_dir_path, the parameter_names list in the order the task writes them, and the value of every name as the key of the same name (enabled, compressor, max_pool_percent, accept_threshold_percent, shrinker_enabled), plus the unit template name and the service unit name. A parameter the kernel drops is removed from parameter_names; a boolean key is written as the Y/N spelling the attributes report.
 
 ## Swap file
 

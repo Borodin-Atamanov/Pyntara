@@ -4463,6 +4463,19 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
         max_pool_percent=max_pool_percent,
         accept_threshold_percent=accept_threshold_percent,
         shrinker_enabled=shrinker_enabled,
+        parameters_dir_path=Path(
+            _nonempty_string_field(
+                raw.get("parameters_dir_path"),
+                "zswap_service.parameters_dir_path",
+            )
+        ),
+        parameter_names=_string_list(
+            raw.get("parameter_names"), "zswap_service.parameter_names"
+        ),
+        unit_template_file_name=_nonempty_string_field(
+            raw.get("unit_template_file_name"),
+            "zswap_service.unit_template_file_name",
+        ),
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"), "zswap_service.service_unit_name"
         ),
