@@ -36,3 +36,13 @@ All parameters live in the [rustdesk_setup] table of the config/ directory. The 
 
 github_repo - the owner and name pair of the release repository the deb comes from
 asset_name_template - the name of the release asset with {version} and {asset_arch} substituted; the architecture part comes from the engine mapping release_asset_architectures, because every task that downloads a release asset maps the dpkg architecture the same way
+version_check_command - the client version query
+machine_id_command - the client machine ID query
+get_option_command - the option read, with {key}
+set_option_command - the option write, with {key} and {value}
+set_password_command - the permanent password write, with {password}; the command is never logged
+service_stop_command - the stop of the service unit, with {service_unit_name}
+service_enable_command - the enable of the unit
+service_start_command - the start of the unit
+identity_file_name - the identity file inside config_dir that force mode removes to regenerate the machine ID
+readiness_probe_timeout_seconds - seconds one machine ID probe may take inside the readiness loop

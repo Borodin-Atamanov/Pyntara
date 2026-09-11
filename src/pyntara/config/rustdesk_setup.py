@@ -36,8 +36,14 @@ class RustdeskSetupConfig:
     rustdesk systemd unit;
     password_words and password_separator define the generated permanent
     password; config_dir is the rustdesk client configuration directory of
-    the primary desktop user, whose identity file force mode removes to
-    regenerate the machine ID; install_timeout_seconds,
+    the primary desktop user, whose identity file identity_file_name force
+    mode removes to regenerate the machine ID. The client is driven through
+    the configured commands: version_check_command, machine_id_command,
+    get_option_command and set_option_command (each with the option key and
+    value substituted) and set_password_command; service_stop_command,
+    service_enable_command and service_start_command carry the service unit
+    name, and readiness_probe_timeout_seconds bounds one machine ID probe
+    inside the readiness loop. install_timeout_seconds,
     apt_update_timeout_seconds and install_retries bound the deb install;
     start_check_attempts and start_check_retry_delay_seconds are the
     readiness loop after the service start; options are the client
@@ -47,6 +53,16 @@ class RustdeskSetupConfig:
 
     github_repo: str
     asset_name_template: str
+    version_check_command: tuple[str, ...]
+    machine_id_command: tuple[str, ...]
+    get_option_command: tuple[str, ...]
+    set_option_command: tuple[str, ...]
+    set_password_command: tuple[str, ...]
+    service_stop_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]
+    service_start_command: tuple[str, ...]
+    identity_file_name: str
+    readiness_probe_timeout_seconds: int
     download_dir: Path
     id_file_path: Path
     id_file_mode: int

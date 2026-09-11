@@ -496,6 +496,16 @@ def base_config() -> str:
         "[rustdesk_setup]\n"
         'github_repo = "rustdesk/rustdesk"\n'
         'asset_name_template = "rustdesk-{version}-{asset_arch}.deb"\n'
+        'version_check_command = ["rustdesk", "--version"]\n'
+        'machine_id_command = ["rustdesk", "--get-id"]\n'
+        'get_option_command = ["rustdesk", "--option", "{key}"]\n'
+        'set_option_command = ["rustdesk", "--option", "{key}", "{value}"]\n'
+        'set_password_command = ["rustdesk", "--password", "{password}"]\n'
+        'service_stop_command = ["systemctl", "stop", "{service_unit_name}"]\n'
+        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
+        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
+        'identity_file_name = "RustDesk.toml"\n'
+        "readiness_probe_timeout_seconds = 5\n"
         'download_dir = "/var/cache/pyntara/rustdesk"\n'
         'id_file_path = "/var/lib/pyntara/rustdesk_id"\n'
         'id_file_mode = "0644"\n'

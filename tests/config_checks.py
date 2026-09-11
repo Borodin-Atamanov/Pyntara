@@ -1967,6 +1967,46 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
         raw.get("asset_name_template"),
         "rustdesk_setup.asset_name_template",
     )
+    version_check_command = _string_list(
+        raw.get("version_check_command"),
+        "rustdesk_setup.version_check_command",
+    )
+    machine_id_command = _string_list(
+        raw.get("machine_id_command"),
+        "rustdesk_setup.machine_id_command",
+    )
+    get_option_command = _string_list(
+        raw.get("get_option_command"),
+        "rustdesk_setup.get_option_command",
+    )
+    set_option_command = _string_list(
+        raw.get("set_option_command"),
+        "rustdesk_setup.set_option_command",
+    )
+    set_password_command = _string_list(
+        raw.get("set_password_command"),
+        "rustdesk_setup.set_password_command",
+    )
+    service_stop_command = _string_list(
+        raw.get("service_stop_command"),
+        "rustdesk_setup.service_stop_command",
+    )
+    service_enable_command = _string_list(
+        raw.get("service_enable_command"),
+        "rustdesk_setup.service_enable_command",
+    )
+    service_start_command = _string_list(
+        raw.get("service_start_command"),
+        "rustdesk_setup.service_start_command",
+    )
+    identity_file_name = _nonempty_string_field(
+        raw.get("identity_file_name"),
+        "rustdesk_setup.identity_file_name",
+    )
+    readiness_probe_timeout_seconds = _positive_int_field(
+        raw.get("readiness_probe_timeout_seconds"),
+        "rustdesk_setup.readiness_probe_timeout_seconds",
+    )
     download_dir = raw.get("download_dir")
     if not isinstance(download_dir, str):
         raise ConfigError("rustdesk_setup.download_dir must be a string")
@@ -1994,6 +2034,16 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
     return RustdeskSetupConfig(
         github_repo=github_repo,
         asset_name_template=asset_name_template,
+        version_check_command=version_check_command,
+        machine_id_command=machine_id_command,
+        get_option_command=get_option_command,
+        set_option_command=set_option_command,
+        set_password_command=set_password_command,
+        service_stop_command=service_stop_command,
+        service_enable_command=service_enable_command,
+        service_start_command=service_start_command,
+        identity_file_name=identity_file_name,
+        readiness_probe_timeout_seconds=readiness_probe_timeout_seconds,
         download_dir=Path(download_dir),
         id_file_path=Path(id_file_path),
         id_file_mode=_octal_mode_field(

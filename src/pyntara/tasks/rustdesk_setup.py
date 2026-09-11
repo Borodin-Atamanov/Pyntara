@@ -58,6 +58,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
 )
 
 # The rustdesk --version output is a bare dotted triple, e.g. 1.4.9.
@@ -97,7 +98,7 @@ def _select_asset(
     return (name, url) if url else None
 
 
-def _installed_version(timeout: float) -> str | None:
+def _installed_version(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
     """The installed rustdesk version from rustdesk --version, or None.
 
     A missing binary, a nonzero exit or a hang means rustdesk is not
@@ -108,7 +109,7 @@ def _installed_version(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["rustdesk", "--version"],
+            cfg.version_check_command,
             check=False,
             capture=True,
             timeout=timeout,
@@ -207,7 +208,7 @@ def _cleanup_download(download_dir: Path, name: str) -> None:
         pass
 
 
-def _machine_id(timeout: float) -> str | None:
+def _machine_id(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
     """The machine RustDesk ID from rustdesk --get-id, or None.
 
     The command needs the running rustdesk daemon, so it may return None
@@ -216,7 +217,7 @@ def _machine_id(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["rustdesk", "--get-id"],
+            cfg.machine_id_command,
             check=False,
             capture=True,
             timeout=timeout,
@@ -228,7 +229,7 @@ def _machine_id(timeout: float) -> str | None:
     return result.stdout.strip()
 
 
-def _get_option(key: str, timeout: float) -> str | None:
+def _get_option(cfg: RustdeskSetupConfig, key: str, timeout: float) -> str | None:
     """The current value of a rustdesk option, or None.
 
     A missing value or a failed query means the option is not set, so the
@@ -237,7 +238,7 @@ def _get_option(key: str, timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["rustdesk", "--option", key],
+            substituted_command(cfg.get_option_command, {"key": key}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -249,12 +250,16 @@ def _get_option(key: str, timeout: float) -> str | None:
     return result.stdout.strip()
 
 
-def _set_option(key: str, value: str, timeout: float) -> bool:
+def _set_option(
+    cfg: RustdeskSetupConfig, key: str, value: str, timeout: float
+) -> bool:
     """Set one rustdesk option through rustdesk --option; True on success."""
 
     try:
         run_command(
-            ["rustdesk", "--option", key, value],
+            substituted_command(
+                cfg.set_option_command, {"key": key, "value": value}
+            ),
             check=True,
             capture=True,
             timeout=timeout,
@@ -274,17 +279,19 @@ def _apply_options(cfg: RustdeskSetupConfig, timeout: float) -> tuple[bool, str]
 
     changed = False
     for option in cfg.options:
-        current = _get_option(option.key, timeout)
+        current = _get_option(cfg, option.key, timeout)
         if current == option.value:
             continue
-        if not _set_option(option.key, option.value, timeout):
+        if not _set_option(cfg, option.key, option.value, timeout):
             return False, f"cannot set rustdesk option {option.key}"
         _log(f"set rustdesk option {option.key} to {option.value!r}")
         changed = True
     return changed, ""
 
 
-def _set_password(password: str, timeout: float) -> tuple[bool, str]:
+def _set_password(
+    cfg: RustdeskSetupConfig, password: str, timeout: float
+) -> tuple[bool, str]:
     """Set the permanent rustdesk password; return (success, error_text).
 
     The password is a secret, so the command is never logged
@@ -293,7 +300,9 @@ def _set_password(password: str, timeout: float) -> tuple[bool, str]:
 
     try:
         run_command(
-            ["rustdesk", "--password", password],
+            substituted_command(
+                cfg.set_password_command, {"password": password}
+            ),
             check=True,
             capture=True,
             timeout=timeout,
@@ -414,7 +423,7 @@ def _reset_identity(cfg: RustdeskSetupConfig) -> None:
     after the service is stopped.
     """
 
-    identity_path = cfg.config_dir / "RustDesk.toml"
+    identity_path = cfg.config_dir / cfg.identity_file_name
     try:
         identity_path.unlink()
         _log("force: removed the rustdesk identity file")
@@ -432,7 +441,7 @@ def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
     """
 
     for _ in range(cfg.start_check_attempts):
-        if _machine_id(min(timeout, 5.0)):
+        if _machine_id(cfg, min(timeout, cfg.readiness_probe_timeout_seconds)):
             return True
         time.sleep(cfg.start_check_retry_delay_seconds)
     return False
@@ -472,7 +481,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest rustdesk release: {tag}")
 
-    installed = _installed_version(timeout)
+    installed = _installed_version(cfg, timeout)
     _log(f"checking installed rustdesk version: {installed or 'not installed'}")
 
     if installed != tag:
@@ -530,7 +539,10 @@ def task(ctx: Context) -> TaskResult:
     # remove the identity file, then start it again below.
     if force:
         run_command(
-            ["systemctl", "stop", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_stop_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             check=False,
             timeout=timeout,
         )
@@ -542,7 +554,10 @@ def task(ctx: Context) -> TaskResult:
     if not enabled:
         _log(f"enabling service {cfg.service_unit_name}")
         run_command(
-            ["systemctl", "enable", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_enable_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             check=True,
             timeout=timeout,
         )
@@ -550,7 +565,10 @@ def task(ctx: Context) -> TaskResult:
     if not active:
         _log(f"starting service {cfg.service_unit_name}")
         run_command(
-            ["systemctl", "start", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_start_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             check=True,
             timeout=timeout,
         )
@@ -568,7 +586,7 @@ def task(ctx: Context) -> TaskResult:
     # once after the daemon answers and feeds both the vault entry and
     # the ID file below. A missing ID still lets the password be stored,
     # and the run reports the warning after it.
-    machine_id = _machine_id(timeout)
+    machine_id = _machine_id(cfg, timeout)
 
     options_changed, options_error = _apply_options(cfg, timeout)
     if options_error:
@@ -588,7 +606,7 @@ def task(ctx: Context) -> TaskResult:
             warnings=(password_warning or "rustdesk password unavailable",),
         )
     _log("applying the permanent rustdesk password")
-    ok, password_error = _set_password(password, timeout)
+    ok, password_error = _set_password(cfg, password, timeout)
     if not ok:
         return TaskResult(
             success=True,

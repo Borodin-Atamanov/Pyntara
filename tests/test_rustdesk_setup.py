@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -265,6 +266,45 @@ def test_installs_missing_release(
     assert result.changed is True
     assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
     assert not (config.rustdesk_setup.download_dir / ASSET_NAME).exists()
+
+
+def test_client_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another command set in the config is the argv the task runs: the
+    # option query and write carry their key and value as data, and the
+    # service commands carry the unit name, so the client interface is a
+    # config value and not code.
+    options = (RustdeskOptionConfig(key="enable-udp-punch", value="Y"),)
+    config = replace(
+        _config(tmp_path=tmp_path, options=options),
+        rustdesk_setup=replace(
+            _config(tmp_path=tmp_path).rustdesk_setup,
+            options=options,
+            get_option_command=("rustdesk", "--query", "{key}"),
+            set_option_command=("rustdesk", "--apply", "{key}", "{value}"),
+            service_start_command=(
+                "systemctl",
+                "--user",
+                "start",
+                "{service_unit_name}",
+            ),
+        ),
+    )
+    calls = _fake_run(
+        monkeypatch, installed_version=RELEASE_TAG, service_active=False
+    )
+    _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert ["rustdesk", "--query", "enable-udp-punch"] in calls
+    assert ["rustdesk", "--apply", "enable-udp-punch", "Y"] in calls
+    assert [
+        "systemctl",
+        "--user",
+        "start",
+        config.rustdesk_setup.service_unit_name,
+    ] in calls
 
 
 def test_no_asset_for_unknown_architecture_fails(

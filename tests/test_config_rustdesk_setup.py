@@ -28,6 +28,55 @@ from pyntara.config import RustdeskOptionConfig
             'asset_name_template = "rustdesk-{version}-{asset_arch}.deb"',
             'asset_name_template = ""',
         ),
+        # version_check_command is an empty array
+        base_config().replace(
+            'version_check_command = ["rustdesk", "--version"]',
+            "version_check_command = []",
+        ),
+        # machine_id_command is a string, not an array
+        base_config().replace(
+            'machine_id_command = ["rustdesk", "--get-id"]',
+            'machine_id_command = "rustdesk --get-id"',
+        ),
+        # get_option_command holds an empty argument
+        base_config().replace(
+            'get_option_command = ["rustdesk", "--option", "{key}"]',
+            'get_option_command = ["rustdesk", ""]',
+        ),
+        # set_option_command is an empty array
+        base_config().replace(
+            'set_option_command = ["rustdesk", "--option", "{key}", "{value}"]',
+            "set_option_command = []",
+        ),
+        # set_password_command is an empty array
+        base_config().replace(
+            'set_password_command = ["rustdesk", "--password", "{password}"]',
+            "set_password_command = []",
+        ),
+        # service_stop_command is an empty array
+        base_config().replace(
+            'service_stop_command = ["systemctl", "stop", "{service_unit_name}"]',
+            "service_stop_command = []",
+        ),
+        # service_enable_command is an empty array
+        base_config().replace(
+            'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]',
+            "service_enable_command = []",
+        ),
+        # service_start_command is an empty array
+        base_config().replace(
+            'service_start_command = ["systemctl", "start", "{service_unit_name}"]',
+            "service_start_command = []",
+        ),
+        # identity_file_name is an empty string
+        base_config().replace(
+            'identity_file_name = "RustDesk.toml"', 'identity_file_name = ""'
+        ),
+        # readiness_probe_timeout_seconds is zero
+        base_config().replace(
+            "readiness_probe_timeout_seconds = 5",
+            "readiness_probe_timeout_seconds = 0",
+        ),
         # download_dir is a number, not a string
         base_config().replace(
             'download_dir = "/var/cache/pyntara/rustdesk"\n',
