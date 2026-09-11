@@ -256,9 +256,11 @@ def task(ctx: Context) -> TaskResult:
     drop-in, verifies the configuration with tor --verify-config,
     prepares the hidden service directory, enables the service, starts
     or restarts it and waits for it to become active. The onion address
-    is read from the hostname file and reported; before the first start
-    created the file the message says the address appears after the
-    first start. Every step is reported to stdout: measurements and
+    is read from the hostname file and reported together with the
+    configured virtual port, so the user of the machine knows how to
+    connect; before the first start created the file the message says
+    the address appears after the first start and still names the
+    virtual port. Every step is reported to stdout: measurements and
     decisions as single lines that include their result, long-running
     commands as a line before and a line after. Any failure is returned
     as an error TaskResult: the runner continues with the remaining
@@ -458,15 +460,20 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     if address:
-        _log(f"SSH onion address: {address}")
+        _log(
+            f"SSH onion address: {address} "
+            f"(virtual port {cfg.onion_ssh_port})"
+        )
         message = (
             f"tor {cfg.package_name} installed, service {cfg.service_unit_name} "
-            f"active, SSH onion address {address}"
+            f"active, SSH onion address {address}, "
+            f"virtual port {cfg.onion_ssh_port}"
         )
     else:
         message = (
             f"tor {cfg.package_name} installed, service {cfg.service_unit_name} "
-            "active, SSH onion address appears after the first start"
+            "active, SSH onion address appears after the first start, "
+            f"virtual port {cfg.onion_ssh_port}"
         )
 
     return TaskResult(success=True, changed=changed, message=message)

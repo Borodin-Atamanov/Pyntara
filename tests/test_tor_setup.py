@@ -228,6 +228,7 @@ def test_installs_and_starts(
     assert ["systemctl", "enable", "tor@default.service"] in calls
     assert ["systemctl", "start", "tor@default.service"] in calls
     cfg = ctx.config.tor_setup
+    assert f"virtual port {cfg.onion_ssh_port}" in (result.message or "")
     assert cfg.torrc_dropin_path.is_file()
     assert f"%include {cfg.torrc_include_path}" in cfg.torrc_path.read_text(
         encoding="utf-8"
@@ -358,6 +359,10 @@ def test_first_start_reports_address_appears_later(
     assert result.success is True
     assert result.changed is True
     assert "appears after the first start" in (result.message or "")
+    assert (
+        f"virtual port {ctx.config.tor_setup.onion_ssh_port}"
+        in (result.message or "")
+    )
     assert not ctx.config.tor_setup.address_file_path.exists()
 
 

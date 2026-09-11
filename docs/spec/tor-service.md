@@ -19,7 +19,7 @@ HiddenServiceVersion 3 — the onion service protocol version.
 HiddenServiceNumIntroductionPoints {num_introduction_points} — how many introduction points the service maintains; more points keep the service reachable while some of them are under attack, at the cost of more keepalive traffic.  
 HiddenServicePort {onion_ssh_port} 127.0.0.1:{ssh_port} — the virtual port clients connect to, forwarding to the local SSH daemon.
 
-The local ssh port is not a parameter anywhere: the task reads the sshd Port directive from the ssh_daemon_setup configuration through the shared reader in pyntara.ssh, the same helper the i2pd task uses. The service and the daemon therefore share one source of truth and can never diverge. The forward host is the loopback address, because the daemon runs on the same machine and the service connects locally. The virtual port is a separate entity owned by this task: it defines what a client connects to on the .onion address, not where the daemon listens, so Port 22 is not a duplication.
+The local ssh port is not a parameter anywhere: the task reads the sshd Port directive from the ssh_daemon_setup configuration through the shared reader in pyntara.ssh, the same helper the i2pd task uses. The service and the daemon therefore share one source of truth and can never diverge. The forward host is the loopback address, because the daemon runs on the same machine and the service connects locally. The virtual port is a separate entity owned by this task: it defines what a client connects to on the .onion address, not where the daemon listens, so its value is a choice of this task and not a copy of the local sshd port. A client always passes the value explicitly with -p, because it is configured and no client may rely on a default.
 
 After a change of the drop-in or the include line the task verifies the whole configuration with tor --verify-config, which parses the main file and every included file and exits nonzero on an invalid option or a conflicting value. The check is independent of the Tor version and of the files the task does not own, so a directive the running Tor does not know is reported as an error instead of being silently accepted.
 
@@ -52,16 +52,17 @@ All parameters live in the [tor_setup] table of the config/ directory.
 An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1 at socks_port of the [tor_setup] table, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
 
 ```bash
-ssh -v -p 22 -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" <user>@<address>.onion
+ssh -v -p <onion_ssh_port> -o ProxyCommand="nc -X 5 -x 127.0.0.1:<socks_port> %h %p" <user>@<address>.onion
 ```
 
-The virtual port is onion_ssh_port (22 by default), and the network telemetry writes it in the command, so a reader never has to know the default; the telemetry carries the same invocation without a user, because the operator chooses the user and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
+The placeholders are the configured virtual port and the configured SOCKS port of the [tor_setup] table, so the example carries no value to remember and each port keeps one home; the network telemetry writes the same invocation with the values, and without a user, because the operator chooses the user and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
 ```text
 Host <alias>
 HostName <address>.onion
 User <user>
-ProxyCommand nc -X 5 -x 127.0.0.1:9050 %h %p
+Port <onion_ssh_port>
+ProxyCommand nc -X 5 -x 127.0.0.1:<socks_port> %h %p
 ```
 
 The client must offer the deployed key; on the target machine the key is loaded once with ssh-add and the agent keeps it for the session. The connection is noticeably slower than the cleartext one, because the traffic crosses the Tor network in both directions, so the client timeouts from ssh_client_setup apply.

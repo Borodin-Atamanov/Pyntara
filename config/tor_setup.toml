@@ -47,8 +47,11 @@ tor_user = "debian-tor"
 # routes its SSH connection through it to reach the onion address.
 socks_port = 9050
 # Virtual port of the onion service: the port a client connects to on
-# the .onion address. Port 22 lets a client omit -p.
-onion_ssh_port = 22
+# the .onion address, never a default a client may omit, so a client
+# always passes it explicitly with -p. The value matches the sshd
+# listen port and the i2pd SSH tunnel, so the same port number reaches
+# SSH on every path; it is deliberately not the standard port.
+onion_ssh_port = 30222
 # Number of introduction points of the onion service; more points keep
 # the service reachable while some of them are under attack, at the
 # cost of more keepalive traffic.
