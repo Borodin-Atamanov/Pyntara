@@ -49,6 +49,7 @@ class EngineConfig:
     github_latest_release_url: str
     github_release_download_url: str
     release_asset_architectures: dict[str, str]
+    partial_download_file_suffix: str
     system_python: str
     journal_identifier: str
     root_owner_uid: int

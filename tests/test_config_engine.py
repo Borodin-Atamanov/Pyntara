@@ -104,6 +104,11 @@ from config_helpers import (
             'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }',
             'release_asset_architectures = { amd64 = "" }',
         ),
+        # partial_download_file_suffix is an empty string
+        base_config().replace(
+            'partial_download_file_suffix = ".download"',
+            'partial_download_file_suffix = ""',
+        ),
         # desktop_detect_processes is a string, not an array
         base_config().replace(
             'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',

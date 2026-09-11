@@ -8,7 +8,7 @@ The described goal needs the latest version and auto-update. The official static
 
 ## Release resolution and install
 
-The configured latest_url is the official download link. A request to it answers a redirect to the archive of the newest release, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. Nothing about the name or the format of the archive is assumed: the cache file is named by the basename of the resolved url as is, and tar extracts the archive and detects the compression by itself, so a changed Telegram naming or archive format needs no code change. The download goes to a sibling file with the configured partial_download_file_suffix and is renamed only after a successful transfer, so a cached archive name always means a complete archive.
+The configured latest_url is the official download link. A request to it answers a redirect to the archive of the newest release, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. Nothing about the name or the format of the archive is assumed: the cache file is named by the basename of the resolved url as is, and tar extracts the archive and detects the compression by itself, so a changed Telegram naming or archive format needs no code change. partial_download_file_suffix is the engine-wide suffix of a half written download, and the download goes to a sibling file with it before it is renamed only after a successful transfer, so a cached archive name always means a complete archive.
 
 The archive carries two files under the configured archive_directory_name: the binary named by binary_file_name and the updater named by updater_file_name. The task extracts the archive to a temporary directory named by the configured extract_dir_prefix and copies each file into the install directory under the desktop user home when it differs from what is already there. The install directory and its files are owned by the desktop user, which is exactly what the built-in updater needs: it replaces the two files in place when it applies a release.
 
@@ -49,7 +49,6 @@ icon_relative_path - the icon under that home, .local/share/icons/telegram-deskt
 binary_file_name - the client binary name, both inside the archive and inside the install directory
 updater_file_name - the updater binary name, the second file the archive carries
 archive_directory_name - the directory inside the extracted archive that holds the two binaries
-partial_download_file_suffix - the suffix of the file a download is written to before it is renamed to the final archive name
 extract_dir_prefix - the prefix of the temporary directory the archive is unpacked into
 launcher_template_file_name - the launcher entry template under task_data/telegram_setup/ of the clone, with $binary and $icon as its placeholders
 launcher_file_mode - the mode of the written launcher entry

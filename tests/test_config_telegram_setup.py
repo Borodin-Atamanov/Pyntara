@@ -94,11 +94,6 @@ from config_helpers import (
             'archive_directory_name = "Telegram"',
             'archive_directory_name = ""',
         ),
-        # partial_download_file_suffix is empty
-        base_config().replace(
-            'partial_download_file_suffix = ".download"',
-            'partial_download_file_suffix = ""',
-        ),
         # extract_dir_prefix is empty
         base_config().replace(
             'extract_dir_prefix = "pyntara-telegram-"',
@@ -131,7 +126,6 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'binary_file_name = "Telegram"\n'
         'updater_file_name = "Updater"\n'
         'archive_directory_name = "Telegram"\n'
-        'partial_download_file_suffix = ".download"\n'
         'extract_dir_prefix = "pyntara-telegram-"\n'
         'launcher_template_file_name = "telegramdesktop.desktop"\n'
         'launcher_file_mode = "0644"\n'

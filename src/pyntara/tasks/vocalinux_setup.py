@@ -268,7 +268,9 @@ def _install_appimage(
     install_dir.mkdir(parents=True, exist_ok=True)
     if not cache.is_file():
         cache.parent.mkdir(parents=True, exist_ok=True)
-        partial = cfg.download_dir / (asset_name + ".download")
+        partial = cfg.download_dir / (
+            asset_name + engine.partial_download_file_suffix
+        )
         try:
             run_command(
                 [

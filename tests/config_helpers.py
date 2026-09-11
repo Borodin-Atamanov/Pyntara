@@ -37,6 +37,7 @@ def base_config() -> str:
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
         'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
         'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }\n'
+        'partial_download_file_suffix = ".download"\n'
         'system_python = "/usr/bin/python3"\n'
         'journal_identifier = "pyntara-engine"\n'
         "root_owner_uid = 0\nroot_owner_gid = 0\n"
@@ -518,7 +519,6 @@ def base_config() -> str:
         'binary_file_name = "Telegram"\n'
         'updater_file_name = "Updater"\n'
         'archive_directory_name = "Telegram"\n'
-        'partial_download_file_suffix = ".download"\n'
         'extract_dir_prefix = "pyntara-telegram-"\n'
         'launcher_template_file_name = "telegramdesktop.desktop"\n'
         'launcher_file_mode = "0644"\nicon_file_mode = "0644"\nexecutable_file_mode = "0755"\n'

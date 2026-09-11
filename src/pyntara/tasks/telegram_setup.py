@@ -36,7 +36,7 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import TelegramSetupConfig
+from pyntara.config import EngineConfig, TelegramSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -90,20 +90,14 @@ def _cache_name(url: str) -> str:
     return url.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _resolve_latest_url(
-    latest_url: str,
-    timeout: float,
-    curl_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
-) -> str:
+def _resolve_latest_url(engine: EngineConfig, latest_url: str) -> str:
     """The download url the latest_url redirect resolves to.
 
     A HEAD request follows the redirect chain and reports the final url
     through --write-out, so the newest release is discovered without
-    downloading the archive. Raises RuntimeError when the request fails.
+    downloading the archive. The retry bounds come from the engine table,
+    so the download settings live in one place. Raises RuntimeError when
+    the request fails.
     """
 
     result = run_command(
@@ -119,13 +113,17 @@ def _resolve_latest_url(
             "--write-out",
             "%{url_effective}",
             *curl_flags(
-                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
+                engine.curl_timeout_seconds,
+                engine.curl_retries,
+                engine.curl_connect_timeout_seconds,
+                engine.curl_retry_max_time_seconds,
+                engine.curl_retry_delay_seconds,
             ),
             latest_url,
         ],
         check=False,
         capture=True,
-        timeout=timeout,
+        timeout=engine.command_timeout_seconds,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -138,25 +136,20 @@ def _resolve_latest_url(
 
 
 def _download_archive(
+    engine: EngineConfig,
     cfg: TelegramSetupConfig,
     url: str,
     name: str,
-    timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> None:
     """Download the archive into download_dir under its final name.
 
-    The download goes to a sibling file with the configured suffix first
-    and is renamed only after a successful transfer, so a cached archive
-    name always means a complete archive. Raises RuntimeError on failure.
+    The download goes to a sibling file with the engine suffix first and
+    is renamed only after a successful transfer, so a cached archive name
+    always means a complete archive. Raises RuntimeError on failure.
     """
 
     cfg.download_dir.mkdir(parents=True, exist_ok=True)
-    partial = cfg.download_dir / (name + cfg.partial_download_file_suffix)
+    partial = cfg.download_dir / (name + engine.partial_download_file_suffix)
     try:
         run_command(
             [
@@ -169,15 +162,15 @@ def _download_archive(
                 "--write-out",
                 CURL_DOWNLOAD_WRITE_OUT,
                 *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
+                    engine.curl_download_timeout_seconds,
+                    engine.curl_retries,
+                    engine.curl_connect_timeout_seconds,
+                    engine.curl_retry_max_time_seconds,
+                    engine.curl_retry_delay_seconds,
                 ),
                 url,
             ],
-            timeout=timeout,
+            timeout=engine.command_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
@@ -305,13 +298,8 @@ def _ensure_launcher(
 
 
 def _ensure_icon(
+    engine: EngineConfig,
     cfg: TelegramSetupConfig,
-    timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> tuple[bool, str | None]:
     """Download the configured icon when missing; return (changed, error).
 
@@ -334,15 +322,15 @@ def _ensure_icon(
                 "--output",
                 str(path),
                 *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
+                    engine.curl_download_timeout_seconds,
+                    engine.curl_retries,
+                    engine.curl_connect_timeout_seconds,
+                    engine.curl_retry_max_time_seconds,
+                    engine.curl_retry_delay_seconds,
                 ),
                 cfg.icon_url,
             ],
-            timeout=timeout,
+            timeout=engine.command_timeout_seconds,
         )
         path.chmod(cfg.icon_file_mode)
         _own_to_user(cfg.username, path)
@@ -368,13 +356,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.telegram_setup
-    timeout = ctx.config.engine.command_timeout_seconds
-    curl_timeout = ctx.config.engine.curl_timeout_seconds
-    download_timeout = ctx.config.engine.curl_download_timeout_seconds
-    curl_retries = ctx.config.engine.curl_retries
-    retry_delay = ctx.config.engine.curl_retry_delay_seconds
-    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
-    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
+    engine = ctx.config.engine
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
@@ -386,15 +368,7 @@ def task(ctx: Context) -> TaskResult:
     paths = _install_paths(cfg)
 
     try:
-        url = _resolve_latest_url(
-            cfg.latest_url,
-            timeout,
-            curl_timeout,
-            curl_retries,
-            connect_timeout,
-            retry_max_time,
-            retry_delay,
-        )
+        url = _resolve_latest_url(engine, cfg.latest_url)
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
     name = _cache_name(url)
@@ -414,22 +388,12 @@ def task(ctx: Context) -> TaskResult:
         if not archive.is_file():
             _log(f"downloading Telegram Desktop release {name}")
             try:
-                _download_archive(
-                    cfg,
-                    url,
-                    name,
-                    timeout,
-                    download_timeout,
-                    curl_retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
-                )
+                _download_archive(engine, cfg, url, name)
             except RuntimeError as exc:
                 return TaskResult(success=False, changed=changed, error=str(exc))
         _log(f"installing Telegram Desktop release {name}")
         try:
-            _install_archive(cfg, archive, timeout)
+            _install_archive(cfg, archive, engine.command_timeout_seconds)
         except RuntimeError as exc:
             return TaskResult(success=False, changed=changed, error=str(exc))
         _cleanup_old_archives(cfg.download_dir, name)
@@ -445,15 +409,7 @@ def task(ctx: Context) -> TaskResult:
         )
         changed = True
 
-    icon_changed, icon_error = _ensure_icon(
-        cfg,
-        timeout,
-        download_timeout,
-        curl_retries,
-        connect_timeout,
-        retry_max_time,
-        retry_delay,
-    )
+    icon_changed, icon_error = _ensure_icon(engine, cfg)
     if icon_error:
         warnings.append(icon_error)
     if icon_changed:

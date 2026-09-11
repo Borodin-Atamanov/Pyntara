@@ -214,7 +214,9 @@ def test_install_downloads_and_installs_latest(
     archive = tmp_path / "cache" / ARCHIVE_NAME
     assert archive.is_file()
     assert not (
-        tmp_path / "cache" / (ARCHIVE_NAME + settings.partial_download_file_suffix)
+        tmp_path
+        / "cache"
+        / (ARCHIVE_NAME + _test_config(tmp_path).engine.partial_download_file_suffix)
     ).exists()
     assert any(call[0] == "tar" for call in calls)
 
@@ -318,7 +320,6 @@ def test_configured_names_decide_what_is_installed(
         binary_file_name="telegram-desktop",
         updater_file_name="upgrade-helper",
         archive_directory_name="telegram-archive",
-        partial_download_file_suffix=".partial",
     )
     _fake_run_factory(monkeypatch, tmp_path, settings=settings)
     ctx = replace(
@@ -333,9 +334,8 @@ def test_configured_names_decide_what_is_installed(
     assert f"Exec={binary}" in launcher.read_text(encoding="utf-8")
     assert icon.read_bytes() == ICON_BYTES
     assert (tmp_path / "cache" / ARCHIVE_NAME).is_file()
-    assert not (
-        tmp_path / "cache" / (ARCHIVE_NAME + settings.partial_download_file_suffix)
-    ).exists()
+    suffix = _test_config(tmp_path).engine.partial_download_file_suffix
+    assert not (tmp_path / "cache" / (ARCHIVE_NAME + suffix)).exists()
 
 
 def test_icon_failure_is_a_warning_when_install_is_current(

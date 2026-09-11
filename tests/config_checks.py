@@ -787,6 +787,10 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("release_asset_architectures"),
             "engine.release_asset_architectures",
         ),
+        partial_download_file_suffix=_nonempty_string_field(
+            raw.get("partial_download_file_suffix"),
+            "engine.partial_download_file_suffix",
+        ),
         system_python=_nonempty_string_field(
             raw.get("system_python"), "engine.system_python"
         ),
@@ -2821,10 +2825,6 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
         archive_directory_name=_nonempty_string_field(
             raw.get("archive_directory_name"),
             "telegram_setup.archive_directory_name",
-        ),
-        partial_download_file_suffix=_nonempty_string_field(
-            raw.get("partial_download_file_suffix"),
-            "telegram_setup.partial_download_file_suffix",
         ),
         extract_dir_prefix=_nonempty_string_field(
             raw.get("extract_dir_prefix"),

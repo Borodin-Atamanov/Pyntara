@@ -41,10 +41,6 @@ updater_file_name = "Updater"
 # Name of the directory inside the extracted archive that holds the two
 # binaries.
 archive_directory_name = "Telegram"
-# Suffix of the partial download file next to the cached archive; the file
-# is renamed to the final name only after a complete transfer, so a cached
-# archive name always means a complete archive.
-partial_download_file_suffix = ".download"
 # Prefix of the temporary directory the archive is extracted to.
 extract_dir_prefix = "pyntara-telegram-"
 # Launcher entry template under task_data/telegram_setup/ of the clone,
