@@ -666,18 +666,25 @@ class TestPortFreeing:
 
 
 def test_repository_root_is_computed_once() -> None:
-    # The root of the clone is computed in utils.py and imported by every
-    # module that reads a shipped file. A module that computes its own copy
-    # is one more place to change and points elsewhere as soon as the file
-    # moves, so the suite refuses the second copy.
+    # The root of the clone is computed in utils.py and read once by the
+    # composition root, which puts it into the Context; a task reads it from
+    # there. A module that computes its own copy, or imports the constant
+    # instead of reading the context, is one more place to change and points
+    # elsewhere as soon as the file moves, so the suite refuses both.
     src_root = Path(utils.__file__).resolve().parent
     duplicated: list[str] = []
+    imported: list[str] = []
     for path in sorted(src_root.rglob("*.py")):
         if path.resolve() == Path(utils.__file__).resolve():
             continue
-        if "REPO_ROOT = " in path.read_text(encoding="utf-8"):
+        text = path.read_text(encoding="utf-8")
+        if "REPO_ROOT = " in text:
             duplicated.append(str(path.relative_to(src_root)))
+        relative = str(path.relative_to(src_root))
+        if "REPO_ROOT" in text and relative not in ("pyntara.py",):
+            imported.append(relative)
     assert not duplicated, f"modules computing their own REPO_ROOT: {duplicated}"
+    assert not imported, f"modules importing REPO_ROOT instead of the Context: {imported}"
 
 
 class TestFetchUrlsInParallel:

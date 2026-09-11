@@ -3,7 +3,8 @@
 The task makes the pyntara package and its dependencies available to the
 services on the target machine: a dedicated virtual environment is created
 at the configured venv_dir with uv and the package is installed into it
-from the repository lockfile of the clone (REPO_ROOT), so deployed
+from the repository lockfile of the clone (the context carries the root), so
+deployed
 services import the same code base the installer uses, run the same
 dependency versions as the repository and never need the clone
 afterwards.

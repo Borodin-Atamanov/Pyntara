@@ -30,8 +30,8 @@ from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 
 # The module reads no repository path of its own: the source vault paths of
-# local_vault_setup are resolved against the REPO_ROOT of that module, which
-# the tests point at a fixture.
+# local_vault_setup are resolved against the clone root the context carries,
+# which the tests point at a fixture.
 
 
 def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:
