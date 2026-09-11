@@ -62,7 +62,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
-    APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
     curl_flags,
@@ -70,6 +69,7 @@ from pyntara.utils import (
     install_package_once,
     os_family_is_debian,
     read_os_release,
+    refresh_apt_index,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -242,11 +242,7 @@ def _install_deb(
 
     if not skip_update:
         try:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_NONINTERACTIVE_ENV,
-                timeout=update_timeout,
-            )
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False

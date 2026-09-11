@@ -60,13 +60,13 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
     curl_flags,
     install_package_once,
     package_is_installed,
     port_listener_pid,
+    refresh_apt_index,
     run_command,
     substituted_command,
     task_data_dir,
@@ -182,11 +182,7 @@ def _ensure_chrome_installed(
         return False, None
     try:
         if not skip_apt_update:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_NONINTERACTIVE_ENV,
-                timeout=timeout,
-            )
+            refresh_apt_index(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot refresh the apt index: {exc}"
     ok, error = install_package_once(cfg.package_name, timeout)

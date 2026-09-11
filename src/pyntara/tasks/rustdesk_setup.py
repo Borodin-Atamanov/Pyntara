@@ -47,13 +47,13 @@ from pyntara.github_release import asset_name_urls, fetch_latest_release, releas
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
     curl_flags,
     dpkg_architecture,
     install_package_once,
     proquint_encode,
+    refresh_apt_index,
     release_asset_architecture,
     run_command,
     service_is_active,
@@ -184,11 +184,7 @@ def _install_deb(
 
     if not skip_update:
         try:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_NONINTERACTIVE_ENV,
-                timeout=update_timeout,
-            )
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False

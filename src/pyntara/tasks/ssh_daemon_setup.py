@@ -62,10 +62,10 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    APT_NONINTERACTIVE_ENV,
     apply_owner,
     install_package_once,
     package_is_installed,
+    refresh_apt_index,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -267,11 +267,7 @@ def _ensure_package(
 
     if not skip_update:
         try:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_NONINTERACTIVE_ENV,
-                timeout=timeout,
-            )
+            refresh_apt_index(timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False

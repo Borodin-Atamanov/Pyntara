@@ -27,7 +27,7 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
+from pyntara.utils import refresh_apt_index
 
 
 @dataclass(frozen=True)
@@ -335,11 +335,7 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log("refreshing apt index: apt-get update")
             try:
-                run_command(
-                    ["apt-get", "update"],
-                    extra_env=APT_NONINTERACTIVE_ENV,
-                    timeout=ctx.config.engine.command_timeout_seconds,
-                )
+                refresh_apt_index(ctx.config.engine.command_timeout_seconds)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 warnings.append(f"apt index refresh: {exc}")
             else:

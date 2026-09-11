@@ -78,6 +78,22 @@ def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def refresh_apt_index(timeout: float) -> None:
+    """Refresh the apt package index.
+
+    One place runs the refresh, so the tasks that need a fresh index before
+    an install call the same command with the same non-interactive
+    environment instead of spelling the argv out each time. Raises
+    CalledProcessError or TimeoutExpired when the refresh fails.
+    """
+
+    run_command(
+        ["apt-get", "update"],
+        extra_env=APT_NONINTERACTIVE_ENV,
+        timeout=timeout,
+    )
+
+
 def install_packages(
     packages: list[str],
     *,
@@ -101,11 +117,7 @@ def install_packages(
     warnings: list[str] = []
     if not skip_update:
         try:
-            run_command(
-                ["apt-get", "update"],
-                extra_env=APT_NONINTERACTIVE_ENV,
-                timeout=update_timeout,
-            )
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"apt index refresh: {exc}")
     for package in packages:
