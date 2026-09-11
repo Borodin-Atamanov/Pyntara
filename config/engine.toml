@@ -49,6 +49,11 @@ curl_connect_timeout_seconds = 60
 # the download budget, so a retry of a large download is not cut short by
 # the total window.
 curl_retry_max_time_seconds = 7777
+# Query URL of the latest release of a GitHub repository; every release
+# query of every task uses this one value, with {repo} replaced by the
+# configured owner/name pair, so a mirror or a proxy is configured in one
+# place instead of five task modules.
+github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

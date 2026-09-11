@@ -33,7 +33,9 @@ def base_config() -> str:
         "command_timeout_seconds = 8000\ncurl_timeout_seconds = 777\n"
         "curl_download_timeout_seconds = 7777\ncurl_retries = 17\n"
         "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
-        "curl_retry_max_time_seconds = 7777\nerror_priority = 3\n"
+        "curl_retry_max_time_seconds = 7777\n"
+        'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
+        "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"

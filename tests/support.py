@@ -189,6 +189,9 @@ def make_config(
     curl_retry_delay_seconds: int = 3,
     curl_connect_timeout_seconds: int = 60,
     curl_retry_max_time_seconds: int = 7777,
+    github_latest_release_url: str = (
+        "https://api.github.com/repos/{repo}/releases/latest"
+    ),
     error_priority: int = 3,
     progress_priority: int = 7,
     process_check_timeout_seconds: int = 5,
@@ -679,6 +682,7 @@ def make_config(
             curl_retry_delay_seconds=curl_retry_delay_seconds,
             curl_connect_timeout_seconds=curl_connect_timeout_seconds,
             curl_retry_max_time_seconds=curl_retry_max_time_seconds,
+            github_latest_release_url=github_latest_release_url,
             error_priority=error_priority,
             progress_priority=progress_priority,
             process_check_timeout_seconds=process_check_timeout_seconds,

@@ -7,7 +7,6 @@ from typing import Any
 from support import FakeProc, make_config, make_context
 
 from pyntara.tasks import dnsproxy_setup as task_module
-from pyntara.utils import curl_flags
 
 PASSWORD = "password"
 
@@ -195,7 +194,7 @@ def _run_task(
     context = make_context(vault_password=PASSWORD, config=config)
     monkeypatch.setattr(
         task_module,
-        "_release_json",
+        "fetch_latest_release",
         lambda *_: {
             "tag_name": "v0.84.1",
             "assets": [
@@ -547,23 +546,15 @@ def test_release_asset_selection_rejects_unsupported_architecture() -> None:
 def test_release_and_download_curls_carry_configured_flags(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # The release query and the binary download run through curl with the
-    # configured --max-time and --retry flags, so a slow or flaky network
-    # gets a long window and retries instead of failing after a short
-    # fixed timeout.
+    # The release query runs through the shared release reader, which takes
+    # the endpoint and the curl flags from the engine config; the flags of
+    # the query itself are asserted in tests/test_github_release.py.
     config = make_config(
         task_data_root=tmp_path,
         dnsproxy_download_dir=tmp_path / "download",
         dnsproxy_binary_path=tmp_path / "dnsproxy",
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
-    )
-    expected_flags = curl_flags(
-        config.engine.curl_timeout_seconds,
-        config.engine.curl_retries,
-        config.engine.curl_connect_timeout_seconds,
-        config.engine.curl_retry_max_time_seconds,
-        config.engine.curl_retry_delay_seconds,
     )
     calls: list[list[str]] = []
 
@@ -572,17 +563,9 @@ def test_release_and_download_curls_carry_configured_flags(
         calls.append(command)
         return FakeProc(0, '{"tag_name": "v0.84.1"}')
 
-    monkeypatch.setattr(task_module, "run_command", fake_run)
-    release = task_module._release_json(
-        "AdguardTeam/dnsproxy",
-        config.engine.command_timeout_seconds,
-        config.engine.curl_timeout_seconds,
-        config.engine.curl_retries,
-        config.engine.curl_connect_timeout_seconds,
-        config.engine.curl_retry_max_time_seconds,
-        config.engine.curl_retry_delay_seconds,
-    )
-    assert release["tag_name"] == "v0.84.1"
+    monkeypatch.setattr("pyntara.github_release.run_command", fake_run)
+    payload = task_module.fetch_latest_release("AdguardTeam/dnsproxy", config.engine)
+    assert payload["tag_name"] == "v0.84.1"
     curl_calls = [call for call in calls if call[0] == "curl"]
     assert curl_calls
-    assert all(flag in curl_calls[0] for flag in expected_flags)
+    assert "https://api.github.com/repos/AdguardTeam/dnsproxy/releases/latest" in curl_calls[0]

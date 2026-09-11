@@ -75,7 +75,6 @@ the stored template no longer matches. The machine that is the remote
 server itself skips both stages: it does not connect to itself.
 """
 
-import json
 import os
 import re
 import subprocess
@@ -88,6 +87,7 @@ from pyntara import metrics, routing_policy, upnp
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
+from pyntara.github_release import fetch_latest_release, release_tag
 from pyntara.location import describe_answers, detect_country
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -129,58 +129,6 @@ def _normalized_version(value: str) -> str:
     """The version with an optional leading v stripped."""
 
     return TAG_VERSION_PATTERN.sub("", value)
-
-
-def _release_tag(release: dict[str, object]) -> str:
-    """The tag_name of a release payload; raises RuntimeError when absent."""
-
-    tag = release.get("tag_name")
-    if not isinstance(tag, str) or not tag:
-        raise RuntimeError("release payload has no tag_name")
-    return tag
-
-
-def _fetch_release_json(
-    repo: str,
-    timeout: float,
-    curl_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
-) -> dict[str, object]:
-    """The latest release payload from the GitHub releases API.
-
-    Raises RuntimeError when the request fails or the payload is not
-    usable JSON, so the caller reports the reason instead of a raw
-    exception.
-    """
-
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
-    result = run_command(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            *curl_flags(
-                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
-            ),
-            url,
-        ],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"cannot fetch {url}: exit {result.returncode}")
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"cannot parse release JSON from {url}: {exc}") from None
-    if not isinstance(data, dict):
-        raise TypeError(f"unexpected release payload from {url}")
-    return data
 
 
 def _installed_version(
@@ -2360,7 +2308,6 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.three_x_ui_xray_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    curl_timeout = ctx.config.engine.curl_timeout_seconds
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -2376,16 +2323,8 @@ def task(ctx: Context) -> TaskResult:
 
     _log(f"querying the latest release of {cfg.github_repo}")
     try:
-        release = _fetch_release_json(
-            cfg.github_repo,
-            timeout,
-            curl_timeout,
-            curl_retries,
-            connect_timeout,
-            retry_max_time,
-            retry_delay,
-        )
-        tag = _release_tag(release)
+        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        tag = release_tag(release)
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest release: {tag}")

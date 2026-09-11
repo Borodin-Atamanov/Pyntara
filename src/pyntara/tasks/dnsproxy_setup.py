@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
 import re
 import shutil
@@ -19,6 +18,7 @@ from typing import NamedTuple
 from pyntara.config import DnsproxySetupConfig
 from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
+from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -100,55 +100,23 @@ def discover_dns_servers(
     )
 
 
-def _release_json(
-    repo: str,
-    timeout: float,
-    curl_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
-) -> dict[str, object]:
-    result = run_command(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            *curl_flags(
-                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
-            ),
-            f"https://api.github.com/repos/{repo}/releases/latest",
-        ],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"cannot fetch dnsproxy release: exit {result.returncode}")
-    value = json.loads(result.stdout)
-    if not isinstance(value, dict):
-        raise TypeError("dnsproxy release response is not an object")
-    return value
+def _asset_for_architecture(payload: dict[str, object], arch: str) -> tuple[str, str]:
+    """The (name, url) of the dnsproxy tarball for this architecture.
 
+    The asset name carries the release tag and the upstream architecture
+    spelling: dnsproxy-linux-amd64-v0.84.1.tar.gz. An architecture that
+    upstream does not build is an error, not a fallback to another
+    architecture.
+    """
 
-def _asset_for_architecture(release: dict[str, object], arch: str) -> tuple[str, str]:
-    tag = release.get("tag_name")
-    assets = release.get("assets")
-    if not isinstance(tag, str) or not tag or not isinstance(assets, list):
-        raise RuntimeError("dnsproxy release has no usable tag or assets")
+    tag = release_tag(payload)
+    assets = dict(asset_name_urls(payload))
     suffix = {"amd64": "amd64", "arm64": "arm64", "armhf": "arm7"}.get(arch)
     if suffix is None:
         raise RuntimeError(f"unsupported dnsproxy architecture: {arch}")
     expected = f"dnsproxy-linux-{suffix}-{tag}.tar.gz"
-    for asset in assets:
-        if (
-            isinstance(asset, dict)
-            and asset.get("name") == expected
-            and isinstance(asset.get("browser_download_url"), str)
-        ):
-            return expected, asset["browser_download_url"]
+    if expected in assets:
+        return expected, assets[expected]
     raise RuntimeError(f"release {tag} has no asset {expected}")
 
 
@@ -826,7 +794,6 @@ def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
 def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    curl_timeout = ctx.config.engine.curl_timeout_seconds
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -845,26 +812,13 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
     try:
-        release = _release_json(
-            cfg.github_repo,
-            timeout,
-            curl_timeout,
-            curl_retries,
-            connect_timeout,
-            retry_max_time,
-            retry_delay,
-        )
-        tag = str(release["tag_name"])
+        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        tag = release_tag(release)
         asset_name, asset_url = _asset_for_architecture(
             release, dpkg_architecture(timeout)
         )
         target_version = _version_from_tag(tag)
-    except (
-        RuntimeError,
-        KeyError,
-        json.JSONDecodeError,
-        subprocess.SubprocessError,
-    ) as exc:
+    except (RuntimeError, subprocess.SubprocessError) as exc:
         return TaskResult(success=False, error=str(exc))
     installed = _installed_version(cfg.binary_path, timeout)
     changed = False

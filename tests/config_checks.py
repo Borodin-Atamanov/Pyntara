@@ -632,6 +632,10 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_retry_delay_seconds=curl_retry_delay_seconds,
         curl_connect_timeout_seconds=curl_connect_timeout_seconds,
         curl_retry_max_time_seconds=curl_retry_max_time_seconds,
+        github_latest_release_url=_nonempty_string_field(
+            raw.get("github_latest_release_url"),
+            "engine.github_latest_release_url",
+        ),
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(

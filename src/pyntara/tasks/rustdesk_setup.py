@@ -34,7 +34,6 @@ the runner continues with the remaining tasks and never stops here.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -44,6 +43,7 @@ from pathlib import Path
 from pyntara import metrics
 from pyntara.config import RustdeskSetupConfig
 from pyntara.context import Context
+from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -79,36 +79,6 @@ def _normalized_version(value: str) -> str:
     return TAG_VERSION_PATTERN.sub("", value)
 
 
-def _release_tag(release: dict[str, object]) -> str:
-    """The tag_name of a release payload; raises RuntimeError when absent."""
-
-    tag = release.get("tag_name")
-    if not isinstance(tag, str) or not tag:
-        raise RuntimeError("release payload has no tag_name")
-    return tag
-
-
-def _asset_name_urls(release: dict[str, object]) -> dict[str, str]:
-    """The name to download_url mapping of the release assets.
-
-    Malformed asset entries are skipped; a name collision keeps the first
-    entry, because the list is ordered as returned by the API.
-    """
-
-    assets = release.get("assets")
-    if not isinstance(assets, list):
-        raise TypeError("release payload has no assets array")
-    result: dict[str, str] = {}
-    for asset in assets:
-        if not isinstance(asset, dict):
-            continue
-        name = asset.get("name")
-        url = asset.get("browser_download_url")
-        if isinstance(name, str) and isinstance(url, str):
-            result.setdefault(name, url)
-    return result
-
-
 def _select_asset(
     release: dict[str, object],
     version: str,
@@ -122,51 +92,8 @@ def _select_asset(
 
     asset_arch = DPKG_TO_ASSET_ARCH.get(arch, arch)
     name = f"rustdesk-{version}-{asset_arch}.deb"
-    url = _asset_name_urls(release).get(name)
+    url = dict(asset_name_urls(release)).get(name)
     return (name, url) if url else None
-
-
-def _fetch_release_json(
-    repo: str,
-    timeout: float,
-    curl_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
-) -> dict[str, object]:
-    """The latest release payload from the GitHub releases API.
-
-    Raises RuntimeError when the request fails or the payload is not
-    usable JSON, so the caller reports the reason instead of a raw
-    exception.
-    """
-
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
-    result = run_command(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            *curl_flags(
-                curl_timeout, retries, connect_timeout, retry_max_time, retry_delay
-            ),
-            url,
-        ],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"cannot fetch {url}: exit {result.returncode}")
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"cannot parse release JSON from {url}: {exc}") from None
-    if not isinstance(data, dict):
-        raise TypeError(f"unexpected release payload from {url}")
-    return data
 
 
 def _installed_version(timeout: float) -> str | None:
@@ -524,7 +451,6 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.rustdesk_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    curl_timeout = ctx.config.engine.curl_timeout_seconds
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -534,16 +460,8 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     try:
-        release = _fetch_release_json(
-            cfg.github_repo,
-            timeout,
-            curl_timeout,
-            curl_retries,
-            connect_timeout,
-            retry_max_time,
-            retry_delay,
-        )
-        tag = _normalized_version(_release_tag(release))
+        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        tag = _normalized_version(release_tag(release))
     except (RuntimeError, TypeError) as exc:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest rustdesk release: {tag}")

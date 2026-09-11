@@ -15,6 +15,8 @@ class EngineConfig:
     desktop session in the default mode detection; the list lives here so
     the detection is configurable without code changes. systemd_unit_dir is
     the one directory the tasks that deploy a systemd unit write it to.
+    github_latest_release_url is the endpoint of every release query, a
+    template whose {repo} is replaced by the repository of the task.
     """
 
     task_data_root: Path
@@ -27,6 +29,7 @@ class EngineConfig:
     curl_retry_delay_seconds: int
     curl_connect_timeout_seconds: int
     curl_retry_max_time_seconds: int
+    github_latest_release_url: str
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int
