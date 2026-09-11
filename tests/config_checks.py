@@ -3883,6 +3883,54 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
         input_group=_nonempty_string_field(
             raw.get("input_group"), "vocalinux_setup.input_group"
         ),
+        appimage_dir_relative_path=_nonempty_string_field(
+            raw.get("appimage_dir_relative_path"),
+            "vocalinux_setup.appimage_dir_relative_path",
+        ),
+        app_config_relative_path=_nonempty_string_field(
+            raw.get("app_config_relative_path"),
+            "vocalinux_setup.app_config_relative_path",
+        ),
+        autostart_relative_path=_nonempty_string_field(
+            raw.get("autostart_relative_path"),
+            "vocalinux_setup.autostart_relative_path",
+        ),
+        echo_desktop_relative_path=_nonempty_string_field(
+            raw.get("echo_desktop_relative_path"),
+            "vocalinux_setup.echo_desktop_relative_path",
+        ),
+        app_config_template_file_name=_nonempty_string_field(
+            raw.get("app_config_template_file_name"),
+            "vocalinux_setup.app_config_template_file_name",
+        ),
+        autostart_template_file_name=_nonempty_string_field(
+            raw.get("autostart_template_file_name"),
+            "vocalinux_setup.autostart_template_file_name",
+        ),
+        echo_desktop_template_file_name=_nonempty_string_field(
+            raw.get("echo_desktop_template_file_name"),
+            "vocalinux_setup.echo_desktop_template_file_name",
+        ),
+        shortcuts_file_name=_nonempty_string_field(
+            raw.get("shortcuts_file_name"),
+            "vocalinux_setup.shortcuts_file_name",
+        ),
+        shortcut_group_name=_nonempty_string_field(
+            raw.get("shortcut_group_name"),
+            "vocalinux_setup.shortcut_group_name",
+        ),
+        shortcut_entry_name=_nonempty_string_field(
+            raw.get("shortcut_entry_name"),
+            "vocalinux_setup.shortcut_entry_name",
+        ),
+        shortcut_action_name=_nonempty_string_field(
+            raw.get("shortcut_action_name"),
+            "vocalinux_setup.shortcut_action_name",
+        ),
+        shortcut_key_sequence=_nonempty_string_field(
+            raw.get("shortcut_key_sequence"),
+            "vocalinux_setup.shortcut_key_sequence",
+        ),
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"), "vocalinux_setup.service_unit_name"
         ),

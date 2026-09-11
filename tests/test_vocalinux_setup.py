@@ -25,19 +25,45 @@ ECHO_CONTENT = (
     "NoDisplay=true\nType=Application\n"
     "X-KDE-GlobalAccel-CommandShortcut=true\n"
 )
+AUTOSTART_CONTENT = (
+    "[Desktop Entry]\nVersion=1.0\nType=Application\nName=Vocalinux\n"
+    "Exec=$appimage --start-minimized\nIcon=vocalinux\n"
+    "Comment=Voice dictation for Linux\nTerminal=false\n"
+    "StartupNotify=false\nX-GNOME-Autostart-enabled=true\n"
+)
+
+
+def _shipped() -> Any:
+    """The vocalinux section of the shared test document."""
+
+    return make_config().vocalinux_setup
 
 
 def _write_templates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any | None = None,
 ) -> None:
-    """Write the task data templates and point the task at them."""
+    """Write the task data templates and point the task at them.
 
+    The fixture file names come from the section, so a renamed template key
+    is what the task looks for and the test stays honest; a test that wants
+    another name passes its own settings.
+    """
+
+    if settings is None:
+        settings = _shipped()
     template_dir = tmp_path / "task_data" / "vocalinux_setup"
     template_dir.mkdir(parents=True, exist_ok=True)
-    config_path = template_dir / "config.json"
-    config_path.write_text(CONFIG_CONTENT, encoding="utf-8")
-    echo_path = template_dir / "net.local.echo.desktop"
-    echo_path.write_text(ECHO_CONTENT, encoding="utf-8")
+    (template_dir / settings.app_config_template_file_name).write_text(
+        CONFIG_CONTENT, encoding="utf-8"
+    )
+    (template_dir / settings.autostart_template_file_name).write_text(
+        AUTOSTART_CONTENT, encoding="utf-8"
+    )
+    (template_dir / settings.echo_desktop_template_file_name).write_text(
+        ECHO_CONTENT, encoding="utf-8"
+    )
 
 
 def _ctx(
@@ -169,10 +195,18 @@ def _install_fakes(
     return fakes
 
 
-def _appimage_target(tmp_path: Path) -> Path:
+def _appimage_target(tmp_path: Path, settings: Any | None = None) -> Path:
     """The install path of the AppImage under the fake home."""
 
-    return tmp_path / ".local" / "share" / "vocalinux" / "appimage" / ASSET
+    if settings is None:
+        settings = _shipped()
+    return tmp_path / settings.appimage_dir_relative_path / ASSET
+
+
+def _user_file(tmp_path: Path, relative_path: str) -> Path:
+    """One deployed user file under the fake home."""
+
+    return tmp_path / relative_path
 
 
 def _seed_installed(tmp_path: Path) -> None:
@@ -186,16 +220,19 @@ def _seed_installed(tmp_path: Path) -> None:
 def _seed_user_files(tmp_path: Path) -> None:
     """Write the matching user files the idempotent rerun expects."""
 
-    config_path = tmp_path / ".config" / "vocalinux" / "config.json"
+    settings = _shipped()
+    config_path = _user_file(tmp_path, settings.app_config_relative_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(CONFIG_CONTENT, encoding="utf-8")
-    autostart_path = tmp_path / ".config" / "autostart" / "vocalinux.desktop"
+    autostart_path = _user_file(tmp_path, settings.autostart_relative_path)
     autostart_path.parent.mkdir(parents=True, exist_ok=True)
     autostart_path.write_text(
-        task_module._autostart_content(_appimage_target(tmp_path)),
+        task_module._autostart_content(
+            AUTOSTART_CONTENT, _appimage_target(tmp_path)
+        ),
         encoding="utf-8",
     )
-    echo_path = tmp_path / ".local" / "share" / "applications" / "net.local.echo.desktop"
+    echo_path = _user_file(tmp_path, settings.echo_desktop_relative_path)
     echo_path.parent.mkdir(parents=True, exist_ok=True)
     echo_path.write_text(ECHO_CONTENT, encoding="utf-8")
 

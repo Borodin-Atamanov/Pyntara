@@ -26,13 +26,13 @@ The app-level hotkey listener reads the keyboard devices, and /dev/input and /de
 
 ## App config and autostart
 
-The app config is written as the exact working config.json template from the task data directory: engine whisper_cpp, model small, language ru, toggle mode on super+s, autostart into the tray, sound effects, text injection through the clipboard, model keepalive and the Russian initial prompt. Writing the full config keeps the target state equal to the verified development machine and turns the app first run off, so no onboarding dialog appears.
+The app config is written as the exact configured template app_config_template_file_name from the task data directory: engine whisper_cpp, model small, language ru, toggle mode on super+s, autostart into the tray, sound effects, text injection through the clipboard, model keepalive and the Russian initial prompt. Writing the full config keeps the target state equal to the verified development machine and turns the app first run off, so no onboarding dialog appears.
 
-The autostart entry is written by the task, not by the app. The app autostart manager would emit a broken Exec for an AppImage: it points at the FUSE mount path of a running instance or at a venv wrapper on PATH, both wrong for a self-contained AppImage. The task therefore writes the autostart desktop entry itself with the Exec pinned to the installed AppImage path and the --start-minimized flag, so Vocalinux starts into the tray at every login.
+The autostart entry is rendered from the template autostart_template_file_name with $appimage. The app autostart manager would emit a broken Exec for an AppImage: it points at the FUSE mount path of a running instance or at a venv wrapper on PATH, both wrong for a self-contained AppImage. The task therefore writes the autostart desktop entry itself with the Exec pinned to the installed AppImage path and the --start-minimized flag, so Vocalinux starts into the tray at every login.
 
 ## Meta+S consuming shortcut
 
-Vocalinux observes keys at the app level and cannot swallow them, so super+s alone would type the S letter into the focused field (the ы letter on the Russian layout). The working machine solves this with an empty KDE global shortcut: a no-op desktop file net.local.echo.desktop registered under the KDE services component with _launch set to Meta+S. Plasma then owns Meta+S, nothing reaches the focused field, and the Vocalinux listener still sees the raw key and toggles. The task writes the empty desktop file and sets the kglobalshortcutsrc key through kwriteconfig6 as the user. The shortcut applies at the next login, the same re-login that the input group membership needs.
+Vocalinux observes keys at the app level and cannot swallow them, so super+s alone would type the S letter into the focused field (the ы letter on the Russian layout). The working machine solves this with an empty KDE global shortcut: a no-op desktop file net.local.echo.desktop (echo_desktop_relative_path and echo_desktop_template_file_name) registered under the configured shortcut_group_name with the configured shortcut_action_name set to the configured shortcut_key_sequence. Plasma then owns the combination, nothing reaches the focused field, and the Vocalinux listener still sees the raw key and toggles. The task writes the empty desktop file and sets the configured key of the configured shortcuts_file_name through kwriteconfig6 as the user. The shortcut applies at the next login, the same re-login that the input group membership needs.
 
 ## Idempotency
 
@@ -40,7 +40,7 @@ A rerun changes nothing when the pinned AppImage file is present, the packages a
 
 ## Install location
 
-The install directory is home_dir/.local/share/vocalinux/appimage under the desktop user home, next to the app data directory of the same version layout that the app itself uses, and the app config and the autostart entry live under the same home. The fleet desktop machine has a single desktop user, configured as username and home_dir in the task config.
+The install directory is the configured appimage_dir_relative_path under the desktop user home, next to the app data directory of the same version layout that the app itself uses, and the app config, the autostart entry and the empty action desktop file live under the same home at their configured relative paths. The fleet desktop machine has a single desktop user, configured as username and home_dir in the task config.
 
 ## Parameters
 
@@ -55,6 +55,17 @@ asset_name_template - the name of the release asset with {version} and {asset_ar
 packages - the system tools the app needs on Wayland plus the kwriteconfig6 provider
 input_group - the group that owns /dev/input and /dev/uinput on Kubuntu
 service_unit_name - the ydotool user unit enabled for the desktop user
+appimage_dir_relative_path - the install directory of the AppImage under home_dir
+app_config_relative_path - the app config file under that home
+autostart_relative_path - the autostart entry under that home
+echo_desktop_relative_path - the empty action desktop file that consumes the shortcut, under that home
+app_config_template_file_name - the app config template under task_data/vocalinux_setup/ of the clone
+autostart_template_file_name - the autostart entry template under the same directory, rendered with $appimage
+echo_desktop_template_file_name - the empty action desktop file template under the same directory
+shortcuts_file_name - the KConfig file of the empty shortcut shortcut_group_name - the group inside that file
+shortcut_entry_name - the entry inside the group, the desktop file name of the action
+shortcut_action_name - the action key the shortcut is stored under
+shortcut_key_sequence - the key sequence the action holds, so Plasma consumes it
 user_file_mode - the mode of the written app config and autostart entry
 executable_file_mode - the mode of the installed AppImage
 package_status_timeout_seconds - seconds a single package status query may run

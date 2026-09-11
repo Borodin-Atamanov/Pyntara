@@ -31,6 +31,29 @@ asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"
 packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]
 # Group that owns /dev/input and /dev/uinput on Kubuntu.
 input_group = "input"
+# Relative paths under the home of the desktop user: the directory of the
+# installed AppImage, the app config, the autostart entry and the empty
+# action desktop file that consumes Meta+S.
+appimage_dir_relative_path = ".local/share/vocalinux/appimage"
+app_config_relative_path = ".config/vocalinux/config.json"
+autostart_relative_path = ".config/autostart/vocalinux.desktop"
+echo_desktop_relative_path = ".local/share/applications/net.local.echo.desktop"
+# Templates under task_data/vocalinux_setup/ of the clone: the app config,
+# the autostart entry (rendered with $appimage) and the empty action
+# desktop file.
+app_config_template_file_name = "config.json"
+autostart_template_file_name = "vocalinux.desktop"
+echo_desktop_template_file_name = "net.local.echo.desktop"
+# The KConfig record of the empty Meta+S consuming shortcut, exactly as the
+# KDE System Settings stores a .desktop launch shortcut: the file, the
+# group, the entry inside it, the action and the key sequence the action
+# holds. Plasma then consumes Meta+S and the S never reaches the focused
+# field, while the app-level listener still sees the raw key.
+shortcuts_file_name = "kglobalshortcutsrc"
+shortcut_group_name = "services"
+shortcut_entry_name = "net.local.echo.desktop"
+shortcut_action_name = "_launch"
+shortcut_key_sequence = "Meta+S"
 # ydotool user unit enabled for the desktop user.
 service_unit_name = "ydotool.service"
 # Seconds a single package status query may run.

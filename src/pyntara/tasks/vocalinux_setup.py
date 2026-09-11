@@ -25,6 +25,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from string import Template
 
 from pyntara.config import EngineConfig, VocalinuxSetupConfig
 from pyntara.context import Context
@@ -42,19 +43,22 @@ from pyntara.utils import (
     trim_whitespace,
 )
 
-# Derived paths under the desktop user home (docs/spec/vocalinux-setup.md).
-APPIMAGE_DIR_REL = Path(".local/share/vocalinux/appimage")
-CONFIG_REL = Path(".config/vocalinux/config.json")
-AUTOSTART_REL = Path(".config/autostart/vocalinux.desktop")
-ECHO_DESKTOP_REL = Path(".local/share/applications/net.local.echo.desktop")
 
-# The KConfig file and group path of the empty Meta+S consuming shortcut,
-# exactly as the KDE System Settings stores a .desktop launch shortcut.
-SHORTCUTS_FILE_NAME = "kglobalshortcutsrc"
-SERVICES_GROUP = "services"
-ECHO_GROUP = "net.local.echo.desktop"
-ECHO_ACTION = "_launch"
-ECHO_SHORTCUT = "Meta+S"
+def _read_task_template(
+    template_dir: Path, file_name: str, label: str
+) -> tuple[str | None, str | None]:
+    """Content of one configured template, or an error naming it.
+
+    A missing template is an error and not a skipped step: the file it
+    renders is part of the configured machine, and the template ships with
+    the clone. The label names the file in the message, so the operator
+    reads which template the run expected.
+    """
+
+    path = template_dir / file_name
+    if not path.is_file():
+        return None, f"missing {label}: {path}"
+    return path.read_text(encoding="utf-8"), None
 
 
 def _as_user_command(cfg: VocalinuxSetupConfig, command: list[str]) -> list[str]:
@@ -97,7 +101,7 @@ def _appimage_install_path(
 ) -> Path:
     """The install path of the pinned AppImage under the user home."""
 
-    return Path(cfg.home_dir) / APPIMAGE_DIR_REL / asset_name
+    return Path(cfg.home_dir) / cfg.appimage_dir_relative_path / asset_name
 
 
 def _write_user_file(
@@ -146,7 +150,7 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = ["kreadconfig6", "--file", SHORTCUTS_FILE_NAME]
+    command = ["kreadconfig6", "--file", cfg.shortcuts_file_name]
     for segment in group_segments:
         command.extend(["--group", segment])
     command.extend(["--key", key])
@@ -170,7 +174,7 @@ def _kwriteconfig(
 ) -> None:
     """Write one KConfig key with kwriteconfig6 as the target user."""
 
-    command = ["kwriteconfig6", "--file", SHORTCUTS_FILE_NAME]
+    command = ["kwriteconfig6", "--file", cfg.shortcuts_file_name]
     for segment in group_segments:
         command.extend(["--group", segment])
     command.extend(["--key", key, value])
@@ -195,35 +199,35 @@ def _sync_echo_shortcut(
     and toggles. The write applies at the next login.
     """
 
-    group = (SERVICES_GROUP, ECHO_GROUP)
-    current = _kreadconfig(cfg, group, ECHO_ACTION, timeout)
-    if not force and current == ECHO_SHORTCUT:
+    group = (cfg.shortcut_group_name, cfg.shortcut_entry_name)
+    current = _kreadconfig(cfg, group, cfg.shortcut_action_name, timeout)
+    if not force and current == cfg.shortcut_key_sequence:
         return False
-    _kwriteconfig(cfg, group, ECHO_ACTION, ECHO_SHORTCUT, timeout=timeout)
-    _log(f"set {SHORTCUTS_FILE_NAME} {ECHO_ACTION}: {ECHO_SHORTCUT}")
+    _kwriteconfig(
+        cfg,
+        group,
+        cfg.shortcut_action_name,
+        cfg.shortcut_key_sequence,
+        timeout=timeout,
+    )
+    _log(
+        f"set {cfg.shortcuts_file_name} {cfg.shortcut_action_name}: "
+        f"{cfg.shortcut_key_sequence}"
+    )
     return True
 
 
-def _autostart_content(appimage_path: Path) -> str:
+def _autostart_content(template: str, appimage_path: Path) -> str:
     """The autostart desktop entry that launches the AppImage minimized.
 
     Written by the task, not by the app: the app autostart manager would
     emit a broken Exec for an AppImage (the FUSE mount path or a venv
-    wrapper), so the task pins the Exec to the stable install path.
+    wrapper), so the task pins the Exec to the stable install path. The
+    body of the entry lives in the template and only the AppImage path is
+    substituted, so the entry text stays with the template.
     """
 
-    return (
-        "[Desktop Entry]\n"
-        "Version=1.0\n"
-        "Type=Application\n"
-        "Name=Vocalinux\n"
-        f"Exec={appimage_path} --start-minimized\n"
-        "Icon=vocalinux\n"
-        "Comment=Voice dictation for Linux\n"
-        "Terminal=false\n"
-        "StartupNotify=false\n"
-        "X-GNOME-Autostart-enabled=true\n"
-    )
+    return Template(template).substitute(appimage=str(appimage_path))
 
 
 def _install_appimage(
@@ -255,7 +259,7 @@ def _install_appimage(
     )
     asset_name = _asset_name(cfg, asset_arch)
     url = _release_download_url(engine, cfg.github_repo, cfg.version, asset_name)
-    install_dir = Path(cfg.home_dir) / APPIMAGE_DIR_REL
+    install_dir = Path(cfg.home_dir) / cfg.appimage_dir_relative_path
     target = install_dir / asset_name
     cache = cfg.download_dir / asset_name
     if target.is_file() and not force:
@@ -483,48 +487,63 @@ def task(ctx: Context) -> TaskResult:
         messages.append(f"enabled the {cfg.service_unit_name} user unit")
 
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    config_template = template_dir / "config.json"
-    echo_desktop_template = template_dir / "net.local.echo.desktop"
-    if not config_template.is_file():
+    app_config_template, app_config_error = _read_task_template(
+        template_dir, cfg.app_config_template_file_name, "app config template"
+    )
+    if app_config_error is not None:
         return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"missing app config template: {config_template}",
+            success=False, changed=changed, error=app_config_error
         )
+    autostart_template, autostart_error = _read_task_template(
+        template_dir, cfg.autostart_template_file_name, "autostart template"
+    )
+    if autostart_error is not None:
+        return TaskResult(
+            success=False, changed=changed, error=autostart_error
+        )
+    echo_desktop_template, echo_desktop_error = _read_task_template(
+        template_dir,
+        cfg.echo_desktop_template_file_name,
+        "empty-action desktop template",
+    )
+    if echo_desktop_error is not None:
+        return TaskResult(
+            success=False, changed=changed, error=echo_desktop_error
+        )
+    assert app_config_template is not None
+    assert autostart_template is not None
+    assert echo_desktop_template is not None
+    app_config_path = Path(cfg.home_dir) / cfg.app_config_relative_path
+    autostart_path = Path(cfg.home_dir) / cfg.autostart_relative_path
+
     config_changed = _write_user_file(
         cfg,
-        str(CONFIG_REL),
-        config_template.read_text(encoding="utf-8"),
+        cfg.app_config_relative_path,
+        app_config_template,
         file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
     )
     if config_changed:
         changed = True
-        messages.append(f"wrote the app config to {Path(cfg.home_dir) / CONFIG_REL}")
+        messages.append(f"wrote the app config to {app_config_path}")
 
     autostart_changed = _write_user_file(
         cfg,
-        str(AUTOSTART_REL),
-        _autostart_content(appimage_path),
+        cfg.autostart_relative_path,
+        _autostart_content(autostart_template, appimage_path),
         file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
     )
     if autostart_changed:
         changed = True
-        messages.append(f"wrote the autostart entry to {Path(cfg.home_dir) / AUTOSTART_REL}")
+        messages.append(f"wrote the autostart entry to {autostart_path}")
 
-    if not echo_desktop_template.is_file():
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"missing empty-action desktop template: {echo_desktop_template}",
-        )
     echo_changed = _write_user_file(
         cfg,
-        str(ECHO_DESKTOP_REL),
-        echo_desktop_template.read_text(encoding="utf-8"),
+        cfg.echo_desktop_relative_path,
+        echo_desktop_template,
         file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,

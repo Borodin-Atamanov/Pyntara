@@ -23,6 +23,18 @@ SECTION = (
     'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n'
     'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
     'input_group = "input"\n'
+    'appimage_dir_relative_path = ".local/share/vocalinux/appimage"\n'
+    'app_config_relative_path = ".config/vocalinux/config.json"\n'
+    'autostart_relative_path = ".config/autostart/vocalinux.desktop"\n'
+    'echo_desktop_relative_path = ".local/share/applications/net.local.echo.desktop"\n'
+    'app_config_template_file_name = "config.json"\n'
+    'autostart_template_file_name = "vocalinux.desktop"\n'
+    'echo_desktop_template_file_name = "net.local.echo.desktop"\n'
+    'shortcuts_file_name = "kglobalshortcutsrc"\n'
+    'shortcut_group_name = "services"\n'
+    'shortcut_entry_name = "net.local.echo.desktop"\n'
+    'shortcut_action_name = "_launch"\n'
+    'shortcut_key_sequence = "Meta+S"\n'
     'service_unit_name = "ydotool.service"\n'
     "package_status_timeout_seconds = 30\n"
     "package_install_retries = 3\n"
@@ -123,6 +135,31 @@ def test_valid_section_loads(tmp_path: Path) -> None:
         SECTION.replace(
             'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n',
             'asset_name_template = ""\n',
+        ),
+        # appimage_dir_relative_path is an empty string
+        SECTION.replace(
+            'appimage_dir_relative_path = ".local/share/vocalinux/appimage"\n',
+            'appimage_dir_relative_path = ""\n',
+        ),
+        # autostart_relative_path is a number, not a string
+        SECTION.replace(
+            'autostart_relative_path = ".config/autostart/vocalinux.desktop"\n',
+            "autostart_relative_path = 42\n",
+        ),
+        # echo_desktop_template_file_name is an empty string
+        SECTION.replace(
+            'echo_desktop_template_file_name = "net.local.echo.desktop"\n',
+            'echo_desktop_template_file_name = ""\n',
+        ),
+        # shortcut_key_sequence is a number, not a string
+        SECTION.replace(
+            'shortcut_key_sequence = "Meta+S"\n',
+            "shortcut_key_sequence = 42\n",
+        ),
+        # shortcuts_file_name is an empty string
+        SECTION.replace(
+            'shortcuts_file_name = "kglobalshortcutsrc"\n',
+            'shortcuts_file_name = ""\n',
         ),
     ],
 )
