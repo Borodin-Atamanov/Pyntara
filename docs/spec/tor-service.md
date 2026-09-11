@@ -47,6 +47,32 @@ The target state is reached when the package is installed, the %include line is 
 
 All parameters live in the [tor_setup] table of the config/ directory.
 
+package_name - the Tor package from the Ubuntu archive
+service_unit_name - the systemd instance unit the task manages
+torrc_path - the main configuration file, which the task never rewrites
+torrc_dropin_path - the drop-in the task owns and renders
+torrc_include_path - the plain path inside /etc/tor that the include line names
+dropin_file_mode - the mode of the rendered drop-in
+hidden_service_dir - the directory of the onion service identity
+hidden_service_dir_mode - the mode of that directory, 0700 because Tor refuses a world-readable one
+tor_user - the system user Tor runs as; the task owns the hardcoded parts of the run to it
+socks_port - the loopback SOCKS proxy port
+onion_ssh_port - the virtual port clients connect to on the onion address
+num_introduction_points - how many introduction points the service maintains
+log_level - the Tor verbosity written to syslog
+dropin_template_file_name - the drop-in template under task_data/tor_setup/ of the clone, with $socks_port, $log_level, $hidden_service_dir, $num_introduction_points, $onion_ssh_port and $ssh_port as its placeholders
+include_directive - the directive that pulls the drop-in into the main configuration
+hostname_file_name - the file Tor writes the onion hostname into inside hidden_service_dir
+verify_config_command - the command that checks the whole configuration, with {tor_user} as its placeholder
+service_enable_command - the command that enables the unit, with {service_unit_name} as its placeholder
+service_start_command - the command that starts the unit when it is inactive
+service_restart_command - the command that restarts the unit when it is active
+install_retries - retry attempts after a failed package install
+start_check_attempts - how many is-active checks the readiness loop runs
+start_check_retry_delay_seconds - the pause between those checks
+address_file_path - the file that saves the onion address once it is known
+address_file_mode - the mode of that file, world-readable because the address is not secret
+
 ## Connecting over Tor
 
 An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1 at socks_port of the [tor_setup] table, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:

@@ -27,15 +27,12 @@ from pyntara.config import PlaywrightSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import install_packages, package_is_installed, run_command
-
-
-def _substituted_command(
-    command: tuple[str, ...], values: dict[str, str]
-) -> list[str]:
-    """The configured command with its {placeholders} filled in."""
-
-    return [part.format(**values) for part in command]
+from pyntara.utils import (
+    install_packages,
+    package_is_installed,
+    run_command,
+    substituted_command,
+)
 
 
 def _user_prefix(cfg: PlaywrightSetupConfig) -> Path:
@@ -53,7 +50,7 @@ def _cli_bin_path(cfg: PlaywrightSetupConfig) -> Path:
 def _runuser_command(cfg: PlaywrightSetupConfig) -> list[str]:
     """The runuser prefix that runs a command as the desktop user."""
 
-    return _substituted_command(
+    return substituted_command(
         cfg.runuser_command,
         {"username": cfg.username, "home_dir": cfg.home_dir},
     )
@@ -74,7 +71,7 @@ def _cli_version(cfg: PlaywrightSetupConfig, *, timeout: float) -> str:
     try:
         result = run_command(
             _runuser_command(cfg)
-            + _substituted_command(cfg.cli_version_command, {"cli_bin": str(binary)}),
+            + substituted_command(cfg.cli_version_command, {"cli_bin": str(binary)}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -144,7 +141,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _runuser_command(cfg)
-            + _substituted_command(
+            + substituted_command(
                 cfg.npm_install_command,
                 {
                     "cli_package": cfg.cli_package,

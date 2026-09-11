@@ -39,7 +39,14 @@ class TorSetupConfig:
     loop that waits for the service to become active after a start.
     address_file_path is the saved onion address file the task writes
     once the hostname file exists and address_file_mode its mode; the
-    address is not secret, so the file is readable by every user.
+    address is not secret, so the file is readable by every user, and
+    hostname_file_name is the name Tor writes the onion hostname under
+    inside hidden_service_dir. The drop-in is rendered from the template
+    dropin_template_file_name under task_data/tor_setup/ of the clone,
+    and include_directive is the directive that pulls it into the main
+    configuration. verify_config_command, service_enable_command,
+    service_start_command and service_restart_command are the commands
+    the task runs, with {tor_user} and {service_unit_name} substituted.
     """
 
     package_name: str
@@ -55,6 +62,13 @@ class TorSetupConfig:
     onion_ssh_port: int
     num_introduction_points: int
     log_level: str
+    dropin_template_file_name: str
+    include_directive: str
+    hostname_file_name: str
+    verify_config_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]
+    service_start_command: tuple[str, ...]
+    service_restart_command: tuple[str, ...]
     install_retries: int
     start_check_attempts: int
     start_check_retry_delay_seconds: float

@@ -368,6 +368,13 @@ def base_config() -> str:
         "start_check_retry_delay_seconds = 1\n"
         'address_file_path = "/var/lib/pyntara/tor_ssh_address"\n'
         'address_file_mode = "0644"\n'
+        'dropin_template_file_name = "torrc.conf"\n'
+        'include_directive = "%include"\n'
+        'hostname_file_name = "hostname"\n'
+        'verify_config_command = ["runuser", "-u", "{tor_user}", "--", "tor", "--verify-config"]\n'
+        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
+        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
+        'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
         "[ssh_daemon_setup]\n"
         'package_name = "openssh-server"\n'
         'augeas_tools_package_name = "augeas-tools"\n'

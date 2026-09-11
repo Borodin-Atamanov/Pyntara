@@ -1,4 +1,4 @@
-# Pyntara 0.3.277
+# Pyntara 0.3.278
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.

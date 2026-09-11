@@ -588,6 +588,20 @@ def ensure_port_free(
     return f"killed unknown process {pid} on port {port}"
 
 
+def substituted_command(
+    command: tuple[str, ...], values: dict[str, str]
+) -> list[str]:
+    """The configured command with its {placeholders} filled in.
+
+    A command whose arguments are ours to choose lives in the config with
+    placeholders such as {username} or {service_unit_name}; this helper is
+    the one place that fills them, so every task renders its commands the
+    same way.
+    """
+
+    return [part.format(**values) for part in command]
+
+
 def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
     """Set the given file owner when the process runs as root.
 

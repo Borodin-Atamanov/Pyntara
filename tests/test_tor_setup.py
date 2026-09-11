@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import stat
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,6 +21,7 @@ from support import make_config, make_context
 from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import tor_setup
+from pyntara.utils import REPO_ROOT
 
 # The onion address written into the hidden service hostname file by
 # the subprocess fake after the first service start.
@@ -64,6 +66,22 @@ def _ctx(
             tor_start_check_retry_delay_seconds=0.0,
             ssh_daemon_directives=tuple(directives),
         ),
+    )
+
+
+def _template_path(ctx: Context) -> Path:
+    """Template the task renders the drop-in from, as it lives in the clone.
+
+    The path is built here from the documented layout instead of calling
+    the helper of the task, so a drifted directory or file name shows up
+    as a failure instead of being mirrored by the test.
+    """
+
+    return (
+        REPO_ROOT
+        / "task_data"
+        / ctx.task_name
+        / ctx.config.tor_setup.dropin_template_file_name
     )
 
 
@@ -177,7 +195,8 @@ def _write_state_as_rendered(ctx: Context) -> None:
     _write_torrc(ctx, include=True)
     cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.torrc_dropin_path.write_text(
-        tor_setup._render_config(cfg, ssh_port), encoding="utf-8"
+        tor_setup._render_config(cfg, ssh_port, _template_path(ctx)),
+        encoding="utf-8",
     )
     cfg.hidden_service_dir.mkdir(parents=True, exist_ok=True)
     (cfg.hidden_service_dir / "hostname").write_text(
@@ -459,7 +478,7 @@ def test_render_config_uses_ssh_port_and_virtual_port(
     ssh_port = tor_setup.ssh_port_from_directives(
         ctx.config.ssh_daemon_setup.directives
     )
-    rendered = tor_setup._render_config(cfg, ssh_port)
+    rendered = tor_setup._render_config(cfg, ssh_port, _template_path(ctx))
     assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
     assert f"HiddenServiceDir {cfg.hidden_service_dir}" in rendered
     assert (
@@ -474,3 +493,25 @@ def test_render_config_uses_ssh_port_and_virtual_port(
         "HiddenServicePort"
     )
     assert rendered.endswith("\n")
+
+
+def test_render_config_follows_the_config_values(tmp_path: Path) -> None:
+    # The body of the drop-in lives in the template and its values in the
+    # config: a changed value must change the render. A value rendered
+    # from the template would otherwise be a hardcoded literal that the
+    # config only pretends to own.
+    ctx = _ctx(tmp_path)
+    cfg = replace(
+        ctx.config.tor_setup, socks_port=12345, log_level="debug"
+    )
+    rendered = tor_setup._render_config(cfg, 2222, _template_path(ctx))
+    assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
+    assert f"Log {cfg.log_level} syslog" in rendered
+    assert f"HiddenServiceDir {cfg.hidden_service_dir}" in rendered
+    assert (
+        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}"
+        in rendered
+    )
+    assert "HiddenServiceVersion 3" in rendered
+    assert f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:2222" in rendered
+    assert "$socks_port" not in rendered

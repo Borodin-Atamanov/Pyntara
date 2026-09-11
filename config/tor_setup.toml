@@ -74,3 +74,24 @@ address_file_path = "/var/lib/pyntara/tor_ssh_address"
 # File mode of the saved address file, as an octal string. The address
 # is not secret, so the file is readable by every user.
 address_file_mode = "0644"
+# Name of the drop-in template under task_data/tor_setup/ of the clone; the
+# run fills its placeholders with the values of this table, the Tor user
+# and the SSH port read from the ssh_daemon_setup directives.
+dropin_template_file_name = "torrc.conf"
+# The directive that pulls the drop-in into the main configuration. The
+# task appends it with the drop-in path, so the include form is a value.
+include_directive = "%include"
+# Name of the file Tor writes its onion hostname into inside the hidden
+# service directory; the task reads it to report and save the address.
+hostname_file_name = "hostname"
+# Command that verifies the whole Tor configuration. Tor validates the
+# ownership of every HiddenServiceDir against the process user, so the
+# check runs as the Tor user through runuser.
+verify_config_command = ["runuser", "-u", "{tor_user}", "--", "tor", "--verify-config"]
+# Command that enables the service unit; {service_unit_name} is replaced
+# with the unit name above.
+service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+# Command that starts the service unit when it is inactive.
+service_start_command = ["systemctl", "start", "{service_unit_name}"]
+# Command that restarts the service unit when it is already active.
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]

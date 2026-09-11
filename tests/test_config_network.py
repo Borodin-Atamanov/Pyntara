@@ -400,6 +400,39 @@ from config_helpers import (
             'address_file_path = "/var/lib/pyntara/tor_ssh_address"\naddress_file_mode = "0644"',
             'address_file_path = "/var/lib/pyntara/tor_ssh_address"\naddress_file_mode = 644',
         ),
+        # tor_setup dropin_template_file_name is an empty string
+        base_config().replace(
+            'dropin_template_file_name = "torrc.conf"',
+            'dropin_template_file_name = ""',
+        ),
+        # tor_setup include_directive is an empty string
+        base_config().replace(
+            'include_directive = "%include"', 'include_directive = ""'
+        ),
+        # tor_setup hostname_file_name is an empty string
+        base_config().replace(
+            'hostname_file_name = "hostname"', 'hostname_file_name = ""'
+        ),
+        # tor_setup verify_config_command is a string, not an array
+        base_config().replace(
+            'verify_config_command = ["runuser", "-u", "{tor_user}", "--", "tor", "--verify-config"]',
+            'verify_config_command = "runuser -u {tor_user} -- tor --verify-config"',
+        ),
+        # tor_setup service_enable_command is an empty array
+        base_config().replace(
+            'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]',
+            "service_enable_command = []",
+        ),
+        # tor_setup service_start_command holds an empty argument
+        base_config().replace(
+            'service_start_command = ["systemctl", "start", "{service_unit_name}"]',
+            'service_start_command = ["systemctl", "start", ""]',
+        ),
+        # tor_setup service_restart_command is a number, not an array
+        base_config().replace(
+            'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]',
+            "service_restart_command = 1",
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:

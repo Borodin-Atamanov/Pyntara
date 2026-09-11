@@ -3463,6 +3463,32 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         raise ConfigError(
             f"tor_setup.log_level must be one of {', '.join(TOR_LOG_LEVELS)}"
         )
+    dropin_template_file_name = _nonempty_string_field(
+        raw.get("dropin_template_file_name"),
+        "tor_setup.dropin_template_file_name",
+    )
+    include_directive = _nonempty_string_field(
+        raw.get("include_directive"), "tor_setup.include_directive"
+    )
+    hostname_file_name = _nonempty_string_field(
+        raw.get("hostname_file_name"), "tor_setup.hostname_file_name"
+    )
+    verify_config_command = _string_list(
+        raw.get("verify_config_command"),
+        "tor_setup.verify_config_command",
+    )
+    service_enable_command = _string_list(
+        raw.get("service_enable_command"),
+        "tor_setup.service_enable_command",
+    )
+    service_start_command = _string_list(
+        raw.get("service_start_command"),
+        "tor_setup.service_start_command",
+    )
+    service_restart_command = _string_list(
+        raw.get("service_restart_command"),
+        "tor_setup.service_restart_command",
+    )
     install_retries = _int_field(
         raw.get("install_retries"), "tor_setup.install_retries"
     )
@@ -3505,6 +3531,13 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         onion_ssh_port=onion_ssh_port,
         num_introduction_points=num_introduction_points,
         log_level=log_level,
+        dropin_template_file_name=dropin_template_file_name,
+        include_directive=include_directive,
+        hostname_file_name=hostname_file_name,
+        verify_config_command=verify_config_command,
+        service_enable_command=service_enable_command,
+        service_start_command=service_start_command,
+        service_restart_command=service_restart_command,
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
