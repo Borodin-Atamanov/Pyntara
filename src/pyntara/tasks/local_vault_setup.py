@@ -32,9 +32,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import ensure_root_owner
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-
 
 def _resolve_source_vault(
     repo_root: Path, cfg: LocalVaultSetupConfig
@@ -132,7 +129,8 @@ def _write_local_vault(
 
     The copy is written to the configured runtime path, so the source
     password never opens the runtime vault (the local password does). The
-    directory is created and forced to 0700, the file is chmodded to 0640.
+    directory is created and forced to the configured secrets directory
+    mode, the file carries the configured vault file mode.
     """
 
     kp.password = password
@@ -153,10 +151,10 @@ def _write_password_file(
 
     The file holds exactly the password: surrounding whitespace is trimmed
     and no newline is appended, so consumers that read the file get the
-    password without post-processing. An existing password file is read-only
-    (0400), so before a force rewrite it is made writable for its owner with
-    the configured pass_file_writable_mode and the restrictive mode is
-    restored after the write.
+    password without post-processing. An existing password file carries
+    the configured restrictive mode, so before a force rewrite it is made
+    writable for its owner with the configured pass_file_writable_mode and
+    the configured pass_file_mode is restored after the write.
     """
 
     pass_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,8 +185,9 @@ def task(ctx: Context) -> TaskResult:
     Without force the task skips when the runtime vault already exists.
     Otherwise it opens the first available source vault, reads the local
     vault password from it, writes the re-encrypted runtime vault and the
-    password file with the fixed modes, sets the owner to root:root when
-    running as root and verifies the runtime vault by opening it. A vault
+    password file with the configured modes, sets the configured owner of
+    a file the run creates as root and verifies the runtime vault by
+    opening it. A vault
     that cannot be opened, a missing or empty password entry and a failed
     write are errors: the serious ones are journaled at syslog level 3,
     the task returns success=False and the runner continues.
