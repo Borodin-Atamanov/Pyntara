@@ -282,6 +282,10 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
             raw.get("keep_debs_file"), "add_extra_repos.keep_debs_file"
         )
     )
+    keep_debs_dropin_content = _nonempty_string_field(
+        raw.get("keep_debs_dropin_content"),
+        "add_extra_repos.keep_debs_dropin_content",
+    )
     return AddExtraReposConfig(
         components=tuple(unique),
         ubuntu_hosts=tuple(ubuntu_hosts),
@@ -289,6 +293,7 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         legacy_sources_file=legacy_sources_file,
         sources_list_d=sources_list_d,
         keep_debs_file=keep_debs_file,
+        keep_debs_dropin_content=keep_debs_dropin_content,
     )
 
 

@@ -24,3 +24,12 @@ sources_list_d = "/etc/apt/sources.list.d"
 # task owns this file completely while keep_downloaded_debs is true: it
 # writes it, and removes it when the setting is false.
 keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"
+# Content of that drop-in: four lines, written exactly as they appear here.
+# A file that already matches is left alone, so the task does not rewrite
+# a machine that carries the same body.
+keep_debs_dropin_content = """
+# Written by pyntara add_extra_repos
+# Keep downloaded .deb files after install for offline reinstall.
+APT::Keep-Downloaded-Packages "true";
+Unattended-Upgrade::Keep-Debs-After-Install "true";
+"""

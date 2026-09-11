@@ -29,16 +29,6 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
 
-# The content of the apt drop-in the task owns while keep_downloaded_debs
-# is true. The file itself and the setting come from the [add_extra_repos]
-# config table.
-APT_KEEP_DEBS_CONTENT = (
-    "# Written by pyntara add_extra_repos\n"
-    "# Keep downloaded .deb files after install for offline reinstall.\n"
-    'APT::Keep-Downloaded-Packages "true";\n'
-    'Unattended-Upgrade::Keep-Debs-After-Install "true";\n'
-)
-
 
 @dataclass(frozen=True)
 class _FileRewrite:
@@ -230,16 +220,17 @@ def _keep_debs_state_note(keep_debs: bool) -> str:
 
 
 def _ensure_keep_debs_dropin(
-    keep_debs: bool, keep_debs_file: Path
+    keep_debs: bool, keep_debs_file: Path, content: str
 ) -> tuple[bool, str | None]:
     """Bring the apt keep-debs drop-in to the configured state.
 
-    When keep_debs is true the drop-in must carry the two option lines that
-    stop apt and unattended-upgrades from deleting downloaded .deb files
-    after a successful install; when false the drop-in must not exist. The
-    current content is read before writing, so an exact match changes
-    nothing (idempotency through read-back). Returns whether the file
-    changed and an error string when the file could not be updated.
+    When keep_debs is true the drop-in must carry the configured body, the
+    two option lines that stop apt and unattended-upgrades from deleting
+    downloaded .deb files after a successful install; when false the
+    drop-in must not exist. The current content is read before writing, so
+    an exact match changes nothing (idempotency through read-back).
+    Returns whether the file changed and an error string when the file
+    could not be updated.
     """
 
     path = keep_debs_file
@@ -249,12 +240,9 @@ def _ensure_keep_debs_dropin(
                 return False, None
             path.unlink()
             return True, None
-        if (
-            path.exists()
-            and path.read_text(encoding="utf-8") == APT_KEEP_DEBS_CONTENT
-        ):
+        if path.exists() and path.read_text(encoding="utf-8") == content:
             return False, None
-        path.write_text(APT_KEEP_DEBS_CONTENT, encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
     except OSError as exc:
         return False, f"cannot update {path}: {exc}"
     return True, None
@@ -274,8 +262,11 @@ def task(ctx: Context) -> TaskResult:
     hosts = ctx.config.add_extra_repos.ubuntu_hosts
     keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
     keep_debs_file = ctx.config.add_extra_repos.keep_debs_file
+    keep_debs_content = ctx.config.add_extra_repos.keep_debs_dropin_content
     _log(f"configured components: {' '.join(configured)}")
-    keep_changed, keep_error = _ensure_keep_debs_dropin(keep_debs, keep_debs_file)
+    keep_changed, keep_error = _ensure_keep_debs_dropin(
+        keep_debs, keep_debs_file, keep_debs_content
+    )
     if keep_error:
         return TaskResult(success=False, error=keep_error)
     if keep_changed:

@@ -1,14 +1,16 @@
 """Unit tests for the add_extra_repos task.
 
-The task reads apt source files from module-level path constants and runs
-apt-get through run_command; both are monkeypatched so the tests only touch
-temporary fixtures (docs/guides/developer-guide.md). The fixtures mirror
-the real files on a Kubuntu system, including comments and Signed-By lines.
+The task reads the apt source files, the keep-debs file and the body it
+carries from the config, and runs apt-get through run_command; subprocess
+is monkeypatched, so the tests only touch temporary fixtures
+(docs/guides/developer-guide.md). The fixtures mirror the real files on a
+Kubuntu system, including comments and Signed-By lines.
 """
 
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -45,6 +47,16 @@ Signed-By: /usr/share/keyrings/google-chrome.gpg
 """
 
 CONFIGURED = ("universe", "restricted", "multiverse")
+
+# Another drop-in body the proof test puts into the config; the task must
+# write exactly the configured body, never a value of its own.
+OTHER_KEEP_DEBS_BODY = 'APT::Keep-Downloaded-Packages "true";\n'
+
+
+def _configured_keep_debs_content() -> str:
+    """The keep-debs body the test document carries."""
+
+    return make_config().add_extra_repos.keep_debs_dropin_content
 
 
 def _ctx(
@@ -109,7 +121,7 @@ def _install_keep_debs(
     path = tmp_path / "apt.conf.d" / "99keep-debs.conf"
     path.parent.mkdir(parents=True, exist_ok=True)
     if create:
-        path.write_text(add_extra_repos.APT_KEEP_DEBS_CONTENT, encoding="utf-8")
+        path.write_text(_configured_keep_debs_content(), encoding="utf-8")
     elif path.exists():
         path.unlink()
     return path
@@ -310,10 +322,7 @@ def test_keep_debs_dropin_created_even_when_sources_satisfied(
     assert result.changed is True
     assert "already satisfied" in (result.message or "")
     assert "enabled" in (result.message or "")
-    assert (
-        keep_debs.read_text(encoding="utf-8")
-        == add_extra_repos.APT_KEEP_DEBS_CONTENT
-    )
+    assert keep_debs.read_text(encoding="utf-8") == _configured_keep_debs_content()
 
 
 def test_keep_debs_dropin_normalized_when_stale(
@@ -327,10 +336,31 @@ def test_keep_debs_dropin_normalized_when_stale(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    assert (
-        keep_debs.read_text(encoding="utf-8")
-        == add_extra_repos.APT_KEEP_DEBS_CONTENT
+    assert keep_debs.read_text(encoding="utf-8") == _configured_keep_debs_content()
+
+
+def test_keep_debs_body_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another body in the [add_extra_repos] table is the body the task
+    # writes, so the drop-in content is not a value of the module.
+    _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
+    keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=False)
+    ctx = _ctx(tmp_path)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(
+            config,
+            add_extra_repos=replace(
+                config.add_extra_repos,
+                keep_debs_dropin_content=OTHER_KEEP_DEBS_BODY,
+            ),
+        ),
     )
+    result = add_extra_repos.task(ctx)
+    assert result.success is True
+    assert keep_debs.read_text(encoding="utf-8") == OTHER_KEEP_DEBS_BODY
 
 
 def test_keep_debs_dropin_unchanged_when_exact(

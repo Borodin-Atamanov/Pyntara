@@ -17,7 +17,8 @@ class AddExtraReposConfig:
     and left untouched. legacy_sources_file and sources_list_d are the apt
     sources the task reads and rewrites; keep_debs_file is the apt drop-in
     the task owns while keep_downloaded_debs is true, which keeps
-    downloaded .deb files after install.
+    downloaded .deb files after install, and keep_debs_dropin_content is
+    the four-line body that drop-in carries.
     """
 
     components: tuple[str, ...]
@@ -26,3 +27,4 @@ class AddExtraReposConfig:
     legacy_sources_file: Path
     sources_list_d: Path
     keep_debs_file: Path
+    keep_debs_dropin_content: str
