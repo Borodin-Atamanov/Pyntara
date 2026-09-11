@@ -25,10 +25,21 @@ APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
 
 # Root of the clone this code runs from: the package lives in src/pyntara/, so
 # the root is two directories above this file. It is computed once here and
-# imported where a template under task_data/ or the config directory is read,
-# because a module that computes its own copy points somewhere else the
-# moment the layout or the installation directory changes.
+# read once by the entry point, which passes it into the Context; a task never
+# imports it, because the clone the task must read is the one the run started
+# from and is the job of the composition root to name.
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def task_data_dir(repo_root: Path, section: str) -> Path:
+    """The task data directory of one task, from the clone root.
+
+    Every template a task renders lives under task_data/<section>/ in the
+    clone the run started from, so the layout is known here and nowhere
+    else.
+    """
+
+    return repo_root / "task_data" / section
 
 
 def package_is_installed(package: str, timeout: float) -> bool:

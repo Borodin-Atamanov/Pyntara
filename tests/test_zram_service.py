@@ -53,6 +53,7 @@ def _ctx(
         install_mode="server",
         force_tasks=frozenset({"zram_service"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
@@ -120,7 +121,6 @@ def _install_fixtures(
     template = tmp_path / "task_data" / "zram_service" / "zram.service"
     template.parent.mkdir(parents=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
-    monkeypatch.setattr(zram_service, "TEMPLATE_PATH", template)
     sys_block = tmp_path / "sys" / "block"
     sys_block.mkdir(parents=True)
     monkeypatch.setattr(zram_service, "SYS_BLOCK_PATH", sys_block)

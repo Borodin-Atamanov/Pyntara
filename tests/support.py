@@ -27,6 +27,7 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.context import Context
+from pyntara.utils import REPO_ROOT
 
 
 class FakeProc:
@@ -691,17 +692,25 @@ def make_context(
     vault_password: str | None = None,
     vault_source: str | None = None,
     force_tasks: frozenset[str] = frozenset(),
+    repo_root: Path = REPO_ROOT,
     task_data_root: Path = Path("/tmp"),
     skip_apt_update: bool = False,
     config: Config | None = None,
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context with a small safe config; the real file is never touched.
+
+    repo_root defaults to the clone the tests run from, so a test that
+    reads a real template keeps working; a test whose task renders a
+    fixture passes its own directory here instead of monkeypatching a
+    module constant.
+    """
 
     return Context(
         install_mode=install_mode,
         vault_password=vault_password,
         vault_source=vault_source,
         force_tasks=force_tasks,
+        repo_root=repo_root,
         task_data_root=task_data_root,
         skip_apt_update=skip_apt_update,
         config=config if config is not None else make_config(task_data_root=task_data_root),

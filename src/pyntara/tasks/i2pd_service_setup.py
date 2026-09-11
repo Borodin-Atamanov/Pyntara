@@ -64,7 +64,6 @@ from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
-    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -74,19 +73,16 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    task_data_dir,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide);
-# the repository root comes from pyntara.utils and the os-release path from
+# the repository root comes from the context and the os-release path from
 # the config.
-TEMPLATE_PATH = REPO_ROOT / "task_data" / "i2pd_service_setup" / "i2pd.conf"
-TUNNELS_TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "i2pd_service_setup" / "tunnels.conf"
-)
 
 
-def _render_config(cfg: I2pdServiceSetupConfig) -> str:
+def _render_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> str:
     """Render the configuration template with the configured values.
 
     Boolean options are rendered as the true/false spelling i2pd accepts,
@@ -96,7 +92,7 @@ def _render_config(cfg: I2pdServiceSetupConfig) -> str:
     signs.
     """
 
-    template = Template(TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         log_level=cfg.log_level,
         bandwidth=str(cfg.bandwidth),
@@ -108,7 +104,9 @@ def _render_config(cfg: I2pdServiceSetupConfig) -> str:
     )
 
 
-def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
+def _render_tunnels_config(
+    cfg: I2pdServiceSetupConfig, ssh_port: int, template_path: Path
+) -> str:
     """Render the tunnels template with the SSH server tunnel.
 
     The tunnel port is the sshd listen port read from the ssh_daemon_setup
@@ -119,7 +117,7 @@ def _render_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> str:
     would point into a directory that does not exist.
     """
 
-    template = Template(TUNNELS_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         tunnel_name=cfg.tunnel_name,
         tunnel_host=cfg.tunnel_host,
@@ -285,11 +283,13 @@ def _read_config(config_path: Path) -> str | None:
         return None
 
 
-def _write_config(cfg: I2pdServiceSetupConfig) -> None:
+def _write_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> None:
     """Write the rendered configuration into the configured path."""
 
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(_render_config(cfg), encoding="utf-8")
+    cfg.config_path.write_text(
+        _render_config(cfg, template_path), encoding="utf-8"
+    )
     ensure_root_owner(cfg.config_path)
 
 
@@ -302,12 +302,14 @@ def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
         return None
 
 
-def _write_tunnels_config(cfg: I2pdServiceSetupConfig, ssh_port: int) -> None:
+def _write_tunnels_config(
+    cfg: I2pdServiceSetupConfig, ssh_port: int, template_path: Path
+) -> None:
     """Write the rendered tunnels configuration into the configured path."""
 
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
-        _render_tunnels_config(cfg, ssh_port), encoding="utf-8"
+        _render_tunnels_config(cfg, ssh_port, template_path), encoding="utf-8"
     )
     ensure_root_owner(cfg.tunnels_config_path)
 
@@ -370,6 +372,12 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.i2pd_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    template_path = (
+        task_data_dir(ctx.repo_root, "i2pd_service_setup") / "i2pd.conf"
+    )
+    tunnels_template_path = (
+        task_data_dir(ctx.repo_root, "i2pd_service_setup") / "tunnels.conf"
+    )
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -427,7 +435,7 @@ def task(ctx: Context) -> TaskResult:
     installed_version = _installed_version(timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    target_config = _render_config(cfg)
+    target_config = _render_config(cfg, template_path)
     current_config = _read_config(cfg.config_path)
     # An install rewrites the package conffile, so the configuration is
     # rewritten after an install even when it matched before.
@@ -444,7 +452,7 @@ def task(ctx: Context) -> TaskResult:
         f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
     )
 
-    target_tunnels = _render_tunnels_config(cfg, ssh_port)
+    target_tunnels = _render_tunnels_config(cfg, ssh_port, tunnels_template_path)
     current_tunnels = _read_tunnels_config(cfg.tunnels_config_path)
     tunnels_changed = force or current_tunnels != target_tunnels
     keys_exist = cfg.tunnel_keys_path.is_file()
@@ -523,7 +531,7 @@ def task(ctx: Context) -> TaskResult:
     if config_changed:
         _log(f"writing configuration {cfg.config_path}")
         try:
-            _write_config(cfg)
+            _write_config(cfg, template_path)
         except OSError as exc:
             return TaskResult(
                 success=False,
@@ -536,7 +544,7 @@ def task(ctx: Context) -> TaskResult:
     if tunnels_changed:
         _log(f"writing tunnels configuration {cfg.tunnels_config_path}")
         try:
-            _write_tunnels_config(cfg, ssh_port)
+            _write_tunnels_config(cfg, ssh_port, tunnels_template_path)
         except OSError as exc:
             return TaskResult(
                 success=False,

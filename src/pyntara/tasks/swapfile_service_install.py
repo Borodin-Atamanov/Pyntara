@@ -25,11 +25,10 @@ from pyntara.config import SwapfileServiceInstallConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import REPO_ROOT, run_command, service_is_enabled
+from pyntara.utils import run_command, service_is_enabled, task_data_dir
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-TEMPLATE_PATH = REPO_ROOT / "task_data" / "swapfile_service_install" / "swapfile.service"
 MEMINFO_PATH = Path("/proc/meminfo")
 
 
@@ -234,9 +233,13 @@ def task(ctx: Context) -> TaskResult:
             return TaskResult(success=False, error=f"swapfile setup failed: {exc}")
         changed = True
 
-    _log(f"rendering unit template from {TEMPLATE_PATH}")
+    template_path = (
+        task_data_dir(ctx.repo_root, "swapfile_service_install")
+        / "swapfile.service"
+    )
+    _log(f"rendering unit template from {template_path}")
     try:
-        content = _render_unit(TEMPLATE_PATH, cfg.swapfile_path)
+        content = _render_unit(template_path, cfg.swapfile_path)
     except OSError as exc:
         return TaskResult(
             success=False, changed=changed, error=f"cannot read unit template: {exc}"

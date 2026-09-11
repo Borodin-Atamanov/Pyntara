@@ -60,6 +60,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
         install_mode="server",
         force_tasks=frozenset({"zswap_service"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
@@ -94,7 +95,6 @@ def _install_fixtures(
     template.parent.mkdir(parents=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     monkeypatch.setattr(zswap_service, "PARAM_PATHS", paths)
-    monkeypatch.setattr(zswap_service, "TEMPLATE_PATH", template)
     return {"params_dir": params_dir, "template": template}
 
 

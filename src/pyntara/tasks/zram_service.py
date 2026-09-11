@@ -31,11 +31,10 @@ from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import REPO_ROOT, run_command, service_is_enabled
+from pyntara.utils import run_command, service_is_enabled, task_data_dir
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-TEMPLATE_PATH = REPO_ROOT / "task_data" / "zram_service" / "zram.service"
 MEMINFO_PATH = Path("/proc/meminfo")
 CPUINFO_PATH = Path("/proc/cpuinfo")
 SYS_BLOCK_PATH = Path("/sys/block")
@@ -497,10 +496,11 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, changed=True, error="; ".join(problems))
     _log("verification passed")
 
-    _log(f"rendering unit template from {TEMPLATE_PATH}")
+    template_path = task_data_dir(ctx.repo_root, "zram_service") / "zram.service"
+    _log(f"rendering unit template from {template_path}")
     try:
         content = _render_unit(
-            TEMPLATE_PATH, device_count, per_device_bytes, read_interface, cfg
+            template_path, device_count, per_device_bytes, read_interface, cfg
         )
     except OSError as exc:
         return TaskResult(

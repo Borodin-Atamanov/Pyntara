@@ -115,6 +115,7 @@ def _ctx(
         install_mode="server",
         force_tasks=frozenset({"i2pd_service_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=tmp_path,
         skip_apt_update=skip_apt_update,
         config=make_config(
             task_data_root=tmp_path,
@@ -150,14 +151,10 @@ def _install_fixtures(
     template = tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf"
     template.parent.mkdir(parents=True)
     template.write_text(I2PD_TEMPLATE, encoding="utf-8")
-    monkeypatch.setattr(i2pd_service_setup, "TEMPLATE_PATH", template)
     tunnels_template = (
         tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf"
     )
     tunnels_template.write_text(TUNNELS_TEMPLATE, encoding="utf-8")
-    monkeypatch.setattr(
-        i2pd_service_setup, "TUNNELS_TEMPLATE_PATH", tunnels_template
-    )
     return {
         "os_release": os_release,
         "template": template,
@@ -241,14 +238,21 @@ def _write_state_as_rendered(ctx: Context) -> None:
     cfg = ctx.config.i2pd_service_setup
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(
-        i2pd_service_setup._render_config(cfg), encoding="utf-8"
+        i2pd_service_setup._render_config(
+            cfg, ctx.repo_root / "task_data" / "i2pd_service_setup" / "i2pd.conf"
+        ),
+        encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
         ctx.config.ssh_daemon_setup.directives
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
-        i2pd_service_setup._render_tunnels_config(cfg, ssh_port),
+        i2pd_service_setup._render_tunnels_config(
+            cfg,
+            ssh_port,
+            ctx.repo_root / "task_data" / "i2pd_service_setup" / "tunnels.conf",
+        ),
         encoding="utf-8",
     )
     cfg.tunnel_keys_path.parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +376,10 @@ def test_installs_new_release(
     assert ["systemctl", "start", "i2pd.service"] in calls
     config = ctx.config.i2pd_service_setup.config_path
     assert config.read_text(encoding="utf-8") == (
-        i2pd_service_setup._render_config(ctx.config.i2pd_service_setup)
+        i2pd_service_setup._render_config(
+            ctx.config.i2pd_service_setup,
+            tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf",
+        )
     )
     # The downloaded file is removed after the successful install.
     assert not (ctx.config.i2pd_service_setup.download_dir / asset).exists()
@@ -592,13 +599,16 @@ def test_select_asset_prioritizes_codename() -> None:
     )
 
 
-def test_render_config_bool_spelling() -> None:
+def test_render_config_bool_spelling(tmp_path: Path) -> None:
     # Booleans render as the lowercase true/false spelling i2pd accepts;
     # the main configuration names the owned tunnels file through tunconf
     # and carries the configured bandwidth limit and transit share.
-    ctx = _ctx(Path("/tmp"))
+    template = tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf"
+    template.parent.mkdir(parents=True)
+    template.write_text(I2PD_TEMPLATE, encoding="utf-8")
+    ctx = _ctx(tmp_path)
     config = i2pd_service_setup._render_config(
-        ctx.config.i2pd_service_setup
+        ctx.config.i2pd_service_setup, template
     )
     assert "loglevel = warn\n" in config
     assert "bandwidth = 12500\n" in config
@@ -611,14 +621,17 @@ def test_render_config_bool_spelling() -> None:
     assert "[socksproxy]\nenabled = true\n" in config
 
 
-def test_render_tunnels_config_uses_ssh_port() -> None:
+def test_render_tunnels_config_uses_ssh_port(tmp_path: Path) -> None:
     # The tunnels render carries the tunnel section, the forward host, the
     # sshd port read from the ssh_daemon_setup directives and the keys
     # value as the file name only, because i2pd resolves every keys path
     # against its data directory.
-    ctx = _ctx(Path("/tmp"))
+    template = tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf"
+    template.parent.mkdir(parents=True)
+    template.write_text(TUNNELS_TEMPLATE, encoding="utf-8")
+    ctx = _ctx(tmp_path)
     config = i2pd_service_setup._render_tunnels_config(
-        ctx.config.i2pd_service_setup, 30222
+        ctx.config.i2pd_service_setup, 30222, template
     )
     assert "[ssh]\ntype = server\n" in config
     assert f"host = {ctx.config.i2pd_service_setup.tunnel_host}\n" in config
@@ -682,14 +695,21 @@ def test_stale_address_file_is_rewritten_without_restart(
     cfg = ctx.config.i2pd_service_setup
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(
-        i2pd_service_setup._render_config(cfg), encoding="utf-8"
+        i2pd_service_setup._render_config(
+            cfg, tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf"
+        ),
+        encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
         ctx.config.ssh_daemon_setup.directives
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
-        i2pd_service_setup._render_tunnels_config(cfg, ssh_port),
+        i2pd_service_setup._render_tunnels_config(
+            cfg,
+            ssh_port,
+            tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf",
+        ),
         encoding="utf-8",
     )
     cfg.tunnel_keys_path.parent.mkdir(parents=True, exist_ok=True)
@@ -725,14 +745,21 @@ def test_missing_keys_file_restarts_even_when_configs_match(
     cfg = ctx.config.i2pd_service_setup
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(
-        i2pd_service_setup._render_config(cfg), encoding="utf-8"
+        i2pd_service_setup._render_config(
+            cfg, ctx.repo_root / "task_data" / "i2pd_service_setup" / "i2pd.conf"
+        ),
+        encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
         ctx.config.ssh_daemon_setup.directives
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
-        i2pd_service_setup._render_tunnels_config(cfg, ssh_port),
+        i2pd_service_setup._render_tunnels_config(
+            cfg,
+            ssh_port,
+            ctx.repo_root / "task_data" / "i2pd_service_setup" / "tunnels.conf",
+        ),
         encoding="utf-8",
     )
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)

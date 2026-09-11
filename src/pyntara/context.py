@@ -21,6 +21,7 @@ class Context:
     vault_password: str | None
     vault_source: str | None
     force_tasks: frozenset[str]
+    repo_root: Path
     task_data_root: Path
     skip_apt_update: bool
     config: Config

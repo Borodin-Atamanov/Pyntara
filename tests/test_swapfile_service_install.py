@@ -57,6 +57,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
             frozenset({"swapfile_service_install"}) if force else frozenset()
         ),
         task_data_root=tmp_path,
+        repo_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
             task_data_root=tmp_path,
@@ -82,7 +83,6 @@ def _install_fixtures(
     template = tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service"
     template.parent.mkdir(parents=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
-    monkeypatch.setattr(swapfile_service_install, "TEMPLATE_PATH", template)
     monkeypatch.setattr(
         "pyntara.tasks.swapfile_service_install.shutil.disk_usage",
         lambda path: _FakeDiskUsage(free=free_bytes),

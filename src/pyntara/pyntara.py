@@ -31,6 +31,7 @@ from pyntara.config import (
 from pyntara.context import Context
 from pyntara.logger import log_event, log_result_line
 from pyntara.task_runner import run_tasks
+from pyntara.utils import REPO_ROOT
 
 app = typer.Typer(invoke_without_command=True)
 
@@ -316,6 +317,7 @@ def run() -> None:
         vault_password=_env("PYNTARA_VAULT_PASSWORD"),
         vault_source=_env("PYNTARA_VAULT_SOURCE"),
         force_tasks=force_tasks,
+        repo_root=REPO_ROOT,
         task_data_root=cfg.engine.task_data_root,
         skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
         config=cfg,
