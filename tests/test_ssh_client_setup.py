@@ -10,6 +10,7 @@ ssh -G with a fixed effective-config output.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,6 @@ from support import augtool_fake_run, make_config, make_context
 from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import ssh_client_setup
-
-DROPIN_HEADER = "# Managed by the Pyntara ssh_client_setup task."
 
 DEFAULT_DIRECTIVES = (
     SshDirective(name="AddressFamily", value="any"),
@@ -85,10 +84,16 @@ def _expected_dropin_content(*, overrides: dict[str, str] | None = None) -> str:
     """The drop-in exactly as the task renders the default directives.
 
     A directive in overrides replaces the default value, which lets a
-    test describe a single drift without restating the whole file.
+    test describe a single drift without restating the whole file. The
+    header and the container line come from the test document, so the
+    expectation follows the config instead of repeating its values.
     """
 
-    lines = [DROPIN_HEADER, "Host *"]
+    cfg = make_config().ssh_client_setup
+    lines = [
+        f"# {cfg.dropin_header}",
+        f"{cfg.augeas_container} {cfg.augeas_container_value}",
+    ]
     for directive in DEFAULT_DIRECTIVES:
         value = (overrides or {}).get(directive.name, directive.value)
         lines.append(f"\t{directive.name} {value}")
@@ -148,6 +153,34 @@ def test_syncs_dropin_when_missing(
     )
     assert (cfg.ssh_config_dropin_path.stat().st_mode & 0o777) == 0o644
     assert ["ssh", "-G", "example.com"] in calls
+
+
+def test_header_and_container_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another header and another container value in the config are what
+    # the rendered drop-in carries, so neither is a value of the module.
+    ctx = _ctx(tmp_path)
+    _write_ssh_config(ctx)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(
+            config,
+            ssh_client_setup=replace(
+                config.ssh_client_setup,
+                dropin_header="Owned by the test",
+                augeas_container_value="*.example.test",
+            ),
+        ),
+    )
+    _install_fake(monkeypatch)
+    result = ssh_client_setup.task(ctx)
+    assert result.success is True
+    content = ctx.config.ssh_client_setup.ssh_config_dropin_path.read_text(
+        encoding="utf-8"
+    )
+    assert content.startswith("# Owned by the test\nHost *.example.test\n")
 
 
 def test_already_configured_skips(

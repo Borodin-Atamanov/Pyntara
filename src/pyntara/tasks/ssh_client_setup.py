@@ -5,7 +5,8 @@ configured ssh_config_dropin_path, never through ssh_config itself:
 ssh_config is only checked for an Include directive that pulls the
 drop-in directory in, because a missing Include means the drop-in
 would be silently ignored. Directives are written through augeas under
-the Host block, which applies them to every connection; augeas parses
+the container block the config names, which applies them to every
+connection; augeas parses
 the real syntax and updates only what differs: a directive that is
 already present with the same value is left untouched, a directive with
 a different value is updated, a directive that is no longer configured
@@ -30,15 +31,6 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command
-
-# The ownership comment of the drop-in, without the leading hash:
-# augeas stores and writes comment values without it.
-DROPIN_HEADER = "Managed by the Pyntara ssh_client_setup task."
-
-# augeas lens for the ssh_config syntax; directives live under the Host
-# block, so the container node is "Host".
-SSH_CLIENT_LENS = "Ssh.lns"
-SSH_CLIENT_CONTAINER = "Host"
 
 
 def _verify_effective_config(
@@ -92,6 +84,8 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.ssh_client_setup
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
 
     include_ok = include_covers_dropin(
         cfg.ssh_config_path, cfg.ssh_config_dropin_path
@@ -128,10 +122,12 @@ def task(ctx: Context) -> TaskResult:
             directives,
             cfg.dropin_file_mode,
             force,
-            SSH_CLIENT_LENS,
-            DROPIN_HEADER,
+            cfg.augeas_lens,
+            cfg.dropin_header,
             timeout,
-            container=SSH_CLIENT_CONTAINER,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            container=(cfg.augeas_container, cfg.augeas_container_value),
         )
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))

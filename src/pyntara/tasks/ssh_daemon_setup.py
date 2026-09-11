@@ -330,6 +330,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.ssh_daemon_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     force = ctx.task_name in ctx.force_tasks
     ssh_data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
 
@@ -424,6 +426,8 @@ def task(ctx: Context) -> TaskResult:
             SSHD_LENS,
             DROPIN_HEADER,
             timeout,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
             port_directive="Port",
         )
     except RuntimeError as exc:

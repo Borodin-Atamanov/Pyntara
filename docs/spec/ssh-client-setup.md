@@ -24,3 +24,15 @@ The target state is reached when ssh_config pulls the drop-in directory in and t
 ## Parameters
 
 All parameters live in the [ssh_client_setup] table of the config/ directory.
+
+ssh_config_path - the client configuration the task only checks for the Include directive
+ssh_config_dropin_path - the drop-in the task owns and writes
+dropin_file_mode - the file mode of the drop-in, as an octal string
+dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
+augeas_lens - the augeas lens of the ssh_config syntax
+augeas_container - the container node the directives are placed under
+augeas_container_value - the pattern that container node carries, so the directives apply to every connection
+augeas_tools_package_name - the package that provides augtool, installed by the task when missing
+package_status_timeout_seconds - seconds the dpkg status query may take
+install_retries - retry attempts after a failed package install
+directives - the ssh_config keywords the task guarantees, each with its value

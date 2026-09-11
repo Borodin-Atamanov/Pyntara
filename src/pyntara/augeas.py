@@ -106,38 +106,40 @@ def write_dropin(
     header: str,
     timeout: float,
     *,
-    container: str | None = None,
-    container_value: str = "*",
+    container: tuple[str, str] | None = None,
 ) -> None:
     """Write the configured directives through augeas.
 
     The ownership comment is set first, so augeas places it at the top
-    of a fresh file; the container node (if any) is created with its
-    value, every configured directive is then set to its value and
-    every stale directive is removed. augtool runs with --noautoload
-    and a manual load entry, so only the drop-in file is touched.
+    of a fresh file; the container node (if any) is created with the
+    value its pair carries, every configured directive is then set to its
+    value and every stale directive is removed. augtool runs with
+    --noautoload and a manual load entry, so only the drop-in file is
+    touched.
     """
 
     dropin_path.parent.mkdir(parents=True, exist_ok=True)
     node = f"/files{dropin_path}"
+    container_name = container[0] if container else None
+    container_value = container[1] if container else ""
     lines = [
         "set /augeas/load/entry/lens " + lens,
         f"set /augeas/load/entry/incl {dropin_path}",
         "load",
         f'set {node}/#comment "{header}"',
     ]
-    if container is not None:
-        lines.append(f"set {node}/{container}[last()] {container_value}")
+    if container_name is not None:
+        lines.append(f"set {node}/{container_name}[last()] {container_value}")
     for name, value in directives:
-        if container is not None:
+        if container_name is not None:
             lines.append(
-                f'set {node}/{container}[last()]/{name}[last()] "{value}"'
+                f'set {node}/{container_name}[last()]/{name}[last()] "{value}"'
             )
         else:
             lines.append(f'set {node}/{name} "{value}"')
     for name in stale_names:
-        if container is not None:
-            lines.append(f"rm {node}/{container}/{name}")
+        if container_name is not None:
+            lines.append(f"rm {node}/{container_name}/{name}")
         else:
             lines.append(f"rm {node}/{name}")
     lines.append("save")
@@ -164,8 +166,9 @@ def sync_dropin(
     header: str,
     timeout: float,
     *,
-    container: str | None = None,
-    container_value: str = "*",
+    owner_uid: int,
+    owner_gid: int,
+    container: tuple[str, str] | None = None,
     port_directive: str | None = None,
 ) -> tuple[bool, bool]:
     """Align the drop-in with the configured directives; return (changed, port_changed).
@@ -175,8 +178,9 @@ def sync_dropin(
     missing ownership comment or force triggers a rewrite.
     port_changed reports whether the port_directive differs, because a
     port change needs a restart, not a reload; it is always False when
-    port_directive is None. An empty directives list removes the
-    drop-in.
+    port_directive is None. The written file gets the owner pair the
+    caller passes, so no module writes the owner of root itself. An empty
+    directives list removes the drop-in.
     """
 
     if not directives:
@@ -184,7 +188,7 @@ def sync_dropin(
         if existed:
             dropin_path.unlink()
         return existed, False
-    skip_labels = frozenset({container}) if container else frozenset()
+    skip_labels = frozenset({container[0]}) if container else frozenset()
     current, comment = read_dropin_state(
         dropin_path, lens, timeout, skip_labels=skip_labels
     )
@@ -205,10 +209,9 @@ def sync_dropin(
         header,
         timeout,
         container=container,
-        container_value=container_value,
     )
     os.chmod(dropin_path, mode)
-    apply_owner(dropin_path, 0, 0)
+    apply_owner(dropin_path, owner_uid, owner_gid)
     return True, port_changed
 
 

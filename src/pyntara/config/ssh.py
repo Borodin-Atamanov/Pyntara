@@ -89,17 +89,25 @@ class SshClientSetupConfig:
     ssh_config_dropin_path, never through ssh_config_path itself, which
     is only checked for an Include directive that pulls the drop-in
     directory in. directives are the ssh_config keywords guaranteed by
-    the task, written through augeas under the Host block so they apply
-    to every connection; dropin_file_mode is the file mode of the
-    drop-in. augeas_tools_package_name names the package that provides
-    augtool, which the task installs itself when the tool is missing;
-    package_status_timeout_seconds bounds the dpkg status query and
-    install_retries is the retry count of the package install.
+    the task, written through augeas under the container block the
+    config names, so they apply to every connection; dropin_file_mode is
+    the file mode of the drop-in and dropin_header is the ownership
+    comment written at its top, without the leading hash. augeas_lens is
+    the lens and augeas_container with augeas_container_value name the
+    node the directives live under. augeas_tools_package_name names the
+    package that provides augtool, which the task installs itself when
+    the tool is missing; package_status_timeout_seconds bounds the dpkg
+    status query and install_retries is the retry count of the package
+    install.
     """
 
     ssh_config_path: Path
     ssh_config_dropin_path: Path
     dropin_file_mode: int
+    dropin_header: str
+    augeas_lens: str
+    augeas_container: str
+    augeas_container_value: str
     augeas_tools_package_name: str
     package_status_timeout_seconds: int
     install_retries: int

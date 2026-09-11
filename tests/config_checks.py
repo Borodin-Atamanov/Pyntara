@@ -2057,6 +2057,19 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
     dropin_file_mode = _octal_mode_field(
         raw.get("dropin_file_mode"), "ssh_client_setup.dropin_file_mode"
     )
+    dropin_header = _nonempty_string_field(
+        raw.get("dropin_header"), "ssh_client_setup.dropin_header"
+    )
+    augeas_lens = _nonempty_string_field(
+        raw.get("augeas_lens"), "ssh_client_setup.augeas_lens"
+    )
+    augeas_container = _nonempty_string_field(
+        raw.get("augeas_container"), "ssh_client_setup.augeas_container"
+    )
+    augeas_container_value = _nonempty_string_field(
+        raw.get("augeas_container_value"),
+        "ssh_client_setup.augeas_container_value",
+    )
     augeas_tools_package_name = _nonempty_string_field(
         raw.get("augeas_tools_package_name"),
         "ssh_client_setup.augeas_tools_package_name",
@@ -2081,6 +2094,10 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
         ssh_config_path=ssh_config_path,
         ssh_config_dropin_path=ssh_config_dropin_path,
         dropin_file_mode=dropin_file_mode,
+        dropin_header=dropin_header,
+        augeas_lens=augeas_lens,
+        augeas_container=augeas_container,
+        augeas_container_value=augeas_container_value,
         augeas_tools_package_name=augeas_tools_package_name,
         package_status_timeout_seconds=package_status_timeout_seconds,
         install_retries=install_retries,
