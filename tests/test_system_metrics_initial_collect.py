@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,49 @@ def test_starts_collector_when_unit_deployed(
     assert result.changed is True
     assert calls == [
         ["systemctl", "start", "--no-block", "system_metrics_collector.service"]
+    ]
+
+
+def test_start_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another start command in the config is the argv the task runs, with
+    # the configured unit name substituted.
+    _install_fixtures(monkeypatch, tmp_path, unit_deployed=True)
+    calls = _install_fake(monkeypatch)
+    ctx = _ctx(tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            system_metrics_setup=replace(
+                ctx.config.system_metrics_setup,
+                collector=replace(
+                    ctx.config.system_metrics_setup.collector,
+                    service_unit_name="collector-fixture.service",
+                    start_command=(
+                        "sudo",
+                        "systemctl",
+                        "start",
+                        "--no-block",
+                        "{service_unit_name}",
+                    ),
+                ),
+            ),
+        ),
+    )
+    unit_path = tmp_path / "systemd" / "collector-fixture.service"
+    unit_path.write_text("[Unit]\nDescription=fixture\n", encoding="utf-8")
+    result = system_metrics_initial_collect.task(ctx)
+    assert result.success is True
+    assert calls == [
+        [
+            "sudo",
+            "systemctl",
+            "start",
+            "--no-block",
+            "collector-fixture.service",
+        ]
     ]
 
 

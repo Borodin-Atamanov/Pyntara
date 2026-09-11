@@ -31,6 +31,11 @@ system_config_path = "/etc/pyntara/config.toml"
 # the spool path and the journal identifier embedded, so any user can
 # commit without config access and without root privileges.
 command_path = "/usr/local/bin/commit_system_metrics"
+# Command that hands one file to the System Metrics queue. {command_path}
+# is the path above and {file} is the report or the vault copy, so the
+# program and the argument shape live in one place: the collector service
+# and the final commit task run the same command.
+commit_command = ["{command_path}", "{file}"]
 # Name of the runtime vault backup that the final task
 # commit_final_system_metrics commits into System Metrics after the run.
 # The {hostname} placeholder is replaced with the machine hostname at
@@ -163,6 +168,10 @@ command_timeout_seconds = 120
 service_unit_name = "system_metrics_collector.service"
 # Name of the collector timer unit file.
 timer_unit_name = "system_metrics_collector.timer"
+# Command that starts the collector service once after provisioning. The
+# start is non-blocking: the service may wait up to its retry window, and
+# the installer must not block on it. {service_unit_name} is the unit above.
+start_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]
 # Journal identifier of the collector service.
 journal_identifier = "system_metrics_collector"
 # Path of the flock lock file. The collector takes a non-blocking

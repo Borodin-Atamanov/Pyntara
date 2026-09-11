@@ -22,21 +22,23 @@ import subprocess
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
+from pyntara.utils import run_command, substituted_command
 
 
 def task(ctx: Context) -> TaskResult:
     """Start the collector service once; skip when the unit is not deployed.
 
-    The unit name comes from the config through Context: the collector
-    service unit of the system_metrics_setup section. When the unit file is
-    absent, the deployment did not happen and the task skips with
-    changed=False. Otherwise the service is started non-blocking through
-    the shared run_command with the engine timeout; a failed start returns
-    an error TaskResult so the runner reports it.
+    The unit name and the command come from the config through Context: the
+    collector service unit of the system_metrics_setup section and the
+    start command of the collector table, with {service_unit_name}
+    substituted. When the unit file is absent, the deployment did not
+    happen and the task skips with changed=False. Otherwise the service is
+    started through the shared run_command with the engine timeout; a
+    failed start returns an error TaskResult so the runner reports it.
     """
 
-    service_name = ctx.config.system_metrics_setup.collector.service_unit_name
+    collector = ctx.config.system_metrics_setup.collector
+    service_name = collector.service_unit_name
     unit_path = ctx.config.engine.systemd_unit_dir / service_name
     if not unit_path.is_file():
         _log(f"collector unit {unit_path} not deployed, skipping")
@@ -45,10 +47,13 @@ def task(ctx: Context) -> TaskResult:
             changed=False,
             message="collector unit not deployed",
         )
-    _log(f"starting collector once: systemctl start --no-block {service_name}")
+    start_argv = substituted_command(
+        collector.start_command, {"service_unit_name": service_name}
+    )
+    _log(f"starting collector once: {' '.join(start_argv)}")
     try:
         run_command(
-            ["systemctl", "start", "--no-block", service_name],
+            start_argv,
             timeout=ctx.config.engine.command_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

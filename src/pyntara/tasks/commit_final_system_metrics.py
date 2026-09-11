@@ -26,26 +26,27 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
+from pyntara.utils import run_command, substituted_command
 
 
 def task(ctx: Context) -> TaskResult:
     """Commit the runtime vault under the configured backup name.
 
     The vault path comes from the local_vault_setup config, the backup
-    file name and the commit command path from the system_metrics_setup
+    file name and the commit command from the system_metrics_setup
     config. The vault is copied to a temporary file named
     vault_backup_file_name with {hostname} replaced by the machine
-    hostname, mode 0600, and committed through the commit command; the
-    temporary copy is removed in all cases. A missing or empty vault and
-    a failed commit return an error TaskResult.
+    hostname and with the configured vault_backup_file_mode, and it is
+    committed through the configured commit command; the temporary copy is
+    removed in all cases. A missing or empty vault and a failed commit
+    return an error TaskResult.
     """
 
+    metrics = ctx.config.system_metrics_setup
     vault_path = ctx.config.local_vault_setup.local_vault_path
-    backup_name = ctx.config.system_metrics_setup.vault_backup_file_name.format(
+    backup_name = metrics.vault_backup_file_name.format(
         hostname=socket.gethostname()
     )
-    command_path = ctx.config.system_metrics_setup.command_path
     timeout = ctx.config.engine.command_timeout_seconds
 
     if not vault_path.is_file():
@@ -68,11 +69,18 @@ def task(ctx: Context) -> TaskResult:
             error=f"runtime vault cannot be stat: {vault_path}: {exc}",
         )
 
+    if not metrics.commit_command:
+        _log("system_metrics_setup names no commit_command, cannot commit")
+        return TaskResult(
+            success=False,
+            error="system_metrics_setup.commit_command is empty",
+        )
+
     temp_path = Path(tempfile.gettempdir()) / backup_name
     _log(f"committing runtime vault {vault_path} as {backup_name}")
     try:
         shutil.copyfile(vault_path, temp_path)
-        os.chmod(temp_path, ctx.config.system_metrics_setup.vault_backup_file_mode)
+        os.chmod(temp_path, metrics.vault_backup_file_mode)
     except OSError as exc:
         temp_path.unlink(missing_ok=True)
         return TaskResult(
@@ -81,7 +89,10 @@ def task(ctx: Context) -> TaskResult:
         )
     try:
         result = run_command(
-            [str(command_path), str(temp_path)],
+            substituted_command(
+                metrics.commit_command,
+                {"command_path": str(metrics.command_path), "file": str(temp_path)},
+            ),
             timeout=timeout,
             capture=True,
             check=False,

@@ -52,7 +52,7 @@ from pyntara.config import (
 # it cannot find in words, so the journal of a machine shows config keys and
 # not a Python error. Nothing is judged here and no key is required to have a
 # particular shape: the rules of the config live in tests/config_checks.py.
-COLLECTOR_SECTION_KEYS = ("command_path", "error_priority")
+COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
 COLLECTOR_TABLE_KEYS = (
     "lock_file_path",
     "report_file_name",
@@ -65,7 +65,7 @@ COLLECTOR_TABLE_KEYS = (
     "retry_max_seconds",
 )
 from pyntara.logger import log_progress as _log
-from pyntara.utils import backoff_delay, trim_whitespace
+from pyntara.utils import backoff_delay, substituted_command, trim_whitespace
 
 
 def _structured_document(output: str) -> object | None:
@@ -241,6 +241,13 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
 
     collector = cfg.system_metrics_setup.collector
     error_priority = cfg.system_metrics_setup.error_priority
+    commit_template = cfg.system_metrics_setup.commit_command
+    if not commit_template:
+        _log(
+            "collecting report: the config names no commit_command",
+            priority=error_priority,
+        )
+        return False
     hostname = socket.gethostname()
     report_name = collector.report_file_name.format(hostname=hostname)
     report_path = Path(tempfile.gettempdir()) / report_name
@@ -256,7 +263,13 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
         return False
     try:
         result = subprocess.run(
-            [str(cfg.system_metrics_setup.command_path), str(report_path)],
+            substituted_command(
+                commit_template,
+                {
+                    "command_path": str(cfg.system_metrics_setup.command_path),
+                    "file": str(report_path),
+                },
+            ),
             capture_output=True,
             text=True,
             timeout=collector.command_timeout_seconds,

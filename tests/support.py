@@ -399,6 +399,10 @@ def make_config(
     system_metrics_venv_dir: Path = Path("/usr/local/lib/pyntara/venv"),
     system_metrics_system_config_path: Path = Path("/etc/pyntara/config.toml"),
     system_metrics_command_path: Path = Path("/usr/local/bin/commit_system_metrics"),
+    system_metrics_commit_command: tuple[str, ...] = (
+        "{command_path}",
+        "{file}",
+    ),
     system_metrics_dir: Path = Path("/var/lib/pyntara/metrics"),
     system_metrics_dir_mode: int = 0o700,
     system_metrics_max_queue_file_size_bytes: int = 104857600,
@@ -416,6 +420,12 @@ def make_config(
     ),
     system_metrics_collector_timer_unit_name: str = (
         "system_metrics_collector.timer"
+    ),
+    system_metrics_collector_start_command: tuple[str, ...] = (
+        "systemctl",
+        "start",
+        "--no-block",
+        "{service_unit_name}",
     ),
     system_metrics_collector_journal_identifier: str = (
         "system_metrics_collector"
@@ -645,6 +655,7 @@ def make_config(
             venv_dir=system_metrics_venv_dir,
             system_config_path=system_metrics_system_config_path,
             command_path=system_metrics_command_path,
+            commit_command=system_metrics_commit_command,
             system_metrics_dir=system_metrics_dir,
             system_metrics_dir_mode=system_metrics_dir_mode,
             max_queue_file_size_bytes=system_metrics_max_queue_file_size_bytes,
@@ -661,6 +672,7 @@ def make_config(
                 command_timeout_seconds=system_metrics_collector_command_timeout_seconds,
                 service_unit_name=system_metrics_collector_service_unit_name,
                 timer_unit_name=system_metrics_collector_timer_unit_name,
+                start_command=system_metrics_collector_start_command,
                 journal_identifier=system_metrics_collector_journal_identifier,
                 lock_file_path=system_metrics_collector_lock_file_path,
                 report_file_name=system_metrics_collector_report_file_name,

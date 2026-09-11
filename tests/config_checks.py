@@ -2407,6 +2407,10 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
             raw.get("timer_unit_name"),
             "system_metrics_setup.collector.timer_unit_name",
         ),
+        start_command=_string_list(
+            raw.get("start_command"),
+            "system_metrics_setup.collector.start_command",
+        ),
         journal_identifier=_nonempty_string_field(
             raw.get("journal_identifier"),
             "system_metrics_setup.collector.journal_identifier",
@@ -2513,6 +2517,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.command_path must be a non-empty string"
         )
+    commit_command = _string_list(
+        raw.get("commit_command"),
+        "system_metrics_setup.commit_command",
+    )
     vault_backup_file_name = _nonempty_string_field(
         raw.get("vault_backup_file_name"),
         "system_metrics_setup.vault_backup_file_name",
@@ -2608,6 +2616,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         venv_dir=Path(venv_dir),
         system_config_path=Path(system_config_path),
         command_path=Path(command_path),
+        commit_command=commit_command,
         vault_backup_file_name=vault_backup_file_name,
         vault_backup_file_mode=vault_backup_file_mode,
         system_metrics_dir=Path(system_metrics_dir),

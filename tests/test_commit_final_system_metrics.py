@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import socket
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,56 @@ def test_commits_vault_under_hostname_name(
     assert captured["path"] == temp_path
     assert captured["content"] == b"vault-bytes"
     assert not temp_path.exists()
+
+
+def test_commit_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another hand-off command in the config is the argv the task runs, so
+    # the program and the argument shape are not values of the module, and
+    # the collector service runs the same configured command.
+    _write_vault(tmp_path)
+    calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            system_metrics_setup=replace(
+                ctx.config.system_metrics_setup,
+                command_path=Path("/opt/pyntara/hand-over"),
+                commit_command=("/bin/sh", "-c", "{command_path} {file}"),
+            ),
+        ),
+    )
+    result = commit_final_system_metrics.task(ctx)
+    assert result.success is True
+    assert calls == [["/bin/sh", "-c", f"/opt/pyntara/hand-over {temp_path}"]]
+
+
+def test_empty_commit_command_reports_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An empty commit_command is a broken config: the task reports it and
+    # never copies the vault, so no temporary file is left behind.
+    vault = _write_vault(tmp_path)
+    calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            system_metrics_setup=replace(
+                ctx.config.system_metrics_setup, commit_command=()
+            ),
+        ),
+    )
+    result = commit_final_system_metrics.task(ctx)
+    assert result.success is False
+    assert "commit_command" in (result.error or "")
+    assert calls == []
+    assert not temp_path.exists()
+    assert vault.read_bytes() == b"vault-bytes"
 
 
 def test_missing_vault_reports_error(

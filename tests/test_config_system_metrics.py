@@ -94,6 +94,16 @@ from config_helpers import (
             'command_path = "/usr/local/bin/commit_system_metrics"',
             'command_path = ""',
         ),
+        # system_metrics_setup commit_command is an empty array
+        base_config().replace(
+            'commit_command = ["{command_path}", "{file}"]',
+            "commit_command = []",
+        ),
+        # system_metrics_setup commit_command holds an empty argument
+        base_config().replace(
+            'commit_command = ["{command_path}", "{file}"]',
+            'commit_command = ["", "{file}"]',
+        ),
         # system_metrics_setup vault_backup_file_name is a number, not a string
         base_config().replace(
             'vault_backup_file_name = "{hostname}.kdbx"',
@@ -161,6 +171,11 @@ from config_helpers import (
         base_config().replace('spool_dir_mode = "1733"', 'spool_dir_mode = "173"'),
         # system_metrics_setup command_file_mode is not a four-digit octal string
         base_config().replace('command_file_mode = "0755"', 'command_file_mode = "755"'),
+        # system_metrics_setup.collector start_command is a string, not an array
+        base_config().replace(
+            'start_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]',
+            'start_command = "systemctl start --no-block"',
+        ),
         # system_metrics_setup service_unit_name is an empty string
         base_config().replace(
             'service_unit_name = "system_metrics.service"', 'service_unit_name = ""'

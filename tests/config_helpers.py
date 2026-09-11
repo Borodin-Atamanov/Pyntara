@@ -568,6 +568,7 @@ def base_config() -> str:
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'
+        'commit_command = ["{command_path}", "{file}"]\n'
         'vault_backup_file_name = "{hostname}.kdbx"\n'
         'vault_backup_file_mode = "0600"\n'
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
@@ -599,6 +600,7 @@ def base_config() -> str:
         "command_timeout_seconds = 15\n"
         'service_unit_name = "system_metrics_collector.service"\n'
         'timer_unit_name = "system_metrics_collector.timer"\n'
+        'start_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]\n'
         'journal_identifier = "system_metrics_collector"\n'
         'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
         'report_file_name = "network.json"\n'

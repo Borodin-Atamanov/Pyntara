@@ -38,11 +38,13 @@ class SystemMetricsCollectorConfig:
     of the timer; retry_base_seconds, retry_multiplier and
     retry_max_seconds are the geometric backoff of the retries, in whole
     seconds; command_timeout_seconds bounds a single console command and
-    one commit call. journal_identifier is the journal identifier of the
-    collector service; lock_file_path is the flock lock that keeps a
-    second instance from committing; network_modules and system_modules
-    are the console commands whose full output forms the report, the
-    readiness percentage counting only the network modules
+    one commit call; start_command starts the collector service once after
+    provisioning, with {service_unit_name} substituted, and is
+    deliberately non-blocking. journal_identifier is the journal
+    identifier of the collector service; lock_file_path is the flock lock
+    that keeps a second instance from committing; network_modules and
+    system_modules are the console commands whose full output forms the
+    report, the readiness percentage counting only the network modules
     (docs/spec/system-metrics.md, section Report collector).
     """
 
@@ -55,6 +57,7 @@ class SystemMetricsCollectorConfig:
     command_timeout_seconds: int
     service_unit_name: str
     timer_unit_name: str
+    start_command: tuple[str, ...]
     journal_identifier: str
     lock_file_path: Path
     report_file_name: str
@@ -80,7 +83,10 @@ class SystemMetricsSetupConfig:
     the senders; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
     command_path being the system path of the generated
-    commit_system_metrics command file;
+    commit_system_metrics command file, and commit_command is the hand-off
+    command that passes one file to the queue, with {command_path} and
+    {file} substituted, so the collector service and the final commit task
+    run the same argv;
     vault_backup_file_name is the committed artifact name of the runtime
     vault backup, with {hostname} replaced by the machine hostname at
     commit time. system_metrics_dir is the root
@@ -126,6 +132,7 @@ class SystemMetricsSetupConfig:
     venv_dir: Path
     system_config_path: Path
     command_path: Path
+    commit_command: tuple[str, ...]
     vault_backup_file_name: str
     vault_backup_file_mode: int
     system_metrics_dir: Path
