@@ -15,3 +15,12 @@ ubuntu_hosts = [
 # task writes an apt.conf.d drop-in that stops apt and unattended-upgrades
 # from deleting downloaded packages after a successful install.
 keep_downloaded_debs = true
+# The apt sources the task manages: the legacy single file and the drop-in
+# directory. Only lowercase files ending in .list or .sources inside the
+# directory are apt sources; everything else is left alone.
+legacy_sources_file = "/etc/apt/sources.list"
+sources_list_d = "/etc/apt/sources.list.d"
+# The apt drop-in that stops apt from deleting downloaded .deb files. The
+# task owns this file completely while keep_downloaded_debs is true: it
+# writes it, and removes it when the setting is false.
+keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"

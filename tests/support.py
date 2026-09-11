@@ -252,6 +252,11 @@ def make_config(
         "old-releases.ubuntu.com",
     ),
     add_extra_repos_keep_downloaded_debs: bool = True,
+    add_extra_repos_legacy_sources_file: Path = Path("/etc/apt/sources.list"),
+    add_extra_repos_sources_list_d: Path = Path("/etc/apt/sources.list.d"),
+    add_extra_repos_keep_debs_file: Path = Path(
+        "/etc/apt/apt.conf.d/99keep-debs.conf"
+    ),
     hostname_file: Path = Path("/etc/hostname"),
     hostname_set_hostname_command: tuple[str, ...] = (
         "hostnamectl",
@@ -731,6 +736,9 @@ def make_config(
             components=add_extra_repos_components,
             ubuntu_hosts=add_extra_repos_ubuntu_hosts,
             keep_downloaded_debs=add_extra_repos_keep_downloaded_debs,
+            legacy_sources_file=add_extra_repos_legacy_sources_file,
+            sources_list_d=add_extra_repos_sources_list_d,
+            keep_debs_file=add_extra_repos_keep_debs_file,
         ),
         hostname=replace(
             base.hostname,

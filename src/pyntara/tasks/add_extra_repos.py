@@ -29,13 +29,9 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import APT_NONINTERACTIVE_ENV, run_command
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-LEGACY_SOURCES_FILE = Path("/etc/apt/sources.list")
-SOURCES_LIST_D = Path("/etc/apt/sources.list.d")
-# Apt drop-in that keeps downloaded .deb files after install. The task owns
-# this file completely: exact content write, removal when disabled.
-APT_KEEP_DEBS_FILE = Path("/etc/apt/apt.conf.d/99keep-debs.conf")
+# The content of the apt drop-in the task owns while keep_downloaded_debs
+# is true. The file itself and the setting come from the [add_extra_repos]
+# config table.
 APT_KEEP_DEBS_CONTENT = (
     "# Written by pyntara add_extra_repos\n"
     "# Keep downloaded .deb files after install for offline reinstall.\n"
@@ -190,22 +186,25 @@ def _process_legacy(
     return _FileRewrite("".join(lines), changed, has_ubuntu, satisfied, tuple(problems))
 
 
-def _collect_source_files() -> list[Path]:
+def _collect_source_files(
+    legacy_sources_file: Path, sources_list_d: Path
+) -> list[Path]:
     """The apt source files apt itself reads, legacy file first.
 
-    apt reads /etc/apt/sources.list and, in sources.list.d, only lowercase
-    files ending in .list or .sources. Backup files (.bak) and other
-    extensions are ignored by apt and by this task.
+    apt reads the configured legacy sources file and, in the configured
+    sources directory, only lowercase files ending in .list or .sources.
+    Backup files (.bak) and other extensions are ignored by apt and by this
+    task.
     """
 
     files: list[Path] = []
-    if LEGACY_SOURCES_FILE.is_file():
-        files.append(LEGACY_SOURCES_FILE)
-    if SOURCES_LIST_D.is_dir():
+    if legacy_sources_file.is_file():
+        files.append(legacy_sources_file)
+    if sources_list_d.is_dir():
         files.extend(
             sorted(
                 path
-                for path in SOURCES_LIST_D.iterdir()
+                for path in sources_list_d.iterdir()
                 if path.suffix in (".list", ".sources") and path.name.islower()
             )
         )
@@ -230,7 +229,9 @@ def _keep_debs_state_note(keep_debs: bool) -> str:
     return "keep downloaded .deb files after install disabled"
 
 
-def _ensure_keep_debs_dropin(keep_debs: bool) -> tuple[bool, str | None]:
+def _ensure_keep_debs_dropin(
+    keep_debs: bool, keep_debs_file: Path
+) -> tuple[bool, str | None]:
     """Bring the apt keep-debs drop-in to the configured state.
 
     When keep_debs is true the drop-in must carry the two option lines that
@@ -241,7 +242,7 @@ def _ensure_keep_debs_dropin(keep_debs: bool) -> tuple[bool, str | None]:
     changed and an error string when the file could not be updated.
     """
 
-    path = APT_KEEP_DEBS_FILE
+    path = keep_debs_file
     try:
         if not keep_debs:
             if not path.exists():
@@ -272,13 +273,17 @@ def task(ctx: Context) -> TaskResult:
     configured = ctx.config.add_extra_repos.components
     hosts = ctx.config.add_extra_repos.ubuntu_hosts
     keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
+    keep_debs_file = ctx.config.add_extra_repos.keep_debs_file
     _log(f"configured components: {' '.join(configured)}")
-    keep_changed, keep_error = _ensure_keep_debs_dropin(keep_debs)
+    keep_changed, keep_error = _ensure_keep_debs_dropin(keep_debs, keep_debs_file)
     if keep_error:
         return TaskResult(success=False, error=keep_error)
     if keep_changed:
-        _log(f"updated {APT_KEEP_DEBS_FILE}: keep downloaded .deb files")
-    files = _collect_source_files()
+        _log(f"updated {keep_debs_file}: keep downloaded .deb files")
+    files = _collect_source_files(
+        ctx.config.add_extra_repos.legacy_sources_file,
+        ctx.config.add_extra_repos.sources_list_d,
+    )
     if not files:
         return TaskResult(success=False, error="no apt source files found")
     _log(f"apt source files found: {len(files)}")

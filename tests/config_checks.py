@@ -216,10 +216,28 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
     keep_downloaded_debs = _bool_field(
         raw.get("keep_downloaded_debs"), "add_extra_repos.keep_downloaded_debs"
     )
+    legacy_sources_file = Path(
+        _nonempty_string_field(
+            raw.get("legacy_sources_file"), "add_extra_repos.legacy_sources_file"
+        )
+    )
+    sources_list_d = Path(
+        _nonempty_string_field(
+            raw.get("sources_list_d"), "add_extra_repos.sources_list_d"
+        )
+    )
+    keep_debs_file = Path(
+        _nonempty_string_field(
+            raw.get("keep_debs_file"), "add_extra_repos.keep_debs_file"
+        )
+    )
     return AddExtraReposConfig(
         components=tuple(unique),
         ubuntu_hosts=tuple(ubuntu_hosts),
         keep_downloaded_debs=keep_downloaded_debs,
+        legacy_sources_file=legacy_sources_file,
+        sources_list_d=sources_list_d,
+        keep_debs_file=keep_debs_file,
     )
 
 

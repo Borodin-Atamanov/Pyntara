@@ -63,6 +63,11 @@ def _ctx(
             cli_tools_packages=("mc",),
             add_extra_repos_components=CONFIGURED,
             add_extra_repos_keep_downloaded_debs=keep_downloaded_debs,
+            add_extra_repos_legacy_sources_file=tmp_path / "sources.list",
+            add_extra_repos_sources_list_d=tmp_path / "sources.list.d",
+            add_extra_repos_keep_debs_file=(
+                tmp_path / "apt.conf.d" / "99keep-debs.conf"
+            ),
             swapfile_path=tmp_path / "swapfile",
         ),
     )
@@ -84,9 +89,6 @@ def _install_sources(
     sources_dir.mkdir()
     for name, content in files.items():
         (sources_dir / name).write_text(content, encoding="utf-8")
-    monkeypatch.setattr(add_extra_repos, "SOURCES_LIST_D", sources_dir)
-    legacy = tmp_path / "sources.list"
-    monkeypatch.setattr(add_extra_repos, "LEGACY_SOURCES_FILE", legacy)
     _install_keep_debs(monkeypatch, tmp_path, create=True)
     return sources_dir
 
@@ -110,7 +112,6 @@ def _install_keep_debs(
         path.write_text(add_extra_repos.APT_KEEP_DEBS_CONTENT, encoding="utf-8")
     elif path.exists():
         path.unlink()
-    monkeypatch.setattr(add_extra_repos, "APT_KEEP_DEBS_FILE", path)
     return path
 
 

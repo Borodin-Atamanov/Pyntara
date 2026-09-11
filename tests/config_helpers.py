@@ -54,6 +54,9 @@ def base_config() -> str:
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\nkeep_downloaded_debs = true\n'
+        'legacy_sources_file = "/etc/apt/sources.list"\n'
+        'sources_list_d = "/etc/apt/sources.list.d"\n'
+        'keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'
         'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
         '[kde_keyboard_setup]\n'
