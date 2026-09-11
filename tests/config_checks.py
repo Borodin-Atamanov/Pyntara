@@ -195,6 +195,25 @@ def _enum_field(raw: object, name: str, allowed: tuple[str, ...]) -> str:
     return raw
 
 
+def _int_map(raw: object, name: str) -> dict[str, int]:
+    """Validate a table of integers keyed by non-empty strings.
+
+    A boolean is not an integer here: it is a flag of the file format, not
+    a number of the file. An empty table is allowed.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a table of integers")
+    result: dict[str, int] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"{name} keys must be non-empty strings")
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ConfigError(f"{name} values must be integers")
+        result[key.strip()] = value
+    return result
+
+
 
 
 
@@ -1018,6 +1037,68 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             raw.get("panel_restart_command"),
             "kde_keyboard_setup.panel_restart_command",
         ),
+        kxkbrc_group=_string_list(
+            raw.get("kxkbrc_group"), "kde_keyboard_setup.kxkbrc_group"
+        ),
+        applet_configuration_group=_string_list(
+            raw.get("applet_configuration_group"),
+            "kde_keyboard_setup.applet_configuration_group",
+        ),
+        shortcuts_file_name=_nonempty_string_field(
+            raw.get("shortcuts_file_name"),
+            "kde_keyboard_setup.shortcuts_file_name",
+        ),
+        kxkbrc_key_layout_list=_nonempty_string_field(
+            raw.get("kxkbrc_key_layout_list"),
+            "kde_keyboard_setup.kxkbrc_key_layout_list",
+        ),
+        kxkbrc_key_display_names=_nonempty_string_field(
+            raw.get("kxkbrc_key_display_names"),
+            "kde_keyboard_setup.kxkbrc_key_display_names",
+        ),
+        kxkbrc_key_variant_list=_nonempty_string_field(
+            raw.get("kxkbrc_key_variant_list"),
+            "kde_keyboard_setup.kxkbrc_key_variant_list",
+        ),
+        kxkbrc_key_options=_nonempty_string_field(
+            raw.get("kxkbrc_key_options"),
+            "kde_keyboard_setup.kxkbrc_key_options",
+        ),
+        kxkbrc_key_reset_old_options=_nonempty_string_field(
+            raw.get("kxkbrc_key_reset_old_options"),
+            "kde_keyboard_setup.kxkbrc_key_reset_old_options",
+        ),
+        kxkbrc_key_switch_mode=_nonempty_string_field(
+            raw.get("kxkbrc_key_switch_mode"),
+            "kde_keyboard_setup.kxkbrc_key_switch_mode",
+        ),
+        kxkbrc_key_use=_nonempty_string_field(
+            raw.get("kxkbrc_key_use"), "kde_keyboard_setup.kxkbrc_key_use"
+        ),
+        display_style_key=_nonempty_string_field(
+            raw.get("display_style_key"),
+            "kde_keyboard_setup.display_style_key",
+        ),
+        kconfig_true_value=_nonempty_string_field(
+            raw.get("kconfig_true_value"),
+            "kde_keyboard_setup.kconfig_true_value",
+        ),
+        kconfig_false_value=_nonempty_string_field(
+            raw.get("kconfig_false_value"),
+            "kde_keyboard_setup.kconfig_false_value",
+        ),
+        layout_switcher_component_unique=_nonempty_string_field(
+            raw.get("layout_switcher_component_unique"),
+            "kde_keyboard_setup.layout_switcher_component_unique",
+        ),
+        layout_switcher_component_friendly=_nonempty_string_field(
+            raw.get("layout_switcher_component_friendly"),
+            "kde_keyboard_setup.layout_switcher_component_friendly",
+        ),
+        shortcut_modifier_bits=_int_map(
+            raw.get("shortcut_modifier_bits"),
+            "kde_keyboard_setup.shortcut_modifier_bits",
+        ),
         layout_switch_shortcuts=_string_map(
             raw.get("layout_switch_shortcuts", {}),
             "kde_keyboard_setup.layout_switch_shortcuts",
@@ -1050,21 +1131,149 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             if "places_hidden" in raw
             else ()
         ),
-        places_bookmark_namespace=_nonempty_string_field(
-            raw.get("places_bookmark_namespace"),
-            "kde_settings.places_bookmark_namespace",
-        ),
-        places_kdepriv_namespace=_nonempty_string_field(
-            raw.get("places_kdepriv_namespace"),
-            "kde_settings.places_kdepriv_namespace",
-        ),
-        places_mime_namespace=_nonempty_string_field(
-            raw.get("places_mime_namespace"),
-            "kde_settings.places_mime_namespace",
+        places_namespaces=_string_map(
+            raw.get("places_namespaces"), "kde_settings.places_namespaces"
         ),
         places_metadata_owner=_nonempty_string_field(
             raw.get("places_metadata_owner"),
             "kde_settings.places_metadata_owner",
+        ),
+        kdeglobals_file_name=_nonempty_string_field(
+            raw.get("kdeglobals_file_name"),
+            "kde_settings.kdeglobals_file_name",
+        ),
+        kcminputrc_file_name=_nonempty_string_field(
+            raw.get("kcminputrc_file_name"),
+            "kde_settings.kcminputrc_file_name",
+        ),
+        kwinrc_file_name=_nonempty_string_field(
+            raw.get("kwinrc_file_name"), "kde_settings.kwinrc_file_name"
+        ),
+        plasma_keyboard_file_name=_nonempty_string_field(
+            raw.get("plasma_keyboard_file_name"),
+            "kde_settings.plasma_keyboard_file_name",
+        ),
+        global_shortcuts_file_name=_nonempty_string_field(
+            raw.get("global_shortcuts_file_name"),
+            "kde_settings.global_shortcuts_file_name",
+        ),
+        general_group=_string_list(
+            raw.get("general_group"), "kde_settings.general_group"
+        ),
+        kde_group=_string_list(raw.get("kde_group"), "kde_settings.kde_group"),
+        mouse_group=_string_list(
+            raw.get("mouse_group"), "kde_settings.mouse_group"
+        ),
+        keyboard_group=_string_list(
+            raw.get("keyboard_group"), "kde_settings.keyboard_group"
+        ),
+        wayland_group=_string_list(
+            raw.get("wayland_group"), "kde_settings.wayland_group"
+        ),
+        virtual_keyboard_group=_string_list(
+            raw.get("virtual_keyboard_group"),
+            "kde_settings.virtual_keyboard_group",
+        ),
+        plugins_group=_string_list(
+            raw.get("plugins_group"), "kde_settings.plugins_group"
+        ),
+        desktops_group=_string_list(
+            raw.get("desktops_group"), "kde_settings.desktops_group"
+        ),
+        look_and_feel_package_key=_nonempty_string_field(
+            raw.get("look_and_feel_package_key"),
+            "kde_settings.look_and_feel_package_key",
+        ),
+        color_scheme_key=_nonempty_string_field(
+            raw.get("color_scheme_key"), "kde_settings.color_scheme_key"
+        ),
+        automatic_look_and_feel_key=_nonempty_string_field(
+            raw.get("automatic_look_and_feel_key"),
+            "kde_settings.automatic_look_and_feel_key",
+        ),
+        automatic_look_and_feel_idle_interval_key=_nonempty_string_field(
+            raw.get("automatic_look_and_feel_idle_interval_key"),
+            "kde_settings.automatic_look_and_feel_idle_interval_key",
+        ),
+        numlock_key=_nonempty_string_field(
+            raw.get("numlock_key"), "kde_settings.numlock_key"
+        ),
+        input_method_key=_nonempty_string_field(
+            raw.get("input_method_key"), "kde_settings.input_method_key"
+        ),
+        input_method_locales_key=_nonempty_string_field(
+            raw.get("input_method_locales_key"),
+            "kde_settings.input_method_locales_key",
+        ),
+        cursor_theme_key=_nonempty_string_field(
+            raw.get("cursor_theme_key"), "kde_settings.cursor_theme_key"
+        ),
+        click_method_key=_nonempty_string_field(
+            raw.get("click_method_key"), "kde_settings.click_method_key"
+        ),
+        touchpad_disable_external_mouse_key=_nonempty_string_field(
+            raw.get("touchpad_disable_external_mouse_key"),
+            "kde_settings.touchpad_disable_external_mouse_key",
+        ),
+        desktop_count_key=_nonempty_string_field(
+            raw.get("desktop_count_key"), "kde_settings.desktop_count_key"
+        ),
+        kconfig_true_value=_nonempty_string_field(
+            raw.get("kconfig_true_value"), "kde_settings.kconfig_true_value"
+        ),
+        kconfig_false_value=_nonempty_string_field(
+            raw.get("kconfig_false_value"),
+            "kde_settings.kconfig_false_value",
+        ),
+        numlock_values=_string_map(
+            raw.get("numlock_values"), "kde_settings.numlock_values"
+        ),
+        click_method_values=_string_map(
+            raw.get("click_method_values"),
+            "kde_settings.click_method_values",
+        ),
+        automatic_theme_switch_idle_interval=_nonempty_string_field(
+            raw.get("automatic_theme_switch_idle_interval"),
+            "kde_settings.automatic_theme_switch_idle_interval",
+        ),
+        places_root_tag=_nonempty_string_field(
+            raw.get("places_root_tag"), "kde_settings.places_root_tag"
+        ),
+        places_bookmark_tag=_nonempty_string_field(
+            raw.get("places_bookmark_tag"),
+            "kde_settings.places_bookmark_tag",
+        ),
+        places_title_tag=_nonempty_string_field(
+            raw.get("places_title_tag"), "kde_settings.places_title_tag"
+        ),
+        places_metadata_path=_nonempty_string_field(
+            raw.get("places_metadata_path"),
+            "kde_settings.places_metadata_path",
+        ),
+        places_metadata_owner_attribute=_nonempty_string_field(
+            raw.get("places_metadata_owner_attribute"),
+            "kde_settings.places_metadata_owner_attribute",
+        ),
+        places_hidden_element=_nonempty_string_field(
+            raw.get("places_hidden_element"),
+            "kde_settings.places_hidden_element",
+        ),
+        places_hidden_value=_nonempty_string_field(
+            raw.get("places_hidden_value"),
+            "kde_settings.places_hidden_value",
+        ),
+        kwin_scripts=_string_list(
+            raw.get("kwin_scripts"), "kde_settings.kwin_scripts"
+        ),
+        kwin_script_files=_string_list(
+            raw.get("kwin_script_files"), "kde_settings.kwin_script_files"
+        ),
+        kwin_script_hotkeys=_string_list(
+            raw.get("kwin_script_hotkeys"),
+            "kde_settings.kwin_script_hotkeys",
+        ),
+        kwin_script_actions=_string_list(
+            raw.get("kwin_script_actions"), "kde_settings.kwin_script_actions"
         ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"

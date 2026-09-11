@@ -51,3 +51,32 @@ panel_restart_command = ["systemctl", "--user", "--machine", "i@.host", "restart
 # Per-layout hotkeys are managed by the kde_settings task through its
 # kconfig records, not here. Empty by default: no hotkeys.
 layout_switch_shortcuts = {}
+# The group of kxkbrc that carries the layout settings and the group of
+# the appletsrc applet that carries its configuration.
+kxkbrc_group = ["Layout"]
+applet_configuration_group = ["Configuration", "General"]
+# The KConfig file of the global shortcuts and the keys the task writes in
+# kxkbrc, in the order KDE writes them.
+shortcuts_file_name = "kglobalshortcutsrc"
+kxkbrc_key_layout_list = "LayoutList"
+kxkbrc_key_display_names = "DisplayNames"
+kxkbrc_key_variant_list = "VariantList"
+kxkbrc_key_options = "Options"
+kxkbrc_key_reset_old_options = "ResetOldOptions"
+kxkbrc_key_switch_mode = "SwitchMode"
+kxkbrc_key_use = "Use"
+# The appletsrc key that carries the indicator display style.
+display_style_key = "displayStyle"
+# The boolean spelling of those files, used for every key the task writes
+# as a flag.
+kconfig_true_value = "true"
+kconfig_false_value = "false"
+# The component that owns the layout switcher actions in the shortcut
+# system: the unique name the daemon knows and the friendly name it shows.
+layout_switcher_component_unique = "KDE Keyboard Layout Switcher"
+layout_switcher_component_friendly = "Keyboard Layout Switcher"
+# The Qt keyboard modifier flags, which the daemon stores combined with
+# the key code of a shortcut. The keys are the modifier names a portable
+# shortcut may carry; the values are the flags of Qt itself, so a
+# shortcut the task applies live can be composed without a Qt library.
+shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }

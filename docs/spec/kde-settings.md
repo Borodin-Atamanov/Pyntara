@@ -46,7 +46,12 @@ packages, the packages the task ensures are installed.
 username and home_dir, the target user and that user's home directory.  
 user_dirs, the XDG user directories folded into Downloads.  
 places_hidden, the Dolphin Places panel system entries hidden by title in user-places.xbel.  
-places_bookmark_namespace, places_kdepriv_namespace and places_mime_namespace, the XBEL namespaces the task declares on the root tag when Dolphin wrote the file without them, and places_metadata_owner, the owner an entry metadata block must carry before the task may hide that place.  
+places_namespaces and places_metadata_owner, the XBEL prefixes with the namespace address each one is declared with, and the owner an entry metadata block must carry before the task may hide that place.  
+kdeglobals_file_name, kcminputrc_file_name, kwinrc_file_name, plasma_keyboard_file_name and global_shortcuts_file_name with general_group, kde_group, mouse_group, keyboard_group, wayland_group, virtual_keyboard_group, plugins_group and desktops_group, the KConfig files and groups the task writes.  
+look_and_feel_package_key, color_scheme_key, automatic_look_and_feel_key, automatic_look_and_feel_idle_interval_key, numlock_key, input_method_key, input_method_locales_key, cursor_theme_key, click_method_key, touchpad_disable_external_mouse_key and desktop_count_key, the keys it reads and writes inside them, with kconfig_true_value and kconfig_false_value, the boolean spelling of those files.  
+numlock_values and click_method_values, the value each configuration choice takes in the file, and automatic_theme_switch_idle_interval, the idle wait of the native day and night switch.  
+places_root_tag, places_bookmark_tag, places_title_tag, places_metadata_path, places_metadata_owner_attribute, places_hidden_element and places_hidden_value, the structure of user-places.xbel the task matches on.  
+kwin_scripts, kwin_script_files, kwin_script_hotkeys and kwin_script_actions, the KWin scripts installed, the files each one carries, the combinations the scripts claim and the actions that own them.  
 color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
 look_and_feel_light, the light theme the day and night switch alternates to.  
 automatic_look_and_feel, whether the native day and night switch is enabled.  

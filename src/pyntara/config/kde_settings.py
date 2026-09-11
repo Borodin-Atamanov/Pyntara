@@ -102,9 +102,47 @@ class KdeSettingsConfig:
     sddm_theme_cursor_size: str
     sddm_theme_cursor_theme: str
     sddm_theme_font: str
+    kdeglobals_file_name: str
+    kcminputrc_file_name: str
+    kwinrc_file_name: str
+    plasma_keyboard_file_name: str
+    global_shortcuts_file_name: str
+    general_group: tuple[str, ...]
+    kde_group: tuple[str, ...]
+    mouse_group: tuple[str, ...]
+    keyboard_group: tuple[str, ...]
+    wayland_group: tuple[str, ...]
+    virtual_keyboard_group: tuple[str, ...]
+    plugins_group: tuple[str, ...]
+    desktops_group: tuple[str, ...]
+    look_and_feel_package_key: str
+    color_scheme_key: str
+    automatic_look_and_feel_key: str
+    automatic_look_and_feel_idle_interval_key: str
+    numlock_key: str
+    input_method_key: str
+    input_method_locales_key: str
+    cursor_theme_key: str
+    click_method_key: str
+    touchpad_disable_external_mouse_key: str
+    desktop_count_key: str
+    kconfig_true_value: str
+    kconfig_false_value: str
+    numlock_values: dict[str, str]
+    click_method_values: dict[str, str]
+    automatic_theme_switch_idle_interval: str
+    places_root_tag: str
+    places_bookmark_tag: str
+    places_title_tag: str
+    places_metadata_path: str
+    places_metadata_owner_attribute: str
+    places_hidden_element: str
+    places_hidden_value: str
+    places_namespaces: dict[str, str]
+    kwin_scripts: tuple[str, ...]
+    kwin_script_files: tuple[str, ...]
+    kwin_script_hotkeys: tuple[str, ...]
+    kwin_script_actions: tuple[str, ...]
     places_hidden: tuple[str, ...] = ()
-    places_bookmark_namespace: str = ""
-    places_kdepriv_namespace: str = ""
-    places_mime_namespace: str = ""
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

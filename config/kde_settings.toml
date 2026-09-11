@@ -93,16 +93,71 @@ sddm_theme_font = "Noto Sans,20"
 # so only Downloads stays visible among the default places. An empty list
 # leaves the Places panel untouched.
 places_hidden = ["Home", "Desktop", "Documents", "Music", "Pictures", "Videos"]
-# The XBEL namespaces of the Places panel file user-places.xbel. Dolphin
-# can write the file with a namespace bound as ns0 while the bookmark:
-# prefix stays undeclared, which a strict parser rejects, so the task
-# declares the prefixes it deals with through these addresses.
-places_bookmark_namespace = "http://freedesktop.org/standards/desktop-bookmarks"
-places_kdepriv_namespace = "http://www.kde.org/kdepriv"
-places_mime_namespace = "http://freedesktop.org/standards/shared-mime-info"
+# The XBEL namespaces of the Places panel file user-places.xbel, by the
+# prefix the file binds them to. Dolphin can write the file with a
+# namespace bound as ns0 while the bookmark: prefix stays undeclared,
+# which a strict parser rejects, so the task declares these prefixes.
+places_namespaces = { bookmark = "http://freedesktop.org/standards/desktop-bookmarks", kdepriv = "http://www.kde.org/kdepriv", mime = "http://freedesktop.org/standards/shared-mime-info" }
 # Owner address of the KDE metadata block inside an entry of that file:
 # only a block with this owner is a place the task may hide.
 places_metadata_owner = "http://www.kde.org"
+# The KConfig files the task writes, by the name they carry under the
+# user config directory, and the group names inside them. The names are
+# the vocabulary of the foreign files, so they are values like any other:
+# a KDE release that renames a file, a group or a key is answered here.
+kdeglobals_file_name = "kdeglobals"
+kcminputrc_file_name = "kcminputrc"
+kwinrc_file_name = "kwinrc"
+plasma_keyboard_file_name = "plasmakeyboardrc"
+global_shortcuts_file_name = "kglobalshortcutsrc"
+general_group = ["General"]
+kde_group = ["KDE"]
+mouse_group = ["Mouse"]
+keyboard_group = ["Keyboard"]
+wayland_group = ["Wayland"]
+virtual_keyboard_group = ["General"]
+plugins_group = ["Plugins"]
+desktops_group = ["Desktops"]
+# The keys the task reads and writes in those files.
+look_and_feel_package_key = "LookAndFeelPackage"
+color_scheme_key = "ColorScheme"
+automatic_look_and_feel_key = "AutomaticLookAndFeel"
+automatic_look_and_feel_idle_interval_key = "AutomaticLookAndFeelIdleInterval"
+numlock_key = "NumLock"
+input_method_key = "InputMethod"
+input_method_locales_key = "enabledLocales"
+cursor_theme_key = "cursorTheme"
+click_method_key = "ClickMethod"
+touchpad_disable_external_mouse_key = "DisableEventsOnExternalMouse"
+desktop_count_key = "Number"
+# The boolean spelling of those files, used for every key the task writes
+# as a flag.
+kconfig_true_value = "true"
+kconfig_false_value = "false"
+# The NumLock and click method values as those files store them.
+numlock_values = { on = "0", off = "1", unchanged = "2" }
+click_method_values = { clickfinger = "1", clickareas = "2", none = "0" }
+# The idle wait, in minutes, before the native day and night theme switch
+# applies its new theme; recorded from the user's manual tuning.
+automatic_theme_switch_idle_interval = "99"
+# The structure of user-places.xbel the task matches on: the root tag, the
+# entry tag, the title tag inside an entry, the metadata path, the
+# attribute that carries the owner and the element and value that mark a
+# hidden place.
+places_root_tag = "xbel"
+places_bookmark_tag = "bookmark"
+places_title_tag = "title"
+places_metadata_path = "info/metadata"
+places_metadata_owner_attribute = "owner"
+places_hidden_element = "IsHidden"
+places_hidden_value = "true"
+# The KWin scripts the task installs and enables, the files each script
+# carries inside its directory, the keyboard combinations the scripts
+# claim and the script actions that own those combinations.
+kwin_scripts = ["window-grow-shrink", "window-restore-tracker"]
+kwin_script_files = ["metadata.json", "contents/code/main.js"]
+kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
+kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.

@@ -40,21 +40,10 @@ from pyntara.utils import (
     trim_whitespace,
 )
 
-# The kxkbrc group that carries the layout settings.
-KXKBRC_GROUP: tuple[str, ...] = ("Layout",)
-# The KConfig file that carries the global shortcuts and the group and
-# daemon component that own the keyboard layout switcher actions.
-SHORTCUTS_FILE_NAME = "kglobalshortcutsrc"
-LAYOUT_SWITCHER_COMPONENT_UNIQUE = "KDE Keyboard Layout Switcher"
-LAYOUT_SWITCHER_COMPONENT_FRIENDLY = "Keyboard Layout Switcher"
-# Qt modifier flag values combined into the key code the kglobalaccel
-# daemon stores for a shortcut.
-_SHORTCUT_MODIFIER_BITS: dict[str, int] = {
-    "Ctrl": 0x04000000,
-    "Alt": 0x08000000,
-    "Shift": 0x02000000,
-    "Meta": 0x10000000,
-}
+# The kxkbrc group that carries the layout settings, the KConfig file of
+# the global shortcuts, the keys the task writes and the Qt modifier
+# flags all come from the config: they are the vocabulary of foreign
+# files, so they are values like any other.
 
 
 def _as_user_command(cfg: KdeKeyboardSetupConfig, command: list[str]) -> list[str]:
@@ -158,12 +147,14 @@ def _sync_key(
     return True
 
 
-def _keyboard_layout_config_group(text: str, plugin: str) -> tuple[str, ...] | None:
+def _keyboard_layout_config_group(
+    cfg: KdeKeyboardSetupConfig, text: str, plugin: str
+) -> tuple[str, ...] | None:
     """The Configuration/General group of the applet that declares plugin.
 
     Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
     applet whose section declares plugin=<plugin> holds its configuration
-    in [Configuration][General] below that section. Returns the group
+    in the configured group below that section. Returns the group
     segments or None when no applet declares the plugin.
     """
 
@@ -173,7 +164,7 @@ def _keyboard_layout_config_group(text: str, plugin: str) -> tuple[str, ...] | N
         if line.startswith("[") and line.endswith("]"):
             current = tuple(part for part in line[1:-1].split("][") if part)
         elif line == f"plugin={plugin}":
-            return current + ("Configuration", "General")
+            return current + cfg.applet_configuration_group
     return None
 
 
@@ -208,22 +199,22 @@ def _reload_kwin(
     return None
 
 
-def _shortcut_to_combined(shortcut: str) -> int | None:
+def _shortcut_to_combined(cfg: KdeKeyboardSetupConfig, shortcut: str) -> int | None:
     """The combined Qt key code of a portable shortcut, or None.
 
     Only the shortcuts the daemon accepts are supported: any modifiers
     from Ctrl, Alt, Shift and Meta plus one alphanumeric key. Other
     portable forms (function keys, named keys) return None; the caller
     then still writes the shortcut to the config file, it just cannot be
-    applied live.
+    applied live. The modifier flags come from the config.
     """
 
     parts = [part for part in shortcut.split("+") if part]
     modifiers = 0
     key: int | None = None
     for part in parts:
-        if part in _SHORTCUT_MODIFIER_BITS:
-            modifiers |= _SHORTCUT_MODIFIER_BITS[part]
+        if part in cfg.shortcut_modifier_bits:
+            modifiers |= cfg.shortcut_modifier_bits[part]
         elif key is None and len(part) == 1 and part.isalnum():
             key = ord(part.upper())
         else:
@@ -248,15 +239,17 @@ def _sync_hotkey_file(
     """
 
     changed = False
-    group = (LAYOUT_SWITCHER_COMPONENT_UNIQUE,)
+    group = (cfg.layout_switcher_component_unique,)
     for action, shortcut in shortcuts.items():
         value = f"{shortcut},none,{action}"
-        current = _kreadconfig(cfg, SHORTCUTS_FILE_NAME, group, action, timeout)
+        current = _kreadconfig(
+            cfg, cfg.shortcuts_file_name, group, action, timeout
+        )
         if not force and current == value:
             continue
         _kwriteconfig(
             cfg,
-            SHORTCUTS_FILE_NAME,
+            cfg.shortcuts_file_name,
             group,
             action,
             value,
@@ -367,7 +360,7 @@ def _apply_hotkeys_live(
 
     assign: list[tuple[str, int]] = []
     for action, shortcut in shortcuts.items():
-        combined = _shortcut_to_combined(shortcut)
+        combined = _shortcut_to_combined(cfg, shortcut)
         if combined is None:
             _log(f"hotkey {action} is not applicable live, applies at login")
             continue
@@ -376,8 +369,8 @@ def _apply_hotkeys_live(
         return None, False
     payload = json.dumps(
         {
-            "component_unique": LAYOUT_SWITCHER_COMPONENT_UNIQUE,
-            "component_friendly": LAYOUT_SWITCHER_COMPONENT_FRIENDLY,
+            "component_unique": cfg.layout_switcher_component_unique,
+            "component_friendly": cfg.layout_switcher_component_friendly,
             "assign": assign,
         }
     )
@@ -471,18 +464,30 @@ def task(ctx: Context) -> TaskResult:
 
     layout_changed = False
     for key, target, bool_value in (
-        ("LayoutList", ",".join(cfg.layouts), False),
-        ("DisplayNames", _per_layout_empty_list(cfg.layouts), False),
-        ("VariantList", _per_layout_empty_list(cfg.layouts), False),
-        ("Options", cfg.switch_option, False),
-        ("ResetOldOptions", "true" if cfg.reset_old_options else "false", True),
-        ("SwitchMode", cfg.switch_mode, False),
-        ("Use", "true" if cfg.use_layout_switching else "false", True),
+        (cfg.kxkbrc_key_layout_list, ",".join(cfg.layouts), False),
+        (cfg.kxkbrc_key_display_names, _per_layout_empty_list(cfg.layouts), False),
+        (cfg.kxkbrc_key_variant_list, _per_layout_empty_list(cfg.layouts), False),
+        (cfg.kxkbrc_key_options, cfg.switch_option, False),
+        (
+            cfg.kxkbrc_key_reset_old_options,
+            cfg.kconfig_true_value if cfg.reset_old_options else cfg.kconfig_false_value,
+            True,
+        ),
+        (cfg.kxkbrc_key_switch_mode, cfg.switch_mode, False),
+        (
+            cfg.kxkbrc_key_use,
+            (
+                cfg.kconfig_true_value
+                if cfg.use_layout_switching
+                else cfg.kconfig_false_value
+            ),
+            True,
+        ),
     ):
         try:
             layout_changed |= _sync_key(
                 cfg,
-                KXKBRC_GROUP,
+                cfg.kxkbrc_group,
                 key,
                 target,
                 timeout=timeout,
@@ -497,6 +502,7 @@ def task(ctx: Context) -> TaskResult:
     appletsrc_path = Path(cfg.config_dir) / cfg.appletsrc_file_name
     try:
         group = _keyboard_layout_config_group(
+            cfg,
             appletsrc_path.read_text(encoding="utf-8"), cfg.applet_plugin
         )
     except OSError:
@@ -509,14 +515,14 @@ def task(ctx: Context) -> TaskResult:
     else:
         try:
             current = _kreadconfig(
-                cfg, cfg.appletsrc_file_name, group, "displayStyle", timeout
+                cfg, cfg.appletsrc_file_name, group, cfg.display_style_key, timeout
             )
             if force or current != cfg.indicator_display_style:
                 _kwriteconfig(
                     cfg,
                     cfg.appletsrc_file_name,
                     group,
-                    "displayStyle",
+                    cfg.display_style_key,
                     cfg.indicator_display_style,
                     timeout=timeout,
                     bool_value=False,
@@ -537,7 +543,7 @@ def task(ctx: Context) -> TaskResult:
                 force=force,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"cannot write {SHORTCUTS_FILE_NAME}: {exc}")
+            warnings.append(f"cannot write {cfg.shortcuts_file_name}: {exc}")
         bus = session_bus_address(cfg.username, timeout)
         if bus is None:
             _log("no desktop session found, layout hotkeys apply at login")

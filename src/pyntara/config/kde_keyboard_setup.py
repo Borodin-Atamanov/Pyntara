@@ -47,3 +47,19 @@ class KdeKeyboardSetupConfig:
     kwin_reload_command: tuple[str, ...]
     panel_restart_command: tuple[str, ...]
     layout_switch_shortcuts: dict[str, str]
+    kxkbrc_group: tuple[str, ...]
+    applet_configuration_group: tuple[str, ...]
+    shortcuts_file_name: str
+    kxkbrc_key_layout_list: str
+    kxkbrc_key_display_names: str
+    kxkbrc_key_variant_list: str
+    kxkbrc_key_options: str
+    kxkbrc_key_reset_old_options: str
+    kxkbrc_key_switch_mode: str
+    kxkbrc_key_use: str
+    display_style_key: str
+    kconfig_true_value: str
+    kconfig_false_value: str
+    layout_switcher_component_unique: str
+    layout_switcher_component_friendly: str
+    shortcut_modifier_bits: dict[str, int]

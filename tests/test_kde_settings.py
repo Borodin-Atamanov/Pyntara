@@ -1157,8 +1157,9 @@ def _script_fakes(
 def _write_script_templates(root: Path) -> None:
     """Write minimal KWin script templates under the given root."""
 
-    for script in task_module.KWIN_SCRIPTS:
-        for rel_file in task_module.KWIN_SCRIPT_FILES:
+    cfg = make_config().kde_settings
+    for script in cfg.kwin_scripts:
+        for rel_file in cfg.kwin_script_files:
             target = root / script / rel_file
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(rel_file, encoding="utf-8")
@@ -1178,8 +1179,8 @@ def test_apply_kwin_scripts_installs_and_enables(
         ctx.config.kde_settings, timeout=5, force=False
     )
     assert changed is True
-    for script in task_module.KWIN_SCRIPTS:
-        for rel_file in task_module.KWIN_SCRIPT_FILES:
+    for script in ctx.config.kde_settings.kwin_scripts:
+        for rel_file in ctx.config.kde_settings.kwin_script_files:
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             assert target.read_text(encoding="utf-8") == rel_file
     enabled = [
@@ -1187,7 +1188,7 @@ def test_apply_kwin_scripts_installs_and_enables(
         for command in writes
         if "kwriteconfig6" in command and "kwinrc" in command
     ]
-    for script in task_module.KWIN_SCRIPTS:
+    for script in ctx.config.kde_settings.kwin_scripts:
         assert f"{script}Enabled" in enabled
     changed2 = task_module._apply_kwin_scripts(
         ctx.config.kde_settings, timeout=5, force=False
@@ -1220,7 +1221,7 @@ def test_script_hotkey_owners_finds_foreign_and_skips_own() -> None:
         "Grow Window by 5px=Meta+Ctrl+Up,none,Grow Window by 5px\n"
         "Window Maximize=Meta+PgUp,Meta+PgUp,Maximize Window\n"
     )
-    owners = task_module._script_hotkey_owners(text)
+    owners = task_module._script_hotkey_owners(make_config().kde_settings, text)
     assert owners == [
         (("kwin",), "Switch One Desktop Up", "Switch One Desktop Up")
     ]
@@ -1300,8 +1301,8 @@ def test_kwin_scripts_installed_and_hotkeys_freed(
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
-    for script in task_module.KWIN_SCRIPTS:
-        for rel_file in task_module.KWIN_SCRIPT_FILES:
+    for script in ctx.config.kde_settings.kwin_scripts:
+        for rel_file in ctx.config.kde_settings.kwin_script_files:
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             assert target.read_text(encoding="utf-8") == rel_file
     cleared = [
@@ -1350,6 +1351,17 @@ XBEL = """\
 """
 
 
+def test_notify_flag_follows_the_configured_file_names() -> None:
+    # Only the files the config names carry a live watcher, so a renamed
+    # file in the config is the file the flag is added for.
+    cfg = make_config().kde_settings
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    assert task_module._notify_flag(cfg, cfg.kwinrc_file_name, env) == ["--notify"]
+    renamed = replace(cfg, kwinrc_file_name="kwinrc-custom")
+    assert task_module._notify_flag(renamed, "kwinrc", env) == []
+    assert task_module._notify_flag(renamed, "kwinrc-custom", env) == ["--notify"]
+
+
 def _places_cfg() -> KdeSettingsConfig:
     """Config of the task with the Places namespaces of the shared document."""
 
@@ -1361,7 +1373,7 @@ def test_places_namespace_address_comes_from_the_config() -> None:
     # the namespace of the file is a value and not a literal in the code.
     cfg = replace(
         _places_cfg(),
-        places_bookmark_namespace="http://example.invalid/bookmarks",
+        places_namespaces={"bookmark": "http://example.invalid/bookmarks"},
     )
     declared = task_module._declare_missing_prefixes(cfg, "<xbel>")
     assert 'xmlns:bookmark="http://example.invalid/bookmarks"' in declared
@@ -1609,8 +1621,8 @@ def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
     profile_dir = tmp_path / ".local/share/konsole"
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
-    for script in task_module.KWIN_SCRIPTS:
-        for rel_file in task_module.KWIN_SCRIPT_FILES:
+    for script in cfg.kwin_scripts:
+        for rel_file in cfg.kwin_script_files:
             template = task_module.KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             target.parent.mkdir(parents=True, exist_ok=True)

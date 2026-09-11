@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,14 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara.config.kde_keyboard_setup import KdeKeyboardSetupConfig
 from pyntara.tasks import kde_keyboard_setup as task_module
+
+
+def _keyboard_cfg() -> KdeKeyboardSetupConfig:
+    """Config of the task with the values of the shared test document."""
+
+    return make_config().kde_keyboard_setup
 
 SAMPLE_APPLETSRC = """\
 [Containments][2]
@@ -328,7 +336,7 @@ def test_keyboard_layout_config_group_finds_nested_applet() -> None:
     # The Configuration/General group of the keyboard layout applet is
     # derived from the nested group that declares the plugin.
     group = task_module._keyboard_layout_config_group(
-        SAMPLE_APPLETSRC, "org.kde.plasma.keyboardlayout"
+        _keyboard_cfg(), SAMPLE_APPLETSRC, "org.kde.plasma.keyboardlayout"
     )
     assert group == (
         "Containments",
@@ -346,6 +354,7 @@ def test_keyboard_layout_config_group_missing() -> None:
     # A document without the applet returns None.
     assert (
         task_module._keyboard_layout_config_group(
+            _keyboard_cfg(),
             "[Containments][2]\nplugin=org.kde.plasma.panel\n",
             "org.kde.plasma.keyboardlayout",
         )
@@ -358,24 +367,33 @@ HOTKEYS = {SPANISH_ACTION: "Meta+Q"}
 META_Q = 0x10000000 | 0x51
 
 
+def test_shortcut_modifier_bits_come_from_the_config() -> None:
+    # The combined key code is composed from the flags of the config, so
+    # the Qt vocabulary lives in the config and not in the code.
+    cfg = replace(_keyboard_cfg(), shortcut_modifier_bits={"Meta": 0x7})
+    assert task_module._shortcut_to_combined(cfg, "Meta+Q") == 0x7 | 0x51
+
+
 def test_shortcut_to_combined_parses_modifiers_and_key() -> None:
     # Modifiers plus one alphanumeric key become the combined Qt key code.
-    assert task_module._shortcut_to_combined("Meta+Q") == META_Q
-    assert task_module._shortcut_to_combined("Ctrl+Alt+E") == (
+    cfg = _keyboard_cfg()
+    assert task_module._shortcut_to_combined(cfg, "Meta+Q") == META_Q
+    assert task_module._shortcut_to_combined(cfg, "Ctrl+Alt+E") == (
         0x04000000 | 0x08000000 | 0x45
     )
-    assert task_module._shortcut_to_combined("Shift+Meta+1") == (
+    assert task_module._shortcut_to_combined(cfg, "Shift+Meta+1") == (
         0x02000000 | 0x10000000 | 0x31
     )
-    assert task_module._shortcut_to_combined("Q") == 0x51
+    assert task_module._shortcut_to_combined(cfg, "Q") == 0x51
 
 
 def test_shortcut_to_combined_rejects_unsupported() -> None:
     # Function keys, named keys and a bare modifier are not supported.
-    assert task_module._shortcut_to_combined("F5") is None
-    assert task_module._shortcut_to_combined("Space") is None
-    assert task_module._shortcut_to_combined("Meta") is None
-    assert task_module._shortcut_to_combined("") is None
+    cfg = _keyboard_cfg()
+    assert task_module._shortcut_to_combined(cfg, "F5") is None
+    assert task_module._shortcut_to_combined(cfg, "Space") is None
+    assert task_module._shortcut_to_combined(cfg, "Meta") is None
+    assert task_module._shortcut_to_combined(cfg, "") is None
 
 
 def test_no_session_writes_hotkey_file(

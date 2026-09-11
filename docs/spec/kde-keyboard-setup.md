@@ -43,4 +43,7 @@ indicator_display_style, how the indicator shows the current layout.
 kwin_reload_command, the command that makes kwin re-read the keyboard layout configuration.  
 panel_restart_command, the command that restarts the Plasma panel.  
 layout_switch_shortcuts, the layout hotkeys: a table of keyboard layout switcher action names to shortcuts in Qt portable text format, empty by default.  
+kxkbrc_file_name, kxkbrc_group, the kxkbrc keys (kxkbrc_key_layout_list, kxkbrc_key_display_names, kxkbrc_key_variant_list, kxkbrc_key_options, kxkbrc_key_reset_old_options, kxkbrc_key_switch_mode, kxkbrc_key_use), appletsrc_file_name, applet_configuration_group and display_style_key, the foreign files, groups and keys the task writes, with kconfig_true_value and kconfig_false_value as the boolean spelling of those files.  
+shortcuts_file_name, layout_switcher_component_unique and layout_switcher_component_friendly, the shortcut file and the component that owns the layout switcher actions.  
+shortcut_modifier_bits, the Qt modifier flags a portable shortcut is combined from, by modifier name.  
 system_python of the [engine] table is the interpreter that runs the embedded DBus client of the live hotkey apply: the Python of the managed system, because the python3-dbus bindings install into the system Python only.
