@@ -701,6 +701,40 @@ class TestProquintCredentials:
         assert len(bash_env["XUI_PASSWORD"]) == 20
         assert len(bash_env["XUI_WEB_BASE_PATH"]) == 23
 
+    def test_installer_runs_without_the_project_venv(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The installer is a third-party shell script that resolves python3
+        # from PATH. The engine runs inside the project venv, whose bin
+        # directory would win that lookup with an interpreter that carries
+        # none of the installer dependencies, so the venv leaves PATH and
+        # VIRTUAL_ENV is cleared.
+        venv_root = tmp_path / "venv"
+        venv_bin = venv_root / "bin"
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv_root))
+        monkeypatch.setenv(
+            "PATH",
+            ":".join([str(venv_bin), str(venv_root), "/usr/bin", "/bin"]),
+        )
+        envs: list[dict[str, str]] = []
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+            captured_env=envs,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert envs, "installer bash call did not record an env"
+        installer_env = envs[0]
+        assert installer_env["PATH"].split(":") == ["/usr/bin", "/bin"]
+        assert installer_env["VIRTUAL_ENV"] == ""
+
     def test_installer_omits_ssl_mode_when_disabled(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

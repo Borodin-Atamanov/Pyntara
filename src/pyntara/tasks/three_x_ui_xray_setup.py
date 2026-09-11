@@ -78,6 +78,7 @@ server itself skips both stages: it does not connect to itself.
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, replace
@@ -230,6 +231,31 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
     }
 
 
+def _installer_environment(extra_env: dict[str, str]) -> dict[str, str]:
+    """The environment the official installer runs in.
+
+    The installer is a third-party shell script that resolves python3 from
+    PATH for its own steps. The engine runs inside the project venv, whose
+    bin directory would win that lookup with an interpreter that carries
+    none of the installer's dependencies, so the venv leaves PATH and
+    VIRTUAL_ENV is cleared: the installer then uses the system python3,
+    where its packages live. The XUI_* values of extra_env stay untouched.
+    """
+
+    environment = dict(os.environ)
+    venv_root = environment.get("VIRTUAL_ENV") or sys.prefix
+    environment["PATH"] = os.pathsep.join(
+        entry
+        for entry in environment.get("PATH", "").split(os.pathsep)
+        if entry
+        and not (entry == venv_root or entry.startswith(f"{venv_root}{os.sep}"))
+    )
+    environment["VIRTUAL_ENV"] = ""
+    environment["XUI_NONINTERACTIVE"] = "1"
+    environment.update(extra_env)
+    return environment
+
+
 def _run_installer(
     script_path: Path, timeout: float, extra_env: dict[str, str]
 ) -> None:
@@ -244,12 +270,10 @@ def _run_installer(
     reason.
     """
 
-    env = {"XUI_NONINTERACTIVE": "1"}
-    env.update(extra_env)
     try:
         run_command(
             ["bash", str(script_path)],
-            extra_env=env,
+            extra_env=_installer_environment(extra_env),
             timeout=timeout,
         )
     finally:
