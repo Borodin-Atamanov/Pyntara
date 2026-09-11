@@ -31,6 +31,78 @@ keyring_path = "/usr/share/keyrings/google-chrome.gpg"
 google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"
 desktop_source_path = "/usr/share/applications/google-chrome.desktop"
 desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
+# Name of the apt package of the browser.
+package_name = "google-chrome-stable"
+# Name of the main browser process as pgrep sees it (comm is the binary
+# name, not the wrapper).
+process_name = "chrome"
+# Name of the desktop user appletsrc that carries the pinned taskbar
+# launchers, as the KConfig tools take it, and its path under home_dir.
+appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"
+appletsrc_relative_path = ".config/plasma-org.kde.plasma.desktop-appletsrc"
+# The task manager applet plugins whose launcher list receives the Chrome
+# button: the icons-only task manager and the classic one, so a desktop
+# with either widget pins the button.
+taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"]
+# The appletsrc key that carries the pinned launchers of a task manager
+# applet.
+appletsrc_launchers_key = "launchers"
+# Launcher id pinned to the panel; it resolves to the CDP desktop
+# override in the XDG applications directories.
+panel_launcher_id = "applications:google-chrome.desktop"
+# Command that restarts the Plasma panel of the desktop user, so a newly
+# pinned launcher appears without a re-login; {username} is the desktop
+# user.
+panel_restart_command = ["systemctl", "--user", "--machine", "{username}@.host", "restart", "plasma-plasmashell.service"]
+# Directory inside the settings repository whose tree is deployed under
+# system_root with the relative paths preserved.
+settings_system_tree_relative_path = "system"
+# Relative path of the browser settings file inside the settings
+# repository and inside the live Chrome profile of the desktop user.
+preferences_relative_path = "Default/Preferences"
+# Live Chrome profile directory under home_dir.
+profile_dir_relative_path = ".config/google-chrome"
+# Prefix of the temporary directory the Google keyring is downloaded and
+# dearmored in.
+keyring_temp_dir_prefix = "pyntara-chrome-"
+# Name of the deb822 apt source template under task_data/chrome_setup/ of
+# the clone, rendered with $keyring_path.
+apt_source_template_file_name = "google-chrome.sources"
+# Flags appended to every Exec line of the packaged desktop entry, in
+# order, each with the placeholders it needs. A flag whose placeholder has
+# no value is left out, so a piece that is not in place costs the browser
+# that one flag and not the whole start.
+launch_flags = [
+    "--proxy-server={proxy_server}",
+    "--user-data-dir={user_data_dir}",
+    "--remote-debugging-port={cdp_port}",
+    "--remote-debugging-address={cdp_address}",
+]
+# Command that dearmors the downloaded Google signing key into the
+# keyring path; {armored} and {output} are the downloaded file and the
+# keyring.
+keyring_dearmor_command = ["gpg", "--dearmor", "--output", "{output}", "{armored}"]
+# Commands that clone, update and compare the settings repository; {url},
+# {ref} and {dir} are the entry above, the configured ref and the clone
+# directory.
+settings_clone_command = ["git", "clone", "--quiet", "--depth", "1", "--branch", "{ref}", "{url}", "{dir}"]
+settings_fetch_command = ["git", "-C", "{dir}", "fetch", "--quiet", "origin", "{ref}"]
+settings_revision_command = ["git", "-C", "{dir}", "rev-parse", "{revision}"]
+settings_reset_command = ["git", "-C", "{dir}", "reset", "--hard", "{revision}"]
+# Command that tells whether the browser runs; {process_name} is the
+# process name above.
+process_check_command = ["pgrep", "-x", "{process_name}"]
+# Command that reports the mount that contains a path, used to confirm the
+# profile mirror; {path} is the path to inspect.
+mount_check_command = ["findmnt", "--noheadings", "--output", "TARGET,FSROOT", "--target", "{path}"]
+# Commands that install the boot-time mirror unit: reload the unit files
+# and enable and start the oneshot unit whose name is substituted.
+mount_reload_command = ["systemctl", "daemon-reload"]
+mount_enable_command = ["systemctl", "enable", "--now", "{unit_name}"]
+# Command that rebuilds the KDE menu cache for the desktop user, with the
+# HOME and XDG_MENU_PREFIX of a Plasma session so the cache looks up
+# plasma-applications.menu.
+menu_refresh_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}", "XDG_MENU_PREFIX=plasma-", "kbuildsycoca6", "--noincremental"]
 # Path of the profile mirror: a bind mount of home_dir/.config/google-chrome
 # that the task creates and the unit below restores at every boot. Branded
 # Google Chrome refuses the DevTools listener on the default data directory
@@ -39,8 +111,10 @@ desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
 # directory name, cookies and logins included.
 profile_mirror_path = "/home/i/.config/google-chrome-cdp"
 # Name of the oneshot systemd unit that bind mounts the profile mirror, so
-# the DevTools listener keeps working after a reboot.
+# the DevTools listener keeps working after a reboot, and of its template
+# under task_data/chrome_setup/ of the clone.
 mount_service_unit_name = "mount_chrome_user_dir.service"
+mount_unit_template_file_name = "mount_chrome_user_dir.service"
 cdp_port = 19222
 cdp_address = "127.0.0.1"
 file_mode = "0644"

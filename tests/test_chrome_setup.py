@@ -124,14 +124,14 @@ def _write_repo(cfg: ChromeSetupConfig) -> None:
 
     settings_dir = cfg.settings_dir
     (settings_dir / ".git").mkdir(parents=True, exist_ok=True)
-    prefs_dir = settings_dir / "Default"
-    prefs_dir.mkdir(parents=True, exist_ok=True)
-    (prefs_dir / "Preferences").write_text(
+    prefs_path = settings_dir / cfg.preferences_relative_path
+    prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    prefs_path.write_text(
         json.dumps(PREFERENCES_CONTENT, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     for rel, data in SYSTEM_FILES.items():
-        path = settings_dir / "system" / rel
+        path = settings_dir / cfg.settings_system_tree_relative_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
@@ -147,7 +147,7 @@ def _write_desktop_source(cfg: ChromeSetupConfig) -> None:
 def _write_appletsrc(cfg: ChromeSetupConfig, text: str = APPLETSRC_TEXT) -> None:
     """Create the Plasma appletsrc of the desktop user."""
 
-    path = Path(cfg.home_dir) / ".config" / chrome_setup.APPLETSRC_FILE_NAME
+    path = Path(cfg.home_dir) / cfg.appletsrc_relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -338,16 +338,27 @@ def test_merge_preferences_overlay_wins_and_keeps_unrelated() -> None:
 
 
 def test_source_text_mentions_google_repo_and_keyring() -> None:
-    text = chrome_setup._source_text(Path("/etc/apt/keyrings/google-chrome.gpg"))
+    # The body of the source file comes from the configured template, so
+    # the suite, the components and the archive address are template text.
+    cfg = make_config().chrome_setup
+    template_path = (
+        Path(__file__).resolve().parents[1]
+        / "task_data"
+        / "chrome_setup"
+        / cfg.apt_source_template_file_name
+    )
+    text = chrome_setup._source_text(
+        template_path, Path("/etc/apt/keyrings/google-chrome.gpg")
+    )
     assert "URIs: https://dl.google.com/linux/chrome-stable/deb/" in text
     assert "Signed-By: /etc/apt/keyrings/google-chrome.gpg" in text
 
 
 def test_desktop_content_appends_flags_to_each_exec() -> None:
+    cfg = make_config().chrome_setup
     content = chrome_setup._desktop_content(
+        cfg,
         DESKTOP_SOURCE,
-        CDP_PORT,
-        "127.0.0.1",
         proxy_server=f"socks5://127.0.0.1:{LOCAL_PROXY_PORT}",
         user_data_dir="/home/i/.config/google-chrome-cdp",
     )
@@ -365,10 +376,10 @@ def test_desktop_content_appends_flags_to_each_exec() -> None:
 
 
 def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
+    cfg = make_config().chrome_setup
     content = chrome_setup._desktop_content(
+        cfg,
         DESKTOP_SOURCE,
-        CDP_PORT,
-        "127.0.0.1",
         proxy_server="",
         user_data_dir="",
     )
@@ -380,6 +391,32 @@ def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
         assert line.endswith(CDP_FLAGS)
         assert "--proxy-server" not in line
         assert "--user-data-dir" not in line
+
+
+def test_desktop_content_follows_the_configured_launch_flags() -> None:
+    # Another flag list and another debug port in the config are what the
+    # Exec lines carry, so the flags are values and not code.
+    cfg = replace(
+        make_config().chrome_setup,
+        cdp_port=31337,
+        launch_flags=(
+            "--proxy-server={proxy_server}",
+            "--remote-debugging-port={cdp_port}",
+        ),
+    )
+    content = chrome_setup._desktop_content(
+        cfg,
+        DESKTOP_SOURCE,
+        proxy_server="socks5://127.0.0.1:10808",
+        user_data_dir="",
+    )
+    for line in content.splitlines():
+        if line.startswith("Exec="):
+            assert line.endswith(
+                " --proxy-server=socks5://127.0.0.1:10808 "
+                "--remote-debugging-port=31337"
+            )
+            assert "--user-data-dir" not in line
 
 
 def test_local_proxy_server_reads_the_three_x_ui_section(
@@ -447,7 +484,7 @@ def test_full_flow_mounts_the_profile_mirror_and_enables_it(
     assert result.success
     unit_file = ctx.config.engine.systemd_unit_dir / cfg.mount_service_unit_name
     unit_text = unit_file.read_text(encoding="utf-8")
-    profile_dir = chrome_setup._profile_dir(cfg.home_dir)
+    profile_dir = chrome_setup._profile_dir(cfg)
     assert (
         f"ExecStart=/usr/bin/mount --bind {profile_dir} {cfg.profile_mirror_path}"
         in unit_text
@@ -518,7 +555,13 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
     assert cfg.keyring_path.is_file()
     assert cfg.keyring_path.stat().st_size > 0
     assert (
-        chrome_setup._source_text(cfg.keyring_path)
+        chrome_setup._source_text(
+            Path(__file__).resolve().parents[1]
+            / "task_data"
+            / "chrome_setup"
+            / cfg.apt_source_template_file_name,
+            cfg.keyring_path,
+        )
         in cfg.apt_source_path.read_text(encoding="utf-8")
     )
     assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
@@ -559,7 +602,9 @@ def test_menu_refresh_carries_the_plasma_menu_prefix(
 
 
 def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
-    groups = chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT)
+    groups = chrome_setup._taskbar_launcher_groups(
+        make_config().chrome_setup, APPLETSRC_TEXT
+    )
     assert len(groups) == 2
     assert ICON_TASKS_GROUP in groups
     assert TASKMANAGER_GROUP in groups

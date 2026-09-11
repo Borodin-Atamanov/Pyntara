@@ -16,9 +16,34 @@ CHROME_BLOCK = (
     "[chrome_setup]\n"
     'username = "i"\n'
     'home_dir = "/home/i"\n'
+    'package_name = "google-chrome-stable"\n'
+    'process_name = "chrome"\n'
+    'appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"\n'
+    'appletsrc_relative_path = ".config/plasma-org.kde.plasma.desktop-appletsrc"\n'
+    'appletsrc_launchers_key = "launchers"\n'
+    'taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"]\n'
+    'panel_launcher_id = "applications:google-chrome.desktop"\n'
+    'panel_restart_command = ["systemctl", "--user", "--machine", "{username}@.host", "restart", "plasma-plasmashell.service"]\n'
     'settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"\n'
     'settings_repo_ref = "main"\n'
     'settings_dir = "/var/cache/pyntara/chromium-settings"\n'
+    'settings_system_tree_relative_path = "system"\n'
+    'preferences_relative_path = "Default/Preferences"\n'
+    'profile_dir_relative_path = ".config/google-chrome"\n'
+    'keyring_temp_dir_prefix = "pyntara-chrome-"\n'
+    'apt_source_template_file_name = "google-chrome.sources"\n'
+    'launch_flags = ["--proxy-server={proxy_server}", "--user-data-dir={user_data_dir}", "--remote-debugging-port={cdp_port}", "--remote-debugging-address={cdp_address}"]\n'
+    'keyring_dearmor_command = ["gpg", "--dearmor", "--output", "{output}", "{armored}"]\n'
+    'settings_clone_command = ["git", "clone", "--quiet", "--depth", "1", "--branch", "{ref}", "{url}", "{dir}"]\n'
+    'settings_fetch_command = ["git", "-C", "{dir}", "fetch", "--quiet", "origin", "{ref}"]\n'
+    'settings_revision_command = ["git", "-C", "{dir}", "rev-parse", "{revision}"]\n'
+    'settings_reset_command = ["git", "-C", "{dir}", "reset", "--hard", "{revision}"]\n'
+    'process_check_command = ["pgrep", "-x", "{process_name}"]\n'
+    'mount_check_command = ["findmnt", "--noheadings", "--output", "TARGET,FSROOT", "--target", "{path}"]\n'
+    'mount_reload_command = ["systemctl", "daemon-reload"]\n'
+    'mount_enable_command = ["systemctl", "enable", "--now", "{unit_name}"]\n'
+    'menu_refresh_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}", "XDG_MENU_PREFIX=plasma-", "kbuildsycoca6", "--noincremental"]\n'
+    'mount_unit_template_file_name = "mount_chrome_user_dir.service"\n'
     'system_root = "/"\n'
     'apt_source_path = "/etc/apt/sources.list.d/google-chrome.sources"\n'
     'keyring_path = "/usr/share/keyrings/google-chrome.gpg"\n'
@@ -100,6 +125,126 @@ CHROME_BLOCK = (
         base_config().replace('file_mode = "0644"\n', "file_mode = 420\n"),
         # file_mode has not the four digits a mode is written with
         base_config().replace('file_mode = "0644"\n', 'file_mode = "644"\n'),
+        # package_name is empty
+        base_config().replace(
+            'package_name = "google-chrome-stable"', 'package_name = ""'
+        ),
+        # process_name is a number, not a string
+        base_config().replace('process_name = "chrome"', "process_name = 7"),
+        # appletsrc_file_name is empty
+        base_config().replace(
+            'appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"',
+            'appletsrc_file_name = ""',
+        ),
+        # appletsrc_relative_path is empty
+        base_config().replace(
+            'appletsrc_relative_path = ".config/plasma-org.kde.plasma.desktop-appletsrc"',
+            'appletsrc_relative_path = ""',
+        ),
+        # appletsrc_launchers_key is empty
+        base_config().replace(
+            'appletsrc_launchers_key = "launchers"', 'appletsrc_launchers_key = ""'
+        ),
+        # taskbar_plugin_names is a string, not an array
+        base_config().replace(
+            'taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"]',
+            'taskbar_plugin_names = "org.kde.plasma.icontasks"',
+        ),
+        # panel_launcher_id is empty
+        base_config().replace(
+            'panel_launcher_id = "applications:google-chrome.desktop"',
+            'panel_launcher_id = ""',
+        ),
+        # panel_restart_command is an empty array
+        base_config().replace(
+            'panel_restart_command = ["systemctl", "--user", "--machine", "{username}@.host", "restart", "plasma-plasmashell.service"]',
+            "panel_restart_command = []",
+        ),
+        # settings_system_tree_relative_path is empty
+        base_config().replace(
+            'settings_system_tree_relative_path = "system"',
+            'settings_system_tree_relative_path = ""',
+        ),
+        # preferences_relative_path is empty
+        base_config().replace(
+            'preferences_relative_path = "Default/Preferences"',
+            'preferences_relative_path = ""',
+        ),
+        # profile_dir_relative_path is empty
+        base_config().replace(
+            'profile_dir_relative_path = ".config/google-chrome"',
+            'profile_dir_relative_path = ""',
+        ),
+        # keyring_temp_dir_prefix is empty
+        base_config().replace(
+            'keyring_temp_dir_prefix = "pyntara-chrome-"',
+            'keyring_temp_dir_prefix = ""',
+        ),
+        # apt_source_template_file_name is empty
+        base_config().replace(
+            'apt_source_template_file_name = "google-chrome.sources"',
+            'apt_source_template_file_name = ""',
+        ),
+        # launch_flags is an empty array
+        base_config().replace(
+            'launch_flags = ["--proxy-server={proxy_server}", "--user-data-dir={user_data_dir}", "--remote-debugging-port={cdp_port}", "--remote-debugging-address={cdp_address}"]',
+            "launch_flags = []",
+        ),
+        # keyring_dearmor_command holds an empty argument
+        base_config().replace(
+            'keyring_dearmor_command = ["gpg", "--dearmor", "--output", "{output}", "{armored}"]',
+            'keyring_dearmor_command = ["gpg", ""]',
+        ),
+        # settings_clone_command is a string, not an array
+        base_config().replace(
+            'settings_clone_command = ["git", "clone", "--quiet", "--depth", "1", "--branch", "{ref}", "{url}", "{dir}"]',
+            'settings_clone_command = "git clone"',
+        ),
+        # settings_fetch_command is an empty array
+        base_config().replace(
+            'settings_fetch_command = ["git", "-C", "{dir}", "fetch", "--quiet", "origin", "{ref}"]',
+            "settings_fetch_command = []",
+        ),
+        # settings_revision_command is an empty array
+        base_config().replace(
+            'settings_revision_command = ["git", "-C", "{dir}", "rev-parse", "{revision}"]',
+            "settings_revision_command = []",
+        ),
+        # settings_reset_command holds an empty argument
+        base_config().replace(
+            'settings_reset_command = ["git", "-C", "{dir}", "reset", "--hard", "{revision}"]',
+            'settings_reset_command = ["git", ""]',
+        ),
+        # process_check_command is an empty array
+        base_config().replace(
+            'process_check_command = ["pgrep", "-x", "{process_name}"]',
+            "process_check_command = []",
+        ),
+        # mount_check_command is an empty array
+        base_config().replace(
+            'mount_check_command = ["findmnt", "--noheadings", "--output", "TARGET,FSROOT", "--target", "{path}"]',
+            "mount_check_command = []",
+        ),
+        # mount_reload_command is an empty array
+        base_config().replace(
+            'mount_reload_command = ["systemctl", "daemon-reload"]',
+            "mount_reload_command = []",
+        ),
+        # mount_enable_command is an empty array
+        base_config().replace(
+            'mount_enable_command = ["systemctl", "enable", "--now", "{unit_name}"]',
+            "mount_enable_command = []",
+        ),
+        # menu_refresh_command is an empty array
+        base_config().replace(
+            'menu_refresh_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}", "XDG_MENU_PREFIX=plasma-", "kbuildsycoca6", "--noincremental"]',
+            "menu_refresh_command = []",
+        ),
+        # mount_unit_template_file_name is empty
+        base_config().replace(
+            'mount_unit_template_file_name = "mount_chrome_user_dir.service"',
+            'mount_unit_template_file_name = ""',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:

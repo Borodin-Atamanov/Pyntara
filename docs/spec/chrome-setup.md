@@ -12,7 +12,8 @@ The task registers the source as a deb822 file at the configured apt_source_path
 
 ## Install
 
-google-chrome-stable is installed with apt-get from the registered repository when the package is missing; an already installed package is left alone and apt keeps it current on later runs. Force mode runs the install again regardless, which brings the package to the newest available version.
+google-chrome-stable is installed with apt-get from the registered repository
+when the package is missing; an already installed package is left alone and apt keeps it current on later runs. Force mode runs the install again regardless, which brings the package to the newest available version.
 
 ## Settings repository
 
@@ -55,7 +56,7 @@ After the override changes, the task rebuilds the KDE menu cache for the desktop
 
 ## Taskbar pinning
 
-The task pins the CDP desktop entry to the Plasma taskbar of the desktop user, so the button is one click away in the panel. Plasma keeps the pinned launchers in the appletsrc of the user, under the Configuration/General group of every task manager applet: the icons-only task manager (org.kde.plasma.icontasks) and the classic task manager (org.kde.plasma.taskmanager). The task finds every applet that declares one of the two plugins and appends the launcher id applications:google-chrome.desktop to its launchers list when missing, so a desktop with either widget type, or with several panels, pins the button without detecting which variant is present. The launcher id resolves through the XDG applications dirs to the CDP desktop override. A missing appletsrc (the user has not logged into a Plasma session yet) is a note: the button pins on the first login. After a change the task restarts the Plasma panel, so the button appears immediately; when the restart fails the button still appears at the next login.
+The task pins the CDP desktop entry to the Plasma taskbar of the desktop user, so the button is one click away in the panel. Plasma keeps the pinned launchers in the appletsrc of the user, under the Configuration/General group of every task manager applet: the plugins named by taskbar_plugin_names (the icons-only task manager and the classic task manager in the shipped config). The task finds every applet that declares one of those plugins and appends the configured panel_launcher_id to the launchers list named by appletsrc_launchers_key when missing, so a desktop with either widget type, or with several panels, pins the button without detecting which variant is present. The launcher id resolves through the XDG applications dirs to the CDP desktop override. A missing appletsrc (the user has not logged into a Plasma session yet) is a note: the button pins on the first login. After a change the task restarts the Plasma panel through panel_restart_command, so the button appears immediately; when the restart fails the button still appears at the next login.
 
 ## Idempotency record
 
@@ -65,19 +66,44 @@ When the task runs while Chrome is running, the profile merge waits with a warni
 
 ## Parameters
 
-username - the desktop user whose Chrome profile receives the settings  
-home_dir - the home directory of that user; the profile preferences path is derived under it  
-settings_repo_url - the git repository of browser settings  
-settings_repo_ref - the branch of that repository applied on every run  
-settings_dir - the root cache that holds the clone of the settings repository  
-system_root - the filesystem root that receives the system/ tree, "/" in production  
-apt_source_path - the deb822 apt source of the Google Chrome repository  
-keyring_path - the Google signing keyring the source signs with  
-google_key_url - the url of the armored Google signing key  
-desktop_source_path - the packaged Chrome desktop entry  
-desktop_override_path - the override entry with the launch flags  
-profile_mirror_path - the bind mounted mirror of the live profile, passed to Chrome as --user-data-dir  
-mount_service_unit_name - the oneshot unit that restores the mirror mount at every boot  
+username - the desktop user whose Chrome profile receives the settings
+home_dir - the home directory of that user; the profile and the deployed files are derived under it
+package_name - the apt package of the browser
+process_name - the process name pgrep sees for a running browser
+appletsrc_file_name - the Plasma appletsrc name as the KConfig tools take it
+appletsrc_relative_path - the same file under home_dir
+appletsrc_launchers_key - the appletsrc key that carries the pinned launchers
+taskbar_plugin_names - the task manager plugin names whose launcher list receives the button
+panel_launcher_id - the launcher id pinned to the panel
+panel_restart_command - the command that restarts the Plasma panel, with {username}
+settings_repo_url - the git repository of browser settings
+settings_repo_ref - the branch of that repository applied on every run
+settings_dir - the root cache that holds the clone of the settings repository
+settings_system_tree_relative_path - the tree inside the repository deployed under system_root
+preferences_relative_path - the settings file inside the repository and inside the profile
+profile_dir_relative_path - the live Chrome profile directory under home_dir
+keyring_temp_dir_prefix - the prefix of the temporary directory the key is downloaded into
+apt_source_template_file_name - the apt source template under task_data/chrome_setup/, rendered with $keyring_path
+launch_flags - the flags appended to every Exec line, in order, each with its placeholders; a flag whose value is empty is left out
+keyring_dearmor_command - the command that dearmors the key, with {armored} and {output}
+settings_clone_command - the clone command, with {url}, {ref} and {dir}
+settings_fetch_command - the fetch command, with {dir} and {ref}
+settings_revision_command - the revision query, with {dir} and {revision}
+settings_reset_command - the reset to a revision, with {dir} and {revision}
+process_check_command - the command that asks whether the browser runs, with {process_name}
+mount_check_command - the findmnt query that confirms the mirror, with {path}
+mount_reload_command - the unit file reload of the mirror unit
+mount_enable_command - the enable and start of the mirror unit, with {unit_name}
+menu_refresh_command - the menu cache rebuild, with {username} and {home_dir}
+mount_unit_template_file_name - the mirror unit template under task_data/chrome_setup/
+system_root - the filesystem root that receives the settings tree, "/" in production
+apt_source_path - the deb822 apt source of the Google Chrome repository
+keyring_path - the Google signing keyring the source signs with
+google_key_url - the url of the armored Google signing key
+desktop_source_path - the packaged Chrome desktop entry
+desktop_override_path - the override entry with the launch flags
+profile_mirror_path - the bind mounted mirror of the live profile, passed to Chrome as --user-data-dir
+mount_service_unit_name - the oneshot unit that restores the mirror mount at every boot
 cdp_port - the Chrome DevTools Protocol port  
 cdp_address - the address the CDP listener binds to, the loopback  
 file_mode - the mode of every deployed configuration and desktop file  

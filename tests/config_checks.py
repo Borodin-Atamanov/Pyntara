@@ -318,6 +318,34 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
         home_dir=_nonempty_string_field(
             raw.get("home_dir"), "chrome_setup.home_dir"
         ),
+        package_name=_nonempty_string_field(
+            raw.get("package_name"), "chrome_setup.package_name"
+        ),
+        process_name=_nonempty_string_field(
+            raw.get("process_name"), "chrome_setup.process_name"
+        ),
+        appletsrc_file_name=_nonempty_string_field(
+            raw.get("appletsrc_file_name"), "chrome_setup.appletsrc_file_name"
+        ),
+        appletsrc_relative_path=_nonempty_string_field(
+            raw.get("appletsrc_relative_path"),
+            "chrome_setup.appletsrc_relative_path",
+        ),
+        appletsrc_launchers_key=_nonempty_string_field(
+            raw.get("appletsrc_launchers_key"),
+            "chrome_setup.appletsrc_launchers_key",
+        ),
+        taskbar_plugin_names=_string_list(
+            raw.get("taskbar_plugin_names"),
+            "chrome_setup.taskbar_plugin_names",
+        ),
+        panel_launcher_id=_nonempty_string_field(
+            raw.get("panel_launcher_id"), "chrome_setup.panel_launcher_id"
+        ),
+        panel_restart_command=_string_list(
+            raw.get("panel_restart_command"),
+            "chrome_setup.panel_restart_command",
+        ),
         settings_repo_url=_nonempty_string_field(
             raw.get("settings_repo_url"), "chrome_setup.settings_repo_url"
         ),
@@ -328,6 +356,69 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             _nonempty_string_field(
                 raw.get("settings_dir"), "chrome_setup.settings_dir"
             )
+        ),
+        settings_system_tree_relative_path=_nonempty_string_field(
+            raw.get("settings_system_tree_relative_path"),
+            "chrome_setup.settings_system_tree_relative_path",
+        ),
+        preferences_relative_path=_nonempty_string_field(
+            raw.get("preferences_relative_path"),
+            "chrome_setup.preferences_relative_path",
+        ),
+        profile_dir_relative_path=_nonempty_string_field(
+            raw.get("profile_dir_relative_path"),
+            "chrome_setup.profile_dir_relative_path",
+        ),
+        keyring_temp_dir_prefix=_nonempty_string_field(
+            raw.get("keyring_temp_dir_prefix"),
+            "chrome_setup.keyring_temp_dir_prefix",
+        ),
+        apt_source_template_file_name=_nonempty_string_field(
+            raw.get("apt_source_template_file_name"),
+            "chrome_setup.apt_source_template_file_name",
+        ),
+        launch_flags=_string_list(
+            raw.get("launch_flags"), "chrome_setup.launch_flags"
+        ),
+        keyring_dearmor_command=_string_list(
+            raw.get("keyring_dearmor_command"),
+            "chrome_setup.keyring_dearmor_command",
+        ),
+        settings_clone_command=_string_list(
+            raw.get("settings_clone_command"),
+            "chrome_setup.settings_clone_command",
+        ),
+        settings_fetch_command=_string_list(
+            raw.get("settings_fetch_command"),
+            "chrome_setup.settings_fetch_command",
+        ),
+        settings_revision_command=_string_list(
+            raw.get("settings_revision_command"),
+            "chrome_setup.settings_revision_command",
+        ),
+        settings_reset_command=_string_list(
+            raw.get("settings_reset_command"),
+            "chrome_setup.settings_reset_command",
+        ),
+        process_check_command=_string_list(
+            raw.get("process_check_command"),
+            "chrome_setup.process_check_command",
+        ),
+        mount_check_command=_string_list(
+            raw.get("mount_check_command"), "chrome_setup.mount_check_command"
+        ),
+        mount_reload_command=_string_list(
+            raw.get("mount_reload_command"), "chrome_setup.mount_reload_command"
+        ),
+        mount_enable_command=_string_list(
+            raw.get("mount_enable_command"), "chrome_setup.mount_enable_command"
+        ),
+        menu_refresh_command=_string_list(
+            raw.get("menu_refresh_command"), "chrome_setup.menu_refresh_command"
+        ),
+        mount_unit_template_file_name=_nonempty_string_field(
+            raw.get("mount_unit_template_file_name"),
+            "chrome_setup.mount_unit_template_file_name",
         ),
         system_root=Path(
             _nonempty_string_field(
