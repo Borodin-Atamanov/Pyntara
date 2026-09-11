@@ -30,21 +30,39 @@ from config_helpers import (
         base_config().replace(
             'packages = ["imagemagick"]\n'
             'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            'policy_template_file_name = "policy.xml"\n'
+            'policy_backup_file_suffix = ".bak"\n'
             "package_status_timeout_seconds = 30\n",
             'packages = ["imagemagick"]\n'
             'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            'policy_template_file_name = "policy.xml"\n'
+            'policy_backup_file_suffix = ".bak"\n'
             'package_status_timeout_seconds = "30"\n',
         ),
         # package_install_retries is a string
         base_config().replace(
             'packages = ["imagemagick"]\n'
             'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            'policy_template_file_name = "policy.xml"\n'
+            'policy_backup_file_suffix = ".bak"\n'
             "package_status_timeout_seconds = 30\n"
             "package_install_retries = 3\n",
             'packages = ["imagemagick"]\n'
             'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+            'policy_template_file_name = "policy.xml"\n'
+            'policy_backup_file_suffix = ".bak"\n'
             "package_status_timeout_seconds = 30\n"
             'package_install_retries = "3"\n',
+        ),
+        # policy_template_file_name is a number, not a string
+        base_config().replace(
+            'policy_template_file_name = "policy.xml"',
+            "policy_template_file_name = 42",
+        ),
+        # policy_backup_file_suffix is an empty string
+        base_config().replace(
+            'policy_backup_file_suffix = ".bak"',
+            'policy_backup_file_suffix = ""',
         ),
     ],
 )
@@ -57,5 +75,7 @@ def test_load_config_imagemagick_values(tmp_path: Path) -> None:
     config = load_checked_config(write_config(tmp_path, base_config()))
     assert config.imagemagick_setup.packages == ("imagemagick",)
     assert config.imagemagick_setup.policy_path == Path("/etc/ImageMagick-7/policy.xml")
+    assert config.imagemagick_setup.policy_template_file_name == "policy.xml"
+    assert config.imagemagick_setup.policy_backup_file_suffix == ".bak"
     assert config.imagemagick_setup.package_status_timeout_seconds == 30
     assert config.imagemagick_setup.package_install_retries == 3

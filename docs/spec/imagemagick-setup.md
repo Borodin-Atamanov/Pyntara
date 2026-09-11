@@ -26,5 +26,7 @@ All parameters live in the [imagemagick_setup] table of the config/ directory.
 
 packages - the package names to install, the meta package imagemagick first
 policy_path - the system policy file the tuned policy is written over
+policy_template_file_name - the name of the tuned policy template in task_data/imagemagick_setup of the clone
+policy_backup_file_suffix - the suffix of the single backup written next to the system policy
 package_status_timeout_seconds - seconds the dpkg status query may take
 package_install_retries - retry attempts after a failed package install

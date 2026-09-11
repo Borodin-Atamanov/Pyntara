@@ -225,6 +225,8 @@ def make_config(
 
     imagemagick_setup_packages: tuple[str, ...] = ("imagemagick",),
     imagemagick_setup_policy_path: Path = Path("/etc/ImageMagick-7/policy.xml"),
+    imagemagick_setup_policy_template_file_name: str = "policy.xml",
+    imagemagick_setup_policy_backup_file_suffix: str = ".bak",
 
     ffmpeg_setup_packages: tuple[str, ...] = ("ffmpeg",),
     ffmpeg_setup_wayrecord_bin_path: Path = Path(
@@ -474,6 +476,8 @@ def make_config(
             base.imagemagick_setup,
             packages=imagemagick_setup_packages,
             policy_path=imagemagick_setup_policy_path,
+            policy_template_file_name=imagemagick_setup_policy_template_file_name,
+            policy_backup_file_suffix=imagemagick_setup_policy_backup_file_suffix,
         ),
 
         ffmpeg_setup=replace(

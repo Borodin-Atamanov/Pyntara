@@ -35,7 +35,12 @@ POLICY_CONTENT = (
 _FIXTURE_REPO: Path | None = None
 
 
-def _policy_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def _policy_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    template_file_name: str = "policy.xml",
+) -> Path:
     """Point the template and the policy target at tmp; return the target.
 
     The fixture clone carries the policy template under
@@ -47,24 +52,41 @@ def _policy_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     template_dir = repo / "task_data" / "imagemagick_setup"
     template_dir.mkdir(parents=True)
-    (template_dir / "policy.xml").write_text(POLICY_CONTENT, encoding="utf-8")
+    (template_dir / template_file_name).write_text(POLICY_CONTENT, encoding="utf-8")
     _FIXTURE_REPO = repo
     return tmp_path / "policy.xml"
 
 
-def _test_config(policy_path: Path) -> Config:
+def _test_config(
+    policy_path: Path,
+    *,
+    template_file_name: str = "policy.xml",
+    backup_file_suffix: str = ".bak",
+) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
     return make_config(
         imagemagick_setup_packages=TEST_PACKAGES,
         imagemagick_setup_policy_path=policy_path,
+        imagemagick_setup_policy_template_file_name=template_file_name,
+        imagemagick_setup_policy_backup_file_suffix=backup_file_suffix,
     )
 
 
-def _ctx(*, skip_apt_update: bool = False, policy_path: Path) -> Context:
+def _ctx(
+    *,
+    skip_apt_update: bool = False,
+    policy_path: Path,
+    template_file_name: str = "policy.xml",
+    backup_file_suffix: str = ".bak",
+) -> Context:
     return make_context(
         task_name="imagemagick_setup",
-        config=_test_config(policy_path),
+        config=_test_config(
+            policy_path,
+            template_file_name=template_file_name,
+            backup_file_suffix=backup_file_suffix,
+        ),
         repo_root=_FIXTURE_REPO or REPO_ROOT,
         skip_apt_update=skip_apt_update,
     )
@@ -227,3 +249,34 @@ def test_policy_backup_never_overwritten(
     assert result.changed is True
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
     assert backup.read_text(encoding="utf-8") == "original backup"
+
+
+def test_policy_template_file_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The fixture clone carries only the template name the config gives, so
+    # a name written in the code could not find a template at all.
+    policy_path = _policy_env(monkeypatch, tmp_path, template_file_name="tuned.xml")
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = imagemagick_setup.task(
+        _ctx(policy_path=policy_path, template_file_name="tuned.xml")
+    )
+    assert result.success is True
+    assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
+
+
+def test_policy_backup_file_suffix_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another suffix in the config is the name of the single backup the
+    # task writes next to the system policy.
+    policy_path = _policy_env(monkeypatch, tmp_path)
+    policy_path.write_text("package original policy", encoding="utf-8")
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = imagemagick_setup.task(
+        _ctx(policy_path=policy_path, backup_file_suffix=".orig")
+    )
+    assert result.success is True
+    backup = policy_path.with_name(f"{policy_path.name}.orig")
+    assert backup.read_text(encoding="utf-8") == "package original policy"
+    assert not policy_path.with_name(f"{policy_path.name}.bak").exists()

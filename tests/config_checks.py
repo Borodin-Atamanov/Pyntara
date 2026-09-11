@@ -1036,9 +1036,19 @@ def _imagemagick_setup_table(raw: object) -> ImagemagickSetupConfig:
     policy_path = raw.get("policy_path")
     if not isinstance(policy_path, str):
         raise ConfigError("imagemagick_setup.policy_path must be a string")
+    policy_template_file_name = _nonempty_string_field(
+        raw.get("policy_template_file_name"),
+        "imagemagick_setup.policy_template_file_name",
+    )
+    policy_backup_file_suffix = _nonempty_string_field(
+        raw.get("policy_backup_file_suffix"),
+        "imagemagick_setup.policy_backup_file_suffix",
+    )
     return ImagemagickSetupConfig(
         packages=tuple(packages),
         policy_path=Path(policy_path),
+        policy_template_file_name=policy_template_file_name,
+        policy_backup_file_suffix=policy_backup_file_suffix,
         package_status_timeout_seconds=_int_field(
             raw.get("package_status_timeout_seconds"),
             "imagemagick_setup.package_status_timeout_seconds",

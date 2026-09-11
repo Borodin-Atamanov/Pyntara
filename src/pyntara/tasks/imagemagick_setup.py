@@ -28,17 +28,17 @@ def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
     """Write the tuned policy over the system file; return (changed, error).
 
     The backup is created once. The first time the system policy differs
-    from the template, the current system file is copied to
-    policy_path.bak, then the template is written to policy_path. When the
-    target already matches the template nothing is written and an existing
-    backup is never overwritten.
+    from the template, the current system file is copied to the file the
+    configured backup suffix names, then the template is written to
+    policy_path. When the target already matches the template nothing is
+    written and an existing backup is never overwritten.
     """
 
     cfg = ctx.config.imagemagick_setup
     target = cfg.policy_path
-    backup = target.with_name(f"{target.name}.bak")
+    backup = target.with_name(f"{target.name}{cfg.policy_backup_file_suffix}")
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / "policy.xml"
+        task_data_dir(ctx.repo_root, ctx.task_name) / cfg.policy_template_file_name
     )
     try:
         template = template_path.read_text(encoding="utf-8")

@@ -13,6 +13,10 @@ package_install_retries = 3
 # package original once next to it as policy_path.bak (ImageMagick loads
 # only the file named policy.xml, so the backup is never picked up).
 policy_path = "/etc/ImageMagick-7/policy.xml"
+# Name of the tuned policy template in task_data/<task>/ of the clone.
+policy_template_file_name = "policy.xml"
+# Suffix of the backup the task writes next to the system policy once.
+policy_backup_file_suffix = ".bak"
 
 #package set
 packages = [

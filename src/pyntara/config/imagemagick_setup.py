@@ -13,5 +13,7 @@ class ImagemagickSetupConfig:
 
     packages: tuple[str, ...]
     policy_path: Path
+    policy_template_file_name: str
+    policy_backup_file_suffix: str
     package_status_timeout_seconds: int
     package_install_retries: int

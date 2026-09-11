@@ -53,6 +53,8 @@ def base_config() -> str:
 
         '[imagemagick_setup]\npackages = ["imagemagick"]\n'
         'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
+        'policy_template_file_name = "policy.xml"\n'
+        'policy_backup_file_suffix = ".bak"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
