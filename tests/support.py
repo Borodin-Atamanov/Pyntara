@@ -259,6 +259,7 @@ def make_config(
         "/etc/apt/apt.conf.d/99keep-debs.conf"
     ),
     hostname_file: Path = Path("/etc/hostname"),
+    hostname_random_bytes: int = 4,
     hostname_set_hostname_command: tuple[str, ...] = (
         "hostnamectl",
         "set-hostname",
@@ -502,6 +503,7 @@ def make_config(
         hostname=replace(
             base.hostname,
             hostname_file=str(hostname_file),
+            hostname_random_bytes=hostname_random_bytes,
             set_hostname_command=hostname_set_hostname_command,
         ),
         kde_keyboard_setup=replace(

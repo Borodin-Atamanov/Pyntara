@@ -24,7 +24,7 @@ FIXED_BYTES = b"\x7f\x00\x00\x01"
 FIXED_NAME = "lusab-babad"
 
 
-def _ctx(tmp_path: Path, *, force: bool = False):
+def _ctx(tmp_path: Path, *, force: bool = False, random_bytes: int = 4):
     """Context with the hostname file rooted in the temporary directory."""
 
     return make_context(
@@ -34,6 +34,7 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         config=make_config(
             task_data_root=tmp_path,
             hostname_file=tmp_path / "etc" / "hostname",
+            hostname_random_bytes=random_bytes,
             hostname_set_hostname_command=("hostnamectl", "set-hostname"),
         ),
     )
@@ -78,6 +79,29 @@ def test_first_run_generates_writes_and_applies(
     hostname_file = tmp_path / "etc" / "hostname"
     assert hostname_file.read_text(encoding="utf-8").strip() == FIXED_NAME
     assert calls == [["hostnamectl", "set-hostname", FIXED_NAME]]
+
+
+def test_random_byte_count_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Another byte count in the config is the count the randomness is
+    # asked for, so a config value the code ignored could not change the
+    # length of the generated name.
+    requested: list[int] = []
+
+    def fake_token_bytes(count: int) -> bytes:
+        requested.append(count)
+        return FIXED_BYTES
+
+    monkeypatch.setattr(task_module.secrets, "token_bytes", fake_token_bytes)
+    monkeypatch.setattr(socket, "gethostname", lambda: "old-host")
+    monkeypatch.setattr(
+        "pyntara.tasks.hostname.run_command",
+        lambda command, **kwargs: _FakeProc(0, ""),
+    )
+    result = task_module.task(_ctx(tmp_path, random_bytes=8))
+    assert result.success is True
+    assert requested == [8]
 
 
 def test_skip_when_already_configured(

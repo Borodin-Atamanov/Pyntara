@@ -841,14 +841,18 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
 def _hostname_table(raw: object) -> HostnameConfig:
     """Validate the [hostname] table and build HostnameConfig.
 
-    hostname_file is a non-empty string; set_hostname_command is a
-    non-empty array of non-empty strings.
+    hostname_file is a non-empty string; hostname_random_bytes is a
+    positive integer; set_hostname_command is a non-empty array of
+    non-empty strings.
     """
 
     if not isinstance(raw, dict):
         raise ConfigError("[hostname] section is missing or not a table")
     hostname_file = _nonempty_string_field(
         raw.get("hostname_file"), "hostname.hostname_file"
+    )
+    hostname_random_bytes = _positive_int_field(
+        raw.get("hostname_random_bytes"), "hostname.hostname_random_bytes"
     )
     command = raw.get("set_hostname_command")
     if not isinstance(command, list) or not command:
@@ -861,6 +865,7 @@ def _hostname_table(raw: object) -> HostnameConfig:
         )
     return HostnameConfig(
         hostname_file=hostname_file,
+        hostname_random_bytes=hostname_random_bytes,
         set_hostname_command=tuple(part.strip() for part in command),
     )
 

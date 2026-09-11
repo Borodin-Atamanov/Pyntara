@@ -66,6 +66,7 @@ def base_config() -> str:
         'sources_list_d = "/etc/apt/sources.list.d"\n'
         'keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'
+        "hostname_random_bytes = 4\n"
         'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
         '[kde_keyboard_setup]\n'
         'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]\n'

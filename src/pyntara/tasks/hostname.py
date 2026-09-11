@@ -1,12 +1,13 @@
 """Task hostname: generate and persist a random proquint hostname.
 
-The hostname is a pronounceable proquint word pair: four random bytes
-encoded by the shared proquint_encode helper into two five-letter words
-joined by a dash, for example lusab-babad (docs/guides/project-structure.md,
-src/pyntara/utils.py). The randomness comes from the secrets module, so
-the name is cryptographically strong: the hostname feeds password
-generation (docs/spec/secrets-model.md) and the deterministic NextDNS
-profile choice (docs/spec/nextdns-profile.md), so it must not be guessable.
+The hostname is a pronounceable proquint word pair: hostname_random_bytes
+random bytes encoded by the shared proquint_encode helper into five-letter
+words joined by a dash, for example lusab-babad from the shipped count of
+four bytes (docs/guides/project-structure.md, src/pyntara/utils.py). The
+randomness comes from the secrets module, so the name is cryptographically
+strong: the hostname feeds password generation (docs/spec/secrets-model.md)
+and the deterministic NextDNS profile choice (docs/spec/nextdns-profile.md),
+so it must not be guessable.
 
 The task writes the name into the configured hostname file and applies it
 to the running kernel through the configured set_hostname_command, so
@@ -32,16 +33,17 @@ from pyntara.models import TaskResult
 from pyntara.utils import proquint_decode, proquint_encode, run_command, trim_whitespace
 
 
-def _generate_hostname() -> str:
-    """A fresh random proquint hostname from four random bytes.
+def _generate_hostname(random_bytes: int) -> str:
+    """A fresh random proquint hostname from the configured byte count.
 
-    Four bytes encode to exactly two five-letter words joined by a dash,
-    the XXXXX-XXXXX shape the task persists. The secrets module provides
+    The configured count of random bytes encodes to five-letter words
+    joined by a dash; the shipped count of four bytes gives the
+    XXXXX-XXXXX shape the task persists. The secrets module provides
     cryptographically strong randomness, which the hostname needs because
     it feeds password generation and the NextDNS profile choice.
     """
 
-    return proquint_encode(secrets.token_bytes(4))
+    return proquint_encode(secrets.token_bytes(random_bytes))
 
 
 def _read_hostname_file(path: Path) -> str | None:
@@ -125,10 +127,10 @@ def task(ctx: Context) -> TaskResult:
         and proquint_decode(current_file) is not None
     )
     if force or not file_is_ours:
-        name = _generate_hostname()
+        name = _generate_hostname(cfg.hostname_random_bytes)
         _log(f"generated hostname: {name}")
     else:
-        name = current_file or _generate_hostname()
+        name = current_file or _generate_hostname(cfg.hostname_random_bytes)
         _log(f"using existing hostname: {name}")
 
     needs_write = force or not file_is_ours

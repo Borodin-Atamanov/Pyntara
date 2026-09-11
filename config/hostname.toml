@@ -6,5 +6,8 @@
 [hostname]
 # Path of the file that holds the hostname.
 hostname_file = "/etc/hostname"
+# Number of random bytes the generated hostname is encoded from: four bytes
+# become two five-letter words joined by a dash.
+hostname_random_bytes = 4
 # Command that applies the hostname to the running kernel.
 set_hostname_command = ["hostnamectl", "set-hostname"]
