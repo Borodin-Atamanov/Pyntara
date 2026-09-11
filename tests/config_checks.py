@@ -1982,6 +1982,15 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
             "ssh_daemon_setup.sshd_config_dropin_path",
         )
     )
+    dropin_header = _nonempty_string_field(
+        raw.get("dropin_header"), "ssh_daemon_setup.dropin_header"
+    )
+    augeas_lens = _nonempty_string_field(
+        raw.get("augeas_lens"), "ssh_daemon_setup.augeas_lens"
+    )
+    port_directive = _nonempty_string_field(
+        raw.get("port_directive"), "ssh_daemon_setup.port_directive"
+    )
     private_key_file_name = _nonempty_string_field(
         raw.get("private_key_file_name"),
         "ssh_daemon_setup.private_key_file_name",
@@ -2016,6 +2025,9 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         sshd_config_path=Path(sshd_config_path),
         sshd_config_dropin_path=Path(sshd_config_dropin_path),
         dropin_file_mode=_file_mode_field("dropin_file_mode"),
+        dropin_header=dropin_header,
+        augeas_lens=augeas_lens,
+        port_directive=port_directive,
         private_key_file_name=private_key_file_name,
         public_key_file_name=public_key_file_name,
         private_key_file_mode=_file_mode_field("private_key_file_mode"),

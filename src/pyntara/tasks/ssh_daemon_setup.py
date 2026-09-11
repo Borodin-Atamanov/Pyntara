@@ -72,16 +72,6 @@ from pyntara.utils import (
     task_data_dir,
 )
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-
-# The ownership comment of the drop-in, without the leading hash:
-# augeas stores and writes comment values without it.
-DROPIN_HEADER = "Managed by the Pyntara ssh_daemon_setup task."
-
-# augeas lens for the sshd_config syntax.
-SSHD_LENS = "Sshd.lns"
-
 
 def _verify_effective_config(
     directives: tuple[SshDirective, ...], timeout: float
@@ -423,12 +413,12 @@ def task(ctx: Context) -> TaskResult:
             directives,
             cfg.dropin_file_mode,
             force,
-            SSHD_LENS,
-            DROPIN_HEADER,
+            cfg.augeas_lens,
+            cfg.dropin_header,
             timeout,
             owner_uid=owner_uid,
             owner_gid=owner_gid,
-            port_directive="Port",
+            port_directive=cfg.port_directive,
         )
     except RuntimeError as exc:
         return TaskResult(success=False, changed=changed, error=str(exc))

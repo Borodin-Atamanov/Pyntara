@@ -53,7 +53,10 @@ class SshDaemonSetupConfig:
     start_check_retry_delay_seconds bound the loop that waits for the
     service to become active after a start. augeas_tools_package_name
     names the package that provides augtool, which the task installs
-    itself when the tool is missing.
+    itself when the tool is missing. dropin_header is the ownership
+    comment written at the top of the drop-in, without the leading hash,
+    augeas_lens is the lens of the sshd_config syntax and port_directive
+    is the directive whose change needs a restart instead of a reload.
     """
 
     package_name: str
@@ -67,6 +70,9 @@ class SshDaemonSetupConfig:
     sshd_config_path: Path
     sshd_config_dropin_path: Path
     dropin_file_mode: int
+    dropin_header: str
+    augeas_lens: str
+    port_directive: str
     private_key_file_name: str
     public_key_file_name: str
     private_key_file_mode: int

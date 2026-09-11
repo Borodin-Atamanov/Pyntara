@@ -11,6 +11,7 @@ file, so the augeas interaction is covered end to end.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +41,6 @@ PF_PUBLIC_KEY_LINE = (
 PF_OPTIONS = 'restrict,port-forwarding,permitlisten="*"'
 PF_AUTHORIZED_LINE = f"{PF_OPTIONS} {PF_PUBLIC_KEY_LINE}"
 
-DROPIN_HEADER = "# Managed by the Pyntara ssh_daemon_setup task."
 
 # The augeas tool package name from the config defaults, used by the
 # subprocess fake to tell the main package from the augtool package.
@@ -74,10 +74,12 @@ def _expected_dropin_content(*, overrides: dict[str, str] | None = None) -> str:
     """The drop-in exactly as the task renders the default directives.
 
     A directive in overrides replaces the default value, which lets a
-    test describe a single drift without restating the whole file.
+    test describe a single drift without restating the whole file. The
+    ownership comment comes from the test document, so the expectation
+    follows the config instead of repeating its value.
     """
 
-    lines = [DROPIN_HEADER]
+    lines = [f"# {make_config().ssh_daemon_setup.dropin_header}"]
     for directive in DEFAULT_DIRECTIVES:
         value = (overrides or {}).get(directive.name, directive.value)
         lines.append(f"{directive.name} {value}")
@@ -177,7 +179,7 @@ def _write_dropin_as_desired(ctx: Context) -> None:
 
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [DROPIN_HEADER]
+    lines = [f"# {cfg.dropin_header}"]
     lines.extend(f"{directive.name} {directive.value}" for directive in cfg.directives)
     cfg.sshd_config_dropin_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -558,6 +560,35 @@ def test_missing_port_forwarding_key_files_are_an_error(
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
     assert "port-forwarding key files" in (result.error or "")
+
+
+def test_dropin_header_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another header in the [ssh_daemon_setup] table is the ownership
+    # comment the rendered drop-in carries, so the value is not a constant
+    # of the module.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(
+            config,
+            ssh_daemon_setup=replace(
+                config.ssh_daemon_setup, dropin_header="Owned by the test"
+            ),
+        ),
+    )
+    _install_fake(monkeypatch)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    content = ctx.config.ssh_daemon_setup.sshd_config_dropin_path.read_text(
+        encoding="utf-8"
+    )
+    assert content.startswith("# Owned by the test\n")
 
 
 def test_empty_directives_removes_dropin(

@@ -42,3 +42,30 @@ The target state is reached when the package is installed, sshd_config pulls the
 ## Parameters
 
 All parameters live in the [ssh_daemon_setup] table of the config/ directory.
+
+package_name - the package that provides the SSH server daemon
+augeas_tools_package_name - the package that provides augtool, installed by the task when missing
+package_status_timeout_seconds - seconds the dpkg status query may take
+install_retries - retry attempts after a failed package install
+service_unit_name - the systemd service unit of the daemon
+socket_unit_name - the systemd socket unit that owns the listen port and is disabled by the task
+start_check_attempts - attempts of the readiness loop after a start
+start_check_retry_delay_seconds - pause between two readiness checks
+sshd_config_path - the daemon configuration the task only checks for the Include directive
+sshd_config_dropin_path - the drop-in the task owns and writes
+dropin_file_mode - the file mode of the drop-in, as an octal string
+dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
+augeas_lens - the augeas lens of the sshd_config syntax
+port_directive - the directive whose change needs a restart instead of a reload
+private_key_file_name - the repository name of the server private key
+public_key_file_name - the repository name of the server public key
+private_key_file_mode - the file mode of the deployed private key, as an octal string
+public_key_file_mode - the file mode of the deployed public key, as an octal string
+authorized_keys_file_mode - the file mode of authorized_keys, as an octal string
+ssh_dir_mode - the mode of the deployed .ssh directories, as an octal string
+root_ssh_dir - the root account .ssh directory
+users - the accounts that receive the key pair
+directives - the sshd_config keywords the task guarantees, each with its value
+port_forwarding_private_key_file_name - the repository name of the port-forwarding private key
+port_forwarding_public_key_file_name - the repository name of the port-forwarding public key
+port_forwarding_authorized_keys_options - the restriction prefix of the port-forwarding key line in authorized_keys
