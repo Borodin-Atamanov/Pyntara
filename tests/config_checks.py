@@ -654,6 +654,9 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("github_latest_release_url"),
             "engine.github_latest_release_url",
         ),
+        system_python=_nonempty_string_field(
+            raw.get("system_python"), "engine.system_python"
+        ),
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(
@@ -1039,6 +1042,54 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         ),
         kwin_reload_command=_string_list(
             raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
+        ),
+        sddm_conf_file=Path(
+            _nonempty_string_field(
+                raw.get("sddm_conf_file"), "kde_settings.sddm_conf_file"
+            )
+        ),
+        sddm_theme_conf_file=Path(
+            _nonempty_string_field(
+                raw.get("sddm_theme_conf_file"), "kde_settings.sddm_theme_conf_file"
+            )
+        ),
+        user_config_dir=_nonempty_string_field(
+            raw.get("user_config_dir"), "kde_settings.user_config_dir"
+        ),
+        user_kwin_scripts_dir=Path(
+            _nonempty_string_field(
+                raw.get("user_kwin_scripts_dir"), "kde_settings.user_kwin_scripts_dir"
+            )
+        ),
+        user_look_and_feel_dir=Path(
+            _nonempty_string_field(
+                raw.get("user_look_and_feel_dir"),
+                "kde_settings.user_look_and_feel_dir",
+            )
+        ),
+        user_places_file=Path(
+            _nonempty_string_field(
+                raw.get("user_places_file"), "kde_settings.user_places_file"
+            )
+        ),
+        user_dirs_file=_nonempty_string_field(
+            raw.get("user_dirs_file"), "kde_settings.user_dirs_file"
+        ),
+        konsole_profile_path=Path(
+            _nonempty_string_field(
+                raw.get("konsole_profile_path"), "kde_settings.konsole_profile_path"
+            )
+        ),
+        system_look_and_feel_dir=Path(
+            _nonempty_string_field(
+                raw.get("system_look_and_feel_dir"),
+                "kde_settings.system_look_and_feel_dir",
+            )
+        ),
+        theme_defaults_dir=Path(
+            _nonempty_string_field(
+                raw.get("theme_defaults_dir"), "kde_settings.theme_defaults_dir"
+            )
         ),
         sddm_autologin_user=_nonempty_string_field(
             raw.get("sddm_autologin_user"), "kde_settings.sddm_autologin_user"

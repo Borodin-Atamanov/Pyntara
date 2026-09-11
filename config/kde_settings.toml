@@ -63,6 +63,24 @@ kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfig
 # The SDDM login screen: autologin into the configured user session and
 # the login theme. These live in the system files /etc/sddm.conf and
 # /etc/sddm.conf.d/20-kubuntu.conf and are written by the task as root.
+sddm_conf_file = "/etc/sddm.conf"
+sddm_theme_conf_file = "/etc/sddm.conf.d/20-kubuntu.conf"
+# Paths of the files and directories the task reads and writes under the
+# home directory of the target user: the KDE config directory, the user
+# copy of the KWin scripts, the user copy of the global themes, the
+# Places panel file, the Konsole profile and the XDG user directories
+# file. A relative path starts at home_dir.
+user_config_dir = ".config"
+user_kwin_scripts_dir = ".local/share/kwin/scripts"
+user_look_and_feel_dir = ".local/share/plasma/look-and-feel"
+user_places_file = ".local/share/user-places.xbel"
+user_dirs_file = "user-dirs.dirs"
+konsole_profile_path = ".local/share/konsole/Pyntara.profile"
+# The system copy of the global themes and the directory inside a theme
+# that carries its defaults. The task copies a theme whose defaults carry
+# the configured cursor theme from the system directory into the user one.
+system_look_and_feel_dir = "/usr/share/plasma/look-and-feel"
+theme_defaults_dir = "contents/defaults"
 sddm_autologin_user = "i"
 sddm_autologin_session = "plasma"
 sddm_theme = "kubuntu"

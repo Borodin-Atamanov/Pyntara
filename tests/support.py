@@ -304,6 +304,20 @@ def make_config(
     ),
     kde_settings_username: str = "i",
     kde_settings_home_dir: str = "/home/i",
+    kde_settings_user_config_dir: str = ".config",
+    kde_settings_user_kwin_scripts_dir: Path = Path(".local/share/kwin/scripts"),
+    kde_settings_user_look_and_feel_dir: Path = Path(
+        ".local/share/plasma/look-and-feel"
+    ),
+    kde_settings_user_places_file: Path = Path(".local/share/user-places.xbel"),
+    kde_settings_user_dirs_file: str = "user-dirs.dirs",
+    kde_settings_konsole_profile_path: Path = Path(
+        ".local/share/konsole/Pyntara.profile"
+    ),
+    kde_settings_system_look_and_feel_dir: Path = Path(
+        "/usr/share/plasma/look-and-feel"
+    ),
+    kde_settings_theme_defaults_dir: Path = Path("contents/defaults"),
     kde_settings_user_dirs: dict[str, str] | None = None,
     kde_settings_color_scheme: str = "BreezeDark",
     kde_settings_look_and_feel: str = "org.kubuntudark.desktop",
@@ -328,6 +342,10 @@ def make_config(
         "org.kde.KWin",
         "/KWin",
         "org.kde.KWin.reconfigure",
+    ),
+    kde_settings_sddm_conf_file: Path = Path("/etc/sddm.conf"),
+    kde_settings_sddm_theme_conf_file: Path = Path(
+        "/etc/sddm.conf.d/20-kubuntu.conf"
     ),
     kde_settings_sddm_autologin_user: str = "i",
     kde_settings_sddm_autologin_session: str = "plasma",
@@ -773,6 +791,14 @@ def make_config(
             packages=kde_settings_packages,
             username=kde_settings_username,
             home_dir=kde_settings_home_dir,
+            user_config_dir=kde_settings_user_config_dir,
+            user_kwin_scripts_dir=kde_settings_user_kwin_scripts_dir,
+            user_look_and_feel_dir=kde_settings_user_look_and_feel_dir,
+            user_places_file=kde_settings_user_places_file,
+            user_dirs_file=kde_settings_user_dirs_file,
+            konsole_profile_path=kde_settings_konsole_profile_path,
+            system_look_and_feel_dir=kde_settings_system_look_and_feel_dir,
+            theme_defaults_dir=kde_settings_theme_defaults_dir,
             user_dirs=(
                 kde_settings_user_dirs
                 if kde_settings_user_dirs is not None
@@ -791,6 +817,8 @@ def make_config(
             virtual_keyboard_input_method=kde_settings_virtual_keyboard_input_method,
             virtual_keyboard_locales=kde_settings_virtual_keyboard_locales,
             kwin_reload_command=kde_settings_kwin_reload_command,
+            sddm_conf_file=kde_settings_sddm_conf_file,
+            sddm_theme_conf_file=kde_settings_sddm_theme_conf_file,
             sddm_autologin_user=kde_settings_sddm_autologin_user,
             sddm_autologin_session=kde_settings_sddm_autologin_session,
             sddm_theme=kde_settings_sddm_theme,

@@ -55,11 +55,6 @@ _SHORTCUT_MODIFIER_BITS: dict[str, int] = {
     "Shift": 0x02000000,
     "Meta": 0x10000000,
 }
-# The interpreter that runs the embedded DBus client. The python3-dbus
-# bindings install into the system Python only; the absolute path keeps
-# the client independent of the caller PATH, where the project venv
-# could shadow python3 with an interpreter that cannot see them.
-_DBUS_CLIENT_PYTHON = "/usr/bin/python3"
 
 
 def _as_user_command(cfg: KdeKeyboardSetupConfig, command: list[str]) -> list[str]:
@@ -358,6 +353,7 @@ def _apply_hotkeys_live(
     *,
     timeout: float,
     home_env: dict[str, str],
+    system_python: str,
 ) -> tuple[str | None, bool]:
     """Apply the supported hotkeys through the running daemon.
 
@@ -388,7 +384,8 @@ def _apply_hotkeys_live(
     try:
         result = run_command(
             _as_user_command(
-                cfg, [_DBUS_CLIENT_PYTHON, "-c", _APPLY_HOTKEYS_SCRIPT, payload]
+                cfg,
+                [system_python, "-c", _APPLY_HOTKEYS_SCRIPT, payload],
             ),
             extra_env={**home_env, "DBUS_SESSION_BUS_ADDRESS": bus},
             timeout=timeout,
@@ -551,6 +548,7 @@ def task(ctx: Context) -> TaskResult:
                 bus,
                 timeout=timeout,
                 home_env=home_env,
+                system_python=ctx.config.engine.system_python,
             )
             if hotkey_error is not None:
                 warnings.append(hotkey_error)

@@ -17,6 +17,8 @@ class EngineConfig:
     the one directory the tasks that deploy a systemd unit write it to.
     github_latest_release_url is the endpoint of every release query, a
     template whose {repo} is replaced by the repository of the task.
+    system_python is the interpreter of the managed system, used by a task
+    that runs an embedded client against the system packages.
     """
 
     task_data_root: Path
@@ -30,6 +32,7 @@ class EngineConfig:
     curl_connect_timeout_seconds: int
     curl_retry_max_time_seconds: int
     github_latest_release_url: str
+    system_python: str
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int

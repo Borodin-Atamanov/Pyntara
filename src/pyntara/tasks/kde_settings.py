@@ -56,7 +56,6 @@ KONSOLE_PROFILE_TEMPLATE = (
 KWIN_SCRIPTS_TEMPLATE_ROOT = REPO_ROOT / "task_data" / "kde_settings" / "kwin"
 KWIN_SCRIPTS: tuple[str, ...] = ("window-grow-shrink", "window-restore-tracker")
 KWIN_SCRIPT_FILES: tuple[str, ...] = ("metadata.json", "contents/code/main.js")
-USER_KWIN_SCRIPTS_REL = Path(".local/share/kwin/scripts")
 # The keyboard combinations the KWin scripts claim for themselves. The
 # task sets them aggressively: any action that owns one of them,
 # wherever it lives, is cleared so the script grabs the key.
@@ -67,11 +66,6 @@ KWIN_SCRIPT_ACTIONS: tuple[str, ...] = (
     "Grow Window by 5px",
     "Shrink Window by 5px",
 )
-# The interpreter that runs the embedded DBus client. The python3-dbus
-# bindings install into the system Python only; the absolute path keeps
-# the client independent of the caller PATH, where the project venv
-# could shadow python3 with an interpreter that cannot see them.
-_DBUS_CLIENT_PYTHON = "/usr/bin/python3"
 # The embedded DBus client that prints the id of every virtual desktop,
 # one per line, in position order. The desktop list is a DBus property
 # of structs (position, id, name); qdbus6 cannot render that type, so the
@@ -96,17 +90,6 @@ KCINPUTRC_FILE = "kcminputrc"
 KWINRC_FILE = "kwinrc"
 PLASMA_KEYBOARD_RC = "plasmakeyboardrc"
 MOUSE_GROUP: tuple[str, ...] = ("Mouse",)
-# The XDG user directory file and the Konsole profile target path, both
-# under the target user config and local share directories.
-USER_DIRS_FILE = "user-dirs.dirs"
-KONSOLE_PROFILE_REL = ".local/share/konsole/Pyntara.profile"
-USER_PLACES_REL = ".local/share/user-places.xbel"
-# The system and user look and feel directories: the user copy of a theme
-# wins over the system one, so the task copies the themes whose defaults
-# carry the configured cursor themes.
-SYSTEM_LOOK_AND_FEEL_DIR = Path("/usr/share/plasma/look-and-feel")
-USER_LOOK_AND_FEEL_REL = ".local/share/plasma/look-and-feel"
-THEME_DEFAULTS_REL = Path("contents") / "defaults"
 NUMLOCK_GROUP: tuple[str, ...] = ("Keyboard",)
 WAYLAND_GROUP: tuple[str, ...] = ("Wayland",)
 VIRTUAL_KEYBOARD_GROUP: tuple[str, ...] = ("General",)
@@ -532,7 +515,7 @@ def _apply_touchpad(
     apply.
     """
 
-    kcminputrc = Path(cfg.home_dir) / ".config" / KCINPUTRC_FILE
+    kcminputrc = Path(cfg.home_dir) / cfg.user_config_dir / KCINPUTRC_FILE
     try:
         groups = _touchpad_groups(kcminputrc.read_text(encoding="utf-8"))
     except OSError:
@@ -718,11 +701,11 @@ def _apply_theme_cursor_overrides(
         (cfg.look_and_feel_light, cfg.cursor_theme_light),
     ):
         try:
-            source = SYSTEM_LOOK_AND_FEEL_DIR / look_and_feel
+            source = cfg.system_look_and_feel_dir / look_and_feel
             if not source.is_dir():
                 _log(f"no system theme {look_and_feel}, cursor override skipped")
                 continue
-            target = Path(cfg.home_dir) / USER_LOOK_AND_FEEL_REL / look_and_feel
+            target = Path(cfg.home_dir) / cfg.user_look_and_feel_dir / look_and_feel
             if not target.is_dir():
                 shutil.copytree(source, target)
                 run_command(
@@ -735,7 +718,7 @@ def _apply_theme_cursor_overrides(
                 )
             changed |= _sync_config_value(
                 cfg,
-                str(target / THEME_DEFAULTS_REL),
+                str(target / cfg.theme_defaults_dir),
                 ("kcminputrc", "Mouse"),
                 "cursorTheme",
                 cursor_theme,
@@ -861,7 +844,7 @@ def _clear_shortcut_conflicts(
     configured_keys = {
         record_key for record_keys in owned.values() for record_key in record_keys
     }
-    path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
+    path = Path(cfg.home_dir) / cfg.user_config_dir / "kglobalshortcutsrc"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -1009,7 +992,7 @@ def _apply_kwin_scripts(
                 content = template.read_text(encoding="utf-8")
                 changed |= _write_user_file(
                     cfg,
-                    str(USER_KWIN_SCRIPTS_REL / script / rel_file),
+                    str(cfg.user_kwin_scripts_dir / script / rel_file),
                     content,
                     mode="0644",
                     timeout=timeout,
@@ -1080,6 +1063,7 @@ def _release_hotkeys_live(
     *,
     env: dict[str, str],
     timeout: float,
+    system_python: str,
 ) -> None:
     """Ask the running KGlobalAccel daemon to release the hotkeys.
 
@@ -1102,7 +1086,7 @@ def _release_hotkeys_live(
         "    action = sys.argv[index + 1]\n"
         "    iface.setForeignShortcutKeys([group, action, group, action], empty)\n"
     )
-    command = [_DBUS_CLIENT_PYTHON, "-c", code]
+    command = [system_python, "-c", code]
     for group, action in targets:
         command.extend([group, action])
     run_command(
@@ -1118,6 +1102,7 @@ def _free_script_hotkeys(
     *,
     env: dict[str, str],
     timeout: float,
+    system_python: str,
     warnings: list[str] | None = None,
 ) -> bool:
     """Clear every action that owns a script hotkey; True when changed.
@@ -1131,7 +1116,7 @@ def _free_script_hotkeys(
     actions still clear.
     """
 
-    path = Path(cfg.home_dir) / ".config" / "kglobalshortcutsrc"
+    path = Path(cfg.home_dir) / cfg.user_config_dir / "kglobalshortcutsrc"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -1167,7 +1152,9 @@ def _free_script_hotkeys(
                 warnings.append(warning)
     if targets and "DBUS_SESSION_BUS_ADDRESS" in env:
         try:
-            _release_hotkeys_live(cfg, targets, env=env, timeout=timeout)
+            _release_hotkeys_live(
+                cfg, targets, env=env, timeout=timeout, system_python=system_python
+            )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warning = f"cannot release the script hotkeys in the running daemon: {exc}"
             _log(warning)
@@ -1275,7 +1262,7 @@ def _apply_places_hidden(
 
     if not cfg.places_hidden:
         return False
-    path = Path(cfg.home_dir) / USER_PLACES_REL
+    path = Path(cfg.home_dir) / cfg.user_places_file
     try:
         current = path.read_text(encoding="utf-8")
     except OSError:
@@ -1284,12 +1271,17 @@ def _apply_places_hidden(
     try:
         content = _places_xbel_hidden(current, set(cfg.places_hidden))
     except ElementTree.ParseError as exc:
-        _log(f"cannot parse {USER_PLACES_REL}: {exc}, Places hiding skipped")
+        _log(f"cannot parse {cfg.user_places_file}: {exc}, Places hiding skipped")
         return False
     if content is None:
         return False
     return _write_user_file(
-        cfg, USER_PLACES_REL, content, mode="0600", timeout=timeout, force=force
+        cfg,
+        str(cfg.user_places_file),
+        content,
+        mode="0600",
+        timeout=timeout,
+        force=force,
     )
 
 
@@ -1301,12 +1293,12 @@ def _apply_user_dirs(
 ) -> bool:
     """Write the configured XDG user directories; True when changed."""
 
-    path = Path(cfg.home_dir) / ".config" / USER_DIRS_FILE
+    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.user_dirs_file
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
     content = _user_dirs_merged(current, cfg.user_dirs)
     return _write_user_file(
         cfg,
-        f".config/{USER_DIRS_FILE}",
+        f"{cfg.user_config_dir}/{cfg.user_dirs_file}",
         content,
         mode="0600",
         timeout=timeout,
@@ -1334,7 +1326,7 @@ def _apply_konsole_profile(
     content = template.replace("{home_dir}", cfg.home_dir)
     return _write_user_file(
         cfg,
-        KONSOLE_PROFILE_REL,
+        str(cfg.konsole_profile_path),
         content,
         mode="0600",
         timeout=timeout,
@@ -1416,7 +1408,7 @@ def _apply_sddm(
     ):
         try:
             changed |= _sync_system_value(
-                "/etc/sddm.conf",
+                str(cfg.sddm_conf_file),
                 ("Autologin",),
                 key,
                 value,
@@ -1440,7 +1432,7 @@ def _apply_sddm(
     ):
         try:
             changed |= _sync_system_value(
-                "/etc/sddm.conf.d/20-kubuntu.conf",
+                str(cfg.sddm_theme_conf_file),
                 ("Theme",),
                 key,
                 value,
@@ -1491,6 +1483,7 @@ def _apply_desktop_count_live(
     *,
     timeout: float,
     env: dict[str, str],
+    system_python: str,
 ) -> str | None:
     """Apply the configured desktop count through the DBus API; error or None.
 
@@ -1554,7 +1547,9 @@ def _apply_desktop_count_live(
         _log(f"created {target - current} desktops, live count now {target}")
     else:
         ids_result = run_command(
-            _as_user_command(cfg, [_DBUS_CLIENT_PYTHON, "-c", _DESKTOP_IDS_CLIENT]),
+            _as_user_command(
+                cfg, [system_python, "-c", _DESKTOP_IDS_CLIENT]
+            ),
             extra_env=env,
             timeout=timeout,
             capture=True,
@@ -1664,7 +1659,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _as_user_command(
-                cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / ".config")]
+                cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / cfg.user_config_dir)]
             ),
             extra_env=_home_env(cfg),
             timeout=timeout,
@@ -1765,7 +1760,11 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "free the kwin script hotkeys",
         lambda: _free_script_hotkeys(
-            cfg, env=apply_env, timeout=timeout, warnings=warnings
+            cfg,
+            env=apply_env,
+            timeout=timeout,
+            system_python=ctx.config.engine.system_python,
+            warnings=warnings,
         ),
     )
     settings_changed |= step(
@@ -1798,7 +1797,10 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(reload_error)
 
     desktop_error = _apply_desktop_count_live(
-        cfg, timeout=timeout, env=apply_env
+        cfg,
+        timeout=timeout,
+        env=apply_env,
+        system_python=ctx.config.engine.system_python,
     )
     if desktop_error is not None:
         _log(desktop_error)

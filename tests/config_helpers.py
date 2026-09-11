@@ -35,6 +35,7 @@ def base_config() -> str:
         "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
         "curl_retry_max_time_seconds = 7777\n"
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
+        'system_python = "/usr/bin/python3"\n'
         "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
@@ -80,6 +81,14 @@ def base_config() -> str:
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
         'home_dir = "/home/i"\n'
+        'user_config_dir = ".config"\n'
+        'user_kwin_scripts_dir = ".local/share/kwin/scripts"\n'
+        'user_look_and_feel_dir = ".local/share/plasma/look-and-feel"\n'
+        'user_places_file = ".local/share/user-places.xbel"\n'
+        'user_dirs_file = "user-dirs.dirs"\n'
+        'konsole_profile_path = ".local/share/konsole/Pyntara.profile"\n'
+        'system_look_and_feel_dir = "/usr/share/plasma/look-and-feel"\n'
+        'theme_defaults_dir = "contents/defaults"\n'
         'user_dirs = { "XDG_DOCUMENTS_DIR" = "$HOME/Downloads", "XDG_MUSIC_DIR" = "$HOME/Downloads", "XDG_PICTURES_DIR" = "$HOME/Downloads", "XDG_PUBLICSHARE_DIR" = "$HOME/Downloads", "XDG_TEMPLATES_DIR" = "$HOME/Downloads", "XDG_VIDEOS_DIR" = "$HOME/Downloads" }\n'
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
@@ -93,6 +102,8 @@ def base_config() -> str:
         "virtual_keyboard_enabled = true\n"
         'virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"\n'
         'virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]\n'
+        'sddm_conf_file = "/etc/sddm.conf"\n'
+        'sddm_theme_conf_file = "/etc/sddm.conf.d/20-kubuntu.conf"\n'
         'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]\n'
         'sddm_autologin_user = "i"\n'
         'sddm_autologin_session = "plasma"\n'

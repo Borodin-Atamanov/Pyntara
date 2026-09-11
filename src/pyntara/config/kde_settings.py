@@ -14,6 +14,7 @@ as new keys or as kconfig records.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 KCONFIG_TYPES: tuple[str, ...] = ("string", "bool")
 
@@ -62,8 +63,10 @@ class KdeSettingsConfig:
     the Wayland virtual keyboard; kwin_reload_command makes kwin re-read
     its configuration; kconfig carries additional KConfig values applied
     as records; the sddm_* values configure the login screen autologin and
-    theme in the system files /etc/sddm.conf and
-    /etc/sddm.conf.d/20-kubuntu.conf.
+    theme, and sddm_conf_file and sddm_theme_conf_file are the system files
+    that carry them; the remaining paths name the files and directories the
+    task reads and writes under home_dir and the system copy of the global
+    themes with the directory inside a theme that holds its defaults.
     """
 
     packages: tuple[str, ...]
@@ -83,6 +86,16 @@ class KdeSettingsConfig:
     virtual_keyboard_input_method: str
     virtual_keyboard_locales: tuple[str, ...]
     kwin_reload_command: tuple[str, ...]
+    sddm_conf_file: Path
+    sddm_theme_conf_file: Path
+    user_config_dir: str
+    user_kwin_scripts_dir: Path
+    user_look_and_feel_dir: Path
+    user_places_file: Path
+    user_dirs_file: str
+    konsole_profile_path: Path
+    system_look_and_feel_dir: Path
+    theme_defaults_dir: Path
     sddm_autologin_user: str
     sddm_autologin_session: str
     sddm_theme: str

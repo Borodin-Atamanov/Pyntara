@@ -25,11 +25,15 @@ def _ctx(
     force: bool = False,
     kcminputrc: str | None = None,
     virtual_keyboard_enabled: bool = True,
+    system_look_and_feel_dir: Path | None = None,
 ):
     """Context with the target user home rooted in tmp_path.
 
     kcminputrc, when given, is written into the user config directory so
-    the touchpad discovery reads it.
+    the touchpad discovery reads it. system_look_and_feel_dir is the system
+    theme directory of the test; the default one does not exist, so the
+    theme cursor overrides skip the copy unless a test points it at its own
+    fixture.
     """
 
     if kcminputrc is not None:
@@ -44,6 +48,9 @@ def _ctx(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
             kde_settings_virtual_keyboard_enabled=virtual_keyboard_enabled,
+            kde_settings_system_look_and_feel_dir=(
+                system_look_and_feel_dir or tmp_path / "no-system-themes"
+            ),
         ),
     )
 
@@ -149,12 +156,9 @@ def _install_fakes(
             else {}
         ),
     )
-    # The system theme directory never exists, so the theme cursor
-    # overrides skip the copy in the general task tests; the override
-    # tests point it at their own fixtures.
-    monkeypatch.setattr(
-        task_module, "SYSTEM_LOOK_AND_FEEL_DIR", Path("/nonexistent/look-and-feel")
-    )
+    # The system theme directory of the default test config does not exist,
+    # so the theme cursor overrides skip the copy in the general task tests;
+    # the override tests point it at their own fixtures through _ctx.
     return themes, schemes, order, installs, writes, reloads, cursorthemes
 
 
@@ -582,6 +586,7 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
             kde_settings_automatic_look_and_feel=True,
+            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
         ),
     )
     themes, schemes, _, _, writes, _, _ = _install_fakes(monkeypatch)
@@ -618,6 +623,7 @@ def test_live_session_notifies_watched_files_only(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
             kde_settings_automatic_look_and_feel=True,
+            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
         ),
     )
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
@@ -652,6 +658,7 @@ def test_no_session_omits_notify_flag(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
             kde_settings_automatic_look_and_feel=True,
+            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
         ),
     )
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
@@ -745,9 +752,8 @@ def test_theme_cursor_overrides_copies_themes_with_cursors(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    monkeypatch.setattr(task_module, "SYSTEM_LOOK_AND_FEEL_DIR", system)
     changed = task_module._apply_theme_cursor_overrides(
         ctx.config.kde_settings, timeout=5, force=False
     )
@@ -783,8 +789,7 @@ def test_theme_cursor_overrides_idempotent(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    monkeypatch.setattr(task_module, "SYSTEM_LOOK_AND_FEEL_DIR", system)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
     values: dict[tuple[str, str], str] = {}
     writes: list[list[str]] = []
 
@@ -1235,7 +1240,10 @@ def test_free_script_hotkeys_clears_and_releases_live(
     writes, releases = _script_fakes(monkeypatch, session=True)
     env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
     changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings, env=env, timeout=5
+        ctx.config.kde_settings,
+        env=env,
+        timeout=5,
+        system_python=ctx.config.engine.system_python,
     )
     assert changed is True
     cleared = [command for command in writes if "Switch One Desktop Up" in command]
@@ -1261,7 +1269,10 @@ def test_free_script_hotkeys_without_session_skips_live(
     ctx = _ctx(tmp_path)
     _, releases = _script_fakes(monkeypatch, session=False)
     changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings, env={}, timeout=5
+        ctx.config.kde_settings,
+        env={},
+        timeout=5,
+        system_python=ctx.config.engine.system_python,
     )
     assert changed is True
     assert releases == []
@@ -1550,6 +1561,7 @@ def _kconfig_ctx(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
             kde_settings_kconfig=records,
+            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
         ),
     )
 
@@ -1700,7 +1712,10 @@ def test_desktop_count_live_removes_extra_desktops(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings, timeout=30.0, env=env
+        ctx.config.kde_settings,
+        timeout=30.0,
+        env=env,
+        system_python=ctx.config.engine.system_python,
     )
     assert error is None
     removals = [
@@ -1743,7 +1758,10 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings, timeout=30.0, env=env
+        ctx.config.kde_settings,
+        timeout=30.0,
+        env=env,
+        system_python=ctx.config.engine.system_python,
     )
     assert error is None
     creates = [
@@ -1846,7 +1864,11 @@ def test_free_script_hotkeys_release_failure_is_warning(
     env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
     warnings: list[str] = []
     changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings, env=env, timeout=5, warnings=warnings
+        ctx.config.kde_settings,
+        env=env,
+        timeout=5,
+        system_python=ctx.config.engine.system_python,
+        warnings=warnings,
     )
     assert changed is True
     assert writes
