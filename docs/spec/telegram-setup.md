@@ -8,9 +8,9 @@ The described goal needs the latest version and auto-update. The official static
 
 ## Release resolution and install
 
-The configured latest_url is the official download link. A request to it answers a redirect to the archive of the newest release, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. Nothing about the name or the format of the archive is assumed: the cache file is named by the basename of the resolved url as is, and tar extracts the archive and detects the compression by itself, so a changed Telegram naming or archive format needs no code change. The download goes to a sibling .download file and is renamed only after a successful transfer, so a cached archive name always means a complete archive.
+The configured latest_url is the official download link. A request to it answers a redirect to the archive of the newest release, so the redirect is the single source of the latest release and no version list is tracked anywhere. The task resolves the redirect with a HEAD request that reports the final url through curl --write-out, takes the archive name from that url and downloads the archive from the resolved url only when it is not already cached. Nothing about the name or the format of the archive is assumed: the cache file is named by the basename of the resolved url as is, and tar extracts the archive and detects the compression by itself, so a changed Telegram naming or archive format needs no code change. The download goes to a sibling file with the configured partial_download_file_suffix and is renamed only after a successful transfer, so a cached archive name always means a complete archive.
 
-The archive carries two files under a Telegram/ prefix: the Telegram binary and the Updater binary. The task extracts the archive to a temporary directory and copies each file into the install directory under the desktop user home when it differs from what is already there. The install directory and its files are owned by the desktop user, which is exactly what the built-in updater needs: it replaces the two files in place when it applies a release.
+The archive carries two files under the configured archive_directory_name: the binary named by binary_file_name and the updater named by updater_file_name. The task extracts the archive to a temporary directory named by the configured extract_dir_prefix and copies each file into the install directory under the desktop user home when it differs from what is already there. The install directory and its files are owned by the desktop user, which is exactly what the built-in updater needs: it replaces the two files in place when it applies a release.
 
 ## Idempotency record
 
@@ -20,7 +20,7 @@ A self-update applied by the client between two provisioning runs is safe: the c
 
 ## Launcher entry and icon
 
-The launcher entry is written to home_dir/.local/share/applications/telegramdesktop.desktop with the Exec path pointing at the installed Telegram binary and the Icon path pointing at the downloaded icon, so Telegram appears in the KDE application menu. The entry content is stable and idempotent: a matching file is left alone. The icon is the official Telegram icon downloaded from the tdesktop repository into home_dir/.local/share/icons/telegram-desktop.png; a failed icon download is a warning, never a fatal error, because the launcher still starts Telegram and the icon is retried on the next run.
+The launcher entry is written to the configured launcher_relative_path under home_dir, rendered from the configured template with the Exec path pointing at the installed Telegram binary and the Icon path pointing at the downloaded icon, so Telegram appears in the KDE application menu. The entry content is stable and idempotent: a matching file is left alone. The icon is the official Telegram icon downloaded from the tdesktop repository into the configured icon_relative_path; a failed icon download is a warning, never a fatal error, because the launcher still starts Telegram and the icon is retried on the next run.
 
 ## Auto-update
 
@@ -28,7 +28,7 @@ Auto-update is enabled by default in the official build, and the user-writable i
 
 ## Install location
 
-The install directory is home_dir/.local/share/Telegram under the desktop user home, the same pattern a self-updating client like Steam uses, and the launcher entry and the icon live under the same home. The fleet desktop machine has a single desktop user, configured as username and home_dir in the task config, and the auto-update writes in place without any special permission on system directories.
+The install directory is the configured install_dir_relative_path under the desktop user home, the same pattern a self-updating client like Steam uses, and the launcher entry and the icon live under the same home at their configured relative paths. The fleet desktop machine has a single desktop user, configured as username and home_dir in the task config, and the auto-update writes in place without any special permission on system directories.
 
 ## Force mode
 
@@ -43,6 +43,15 @@ home_dir - the home directory of that user; the install directory, the launcher 
 download_dir - the root cache that keeps the archive of the last installed version, whose name doubles as the idempotency record
 latest_url - the official download link that redirects to the newest archive
 icon_url - the official Telegram icon url
+install_dir_relative_path - the install directory under home_dir, .local/share/Telegram in the shipped config
+launcher_relative_path - the launcher entry under that home, .local/share/applications/telegramdesktop.desktop in the shipped config
+icon_relative_path - the icon under that home, .local/share/icons/telegram-desktop.png in the shipped config
+binary_file_name - the client binary name, both inside the archive and inside the install directory
+updater_file_name - the updater binary name, the second file the archive carries
+archive_directory_name - the directory inside the extracted archive that holds the two binaries
+partial_download_file_suffix - the suffix of the file a download is written to before it is renamed to the final archive name
+extract_dir_prefix - the prefix of the temporary directory the archive is unpacked into
+launcher_template_file_name - the launcher entry template under task_data/telegram_setup/ of the clone, with $binary and $icon as its placeholders
 launcher_file_mode - the mode of the written launcher entry
 icon_file_mode - the mode of the downloaded icon
 executable_file_mode - the mode of the installed binaries

@@ -61,6 +61,54 @@ from config_helpers import (
         base_config().replace(
             'launcher_file_mode = "0644"\n', 'launcher_file_mode = "644"\n'
         ),
+        # install_dir_relative_path is a number, not a string
+        base_config().replace(
+            'install_dir_relative_path = ".local/share/Telegram"',
+            "install_dir_relative_path = 7",
+        ),
+        # install_dir_relative_path is empty
+        base_config().replace(
+            'install_dir_relative_path = ".local/share/Telegram"',
+            'install_dir_relative_path = ""',
+        ),
+        # launcher_relative_path is empty
+        base_config().replace(
+            'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"',
+            'launcher_relative_path = ""',
+        ),
+        # icon_relative_path is empty
+        base_config().replace(
+            'icon_relative_path = ".local/share/icons/telegram-desktop.png"',
+            'icon_relative_path = ""',
+        ),
+        # binary_file_name is empty
+        base_config().replace(
+            'binary_file_name = "Telegram"', 'binary_file_name = ""'
+        ),
+        # updater_file_name is a number, not a string
+        base_config().replace(
+            'updater_file_name = "Updater"', "updater_file_name = 7"
+        ),
+        # archive_directory_name is empty
+        base_config().replace(
+            'archive_directory_name = "Telegram"',
+            'archive_directory_name = ""',
+        ),
+        # partial_download_file_suffix is empty
+        base_config().replace(
+            'partial_download_file_suffix = ".download"',
+            'partial_download_file_suffix = ""',
+        ),
+        # extract_dir_prefix is empty
+        base_config().replace(
+            'extract_dir_prefix = "pyntara-telegram-"',
+            'extract_dir_prefix = ""',
+        ),
+        # launcher_template_file_name is empty
+        base_config().replace(
+            'launcher_template_file_name = "telegramdesktop.desktop"',
+            'launcher_template_file_name = ""',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -77,6 +125,15 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
+        'install_dir_relative_path = ".local/share/Telegram"\n'
+        'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"\n'
+        'icon_relative_path = ".local/share/icons/telegram-desktop.png"\n'
+        'binary_file_name = "Telegram"\n'
+        'updater_file_name = "Updater"\n'
+        'archive_directory_name = "Telegram"\n'
+        'partial_download_file_suffix = ".download"\n'
+        'extract_dir_prefix = "pyntara-telegram-"\n'
+        'launcher_template_file_name = "telegramdesktop.desktop"\n'
         'launcher_file_mode = "0644"\n'
         'icon_file_mode = "0644"\n'
         'executable_file_mode = "0755"\n'

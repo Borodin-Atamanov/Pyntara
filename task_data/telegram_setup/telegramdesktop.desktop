@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Telegram Desktop
+Comment=Official messaging client for Telegram
+Exec=$binary
+Icon=$icon
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;

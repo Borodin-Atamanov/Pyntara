@@ -2782,6 +2782,40 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
         icon_url=_nonempty_string_field(
             raw.get("icon_url"), "telegram_setup.icon_url"
         ),
+        install_dir_relative_path=_nonempty_string_field(
+            raw.get("install_dir_relative_path"),
+            "telegram_setup.install_dir_relative_path",
+        ),
+        launcher_relative_path=_nonempty_string_field(
+            raw.get("launcher_relative_path"),
+            "telegram_setup.launcher_relative_path",
+        ),
+        icon_relative_path=_nonempty_string_field(
+            raw.get("icon_relative_path"),
+            "telegram_setup.icon_relative_path",
+        ),
+        binary_file_name=_nonempty_string_field(
+            raw.get("binary_file_name"), "telegram_setup.binary_file_name"
+        ),
+        updater_file_name=_nonempty_string_field(
+            raw.get("updater_file_name"), "telegram_setup.updater_file_name"
+        ),
+        archive_directory_name=_nonempty_string_field(
+            raw.get("archive_directory_name"),
+            "telegram_setup.archive_directory_name",
+        ),
+        partial_download_file_suffix=_nonempty_string_field(
+            raw.get("partial_download_file_suffix"),
+            "telegram_setup.partial_download_file_suffix",
+        ),
+        extract_dir_prefix=_nonempty_string_field(
+            raw.get("extract_dir_prefix"),
+            "telegram_setup.extract_dir_prefix",
+        ),
+        launcher_template_file_name=_nonempty_string_field(
+            raw.get("launcher_template_file_name"),
+            "telegram_setup.launcher_template_file_name",
+        ),
         launcher_file_mode=_octal_mode_field(
             raw.get("launcher_file_mode"), "telegram_setup.launcher_file_mode"
         ),

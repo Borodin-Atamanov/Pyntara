@@ -13,14 +13,20 @@ class TelegramSetupConfig:
 
     username and home_dir identify the user who runs the client; the
     install directory, the launcher entry and the icon are derived under
-    that home (install directory home_dir/.local/share/Telegram, launcher
-    entry home_dir/.local/share/applications/telegramdesktop.desktop, icon
-    home_dir/.local/share/icons/telegram-desktop.png). download_dir is the
-    root cache that keeps the archive of the last installed version, whose
-    name doubles as the idempotency record. latest_url is the official
-    download link that redirects to the newest tsetup archive and is the
-    single source of the latest release; icon_url is the official Telegram
-    icon (docs/spec/telegram-setup.md).
+    that home from install_dir_relative_path, launcher_relative_path and
+    icon_relative_path, and binary_file_name, updater_file_name and
+    archive_directory_name name the two binaries inside the archive and
+    inside the install directory. download_dir is the root cache that
+    keeps the archive of the last installed version, whose name doubles as
+    the idempotency record; partial_download_file_suffix marks the file a
+    download is written to before it is renamed, extract_dir_prefix names
+    the temporary directory the archive is unpacked into, and
+    launcher_template_file_name is the launcher entry template under
+    task_data/telegram_setup/ of the clone, rendered with the binary and
+    the icon paths. latest_url is the official download link that
+    redirects to the newest tsetup archive and is the single source of the
+    latest release; icon_url is the official Telegram icon
+    (docs/spec/telegram-setup.md).
     """
 
     username: str
@@ -28,6 +34,15 @@ class TelegramSetupConfig:
     download_dir: Path
     latest_url: str
     icon_url: str
+    install_dir_relative_path: str
+    launcher_relative_path: str
+    icon_relative_path: str
+    binary_file_name: str
+    updater_file_name: str
+    archive_directory_name: str
+    partial_download_file_suffix: str
+    extract_dir_prefix: str
+    launcher_template_file_name: str
     launcher_file_mode: int
     icon_file_mode: int
     executable_file_mode: int

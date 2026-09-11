@@ -8,14 +8,16 @@ download (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import Config, load_config
+from pyntara.config import Config, TelegramSetupConfig, load_config
 from pyntara.context import Context
 from pyntara.tasks import telegram_setup
 
@@ -51,6 +53,7 @@ def _test_config(tmp_path: Path) -> Config:
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     return make_context(
         install_mode="desktop",
+        task_name="telegram_setup",
         config=_test_config(tmp_path),
         force_tasks=frozenset({"telegram_setup"}) if force else frozenset(),
     )
@@ -60,9 +63,49 @@ def _home(cfg: Config) -> Path:
     return Path(cfg.telegram_setup.home_dir)
 
 
+def _settings(tmp_path: Path, **changes: Any) -> TelegramSetupConfig:
+    """The telegram section of the test config, with optional changes."""
+
+    return replace(_test_config(tmp_path).telegram_setup, **changes)
+
+
+def _template_path(settings: TelegramSetupConfig) -> Path:
+    """The launcher template as it lives in the clone.
+
+    The path is built here from the documented layout instead of calling
+    the task, so a drifted directory or file name shows up as a failure.
+    """
+
+    return (
+        REPO_ROOT
+        / "task_data"
+        / "telegram_setup"
+        / settings.launcher_template_file_name
+    )
+
+
+def _deployed_paths(
+    tmp_path: Path, settings: TelegramSetupConfig | None = None
+) -> tuple[Path, Path, Path, Path]:
+    """The binary, the updater, the launcher entry and the icon."""
+
+    if settings is None:
+        settings = _settings(tmp_path)
+    home = Path(settings.home_dir)
+    install_dir = home / settings.install_dir_relative_path
+    return (
+        install_dir / settings.binary_file_name,
+        install_dir / settings.updater_file_name,
+        home / settings.launcher_relative_path,
+        home / settings.icon_relative_path,
+    )
+
+
 def _fake_run_factory(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     *,
+    settings: TelegramSetupConfig | None = None,
     resolved_url: str = FINAL_URL,
     head_rc: int = 0,
     download_rc: int = 0,
@@ -71,11 +114,15 @@ def _fake_run_factory(
 
     A curl with --head answers the redirect resolution with resolved_url, a
     curl with --output writes the sentinel bytes to its target (the icon or
-    the archive download) and tar creates the extracted Telegram files under
-    its --directory. A nonzero download_rc makes every non-head curl fail,
+    the archive download) and tar creates the extracted binaries under its
+    --directory, in the configured archive directory and under the
+    configured names, so a test that renames them exercises the same layout
+    the task reads. A nonzero download_rc makes every non-head curl fail,
     which stands for a failed archive or icon download.
     """
 
+    if settings is None:
+        settings = _settings(tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -90,10 +137,10 @@ def _fake_run_factory(
             return _FakeProc(download_rc, stdout="Downloaded sentinel bytes\n")
         if command[0] == "tar":
             dir_index = command.index("--directory") + 1
-            telegram_dir = Path(command[dir_index]) / "Telegram"
-            telegram_dir.mkdir(parents=True, exist_ok=True)
-            (telegram_dir / telegram_setup.BINARY_NAME).write_bytes(TELEGRAM_BYTES)
-            (telegram_dir / telegram_setup.UPDATER_NAME).write_bytes(UPDATER_BYTES)
+            archive_dir = Path(command[dir_index]) / settings.archive_directory_name
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            (archive_dir / settings.binary_file_name).write_bytes(TELEGRAM_BYTES)
+            (archive_dir / settings.updater_file_name).write_bytes(UPDATER_BYTES)
             return _FakeProc(0, "")
         return _FakeProc(0, "")
 
@@ -123,61 +170,74 @@ def test_cache_name_takes_the_redirect_basename_as_is() -> None:
 
 
 def test_desktop_content_points_at_the_installed_binary(tmp_path: Path) -> None:
-    config = _test_config(tmp_path)
-    home = _home(config)
-    content = telegram_setup._desktop_content(config.telegram_setup)
-    assert f"Exec={home / '.local/share/Telegram/Telegram'}" in content
-    assert f"Icon={home / '.local/share/icons/telegram-desktop.png'}" in content
+    settings = _settings(tmp_path)
+    binary, _updater, _launcher, icon = _deployed_paths(tmp_path, settings)
+    content = telegram_setup._desktop_content(settings, _template_path(settings))
+    assert f"Exec={binary}" in content
+    assert f"Icon={icon}" in content
     assert content.startswith("[Desktop Entry]")
     assert "Name=Telegram Desktop" in content
+
+
+def test_desktop_content_follows_the_configured_names(tmp_path: Path) -> None:
+    # The launcher body lives in the template and its two paths in the
+    # config: another install directory, another binary name and another
+    # icon path must change the rendered entry.
+    settings = _settings(
+        tmp_path,
+        install_dir_relative_path="opt/telegram",
+        binary_file_name="telegram-desktop",
+        icon_relative_path=".icons/custom.png",
+    )
+    binary, _updater, _launcher, icon = _deployed_paths(tmp_path, settings)
+    content = telegram_setup._desktop_content(settings, _template_path(settings))
+    assert f"Exec={binary}" in content
+    assert f"Icon={icon}" in content
+    assert "$binary" not in content and "$icon" not in content
 
 
 def test_install_downloads_and_installs_latest(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    calls = _fake_run_factory(monkeypatch)
+    calls = _fake_run_factory(monkeypatch, tmp_path)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert "installed Telegram Desktop" in (result.message or "")
-    config = _test_config(tmp_path)
-    home = _home(config)
-    binary = home / ".local/share/Telegram/Telegram"
-    updater = home / ".local/share/Telegram/Updater"
+    settings = _settings(tmp_path)
+    binary, updater, launcher, icon = _deployed_paths(tmp_path, settings)
     assert binary.read_bytes() == TELEGRAM_BYTES
     assert updater.read_bytes() == UPDATER_BYTES
-    launcher = home / ".local/share/applications/telegramdesktop.desktop"
     assert launcher.is_file()
     assert f"Exec={binary}" in launcher.read_text(encoding="utf-8")
-    icon = home / ".local/share/icons/telegram-desktop.png"
     assert icon.read_bytes() == ICON_BYTES
     archive = tmp_path / "cache" / ARCHIVE_NAME
     assert archive.is_file()
-    assert not (tmp_path / "cache" / (ARCHIVE_NAME + ".download")).exists()
+    assert not (
+        tmp_path / "cache" / (ARCHIVE_NAME + settings.partial_download_file_suffix)
+    ).exists()
     assert any(call[0] == "tar" for call in calls)
 
 
 def test_already_installed_changes_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _test_config(tmp_path)
-    home = _home(config)
-    binary = home / ".local/share/Telegram/Telegram"
+    settings = _settings(tmp_path)
+    binary, _updater, launcher, icon = _deployed_paths(tmp_path, settings)
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(TELEGRAM_BYTES)
-    launcher = home / ".local/share/applications/telegramdesktop.desktop"
     launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.write_text(
-        telegram_setup._desktop_content(config.telegram_setup), encoding="utf-8"
+        telegram_setup._desktop_content(settings, _template_path(settings)),
+        encoding="utf-8",
     )
-    icon = home / ".local/share/icons/telegram-desktop.png"
     icon.parent.mkdir(parents=True, exist_ok=True)
     icon.write_bytes(ICON_BYTES)
     cache = tmp_path / "cache"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / ARCHIVE_NAME).write_bytes(ARCHIVE_BYTES)
 
-    calls = _fake_run_factory(monkeypatch)
+    calls = _fake_run_factory(monkeypatch, tmp_path)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is False
@@ -192,16 +252,14 @@ def test_already_installed_changes_nothing(
 def test_newer_release_replaces_and_removes_the_stale_archive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _test_config(tmp_path)
-    home = _home(config)
-    binary = home / ".local/share/Telegram/Telegram"
+    binary, _updater, _launcher, _icon = _deployed_paths(tmp_path)
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(b"old binary\n")
     cache = tmp_path / "cache"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / OLD_ARCHIVE_NAME).write_bytes(ARCHIVE_BYTES)
 
-    calls = _fake_run_factory(monkeypatch)
+    calls = _fake_run_factory(monkeypatch, tmp_path)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -214,16 +272,14 @@ def test_newer_release_replaces_and_removes_the_stale_archive(
 def test_force_reinstalls_when_the_latest_archive_is_cached(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _test_config(tmp_path)
-    home = _home(config)
-    binary = home / ".local/share/Telegram/Telegram"
+    binary, _updater, _launcher, _icon = _deployed_paths(tmp_path)
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(TELEGRAM_BYTES)
     cache = tmp_path / "cache"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / ARCHIVE_NAME).write_bytes(ARCHIVE_BYTES)
 
-    calls = _fake_run_factory(monkeypatch)
+    calls = _fake_run_factory(monkeypatch, tmp_path)
     result = telegram_setup.task(_ctx(tmp_path, force=True))
     assert result.success is True
     assert result.changed is True
@@ -233,7 +289,7 @@ def test_force_reinstalls_when_the_latest_archive_is_cached(
 def test_resolve_failure_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _fake_run_factory(monkeypatch, head_rc=22)
+    _fake_run_factory(monkeypatch, tmp_path, head_rc=22)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is False
     assert "cannot resolve" in (result.error or "")
@@ -242,24 +298,57 @@ def test_resolve_failure_is_an_error(
 def test_download_failure_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _fake_run_factory(monkeypatch, download_rc=22)
+    _fake_run_factory(monkeypatch, tmp_path, download_rc=22)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is False
     assert "cannot download" in (result.error or "")
 
 
+def test_configured_names_decide_what_is_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another layout in the config is what the task writes: the relative
+    # paths, the two binary names, the archive directory and the suffix of
+    # the partial download are read, not composed in code.
+    settings = _settings(
+        tmp_path,
+        install_dir_relative_path="opt/telegram",
+        launcher_relative_path=".local/share/applications/custom.desktop",
+        icon_relative_path=".local/share/icons/custom.png",
+        binary_file_name="telegram-desktop",
+        updater_file_name="upgrade-helper",
+        archive_directory_name="telegram-archive",
+        partial_download_file_suffix=".partial",
+    )
+    _fake_run_factory(monkeypatch, tmp_path, settings=settings)
+    ctx = replace(
+        _ctx(tmp_path),
+        config=replace(_test_config(tmp_path), telegram_setup=settings),
+    )
+    result = telegram_setup.task(ctx)
+    assert result.success is True
+    binary, updater, launcher, icon = _deployed_paths(tmp_path, settings)
+    assert binary.read_bytes() == TELEGRAM_BYTES
+    assert updater.read_bytes() == UPDATER_BYTES
+    assert f"Exec={binary}" in launcher.read_text(encoding="utf-8")
+    assert icon.read_bytes() == ICON_BYTES
+    assert (tmp_path / "cache" / ARCHIVE_NAME).is_file()
+    assert not (
+        tmp_path / "cache" / (ARCHIVE_NAME + settings.partial_download_file_suffix)
+    ).exists()
+
+
 def test_icon_failure_is_a_warning_when_install_is_current(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _test_config(tmp_path)
-    home = _home(config)
-    binary = home / ".local/share/Telegram/Telegram"
+    settings = _settings(tmp_path)
+    binary, _updater, launcher, _icon = _deployed_paths(tmp_path, settings)
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(TELEGRAM_BYTES)
-    launcher = home / ".local/share/applications/telegramdesktop.desktop"
     launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.write_text(
-        telegram_setup._desktop_content(config.telegram_setup), encoding="utf-8"
+        telegram_setup._desktop_content(settings, _template_path(settings)),
+        encoding="utf-8",
     )
     cache = tmp_path / "cache"
     cache.mkdir(parents=True, exist_ok=True)
@@ -267,7 +356,7 @@ def test_icon_failure_is_a_warning_when_install_is_current(
 
     # download_rc makes the icon curl fail while the resolve curl keeps the
     # head_rc of zero.
-    calls = _fake_run_factory(monkeypatch, download_rc=22)
+    calls = _fake_run_factory(monkeypatch, tmp_path, download_rc=22)
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is False
