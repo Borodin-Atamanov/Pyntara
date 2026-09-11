@@ -28,7 +28,7 @@ The package is downloaded from the official GitHub release assets of the configu
 
 ## Configuration ownership
 
-The task owns the main configuration file at the configured config_path. It renders the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The template renders only the log level, the tunconf path to the owned tunnels file and the two proxy switches. Every other option keeps the i2pd built-in default, so a package upgrade that gains new options never conflicts with this file, and dpkg never needs to resolve a conffile conflict during an update.
+The task owns the main configuration file at the configured config_path. It renders the template at task_data/i2pd_service_setup/i2pd.conf and rewrites the file whenever the rendered content differs, so manual edits are reverted on the next run. The template renders only the log level, the tunconf path to the owned tunnels file, the two proxy switches and the SOCKS proxy port. Every other option keeps the i2pd built-in default, so a package upgrade that gains new options never conflicts with this file, and dpkg never needs to resolve a conffile conflict during an update.
 
 config_path must match the --conf path of the package unit, otherwise the rendered values are ignored. The deb package installs the unit with ExecStart i2pd --conf=/etc/i2pd/i2pd.conf, so the default config_path matches; the value stays configurable because the unit path is a package contract and may change.
 
@@ -46,13 +46,13 @@ The keys file is the binary PrivateKeys record i2pd writes: the first 387 bytes 
 
 ## Connecting over I2P
 
-An SSH client reaches the tunnel through the local SOCKS proxy of i2pd, which the task enables. The proxy listens on 127.0.0.1:4447 by default, and the client routes the connection through it with a ProxyCommand:
+An SSH client reaches the tunnel through the local SOCKS proxy of i2pd, which the task enables. The proxy listens on the loopback address at socks_proxy_port of the [i2pd_service_setup] table, which the task renders into the [socksproxy] section of i2pd.conf, so the port has one home and no caller guesses the i2pd default; the client routes the connection through it with a ProxyCommand:
 
 ```bash
-ssh -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:4447 %h %p" <user>@<base32>.b32.i2p
+ssh -v -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:4447 %h %p" <user>@<base32>.b32.i2p
 ```
 
-The placeholders are the configured sshd Port directive, the user whose authorized_keys holds the deployed key, and the tunnel address from the task message. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
+The placeholders are the configured sshd Port directive, the user whose authorized_keys holds the deployed key, and the tunnel address from the task message. The network telemetry carries the same invocation for the tunnel, built from the same config values and without a user: the operator chooses the user, and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
 ```text
 Host <alias>
@@ -68,7 +68,7 @@ The client must offer the deployed key; on the target machine the key is loaded 
 
 The .b32.i2p address is available on the target system through a shared decoder and a command, so the address can be reported without repeating the binary parsing logic. The decoder lives in the pyntara.i2pd module and is imported by the task, never copied.
 
-The task saves the computed address into the configured address_file_path with the mode address_file_mode once the identity exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The deployed command venv/bin/python -m pyntara.i2pd_address KEYS_PATH ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) decodes the live keys file first and falls back to the saved file when the keys file is missing or broken, because the identity may have been recreated between two provisioning runs. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
+The task saves the computed address into the configured address_file_path with the mode address_file_mode once the identity exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The deployed command venv/bin/python -m pyntara.i2pd_address CONFIG_PATH (the venv python from system_metrics_setup.venv_dir) decodes the live keys file first and falls back to the saved file when the keys file is missing or broken, because the identity may have been recreated between two provisioning runs; it prints one JSON record with the channel, the address, the sshd port, the SOCKS proxy and the ssh command that reaches the daemon through the tunnel, and a fallback reason travels inside the record as a note. The ports come from the single config named by the argument, which is the same source the task reads. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
 
 ## Service lifecycle
 

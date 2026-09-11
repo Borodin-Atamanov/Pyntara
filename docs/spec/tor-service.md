@@ -33,7 +33,7 @@ Tor generates the identity on the first start. A missing hostname file is not an
 
 The .onion address is available on the target system through a shared reader and a command. The reader lives in the pyntara.tor module and is imported by the task and the command, never copied. The address from the hostname file crosses an external boundary, so it passes through the shared trim_whitespace helper before it is stored or reported (project rules, the trim rule).
 
-The task saves the address into the configured address_file_path with the mode address_file_mode once the hostname file exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The deployed command venv/bin/python -m pyntara.tor_address HIDDEN_SERVICE_DIR ADDRESS_FILE_PATH (the venv python from system_metrics_setup.venv_dir) reads the live hostname file first and falls back to the saved file when the hostname file is missing or empty, because the identity may have been recreated between two provisioning runs. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
+The task saves the address into the configured address_file_path with the mode address_file_mode once the hostname file exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The deployed command venv/bin/python -m pyntara.tor_address CONFIG_PATH (the venv python from system_metrics_setup.venv_dir) reads the live hostname file first and falls back to the saved file when the hostname file is missing or empty, because the identity may have been recreated between two provisioning runs; it prints one JSON record with the channel, the address, the virtual port of the onion service, the SOCKS proxy and the ssh command that reaches the daemon through the service, and a fallback reason travels inside the record as a note. The ports come from the single config named by the argument, which is the same source the task writes into the drop-in. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
 
 ## Service lifecycle
 
@@ -49,13 +49,13 @@ All parameters live in the [tor_setup] table of the config/ directory.
 
 ## Connecting over Tor
 
-An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1:9050 by default, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
+An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1 at socks_port of the [tor_setup] table, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
 
 ```bash
-ssh -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" <user>@<address>.onion
+ssh -v -p 22 -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" <user>@<address>.onion
 ```
 
-The virtual port is 22 by default, so -p is not needed. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
+The virtual port is onion_ssh_port (22 by default), and the network telemetry writes it in the command, so a reader never has to know the default; the telemetry carries the same invocation without a user, because the operator chooses the user and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
 ```text
 Host <alias>

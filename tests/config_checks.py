@@ -756,7 +756,9 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     non-empty strings; log_level is one of the I2PD_LOG_LEVELS values;
     bandwidth is a positive integer in kilobytes per second and share is
     an integer percentage between 0 and 100; http_enabled and
-    socks_proxy_enabled are strict booleans; install_retries and
+    socks_proxy_enabled are strict booleans; socks_proxy_port is a TCP
+    port, because the telemetry builds the ssh command over I2P through
+    it; install_retries and
     start_check_attempts are positive integers;
     start_check_retry_delay_seconds is positive, so the readiness loop
     always waits between attempts. tunnels_config_path and
@@ -806,6 +808,13 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     if not isinstance(socks_proxy_enabled, bool):
         raise ConfigError(
             "i2pd_service_setup.socks_proxy_enabled must be a boolean"
+        )
+    socks_proxy_port = _int_field(
+        raw.get("socks_proxy_port"), "i2pd_service_setup.socks_proxy_port"
+    )
+    if not 1 <= socks_proxy_port <= 65535:
+        raise ConfigError(
+            "i2pd_service_setup.socks_proxy_port must be a TCP port"
         )
     install_retries = _int_field(
         raw.get("install_retries"), "i2pd_service_setup.install_retries"
@@ -861,6 +870,7 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         share=share,
         http_enabled=http_enabled,
         socks_proxy_enabled=socks_proxy_enabled,
+        socks_proxy_port=socks_proxy_port,
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,

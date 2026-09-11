@@ -35,7 +35,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from pykeepass import PyKeePass
 
@@ -43,6 +42,7 @@ from pyntara import metrics
 from pyntara.config import Config, load_config
 from pyntara.logger import log_progress as _log
 from pyntara.ssh import ssh_port_from_directives
+from pyntara.ssh_access import host_from_address
 from pyntara.utils import backoff_delay
 
 # The server prints the granted random port to the client stderr; the
@@ -141,21 +141,6 @@ def own_addresses() -> set[str]:
     return own
 
 
-def _host_from_address(address: str) -> str:
-    """The host of a server address, with a url scheme stripped.
-
-    A url like https://vpn.example.com resolves to vpn.example.com; a
-    bare ipv4, ipv6 or hostname is returned unchanged. The host is what
-    the comparison with the machine's own addresses operates on.
-    """
-
-    if "://" in address:
-        parsed = urlparse(address)
-        if parsed.hostname:
-            return parsed.hostname
-    return address
-
-
 def filter_own_servers(
     servers: list[str], own: set[str]
 ) -> tuple[list[str], list[str]]:
@@ -171,7 +156,7 @@ def filter_own_servers(
     kept: list[str] = []
     skipped: list[str] = []
     for server in servers:
-        if _normalize_host(_host_from_address(server)) in own:
+        if _normalize_host(host_from_address(server)) in own:
             skipped.append(server)
         else:
             kept.append(server)
@@ -343,7 +328,7 @@ def _build_ssh_command(
         str(key_path),
         "-R",
         f"{remote_port}:localhost:{local_port}",
-        f"{user}@{server}",
+        f"{user}@{host_from_address(server)}",
     ]
 
 

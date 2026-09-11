@@ -14,7 +14,12 @@ argument and does all waiting itself, so systemd never sleeps for it
 (docs/spec/system-metrics.md, section Report collector). The report is a
 JSON document: generated_at in the project datetime format,
 ready_percent, and the network and system module results, each with its
-status (ok, empty or error) and the full command output. A non-blocking
+status (ok, empty or error) and the full command output. A module that
+printed a JSON document contributes it as structured data instead of a
+string, so the addresses of the machine and the ssh commands that reach
+them stay records with their fields. ready_percent counts modules and
+never the records inside them, so the readiness of a machine does not
+grow or shrink with the number of addresses it carries. A non-blocking
 flock on the configured lock path keeps a second instance (a boot run
 overrunning into the daily run) from committing at the same time; the
 second instance exits.
@@ -63,10 +68,30 @@ from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay, trim_whitespace
 
 
+def _structured_document(output: str) -> object | None:
+    """The JSON document of a module output, or None when it is text.
+
+    A module that reports records (an address with its ssh command, the
+    answers of the country services) prints a JSON array or object, and
+    the report keeps that structure instead of a string the reader would
+    have to parse again. A bare scalar stays text on purpose: an
+    identifier that happens to be a number (a RustDesk ID) is not a
+    document, and turning it into a number would change its meaning.
+    """
+
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, (list, dict)):
+        return parsed
+    return None
+
+
 def _run_module(
     module: CollectorModuleConfig, timeout_seconds: int
-) -> dict[str, str]:
-    """Run one configured command; return status and trimmed output.
+) -> dict[str, object]:
+    """Run one configured command; return status and output.
 
     A command that exits 0 with non-empty stdout is ok; one that exits 0
     with empty stdout is empty; anything else (nonzero exit, a missing
@@ -74,7 +99,9 @@ def _run_module(
     output of every branch is trimmed of leading and trailing whitespace
     before it enters the report, so the trailing newline of every console
     command never reaches the telemetry; a whitespace-only output is
-    empty, because it carries no information.
+    empty, because it carries no information. A module that printed a
+    JSON document contributes it as structured data, so the report keeps
+    the records and their fields instead of a string.
     """
 
     try:
@@ -103,14 +130,21 @@ def _run_module(
         return {"status": "error", "output": output}
     if not output:
         return {"status": "empty", "output": ""}
+    document = _structured_document(output)
+    if document is not None:
+        return {"status": "ok", "output": document}
     return {"status": "ok", "output": output}
 
 
-def percent_ready(entries: list[dict[str, str]]) -> int:
+def percent_ready(entries: list[dict[str, object]]) -> int:
     """Share of ok modules among the entries, in percent.
 
     An empty module list is trivially ready: there is nothing to wait
-    for, so the percentage is 100.
+    for, so the percentage is 100. The share counts sources, never the
+    records inside them: a module that reports thirty addresses is one
+    answered source, exactly like a module that reports one, so the
+    readiness of a machine never depends on how many addresses it
+    carries.
     """
 
     if not entries:

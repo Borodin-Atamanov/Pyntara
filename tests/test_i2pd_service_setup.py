@@ -41,6 +41,7 @@ enabled = $http_enabled
 
 [socksproxy]
 enabled = $socks_proxy_enabled
+port = $socks_proxy_port
 """
 
 TUNNELS_TEMPLATE = """\

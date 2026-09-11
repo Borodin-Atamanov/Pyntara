@@ -115,6 +115,58 @@ def _fake_time(
     return sleeps
 
 
+def test_run_module_keeps_a_json_document_structured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An address module prints a JSON array of records; the report keeps
+    # the records and their ssh fields instead of a string the reader
+    # would have to parse again.
+    records = [
+        {
+            "address": "10.10.0.1",
+            "family": "ipv4",
+            "interface": "enp87s0",
+            "scope": "global",
+            "ssh": "ssh -v -p 30222 10.10.0.1",
+        }
+    ]
+    _fake_run(monkeypatch, {("addresses",): _FakeProc(0, json.dumps(records))})
+    module = CollectorModuleConfig(name="addresses", command=("addresses",))
+    assert metrics_collect._run_module(module, 15) == {
+        "status": "ok",
+        "output": records,
+    }
+
+
+def test_run_module_keeps_a_bare_scalar_as_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A RustDesk ID is a number written as text and must stay text: a
+    # JSON number would lose that it is an identifier.
+    _fake_run(monkeypatch, {("id",): _FakeProc(0, "123456789")})
+    module = CollectorModuleConfig(name="id", command=("id",))
+    assert metrics_collect._run_module(module, 15) == {
+        "status": "ok",
+        "output": "123456789",
+    }
+
+
+def test_ready_percent_counts_sources_not_records() -> None:
+    # A source that reports thirty addresses weighs exactly as a source
+    # that reports one, so the readiness of a machine never depends on
+    # how many addresses it carries.
+    entries: list[dict[str, object]] = [
+        {
+            "status": "ok",
+            "output": [
+                {"address": f"10.0.0.{index}"} for index in range(30)
+            ],
+        },
+        {"status": "empty", "output": ""},
+    ]
+    assert metrics_collect.percent_ready(entries) == 50
+
+
 def test_run_module_classifies_ok_empty_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,7 +224,8 @@ def test_run_module_reports_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     module = CollectorModuleConfig(name="slow", command=("slow",))
     result = metrics_collect._run_module(module, 15)
     assert result["status"] == "error"
-    assert "timed out" in result["output"]
+    output = result["output"]
+    assert isinstance(output, str) and "timed out" in output
 
 
 def test_run_module_trims_whitespace_only_output_to_empty(
@@ -230,7 +283,7 @@ def test_run_module_trims_joined_error_output(
 def test_percent_ready_counts_only_ok() -> None:
     # Two of four modules ok is 50 percent; an empty list is trivially
     # ready at 100 percent.
-    entries = [
+    entries: list[dict[str, object]] = [
         {"status": "ok"},
         {"status": "ok"},
         {"status": "empty"},

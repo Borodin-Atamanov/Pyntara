@@ -23,6 +23,11 @@ share = 1
 http_enabled = false
 # Whether the SOCKS proxy is enabled (socksproxy.enabled of i2pd.conf).
 socks_proxy_enabled = true
+# Port the SOCKS proxy listens on (socksproxy.port of i2pd.conf). The
+# proxy is the way an ssh client reaches this machine over I2P, so the
+# port is a value of this table and not a guessed default: the network
+# telemetry builds the ssh command through exactly this address.
+socks_proxy_port = 4447
 # Retry attempts after a failed package install; total attempts are
 # retries plus one.
 install_retries = 3

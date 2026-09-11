@@ -143,8 +143,12 @@ retry_base_seconds = 2
 retry_multiplier = 2
 retry_max_seconds = 600
 # Seconds a single console command may run before it is killed; the
-# same timeout bounds one commit_system_metrics call.
-command_timeout_seconds = 15
+# same timeout bounds one commit_system_metrics call. The address
+# detection asks every echo service at once, and one service may take
+# its own timeout (three_x_ui_xray_setup.server_ip_timeout_seconds) to
+# answer, so the bound is wider than one query: 60 seconds of query plus
+# the country query fit inside it.
+command_timeout_seconds = 120
 # Name of the oneshot collector service unit file.
 service_unit_name = "system_metrics_collector.service"
 # Name of the collector timer unit file.
@@ -174,52 +178,63 @@ report_file_name = "network-{hostname}.json"
 # while internal newlines are preserved; whitespace-only output is
 # empty. Commands are argv arrays, never shell lines. Unconfigured
 # sources are simply absent: add or remove modules here without code
-# changes. The ipv4 and ipv6 modules cover the global scope, which
-# includes the private subnets of local networks (192.168.0.0/16,
-# 10.0.0.0/8, 172.16.0.0/12 and the public IPv6 addresses); ipv4_link
-# and ipv6_link cover the link scope (IPv4 169.254.0.0/16 and IPv6
-# fe80::/10), so the report carries every address of the machine in its
-# local and global networks. The i2pd, yggdrasil and tor_onion modules
-# run the address commands of the dedicated venv
-# (system_metrics_setup.venv_dir): each prints the live address and
-# falls back to the saved address file written by the provisioning
-# task, with the reason in the output when the fallback is used. The
-# tor_onion command takes the hidden service directory and the saved
-# address file. The nextdns module prints the applied NextDNS profile
-# ID from the file the nextdns_setup_system_wide task writes after a
-# successful verification. Future candidates, commented out until the
-# services are installed:
+# changes. The ipv4 and ipv6 modules run the network_addresses command
+# of the dedicated venv (system_metrics_setup.venv_dir) and report every
+# address of their family with its interface, its scope and the ssh
+# command that connects to it: the loopback, link scope, global, bridge
+# and overlay addresses are all present, because the command reads the
+# addresses from iproute2 in JSON form instead of filtering by scope.
+# The i2pd, yggdrasil, tor_onion, port_forwarding and public_address
+# modules report the channels that reach this machine (I2P, the
+# yggdrasil overlay, the Tor onion service, the forwarded ports and the
+# public address), each as a record that carries the address, the port
+# and the ssh command. Every command that needs a port or a path reads
+# it from the single config named by its last argument, so no value is
+# duplicated into this file; the collector test guards that argument
+# against system_config_path. The nextdns module prints the applied
+# NextDNS profile ID from the file the nextdns_setup_system_wide task
+# writes after a successful verification. A module whose command prints
+# a JSON document contributes it as structured data, so the records and
+# their fields stay readable in the report. ready_percent counts
+# modules and never the records inside them, so the readiness of a
+# machine does not change with the number of addresses it carries.
+# Future candidates, commented out until the services are installed:
 # [[system_metrics_setup.collector.network_modules]]
 # name = "cloudflared"
 # command = ["cat", "/home/i/.cloudflared/config.yml"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "ipv4"
-command = ["ip", "-4", "addr", "show", "scope", "global"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "/etc/pyntara/config.toml", "4"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "ipv6"
-command = ["ip", "-6", "addr", "show", "scope", "global"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "/etc/pyntara/config.toml", "6"]
 
+# The public_address module asks the configured echo services for the
+# address the machine appears under from the internet and reports it
+# with its ssh command; both families are asked in one parallel call.
 [[system_metrics_setup.collector.network_modules]]
-name = "ipv4_link"
-command = ["ip", "-4", "addr", "show", "scope", "link"]
+name = "public_address"
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.public_address_report", "/etc/pyntara/config.toml"]
 
+# The country module reports the country the configured services see,
+# so the report says where the machine currently sits.
 [[system_metrics_setup.collector.network_modules]]
-name = "ipv6_link"
-command = ["ip", "-6", "addr", "show", "scope", "link"]
+name = "country"
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.country_report", "/etc/pyntara/config.toml"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "i2pd"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.i2pd_address", "/var/lib/i2pd/ssh.dat", "/var/lib/pyntara/i2pd_ssh_address"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.i2pd_address", "/etc/pyntara/config.toml"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "yggdrasil"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_address", "/var/lib/pyntara/yggdrasil_self_address"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_address", "/etc/pyntara/config.toml"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "tor_onion"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address", "/var/lib/tor/ssh", "/var/lib/pyntara/tor_ssh_address"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address", "/etc/pyntara/config.toml"]
 
 # The nextdns module prints the applied NextDNS profile ID from the file
 # the nextdns_setup_system_wide task writes after a successful
@@ -232,14 +247,16 @@ command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 
 # The port_forwarding module prints the assigned remote ports from the
 # root-only state file of the auto_port_forwarding service, so every
-# network report carries the current forwarding state. The path must
-# match port_forwarding_setup.state_file_path in
-# config/port_forwarding_setup.toml; the collector test guards the two
-# config files against drifting apart. A machine without the state file
-# reports an empty module instead of an error.
+# network report carries the current forwarding state and the ssh
+# command that reaches this machine through each server. The path comes
+# from port_forwarding_setup.state_file_path in
+# config/port_forwarding_setup.toml, read through the single config the
+# command is given; the collector test guards the argument against
+# drifting apart. A machine without the state file reports an empty
+# module instead of an error.
 [[system_metrics_setup.collector.network_modules]]
 name = "port_forwarding"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/var/lib/pyntara/port_forwarding_state.json"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]
 
 # The rustdesk module prints the machine RustDesk ID from the file the
 # rustdesk_setup task writes after a successful install, so the network

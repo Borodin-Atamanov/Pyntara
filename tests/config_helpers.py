@@ -133,6 +133,7 @@ def base_config() -> str:
         "share = 1\n"
         "http_enabled = false\n"
         "socks_proxy_enabled = true\n"
+        "socks_proxy_port = 4447\n"
         "install_retries = 3\n"
         "start_check_attempts = 5\n"
         "start_check_retry_delay_seconds = 1\n"

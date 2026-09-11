@@ -384,33 +384,29 @@ def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
 
 
 def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
-    # The i2pd, yggdrasil and tor_onion network modules run the address
-    # commands of the dedicated venv; all parse as modules with their
-    # argv commands.
+    # The address and channel network modules run the commands of the
+    # dedicated venv; all parse as modules with their argv commands.
     content = base_config().replace(
         "[[system_metrics_setup.collector.system_modules]]",
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "i2pd"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.i2pd_address", "/var/lib/i2pd/ssh.dat", '
-        '"/var/lib/pyntara/i2pd_ssh_address"]\n'
+        '"pyntara.i2pd_address", "/etc/pyntara/config.toml"]\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "yggdrasil"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.yggdrasil_address", "/var/lib/pyntara/yggdrasil_self_address"]\n'
+        '"pyntara.yggdrasil_address", "/etc/pyntara/config.toml"]\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "tor_onion"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.tor_address", "/var/lib/tor/ssh", '
-        '"/var/lib/pyntara/tor_ssh_address"]\n'
+        '"pyntara.tor_address", "/etc/pyntara/config.toml"]\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "nextdns"\n'
         'command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "port_forwarding"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.port_forwarding_state", '
-        '"/var/lib/pyntara/port_forwarding_state.json"]\n'
+        '"pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]\n'
         "[[system_metrics_setup.collector.system_modules]]",
     )
     config = load_checked_config(write_config(tmp_path, content))
@@ -429,21 +425,19 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.i2pd_address",
-        "/var/lib/i2pd/ssh.dat",
-        "/var/lib/pyntara/i2pd_ssh_address",
+        "/etc/pyntara/config.toml",
     )
     assert by_name["yggdrasil"].command == (
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.yggdrasil_address",
-        "/var/lib/pyntara/yggdrasil_self_address",
+        "/etc/pyntara/config.toml",
     )
     assert by_name["tor_onion"].command == (
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.tor_address",
-        "/var/lib/tor/ssh",
-        "/var/lib/pyntara/tor_ssh_address",
+        "/etc/pyntara/config.toml",
     )
     assert by_name["nextdns"].command == (
         "cat",
@@ -453,7 +447,7 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.port_forwarding_state",
-        "/var/lib/pyntara/port_forwarding_state.json",
+        "/etc/pyntara/config.toml",
     )
 
 
@@ -476,11 +470,10 @@ def test_nextdns_module_path_matches_nextdns_config() -> None:
 
 
 def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
-    # The port_forwarding collector module reads the state file whose
-    # path lives in the [port_forwarding_setup] table. The two config
-    # files must not drift apart: the module command path must equal the
-    # configured state_file_path, so a rename in one file is caught here
-    # instead of silently breaking the telemetry.
+    # The port_forwarding collector module reads the state file through
+    # the single system config the collector deploys, so the argument of
+    # the module command must be that config and not a copy of the state
+    # path: a copied path could drift away from the section that owns it.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
@@ -491,5 +484,47 @@ def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.port_forwarding_state",
-        str(config.port_forwarding_setup.state_file_path),
+        str(config.system_metrics_setup.system_config_path),
     )
+
+
+def test_repository_collector_network_module_names() -> None:
+    # The shipped module list is what the target machine collects; a
+    # module dropped by accident would silently remove a fact from every
+    # network report.
+    repo_root = Path(__file__).resolve().parents[1]
+    config = load_checked_config(repo_root / "config")
+    modules = config.system_metrics_setup.collector.network_modules
+    assert [module.name for module in modules] == [
+        "ipv4",
+        "ipv6",
+        "public_address",
+        "country",
+        "i2pd",
+        "yggdrasil",
+        "tor_onion",
+        "nextdns",
+        "port_forwarding",
+        "rustdesk",
+    ]
+
+
+def test_pyntara_command_modules_read_the_single_system_config() -> None:
+    # A module that runs a pyntara command needs ports and paths, and it
+    # reads them from the single system config, so every such command
+    # carries the configured system_config_path as an argument; a module
+    # that named another config would break on a machine where the path
+    # differs. The family modules append their family flag after it.
+    repo_root = Path(__file__).resolve().parents[1]
+    config = load_checked_config(repo_root / "config")
+    system_config_path = str(
+        config.system_metrics_setup.system_config_path
+    )
+    command_modules = [
+        module
+        for module in config.system_metrics_setup.collector.network_modules
+        if any("pyntara." in part for part in module.command)
+    ]
+    assert command_modules
+    for module in command_modules:
+        assert system_config_path in module.command, module.name

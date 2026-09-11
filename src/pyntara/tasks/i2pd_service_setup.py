@@ -105,6 +105,7 @@ def _render_config(cfg: I2pdServiceSetupConfig) -> str:
         tunnels_config_path=str(cfg.tunnels_config_path),
         http_enabled="true" if cfg.http_enabled else "false",
         socks_proxy_enabled="true" if cfg.socks_proxy_enabled else "false",
+        socks_proxy_port=str(cfg.socks_proxy_port),
     )
 
 

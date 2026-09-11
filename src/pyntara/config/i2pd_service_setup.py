@@ -21,8 +21,11 @@ class I2pdServiceSetupConfig:
     bandwidth is the total router bandwidth limit in kilobytes per second
     and share is the percentage of that bandwidth used for transit
     traffic; http_enabled and socks_proxy_enabled toggle the web console
-    and the SOCKS proxy in the rendered configuration; install_retries is
-    the
+    and the SOCKS proxy in the rendered configuration;
+    socks_proxy_port is the TCP port that proxy listens on, which the
+    network telemetry uses to build the ssh command over I2P, so the
+    port has one home and no caller guesses the i2pd default;
+    install_retries is the
     retry count of the package install, so the total attempts are retries
     plus one; start_check_attempts and start_check_retry_delay_seconds
     bound the loop that waits for the service to become active after a
@@ -51,6 +54,7 @@ class I2pdServiceSetupConfig:
     share: int
     http_enabled: bool
     socks_proxy_enabled: bool
+    socks_proxy_port: int
     install_retries: int
     start_check_attempts: int
     start_check_retry_delay_seconds: float
