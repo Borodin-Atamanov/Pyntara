@@ -1,10 +1,10 @@
 """Configuration reading from config.toml.
 
 The package is split by config section: each section module holds its
-frozen dataclass, the vocabulary constants live in _fields.py, and loader.py
-reads the document into the Config with the runtime reader. This file
-re-exports the public surface, so `from pyntara.config import ...` keeps
-working unchanged.
+frozen dataclass, the install mode vocabulary lives in _fields.py, and
+loader.py reads the document into the Config with the runtime reader. This
+file re-exports the public surface, so `from pyntara.config import ...`
+keeps working unchanged.
 
 The config/ directory at the repository root is the single source of truth
 for the Python part of the engine. Reading is total: a missing file, broken
@@ -20,16 +20,7 @@ Context.
 
 from __future__ import annotations
 
-from ._fields import (
-    DNS_OVER_TLS_VALUES,
-    I2PD_LOG_LEVELS,
-    MODES,
-    SEND_ORDERS,
-    TOR_LOG_LEVELS,
-    YGGDRASIL_LISTEN_SCHEMES,
-    YGGDRASIL_PEER_SCHEMES,
-    ConfigError,
-)
+from ._fields import MODES
 from .add_extra_repos import AddExtraReposConfig
 from .chrome_setup import ChromeSetupConfig
 from .cli_tools import CliToolsConfig
@@ -78,19 +69,12 @@ from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
 __all__ = [
-    "DNS_OVER_TLS_VALUES",
-    "I2PD_LOG_LEVELS",
     "MODES",
-    "SEND_ORDERS",
-    "TOR_LOG_LEVELS",
-    "YGGDRASIL_LISTEN_SCHEMES",
-    "YGGDRASIL_PEER_SCHEMES",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",
     "CollectorModuleConfig",
     "Config",
-    "ConfigError",
     "DnsproxySetupConfig",
     "EngineConfig",
     "FfmpegSetupConfig",

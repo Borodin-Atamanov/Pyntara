@@ -38,7 +38,7 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 src/pyntara/__init__.py — Package version and public exports.  
 src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py and inst.sh through config_edit.replace_line_by_string. Consumed by hooks/pre-commit.  
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
-src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the vocabulary constants in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks live in tests/config_checks.py.  
+src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the install mode vocabulary in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks and the vocabularies they validate against live in tests/config_checks.py.  
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  
 src/pyntara/models.py — TaskResult dataclass.  
 src/pyntara/context.py — Context frozen dataclass.  

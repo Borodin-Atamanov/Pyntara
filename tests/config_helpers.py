@@ -15,9 +15,9 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from config_checks import strict_config_from_document
+from config_checks import ConfigError, strict_config_from_document
 
-from pyntara.config import Config, ConfigError
+from pyntara.config import Config
 from pyntara.config.loader import render_config_source
 
 

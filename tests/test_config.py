@@ -13,11 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from config_checks import ConfigError
 from config_helpers import base_config, load_checked_config, write_config
-
-from pyntara.config import (
-    ConfigError,
-)
 
 
 def test_load_config_returns_typed_values(tmp_path: Path) -> None:

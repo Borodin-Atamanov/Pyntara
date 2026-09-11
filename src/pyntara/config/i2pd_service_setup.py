@@ -17,7 +17,8 @@ class I2pdServiceSetupConfig:
     service_unit_name is the systemd unit installed by the package;
     config_path is the main configuration file the task writes, and it must
     match the --conf path of the package unit, otherwise the changes are
-    ignored; log_level is the i2pd verbosity from I2PD_LOG_LEVELS;
+    ignored; log_level is the i2pd verbosity the checks validate against
+    their own list of levels;
     bandwidth is the total router bandwidth limit in kilobytes per second
     and share is the percentage of that bandwidth used for transit
     traffic; http_enabled and socks_proxy_enabled toggle the web console

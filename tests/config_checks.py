@@ -5,7 +5,8 @@ checks, never stops and never invents a value. Every condition that used to
 guard the run lives here instead, so a broken config fails the test suite
 during development and never on the target machine (architecture contract,
 Configuration). The parsers below are the checks that used to run inside the
-package, with their logic unchanged.
+package, with their logic unchanged, and the vocabularies they validate
+against live here as well: the run reads no rule of the config.
 """
 
 from __future__ import annotations
@@ -15,18 +16,12 @@ from pathlib import Path
 from typing import Any
 
 from pyntara.config import (
-    I2PD_LOG_LEVELS,
     MODES,
-    SEND_ORDERS,
-    TOR_LOG_LEVELS,
-    YGGDRASIL_LISTEN_SCHEMES,
-    YGGDRASIL_PEER_SCHEMES,
     AddExtraReposConfig,
     ChromeSetupConfig,
     CliToolsConfig,
     CollectorModuleConfig,
     Config,
-    ConfigError,
     DnsproxySetupConfig,
     EngineConfig,
     FfmpegSetupConfig,
@@ -62,14 +57,51 @@ from pyntara.config import (
     ZramServiceConfig,
     ZswapServiceConfig,
 )
-from pyntara.config._fields import (
-    CLICK_METHODS,
-    DOMAIN_STRATEGIES,
-    NUMLOCK_STATES,
-    SHARE_ADDR_STRATEGIES,
-)
 from pyntara.config.kde_settings import KCONFIG_TYPES
 from pyntara.config.vault import GENERATED_PASSWORD_RE
+
+# The vocabulary constants the checks validate against, and the error they
+# raise. They live here, in the test suite, because the runtime reader never
+# checks a value and never raises: a rule of the config needs no name in the
+# shipped package. MODES is the exception, and comes from pyntara.config,
+# because production reads it to accept or reject an install mode.
+
+
+class ConfigError(RuntimeError):
+    """Raised by a check when a config value is missing or invalid."""
+
+
+SEND_ORDERS: tuple[str, ...] = ("oldest_first", "newest_first")
+
+I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
+
+TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
+
+DNS_OVER_TLS_VALUES: tuple[str, ...] = ("yes", "opportunistic", "no")
+
+YGGDRASIL_LISTEN_SCHEMES: tuple[str, ...] = ("tcp", "tls", "quic", "ws", "unix")
+
+YGGDRASIL_PEER_SCHEMES: tuple[str, ...] = (
+    "tcp",
+    "tls",
+    "quic",
+    "ws",
+    "wss",
+    "socks",
+    "sockstls",
+    "unix",
+)
+
+NUMLOCK_STATES: tuple[str, ...] = ("on", "off", "unchanged")
+
+CLICK_METHODS: tuple[str, ...] = ("clickfinger", "clickareas", "none")
+
+SHARE_ADDR_STRATEGIES: tuple[str, ...] = ("node", "listen", "custom")
+
+# The domain resolution strategies of the Xray routing block: AsIs keeps
+# every name unresolved, IPIfNonMatch resolves a name only when no domain
+# rule matched it, IPOnDemand resolves before matching at all.
+DOMAIN_STRATEGIES: tuple[str, ...] = ("AsIs", "IPIfNonMatch", "IPOnDemand")
 
 
 def _int_field(raw: object, name: str) -> int:

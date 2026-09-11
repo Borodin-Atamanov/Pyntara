@@ -1,58 +1,12 @@
-"""Field-level validation helpers shared by every config table parser.
+"""Production vocabulary constants of the config package.
 
-The helpers validate one raw TOML value and either return the typed value
-or raise ConfigError. The vocabulary constants live here too: they are
-part of the config contract and are validated against in the parsers.
+MODES is the install mode vocabulary: production reads it to accept or
+reject a mode (pyntara.py, task_catalog.py). Every other vocabulary of the
+config is checked and never read by the run, so those lists live with the
+checks in the test suite (tests/config_checks.py) and not in this package,
+which carries no name a rule needs.
 """
-
 
 from __future__ import annotations
 
-
-class ConfigError(RuntimeError):
-    """Raised when config.toml is missing, unreadable or invalid."""
-
-
 MODES: tuple[str, ...] = ("minimal", "server", "desktop")
-
-
-SEND_ORDERS: tuple[str, ...] = ("oldest_first", "newest_first")
-
-
-I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
-
-
-TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
-
-
-DNS_OVER_TLS_VALUES: tuple[str, ...] = ("yes", "opportunistic", "no")
-
-
-YGGDRASIL_LISTEN_SCHEMES: tuple[str, ...] = ("tcp", "tls", "quic", "ws", "unix")
-
-
-YGGDRASIL_PEER_SCHEMES: tuple[str, ...] = (
-    "tcp",
-    "tls",
-    "quic",
-    "ws",
-    "wss",
-    "socks",
-    "sockstls",
-    "unix",
-)
-
-
-NUMLOCK_STATES: tuple[str, ...] = ("on", "off", "unchanged")
-
-
-CLICK_METHODS: tuple[str, ...] = ("clickfinger", "clickareas", "none")
-
-
-SHARE_ADDR_STRATEGIES: tuple[str, ...] = ("node", "listen", "custom")
-
-
-# The domain resolution strategies of the Xray routing block: AsIs keeps
-# every name unresolved, IPIfNonMatch resolves a name only when no domain
-# rule matched it, IPOnDemand resolves before matching at all.
-DOMAIN_STRATEGIES: tuple[str, ...] = ("AsIs", "IPIfNonMatch", "IPOnDemand")

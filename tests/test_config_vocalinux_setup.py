@@ -5,14 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from config_checks import ConfigError
 from config_helpers import (
     assert_config_error,
     base_config,
     load_checked_config,
     write_config,
 )
-
-from pyntara.config import ConfigError
 
 SECTION = (
     "[vocalinux_setup]\n"

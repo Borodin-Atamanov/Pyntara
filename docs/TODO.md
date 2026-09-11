@@ -76,7 +76,7 @@ Done 2026-09-10: the deployed metrics services report an incomplete config in on
 
 Done 2026-09-10: the two scripts in secrets/ no longer catch the ConfigError that the runtime reader never raises, and their comments describe the loader as it is now.
 
-Remaining: the vocabulary constants that only the checks use still live in src/pyntara/config/_fields.py, while every other check moved to tests/config_checks.py; MODES stays because production reads it.
+Done 2026-09-10: the vocabularies that only the checks validate against (SEND_ORDERS, I2PD_LOG_LEVELS, TOR_LOG_LEVELS, DNS_OVER_TLS_VALUES, YGGDRASIL_LISTEN_SCHEMES, YGGDRASIL_PEER_SCHEMES, NUMLOCK_STATES, CLICK_METHODS, SHARE_ADDR_STRATEGIES, DOMAIN_STRATEGIES) and the ConfigError they raise moved from src/pyntara/config/_fields.py into tests/config_checks.py, and the package stopped re-exporting them. MODES stays in the package: production reads it to accept or reject an install mode. src/pyntara/config/_fields.py now holds that one vocabulary and says where the others live.
 
 Done 2026-09-10: the four config key lists of the deployed metrics components (COLLECTOR_SECTION_KEYS, COLLECTOR_TABLE_KEYS, INGEST_CONFIG_KEYS, SERVICE_CONFIG_KEYS) are checked against the tables they belong to, so a renamed or mistyped key can no longer make the one-line report point at a value nobody can set.
 
