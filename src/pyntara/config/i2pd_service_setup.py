@@ -49,6 +49,7 @@ class I2pdServiceSetupConfig:
     github_repo: str
     download_dir: Path
     service_unit_name: str
+    os_release_file_path: Path
     config_path: Path
     log_level: str
     bandwidth: int

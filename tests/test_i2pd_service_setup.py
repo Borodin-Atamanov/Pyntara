@@ -122,6 +122,7 @@ def _ctx(
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
             i2pd_download_dir=tmp_path / "download",
+            i2pd_os_release_file_path=tmp_path / "os-release",
             i2pd_config_path=tmp_path / "etc" / "i2pd" / "i2pd.conf",
             i2pd_tunnels_config_path=tmp_path / "etc" / "i2pd" / "tunnels.conf",
             i2pd_tunnel_keys_path=tmp_path / "etc" / "i2pd" / "ssh.dat",
@@ -146,7 +147,6 @@ def _install_fixtures(
     os_release.write_text(
         f'ID=ubuntu\nVERSION_CODENAME="{codename}"\n', encoding="utf-8"
     )
-    monkeypatch.setattr(i2pd_service_setup, "OS_RELEASE_PATH", os_release)
     template = tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf"
     template.parent.mkdir(parents=True)
     template.write_text(I2PD_TEMPLATE, encoding="utf-8")
@@ -503,7 +503,6 @@ def test_non_debian_os_reports_error(
     _install_fixtures(monkeypatch, tmp_path, codename="rolling")
     os_release = tmp_path / "os-release"
     os_release.write_text('ID=arch\nID_LIKE=archlinux\n', encoding="utf-8")
-    monkeypatch.setattr(i2pd_service_setup, "OS_RELEASE_PATH", os_release)
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)

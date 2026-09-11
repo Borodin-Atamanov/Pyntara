@@ -270,6 +270,7 @@ def make_config(
     zram_reset_busy_attempts: int = 5,
     zram_reset_busy_retry_delay_seconds: float = 0.5,
     i2pd_download_dir: Path = Path("/var/lib/pyntara/i2pd-download"),
+    i2pd_os_release_file_path: Path = Path("/etc/os-release"),
     i2pd_config_path: Path = Path("/etc/i2pd/i2pd.conf"),
     i2pd_install_retries: int = 3,
     i2pd_start_check_attempts: int = 5,
@@ -516,6 +517,7 @@ def make_config(
         i2pd_service_setup=replace(
             base.i2pd_service_setup,
             download_dir=i2pd_download_dir,
+            os_release_file_path=i2pd_os_release_file_path,
             config_path=i2pd_config_path,
             install_retries=i2pd_install_retries,
             start_check_attempts=i2pd_start_check_attempts,

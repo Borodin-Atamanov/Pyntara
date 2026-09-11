@@ -938,10 +938,17 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     address_file_mode = _octal_mode_field(
         raw.get("address_file_mode"), "i2pd_service_setup.address_file_mode"
     )
+    os_release_file_path = Path(
+        _nonempty_string_field(
+            raw.get("os_release_file_path"),
+            "i2pd_service_setup.os_release_file_path",
+        )
+    )
     return I2pdServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
         service_unit_name=service_unit_name,
+        os_release_file_path=os_release_file_path,
         config_path=config_path,
         log_level=log_level,
         bandwidth=bandwidth,
@@ -2460,9 +2467,17 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         spool_dir_mode=_octal_mode_field(
             raw.get("spool_dir_mode"), "system_metrics_setup.spool_dir_mode"
         ),
+        spool_dir_permission_mask=_octal_mode_field(
+            raw.get("spool_dir_permission_mask"),
+            "system_metrics_setup.spool_dir_permission_mask",
+        ),
         command_file_mode=_octal_mode_field(
             raw.get("command_file_mode"),
             "system_metrics_setup.command_file_mode",
+        ),
+        command_permission_mask=_octal_mode_field(
+            raw.get("command_permission_mask"),
+            "system_metrics_setup.command_permission_mask",
         ),
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"),
@@ -3990,6 +4005,10 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         ),
         reset_busy_attempts=reset_busy_attempts,
         reset_busy_retry_delay_seconds=reset_busy_retry_delay_seconds,
+        hot_add_readable_mode_bit=_octal_mode_field(
+            raw.get("hot_add_readable_mode_bit"),
+            "zram_service.hot_add_readable_mode_bit",
+        ),
     )
 
 

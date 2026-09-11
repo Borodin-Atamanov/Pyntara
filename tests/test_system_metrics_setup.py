@@ -864,6 +864,25 @@ def test_spool_wrong_mode_fixed(
     assert os.stat(fixtures["spool_dir"]).st_mode & 0o7777 == 0o1733
 
 
+def test_permission_masks_come_from_the_config(tmp_path: Path) -> None:
+    # The mode checks compare through the configured masks: a mask that
+    # keeps the permission bits only accepts the command file, and a mask
+    # that includes the special bits makes the same comparison fail while
+    # the spool check needs the wider mask to see the sticky bit of 1733.
+    command = tmp_path / "commit_system_metrics"
+    command.write_text("body", encoding="utf-8")
+    command.chmod(0o755)
+    assert system_metrics_setup._command_file_matches(command, "body", 0o755, 0o777)
+    assert not system_metrics_setup._command_file_matches(
+        command, "body", 0o4755, 0o7777
+    )
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    spool.chmod(0o1733)
+    assert system_metrics_setup._spool_dir_ok(spool, 0o1733, 0o7777)
+    assert not system_metrics_setup._spool_dir_ok(spool, 0o1733, 0o777)
+
+
 def test_only_path_unit_disabled_enables_and_starts_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

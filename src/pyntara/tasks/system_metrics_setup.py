@@ -346,19 +346,23 @@ def _write_unit(unit_dir: Path, name: str, content: str) -> None:
     (unit_dir / name).write_text(content, encoding="utf-8")
 
 
-def _command_file_matches(command_path: Path, expected: str, mode: int) -> bool:
+def _command_file_matches(
+    command_path: Path, expected: str, mode: int, permission_mask: int
+) -> bool:
     """True when the command file content and mode equal the expected.
 
     The command is a generated regular file: the mode matters as much as
     the content, because the file must stay executable for every user.
-    Any OSError (missing path, unreadable file) is not ok.
+    Any OSError (missing path, unreadable file) is not ok. The comparison
+    keeps the permission bits only, because the configured mask says which
+    bits are the mode of the file.
     """
 
     try:
         if not command_path.is_file():
             return False
         return command_path.read_text(encoding="utf-8") == expected and (
-            os.stat(command_path).st_mode & 0o777 == mode
+            os.stat(command_path).st_mode & permission_mask == mode
         )
     except OSError:
         return False
@@ -384,15 +388,18 @@ def _write_command_file(command_path: Path, content: str, mode: int) -> None:
     os.chmod(command_path, mode)
 
 
-def _spool_dir_ok(spool_dir: Path, mode: int) -> bool:
+def _spool_dir_ok(spool_dir: Path, mode: int, permission_mask: int) -> bool:
     """True when the spool directory exists with the configured mode.
 
-    The mask covers the sticky bit (0o1000) of the 1733 mode, so the
-    check does not silently drop it.
+    The mask is the configured one and covers the special bits, including
+    the sticky bit of the 1733 mode, so the check does not silently drop
+    it.
     """
 
     try:
-        return spool_dir.is_dir() and (os.stat(spool_dir).st_mode & 0o7777 == mode)
+        return spool_dir.is_dir() and (
+            os.stat(spool_dir).st_mode & permission_mask == mode
+        )
     except OSError:
         return False
 
@@ -495,13 +502,18 @@ def task(ctx: Context) -> TaskResult:
         f"{'enabled' if timer_enabled else 'disabled'}"
     )
     command_ok = _command_file_matches(
-        command_path, command_content, metrics.command_file_mode
+        command_path,
+        command_content,
+        metrics.command_file_mode,
+        metrics.command_permission_mask,
     )
     _log(
         f"checking command {command_path}: "
         f"{'ok' if command_ok else 'missing or stale'}"
     )
-    spool_ok = _spool_dir_ok(spool_dir, metrics.spool_dir_mode)
+    spool_ok = _spool_dir_ok(
+        spool_dir, metrics.spool_dir_mode, metrics.spool_dir_permission_mask
+    )
     _log(
         f"checking spool {spool_dir}: "
         f"{'ok' if spool_ok else 'missing or wrong mode'}"

@@ -22,3 +22,7 @@ reset_busy_attempts = 5
 reset_busy_retry_delay_seconds = 0.5
 # Name of the systemd oneshot service unit that repeats the setup at boot.
 service_unit_name = "zram.service"
+# Mode bit that marks the hot_add attribute as readable, octal string: a
+# readable attribute is the kernel 7.0 read-to-add interface, a write-only
+# one is the older write-to-add interface.
+hot_add_readable_mode_bit = "0400"

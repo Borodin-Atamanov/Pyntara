@@ -6,6 +6,9 @@
 github_repo = "PurpleI2P/i2pd"
 # Directory for the downloaded package file.
 download_dir = "/var/lib/pyntara/i2pd-download"
+# Path of the distribution identity file the task reads to check that the
+# deb packages apply to this system and to name the release asset.
+os_release_file_path = "/etc/os-release"
 # Name of the systemd service unit installed by the package.
 service_unit_name = "i2pd.service"
 # Main configuration file the task writes. It must match the --conf path

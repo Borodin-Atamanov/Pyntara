@@ -186,18 +186,19 @@ def _write_sysfs_with_retry(
             time.sleep(delay_seconds)
 
 
-def _hot_add_read_interface() -> bool:
+def _hot_add_read_interface(readable_mode_bit: int) -> bool:
     """True when hot_add is the read-to-add interface (kernel 7.0+).
 
     Kernel 7.0 creates a zram device on every read of hot_add and
     returns the new device id; older kernels create one device per
     write. The interface is told apart by the attribute mode: readable
     files are read-to-add, write-only files are write-to-add. The mode
-    query itself does not create a device.
+    query itself does not create a device. readable_mode_bit is the
+    configured bit that marks the attribute as readable.
     """
 
     mode = ZRAM_HOT_ADD_PATH.stat().st_mode
-    return bool(mode & 0o400)
+    return bool(mode & readable_mode_bit)
 
 
 def _add_devices(count: int, read_interface: bool) -> str | None:
@@ -437,7 +438,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot load zram module: {exc}")
     _log("module loaded")
     try:
-        read_interface = _hot_add_read_interface()
+        read_interface = _hot_add_read_interface(cfg.hot_add_readable_mode_bit)
     except OSError as exc:
         return TaskResult(success=False, error=f"cannot query hot_add: {exc}")
     _log(f"hot_add interface: {'read' if read_interface else 'write'}")

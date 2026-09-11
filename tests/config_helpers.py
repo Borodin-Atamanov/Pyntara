@@ -183,10 +183,12 @@ def base_config() -> str:
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
         "reset_busy_retry_delay_seconds = 0.5\n"
+        'hot_add_readable_mode_bit = "0400"\n'
         'service_unit_name = "zram.service"\n'
         '[i2pd_service_setup]\n'
         'github_repo = "PurpleI2P/i2pd"\n'
         'download_dir = "/var/lib/pyntara/i2pd-download"\n'
+        'os_release_file_path = "/etc/os-release"\n'
         'service_unit_name = "i2pd.service"\n'
         'config_path = "/etc/i2pd/i2pd.conf"\n'
         'log_level = "warn"\n'
@@ -523,7 +525,9 @@ def base_config() -> str:
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
         'queue_file_suffix_length = 12\n'
         'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
+        'spool_dir_permission_mask = "7777"\n'
         'command_file_mode = "0755"\n'
+        'command_permission_mask = "0777"\n'
         'service_unit_name = "system_metrics.service"\n'
         'ingest_service_unit_name = "system_metrics-ingest.service"\n'
         'ingest_path_unit_name = "system_metrics-ingest.path"\n'

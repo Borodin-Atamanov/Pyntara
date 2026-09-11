@@ -77,14 +77,13 @@ from pyntara.utils import (
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-# /etc/os-release is a fixed machine contract (architecture contract,
-# Configuration); the repository root comes from pyntara.utils.
+# against temporary fixtures instead of the real system (developer guide);
+# the repository root comes from pyntara.utils and the os-release path from
+# the config.
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "i2pd_service_setup" / "i2pd.conf"
 TUNNELS_TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "i2pd_service_setup" / "tunnels.conf"
 )
-OS_RELEASE_PATH = Path("/etc/os-release")
 
 
 def _render_config(cfg: I2pdServiceSetupConfig) -> str:
@@ -379,10 +378,10 @@ def task(ctx: Context) -> TaskResult:
     force = "i2pd_service_setup" in ctx.force_tasks
 
     try:
-        os_release = read_os_release(OS_RELEASE_PATH)
+        os_release = read_os_release(cfg.os_release_file_path)
     except OSError as exc:
         return TaskResult(
-            success=False, error=f"cannot read {OS_RELEASE_PATH}: {exc}"
+            success=False, error=f"cannot read {cfg.os_release_file_path}: {exc}"
         )
     if not os_family_is_debian(os_release):
         return TaskResult(
@@ -394,7 +393,7 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
     _log(
-        f"reading {OS_RELEASE_PATH}: ID={os_release.get('ID', '')}, "
+        f"reading {cfg.os_release_file_path}: ID={os_release.get('ID', '')}, "
         f"VERSION_CODENAME={os_release.get('VERSION_CODENAME', '')}"
     )
     try:

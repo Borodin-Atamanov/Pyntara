@@ -32,9 +32,9 @@ from pyntara.utils import (
     service_is_enabled,
 )
 
-OS_RELEASE_PATH = Path("/etc/os-release")
 VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
 PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\Z")
+
 
 class DiscoveredDnsServers(NamedTuple):
     '''Validated DNS addresses found from the current network state.'''

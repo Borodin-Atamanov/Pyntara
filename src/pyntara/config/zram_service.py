@@ -20,6 +20,9 @@ class ZramServiceConfig:
     reset_busy_attempts and reset_busy_retry_delay_seconds bound the
     retries of a reset or hot_remove rejected with EBUSY while a
     transient opener, for example a udev probe, holds the device.
+    hot_add_readable_mode_bit is the mode bit that marks the hot_add
+    attribute as readable, which tells the read-to-add interface of
+    kernel 7.0 apart from the older write-to-add one.
     """
 
     compressor: str
@@ -30,3 +33,4 @@ class ZramServiceConfig:
     service_unit_name: str
     reset_busy_attempts: int
     reset_busy_retry_delay_seconds: float
+    hot_add_readable_mode_bit: int

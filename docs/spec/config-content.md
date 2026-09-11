@@ -113,6 +113,20 @@ List of records, each with its own fields: the vault structure, kconfig records,
 ssh directives, collector modules, the task catalog.  
 Mapping of a name to a value: kde_settings.user_dirs.
 
+## File permissions
+
+Every permission the run gives a file is a config value, without exception:
+the mode that is applied, the mode that is restored, the mode a temporary file
+carries while it waits to be moved into place, and the masks and bits a check
+uses to inspect a mode. A value of this kind is written as an octal string such
+as "0600", because TOML has no octal literal.
+
+The list above holds the keys of this kind: file modes, permission masks that
+select the bits a check compares, and the bit that identifies a kernel
+attribute as readable or write-only. A permission that stays in the code is a
+permission the reader of the config cannot see, so the suite refuses a literal
+file mode in a module (test_config_coverage, no literal file mode).
+
 ## Exceptions
 
 A value of one of these types never goes into the config.
@@ -132,6 +146,17 @@ the tool or the run: the HTTP response code 200, the size and the flag masks of
 a DNS header, the bit shifts of the proquint encoding, the factor 1024 of a unit
 conversion.
 
+## A doubtful value goes into the config
+
+When it is unclear whether a value belongs to one of the types above, the doubt
+is resolved in favour of the config: the value becomes a key, and the code reads
+it. Doubt never justifies a literal in the code, and no exception may be invented
+while implementing a task: the Exceptions section is the whole list, and adding
+to it is a change of this document, never a decision of the implementer taken
+alone. A value left in the code under an invented reason is a defect of the same
+kind as a value that was never moved, and it is fixed the same way: the key is
+written, the code reads it, and the code keeps no copy.
+
 ## Where a value is declared and checked
 
 A config value is declared in four places, and a missing one of them fails the
@@ -140,7 +165,6 @@ src/pyntara/config/<section>.py, the check in tests/config_checks.py and the key
 in tests/config_helpers.py. The Parameters section of the task spec documents
 the value for the reader, and the section map is in
 [project structure](../guides/project-structure.md#config-section-map).
-
 The runtime reader never checks a value and never invents one: a key that is not
 in the document leaves its field without a value, and the task that needed it
 reports what it could not do (architecture contract, Configuration). Every rule

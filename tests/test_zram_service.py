@@ -66,6 +66,19 @@ def _ctx(
     )
 
 
+def test_hot_add_read_interface_uses_the_configured_bit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The attribute mode is told apart by the configured bit: the fixture
+    # exposes the owner-read bit, so the configured bit reports the
+    # read-to-add interface while the owner-write bit reports write-to-add
+    # for the very same attribute.
+    _install_fixtures(monkeypatch, tmp_path, read_interface=True)
+    configured = make_config().zram_service.hot_add_readable_mode_bit
+    assert zram_service._hot_add_read_interface(configured) is True
+    assert zram_service._hot_add_read_interface(0o200) is False
+
+
 def _target(tmp_path: Path) -> tuple[int, int]:
     """Target (device_count, per_device_bytes) from the test config."""
 

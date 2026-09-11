@@ -96,7 +96,10 @@ class SystemMetricsSetupConfig:
     generated commit_system_metrics command publishes files, its mode
     spool_dir_mode is 1733 (sticky, write and search for everyone, no
     listing) and command_file_mode is the mode of the generated command
-    file. service_unit_name, ingest_service_unit_name and
+    file; spool_dir_permission_mask and command_permission_mask are the
+    masks the mode checks compare against, the spool one covering the
+    special bits and the command one keeping the permission bits only.
+    service_unit_name, ingest_service_unit_name and
     ingest_path_unit_name are the unit file names of the service, the
     ingest oneshot and the path watcher; service_journal_identifier and
     commit_journal_identifier are the journal identifiers of the
@@ -133,7 +136,9 @@ class SystemMetricsSetupConfig:
     queue_file_suffix_length: int
     spool_dir: Path
     spool_dir_mode: int
+    spool_dir_permission_mask: int
     command_file_mode: int
+    command_permission_mask: int
     service_unit_name: str
     ingest_service_unit_name: str
     ingest_path_unit_name: str
