@@ -783,6 +783,10 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("github_release_download_url"),
             "engine.github_release_download_url",
         ),
+        release_asset_architectures=_string_map(
+            raw.get("release_asset_architectures"),
+            "engine.release_asset_architectures",
+        ),
         system_python=_nonempty_string_field(
             raw.get("system_python"), "engine.system_python"
         ),
@@ -1864,6 +1868,10 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
     github_repo = raw.get("github_repo")
     if not isinstance(github_repo, str) or not github_repo:
         raise ConfigError("rustdesk_setup.github_repo must be a non-empty string")
+    asset_name_template = _nonempty_string_field(
+        raw.get("asset_name_template"),
+        "rustdesk_setup.asset_name_template",
+    )
     download_dir = raw.get("download_dir")
     if not isinstance(download_dir, str):
         raise ConfigError("rustdesk_setup.download_dir must be a string")
@@ -1890,6 +1898,7 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
         )
     return RustdeskSetupConfig(
         github_repo=github_repo,
+        asset_name_template=asset_name_template,
         download_dir=Path(download_dir),
         id_file_path=Path(id_file_path),
         id_file_mode=_octal_mode_field(
@@ -3865,6 +3874,10 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
         ),
         github_repo=_nonempty_string_field(
             raw.get("github_repo"), "vocalinux_setup.github_repo"
+        ),
+        asset_name_template=_nonempty_string_field(
+            raw.get("asset_name_template"),
+            "vocalinux_setup.asset_name_template",
         ),
         packages=_string_list(raw.get("packages"), "vocalinux_setup.packages"),
         input_group=_nonempty_string_field(

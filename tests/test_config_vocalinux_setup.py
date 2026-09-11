@@ -20,6 +20,7 @@ SECTION = (
     'download_dir = "/var/cache/pyntara/vocalinux"\n'
     'version = "0.16.2"\n'
     'github_repo = "VocaHQ/vocalinux"\n'
+    'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n'
     'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
     'input_group = "input"\n'
     'service_unit_name = "ydotool.service"\n'
@@ -112,6 +113,16 @@ def test_valid_section_loads(tmp_path: Path) -> None:
         # executable_file_mode has not the four digits a mode is written with
         SECTION.replace(
             'executable_file_mode = "0755"\n', 'executable_file_mode = "755"\n'
+        ),
+        # asset_name_template is a number, not a string
+        SECTION.replace(
+            'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n',
+            "asset_name_template = 42\n",
+        ),
+        # asset_name_template is an empty string
+        SECTION.replace(
+            'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n',
+            'asset_name_template = ""\n',
         ),
     ],
 )

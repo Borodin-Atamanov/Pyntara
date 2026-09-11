@@ -22,6 +22,10 @@ version = "0.16.2"
 # the download URL of the asset is composed from it and the engine template
 # github_release_download_url.
 github_repo = "VocaHQ/vocalinux"
+# Name of the release asset of the pinned version; {version} is the value
+# above and {asset_arch} the release architecture the engine mapping
+# release_asset_architectures names for this machine.
+asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"
 # System tools the app needs on the Wayland desktop plus the provider of
 # kwriteconfig6 that registers the Meta+S consuming shortcut.
 packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]

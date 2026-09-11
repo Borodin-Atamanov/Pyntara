@@ -36,6 +36,7 @@ def base_config() -> str:
         "curl_retry_max_time_seconds = 7777\n"
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
         'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
+        'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }\n'
         'system_python = "/usr/bin/python3"\n'
         'journal_identifier = "pyntara-engine"\n'
         "root_owner_uid = 0\nroot_owner_gid = 0\n"
@@ -489,6 +490,7 @@ def base_config() -> str:
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\nprofile_id_file_mode = "0644"\n'
         "[rustdesk_setup]\n"
         'github_repo = "rustdesk/rustdesk"\n'
+        'asset_name_template = "rustdesk-{version}-{asset_arch}.deb"\n'
         'download_dir = "/var/cache/pyntara/rustdesk"\n'
         'id_file_path = "/var/lib/pyntara/rustdesk_id"\n'
         'id_file_mode = "0644"\n'
@@ -555,6 +557,7 @@ def base_config() -> str:
         'download_dir = "/var/cache/pyntara/vocalinux"\n'
         'version = "0.16.2"\n'
         'github_repo = "VocaHQ/vocalinux"\n'
+        'asset_name_template = "Vocalinux-{version}-{asset_arch}.AppImage"\n'
         'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
         'input_group = "input"\n'
         'service_unit_name = "ydotool.service"\n'

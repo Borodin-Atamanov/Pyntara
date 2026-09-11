@@ -36,22 +36,11 @@ from pyntara.utils import (
     dpkg_architecture,
     install_packages,
     package_is_installed,
+    release_asset_architecture,
     run_command,
     task_data_dir,
     trim_whitespace,
 )
-
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-# The working app config and the empty-action desktop file, byte-for-byte
-# the ones verified on the development machine (docs/spec/vocalinux-setup.md).
-# The templates of the app config and of the empty Meta+S action live under
-# task_data/vocalinux_setup in the clone and are read from the context. The
-# repository pair of the pinned release and the download URL template are
-# config values, read from the vocalinux_setup table and the engine.
-# Release asset arch names use the upstream spelling, while dpkg reports
-# the Debian one; other architectures fall back to the dpkg spelling.
-DPKG_TO_ASSET_ARCH = {"amd64": "x86_64", "arm64": "aarch64"}
 
 # Derived paths under the desktop user home (docs/spec/vocalinux-setup.md).
 APPIMAGE_DIR_REL = Path(".local/share/vocalinux/appimage")
@@ -95,10 +84,12 @@ def _release_download_url(
     )
 
 
-def _asset_name(version: str, asset_arch: str) -> str:
+def _asset_name(cfg: VocalinuxSetupConfig, asset_arch: str) -> str:
     """The asset file name of a Vocalinux release for one arch."""
 
-    return f"Vocalinux-{version}-{asset_arch}.AppImage"
+    return cfg.asset_name_template.format(
+        version=cfg.version, asset_arch=asset_arch
+    )
 
 
 def _appimage_install_path(
@@ -259,8 +250,10 @@ def _install_appimage(
     """
 
     arch = dpkg_architecture(timeout)
-    asset_arch = DPKG_TO_ASSET_ARCH.get(arch, arch)
-    asset_name = _asset_name(cfg.version, asset_arch)
+    asset_arch = release_asset_architecture(
+        engine.release_asset_architectures, arch
+    )
+    asset_name = _asset_name(cfg, asset_arch)
     url = _release_download_url(engine, cfg.github_repo, cfg.version, asset_name)
     install_dir = Path(cfg.home_dir) / APPIMAGE_DIR_REL
     target = install_dir / asset_name
@@ -444,8 +437,10 @@ def task(ctx: Context) -> TaskResult:
         messages.append("installed the required packages")
 
     arch = dpkg_architecture(timeout)
-    asset_arch = DPKG_TO_ASSET_ARCH.get(arch, arch)
-    asset_name = _asset_name(cfg.version, asset_arch)
+    asset_arch = release_asset_architecture(
+        engine.release_asset_architectures, arch
+    )
+    asset_name = _asset_name(cfg, asset_arch)
     appimage_path = _appimage_install_path(cfg, asset_name)
 
     appimage_changed, appimage_error = _install_appimage(

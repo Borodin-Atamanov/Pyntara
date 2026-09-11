@@ -191,6 +191,7 @@ def make_config(
     github_latest_release_url: str = (
         "https://api.github.com/repos/{repo}/releases/latest"
     ),
+    engine_release_asset_architectures: dict[str, str] | None = None,
     journal_identifier: str = "pyntara-engine",
     root_owner_uid: int = 0,
     root_owner_gid: int = 0,
@@ -316,6 +317,7 @@ def make_config(
     three_x_ui_probe_listener_start_seconds: int = 1,
     three_x_ui_upnp_enabled: bool = True,
     three_x_ui_upnp_package: str = "miniupnpc",
+    rustdesk_asset_name_template: str = "rustdesk-{version}-{asset_arch}.deb",
     rustdesk_download_dir: Path = Path("/var/cache/pyntara/rustdesk"),
     rustdesk_id_file_path: Path = Path("/var/lib/pyntara/rustdesk_id"),
     rustdesk_config_dir: Path = Path("/home/i/.config/rustdesk"),
@@ -469,6 +471,11 @@ def make_config(
             curl_connect_timeout_seconds=curl_connect_timeout_seconds,
             curl_retry_max_time_seconds=curl_retry_max_time_seconds,
             github_latest_release_url=github_latest_release_url,
+            release_asset_architectures=(
+                engine_release_asset_architectures
+                if engine_release_asset_architectures is not None
+                else {"amd64": "x86_64", "arm64": "aarch64"}
+            ),
             journal_identifier=journal_identifier,
             root_owner_uid=root_owner_uid,
             root_owner_gid=root_owner_gid,
@@ -699,6 +706,7 @@ def make_config(
         ),
         rustdesk_setup=replace(
             base.rustdesk_setup,
+            asset_name_template=rustdesk_asset_name_template,
             download_dir=rustdesk_download_dir,
             id_file_path=rustdesk_id_file_path,
             config_dir=rustdesk_config_dir,

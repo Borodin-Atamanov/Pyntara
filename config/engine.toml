@@ -60,6 +60,13 @@ github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest
 # release instead of the latest one composes the download URL from this
 # template, so a mirror or a proxy is configured in one place.
 github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"
+# Spelling of a release asset architecture per Debian architecture name.
+# A release asset carries the upstream spelling (x86_64, aarch64) while
+# dpkg --print-architecture reports the Debian one (amd64, arm64); the
+# mapping belongs to the engine, because every task that downloads a
+# release asset maps the one architecture name the same way. An
+# architecture the mapping does not name keeps the dpkg spelling.
+release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }
 # The Python interpreter of the managed system, the one that carries the
 # system packages such as python3-dbus. The absolute path keeps a task
 # that runs an embedded client independent of the caller PATH, where the

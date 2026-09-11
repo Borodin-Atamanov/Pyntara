@@ -18,7 +18,10 @@ class VocalinuxSetupConfig:
     home_dir/.config/autostart/vocalinux.desktop). download_dir is the
     root cache that keeps the AppImage of the pinned version. version is
     the pinned Vocalinux release the task installs, without a leading v;
-    the release tag and the asset name are derived from it. packages are
+    the release tag and the asset name are derived from it, and
+    asset_name_template is the name of that asset with {version} and
+    {asset_arch} substituted, the architecture part coming from the engine
+    mapping release_asset_architectures. packages are
     the system tools the app needs on Wayland (wtype, ydotool and
     wl-clipboard) plus the kwriteconfig6 provider used to register the
     Meta+S consuming shortcut. input_group is the group that owns the
@@ -32,6 +35,7 @@ class VocalinuxSetupConfig:
     download_dir: Path
     version: str
     github_repo: str
+    asset_name_template: str
     packages: tuple[str, ...]
     input_group: str
     service_unit_name: str

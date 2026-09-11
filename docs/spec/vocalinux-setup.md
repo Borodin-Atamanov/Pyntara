@@ -51,8 +51,11 @@ home_dir - the home directory of that user; the install, the app config and the 
 download_dir - the root cache that keeps the AppImage of the pinned version
 version - the pinned Vocalinux release, without the leading v of the release tag
 github_repo - the owner and name pair of the release repository; the asset download URL is composed from it and the engine template github_release_download_url, so a mirror is a config change
+asset_name_template - the name of the release asset with {version} and {asset_arch} substituted; the architecture part comes from the engine mapping release_asset_architectures, because every task that downloads a release asset maps the dpkg architecture the same way
 packages - the system tools the app needs on Wayland plus the kwriteconfig6 provider
 input_group - the group that owns /dev/input and /dev/uinput on Kubuntu
-service_unit_name - the ydotool user unit enabled for the desktop useruser_file_mode - the mode of the written app config and autostart entry  
-executable_file_mode - the mode of the installed AppImage  package_status_timeout_seconds - seconds a single package status query may run
+service_unit_name - the ydotool user unit enabled for the desktop user
+user_file_mode - the mode of the written app config and autostart entry
+executable_file_mode - the mode of the installed AppImage
+package_status_timeout_seconds - seconds a single package status query may run
 package_install_retries - install attempts after the first one for each package

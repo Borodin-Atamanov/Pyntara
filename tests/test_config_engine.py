@@ -94,6 +94,16 @@ from config_helpers import (
         base_config().replace(
             'journal_identifier = "pyntara-engine"', 'journal_identifier = ""'
         ),
+        # release_asset_architectures is a string, not a table
+        base_config().replace(
+            'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }',
+            'release_asset_architectures = "amd64"',
+        ),
+        # release_asset_architectures maps to an empty string
+        base_config().replace(
+            'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }',
+            'release_asset_architectures = { amd64 = "" }',
+        ),
         # desktop_detect_processes is a string, not an array
         base_config().replace(
             'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',

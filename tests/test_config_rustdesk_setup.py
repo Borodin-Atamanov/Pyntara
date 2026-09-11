@@ -23,6 +23,11 @@ from pyntara.config import RustdeskOptionConfig
             'github_repo = "rustdesk/rustdesk"\n',
             "github_repo = 42\n",
         ),
+        # asset_name_template is an empty string
+        base_config().replace(
+            'asset_name_template = "rustdesk-{version}-{asset_arch}.deb"',
+            'asset_name_template = ""',
+        ),
         # download_dir is a number, not a string
         base_config().replace(
             'download_dir = "/var/cache/pyntara/rustdesk"\n',

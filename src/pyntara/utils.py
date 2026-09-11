@@ -179,6 +179,20 @@ def dpkg_architecture(timeout: float) -> str:
     return result.stdout.strip()
 
 
+def release_asset_architecture(
+    architectures: dict[str, str], dpkg_arch: str
+) -> str:
+    """The release asset spelling of a dpkg architecture.
+
+    The mapping comes from the engine config and names the upstream
+    spelling of the architectures whose assets differ from the Debian
+    name; an architecture the mapping does not name keeps the dpkg
+    spelling, so an unknown target is never turned into a wrong asset name.
+    """
+
+    return architectures.get(dpkg_arch, dpkg_arch)
+
+
 def trim_whitespace(text: str) -> str:
     """Remove the leading and trailing whitespace of a text.
 

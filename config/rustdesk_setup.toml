@@ -13,6 +13,10 @@
 github_repo = "rustdesk/rustdesk"
 # Directory the downloaded deb is kept in during the install.
 download_dir = "/var/cache/pyntara/rustdesk"
+# Name of the release asset of the installed version; {version} is the
+# release version and {asset_arch} the release architecture the engine
+# mapping release_asset_architectures names for this machine.
+asset_name_template = "rustdesk-{version}-{asset_arch}.deb"
 # File that carries the machine RustDesk ID for the network report.
 id_file_path = "/var/lib/pyntara/rustdesk_id"
 # File mode of the ID file, as an octal string.

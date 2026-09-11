@@ -54,6 +54,7 @@ from pyntara.utils import (
     dpkg_architecture,
     install_package_once,
     proquint_encode,
+    release_asset_architecture,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -67,11 +68,6 @@ VERSION_PATTERN = re.compile(r"(\d+\.\d+(?:\.\d+)?)")
 # compares equal to the version output.
 TAG_VERSION_PATTERN = re.compile(r"^v?")
 
-# rustdesk deb asset names use the upstream architecture spelling, while
-# dpkg reports the Debian one; the mapping covers the common targets and
-# any other architecture falls back to the dpkg spelling as is.
-DPKG_TO_ASSET_ARCH = {"amd64": "x86_64", "arm64": "aarch64"}
-
 
 def _normalized_version(value: str) -> str:
     """The version with an optional leading v stripped."""
@@ -80,18 +76,23 @@ def _normalized_version(value: str) -> str:
 
 
 def _select_asset(
+    cfg: RustdeskSetupConfig,
     release: dict[str, object],
     version: str,
     arch: str,
+    architectures: dict[str, str],
 ) -> tuple[str, str] | None:
     """The (name, url) of the rustdesk deb for this machine, or None.
 
-    The asset name is rustdesk-{version}-{arch}.deb; the architecture
-    part uses the upstream spelling mapped from the dpkg architecture.
+    The asset name comes from the configured template; the architecture
+    part uses the release asset spelling the engine mapping names for the
+    dpkg architecture.
     """
 
-    asset_arch = DPKG_TO_ASSET_ARCH.get(arch, arch)
-    name = f"rustdesk-{version}-{asset_arch}.deb"
+    asset_arch = release_asset_architecture(architectures, arch)
+    name = cfg.asset_name_template.format(
+        version=version, asset_arch=asset_arch
+    )
     url = dict(asset_name_urls(release)).get(name)
     return (name, url) if url else None
 
@@ -483,7 +484,9 @@ def task(ctx: Context) -> TaskResult:
             arch = dpkg_architecture(timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"cannot read dpkg architecture: {exc}")
-        selected = _select_asset(release, tag, arch)
+        selected = _select_asset(
+            cfg, release, tag, arch, ctx.config.engine.release_asset_architectures
+        )
         if selected is None:
             return TaskResult(
                 success=False,

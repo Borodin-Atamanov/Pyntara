@@ -48,6 +48,7 @@ class EngineConfig:
     curl_retry_max_time_seconds: int
     github_latest_release_url: str
     github_release_download_url: str
+    release_asset_architectures: dict[str, str]
     system_python: str
     journal_identifier: str
     root_owner_uid: int

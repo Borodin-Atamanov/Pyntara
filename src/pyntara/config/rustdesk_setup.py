@@ -25,7 +25,10 @@ class RustdeskSetupConfig:
     """RustDesk remote desktop client installed and configured.
 
     github_repo is the GitHub repository whose latest release provides the
-    client deb; download_dir is where the deb is kept during the install;
+    client deb; asset_name_template is the name of that deb with {version}
+    and {asset_arch} substituted, the architecture part coming from the
+    engine mapping release_asset_architectures; download_dir is where the
+    deb is kept during the install;
     id_file_path and id_file_mode are the location and mode of the file
     that carries the machine RustDesk ID for the network report;
     vault_entry_title is the runtime vault entry that holds the permanent
@@ -43,6 +46,7 @@ class RustdeskSetupConfig:
     """
 
     github_repo: str
+    asset_name_template: str
     download_dir: Path
     id_file_path: Path
     id_file_mode: int
