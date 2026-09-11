@@ -42,6 +42,11 @@ def base_config() -> str:
         "process_check_timeout_seconds = 5\n"
         "task_start_delay_seconds = 0.5\n"
         'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
+        'desktop_username = "i"\n'
+        'session_environment_command = ["systemctl", "--machine", "{username}@.host", "--user", "show-environment"]\n'
+        'session_environment_keys = ["DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"]\n'
+        'session_bus_key = "DBUS_SESSION_BUS_ADDRESS"\n'
+        'session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 
@@ -400,6 +405,7 @@ def base_config() -> str:
         "agent_start_timeout_seconds = 15\n"
         "key_unlock_timeout_seconds = 30\n"
         'askpass_helper_file_mode = "0700"\n'
+        'askpass_display = ":0"\n'
         'state_file_mode = "0600"\n'
         "backoff_base_seconds = 2\n"
         "backoff_multiplier = 2\n"

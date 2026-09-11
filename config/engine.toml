@@ -78,3 +78,28 @@ task_start_delay_seconds = 0.5
 # install mode detection. A desktop session variable wins over these;
 # the list is checked only when no session variable is set.
 desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]
+# Account of the desktop user, the owner of the live desktop session the run
+# reaches. The run reads the session environment of that account once and
+# exports it, so a run started over a remote console configures the desktop
+# exactly like a run started inside the session. An empty value disables the
+# export and leaves every desktop task to apply its settings at the next login.
+desktop_username = "i"
+# Command that prints the environment of that user's session manager, one
+# KEY=VALUE per line; {username} is replaced with desktop_username. The machine
+# is named as <user>@.host because the engine runs as root and root has its own
+# session manager, which carries none of the desktop variables.
+session_environment_command = ["systemctl", "--machine", "{username}@.host", "--user", "show-environment"]
+# The session variables the run exports to every task and every child process.
+# The list holds the variables of the desktop session only: HOME, PATH,
+# SSH_AUTH_SOCK and the locale of the root process are never replaced, because
+# they belong to the run and not to the desktop.
+session_environment_keys = ["DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "XDG_SESSION_ID", "XDG_SESSION_CLASS", "XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "XDG_MENU_PREFIX", "KDE_FULL_SESSION", "KDE_SESSION_VERSION"]
+# The session bus variable. It carries the address the DBus clients of the
+# tasks connect to, so a task can reach a running service of the session with
+# this one value alone.
+session_bus_key = "DBUS_SESSION_BUS_ADDRESS"
+# The display variables. A GUI tool reaches the compositor or the X server when
+# at least one of them carries a value; without one Qt picks a platform plugin
+# that cannot connect and the tool aborts. The session counts as live only when
+# session_bus_key and one display key are present.
+session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]

@@ -21,7 +21,14 @@ class EngineConfig:
     that runs an embedded client against the system packages.
     journal_identifier is the name under which the engine mirrors its own
     messages into the system journal; the composition root hands it to the
-    journal writer before the first message.
+    journal writer before the first message. desktop_username is the account
+    of the desktop user whose live session the run reaches;
+    session_environment_command prints that session's environment, one
+    KEY=VALUE per line, with {username} replaced by desktop_username;
+    session_environment_keys are the session variables the run exports to
+    every task and every child process; session_bus_key is the bus variable of
+    that session and session_display_keys are its display variables, the two
+    groups that decide whether a session counts as live.
     """
 
     task_data_root: Path
@@ -42,3 +49,8 @@ class EngineConfig:
     process_check_timeout_seconds: int
     task_start_delay_seconds: float
     desktop_detect_processes: tuple[str, ...]
+    desktop_username: str = ""
+    session_environment_command: tuple[str, ...] = ()
+    session_environment_keys: tuple[str, ...] = ()
+    session_bus_key: str = ""
+    session_display_keys: tuple[str, ...] = ()

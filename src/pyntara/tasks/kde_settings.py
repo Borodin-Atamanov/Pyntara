@@ -31,7 +31,7 @@ from collections.abc import Callable
 from pathlib import Path
 from xml.etree import ElementTree
 
-from pyntara.config import KdeSettingsConfig
+from pyntara.config import EngineConfig, KdeSettingsConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -109,12 +109,12 @@ def _notify_flag(
     The flag makes kwriteconfig6 emit the KConfig change DBus signal that
     kwin watches for kwinrc and kdeglobals, so the running kwin re-reads
     the file and applies the change live instead of only at the next
-    login. Without the session bus in the process environment the flag is
-    a harmless no-op, so it is added only when the live environment is
-    passed and the file has a live watcher.
+    login. A missing session bus makes the flag a harmless no-op, so it is
+    added only when the caller passes the environment of a live session
+    and the file has a live watcher.
     """
 
-    if env is None or "DBUS_SESSION_BUS_ADDRESS" not in env:
+    if env is None:
         return []
     if file_name not in (cfg.kwinrc_file_name, cfg.kdeglobals_file_name):
         return []
@@ -215,19 +215,30 @@ def _sync_config_value(
     return True
 
 
-def _apply_env(cfg: KdeSettingsConfig, timeout: float) -> dict[str, str]:
+def _apply_env(
+    cfg: KdeSettingsConfig, engine: EngineConfig
+) -> dict[str, str] | None:
     """Environment that lets the plasma-apply tools reach the live session.
 
-    The session bus address and the display variables are read from the
-    target user's desktop processes when a live session is running, so
-    the theme applies live even when the run started over SSH without a
-    desktop environment; a missing session leaves the environment without
-    them, the values are written into the config and apply after the next
-    login.
+    The session variables are read from the session manager of the desktop
+    user, so the theme applies live even when the run started over SSH
+    without a desktop environment. None means no live session was found:
+    the values are written into the config and apply after the next login,
+    and a GUI tool is never started against a display that is not there.
     """
 
+    session = session_environment(
+        engine.desktop_username,
+        command_template=engine.session_environment_command,
+        keys=engine.session_environment_keys,
+        bus_key=engine.session_bus_key,
+        display_keys=engine.session_display_keys,
+        timeout=engine.process_check_timeout_seconds,
+    )
+    if not session:
+        return None
     env = _home_env(cfg)
-    env.update(session_environment(cfg.username, timeout))
+    env.update(session)
     return env
 
 
@@ -237,19 +248,20 @@ def _run_appearance_tool_best_effort(
     command: list[str],
     applied_message: str,
     timeout: float,
-    env: dict[str, str],
+    env: dict[str, str] | None,
 ) -> None:
     """Run one plasma-apply tool live when a session is present.
 
     The plasma-apply tools are GUI programs that need the desktop display
     and abort on a machine without a live session (provisioning over SSH,
-    before login) or when the display environment is missing. A failure is
-    therefore reported as a progress line but never raised, because the
-    caller has already written the value into the config file and it
-    applies at the next login.
+    before login) or when the display environment is missing. A missing
+    session is therefore reported as a progress line and a failure of the
+    tool is reported the same way, never raised, because the caller has
+    already written the value into the config file and it applies at the
+    next login.
     """
 
-    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+    if env is None:
         _log(f"no desktop session, {applied_message} applies at the next login")
         return
     try:
@@ -289,7 +301,7 @@ def _guard_write(
 def _apply_look_and_feel(
     cfg: KdeSettingsConfig,
     *,
-    env: dict[str, str],
+    env: dict[str, str] | None,
     timeout: float,
     force: bool,
 ) -> bool:
@@ -330,7 +342,7 @@ def _apply_look_and_feel(
 def _apply_color_scheme(
     cfg: KdeSettingsConfig,
     *,
-    env: dict[str, str],
+    env: dict[str, str] | None,
     timeout: float,
     force: bool,
 ) -> bool:
@@ -608,7 +620,7 @@ def _apply_virtual_keyboard(
 def _apply_cursor_theme(
     cfg: KdeSettingsConfig,
     *,
-    env: dict[str, str],
+    env: dict[str, str] | None,
     timeout: float,
     force: bool,
 ) -> bool:
@@ -935,6 +947,7 @@ def _write_user_file(
 
 def _apply_kwin_scripts(
     cfg: KdeSettingsConfig,
+    scripts_template_root: Path,
     *,
     timeout: float,
     force: bool,
@@ -947,7 +960,6 @@ def _apply_kwin_scripts(
     into the user local share kwin scripts directory as the target user
     and enabled in kwinrc [Plugins]. Files are written only when their
     content differs, so repeated runs skip matching scripts. A script
-    scripts_template_root: Path,
     whose template is missing is skipped entirely, so no dangling
     kwinrc enable is written. A script that fails to install or enable
     is reported and the remaining scripts still apply.
@@ -1076,7 +1088,7 @@ def _release_hotkeys_live(
 def _free_script_hotkeys(
     cfg: KdeSettingsConfig,
     *,
-    env: dict[str, str],
+    env: dict[str, str] | None,
     timeout: float,
     system_python: str,
     warnings: list[str] | None = None,
@@ -1126,7 +1138,7 @@ def _free_script_hotkeys(
             _log(warning)
             if warnings is not None:
                 warnings.append(warning)
-    if targets and "DBUS_SESSION_BUS_ADDRESS" in env:
+    if targets and env is not None:
         try:
             _release_hotkeys_live(
                 cfg, targets, env=env, timeout=timeout, system_python=system_python
@@ -1286,6 +1298,7 @@ def _apply_user_dirs(
 
 def _apply_konsole_profile(
     cfg: KdeSettingsConfig,
+    template_path: Path,
     *,
     timeout: float,
     force: bool,
@@ -1298,7 +1311,6 @@ def _apply_konsole_profile(
 
     try:
         template = template_path.read_text(encoding="utf-8")
-    template_path: Path,
     except OSError:
         _log("no konsole profile template, profile left as is")
         return False
@@ -1434,15 +1446,15 @@ def _reload_kwin(
     cfg: KdeSettingsConfig,
     *,
     timeout: float,
-    env: dict[str, str],
+    env: dict[str, str] | None,
 ) -> str | None:
     """Reload the kwin configuration; error text or None.
 
     Runs after the Wayland input method changed so kwin re-reads kwinrc.
-    A missing session bus is not an error: the setting applies at login.
+    A missing live session is not an error: the setting applies at login.
     """
 
-    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+    if env is None:
         _log("no desktop session found, input method applies after login")
         return None
     try:
@@ -1461,7 +1473,7 @@ def _apply_desktop_count_live(
     cfg: KdeSettingsConfig,
     *,
     timeout: float,
-    env: dict[str, str],
+    env: dict[str, str] | None,
     system_python: str,
 ) -> str | None:
     """Apply the configured desktop count through the DBus API; error or None.
@@ -1470,11 +1482,11 @@ def _apply_desktop_count_live(
     kwin reconfigure does not apply a changed Number. This function reads
     the target count from the kconfig records and creates or removes
     desktops through the VirtualDesktopManager DBus API to match it live.
-    A missing session bus is not an error: the count applies at the next
+    A missing live session is not an error: the count applies at the next
     login.
     """
 
-    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+    if env is None:
         return None
     target = None
     for record in cfg.kconfig:
@@ -1653,8 +1665,8 @@ def task(ctx: Context) -> TaskResult:
         OSError,
     ) as exc:
         warnings.append(f"cannot create the user config directory: {exc}")
-    apply_env = _apply_env(cfg, timeout)
-    if "DBUS_SESSION_BUS_ADDRESS" not in apply_env:
+    apply_env = _apply_env(cfg, ctx.config.engine)
+    if apply_env is None:
         _log("no desktop session found, settings apply after login")
 
     settings_changed = False
@@ -1733,6 +1745,7 @@ def task(ctx: Context) -> TaskResult:
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
             cfg,
+            task_data_dir(ctx.repo_root, "kde_settings") / "kwin",
             timeout=timeout,
             force=force,
             env=apply_env,
@@ -1745,7 +1758,6 @@ def task(ctx: Context) -> TaskResult:
         lambda: _free_script_hotkeys(
             cfg,
             env=apply_env,
-            task_data_dir(ctx.repo_root, "kde_settings") / "kwin",
             timeout=timeout,
             system_python=ctx.config.engine.system_python,
             warnings=warnings,

@@ -17,11 +17,14 @@ tasks/*.py (one task per module)
 
 The run command in pyntara.py is the only place that reads the environment and assembles runtime state:
 
+read and export the desktop session environment of the configured desktop user  
 resolve the install mode (PYNTARA_INSTALL_MODE or the auto-detected default)  
 resolve the task set (PYNTARA_TASKS or the mode defaults, dependencies resolved)  
 resolve the force task list (PYNTARA_FORCE_TASKS)  
 create Context  
 launch the runner
+
+The session environment is read once, before the tasks, from the session manager of the account named by `desktop_username` of the [engine] table (`session_environment_command`), and the variables of `session_environment_keys` are written into the environment of the process, so every task and every child process of every task inherits them. A run started over a remote console therefore configures the desktop exactly like a run started inside the session, and no task has to know where the run was started. The session counts as live only when its bus variable (`session_bus_key`) and one of its display variables (`session_display_keys`) carry a value; otherwise nothing is exported and the desktop tasks write their values and report that they apply at the next login. The export is limited to the session variables of the desktop: HOME, PATH, SSH_AUTH_SOCK and the locale of the run are never replaced, because they belong to the run and not to the desktop.
 
 No task may read the environment, create global singletons, or assemble runtime state itself.
 

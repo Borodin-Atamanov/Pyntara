@@ -25,6 +25,7 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
     assert section.server_alive_interval_seconds == 61
     assert section.server_alive_count_max == 3
     assert section.connect_timeout_seconds == 31
+    assert section.askpass_display == ":0"
     assert section.backoff_base_seconds == 2
     assert section.backoff_multiplier == 2
     assert section.backoff_max_seconds == 1024
@@ -55,6 +56,7 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             "agent_start_timeout_seconds = 15\n"
             "key_unlock_timeout_seconds = 30\n"
             'askpass_helper_file_mode = "0700"\n'
+            'askpass_display = ":0"\n'
             'state_file_mode = "0600"\n'
             "backoff_base_seconds = 2\n"
             "backoff_multiplier = 2\n"

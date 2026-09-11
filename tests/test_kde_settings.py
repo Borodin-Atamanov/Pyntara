@@ -157,7 +157,7 @@ def _install_fakes(
         task_module,
         "session_environment",
         (
-            lambda username, timeout: {
+            lambda username, **kwargs: {
                 "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"
             }
             if bus_pid
@@ -365,14 +365,15 @@ def test_apply_env_carries_live_session_display(
     monkeypatch.setattr(
         task_module,
         "session_environment",
-        lambda username, timeout: {
+        lambda username, **kwargs: {
             "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
             "WAYLAND_DISPLAY": "wayland-0",
             "XDG_RUNTIME_DIR": "/run/user/1000",
             "DISPLAY": ":0",
         },
     )
-    env = task_module._apply_env(ctx.config.kde_settings, timeout=5)
+    env = task_module._apply_env(ctx.config.kde_settings, ctx.config.engine)
+    assert env is not None
     assert env["HOME"] == str(tmp_path)
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
     assert env["WAYLAND_DISPLAY"] == "wayland-0"
@@ -382,12 +383,13 @@ def test_apply_env_carries_live_session_display(
 def test_apply_env_without_session_has_no_bus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No live session: the environment keeps only the home directory, so
-    # the appearance values are written for the next login.
+    # No live session: the environment is absent, so the appearance values
+    # are written for the next login and no GUI tool runs without a display.
     ctx = _ctx(tmp_path)
-    monkeypatch.setattr(task_module, "session_environment", lambda u, t: {})
-    env = task_module._apply_env(ctx.config.kde_settings, timeout=5)
-    assert env == {"HOME": str(tmp_path)}
+    monkeypatch.setattr(
+        task_module, "session_environment", lambda username, **kwargs: {}
+    )
+    assert task_module._apply_env(ctx.config.kde_settings, ctx.config.engine) is None
 
 
 def test_written_user_file_mode_comes_from_the_config(
@@ -1283,8 +1285,8 @@ def test_free_script_hotkeys_clears_and_releases_live(
 def test_free_script_hotkeys_without_session_skips_live(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Without a session bus the config is still cleared, but no daemon
-    # release runs.
+    # Without a live session there is no environment to run the daemon
+    # release through: the config is still cleared, but nothing runs live.
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "kglobalshortcutsrc").write_text(
@@ -1296,7 +1298,7 @@ def test_free_script_hotkeys_without_session_skips_live(
     _, releases = _script_fakes(monkeypatch, session=False)
     changed = task_module._free_script_hotkeys(
         ctx.config.kde_settings,
-        env={},
+        env=None,
         timeout=5,
         system_python=ctx.config.engine.system_python,
     )

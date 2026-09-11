@@ -149,7 +149,7 @@ def _install_fakes(
         task_module,
         "session_bus_address",
         (
-            lambda username, timeout: "unix:path=/run/user/1000/bus"
+            lambda username, **kwargs: "unix:path=/run/user/1000/bus"
             if bus_pid
             else None
         ),

@@ -62,6 +62,76 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_live_desktop_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the unit tests away from the live desktop session.
+
+    The run command reads the session environment of the configured desktop
+    user and exports it into the environment of the process. A unit test must
+    never ask the real session manager for it, so the resolver reports no
+    session unless a test replaces this fixture.
+    """
+
+    monkeypatch.setattr(
+        "pyntara.pyntara.session_environment", lambda username, **kwargs: {}
+    )
+
+
+def test_run_exports_the_desktop_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The run hands the session variables of the desktop user to the process,
+    # so every task and every child process inherits them no matter where the
+    # run itself was started.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    monkeypatch.setattr(
+        "pyntara.pyntara.session_environment",
+        lambda username, **kwargs: {
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            "WAYLAND_DISPLAY": "wayland-0",
+        },
+    )
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "Desktop session of i exported" in result.output
+    assert os.environ["WAYLAND_DISPLAY"] == "wayland-0"
+
+
+def test_run_reports_a_missing_desktop_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without a live session the run says so and continues: the desktop tasks
+    # then write their values and report that they apply at the next login.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "No live desktop session for i" in result.output
+
+
+def test_run_skips_the_export_without_a_desktop_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A config that names no desktop user leaves the export out and reports
+    # it; the run itself continues.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config",
+        lambda path: make_config(
+            engine_desktop_username="", notice_timeout=0, tasks=REAL_TASKS
+        ),
+    )
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "engine.desktop_username is not set" in result.output
+
+
 def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     # A missing install mode is not an error: the engine auto-detects it,
     # reports the choice and runs with it (resilience rule).

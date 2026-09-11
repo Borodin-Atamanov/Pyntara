@@ -31,7 +31,11 @@ from pyntara.config import (
 from pyntara.context import Context
 from pyntara.logger import log_event, log_result_line
 from pyntara.task_runner import run_tasks
-from pyntara.utils import REPO_ROOT
+from pyntara.utils import (
+    REPO_ROOT,
+    export_session_environment,
+    session_environment,
+)
 
 app = typer.Typer(invoke_without_command=True)
 
@@ -139,6 +143,48 @@ def _export_journal_identifier(engine: EngineConfig) -> None:
     if not identifier:
         return
     os.environ["PYNTARA_JOURNAL_IDENTIFIER"] = identifier
+
+
+def _export_desktop_session(engine: EngineConfig) -> None:
+    """Hand the live desktop session environment to the whole run.
+
+    One export puts the session variables of the configured desktop user into
+    the environment of this process, so every task and every child process
+    inherits them: a run started over a remote console then configures the
+    desktop exactly like a run started inside the session. The step runs
+    before the mode detection, which reads a session variable as direct
+    evidence of a desktop session and falls back to the configured process
+    names when there is none. Nothing is exported when the config names no
+    desktop user, when the session manager of that user does not answer, or
+    when the session reports no bus or display variable; the desktop tasks
+    then write their values and report that they apply at the next login.
+    """
+
+    if not engine.desktop_username:
+        log_event(
+            "Desktop session not read: engine.desktop_username is not set, "
+            "desktop settings apply at the next login"
+        )
+        return
+    session = session_environment(
+        engine.desktop_username,
+        command_template=engine.session_environment_command,
+        keys=engine.session_environment_keys,
+        bus_key=engine.session_bus_key,
+        display_keys=engine.session_display_keys,
+        timeout=engine.process_check_timeout_seconds,
+    )
+    if not session:
+        log_event(
+            f"No live desktop session for {engine.desktop_username}, "
+            "desktop settings apply at the next login"
+        )
+        return
+    exported = export_session_environment(session)
+    log_event(
+        f"Desktop session of {engine.desktop_username} exported: "
+        + " ".join(f"{name}={session[name]}" for name in exported)
+    )
 
 
 def _warn_and_continue(message: str, notice_timeout: int | None) -> None:
@@ -301,6 +347,7 @@ def run() -> None:
 
     cfg = _load_config()
     _export_journal_identifier(cfg.engine)
+    _export_desktop_session(cfg.engine)
     if not cfg.tasks:
         # Without the catalog there is nothing to run, so the run reports the
         # state instead of finishing as if the machine were provisioned.

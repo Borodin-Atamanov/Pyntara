@@ -34,7 +34,9 @@ class PortForwardingSetupConfig:
     machine's own addresses, and agent_start_timeout_seconds and
     key_unlock_timeout_seconds bound the ssh-agent start and the key
     unlock, and askpass_helper_file_mode and state_file_mode carry the
-    modes of the askpass helper and of the state file. backoff_base_seconds,
+    modes of the askpass helper and of the state file. askpass_display is
+    the display ssh-add hands to the askpass helper of the key unlock.
+    backoff_base_seconds,
     backoff_multiplier and backoff_max_seconds drive the reconnect pauses.
     state_file_path is the root-only JSON file that records the assigned
     remote ports; the System Metrics collector reads it into the network
@@ -55,6 +57,7 @@ class PortForwardingSetupConfig:
     agent_start_timeout_seconds: int
     key_unlock_timeout_seconds: int
     askpass_helper_file_mode: int
+    askpass_display: str
     state_file_mode: int
     backoff_base_seconds: int
     backoff_multiplier: int

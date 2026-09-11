@@ -28,7 +28,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from pyntara.config import KdeKeyboardSetupConfig
+from pyntara.config import EngineConfig, KdeKeyboardSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -56,6 +56,29 @@ def _home_env(cfg: KdeKeyboardSetupConfig) -> dict[str, str]:
     """Environment that points the KDE tools at the target user home."""
 
     return {"HOME": cfg.home_dir}
+
+
+def _session_bus_env(
+    cfg: KdeKeyboardSetupConfig, engine: EngineConfig
+) -> dict[str, str]:
+    """The one-entry environment that reaches the live session bus.
+
+    The bus address comes from the session manager of the desktop user, so the
+    DBus clients of the task work the same whether the run started inside the
+    session or over a remote console. An empty dict means no live session was
+    found: the persistent values are still written and apply at the next login.
+    """
+
+    bus = session_bus_address(
+        cfg.username,
+        command_template=engine.session_environment_command,
+        keys=engine.session_environment_keys,
+        bus_key=engine.session_bus_key,
+        timeout=engine.process_check_timeout_seconds,
+    )
+    if bus is None:
+        return {}
+    return {engine.session_bus_key: bus}
 
 
 def _per_layout_empty_list(layouts: tuple[str, ...]) -> str:
@@ -173,24 +196,24 @@ def _reload_kwin(
     *,
     timeout: float,
     home_env: dict[str, str],
+    bus_env: dict[str, str],
 ) -> str | None:
     """Reload the kwin keyboard layout config; error text or None.
 
     The reload runs through the target user's session bus so kwin re-reads
     kxkbrc immediately; the layout list applies at once, the switch option
-    takes effect at the next session start. A missing session is not an
+    takes effect at the next session start. A missing session bus is not an
     error: the settings apply after the next login. A failing reload
     command is an error.
     """
 
-    bus = session_bus_address(cfg.username, timeout)
-    if bus is None:
+    if not bus_env:
         _log("no desktop session found, layouts apply after login")
         return None
     try:
         run_command(
             _as_user_command(cfg, list(cfg.kwin_reload_command)),
-            extra_env={**home_env, "DBUS_SESSION_BUS_ADDRESS": bus},
+            extra_env={**home_env, **bus_env},
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -342,10 +365,10 @@ print(json.dumps({"before": before, "after": after}))
 def _apply_hotkeys_live(
     cfg: KdeKeyboardSetupConfig,
     shortcuts: dict[str, str],
-    bus: str,
     *,
     timeout: float,
     home_env: dict[str, str],
+    bus_env: dict[str, str],
     system_python: str,
 ) -> tuple[str | None, bool]:
     """Apply the supported hotkeys through the running daemon.
@@ -380,7 +403,7 @@ def _apply_hotkeys_live(
                 cfg,
                 [system_python, "-c", _APPLY_HOTKEYS_SCRIPT, payload],
             ),
-            extra_env={**home_env, "DBUS_SESSION_BUS_ADDRESS": bus},
+            extra_env={**home_env, **bus_env},
             timeout=timeout,
             capture=True,
         )
@@ -422,9 +445,11 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.kde_keyboard_setup
-    timeout = ctx.config.engine.command_timeout_seconds
+    engine = ctx.config.engine
+    timeout = engine.command_timeout_seconds
     force = "kde_keyboard_setup" in ctx.force_tasks
     home_env = _home_env(cfg)
+    bus_env = _session_bus_env(cfg, engine)
     changed = False
     warnings: list[str] = []
 
@@ -544,17 +569,16 @@ def task(ctx: Context) -> TaskResult:
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"cannot write {cfg.shortcuts_file_name}: {exc}")
-        bus = session_bus_address(cfg.username, timeout)
-        if bus is None:
+        if not bus_env:
             _log("no desktop session found, layout hotkeys apply at login")
         else:
             hotkey_error, applied = _apply_hotkeys_live(
                 cfg,
                 cfg.layout_switch_shortcuts,
-                bus,
                 timeout=timeout,
                 home_env=home_env,
-                system_python=ctx.config.engine.system_python,
+                bus_env=bus_env,
+                system_python=engine.system_python,
             )
             if hotkey_error is not None:
                 warnings.append(hotkey_error)
@@ -563,7 +587,9 @@ def task(ctx: Context) -> TaskResult:
     changed |= hotkeys_changed
 
     if layout_changed:
-        reload_error = _reload_kwin(cfg, timeout=timeout, home_env=home_env)
+        reload_error = _reload_kwin(
+            cfg, timeout=timeout, home_env=home_env, bus_env=bus_env
+        )
         if reload_error is not None:
             warnings.append(reload_error)
         _log("the layout switch option takes effect at the next login")

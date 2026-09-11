@@ -673,6 +673,41 @@ def _engine_table(raw: object) -> EngineConfig:
         raise ConfigError(
             "engine.desktop_detect_processes must be non-empty strings"
         )
+    desktop_username = raw.get("desktop_username", "")
+    if not isinstance(desktop_username, str):
+        raise ConfigError("engine.desktop_username must be a string")
+    session_environment_command = raw.get("session_environment_command", [])
+    if not isinstance(session_environment_command, list):
+        raise ConfigError(
+            "engine.session_environment_command must be an array of strings"
+        )
+    if not all(
+        isinstance(part, str) and part.strip() for part in session_environment_command
+    ):
+        raise ConfigError(
+            "engine.session_environment_command must be non-empty strings"
+        )
+    session_environment_keys = raw.get("session_environment_keys", [])
+    if not isinstance(session_environment_keys, list):
+        raise ConfigError(
+            "engine.session_environment_keys must be an array of strings"
+        )
+    if not all(
+        isinstance(key, str) and key.strip() for key in session_environment_keys
+    ):
+        raise ConfigError("engine.session_environment_keys must be non-empty strings")
+    session_bus_key = raw.get("session_bus_key")
+    if session_bus_key is None:
+        session_bus_key = ""
+    elif not isinstance(session_bus_key, str) or not session_bus_key:
+        raise ConfigError("engine.session_bus_key must be a non-empty string")
+    session_display_keys = raw.get("session_display_keys", [])
+    if not isinstance(session_display_keys, list):
+        raise ConfigError("engine.session_display_keys must be an array of strings")
+    if not all(
+        isinstance(key, str) and key.strip() for key in session_display_keys
+    ):
+        raise ConfigError("engine.session_display_keys must be non-empty strings")
     error_priority = _int_field(raw.get("error_priority"), "engine.error_priority")
     if not 0 <= error_priority <= 7:
         raise ConfigError("engine.error_priority must be between 0 and 7")
@@ -745,6 +780,11 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
         ),
         desktop_detect_processes=tuple(desktop_detect_processes),
+        desktop_username=desktop_username,
+        session_environment_command=tuple(session_environment_command),
+        session_environment_keys=tuple(session_environment_keys),
+        session_bus_key=session_bus_key,
+        session_display_keys=tuple(session_display_keys),
     )
 
 
@@ -1633,6 +1673,9 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     askpass_helper_file_mode = _octal_mode_field(
         raw.get("askpass_helper_file_mode"), section + "askpass_helper_file_mode"
     )
+    askpass_display = _nonempty_string_field(
+        raw.get("askpass_display"), section + "askpass_display"
+    )
     state_file_mode = _octal_mode_field(
         raw.get("state_file_mode"), section + "state_file_mode"
     )
@@ -1675,6 +1718,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         agent_start_timeout_seconds=agent_start_timeout_seconds,
         key_unlock_timeout_seconds=key_unlock_timeout_seconds,
         askpass_helper_file_mode=askpass_helper_file_mode,
+        askpass_display=askpass_display,
         state_file_mode=state_file_mode,
         backoff_base_seconds=backoff_base_seconds,
         backoff_multiplier=backoff_multiplier,

@@ -184,6 +184,7 @@ def _start_agent(
     agent_start_timeout_seconds: int,
     key_unlock_timeout_seconds: int,
     askpass_helper_file_mode: int,
+    askpass_display: str,
 ) -> dict[str, str] | None:
     """Start a dedicated ssh-agent and unlock the key; the agent env or None.
 
@@ -195,7 +196,8 @@ def _start_agent(
     None is returned. agent_start_timeout_seconds bounds the ssh-agent
     start and key_unlock_timeout_seconds bounds the ssh-add unlock;
     askpass_helper_file_mode is the mode of the helper script, which must
-    stay executable by its owner only.
+    stay executable by its owner only, and askpass_display is the display
+    ssh-add hands to that helper.
     """
 
     try:
@@ -231,7 +233,7 @@ def _start_agent(
         {
             "SSH_ASKPASS": str(helper),
             "SSH_ASKPASS_REQUIRE": "force",
-            "DISPLAY": ":0",
+            "DISPLAY": askpass_display,
             "PF_KEY_PASSPHRASE": passphrase,
         }
     )
@@ -689,6 +691,7 @@ def main() -> None:
         pf.agent_start_timeout_seconds,
         pf.key_unlock_timeout_seconds,
         pf.askpass_helper_file_mode,
+        pf.askpass_display,
     )
     if env is None:
         _log("cannot unlock the port-forwarding key", priority=pf.error_priority)

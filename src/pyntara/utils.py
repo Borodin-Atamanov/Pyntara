@@ -14,7 +14,7 @@ import re
 import signal
 import subprocess
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from pathlib import Path
 
 from pyntara import logger
@@ -600,100 +600,176 @@ def ensure_root_owner(path: Path) -> None:
         os.chown(path, 0, 0)
 
 
-def process_environment_vars(pid: str) -> dict[str, str]:
-    """The environment of a process as a dict, empty when unreadable.
+def session_environment_command(
+    username: str, command_template: tuple[str, ...]
+) -> list[str]:
+    """The configured session environment command for one user.
 
-    Desktop processes of the logged-in user carry the session bus address
-    and the display variables, so the KDE desktop tasks read them from
-    /proc to reach a live session even when the task itself started over
-    SSH without a desktop environment.
+    The command form lives in the config with a {username} placeholder, the
+    same way the release query carries {repo}; the account name is the only
+    part of the command the run decides.
     """
 
-    try:
-        data = Path(f"/proc/{pid}/environ").read_bytes()
-    except OSError:
-        return {}
-    result: dict[str, str] = {}
-    for entry in data.split(b"\0"):
-        key, separator, value = entry.partition(b"=")
-        if separator:
-            result[key.decode("utf-8")] = value.decode("utf-8")
-    return result
+    return [part.replace("{username}", username) for part in command_template]
 
 
-def process_environment(pid: str) -> str | None:
-    """The DBUS_SESSION_BUS_ADDRESS of a process, or None when unreadable.
+def session_environment_value(entry: str) -> str | None:
+    """The usable value of one session environment line, or None.
 
-    The session bus address is only meaningful for desktop processes of
-    the logged-in user, so the helper is used by the KDE desktop tasks.
+    The session manager prints the environment in shell-quoted form: a plain
+    value stays as it is, a value may be wrapped in double quotes, and a value
+    with spaces or escapes is printed as an ANSI-C quoted string ($'...'). The
+    run takes plain and double-quoted values only: guessing at an escape would
+    put a wrong value into the environment of every child process, so an
+    escaped value is skipped and named in the log instead.
     """
 
-    return process_environment_vars(pid).get("DBUS_SESSION_BUS_ADDRESS")
-
-
-def session_bus_address(username: str, timeout: float) -> str | None:
-    """The DBus session address of a user, or None when no session exists.
-
-    The address is read from the environment of the user's kwin_wayland
-    process, which owns the desktop session services. A missing session
-    (no kwin_wayland process) returns None, so the caller can skip the
-    live reload and let the settings apply at the next login.
-    """
-
-    result = run_command(
-        ["pgrep", "-u", username, "-x", "kwin_wayland"],
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    lines = trim_whitespace(result.stdout).splitlines()
-    if not lines:
+    if entry.startswith("$'") or "\\" in entry:
         return None
-    return process_environment(lines[0].strip())
+    if len(entry) >= 2 and entry.startswith('"') and entry.endswith('"'):
+        return entry[1:-1]
+    return entry
 
 
-# The session variables the desktop tasks copy from the running session.
-# The bus address reaches the DBus services; the display variables let a
-# Qt GUI tool connect to the running Wayland compositor, which a process
-# started over SSH lacks.
-_LIVE_SESSION_ENV_KEYS: tuple[str, ...] = (
-    "DBUS_SESSION_BUS_ADDRESS",
-    "WAYLAND_DISPLAY",
-    "DISPLAY",
-    "XAUTHORITY",
-    "XDG_RUNTIME_DIR",
-    "XDG_SESSION_TYPE",
-)
+def parse_session_environment(text: str, keys: tuple[str, ...]) -> dict[str, str]:
+    """The configured session variables of a session environment text.
 
-
-def session_environment(username: str, timeout: float) -> dict[str, str]:
-    """The live desktop session variables of a user, or an empty dict.
-
-    The variables are read from the environment of the user's desktop
-    processes: plasmashell is a Wayland client of the running session and
-    carries the display connection, kwin_wayland owns the session
-    services. A run started over SSH therefore reaches a live session
-    when one exists; without any desktop process the dict is empty and
-    the caller applies the settings for the next login.
+    Every line is KEY=VALUE. A key outside the configured list is ignored:
+    the same text carries HOME, PATH, SSH_AUTH_SOCK and the locale, which
+    belong to the root process of the run and are never taken. A value the
+    session manager printed in escaped form is skipped and reported.
     """
 
-    merged: dict[str, str] = {}
-    for process_name in ("plasmashell", "kwin_wayland"):
-        result = run_command(
-            ["pgrep", "-u", username, "-x", process_name],
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-        lines = trim_whitespace(result.stdout).splitlines()
-        if not lines:
+    environment: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, entry = line.partition("=")
+        if not separator or key not in keys:
             continue
-        for key, value in process_environment_vars(lines[0].strip()).items():
-            if key in _LIVE_SESSION_ENV_KEYS and key not in merged:
-                merged[key] = value
-        if merged:
-            break
-    return merged
+        value = session_environment_value(entry)
+        if value is None:
+            logger.log_progress(
+                f"session variable {key} is printed in escaped form, left alone"
+            )
+            continue
+        environment[key] = value
+    return environment
+
+
+def user_session_environment(
+    username: str,
+    *,
+    command_template: tuple[str, ...],
+    keys: tuple[str, ...],
+    timeout: float,
+) -> dict[str, str]:
+    """The session environment of one user, or an empty dict.
+
+    The configured command asks the session manager of that user for its
+    environment, so a run started over a remote console reads the variables
+    of the live desktop session without depending on the caller. A missing
+    user manager, a user without a session and a failed command all return an
+    empty dict with a progress line: the caller then applies its settings for
+    the next login instead of failing.
+    """
+
+    if not username or not command_template or not keys:
+        return {}
+    command = session_environment_command(username, command_template)
+    try:
+        result = run_command(command, check=False, capture=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logger.log_progress(f"cannot read the desktop session environment: {exc}")
+        return {}
+    if result.returncode != 0:
+        logger.log_progress(
+            f"cannot read the desktop session environment: {' '.join(command)} "
+            f"exited {result.returncode}"
+        )
+        return {}
+    return parse_session_environment(result.stdout, keys)
+
+
+def session_bus_address(
+    username: str,
+    *,
+    command_template: tuple[str, ...],
+    keys: tuple[str, ...],
+    bus_key: str,
+    timeout: float,
+) -> str | None:
+    """The session bus address of a user, or None when no session exists.
+
+    The address reaches the DBus services of the session, so the DBus clients
+    of the tasks need this one value and no display variable. A missing
+    session returns None, so the caller can skip the live action and let the
+    settings apply at the next login.
+    """
+
+    if not bus_key:
+        return None
+    environment = user_session_environment(
+        username, command_template=command_template, keys=keys, timeout=timeout
+    )
+    return environment.get(bus_key) or None
+
+
+def session_environment(
+    username: str,
+    *,
+    command_template: tuple[str, ...],
+    keys: tuple[str, ...],
+    bus_key: str,
+    display_keys: tuple[str, ...],
+    timeout: float,
+) -> dict[str, str]:
+    """The session environment of a user, only when the session is live.
+
+    A session counts as live when its bus variable and one of its display
+    variables carry a value: the bus reaches the DBus services, a display
+    variable lets a GUI tool connect to the running compositor instead of
+    picking a platform plugin that aborts. A partial environment is reported
+    and dropped, because a GUI tool without a display variable fails before it
+    applies anything.
+    """
+
+    environment = user_session_environment(
+        username, command_template=command_template, keys=keys, timeout=timeout
+    )
+    if not environment:
+        return {}
+    if bus_key not in environment:
+        logger.log_progress(
+            f"the desktop session of {username} reports no {bus_key}, "
+            "its settings apply at the next login"
+        )
+        return {}
+    present = [key for key in display_keys if key in environment]
+    if not present:
+        logger.log_progress(
+            f"the desktop session of {username} reports no display variable "
+            f"({', '.join(display_keys)}), its GUI settings apply at the next login"
+        )
+        return {}
+    return environment
+
+
+def export_session_environment(
+    environment: Mapping[str, str],
+    target: MutableMapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    """Put the session variables into the environment of this process.
+
+    Every child process the run starts inherits the target mapping, so one
+    export reaches every task and every tool a task calls, no matter where the
+    run itself was started. The mapping defaults to the environment of the
+    process. The exported names are returned, so the caller can report what it
+    handed to the run.
+    """
+
+    destination = os.environ if target is None else target
+    for key, value in environment.items():
+        destination[key] = value
+    return tuple(environment)
 
 
 def backoff_delay(

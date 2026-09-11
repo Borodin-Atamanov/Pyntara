@@ -143,6 +143,30 @@ from config_helpers import (
         ),
         # keep_downloaded_debs is an integer, not a boolean
         base_config().replace("keep_downloaded_debs = true", "keep_downloaded_debs = 1"),
+        # session_environment_command is a string, not an array
+        base_config().replace(
+            'session_environment_command = ["systemctl", "--machine", "{username}@.host", "--user", "show-environment"]',
+            'session_environment_command = "systemctl"',
+        ),
+        # session_environment_command contains an empty string
+        base_config().replace(
+            'session_environment_command = ["systemctl", "--machine", "{username}@.host", "--user", "show-environment"]',
+            'session_environment_command = [""]',
+        ),
+        # session_environment_keys contains a number, not strings
+        base_config().replace(
+            'session_environment_keys = ["DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"]',
+            'session_environment_keys = [1]',
+        ),
+        # session_bus_key is an empty string
+        base_config().replace(
+            'session_bus_key = "DBUS_SESSION_BUS_ADDRESS"', 'session_bus_key = ""'
+        ),
+        # session_display_keys is a string, not an array
+        base_config().replace(
+            'session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]',
+            'session_display_keys = "WAYLAND_DISPLAY"',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:

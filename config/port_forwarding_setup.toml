@@ -51,6 +51,10 @@ own_addresses_timeout_seconds = 15
 # askpass helper.
 agent_start_timeout_seconds = 15
 key_unlock_timeout_seconds = 30
+# Display the askpass helper of the key unlock is given. ssh-add needs a
+# display to run the helper at all, even when the helper answers without a
+# dialog; the value is the display name of the machine's desktop session.
+askpass_display = ":0"
 # Reconnect backoff after a dropped connection: the pause after the first
 # drop is backoff_base_seconds, every further consecutive drop multiplies
 # the pause by backoff_multiplier until backoff_max_seconds, all whole
