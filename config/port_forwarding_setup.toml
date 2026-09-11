@@ -39,6 +39,14 @@ server_alive_interval_seconds = 61
 server_alive_count_max = 3
 # Seconds a single ssh connection attempt may take before it is given up.
 connect_timeout_seconds = 31
+# Seconds the ip call that lists this machine's own addresses may take:
+# the addresses decide which vault server is this machine itself.
+own_addresses_timeout_seconds = 15
+# Seconds the ssh-agent start and the unlock of the port-forwarding key
+# may take; the unlock runs ssh-add with the passphrase fed through the
+# askpass helper.
+agent_start_timeout_seconds = 15
+key_unlock_timeout_seconds = 30
 # Reconnect backoff after a dropped connection: the pause after the first
 # drop is backoff_base_seconds, every further consecutive drop multiplies
 # the pause by backoff_multiplier until backoff_max_seconds, all whole

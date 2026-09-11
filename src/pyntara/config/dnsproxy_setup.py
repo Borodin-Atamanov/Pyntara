@@ -7,6 +7,8 @@ from pathlib import Path
 @dataclass(frozen=True)
 class DnsproxySetupConfig:
     # Configuration for the root-owned dnsproxy system service.
+    # verification_error_excerpt_length and service_log_excerpt_length
+    # carry the lengths of the diagnostic texts the task reports.
 
     github_repo: str
     download_dir: Path
@@ -52,9 +54,11 @@ class DnsproxySetupConfig:
     nmcli_dns_command: tuple[str, ...]
     verification_command: tuple[str, ...]
     verification_domain: str
+    verification_error_excerpt_length: int
     ss_tcp_listen_command: tuple[str, ...]
     ss_udp_listen_command: tuple[str, ...]
     kill_command: tuple[str, ...]
     service_log_command: tuple[str, ...]
+    service_log_excerpt_length: int
     profile_id_file_path: Path
     profile_id_file_mode: int

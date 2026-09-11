@@ -568,6 +568,14 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     verification_domain = _nonempty_string_field(
         raw.get("verification_domain"), "dnsproxy_setup.verification_domain"
     )
+    verification_error_excerpt_length = _positive_int_field(
+        raw.get("verification_error_excerpt_length"),
+        "dnsproxy_setup.verification_error_excerpt_length",
+    )
+    service_log_excerpt_length = _positive_int_field(
+        raw.get("service_log_excerpt_length"),
+        "dnsproxy_setup.service_log_excerpt_length",
+    )
     profile_id_file_path = Path(
         _nonempty_string_field(
             raw.get("profile_id_file_path"), "dnsproxy_setup.profile_id_file_path"
@@ -625,6 +633,8 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         kill_command=commands[14],
         service_log_command=commands[15],
         verification_domain=verification_domain,
+        verification_error_excerpt_length=verification_error_excerpt_length,
+        service_log_excerpt_length=service_log_excerpt_length,
         profile_id_file_path=profile_id_file_path,
         profile_id_file_mode=profile_id_file_mode,
     )
@@ -1591,6 +1601,18 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     connect_timeout_seconds = _positive_int_field(
         raw.get("connect_timeout_seconds"), section + "connect_timeout_seconds"
     )
+    own_addresses_timeout_seconds = _positive_int_field(
+        raw.get("own_addresses_timeout_seconds"),
+        section + "own_addresses_timeout_seconds",
+    )
+    agent_start_timeout_seconds = _positive_int_field(
+        raw.get("agent_start_timeout_seconds"),
+        section + "agent_start_timeout_seconds",
+    )
+    key_unlock_timeout_seconds = _positive_int_field(
+        raw.get("key_unlock_timeout_seconds"),
+        section + "key_unlock_timeout_seconds",
+    )
     backoff_base_seconds = _positive_int_field(
         raw.get("backoff_base_seconds"), section + "backoff_base_seconds"
     )
@@ -1626,6 +1648,9 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         server_alive_interval_seconds=server_alive_interval_seconds,
         server_alive_count_max=server_alive_count_max,
         connect_timeout_seconds=connect_timeout_seconds,
+        own_addresses_timeout_seconds=own_addresses_timeout_seconds,
+        agent_start_timeout_seconds=agent_start_timeout_seconds,
+        key_unlock_timeout_seconds=key_unlock_timeout_seconds,
         backoff_base_seconds=backoff_base_seconds,
         backoff_multiplier=backoff_multiplier,
         backoff_max_seconds=backoff_max_seconds,

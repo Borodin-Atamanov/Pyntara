@@ -80,6 +80,41 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
     assert not any(arg.startswith("--output=") for arg in command)
 
 
+def test_verify_system_error_excerpt_length_comes_from_the_config(
+    monkeypatch: Any,
+) -> None:
+    # The failure text is cut to the configured length, so a longer or
+    # shorter excerpt is answered in the config and not in the code.
+    cfg = make_config().dnsproxy_setup
+
+    def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        return FakeProc(1, "x" * 1000)
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    error, _ = task_module._verify_system(
+        replace(cfg, verification_error_excerpt_length=7),
+        task_module.DiscoveredDnsServers((), (), ()),
+        3.0,
+    )
+    assert error == "system DNS verification failed: " + "x" * 7
+
+
+def test_service_log_excerpt_length_comes_from_the_config(
+    monkeypatch: Any,
+) -> None:
+    # The diagnosis keeps the trailing characters the config asks for.
+    cfg = make_config().dnsproxy_setup
+
+    def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        return FakeProc(0, "y" * 1000)
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    tail = task_module._service_log(
+        replace(cfg, service_log_excerpt_length=11), 3.0
+    )
+    assert tail == "y" * 11
+
+
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
     config = make_config()
     command = task_module._command(

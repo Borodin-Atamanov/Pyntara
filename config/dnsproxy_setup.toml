@@ -195,9 +195,16 @@ resolvectl_dns_command = ["resolvectl", "dns"]
 nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
 verification_domain = "example.com"
 verification_command = ["resolvectl", "query", "--cache=no", "{domain}"]
+# Characters of the failed verification output shown in the error text: a
+# long resolver error is cut to this length, an empty output becomes the
+# placeholder <no output>.
+verification_error_excerpt_length = 200
 ss_tcp_listen_command = ["ss", "-lntp"]
 ss_udp_listen_command = ["ss", "-lunp"]
 kill_command = ["kill"]
 service_log_command = ["journalctl", "-u", "{unit}", "--no-pager", "-n", "20"]
+# Trailing characters of the unit log kept for the diagnosis of a failed
+# service start: the last lines carry the reason the unit stopped.
+service_log_excerpt_length = 400
 profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"
 profile_id_file_mode = "0644"

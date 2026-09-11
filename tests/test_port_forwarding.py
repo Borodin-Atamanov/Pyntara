@@ -148,12 +148,28 @@ class TestOwnServers:
         monkeypatch.setattr(
             pf.subprocess, "run", lambda *args, **kwargs: FakeProc(0, stdout)
         )
-        assert own_addresses() == {
+        assert own_addresses(15) == {
             "127.0.0.1",
             "::1",
             "192.168.1.5",
             "fe80::1234:abcd",
         }
+
+    def test_own_addresses_timeout_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The bound of the ip call is the config value, so a slow machine
+        # is answered in the config and not in the code.
+        seen: list[float] = []
+
+        def _run(*args: object, **kwargs: object) -> FakeProc:
+            seen.append(float(kwargs["timeout"]))  # type: ignore[arg-type]
+            return FakeProc(0, "")
+
+        monkeypatch.setattr(pf.subprocess, "run", _run)
+        configured = make_config().port_forwarding_setup.own_addresses_timeout_seconds
+        own_addresses(configured)
+        assert seen == [float(configured)]
 
     def test_own_addresses_failure_keeps_everything(
         self, monkeypatch: pytest.MonkeyPatch
@@ -163,7 +179,7 @@ class TestOwnServers:
         monkeypatch.setattr(
             pf.subprocess, "run", lambda *args, **kwargs: FakeProc(1, "")
         )
-        assert own_addresses() == set()
+        assert own_addresses(15) == set()
 
     def test_filter_own_servers_splits_by_matching_address(self) -> None:
         own = {"127.0.0.1", "192.168.1.5", "fe80::1"}
@@ -492,7 +508,7 @@ class TestMain:
             pf.metrics, "open_runtime_vault",
             lambda cfg: self._kp(group=True, passphrase=True),
         )
-        monkeypatch.setattr(pf, "_start_agent", lambda passphrase, key: {"PATH": "/bin"})
+        monkeypatch.setattr(pf, "_start_agent", lambda *args, **kwargs: {"PATH": "/bin"})
         monkeypatch.setattr(pf.threading, "Thread", FakeThread)
         pf.main()
         assert len(created) == 1

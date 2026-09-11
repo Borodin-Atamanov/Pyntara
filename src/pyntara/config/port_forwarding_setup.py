@@ -29,7 +29,11 @@ class PortForwardingSetupConfig:
     every server. desired_port_min and desired_port_max bound the
     deterministic desired remote port derived from the hostname.
     server_alive_interval_seconds, server_alive_count_max and
-    connect_timeout_seconds tune the ssh connection; backoff_base_seconds,
+    connect_timeout_seconds tune the ssh connection;
+    own_addresses_timeout_seconds bounds the ip call that lists this
+    machine's own addresses, and agent_start_timeout_seconds and
+    key_unlock_timeout_seconds bound the ssh-agent start and the key
+    unlock. backoff_base_seconds,
     backoff_multiplier and backoff_max_seconds drive the reconnect pauses.
     state_file_path is the root-only JSON file that records the assigned
     remote ports; the System Metrics collector reads it into the network
@@ -46,6 +50,9 @@ class PortForwardingSetupConfig:
     server_alive_interval_seconds: int
     server_alive_count_max: int
     connect_timeout_seconds: int
+    own_addresses_timeout_seconds: int
+    agent_start_timeout_seconds: int
+    key_unlock_timeout_seconds: int
     backoff_base_seconds: int
     backoff_multiplier: int
     backoff_max_seconds: int

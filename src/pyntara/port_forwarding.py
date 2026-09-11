@@ -111,14 +111,14 @@ def _normalize_host(host: str) -> str:
     return host.lower()
 
 
-def own_addresses() -> set[str]:
+def own_addresses(timeout_seconds: int) -> set[str]:
     """The machine's own IP addresses from ip -o addr, or an empty set.
 
     The addresses come from the local interfaces, both families, so a
     server address that appears here is the machine itself. A failed or
     missing ip call yields an empty set, so the filter then keeps every
     server: that errs toward forwarding instead of dropping a real
-    server.
+    server. timeout_seconds is the configured bound of the call.
     """
 
     try:
@@ -126,7 +126,7 @@ def own_addresses() -> set[str]:
             ["ip", "-o", "addr", "show"],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -178,7 +178,12 @@ def read_passphrase(kp: PyKeePass, entry_title: str) -> str | None:
     return password
 
 
-def _start_agent(passphrase: str, key_path: Path) -> dict[str, str] | None:
+def _start_agent(
+    passphrase: str,
+    key_path: Path,
+    agent_start_timeout_seconds: int,
+    key_unlock_timeout_seconds: int,
+) -> dict[str, str] | None:
     """Start a dedicated ssh-agent and unlock the key; the agent env or None.
 
     The key is passphrase-protected, so it is loaded into a dedicated
@@ -186,12 +191,17 @@ def _start_agent(passphrase: str, key_path: Path) -> dict[str, str] | None:
     echoes the passphrase; after the load the helper is removed, and the
     long-running ssh processes sign through the agent without ever seeing
     the passphrase. A failed agent start or a failed unlock is logged and
-    None is returned.
+    None is returned. agent_start_timeout_seconds bounds the ssh-agent
+    start and key_unlock_timeout_seconds bounds the ssh-add unlock.
     """
 
     try:
         agent_out = subprocess.run(
-            ["ssh-agent", "-s"], capture_output=True, text=True, timeout=15, check=False
+            ["ssh-agent", "-s"],
+            capture_output=True,
+            text=True,
+            timeout=agent_start_timeout_seconds,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(f"cannot start the ssh-agent: {exc}")
@@ -228,7 +238,7 @@ def _start_agent(passphrase: str, key_path: Path) -> dict[str, str] | None:
             env=add_env,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=key_unlock_timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -639,7 +649,7 @@ def main() -> None:
         )
         raise SystemExit(1)
     servers = read_server_addresses(kp, pf.vault_group_title)
-    own = own_addresses()
+    own = own_addresses(pf.own_addresses_timeout_seconds)
     servers, skipped = filter_own_servers(servers, own)
     if skipped:
         _log(f"skipping own server address(es): {', '.join(skipped)}")
@@ -668,7 +678,12 @@ def main() -> None:
             priority=pf.error_priority,
         )
         raise SystemExit(1)
-    env = _start_agent(passphrase, key_path)
+    env = _start_agent(
+        passphrase,
+        key_path,
+        pf.agent_start_timeout_seconds,
+        pf.key_unlock_timeout_seconds,
+    )
     if env is None:
         _log("cannot unlock the port-forwarding key", priority=pf.error_priority)
         raise SystemExit(1)

@@ -657,7 +657,9 @@ def _verify_system(
     ]
     result = run_command(command, check=False, capture=True, timeout=timeout)
     if result.returncode != 0:
-        excerpt = (result.stdout + result.stderr).strip()[:200] or "<no output>"
+        excerpt = (
+            result.stdout + result.stderr
+        ).strip()[: cfg.verification_error_excerpt_length] or "<no output>"
         return f"system DNS verification failed: {excerpt}", None
     route_error = _resolved_uses_dnsproxy(cfg, timeout)
     if route_error is not None:
@@ -708,7 +710,7 @@ def _service_log(cfg: DnsproxySetupConfig, timeout: float) -> str:
         result = run_command(command, check=False, capture=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return ""
-    return (result.stdout + result.stderr).strip()[-400:]
+    return (result.stdout + result.stderr).strip()[-cfg.service_log_excerpt_length :]
 
 
 def _revert(

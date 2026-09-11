@@ -389,6 +389,9 @@ def base_config() -> str:
         "server_alive_interval_seconds = 61\n"
         "server_alive_count_max = 3\n"
         "connect_timeout_seconds = 31\n"
+        "own_addresses_timeout_seconds = 15\n"
+        "agent_start_timeout_seconds = 15\n"
+        "key_unlock_timeout_seconds = 30\n"
         "backoff_base_seconds = 2\n"
         "backoff_multiplier = 2\n"
         "backoff_max_seconds = 1024\n"
@@ -433,10 +436,12 @@ def base_config() -> str:
         'nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]\n'
         'verification_domain = "example.com"\n'
         'verification_command = ["resolvectl", "query", "--cache=no", "{domain}"]\n'
+        'verification_error_excerpt_length = 200\n'
         'ss_tcp_listen_command = ["ss", "-lntp"]\n'
         'ss_udp_listen_command = ["ss", "-lunp"]\n'
         'kill_command = ["kill"]\n'
         'service_log_command = ["journalctl", "-u", "{unit}", "--no-pager", "-n", "20"]\n'
+        'service_log_excerpt_length = 400\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\nprofile_id_file_mode = "0644"\n'
         "[rustdesk_setup]\n"
         'github_repo = "rustdesk/rustdesk"\n'
