@@ -1,4 +1,4 @@
-# Pyntara 0.3.235
+# Pyntara 0.3.236
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -92,6 +92,7 @@ testable in code:
 Spec — functional specification, what the system does and how. Design rationale, formulas,
 parameters. May reference contracts but never repeat them:
 
+[docs/spec/config-content.md](docs/spec/config-content.md) — what the config holds, type by type, the closed list of exceptions and the rule that everything else is a config value  
 [docs/spec/install-modes.md](docs/spec/install-modes.md) — minimal/server/desktop modes, auto-detection, task and force selection  
 [docs/spec/secrets-model.md](docs/spec/secrets-model.md) — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback  
 [docs/spec/system-metrics.md](docs/spec/system-metrics.md) — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive  
