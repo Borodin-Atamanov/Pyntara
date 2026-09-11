@@ -145,8 +145,8 @@ modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
 name = "chrome_setup"
-description = "Install Google Chrome and apply the browser settings from the chromium-default-settings repository."
-depends = []
+description = "Install Google Chrome, apply the browser settings from the chromium-default-settings repository, and start the browser through the local Xray proxy with the DevTools listener."
+depends = ["three_x_ui_xray_setup"]
 modes = ["desktop"]
 
 [[tasks]]

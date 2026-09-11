@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -50,6 +51,11 @@ DESKTOP_SOURCE = (
     "Exec=/usr/bin/google-chrome-stable\n"
 )
 CDP_FLAGS = " --remote-debugging-port=19222 --remote-debugging-address=127.0.0.1"
+# The local proxy of the repository [three_x_ui_xray_setup] section and the
+# flag the override receives while a listener answers on its port.
+LOCAL_PROXY_PORT = 10800
+CDP_PORT = 19222
+PROXY_FLAG = f" --proxy-server=socks5://127.0.0.1:{LOCAL_PROXY_PORT}"
 # The launcher id the task pins and the appletsrc groups of the two task
 # manager widgets it appears under in the fixture.
 PINNED_LAUNCHER = "applications:google-chrome.desktop"
@@ -89,6 +95,9 @@ def _test_config(tmp_path: Path) -> Config:
         chrome_home_dir=str(tmp_path / "home"),
         chrome_settings_dir=tmp_path / "repo",
         chrome_system_root=tmp_path / "root",
+        chrome_profile_mirror_path=(
+            tmp_path / "home" / ".config" / "google-chrome-cdp"
+        ),
         chrome_apt_source_path=(
             tmp_path / "etc" / "apt" / "sources.list.d" / "google-chrome.sources"
         ),
@@ -97,6 +106,7 @@ def _test_config(tmp_path: Path) -> Config:
         chrome_desktop_override_path=(
             tmp_path / "usr" / "local" / "share" / "applications" / "google-chrome.desktop"
         ),
+        systemd_unit_dir=tmp_path / "systemd",
     )
 
 
@@ -202,13 +212,20 @@ def _fake_run_factory(
     git_head: str = "a" * 40,
     git_fetch: str = "a" * 40,
     clone_creates_dir: bool = False,
+    local_proxy_listening: bool = True,
+    cdp_listening: bool = True,
+    mirror_mounted: bool = True,
+    mirror_source: str = "",
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
     curl writes the armored key bytes to its --output target, gpg copies
     them to the keyring, dpkg-query answers the install state, apt-get and
-    git succeed, pgrep answers the Chrome running state and runuser
-    succeeds. Failure knobs raise CalledProcessError for curl, apt and git.
+    git succeed, pgrep answers the Chrome running state, ss answers the
+    listener question of the local proxy and of the DevTools port, findmnt
+    reports the mirror as a bind mount of the profile directory and runuser
+    succeeds. Failure knobs raise CalledProcessError for curl, apt and git;
+    the listening and mounting knobs answer the readiness questions.
     """
 
     calls: list[list[str]] = []
@@ -247,6 +264,23 @@ def _fake_run_factory(
             return _FakeProc(0, "")
         if name == "pgrep":
             return _FakeProc(0 if chrome_running else 1, "")
+        if name == "ss":
+            port = int(command[-1].rsplit(":", 1)[1])
+            listening = cdp_listening if port == CDP_PORT else local_proxy_listening
+            if not listening:
+                return _FakeProc(0, "")
+            return _FakeProc(
+                0,
+                f"LISTEN 0 4096 127.0.0.1:{port} 0.0.0.0:* "
+                'users:(("xray",pid=111,fd=7))\n',
+            )
+        if name == "findmnt":
+            if not mirror_mounted:
+                return _FakeProc(0, "/ /\n")
+            profile_dir = mirror_source or str(
+                Path(command[-1]).parent / "google-chrome"
+            )
+            return _FakeProc(0, f"{command[-1]} {profile_dir}\n")
         if name == "runuser":
             return _FakeProc(0, "")
         return _FakeProc(0, "")
@@ -261,6 +295,13 @@ def test_chrome_setup_is_in_desktop_default_set() -> None:
     assert "chrome_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
 
 
+def test_chrome_setup_depends_on_the_xray_task() -> None:
+    resolved = task_catalog.resolve(["chrome_setup"], REAL_TASKS)
+
+    assert resolved.index("three_x_ui_xray_setup") < resolved.index("chrome_setup")
+    assert "yggdrasil_service_setup" in resolved
+
+
 def test_real_config_names_google_repo_cdp_and_system_root() -> None:
     config = load_config(REPO_ROOT / "config")
     assert config.chrome_setup.username == "i"
@@ -273,6 +314,12 @@ def test_real_config_names_google_repo_cdp_and_system_root() -> None:
     assert config.chrome_setup.cdp_address == "127.0.0.1"
     assert config.chrome_setup.desktop_override_path == Path(
         "/usr/local/share/applications/google-chrome.desktop"
+    )
+    assert config.chrome_setup.profile_mirror_path == Path(
+        "/home/i/.config/google-chrome-cdp"
+    )
+    assert config.chrome_setup.mount_service_unit_name == (
+        "mount_chrome_user_dir.service"
     )
 
 
@@ -296,14 +343,162 @@ def test_source_text_mentions_google_repo_and_keyring() -> None:
 
 
 def test_desktop_content_appends_flags_to_each_exec() -> None:
-    content = chrome_setup._desktop_content(DESKTOP_SOURCE, 19222, "127.0.0.1")
+    content = chrome_setup._desktop_content(
+        DESKTOP_SOURCE,
+        CDP_PORT,
+        "127.0.0.1",
+        proxy_server=f"socks5://127.0.0.1:{LOCAL_PROXY_PORT}",
+        user_data_dir="/home/i/.config/google-chrome-cdp",
+    )
+    exec_lines = [
+        line for line in content.splitlines() if line.startswith("Exec=")
+    ]
+    assert len(exec_lines) == 2
+    for line in exec_lines:
+        assert line.endswith(
+            PROXY_FLAG
+            + " --user-data-dir=/home/i/.config/google-chrome-cdp"
+            + CDP_FLAGS
+        )
+    assert "Name=Google Chrome" in content
+
+
+def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
+    content = chrome_setup._desktop_content(
+        DESKTOP_SOURCE,
+        CDP_PORT,
+        "127.0.0.1",
+        proxy_server="",
+        user_data_dir="",
+    )
     exec_lines = [
         line for line in content.splitlines() if line.startswith("Exec=")
     ]
     assert len(exec_lines) == 2
     for line in exec_lines:
         assert line.endswith(CDP_FLAGS)
-    assert "Name=Google Chrome" in content
+        assert "--proxy-server" not in line
+        assert "--user-data-dir" not in line
+
+
+def test_local_proxy_server_reads_the_three_x_ui_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    _fake_run_factory(monkeypatch)
+    client_config = replace(
+        ctx.config.three_x_ui_xray_setup, local_proxy_port=10888
+    )
+
+    proxy_server, note = chrome_setup._local_proxy_server(
+        client_config, timeout=60
+    )
+
+    assert proxy_server == "socks5://127.0.0.1:10888"
+    assert note is None
+
+
+def test_local_proxy_server_without_a_listener_returns_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    _fake_run_factory(monkeypatch, local_proxy_listening=False)
+
+    proxy_server, note = chrome_setup._local_proxy_server(
+        ctx.config.three_x_ui_xray_setup, timeout=60
+    )
+
+    assert proxy_server == ""
+    assert note is not None
+    assert f"no local proxy listens on 127.0.0.1:{LOCAL_PROXY_PORT}" in note
+
+
+def test_local_proxy_server_without_configured_address_returns_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    calls = _fake_run_factory(monkeypatch)
+    client_config = replace(
+        ctx.config.three_x_ui_xray_setup, local_proxy_listen_address=""
+    )
+
+    proxy_server, note = chrome_setup._local_proxy_server(
+        client_config, timeout=60
+    )
+
+    assert proxy_server == ""
+    assert note is not None
+    assert "carries no local proxy address" in note
+    assert not calls
+
+
+def test_full_flow_mounts_the_profile_mirror_and_enables_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    calls = _fake_run_factory(monkeypatch, chrome_installed=False)
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    unit_file = ctx.config.engine.systemd_unit_dir / cfg.mount_service_unit_name
+    unit_text = unit_file.read_text(encoding="utf-8")
+    profile_dir = chrome_setup._profile_dir(cfg.home_dir)
+    assert (
+        f"ExecStart=/usr/bin/mount --bind {profile_dir} {cfg.profile_mirror_path}"
+        in unit_text
+    )
+    assert f"ExecStartPre=/usr/bin/install -d -o {cfg.username}" in unit_text
+    assert ["systemctl", "daemon-reload"] in calls
+    assert ["systemctl", "enable", "--now", cfg.mount_service_unit_name] in calls
+    override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
+    assert PROXY_FLAG in override_text
+    assert f" --user-data-dir={cfg.profile_mirror_path}" in override_text
+
+
+def test_mirror_that_is_not_mounted_keeps_the_user_data_dir_flag_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    _fake_run_factory(monkeypatch, chrome_installed=True, mirror_mounted=False)
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    assert any("is not mounted" in warning for warning in result.warnings)
+    override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
+    assert "--user-data-dir" not in override_text
+    assert PROXY_FLAG in override_text
+    assert CDP_FLAGS in override_text
+
+
+def test_cdp_listener_warning_when_chrome_runs_without_the_listener(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    _fake_run_factory(
+        monkeypatch,
+        chrome_installed=True,
+        chrome_running=True,
+        cdp_listening=False,
+    )
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    assert any(
+        "the DevTools listener does not answer" in warning
+        for warning in result.warnings
+    )
 
 
 def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -459,6 +654,9 @@ def test_second_run_changes_nothing_when_target_reached(
     assert "already set up" in (result.message or "")
     assert not any(call[0] == "curl" for call in calls)
     assert not any(call[0] == "apt-get" for call in calls)
+    assert not any(
+        call[:2] == ["systemctl", "daemon-reload"] for call in calls
+    )
 
 
 def test_merge_restores_repo_value_keeping_unrelated(

@@ -1,0 +1,14 @@
+[Unit]
+Description=Bind mount the live Google Chrome profile for the DevTools listener
+RequiresMountsFor=$profile_dir
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/install -d -o $username $mirror_path
+ExecStart=/usr/bin/mount --bind $profile_dir $mirror_path
+ExecStop=/usr/bin/umount $mirror_path
+
+[Install]
+WantedBy=multi-user.target

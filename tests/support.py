@@ -310,6 +310,7 @@ def make_config(
     chrome_desktop_override_path: Path = Path(
         "/usr/local/share/applications/google-chrome.desktop"
     ),
+    chrome_profile_mirror_path: Path = Path("/home/i/.config/google-chrome-cdp"),
     vocalinux_home_dir: str = "/home/i",
     vocalinux_download_dir: Path = Path("/var/cache/pyntara/vocalinux"),
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
@@ -668,6 +669,7 @@ def make_config(
             keyring_path=chrome_keyring_path,
             desktop_source_path=chrome_desktop_source_path,
             desktop_override_path=chrome_desktop_override_path,
+            profile_mirror_path=chrome_profile_mirror_path,
         ),
         local_vault_setup=replace(
             base.local_vault_setup,

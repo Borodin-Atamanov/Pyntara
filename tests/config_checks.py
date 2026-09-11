@@ -335,6 +335,16 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
                 "chrome_setup.desktop_override_path",
             )
         ),
+        profile_mirror_path=Path(
+            _nonempty_string_field(
+                raw.get("profile_mirror_path"),
+                "chrome_setup.profile_mirror_path",
+            )
+        ),
+        mount_service_unit_name=_nonempty_string_field(
+            raw.get("mount_service_unit_name"),
+            "chrome_setup.mount_service_unit_name",
+        ),
         cdp_port=cdp_port,
         cdp_address=_nonempty_string_field(
             raw.get("cdp_address"), "chrome_setup.cdp_address"

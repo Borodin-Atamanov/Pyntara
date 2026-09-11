@@ -21,10 +21,15 @@ class ChromeSetupConfig:
     deb822 source at apt_source_path, whose Signed-By keyring lives at
     keyring_path and is downloaded from google_key_url when missing.
     desktop_override_path receives the packaged desktop entry at
-    desktop_source_path with the CDP flags appended to every Exec line: the
-    debug port cdp_port bound to the loopback address cdp_address
-    (docs/spec/chrome-setup.md). file_mode is the mode of every deployed
-    configuration and desktop file.
+    desktop_source_path with the launch flags appended to every Exec line:
+    the local SOCKS5 proxy of the three_x_ui_xray_setup section when it
+    listens, the profile mirror at profile_mirror_path, and the debug port
+    cdp_port bound to the loopback address cdp_address
+    (docs/spec/chrome-setup.md). profile_mirror_path is a bind mount of
+    home_dir/.config/google-chrome, because branded Chrome refuses the CDP
+    listener on the default data directory; the oneshot unit
+    mount_service_unit_name restores the mount at every boot. file_mode is
+    the mode of every deployed configuration and desktop file.
     """
 
     username: str
@@ -38,6 +43,8 @@ class ChromeSetupConfig:
     google_key_url: str
     desktop_source_path: Path
     desktop_override_path: Path
+    profile_mirror_path: Path
+    mount_service_unit_name: str
     cdp_port: int
     cdp_address: str
     file_mode: int

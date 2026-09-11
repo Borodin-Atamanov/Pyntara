@@ -25,6 +25,8 @@ CHROME_BLOCK = (
     'google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"\n'
     'desktop_source_path = "/usr/share/applications/google-chrome.desktop"\n'
     'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n'
+    'profile_mirror_path = "/home/i/.config/google-chrome-cdp"\n'
+    'mount_service_unit_name = "mount_chrome_user_dir.service"\n'
     "cdp_port = 19222\n"
     'cdp_address = "127.0.0.1"\n'
 )
@@ -75,6 +77,16 @@ CHROME_BLOCK = (
         base_config().replace(
             'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n',
             'desktop_override_path = ""\n',
+        ),
+        # profile_mirror_path is a number, not a string
+        base_config().replace(
+            'profile_mirror_path = "/home/i/.config/google-chrome-cdp"\n',
+            "profile_mirror_path = 7\n",
+        ),
+        # mount_service_unit_name is empty
+        base_config().replace(
+            'mount_service_unit_name = "mount_chrome_user_dir.service"\n',
+            'mount_service_unit_name = ""\n',
         ),
         # cdp_port is zero
         base_config().replace("cdp_port = 19222\n", "cdp_port = 0\n"),
@@ -131,6 +143,12 @@ def test_load_config_typed_values(tmp_path: Path) -> None:
     )
     assert config.chrome_setup.desktop_override_path == Path(
         "/usr/local/share/applications/google-chrome.desktop"
+    )
+    assert config.chrome_setup.profile_mirror_path == Path(
+        "/home/i/.config/google-chrome-cdp"
+    )
+    assert config.chrome_setup.mount_service_unit_name == (
+        "mount_chrome_user_dir.service"
     )
     assert config.chrome_setup.cdp_port == 19222
     assert config.chrome_setup.cdp_address == "127.0.0.1"

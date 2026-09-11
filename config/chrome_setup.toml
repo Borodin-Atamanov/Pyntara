@@ -13,10 +13,13 @@
 # relative paths preserved. The Google apt repository is registered through
 # the deb822 source apt_source_path with the keyring at keyring_path,
 # downloaded from google_key_url. desktop_override_path receives the
-# packaged desktop entry desktop_source_path with the CDP flags appended to
-# every Exec line: the debug port cdp_port on the address cdp_address,
-# which listens on the loopback only. file_mode is the mode of every
-# deployed configuration and desktop file.
+# packaged desktop entry desktop_source_path with the launch flags appended
+# to every Exec line: the local SOCKS5 proxy of the three_x_ui_xray_setup
+# section when it listens on its port, the profile mirror
+# profile_mirror_path that makes the DevTools listener work with the live
+# profile, and the debug port cdp_port on the address cdp_address, which
+# listens on the loopback only. file_mode is the mode of every deployed
+# configuration and desktop file.
 username = "i"
 home_dir = "/home/i"
 settings_repo_url = "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
@@ -28,6 +31,16 @@ keyring_path = "/usr/share/keyrings/google-chrome.gpg"
 google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"
 desktop_source_path = "/usr/share/applications/google-chrome.desktop"
 desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
+# Path of the profile mirror: a bind mount of home_dir/.config/google-chrome
+# that the task creates and the unit below restores at every boot. Branded
+# Google Chrome refuses the DevTools listener on the default data directory
+# and asks for a non-default one, so Chrome is started with
+# --user-data-dir on this second path: the same live profile under another
+# directory name, cookies and logins included.
+profile_mirror_path = "/home/i/.config/google-chrome-cdp"
+# Name of the oneshot systemd unit that bind mounts the profile mirror, so
+# the DevTools listener keeps working after a reboot.
+mount_service_unit_name = "mount_chrome_user_dir.service"
 cdp_port = 19222
 cdp_address = "127.0.0.1"
 file_mode = "0644"

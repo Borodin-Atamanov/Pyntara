@@ -9,9 +9,23 @@ installs google-chrome-stable when missing, clones or updates the settings
 repository into the root cache, deploys its system/ tree (the machine
 policy and the external extension files) under the configured system root,
 merges its Default/Preferences over the live profile of the desktop user,
-and writes a desktop entry override that appends the CDP flags to every
-Exec line of the packaged entry, and pins that entry to the Plasma
-taskbar of the desktop user so the Chrome button sits in the panel.
+and writes a desktop entry override that appends the launch flags to every
+Exec line of the packaged entry: the local proxy of the
+three_x_ui_xray_setup section when a listener answers on its port, the
+profile mirror, and the CDP listener. The mirror is a bind mount of the
+live profile under profile_mirror_path, restored at every boot by the
+oneshot unit mount_service_unit_name, because branded Chrome refuses the
+DevTools listener on the default data directory. The task then pins the
+entry to the Plasma taskbar of the desktop user so the Chrome button sits
+in the panel.
+
+No piece of the launcher is assumed to be in place. The proxy flag enters
+the entry only when the port of the local proxy answers, because a proxy
+flag with no proxy behind it opens every request with a connection error,
+and the absence is reported as a warning. The --user-data-dir flag enters
+the entry only when the mirror mount is confirmed, because a Chrome start
+on an empty directory would hide the live profile; a mirror that could not
+be mounted is reported as a warning too.
 
 The profile merge is identical in normal and force mode by design: the
 repository preferences are laid over the current profile, so the
@@ -38,18 +52,21 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from string import Template
 
-from pyntara.config import ChromeSetupConfig
+from pyntara.config import ChromeSetupConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
+    REPO_ROOT,
     curl_flags,
     ensure_root_owner,
     install_package_once,
     package_is_installed,
+    port_listener_pid,
     run_command,
     trim_whitespace,
 )
@@ -70,9 +87,14 @@ PANEL_LAUNCHER_ID = "applications:google-chrome.desktop"
 SYSTEM_TREE_REL = Path("system")
 # The repository profile file merged over the live Chrome profile.
 REPO_PREFERENCES_REL = Path("Default") / "Preferences"
-# The live profile preferences under the desktop user home.
-PROFILE_PREFERENCES_REL = (
-    Path(".config") / "google-chrome" / "Default" / "Preferences"
+# The live Chrome profile directory under the desktop user home and the
+# preferences file inside it.
+PROFILE_DIR_REL = Path(".config") / "google-chrome"
+PROFILE_PREFERENCES_REL = PROFILE_DIR_REL / "Default" / "Preferences"
+# The template of the oneshot unit that restores the profile mirror bind
+# mount at every boot; the tests monkeypatch this path.
+MIRROR_UNIT_TEMPLATE_PATH = (
+    REPO_ROOT / "task_data" / "chrome_setup" / "mount_chrome_user_dir.service"
 )
 
 
@@ -281,6 +303,12 @@ def _deploy_system_tree(
     return changed, warnings
 
 
+def _profile_dir(home_dir: str) -> Path:
+    """The live Chrome profile directory of the desktop user."""
+
+    return Path(home_dir) / PROFILE_DIR_REL
+
+
 def _profile_preferences_path(home_dir: str) -> Path:
     """The live Chrome profile preferences of the desktop user."""
 
@@ -388,10 +416,168 @@ def _apply_profile_preferences(
     return True, None
 
 
-def _desktop_content(source_text: str, cdp_port: int, cdp_address: str) -> str:
-    """The packaged desktop entry with the CDP flags on every Exec line."""
+def _mirror_is_mounted(
+    profile_dir: Path, mirror_path: Path, timeout: float
+) -> bool:
+    """True when the mirror path is a bind mount of the live profile.
 
-    flags = (
+    findmnt answers the mount that contains the target path: TARGET is that
+    mount point and FSROOT is the directory inside the mounted filesystem the
+    mount starts at. A bind mount of the profile shows the mirror path as the
+    mount point and the profile directory as the filesystem root, while a
+    plain directory reports the mount that encloses it. The source column is
+    not used because findmnt renders a bind mount source as the device with
+    the subdirectory in brackets.
+    """
+
+    result = run_command(
+        [
+            "findmnt",
+            "--noheadings",
+            "--output",
+            "TARGET,FSROOT",
+            "--target",
+            str(mirror_path),
+        ],
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return False
+    fields = trim_whitespace(result.stdout).split()
+    return (
+        len(fields) == 2
+        and fields[0] == str(mirror_path)
+        and fields[1] == str(profile_dir)
+    )
+
+
+def _render_mount_unit(
+    template_path: Path, profile_dir: Path, mirror_path: Path, username: str
+) -> str:
+    """Render the bind mount unit with the profile and mirror paths."""
+
+    template = Template(template_path.read_text(encoding="utf-8"))
+    return template.substitute(
+        profile_dir=str(profile_dir),
+        mirror_path=str(mirror_path),
+        username=username,
+    )
+
+
+def _ensure_profile_mirror(
+    cfg: ChromeSetupConfig,
+    unit_dir: Path,
+    *,
+    force: bool,
+    timeout: float,
+) -> tuple[bool, str | None]:
+    """Mount the live profile on the mirror path and keep it across boots.
+
+    Branded Google Chrome refuses the DevTools listener on the default data
+    directory and asks for a non-default one, so the live profile is bind
+    mounted to a second path and Chrome is started with --user-data-dir on
+    that path: the same files under another directory name. The mount is
+    restored at every boot by the oneshot unit named by
+    mount_service_unit_name, rendered from the template; the unit is written
+    and enabled on every run, so a mirror that was mounted by hand is
+    restored after a reboot too. Returns whether the
+    mirror is mounted; a failure is a note and leaves the caller without the
+    --user-data-dir flag, so a Chrome start never lands on an empty directory
+    while the live profile stays where Chrome expects it.
+    """
+
+    profile_dir = _profile_dir(cfg.home_dir)
+    mirror_path = cfg.profile_mirror_path
+    unit_name = cfg.mount_service_unit_name
+    try:
+        if not profile_dir.is_dir():
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            _own_to_user(cfg.username, profile_dir)
+    except OSError as exc:
+        return (
+            False,
+            f"cannot create the Chrome profile directory {profile_dir}: {exc}",
+        )
+    try:
+        content = _render_mount_unit(
+            MIRROR_UNIT_TEMPLATE_PATH, profile_dir, mirror_path, cfg.username
+        )
+    except OSError as exc:
+        return False, f"cannot read the profile mirror unit template: {exc}"
+    unit_file = unit_dir / unit_name
+    try:
+        current = unit_file.read_text(encoding="utf-8") if unit_file.is_file() else ""
+        if force or current != content:
+            unit_dir.mkdir(parents=True, exist_ok=True)
+            unit_file.write_text(content, encoding="utf-8")
+            unit_file.chmod(cfg.file_mode)
+            ensure_root_owner(unit_file)
+            run_command(["systemctl", "daemon-reload"], timeout=timeout)
+        run_command(["systemctl", "enable", "--now", unit_name], timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"cannot enable the profile mirror mount {unit_name}: {exc}"
+    if not _mirror_is_mounted(profile_dir, mirror_path, timeout):
+        return False, (
+            f"the profile mirror {mirror_path} is not mounted; Chrome starts "
+            "without --user-data-dir and the DevTools listener stays off"
+        )
+    return True, None
+
+
+def _local_proxy_server(
+    cfg: ThreeXuiXraySetupConfig, *, timeout: float
+) -> tuple[str, str | None]:
+    """The SOCKS5 address of the local proxy; (proxy text, note).
+
+    The proxy is the mixed inbound that three_x_ui_xray_setup creates on the
+    loopback address. A machine that is the remote server itself never raises
+    that inbound, and a panel that is down has no listener either, so the port
+    is asked for a listener before the flag enters the desktop entry: Chrome
+    with a proxy flag and no proxy behind it opens every request with a
+    connection error, while Chrome without the flag keeps working. An empty
+    proxy text and a note are returned when no listener answers, so the caller
+    reports the missing proxy instead of writing a flag that cannot work.
+    """
+
+    address = cfg.local_proxy_listen_address
+    port = cfg.local_proxy_port
+    if not address or not port:
+        return "", (
+            "the three_x_ui_xray_setup section carries no local proxy address; "
+            "Chrome starts without the proxy"
+        )
+    if port_listener_pid(port, timeout) is None:
+        return "", (
+            f"no local proxy listens on {address}:{port}; Chrome starts without it"
+        )
+    return f"socks5://{address}:{port}", None
+
+
+def _desktop_content(
+    source_text: str,
+    cdp_port: int,
+    cdp_address: str,
+    *,
+    proxy_server: str,
+    user_data_dir: str,
+) -> str:
+    """The packaged desktop entry with the launch flags on every Exec line.
+
+    Each Exec line receives, in order, the local proxy the browser must use,
+    the profile mirror that makes the DevTools listener work with the live
+    profile, and the DevTools listener itself. An empty proxy or an empty
+    mirror leaves its flag out, so a piece that is not in place costs the
+    browser that one flag instead of the whole start.
+    """
+
+    flags = ""
+    if proxy_server:
+        flags += f" --proxy-server={proxy_server}"
+    if user_data_dir:
+        flags += f" --user-data-dir={user_data_dir}"
+    flags += (
         f" --remote-debugging-port={cdp_port} "
         f"--remote-debugging-address={cdp_address}"
     )
@@ -405,18 +591,26 @@ def _desktop_content(source_text: str, cdp_port: int, cdp_address: str) -> str:
 
 
 def _ensure_desktop_override(
-    cfg: ChromeSetupConfig, *, force: bool
+    cfg: ChromeSetupConfig,
+    *,
+    proxy_server: str,
+    user_data_dir: str,
+    force: bool,
 ) -> tuple[bool, str | None]:
-    """Write the CDP desktop override; (changed, warning)."""
+    """Write the desktop override with the launch flags; (changed, warning)."""
 
     source = cfg.desktop_source_path
     if not source.is_file():
         return (
             False,
-            f"the packaged desktop entry is missing; CDP flags not applied: {source}",
+            f"the packaged desktop entry is missing; launch flags not applied: {source}",
         )
     content = _desktop_content(
-        source.read_text(encoding="utf-8"), cfg.cdp_port, cfg.cdp_address
+        source.read_text(encoding="utf-8"),
+        cfg.cdp_port,
+        cfg.cdp_address,
+        proxy_server=proxy_server,
+        user_data_dir=user_data_dir,
     )
     target = cfg.desktop_override_path
     try:
@@ -669,12 +863,35 @@ def task(ctx: Context) -> TaskResult:
         )
         changed = True
 
-    override_changed, override_note = _ensure_desktop_override(cfg, force=force)
+    _log("checking the local proxy of the Xray client")
+    proxy_server, proxy_note = _local_proxy_server(
+        ctx.config.three_x_ui_xray_setup, timeout=timeout
+    )
+    if proxy_note:
+        warnings.append(proxy_note)
+    else:
+        _log(f"Chrome starts with the local proxy {proxy_server}")
+
+    _log("mounting the Chrome profile mirror for the DevTools listener")
+    mirror_mounted, mirror_note = _ensure_profile_mirror(
+        cfg, ctx.config.engine.systemd_unit_dir, force=force, timeout=timeout
+    )
+    if mirror_note:
+        warnings.append(mirror_note)
+    else:
+        _log(f"the profile mirror is mounted at {cfg.profile_mirror_path}")
+
+    override_changed, override_note = _ensure_desktop_override(
+        cfg,
+        proxy_server=proxy_server,
+        user_data_dir=str(cfg.profile_mirror_path) if mirror_mounted else "",
+        force=force,
+    )
     if override_note:
         warnings.append(override_note)
     if override_changed:
         messages.append(
-            f"wrote the CDP desktop entry to {cfg.desktop_override_path}"
+            f"wrote the browser launcher entry to {cfg.desktop_override_path}"
         )
         changed = True
         menu_note = _refresh_menu_database(cfg, timeout=timeout)
@@ -707,6 +924,19 @@ def task(ctx: Context) -> TaskResult:
             OSError,
         ) as exc:
             warnings.append(f"cannot restart the Plasma panel: {exc}")
+
+    if port_listener_pid(cfg.cdp_port, timeout) is None:
+        if _chrome_is_running(timeout):
+            warnings.append(
+                "Chrome is running but the DevTools listener does not answer on "
+                f"{cfg.cdp_address}:{cfg.cdp_port}; restart Chrome from the menu "
+                "so the launcher flags apply"
+            )
+        else:
+            _log(
+                "the DevTools listener starts with the next Chrome launch from "
+                f"the menu, on {cfg.cdp_address}:{cfg.cdp_port}"
+            )
 
     if not messages:
         messages.append("browser already set up")
