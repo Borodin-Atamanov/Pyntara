@@ -1653,6 +1653,25 @@ def _playwright_setup_table(raw: object) -> PlaywrightSetupConfig:
         cli_package=_nonempty_string_field(
             raw.get("cli_package"), "playwright_setup.cli_package"
         ),
+        user_prefix_relative_path=_nonempty_string_field(
+            raw.get("user_prefix_relative_path"),
+            "playwright_setup.user_prefix_relative_path",
+        ),
+        cli_bin_relative_path=_nonempty_string_field(
+            raw.get("cli_bin_relative_path"),
+            "playwright_setup.cli_bin_relative_path",
+        ),
+        runuser_command=_string_list(
+            raw.get("runuser_command"), "playwright_setup.runuser_command"
+        ),
+        cli_version_command=_string_list(
+            raw.get("cli_version_command"),
+            "playwright_setup.cli_version_command",
+        ),
+        npm_install_command=_string_list(
+            raw.get("npm_install_command"),
+            "playwright_setup.npm_install_command",
+        ),
         npm_install_timeout_seconds=_int_field(
             raw.get("npm_install_timeout_seconds"),
             "playwright_setup.npm_install_timeout_seconds",

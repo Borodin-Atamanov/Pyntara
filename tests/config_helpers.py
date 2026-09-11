@@ -526,6 +526,11 @@ def base_config() -> str:
         "package_status_timeout_seconds = 30\n"
         "package_install_retries = 3\n"
         'cli_package = "@playwright/cli"\n'
+        'user_prefix_relative_path = ".local"\n'
+        'cli_bin_relative_path = "bin/playwright-cli"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}"]\n'
+        'cli_version_command = ["{cli_bin}", "--version"]\n'
+        'npm_install_command = ["npm", "install", "-g", "{cli_package}", "--prefix", "{prefix}"]\n'
         "npm_install_timeout_seconds = 900\n"
         "[vocalinux_setup]\n"
         'username = "i"\n'

@@ -22,5 +22,18 @@ package_status_timeout_seconds = 30
 package_install_retries = 3
 # The npm package that provides the playwright-cli binary.
 cli_package = "@playwright/cli"
+# Path of the user prefix that receives the install, relative to home_dir.
+user_prefix_relative_path = ".local"
+# Path of the playwright-cli binary, relative to that prefix.
+cli_bin_relative_path = "bin/playwright-cli"
+# Command that runs another command as the desktop user; {username} and
+# {home_dir} are replaced with the account and the home directory above.
+runuser_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}"]
+# Command that prints the version of the installed binary; {cli_bin} is the
+# binary path. An answer is the proof that the tool is installed.
+cli_version_command = ["{cli_bin}", "--version"]
+# Command that installs the npm package into the user prefix; {cli_package}
+# and {prefix} are replaced with the package and the prefix path.
+npm_install_command = ["npm", "install", "-g", "{cli_package}", "--prefix", "{prefix}"]
 # Seconds a single npm install command may run before it is killed.
 npm_install_timeout_seconds = 900

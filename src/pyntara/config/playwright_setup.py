@@ -16,4 +16,9 @@ class PlaywrightSetupConfig:
     package_status_timeout_seconds: int
     package_install_retries: int
     cli_package: str
+    user_prefix_relative_path: str
+    cli_bin_relative_path: str
+    runuser_command: tuple[str, ...]
+    cli_version_command: tuple[str, ...]
+    npm_install_command: tuple[str, ...]
     npm_install_timeout_seconds: int

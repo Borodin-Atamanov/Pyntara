@@ -17,9 +17,14 @@ The target state is reached when every configured apt package is installed and t
 ## Parameters
 
 username - the desktop user whose prefix receives playwright-cli
-home_dir - the home of that user; the prefix home_dir/.local and the binary path are derived under it
+home_dir - the home of that user; the prefix and the binary path are derived under it
 packages - the apt packages that provide the npm runtime, nodejs and npm
 package_status_timeout_seconds - seconds the dpkg status query may take
 package_install_retries - retry attempts after a failed package install
 cli_package - the npm package that provides the playwright-cli binary
+user_prefix_relative_path - the install prefix under home_dir, .local in the shipped config
+cli_bin_relative_path - the binary path inside that prefix, bin/playwright-cli in the shipped config
+runuser_command - the command that runs another command as the desktop user, with {username} and {home_dir} as its placeholders
+cli_version_command - the command that prints the version of the installed binary, with {cli_bin} as its placeholder
+npm_install_command - the install command, with {cli_package} and {prefix} as its placeholders
 npm_install_timeout_seconds - seconds a single npm install command may run

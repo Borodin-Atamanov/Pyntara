@@ -5,14 +5,15 @@ drives the Google Chrome installed by chrome_setup over its Chrome
 DevTools Protocol listener on the loopback address. The task installs the
 nodejs and npm packages from the Ubuntu archive (nodejs lives in the
 universe component, enabled by add_extra_repos, a hard dependency of the
-task) and then installs the npm package cli_package into the user prefix
-home_dir/.local of the desktop user with npm install -g --prefix, running
-npm as that user through runuser. The binary lands at
-home_dir/.local/bin/playwright-cli inside the user home, so no root-owned
+task) and then installs the npm package cli_package into the user prefix under
+home_dir (user_prefix_relative_path) with the configured npm install
+command, running it as the desktop user through the configured runuser
+command. The binary lands at cli_bin_relative_path inside that prefix, so
+no root-owned
 npm prefix is used and the plain user can update it. The version is not
 chased: npm installs the latest release, and a rerun whose configured apt
-packages are installed and whose playwright-cli binary is present and
-answers --version changes nothing (docs/spec/playwright-setup.md). Force
+packages are installed and whose playwright-cli binary answers the
+version command changes nothing (docs/spec/playwright-setup.md). Force
 mode re-runs the npm install regardless of the current binary.
 """
 
@@ -28,35 +29,34 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import install_packages, package_is_installed, run_command
 
-# The user prefix that receives the playwright-cli install and the binary
-# path inside it; both are derived under the desktop user home.
-USER_PREFIX_REL = Path(".local")
-CLI_BIN_REL = Path("bin") / "playwright-cli"
+
+def _substituted_command(
+    command: tuple[str, ...], values: dict[str, str]
+) -> list[str]:
+    """The configured command with its {placeholders} filled in."""
+
+    return [part.format(**values) for part in command]
 
 
 def _user_prefix(cfg: PlaywrightSetupConfig) -> Path:
     """The npm prefix under the desktop user home."""
 
-    return Path(cfg.home_dir) / USER_PREFIX_REL
+    return Path(cfg.home_dir) / cfg.user_prefix_relative_path
 
 
 def _cli_bin_path(cfg: PlaywrightSetupConfig) -> Path:
     """The playwright-cli binary path inside the user prefix."""
 
-    return _user_prefix(cfg) / CLI_BIN_REL
+    return _user_prefix(cfg) / cfg.cli_bin_relative_path
 
 
 def _runuser_command(cfg: PlaywrightSetupConfig) -> list[str]:
     """The runuser prefix that runs a command as the desktop user."""
 
-    return [
-        "runuser",
-        "-u",
-        cfg.username,
-        "--",
-        "env",
-        f"HOME={cfg.home_dir}",
-    ]
+    return _substituted_command(
+        cfg.runuser_command,
+        {"username": cfg.username, "home_dir": cfg.home_dir},
+    )
 
 
 def _cli_version(cfg: PlaywrightSetupConfig, *, timeout: float) -> str:
@@ -73,7 +73,8 @@ def _cli_version(cfg: PlaywrightSetupConfig, *, timeout: float) -> str:
         return ""
     try:
         result = run_command(
-            _runuser_command(cfg) + [str(binary), "--version"],
+            _runuser_command(cfg)
+            + _substituted_command(cfg.cli_version_command, {"cli_bin": str(binary)}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -143,14 +144,13 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _runuser_command(cfg)
-            + [
-                "npm",
-                "install",
-                "-g",
-                cfg.cli_package,
-                "--prefix",
-                str(_user_prefix(cfg)),
-            ],
+            + _substituted_command(
+                cfg.npm_install_command,
+                {
+                    "cli_package": cfg.cli_package,
+                    "prefix": str(_user_prefix(cfg)),
+                },
+            ),
             timeout=cfg.npm_install_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:

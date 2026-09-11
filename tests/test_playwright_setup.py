@@ -8,6 +8,7 @@ the real npm registry (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -44,8 +45,11 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
 
 
 def _cli_bin(cfg: Config) -> Path:
+    setup = cfg.playwright_setup
     return (
-        Path(cfg.playwright_setup.home_dir) / ".local" / "bin" / "playwright-cli"
+        Path(setup.home_dir)
+        / setup.user_prefix_relative_path
+        / setup.cli_bin_relative_path
     )
 
 
@@ -57,13 +61,14 @@ def _fake_run_factory(
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
-    dpkg-query reports the configured package state, a runuser command
-    that carries --version answers the version probe, and a runuser npm
-    install creates the playwright-cli binary under its --prefix so the
-    read-back after the install succeeds. A nonzero npm_rc makes the npm
-    install raise, which stands for a failed install.
+    dpkg-query reports the configured package state, a command that carries
+    --version answers the version probe whatever prefix runs it, and a
+    command that carries --prefix creates the playwright-cli binary under
+    that prefix so the read-back after the install succeeds. A nonzero
+    npm_rc makes the install raise, which stands for a failed install.
     """
 
+    binary_rel = make_config().playwright_setup.cli_bin_relative_path
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -71,13 +76,13 @@ def _fake_run_factory(
         if command[0] == "dpkg-query":
             status = "install ok installed" if dpkg_installed else "deinstall ok config-files"
             return _FakeProc(0, stdout=status)
-        if command[0] == "runuser":
-            if "--version" in command:
-                return _FakeProc(0, stdout=VERSION)
+        if "--version" in command:
+            return _FakeProc(0, stdout=VERSION)
+        if "--prefix" in command:
             if npm_rc != 0 and kwargs.get("check", True):
                 raise subprocess.CalledProcessError(npm_rc, command)
             prefix_index = command.index("--prefix") + 1
-            binary = Path(command[prefix_index]) / "bin" / "playwright-cli"
+            binary = Path(command[prefix_index]) / binary_rel
             binary.parent.mkdir(parents=True, exist_ok=True)
             binary.write_text("#! /usr/bin/env node\n", encoding="utf-8")
             binary.chmod(0o755)
@@ -144,22 +149,46 @@ def test_installs_playwright_cli_when_missing(
     assert result.changed is True
     assert VERSION in (result.message or "")
     home = Path(config.playwright_setup.home_dir)
+    setup = config.playwright_setup
     npm_call = [
         "runuser",
         "-u",
-        "i",
+        setup.username,
         "--",
         "env",
-        f"HOME={home}",
+        f"HOME={setup.home_dir}",
         "npm",
         "install",
         "-g",
-        "@playwright/cli",
+        setup.cli_package,
         "--prefix",
-        str(home / ".local"),
+        str(home / setup.user_prefix_relative_path),
     ]
     assert npm_call in calls
     assert _cli_bin(config).is_file()
+
+
+def test_runuser_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another runuser template in the config is the prefix the task runs,
+    # so the command shape is not a value of the module.
+    calls = _fake_run_factory(monkeypatch)
+    ctx = _ctx(tmp_path)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(
+            config,
+            playwright_setup=replace(
+                config.playwright_setup,
+                runuser_command=("sudo", "-u", "{username}", "env"),
+            ),
+        ),
+    )
+    result = playwright_setup.task(ctx)
+    assert result.success is True
+    assert any(command[:4] == ["sudo", "-u", "i", "env"] for command in calls)
 
 
 def test_force_reinstalls_even_when_installed(
