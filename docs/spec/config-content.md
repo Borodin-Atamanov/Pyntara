@@ -119,13 +119,12 @@ Every permission the run gives a file is a config value, without exception:
 the mode that is applied, the mode that is restored, the mode a temporary file
 carries while it waits to be moved into place, and the masks and bits a check
 uses to inspect a mode. A value of this kind is written as an octal string such
-as "0600", because TOML has no octal literal.
-
-The list above holds the keys of this kind: file modes, permission masks that
-select the bits a check compares, and the bit that identifies a kernel
-attribute as readable or write-only. A permission that stays in the code is a
-permission the reader of the config cannot see, so the suite refuses a literal
-file mode in a module (test_config_coverage, no literal file mode).
+as "0600", because TOML has no octal literal, and the keys of this kind are file
+modes, permission masks that select the bits a check compares, and a bit that
+identifies a kernel attribute as readable or write-only. A permission that stays
+in the code is a permission the reader of the config cannot see, so no octal
+literal lives in a module under src/ and the suite refuses one
+(tests/test_config_coverage.py, test_no_module_applies_a_literal_file_mode).
 
 ## Exceptions
 
@@ -175,5 +174,6 @@ tests/test_config_coverage.py.
 
 The migration of the values the code still carries is tracked in
 [docs/TODO.md](../TODO.md): the constants of the task modules, the commands
-assembled inside functions, the paths of the foreign programs, the file names,
-the site addresses, the file modes and the numbers that describe the run.
+assembled inside functions, the paths of the foreign programs, the file names
+and the site addresses. The file modes, the permission masks, the numbers that
+describe the run, REPO_ROOT and the os-release path are done.
