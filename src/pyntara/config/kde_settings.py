@@ -103,4 +103,8 @@ class KdeSettingsConfig:
     sddm_theme_cursor_theme: str
     sddm_theme_font: str
     places_hidden: tuple[str, ...] = ()
+    places_bookmark_namespace: str = ""
+    places_kdepriv_namespace: str = ""
+    places_mime_namespace: str = ""
+    places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

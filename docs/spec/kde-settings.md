@@ -46,6 +46,7 @@ packages, the packages the task ensures are installed.
 username and home_dir, the target user and that user's home directory.  
 user_dirs, the XDG user directories folded into Downloads.  
 places_hidden, the Dolphin Places panel system entries hidden by title in user-places.xbel.  
+places_bookmark_namespace, places_kdepriv_namespace and places_mime_namespace, the XBEL namespaces the task declares on the root tag when Dolphin wrote the file without them, and places_metadata_owner, the owner an entry metadata block must carry before the task may hide that place.  
 color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
 look_and_feel_light, the light theme the day and night switch alternates to.  
 automatic_look_and_feel, whether the native day and night switch is enabled.  

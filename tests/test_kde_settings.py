@@ -8,6 +8,7 @@ run_command inspects the command shape and answers per key.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara.config import KConfigRecord
+from pyntara.config.kde_settings import KdeSettingsConfig
 from pyntara.tasks import kde_settings as task_module
 
 
@@ -1348,10 +1350,36 @@ XBEL = """\
 """
 
 
+def _places_cfg() -> KdeSettingsConfig:
+    """Config of the task with the Places namespaces of the shared document."""
+
+    return make_config().kde_settings
+
+
+def test_places_namespace_address_comes_from_the_config() -> None:
+    # Another address in the config is the address the task declares, so
+    # the namespace of the file is a value and not a literal in the code.
+    cfg = replace(
+        _places_cfg(),
+        places_bookmark_namespace="http://example.invalid/bookmarks",
+    )
+    declared = task_module._declare_missing_prefixes(cfg, "<xbel>")
+    assert 'xmlns:bookmark="http://example.invalid/bookmarks"' in declared
+
+
+def test_places_metadata_owner_comes_from_the_config() -> None:
+    # Only a metadata block with the configured owner may be hidden: with
+    # another owner in the config the same file is left unchanged.
+    cfg = replace(
+        _places_cfg(), places_metadata_owner="http://example.invalid/owner"
+    )
+    assert task_module._places_xbel_hidden(cfg, XBEL, {"Home"}) is None
+
+
 def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
     # Home is matched by its title and hidden, Downloads stays visible,
     # and the machine-specific device separator survives untouched.
-    out = task_module._places_xbel_hidden(XBEL, {"Home"})
+    out = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home
@@ -1362,9 +1390,10 @@ def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
 
 def test_places_xbel_hidden_idempotent() -> None:
     # A second pass over an already hidden file changes nothing.
-    out = task_module._places_xbel_hidden(XBEL, {"Home"})
+    cfg = _places_cfg()
+    out = task_module._places_xbel_hidden(cfg, XBEL, {"Home"})
     assert out is not None
-    assert task_module._places_xbel_hidden(out, {"Home"}) is None
+    assert task_module._places_xbel_hidden(cfg, out, {"Home"}) is None
 
 
 def test_apply_places_hidden_writes_when_changed(
@@ -1401,7 +1430,7 @@ def test_apply_places_hidden_skips_when_matching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A file that already hides the configured places changes nothing.
-    already = task_module._places_xbel_hidden(XBEL, {"Home"})
+    already = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
     assert already is not None
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
@@ -1450,7 +1479,7 @@ def test_places_xbel_hidden_tolerates_undeclared_bookmark_prefix() -> None:
         'xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"',
         'xmlns:ns0="http://www.freedesktop.org/standards/desktop-bookmarks"',
     )
-    out = task_module._places_xbel_hidden(malformed, {"Home"})
+    out = task_module._places_xbel_hidden(_places_cfg(), malformed, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home

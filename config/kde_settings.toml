@@ -93,6 +93,16 @@ sddm_theme_font = "Noto Sans,20"
 # so only Downloads stays visible among the default places. An empty list
 # leaves the Places panel untouched.
 places_hidden = ["Home", "Desktop", "Documents", "Music", "Pictures", "Videos"]
+# The XBEL namespaces of the Places panel file user-places.xbel. Dolphin
+# can write the file with a namespace bound as ns0 while the bookmark:
+# prefix stays undeclared, which a strict parser rejects, so the task
+# declares the prefixes it deals with through these addresses.
+places_bookmark_namespace = "http://freedesktop.org/standards/desktop-bookmarks"
+places_kdepriv_namespace = "http://www.kde.org/kdepriv"
+places_mime_namespace = "http://freedesktop.org/standards/shared-mime-info"
+# Owner address of the KDE metadata block inside an entry of that file:
+# only a block with this owner is a place the task may hide.
+places_metadata_owner = "http://www.kde.org"
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.

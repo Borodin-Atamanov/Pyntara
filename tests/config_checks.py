@@ -1040,6 +1040,22 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             if "places_hidden" in raw
             else ()
         ),
+        places_bookmark_namespace=_nonempty_string_field(
+            raw.get("places_bookmark_namespace"),
+            "kde_settings.places_bookmark_namespace",
+        ),
+        places_kdepriv_namespace=_nonempty_string_field(
+            raw.get("places_kdepriv_namespace"),
+            "kde_settings.places_kdepriv_namespace",
+        ),
+        places_mime_namespace=_nonempty_string_field(
+            raw.get("places_mime_namespace"),
+            "kde_settings.places_mime_namespace",
+        ),
+        places_metadata_owner=_nonempty_string_field(
+            raw.get("places_metadata_owner"),
+            "kde_settings.places_metadata_owner",
+        ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
         ),

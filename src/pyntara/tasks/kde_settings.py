@@ -1163,18 +1163,29 @@ def _free_script_hotkeys(
     return changed
 
 
-# The namespace prefixes the Places file serializes and the URIs they
-# map to. Dolphin can write the file with the desktop-bookmarks namespace
-# bound as ns0 while still using the bookmark: prefix undeclared, which
-# strict parsers reject; declaring these prefixes keeps the parse tolerant.
-_PLACES_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("bookmark", "http://freedesktop.org/standards/desktop-bookmarks"),
-    ("kdepriv", "http://www.kde.org/kdepriv"),
-    ("mime", "http://freedesktop.org/standards/shared-mime-info"),
-)
+# The XBEL prefixes the Places file uses. Declaring the prefixes keeps
+# the parse tolerant: Dolphin can write the file with the
+# desktop-bookmarks namespace bound as ns0 while still using the
+# bookmark: prefix undeclared, which strict parsers reject. The prefix
+# names are the vocabulary of the file, the addresses behind them come
+# from the config.
+_PLACES_PREFIXES: tuple[str, ...] = ("bookmark", "kdepriv", "mime")
 
 
-def _declare_missing_prefixes(current: str) -> str:
+def _places_prefix_addresses(
+    cfg: KdeSettingsConfig,
+) -> tuple[tuple[str, str], ...]:
+    """The Places prefixes with the namespace address of each one."""
+
+    addresses = {
+        "bookmark": cfg.places_bookmark_namespace,
+        "kdepriv": cfg.places_kdepriv_namespace,
+        "mime": cfg.places_mime_namespace,
+    }
+    return tuple((prefix, addresses[prefix]) for prefix in _PLACES_PREFIXES)
+
+
+def _declare_missing_prefixes(cfg: KdeSettingsConfig, current: str) -> str:
     """current with the undeclared Places prefix declarations added.
 
     The prefixes the task deals with are declared on the root xbel tag
@@ -1186,7 +1197,7 @@ def _declare_missing_prefixes(current: str) -> str:
 
     missing = [
         f'xmlns:{prefix}="{uri}"'
-        for prefix, uri in _PLACES_PREFIXES
+        for prefix, uri in _places_prefix_addresses(cfg)
         if f"xmlns:{prefix}=" not in current
     ]
     if not missing:
@@ -1201,7 +1212,9 @@ def _declare_missing_prefixes(current: str) -> str:
     return current[:tag_end] + injection + current[tag_end:]
 
 
-def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
+def _places_xbel_hidden(
+    cfg: KdeSettingsConfig, current: str, hidden: set[str]
+) -> str | None:
     """current with IsHidden=true for the hidden places; None when unchanged.
 
     The Dolphin Places panel file user-places.xbel marks a hidden system
@@ -1212,23 +1225,18 @@ def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
     never rewrites the file over formatting differences alone.
     """
 
-    ElementTree.register_namespace(
-        "bookmark", "http://freedesktop.org/standards/desktop-bookmarks"
-    )
-    ElementTree.register_namespace("kdepriv", "http://www.kde.org/kdepriv")
-    ElementTree.register_namespace(
-        "mime", "http://freedesktop.org/standards/shared-mime-info"
-    )
+    for prefix, namespace in _places_prefix_addresses(cfg):
+        ElementTree.register_namespace(prefix, namespace)
     try:
         root = ElementTree.fromstring(current)
     except ElementTree.ParseError:
-        root = ElementTree.fromstring(_declare_missing_prefixes(current))
+        root = ElementTree.fromstring(_declare_missing_prefixes(cfg, current))
     changed = False
     for bookmark in root.findall("bookmark"):
         if bookmark.findtext("title") not in hidden:
             continue
         for metadata in bookmark.findall("info/metadata"):
-            if metadata.get("owner") != "http://www.kde.org":
+            if metadata.get("owner") != cfg.places_metadata_owner:
                 continue
             marker = metadata.find("IsHidden")
             if marker is None:
@@ -1269,7 +1277,7 @@ def _apply_places_hidden(
         _log("no user-places.xbel found, Places hiding applies after first login")
         return False
     try:
-        content = _places_xbel_hidden(current, set(cfg.places_hidden))
+        content = _places_xbel_hidden(cfg, current, set(cfg.places_hidden))
     except ElementTree.ParseError as exc:
         _log(f"cannot parse {cfg.user_places_file}: {exc}, Places hiding skipped")
         return False
