@@ -420,7 +420,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "system_metrics_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     metrics = ctx.config.system_metrics_setup
     venv_dir = metrics.venv_dir
     venv_python = venv_dir / "bin" / "python"
@@ -433,7 +433,7 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_name = metrics.collector.timer_unit_name
     spool_dir = metrics.spool_dir
     journal_identifier = metrics.service_journal_identifier
-    template_dir = task_data_dir(ctx.repo_root, "system_metrics_setup")
+    template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
 
     service_unit = _render_service_unit(
         template_dir / "system_metrics.service",

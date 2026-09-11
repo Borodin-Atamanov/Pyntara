@@ -115,7 +115,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.swapfile_service_install
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "swapfile_service_install" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
 
     try:
@@ -234,7 +234,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     template_path = (
-        task_data_dir(ctx.repo_root, "swapfile_service_install")
+        task_data_dir(ctx.repo_root, ctx.task_name)
         / "swapfile.service"
     )
     _log(f"rendering unit template from {template_path}")

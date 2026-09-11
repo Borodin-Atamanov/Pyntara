@@ -44,6 +44,7 @@ def _ctx(
     if ssh_port is not None:
         directives.insert(0, SshDirective(name="Port", value=ssh_port))
     return make_context(
+        task_name="tor_setup",
         install_mode="server",
         force_tasks=frozenset({"tor_setup"}) if force else frozenset(),
         task_data_root=tmp_path,

@@ -15,7 +15,13 @@ from pyntara.config import Config
 
 @dataclass(frozen=True)
 class Context:
-    """Everything a task may need during provisioning."""
+    """Everything a task may need during provisioning.
+
+    The runner fills task_name with the name the catalog gives the task it
+    is about to call, so a task module never writes its own name
+    (docs/contracts/task-model.md). A context that is not running a task
+    carries the empty string.
+    """
 
     install_mode: str
     vault_password: str | None
@@ -25,3 +31,4 @@ class Context:
     task_data_root: Path
     skip_apt_update: bool
     config: Config
+    task_name: str = ""

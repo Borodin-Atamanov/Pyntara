@@ -63,6 +63,7 @@ def _test_config(policy_path: Path) -> Config:
 
 def _ctx(*, skip_apt_update: bool = False, policy_path: Path) -> Context:
     return make_context(
+        task_name="imagemagick_setup",
         config=_test_config(policy_path),
         repo_root=_FIXTURE_REPO or REPO_ROOT,
         skip_apt_update=skip_apt_update,

@@ -54,6 +54,7 @@ def _ctx(
         local_vault_pass_file_path=tmp_path / "etc" / "pass",
     )
     return make_context(
+        task_name="local_vault_setup",
         vault_password=vault_password,
         force_tasks=frozenset({"local_vault_setup"}) if force else frozenset(),
         repo_root=tmp_path,

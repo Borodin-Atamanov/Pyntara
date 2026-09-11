@@ -28,6 +28,7 @@ def _ctx(tmp_path: Path, *, force: bool = False, random_bytes: int = 4):
     """Context with the hostname file rooted in the temporary directory."""
 
     return make_context(
+        task_name="hostname",
         install_mode="server",
         force_tasks=frozenset({"hostname"}) if force else frozenset(),
         task_data_root=tmp_path,

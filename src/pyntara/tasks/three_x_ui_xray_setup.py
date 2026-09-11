@@ -2465,7 +2465,7 @@ def task(ctx: Context) -> TaskResult:
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
-    force = "three_x_ui_xray_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
 
     # Addresses and the UPnP router are read once per run: the stages below
     # reuse them, so a machine without UPnP is not asked about its router

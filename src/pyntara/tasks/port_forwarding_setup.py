@@ -141,7 +141,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "port_forwarding_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     pf = ctx.config.port_forwarding_setup
     metrics = ctx.config.system_metrics_setup
     venv_python = metrics.venv_dir / "bin" / "python"
@@ -150,7 +150,7 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         unit = _render_service_unit(
-            task_data_dir(ctx.repo_root, "port_forwarding_setup")
+            task_data_dir(ctx.repo_root, ctx.task_name)
             / "auto_port_forwarding.service",
             venv_python,
             system_config_path,

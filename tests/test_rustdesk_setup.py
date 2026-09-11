@@ -185,6 +185,7 @@ def _config(*, tmp_path: Path, options: tuple = ()) -> Config:
 
 def _ctx(*, tmp_path: Path, config: Config, force: bool = False) -> Context:
     return make_context(
+        task_name="rustdesk_setup",
         config=config,
         force_tasks=frozenset({"rustdesk_setup"}) if force else frozenset(),
         skip_apt_update=True,

@@ -60,7 +60,12 @@ def _install_fixtures(
         system_metrics_system_config_path=system_config,
         port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
     )
-    ctx = make_context(task_data_root=tmp_path, config=config, repo_root=repo)
+    ctx = make_context(
+        task_data_root=tmp_path,
+        config=config,
+        repo_root=repo,
+        task_name="port_forwarding_setup",
+    )
     return systemd_dir, venv_python, system_config, ctx
 
 
@@ -164,6 +169,7 @@ def test_force_rewrites_and_restarts(
         task_data_root=tmp_path,
         force_tasks=frozenset({"port_forwarding_setup"}),
         config=ctx.config,
+        task_name="port_forwarding_setup",
     )
     result = port_forwarding_setup.task(force_ctx)
     assert result.success
@@ -193,6 +199,7 @@ def test_force_resets_state_for_a_fresh_port(
         task_data_root=tmp_path,
         force_tasks=frozenset({"port_forwarding_setup"}),
         config=ctx.config,
+        task_name="port_forwarding_setup",
     )
     result = port_forwarding_setup.task(force_ctx)
     assert result.success

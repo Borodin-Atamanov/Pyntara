@@ -1622,7 +1622,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.kde_settings
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "kde_settings" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     packages_failed = False
@@ -1745,7 +1745,7 @@ def task(ctx: Context) -> TaskResult:
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
             cfg,
-            task_data_dir(ctx.repo_root, "kde_settings") / "kwin",
+            task_data_dir(ctx.repo_root, ctx.task_name) / "kwin",
             timeout=timeout,
             force=force,
             env=apply_env,
@@ -1771,7 +1771,7 @@ def task(ctx: Context) -> TaskResult:
         "write the Konsole profile",
         lambda: _apply_konsole_profile(
             cfg,
-            task_data_dir(ctx.repo_root, "kde_settings") / "Pyntara.profile",
+            task_data_dir(ctx.repo_root, ctx.task_name) / "Pyntara.profile",
             timeout=timeout,
             force=force,
         ),

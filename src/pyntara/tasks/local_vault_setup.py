@@ -195,7 +195,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.local_vault_setup
-    force = "local_vault_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     production_path, default_path = _resolve_source_vault(ctx.repo_root, cfg)
 
     if not force and cfg.local_vault_path.exists():

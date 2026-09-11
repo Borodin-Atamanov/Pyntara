@@ -330,8 +330,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.ssh_daemon_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "ssh_daemon_setup" in ctx.force_tasks
-    ssh_data_dir = task_data_dir(ctx.repo_root, "ssh_daemon_setup")
+    force = ctx.task_name in ctx.force_tasks
+    ssh_data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
 
     private_source = ssh_data_dir / cfg.private_key_file_name
     public_source = ssh_data_dir / cfg.public_key_file_name

@@ -57,6 +57,7 @@ def _ctx(
         appletsrc, encoding="utf-8"
     )
     return make_context(
+        task_name="kde_keyboard_setup",
         install_mode="desktop",
         force_tasks=frozenset({"kde_keyboard_setup"}) if force else frozenset(),
         task_data_root=tmp_path,

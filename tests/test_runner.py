@@ -41,6 +41,23 @@ def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) 
     assert results == [("cli_tools", TaskResult(success=True, message="ok"))]
 
 
+def test_run_tasks_hands_each_task_its_own_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The catalog is the single source of truth for task names: the runner
+    # gives each task the name it looked up, so no module writes its own.
+    seen: list[str] = []
+
+    def fake_load(name: str) -> object:
+        def fake_task(ctx: Context) -> TaskResult:
+            seen.append(ctx.task_name)
+            return TaskResult(success=True)
+
+        return fake_task
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    task_runner.run_tasks(_ctx(), ["cli_tools", "hostname"])
+    assert seen == ["cli_tools", "hostname"]
+
+
 def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     # A raising task becomes a completed result with the reason in warnings,
     # so a broken task never stops the run.

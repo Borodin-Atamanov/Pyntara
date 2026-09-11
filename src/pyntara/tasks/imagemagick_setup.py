@@ -38,7 +38,7 @@ def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
     target = cfg.policy_path
     backup = target.with_name(f"{target.name}.bak")
     template_path = (
-        task_data_dir(ctx.repo_root, "imagemagick_setup") / "policy.xml"
+        task_data_dir(ctx.repo_root, ctx.task_name) / "policy.xml"
     )
     try:
         template = template_path.read_text(encoding="utf-8")

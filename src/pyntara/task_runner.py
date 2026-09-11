@@ -1,11 +1,13 @@
 """Task execution engine.
 
 Runs tasks in resolved order, one module per task under pyntara.tasks. Each
-module exposes a task(ctx) function returning TaskResult. A missing module is
-reported as a skipped result so a partially implemented catalog still runs
-cleanly. A task that reports a failure or raises is converted into a
-completed result with warnings: a recoverable failure must never stop the
-run, and the entry point counts the warnings and exits nonzero.
+module exposes a task(ctx) function returning TaskResult. The runner hands
+each task a context whose task_name is the catalog name of that task, so a
+module never writes its own name. A missing module is reported as a skipped
+result so a partially implemented catalog still runs cleanly. A task that
+reports a failure or raises is converted into a completed result with
+warnings: a recoverable failure must never stop the run, and the entry
+point counts the warnings and exits nonzero.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import importlib
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from pyntara.context import Context
 from pyntara.logger import log_result_line, log_task_start
@@ -97,7 +100,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
         time.sleep(ctx.config.engine.task_start_delay_seconds or 0)
         start = time.monotonic()
         try:
-            result = task(ctx)
+            result = task(replace(ctx, task_name=name))
         except Exception as exc:  # noqa: BLE001 - a raising task must not kill the run
             result = TaskResult(success=False, error=str(exc))
         duration_seconds = time.monotonic() - start

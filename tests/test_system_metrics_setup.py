@@ -123,6 +123,7 @@ def _ctx(
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
+        task_name="system_metrics_setup",
         install_mode="server",
         force_tasks=frozenset({"system_metrics_setup"}) if force else frozenset(),
         repo_root=tmp_path / "repo",

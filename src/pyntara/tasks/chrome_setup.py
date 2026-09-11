@@ -800,7 +800,7 @@ def task(ctx: Context) -> TaskResult:
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
-    force = "chrome_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     messages: list[str] = []
@@ -872,7 +872,7 @@ def task(ctx: Context) -> TaskResult:
     mirror_mounted, mirror_note = _ensure_profile_mirror(
         cfg,
         ctx.config.engine.systemd_unit_dir,
-        task_data_dir(ctx.repo_root, "chrome_setup")
+        task_data_dir(ctx.repo_root, ctx.task_name)
         / "mount_chrome_user_dir.service",
         force=force,
         timeout=timeout,

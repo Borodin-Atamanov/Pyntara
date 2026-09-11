@@ -117,6 +117,7 @@ def _ctx(
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
+        task_name="ssh_daemon_setup",
         install_mode="server",
         force_tasks=frozenset({"ssh_daemon_setup"}) if force else frozenset(),
         repo_root=tmp_path,

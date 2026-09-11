@@ -81,6 +81,7 @@ def _ctx(
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
+        task_name="yggdrasil_service_setup",
         install_mode="server",
         force_tasks=(
             frozenset({"yggdrasil_service_setup"}) if force else frozenset()

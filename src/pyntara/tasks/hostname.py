@@ -106,7 +106,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.hostname
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "hostname" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     hostname_file = Path(cfg.hostname_file)
 
     current_file = _read_hostname_file(hostname_file)

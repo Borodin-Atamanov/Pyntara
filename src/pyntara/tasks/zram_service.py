@@ -345,7 +345,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.zram_service
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "zram_service" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
 
     try:
@@ -496,7 +496,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, changed=True, error="; ".join(problems))
     _log("verification passed")
 
-    template_path = task_data_dir(ctx.repo_root, "zram_service") / "zram.service"
+    template_path = task_data_dir(ctx.repo_root, ctx.task_name) / "zram.service"
     _log(f"rendering unit template from {template_path}")
     try:
         content = _render_unit(

@@ -36,6 +36,7 @@ def _test_config(tmp_path: Path) -> Config:
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     return make_context(
+        task_name="playwright_setup",
         install_mode="desktop",
         config=_test_config(tmp_path),
         force_tasks=frozenset({"playwright_setup"}) if force else frozenset(),

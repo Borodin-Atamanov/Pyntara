@@ -269,7 +269,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.tor_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "tor_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
 
     installed = package_is_installed(cfg.package_name, timeout)
     _log(

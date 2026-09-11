@@ -48,6 +48,7 @@ def _ctx(
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "kcminputrc").write_text(kcminputrc, encoding="utf-8")
     return make_context(
+        task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
@@ -1619,6 +1620,7 @@ def _kconfig_ctx(
     """Context whose kconfig list carries the given records."""
 
     return make_context(
+        task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,

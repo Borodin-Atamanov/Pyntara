@@ -24,6 +24,8 @@ Each task is a separate Python module in src/pyntara/tasks/.
 Task file name must match task name in the catalog.  
 Task data is stored in the task-data directory, in a subdirectory matching the task name.
 
+A task module never writes its own name: the runner reads the name from the catalog and hands it to the task in the task_name field of the context, so the catalog stays the single source of truth for task names.
+
 ## Example
 
 A meaningful task: install and configure SSH server, patch daemon config, add pre-generated certificates for passwordless login.

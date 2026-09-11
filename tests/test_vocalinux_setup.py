@@ -48,6 +48,7 @@ def _ctx(
     """Context with the target user home rooted in tmp_path."""
 
     return make_context(
+        task_name="vocalinux_setup",
         install_mode="desktop",
         force_tasks=frozenset({"vocalinux_setup"}) if force else frozenset(),
         repo_root=tmp_path,

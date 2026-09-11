@@ -447,7 +447,7 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.kde_keyboard_setup
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
-    force = "kde_keyboard_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     home_env = _home_env(cfg)
     bus_env = _session_bus_env(cfg, engine)
     changed = False

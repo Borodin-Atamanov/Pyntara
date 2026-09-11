@@ -50,6 +50,7 @@ def _ctx(
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
+        task_name="zram_service",
         install_mode="server",
         force_tasks=frozenset({"zram_service"}) if force else frozenset(),
         task_data_root=tmp_path,

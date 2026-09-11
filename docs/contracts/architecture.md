@@ -57,7 +57,9 @@ vault_password
 vault_source  
 force_tasks (frozenset of task names)  
 task_data_root (Path)  
+repo_root (Path; the clone root a task resolves its data against)  
 skip_apt_update (bool; True skips the apt index refresh in cli_tools and add_extra_repos)  
+task_name (str; the catalog name of the task being run, filled by the runner)  
 config (Config loaded from config.toml)
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.

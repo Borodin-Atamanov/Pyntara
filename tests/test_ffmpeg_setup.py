@@ -85,6 +85,7 @@ def _ctx(
     repo_root: Path | None = None,
 ) -> Context:
     return make_context(
+        task_name="ffmpeg_setup",
         config=_test_config(wayrecord_bin_path, wayrecord_desktop_path),
         repo_root=repo_root or _FIXTURE_REPO or _CLONE_ROOT,
         skip_apt_update=skip_apt_update,

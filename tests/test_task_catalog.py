@@ -11,6 +11,7 @@ engine owns defaults, validation and dependency resolution.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -147,3 +148,20 @@ def test_task_config_is_frozen() -> None:
     task = TaskConfig(name="x", description="X")
     with pytest.raises(AttributeError):
         task.name = "y"  # type: ignore[misc]
+
+
+def test_task_modules_do_not_write_their_own_name() -> None:
+    # The catalog is the single source of truth for task names and the
+    # runner hands each task its own name (docs/contracts/task-model.md),
+    # so a module never writes it: it reads the name from the context for
+    # the force check and for the task-data directory. A literal there is
+    # a copy of a config value, which the config spec forbids.
+    force_literal = re.compile(r'"[a-z0-9_]+" (?:not )?in ctx\.force_tasks')
+    data_dir_literal = re.compile(r'task_data_dir\([^)]*"', re.DOTALL)
+    src_root = REPO_ROOT / "src" / "pyntara"
+    offenders: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if force_literal.search(text) or data_dir_literal.search(text):
+            offenders.append(str(path.relative_to(src_root)))
+    assert not offenders, f"modules writing a task name: {offenders}"

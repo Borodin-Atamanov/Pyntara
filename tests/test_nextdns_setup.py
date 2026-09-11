@@ -26,6 +26,7 @@ def _ctx(tmp_path: Path, *, force: bool = False):
     """Context with the task config rooted in the temporary directory."""
 
     return make_context(
+        task_name="nextdns_setup_system_wide",
         install_mode="server",
         vault_password=VAULT_PASSWORD,
         force_tasks=frozenset({"nextdns_setup_system_wide"}) if force else frozenset(),

@@ -99,7 +99,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.playwright_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "playwright_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     changed = False
     messages: list[str] = []
     warnings: list[str] = []

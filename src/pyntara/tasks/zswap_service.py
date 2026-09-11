@@ -140,7 +140,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.zswap_service
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "zswap_service" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
     target = _target_values(cfg)
 
@@ -191,7 +191,7 @@ def task(ctx: Context) -> TaskResult:
     if not enabled:
         changed = True
 
-    template_path = task_data_dir(ctx.repo_root, "zswap_service") / "zswap.service"
+    template_path = task_data_dir(ctx.repo_root, ctx.task_name) / "zswap.service"
     _log(f"rendering unit template from {template_path}")
     try:
         content = _render_unit(template_path, target)

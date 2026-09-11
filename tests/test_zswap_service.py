@@ -57,6 +57,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
+        task_name="zswap_service",
         install_mode="server",
         force_tasks=frozenset({"zswap_service"}) if force else frozenset(),
         task_data_root=tmp_path,

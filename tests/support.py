@@ -720,6 +720,7 @@ def make_context(
     task_data_root: Path = Path("/tmp"),
     skip_apt_update: bool = False,
     config: Config | None = None,
+    task_name: str = "",
 ) -> Context:
     """Context with a small safe config; the real file is never touched.
 
@@ -727,6 +728,10 @@ def make_context(
     reads a real template keeps working; a test whose task renders a
     fixture passes its own directory here instead of monkeypatching a
     module constant.
+
+    task_name is the name of the task under test. The runner fills it in
+    a real run, so a test that exercises force mode or a task-data
+    template passes the catalog name of the module it calls.
     """
 
     return Context(
@@ -738,6 +743,7 @@ def make_context(
         task_data_root=task_data_root,
         skip_apt_update=skip_apt_update,
         config=config if config is not None else make_config(task_data_root=task_data_root),
+        task_name=task_name,
     )
 
 

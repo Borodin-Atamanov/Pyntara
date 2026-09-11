@@ -114,7 +114,7 @@ def task(ctx: Context) -> TaskResult:
         existing = cfg.profile_id_file_path.read_text(encoding="utf-8").strip()
     except OSError:
         existing = ""
-    if existing == profile_id and "nextdns_setup_system_wide" not in ctx.force_tasks:
+    if existing == profile_id and ctx.task_name not in ctx.force_tasks:
         return TaskResult(
             success=True,
             changed=False,

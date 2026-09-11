@@ -426,7 +426,7 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.vocalinux_setup
     timeout = ctx.config.engine.command_timeout_seconds
     engine = ctx.config.engine
-    force = "vocalinux_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     messages: list[str] = []
@@ -485,7 +485,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
         messages.append(f"enabled the {cfg.service_unit_name} user unit")
 
-    template_dir = task_data_dir(ctx.repo_root, "vocalinux_setup")
+    template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     config_template = template_dir / "config.json"
     echo_desktop_template = template_dir / "net.local.echo.desktop"
     if not config_template.is_file():

@@ -91,7 +91,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.ssh_client_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    force = "ssh_client_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
 
     include_ok = include_covers_dropin(
         cfg.ssh_config_path, cfg.ssh_config_dropin_path

@@ -456,7 +456,7 @@ def task(ctx: Context) -> TaskResult:
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
-    force = "rustdesk_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
     changed = False
 
     try:

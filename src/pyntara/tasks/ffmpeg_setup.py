@@ -184,7 +184,7 @@ def task(ctx: Context) -> TaskResult:
                 success=False, changed=bool(installed_packages), error=detail
             )
     engine_changed, engine_error = _build_wayrecord(
-        task_data_dir(ctx.repo_root, "ffmpeg_setup"),
+        task_data_dir(ctx.repo_root, ctx.task_name),
         cfg.wayrecord_bin_path,
         cfg.wayrecord_file_mode,
         install_timeout,

@@ -373,17 +373,17 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.i2pd_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
     template_path = (
-        task_data_dir(ctx.repo_root, "i2pd_service_setup") / "i2pd.conf"
+        task_data_dir(ctx.repo_root, ctx.task_name) / "i2pd.conf"
     )
     tunnels_template_path = (
-        task_data_dir(ctx.repo_root, "i2pd_service_setup") / "tunnels.conf"
+        task_data_dir(ctx.repo_root, ctx.task_name) / "tunnels.conf"
     )
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
     connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
     retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
-    force = "i2pd_service_setup" in ctx.force_tasks
+    force = ctx.task_name in ctx.force_tasks
 
     try:
         os_release = read_os_release(cfg.os_release_file_path)
