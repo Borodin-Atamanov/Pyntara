@@ -136,11 +136,12 @@ def _run_module(
     return {"status": "ok", "output": output}
 
 
-def percent_ready(entries: list[dict[str, object]]) -> int:
+def percent_ready(entries: list[dict[str, object]], percent_scale: int) -> int:
     """Share of ok modules among the entries, in percent.
 
     An empty module list is trivially ready: there is nothing to wait
-    for, so the percentage is 100. The share counts sources, never the
+    for, so the share is the full scale the config carries. The share
+    counts sources, never the
     records inside them: a module that reports thirty addresses is one
     answered source, exactly like a module that reports one, so the
     readiness of a machine never depends on how many addresses it
@@ -148,9 +149,9 @@ def percent_ready(entries: list[dict[str, object]]) -> int:
     """
 
     if not entries:
-        return 100
+        return percent_scale
     ready = sum(1 for entry in entries if entry["status"] == "ok")
-    return int(ready * 100 / len(entries))
+    return int(ready * percent_scale / len(entries))
 
 
 def collect(cfg: Config) -> dict[str, object]:
@@ -180,7 +181,7 @@ def collect(cfg: Config) -> dict[str, object]:
     ]
     return {
         "generated_at": datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S"),
-        "ready_percent": percent_ready(network),
+        "ready_percent": percent_ready(network, cfg.engine.percent_scale),
         "network": network,
         "system": system,
     }

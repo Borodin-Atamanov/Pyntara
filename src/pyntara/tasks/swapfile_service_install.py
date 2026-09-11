@@ -47,30 +47,34 @@ def _read_ram_kib() -> int:
 
 
 def _calculate_swap_size_mb(
-    ram_kib: int, free_disk_kib: int, cfg: SwapfileServiceInstallConfig
+    ram_kib: int,
+    free_disk_kib: int,
+    cfg: SwapfileServiceInstallConfig,
+    bytes_per_kib: int,
 ) -> int:
     """Swap size in mebibytes: min(RAM*mult+extra, free*disk_fraction).
 
     The RAM-based size comes from installed RAM scaled by ram_multiplier
     plus the flat ram_extra_mb; the disk-based size is the free space of
     the swapfile partition scaled by disk_fraction. The smaller of the two
-    wins, so the swap never risks filling the disk.
+    wins, so the swap never risks filling the disk. The byte factor comes
+    from the engine table.
     """
 
-    ram_mb = ram_kib // 1024
+    ram_mb = ram_kib // bytes_per_kib
     ram_based = int(ram_mb * cfg.ram_multiplier) + cfg.ram_extra_mb
-    disk_based = int(free_disk_kib // 1024 * cfg.disk_fraction)
+    disk_based = int(free_disk_kib // bytes_per_kib * cfg.disk_fraction)
     return min(ram_based, disk_based)
 
 
-def _current_swap_size_mb(path: Path) -> int | None:
+def _current_swap_size_mb(path: Path, bytes_per_mib: int) -> int | None:
     """Size of the swapfile in mebibytes, or None when the file is absent."""
 
     try:
         size = path.stat().st_size
     except FileNotFoundError:
         return None
-    return size // (1024 * 1024)
+    return size // bytes_per_mib
 
 
 def _swap_active(path: Path, timeout: float) -> bool:
@@ -117,17 +121,21 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
+    bytes_per_kib = ctx.config.engine.bytes_per_kib
+    bytes_per_mib = ctx.config.engine.bytes_per_mib
 
     try:
         ram_kib = _read_ram_kib()
-        free_disk_kib = shutil.disk_usage(cfg.swapfile_path.parent).free // 1024
+        free_disk_kib = (
+            shutil.disk_usage(cfg.swapfile_path.parent).free // bytes_per_kib
+        )
     except OSError as exc:
         return TaskResult(
             success=False, error=f"cannot determine RAM or free disk space: {exc}"
         )
 
-    ram_mb = ram_kib // 1024
-    free_disk_mb = free_disk_kib // 1024
+    ram_mb = ram_kib // bytes_per_kib
+    free_disk_mb = free_disk_kib // bytes_per_kib
     _log(f"reading RAM from {MEMINFO_PATH}: {ram_mb} MiB")
     _log(f"reading free disk space on {cfg.swapfile_path.parent}: {free_disk_mb} MiB")
 
@@ -137,14 +145,14 @@ def task(ctx: Context) -> TaskResult:
     )
     fraction = cfg.disk_fraction
     fraction_text = str(int(fraction)) if fraction.is_integer() else str(fraction)
-    target_mb = _calculate_swap_size_mb(ram_kib, free_disk_kib, cfg)
+    target_mb = _calculate_swap_size_mb(ram_kib, free_disk_kib, cfg, bytes_per_kib)
     _log(
         f"calculated target size: min({ram_mb} MiB * {multiplier_text} + "
         f"{cfg.ram_extra_mb} MiB, {free_disk_mb} MiB * {fraction_text}) = "
         f"{target_mb} MiB"
     )
 
-    current_mb = _current_swap_size_mb(cfg.swapfile_path)
+    current_mb = _current_swap_size_mb(cfg.swapfile_path, bytes_per_mib)
     if current_mb is None:
         _log(f"checking swapfile {cfg.swapfile_path}: absent")
     else:

@@ -752,6 +752,16 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if curl_retry_max_time_seconds <= 0:
         raise ConfigError("engine.curl_retry_max_time_seconds must be positive")
+    bytes_per_kib = _positive_int_field(
+        raw.get("bytes_per_kib"), "engine.bytes_per_kib"
+    )
+    bytes_per_mib = _positive_int_field(
+        raw.get("bytes_per_mib"), "engine.bytes_per_mib"
+    )
+    if bytes_per_mib != bytes_per_kib * bytes_per_kib:
+        raise ConfigError(
+            "engine.bytes_per_mib must be engine.bytes_per_kib squared"
+        )
     return EngineConfig(
         task_data_root=Path(task_data_root),
         systemd_unit_dir=Path(systemd_unit_dir),
@@ -781,6 +791,11 @@ def _engine_table(raw: object) -> EngineConfig:
         ),
         root_owner_uid=_int_field(raw.get("root_owner_uid"), "engine.root_owner_uid"),
         root_owner_gid=_int_field(raw.get("root_owner_gid"), "engine.root_owner_gid"),
+        percent_scale=_positive_int_field(
+            raw.get("percent_scale"), "engine.percent_scale"
+        ),
+        bytes_per_kib=bytes_per_kib,
+        bytes_per_mib=bytes_per_mib,
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(

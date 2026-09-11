@@ -84,8 +84,13 @@ def test_hot_add_read_interface_uses_the_configured_bit(
 def _target(tmp_path: Path) -> tuple[int, int]:
     """Target (device_count, per_device_bytes) from the test config."""
 
+    config = make_config(task_data_root=tmp_path)
     return zram_service._calculate_devices(
-        RAM_KIB, 2, make_config(task_data_root=tmp_path).zram_service
+        RAM_KIB,
+        2,
+        config.zram_service,
+        config.engine.bytes_per_kib,
+        config.engine.percent_scale,
     )
 
 
@@ -308,8 +313,13 @@ def _expected_unit(
 def test_calculate_devices_uses_96_percent_and_core_count() -> None:
     # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
     # of RAM rounded down to the 4096-byte zram page size.
+    config = make_config()
     device_count, per_device_bytes = zram_service._calculate_devices(
-        RAM_KIB, 2, make_config().zram_service
+        RAM_KIB,
+        2,
+        config.zram_service,
+        config.engine.bytes_per_kib,
+        config.engine.percent_scale,
     )
     assert device_count == 2
     total_bytes = RAM_KIB * 1024 * 96 // 100
@@ -317,6 +327,26 @@ def test_calculate_devices_uses_96_percent_and_core_count() -> None:
     assert per_device_bytes % 4096 == 0
     # Alignment costs less than one page per device.
     assert per_device_bytes * 2 >= total_bytes - 2 * 4096
+
+
+def test_device_target_follows_the_engine_factors() -> None:
+    # Another byte factor and another percent scale in the [engine] table
+    # are the factors the target is counted with, so neither is a value of
+    # the module.
+    config = make_config(bytes_per_kib=1000, percent_scale=50)
+    device_count, per_device_bytes = zram_service._calculate_devices(
+        RAM_KIB,
+        2,
+        config.zram_service,
+        config.engine.bytes_per_kib,
+        config.engine.percent_scale,
+    )
+    expected_total = (
+        RAM_KIB * 1000 * config.zram_service.memory_fraction_percent // 50
+    )
+    assert device_count == 2
+    assert per_device_bytes * 2 <= expected_total
+    assert per_device_bytes * 2 > expected_total - 2 * 4096
 
 
 def test_read_cpu_count_returns_processor_count(

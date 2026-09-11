@@ -35,6 +35,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cli = ctx.config.cli_tools
+    percent_scale = ctx.config.engine.percent_scale
     missing = [
         package
         for package in cli.packages
@@ -50,7 +51,7 @@ def task(ctx: Context) -> TaskResult:
         skip_update=ctx.skip_apt_update,
     )
     installed_total = len(cli.packages) - len(missing) + len(installed)
-    installed_percent = installed_total * 100 // len(cli.packages)
+    installed_percent = installed_total * percent_scale // len(cli.packages)
     already_installed = [
         package for package in cli.packages if package not in missing
     ]

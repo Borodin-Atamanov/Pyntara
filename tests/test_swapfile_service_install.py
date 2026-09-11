@@ -9,6 +9,7 @@ fixture, so the tests never read the repository template.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,28 @@ def test_creates_swapfile_and_service(
     unit = tmp_path / "systemd" / "swapfile.service"
     expected = UNIT_TEMPLATE.replace("$swapfile_path", str(swapfile))
     assert unit.read_text(encoding="utf-8") == expected
+
+
+def test_target_size_follows_the_engine_byte_factor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another byte factor in the [engine] table is the factor the task
+    # counts RAM and free disk with, so it is not a value of the module.
+    swapfile = _install_fixtures(monkeypatch, tmp_path)
+    calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
+    ctx = _ctx(tmp_path)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(config, engine=replace(config.engine, bytes_per_kib=1000)),
+    )
+    result = swapfile_service_install.task(ctx)
+    assert result.success is True
+    swap = config.swapfile_service_install
+    ram_based = int(RAM_KIB // 1000 * swap.ram_multiplier) + swap.ram_extra_mb
+    disk_based = int(FREE_BYTES // 1000 // 1000 * swap.disk_fraction)
+    expected_mb = min(ram_based, disk_based)
+    assert ["fallocate", "-l", f"{expected_mb}M", str(swapfile)] in calls
 
 
 def test_activates_existing_file_when_service_missing(

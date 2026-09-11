@@ -164,7 +164,9 @@ def test_ready_percent_counts_sources_not_records() -> None:
         },
         {"status": "empty", "output": ""},
     ]
-    assert metrics_collect.percent_ready(entries) == 50
+    assert metrics_collect.percent_ready(
+        entries, make_config().engine.percent_scale
+    ) == 50
 
 
 def test_run_module_classifies_ok_empty_error(
@@ -289,8 +291,22 @@ def test_percent_ready_counts_only_ok() -> None:
         {"status": "empty"},
         {"status": "error"},
     ]
-    assert metrics_collect.percent_ready(entries) == 50
-    assert metrics_collect.percent_ready([]) == 100
+    assert metrics_collect.percent_ready(
+        entries, make_config().engine.percent_scale
+    ) == 50
+    assert metrics_collect.percent_ready([], make_config().engine.percent_scale) == 100
+
+
+def test_percent_ready_follows_the_configured_scale() -> None:
+    # Another scale in the [engine] table is the scale the share is counted
+    # with, so the factor is not a value of the module.
+    entries: list[dict[str, object]] = [
+        {"status": "ok"},
+        {"status": "ok"},
+        {"status": "empty"},
+        {"status": "error"},
+    ]
+    assert metrics_collect.percent_ready(entries, 10) == 5
 
 
 def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:

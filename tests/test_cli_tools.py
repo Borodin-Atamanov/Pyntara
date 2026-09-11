@@ -7,6 +7,7 @@ the tests never touch the real system (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,24 @@ def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert install_calls == [["apt-get", "install", "-y", "mc"]]
+
+
+def test_share_follows_the_configured_percent_scale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Another percent scale in the [engine] table is the scale the share is
+    # counted with, so the factor is not a value of the module.
+    _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
+    ctx = _ctx()
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config, engine=replace(ctx.config.engine, percent_scale=200)
+        ),
+    )
+    result = cli_tools.task(ctx)
+    assert result.success is True
+    assert "200%" in (result.message or "")
 
 
 def test_config_files_leftover_counts_as_not_installed(

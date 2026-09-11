@@ -75,7 +75,11 @@ Parameter of an external tool whose value is ours to choose: bandwidth, share,
 if_mtu, num_introduction_points, cursor size, log rate limit burst.  
 Number that describes the machine, the run or the output: fallback_cpu_count,
 ram_extra_mb, queue_file_suffix_length, the length of an excerpt of a command
-output.
+output.  
+Conversion factor the run counts with: percent_scale, bytes_per_kib,
+bytes_per_mib. A factor is a value like any other number, even when it looks
+like the definition of a unit: keeping it in the config makes the arithmetic of
+the run readable in one place.
 
 Texts and vocabularies:
 
@@ -142,8 +146,7 @@ a value of the type Text of at most five lines that becomes part of a file the
 run writes.  
 Numbers that encode a protocol or an encoding instead of describing the machine,
 the tool or the run: the HTTP response code 200, the size and the flag masks of
-a DNS header, the bit shifts of the proquint encoding, the factor 1024 of a unit
-conversion.
+a DNS header, the bit shifts of the proquint encoding.
 
 ## A doubtful value goes into the config
 

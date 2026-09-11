@@ -76,6 +76,13 @@ journal_identifier = "pyntara-engine"
 # and not to a task, because eight tasks give the same ownership.
 root_owner_uid = 0
 root_owner_gid = 0
+# Conversion factors the run counts with: the scale that turns a fraction
+# into a percent, and the bytes of a kibibyte and of a mebibyte. They are
+# values of the run, not of a machine, and the suite checks that the two
+# byte factors agree.
+percent_scale = 100
+bytes_per_kib = 1024
+bytes_per_mib = 1048576
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

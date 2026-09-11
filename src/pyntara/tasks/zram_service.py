@@ -1,7 +1,7 @@
 """Task zram_service: configure aggressive ZRAM swap by CPU and RAM.
 
 The device count equals the number of CPU cores (8 when the count cannot
-be determined), the total capacity is 96 percent of installed RAM split
+be determined), the total capacity is memory_fraction_percent of installed RAM split
 evenly across the devices and rounded down to the 4096-byte zram page
 size. Every device uses the zstd compression algorithm and is activated
 with swap priority 1111, so ZRAM swap is preferred over the disk
@@ -76,16 +76,21 @@ def _read_cpu_count(fallback_cpu_count: int) -> tuple[int, bool]:
 
 
 def _calculate_devices(
-    ram_kib: int, cpu_count: int, cfg: ZramServiceConfig
+    ram_kib: int,
+    cpu_count: int,
+    cfg: ZramServiceConfig,
+    bytes_per_kib: int,
+    percent_scale: int,
 ) -> tuple[int, int]:
     """Target (device_count, per_device_bytes).
 
     The total capacity is the configured fraction of installed RAM; it is
     split evenly across the devices and rounded down to the configured
-    byte boundary that the zram driver requires for disksize.
+    byte boundary that the zram driver requires for disksize. The byte
+    factor and the percent scale come from the engine table.
     """
 
-    total_bytes = ram_kib * 1024 * cfg.memory_fraction_percent // 100
+    total_bytes = ram_kib * bytes_per_kib * cfg.memory_fraction_percent // percent_scale
     per_device_bytes = (
         total_bytes // cpu_count // cfg.alignment_bytes * cfg.alignment_bytes
     )
@@ -347,16 +352,21 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     service_name = cfg.service_unit_name
+    percent_scale = ctx.config.engine.percent_scale
+    bytes_per_kib = ctx.config.engine.bytes_per_kib
+    bytes_per_mib = ctx.config.engine.bytes_per_mib
 
     try:
         ram_kib = _read_ram_kib()
     except OSError as exc:
         return TaskResult(success=False, error=f"cannot determine RAM size: {exc}")
     cpu_count, cpu_fallback = _read_cpu_count(cfg.fallback_cpu_count)
-    device_count, per_device_bytes = _calculate_devices(ram_kib, cpu_count, cfg)
-    total_mb = per_device_bytes * device_count // (1024 * 1024)
+    device_count, per_device_bytes = _calculate_devices(
+        ram_kib, cpu_count, cfg, bytes_per_kib, percent_scale
+    )
+    total_mb = per_device_bytes * device_count // bytes_per_mib
 
-    _log(f"reading RAM from {MEMINFO_PATH}: {ram_kib // 1024} MiB")
+    _log(f"reading RAM from {MEMINFO_PATH}: {ram_kib // bytes_per_kib} MiB")
     if cpu_fallback:
         _log(
             f"reading CPU count from {CPUINFO_PATH}: undeterminable, "
