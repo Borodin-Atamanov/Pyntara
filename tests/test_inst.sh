@@ -290,6 +290,24 @@ inst_log_empty_identifier_disables_journal() {
     rm -rf "$tmp"
 }
 
+inst_log_identifier_follows_the_contract() {
+    # Unset PYNTARA_JOURNAL_IDENTIFIER means the contract identifier
+    # (bootstrap contract, Logging); an empty value stays empty and so
+    # disables journal forwarding.
+    local unset_value
+    unset_value="$(env -u PYNTARA_JOURNAL_IDENTIFIER bash -c 'source "$1"; printf %s "$JOURNAL_IDENTIFIER"' _ "$INSTALLER")"
+    if [[ "$unset_value" != "pyntara-install" ]]; then
+        echo "unset identifier must fall back to pyntara-install, got [$unset_value]" >&2
+        return 1
+    fi
+    local empty_value
+    empty_value="$(PYNTARA_JOURNAL_IDENTIFIER="" bash -c 'source "$1"; printf %s "$JOURNAL_IDENTIFIER"' _ "$INSTALLER")"
+    if [[ -n "$empty_value" ]]; then
+        echo "empty identifier must stay empty, got [$empty_value]" >&2
+        return 1
+    fi
+}
+
 inst_log_survives_failing_systemd_cat() {
     # A failing systemd-cat must never stop the installer (best effort).
     local tmp
@@ -1814,6 +1832,7 @@ run_test inst_log_appends_lines_instead_of_overwriting
 run_test inst_log_file_defaults_inside_log_dir
 run_test inst_log_forwards_to_system_journal
 run_test inst_log_empty_identifier_disables_journal
+run_test inst_log_identifier_follows_the_contract
 run_test inst_log_survives_failing_systemd_cat
 run_test inst_run_logged_streams_both_streams_and_preserves_exit_code
 run_test inst_run_timed_logs_duration_and_exit_code
