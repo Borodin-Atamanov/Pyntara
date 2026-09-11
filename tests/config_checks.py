@@ -764,6 +764,10 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("github_latest_release_url"),
             "engine.github_latest_release_url",
         ),
+        github_release_download_url=_nonempty_string_field(
+            raw.get("github_release_download_url"),
+            "engine.github_release_download_url",
+        ),
         system_python=_nonempty_string_field(
             raw.get("system_python"), "engine.system_python"
         ),
@@ -3668,6 +3672,9 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
         ),
         version=_nonempty_string_field(
             raw.get("version"), "vocalinux_setup.version"
+        ),
+        github_repo=_nonempty_string_field(
+            raw.get("github_repo"), "vocalinux_setup.github_repo"
         ),
         packages=_string_list(raw.get("packages"), "vocalinux_setup.packages"),
         input_group=_nonempty_string_field(

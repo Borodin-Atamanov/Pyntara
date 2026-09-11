@@ -31,6 +31,7 @@ class VocalinuxSetupConfig:
     home_dir: str
     download_dir: Path
     version: str
+    github_repo: str
     packages: tuple[str, ...]
     input_group: str
     service_unit_name: str

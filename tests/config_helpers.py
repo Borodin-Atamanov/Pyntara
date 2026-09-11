@@ -35,6 +35,7 @@ def base_config() -> str:
         "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
         "curl_retry_max_time_seconds = 7777\n"
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
+        'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
         'system_python = "/usr/bin/python3"\n'
         'journal_identifier = "pyntara-engine"\n'
         "error_priority = 3\n"
@@ -513,6 +514,7 @@ def base_config() -> str:
         'home_dir = "/home/i"\n'
         'download_dir = "/var/cache/pyntara/vocalinux"\n'
         'version = "0.16.2"\n'
+        'github_repo = "VocaHQ/vocalinux"\n'
         'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
         'input_group = "input"\n'
         'service_unit_name = "ydotool.service"\n'

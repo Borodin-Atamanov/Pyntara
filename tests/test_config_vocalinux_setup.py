@@ -19,6 +19,7 @@ SECTION = (
     'home_dir = "/home/i"\n'
     'download_dir = "/var/cache/pyntara/vocalinux"\n'
     'version = "0.16.2"\n'
+    'github_repo = "VocaHQ/vocalinux"\n'
     'packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]\n'
     'input_group = "input"\n'
     'service_unit_name = "ydotool.service"\n'

@@ -50,6 +50,7 @@ username - the desktop user who runs Vocalinux and owns the install
 home_dir - the home directory of that user; the install, the app config and the autostart entry are derived under it
 download_dir - the root cache that keeps the AppImage of the pinned version
 version - the pinned Vocalinux release, without the leading v of the release tag
+github_repo - the owner and name pair of the release repository; the asset download URL is composed from it and the engine template github_release_download_url, so a mirror is a config change
 packages - the system tools the app needs on Wayland plus the kwriteconfig6 provider
 input_group - the group that owns /dev/input and /dev/uinput on Kubuntu
 service_unit_name - the ydotool user unit enabled for the desktop useruser_file_mode - the mode of the written app config and autostart entry  

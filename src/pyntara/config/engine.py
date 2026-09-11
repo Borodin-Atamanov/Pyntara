@@ -42,6 +42,7 @@ class EngineConfig:
     curl_connect_timeout_seconds: int
     curl_retry_max_time_seconds: int
     github_latest_release_url: str
+    github_release_download_url: str
     system_python: str
     journal_identifier: str
     error_priority: int

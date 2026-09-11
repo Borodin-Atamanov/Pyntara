@@ -26,7 +26,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from pyntara.config import VocalinuxSetupConfig
+from pyntara.config import EngineConfig, VocalinuxSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -46,10 +46,9 @@ from pyntara.utils import (
 # The working app config and the empty-action desktop file, byte-for-byte
 # the ones verified on the development machine (docs/spec/vocalinux-setup.md).
 # The templates of the app config and of the empty Meta+S action live under
-# task_data/vocalinux_setup in the clone and are read from the context.
-
-# The GitHub repository that publishes the Vocalinux releases.
-GITHUB_REPO = "VocaHQ/vocalinux"
+# task_data/vocalinux_setup in the clone and are read from the context. The
+# repository pair of the pinned release and the download URL template are
+# config values, read from the vocalinux_setup table and the engine.
 # Release asset arch names use the upstream spelling, while dpkg reports
 # the Debian one; other architectures fall back to the dpkg spelling.
 DPKG_TO_ASSET_ARCH = {"amd64": "x86_64", "arm64": "aarch64"}
@@ -81,12 +80,18 @@ def _home_env(cfg: VocalinuxSetupConfig) -> dict[str, str]:
     return {"HOME": cfg.home_dir}
 
 
-def _release_download_url(version: str, asset_name: str) -> str:
-    """The download url of a pinned release asset."""
+def _release_download_url(
+    engine: EngineConfig, repo: str, version: str, asset_name: str
+) -> str:
+    """The download url of a pinned release asset.
 
-    return (
-        f"https://github.com/{GITHUB_REPO}/releases/download/"
-        f"v{version}/{asset_name}"
+    The repository pair, the pinned version and the asset name are
+    substituted into the engine-wide template, so the host is a config
+    value and a mirror works without touching the code.
+    """
+
+    return engine.github_release_download_url.format(
+        repo=repo, version=version, asset_name=asset_name
     )
 
 
@@ -232,6 +237,7 @@ def _autostart_content(appimage_path: Path) -> str:
 
 def _install_appimage(
     cfg: VocalinuxSetupConfig,
+    engine: EngineConfig,
     *,
     timeout: float,
     curl_download_timeout_seconds: float,
@@ -255,7 +261,7 @@ def _install_appimage(
     arch = dpkg_architecture(timeout)
     asset_arch = DPKG_TO_ASSET_ARCH.get(arch, arch)
     asset_name = _asset_name(cfg.version, asset_arch)
-    url = _release_download_url(cfg.version, asset_name)
+    url = _release_download_url(engine, cfg.github_repo, cfg.version, asset_name)
     install_dir = Path(cfg.home_dir) / APPIMAGE_DIR_REL
     target = install_dir / asset_name
     cache = cfg.download_dir / asset_name
@@ -444,6 +450,7 @@ def task(ctx: Context) -> TaskResult:
 
     appimage_changed, appimage_error = _install_appimage(
         cfg,
+        ctx.config.engine,
         timeout=timeout,
         curl_download_timeout_seconds=engine.curl_download_timeout_seconds,
         curl_retries=engine.curl_retries,

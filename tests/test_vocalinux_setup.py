@@ -8,6 +8,7 @@ run_command inspects the command shape and answers per command.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -356,3 +357,21 @@ def test_missing_config_template_is_error(
 
     assert result.success is False
     assert "config template" in (result.error or "")
+
+
+def test_release_download_url_comes_from_the_config() -> None:
+    # The repository pair and the host template are config values: another
+    # pair and another host in the config are the URL the task downloads
+    # from, so a mirror needs no code change.
+    engine = replace(
+        make_config().engine,
+        github_release_download_url=(
+            "https://mirror.example/{repo}/v{version}/{asset_name}"
+        ),
+    )
+    url = task_module._release_download_url(
+        engine, "Owner/App", "1.2.3", "App-1.2.3-x86_64.AppImage"
+    )
+    assert url == (
+        "https://mirror.example/Owner/App/v1.2.3/App-1.2.3-x86_64.AppImage"
+    )

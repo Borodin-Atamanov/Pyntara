@@ -54,6 +54,12 @@ curl_retry_max_time_seconds = 7777
 # configured owner/name pair, so a mirror or a proxy is configured in one
 # place instead of five task modules.
 github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"
+# URL template of one pinned release asset: {repo} is the owner/name pair
+# of the task, {version} the pinned version without the leading v of the tag
+# and {asset_name} the asset file name. A task that installs a pinned
+# release instead of the latest one composes the download URL from this
+# template, so a mirror or a proxy is configured in one place.
+github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"
 # The Python interpreter of the managed system, the one that carries the
 # system packages such as python3-dbus. The absolute path keeps a task
 # that runs an embedded client independent of the caller PATH, where the

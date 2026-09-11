@@ -18,6 +18,10 @@ home_dir = "/home/i"
 download_dir = "/var/cache/pyntara/vocalinux"
 # Pinned Vocalinux release, without the leading v of the release tag.
 version = "0.16.2"
+# Owner and name pair of the Vocalinux repository the release comes from;
+# the download URL of the asset is composed from it and the engine template
+# github_release_download_url.
+github_repo = "VocaHQ/vocalinux"
 # System tools the app needs on the Wayland desktop plus the provider of
 # kwriteconfig6 that registers the Meta+S consuming shortcut.
 packages = ["wtype", "ydotool", "wl-clipboard", "libkf6config-bin"]
