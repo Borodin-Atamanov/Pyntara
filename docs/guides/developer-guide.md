@@ -9,13 +9,15 @@ Run uv run ruff check . for linting.
 Run uv run mypy --strict src/ for type checking.  
 The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default.
 
+The test suite runs in parallel through pytest-xdist: [tool.pytest.ini_options] addopts in pyproject.toml is -n auto, so uv run pytest spreads the tests over worker processes on its own, and the worker count follows the machine. Use uv run pytest -n 0 for a serial run when measuring where the time goes, because under workers the wall time no longer maps to a single test.
+
 ## Testing rules
 
 Every module with task logic must have pytest unit tests.  
 In unit tests, all external resources (subprocess, filesystem, network) are mocked via monkeypatch.  
 For file logic, use tmp_path, not real paths.  
 Shared test factories and fakes live in tests/support.py (make_config, make_context, FakeProc); test modules import them instead of copying the Config and Context shapes. make_config derives every section from the shared test document in tests/config_helpers.py, so a value added to the real config reaches the tests without a second edit, and tests/test_config_coverage.py fails when the repository config, either test copy or the parsers drift apart. The strict checks of the config live in tests/config_checks.py: load_checked_config in tests/config_helpers.py runs them, and the runtime reader never checks anything.  
-Journal forwarding is covered by integration tests in tests/test_logger.py and tests/test_inst.sh that write into the real system journal through systemd-cat and read entries back through journalctl. When journald is unavailable the tests skip; the best-effort branches are always covered by unit tests.
+Journal forwarding is covered by integration tests in tests/test_logger.py and tests/test_inst.sh that write into the real system journal through systemd-cat and read entries back through journalctl. When journald is unavailable the tests skip; the best-effort branches are always covered by unit tests. A test never waits out real time to learn an outcome: a patched time.sleep paces a retry loop, a fake child process is dropped as soon as it delivered its output, and an absent journal line is proved by sending a later marker line through the same pipe instead of polling a fixed window.
 
 Minimum required per task: one success scenario test and one realistic error scenario test (for example, a command unavailable or permission denied).
 

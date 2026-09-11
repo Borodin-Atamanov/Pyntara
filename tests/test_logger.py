@@ -104,15 +104,23 @@ def _wait_for(identifier: str, needle: str, timeout: float = 2.0) -> bool:
     return False
 
 
-def _wait_absent(identifier: str, needle: str, timeout: float = 1.5) -> bool:
-    """Poll the journal and confirm the needle never appears."""
+def _journal_with_marker(identifier: str, marker: str) -> str:
+    """Return the journal text once the marker line has arrived.
 
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if needle in _read_journal(identifier):
-            return False
-        time.sleep(0.1)
-    return True
+    A line that must not reach the journal is proved absent by ordering,
+    not by waiting out a window: the marker is sent after the call under
+    test through the same reused systemd-cat process, so its arrival in
+    the journal means every earlier line of that process was delivered,
+    and a needle missing from the returned text was never sent. A fixed
+    absence window costs its whole length on every run, while the round
+    trip through journald takes milliseconds.
+    """
+
+    logger.log_event(marker)
+    assert _wait_for(identifier, marker), (
+        f"the marker line {marker!r} never reached the journal"
+    )
+    return _read_journal(identifier)
 
 
 @pytest.fixture(scope="module")
@@ -254,7 +262,9 @@ def test_log_result_line_to_journal_false_skips_journal(
     monkeypatch: pytest.MonkeyPatch, journal_available: bool
 ) -> None:
     # to_journal=False prints to the console only; the journal must keep
-    # the earlier line and never see the hidden one.
+    # the earlier line and never see the hidden one. The marker line goes
+    # through the same shared systemd-cat process after the hidden call,
+    # so its arrival proves that an earlier hidden line would be there.
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("quiet-result")
@@ -262,7 +272,8 @@ def test_log_result_line_to_journal_false_skips_journal(
     logger.log_result_line("cli_tools", TaskResult(success=True, message="visible"))
     assert _wait_for(identifier, "[done] cli_tools: visible")
     logger.log_result_line("cli_tools", TaskResult(success=True, message="hidden"), to_journal=False)
-    assert _wait_absent(identifier, "hidden")
+    journal = _journal_with_marker(identifier, "result path finished")
+    assert "hidden" not in journal
 
 
 def test_log_result_line_prints_warnings(
@@ -330,6 +341,9 @@ def test_log_result_line_skip_never_invents_not_implemented(
 def test_log_event_to_journal_false_skips_journal(
     monkeypatch: pytest.MonkeyPatch, journal_available: bool
 ) -> None:
+    # The event form of the same rule: the marker line travels through the
+    # shared process after the hidden event, so its arrival proves the
+    # hidden event was never sent.
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("quiet-event")
@@ -337,7 +351,8 @@ def test_log_event_to_journal_false_skips_journal(
     logger.log_event("visible event")
     assert _wait_for(identifier, "visible event")
     logger.log_event("hidden event", to_journal=False)
-    assert _wait_absent(identifier, "hidden event")
+    journal = _journal_with_marker(identifier, "event path finished")
+    assert "hidden event" not in journal
 
 
 def test_empty_identifier_disables_forwarding(monkeypatch: pytest.MonkeyPatch) -> None:

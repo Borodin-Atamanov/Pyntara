@@ -80,12 +80,22 @@ def _fake_bin(tmp_path: Path) -> Path:
     return bindir
 
 
-def _agent_env(bindir: Path, **extra: str) -> dict[str, str]:
-    """An environment that resolves ssh through the fake bin directory."""
+def _agent_env(
+    bindir: Path, lifetime: float = 1, **extra: str
+) -> dict[str, str]:
+    """An environment that resolves ssh through the fake bin directory.
+
+    lifetime is how long the fake ssh keeps the tunnel open. A test that
+    only reads the parsed outcome keeps the default, because it asserts
+    that the returned process is still running. The reconnect loop waits
+    for the child to exit, and its pacing comes from the patched
+    time.sleep of that test class, so a long real lifetime there only
+    delays the drop the test is waiting for.
+    """
 
     env = {
         "PATH": str(bindir) + os.pathsep + os.environ.get("PATH", ""),
-        "FAKE_SSH_LIFETIME": "1",
+        "FAKE_SSH_LIFETIME": str(lifetime),
     }
     env.update(extra)
     return env
@@ -249,12 +259,18 @@ class TestVaultReads:
 
 class TestStartForward:
     @pytest.fixture(autouse=True)
-    def _config(self, tmp_path: Path) -> None:
+    def _config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         self.config = make_config(
             port_forwarding_connect_timeout_seconds=1,
         )
         self.bindir = _fake_bin(tmp_path)
         self.key = tmp_path / "key"
+        # The pause between the stderr polls is pacing, not behaviour:
+        # the fake ssh answers within milliseconds, so the real 0.2s
+        # pause only slows the test down.
+        monkeypatch.setattr(pf.time, "sleep", lambda _seconds: None)
 
     def test_grants_random_port(self) -> None:
         env = _agent_env(self.bindir, FAKE_SSH_GRANT_PORT="45678")
@@ -328,6 +344,11 @@ class TestRunForwardLoop:
 
         monkeypatch.setattr(pf.time, "sleep", fake_sleep)
 
+    def _agent_env(self, **extra: str) -> dict[str, str]:
+        """Env for the reconnect loop: the fake ssh drops the tunnel at once."""
+
+        return _agent_env(self.bindir, lifetime=0.05, **extra)
+
     def _run(self, state: dict[str, dict[str, int]], env: dict[str, str]) -> None:
         lock = pf.threading.Lock()
         with pytest.raises(KeyboardInterrupt):
@@ -347,7 +368,7 @@ class TestRunForwardLoop:
         # triggers one collector run, then waits the first backoff pause
         # after the fake connection drops.
         state: dict[str, dict[str, int]] = {}
-        self._run(state, _agent_env(self.bindir))
+        self._run(state, self._agent_env())
         recorded = state["server"]["30222"]
         assert recorded == desired_port(self.config, "testhost")
         assert json.loads(self.state_path.read_text(encoding="utf-8"))["server"][
@@ -359,7 +380,7 @@ class TestRunForwardLoop:
         # A busy desired port makes the loop ask for a random port and
         # record the granted one instead.
         state: dict[str, dict[str, int]] = {}
-        env = _agent_env(self.bindir, FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_PORT="45678")
+        env = self._agent_env(FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_PORT="45678")
         self._run(state, env)
         assert state["server"]["30222"] == 45678
         assert len(self.triggers) == 1
@@ -370,8 +391,8 @@ class TestRunForwardLoop:
         # carries the current port.
         grant_file = self.tmp / "grant.txt"
         grant_file.write_text("10000\n", encoding="utf-8")
-        env = _agent_env(
-            self.bindir, FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_FILE=str(grant_file)
+        env = self._agent_env(
+            FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_FILE=str(grant_file)
         )
         state: dict[str, dict[str, int]] = {}
         self._run(state, env)
@@ -383,7 +404,7 @@ class TestRunForwardLoop:
         # address does not change; no collection is triggered.
         grant_file = self.tmp / "grant.txt"
         grant_file.write_text("20000\n", encoding="utf-8")
-        env = _agent_env(self.bindir, FAKE_SSH_GRANT_FILE=str(grant_file))
+        env = self._agent_env(FAKE_SSH_GRANT_FILE=str(grant_file))
         state: dict[str, dict[str, int]] = {"server": {"30222": 20000}}
         self._run(state, env)
         assert state["server"]["30222"] == 20000

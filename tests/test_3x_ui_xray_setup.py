@@ -516,8 +516,12 @@ def test_release_json_failure_reports_error(
 ) -> None:
     # The GitHub releases API is unreachable: the task reports the
     # failure without ever running the installer. Stage 2 is not reached.
+    # Run facts are stubbed like every other external resource: the real
+    # helper queries the public address echo services through
+    # subprocess.Popen, which the curl fake below does not intercept.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -754,6 +758,10 @@ class TestProquintCredentials:
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
                 ),
+                # The readiness loop sleeps the configured retry delay
+                # before every check; the service reports active at once,
+                # so the production second only slows the test down.
+                three_x_ui_start_check_retry_delay_seconds=0,
                 three_x_ui_ssl_enabled=False,
             ),
         )
@@ -837,6 +845,10 @@ class TestProquintCredentials:
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
                 ),
+                # The readiness loop sleeps the configured retry delay
+                # before every check; the service reports active at once,
+                # so the production second only slows the test down.
+                three_x_ui_start_check_retry_delay_seconds=0,
                 three_x_ui_ssl_enabled=False,
             ),
         )
