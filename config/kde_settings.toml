@@ -163,6 +163,13 @@ kwin_scripts = ["window-grow-shrink", "window-restore-tracker"]
 kwin_script_files = ["metadata.json", "contents/code/main.js"]
 kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
 kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
+# The python client that prints the id of every virtual desktop, one per
+# line, in position order; the directory under task_data that holds one
+# directory per kwin script; and the Konsole profile shipped as a task
+# data file. All three are read from task_data/ of the clone.
+desktop_ids_script_file_name = "list_desktop_ids.py"
+kwin_scripts_dir_name = "kwin"
+konsole_profile_file_name = "Pyntara.profile"
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.

@@ -67,6 +67,11 @@ class KdeSettingsConfig:
     that carry them; the remaining paths name the files and directories the
     task reads and writes under home_dir and the system copy of the global
     themes with the directory inside a theme that holds its defaults.
+    desktop_ids_script_file_name is the python client that prints the live
+    virtual desktop ids; kwin_scripts_dir_name is the directory under
+    task_data that holds one directory per kwin script; and
+    konsole_profile_file_name is the Konsole profile shipped as a task data
+    file.
     """
 
     packages: tuple[str, ...]
@@ -145,6 +150,9 @@ class KdeSettingsConfig:
     kwin_script_files: tuple[str, ...]
     kwin_script_hotkeys: tuple[str, ...]
     kwin_script_actions: tuple[str, ...]
+    desktop_ids_script_file_name: str
+    kwin_scripts_dir_name: str
+    konsole_profile_file_name: str
     places_hidden: tuple[str, ...] = ()
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

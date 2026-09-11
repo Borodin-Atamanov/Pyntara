@@ -113,6 +113,7 @@ def base_config() -> str:
         'layout_switcher_component_unique = "KDE Keyboard Layout Switcher"\n'
         'layout_switcher_component_friendly = "Keyboard Layout Switcher"\n'
         'shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }\n'
+        'apply_hotkeys_script_file_name = "apply_hotkeys.py"\n'
         '[kde_settings]\n'
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
@@ -190,6 +191,9 @@ def base_config() -> str:
         'sddm_theme = "kubuntu"\n'
         "sddm_theme_cursor_size = \"30\"\n"
         'sddm_theme_cursor_theme = "breeze_cursors"\n'
+        'desktop_ids_script_file_name = "list_desktop_ids.py"\n'
+        'kwin_scripts_dir_name = "kwin"\n'
+        'konsole_profile_file_name = "Pyntara.profile"\n'
         'sddm_theme_font = "Noto Sans,20"\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"

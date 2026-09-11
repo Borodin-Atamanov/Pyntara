@@ -37,6 +37,7 @@ from pyntara.utils import (
     package_is_installed,
     run_command,
     session_bus_address,
+    task_data_dir,
     trim_whitespace,
 )
 
@@ -292,80 +293,13 @@ def _sync_hotkey_file(
 # prints the before and after state as JSON. The actionId field order is
 # [component unique, action unique, component friendly, action friendly];
 # the daemon silently ignores a wrong order, so it must not change.
-_APPLY_HOTKEYS_SCRIPT = r"""
-import json
-import sys
-
-import dbus
-
-payload = json.loads(sys.argv[1])
-component_unique = payload["component_unique"]
-component_friendly = payload["component_friendly"]
-assign = payload["assign"]
-
-
-def combined_array(combined):
-    return dbus.Array(
-        [dbus.Int32(combined), dbus.Int32(0), dbus.Int32(0), dbus.Int32(0)],
-        signature="i",
-    )
-
-
-def set_keys(action_id, combined):
-    if combined:
-        keys = dbus.Array(
-            [dbus.Struct([combined_array(combined)], signature="(ai)")],
-            signature="(ai)",
-        )
-    else:
-        keys = dbus.Array([], signature="(ai)")
-    iface.setForeignShortcutKeys(action_id, keys)
-
-
-def owner_of(combined):
-    sequence = dbus.Struct([combined_array(combined)], signature=None)
-    result = list(iface.actionList(sequence))
-    return [str(part) for part in result] if result else None
-
-
-def read_keys(action_id):
-    return [int(seq[0][0]) for seq in iface.shortcutKeys(action_id)]
-
-
-bus = dbus.SessionBus()
-daemon = bus.get_object("org.kde.kglobalaccel", "/kglobalaccel")
-iface = dbus.Interface(daemon, "org.kde.KGlobalAccel")
-
-before = {}
-for action, combined in assign:
-    before[action] = read_keys([component_unique, action, component_friendly, action])
-
-owners = set()
-for action, combined in assign:
-    if not combined:
-        continue
-    owner = owner_of(combined)
-    if owner and owner[1] != action:
-        owners.add(tuple(owner))
-
-for owner in sorted(owners):
-    set_keys(list(owner), 0)
-
-for action, combined in assign:
-    set_keys([component_unique, action, component_friendly, action], combined)
-
-after = {}
-for action, combined in assign:
-    after[action] = read_keys([component_unique, action, component_friendly, action])
-
-print(json.dumps({"before": before, "after": after}))
-"""
 
 
 def _apply_hotkeys_live(
     cfg: KdeKeyboardSetupConfig,
     shortcuts: dict[str, str],
     *,
+    script_path: Path,
     timeout: float,
     home_env: dict[str, str],
     bus_env: dict[str, str],
@@ -373,12 +307,13 @@ def _apply_hotkeys_live(
 ) -> tuple[str | None, bool]:
     """Apply the supported hotkeys through the running daemon.
 
-    Runs the embedded python3-dbus script as the target user on the
-    desktop session bus; the script frees each key from its current owner
-    and assigns it to the configured action, so the shortcut works without
-    a session restart. Shortcuts the parser does not support are skipped
-    here (they were already written to kglobalshortcutsrc). Returns error
-    text or None and whether a shortcut actually changed.
+    Runs the python3-dbus script named by script_path, which ships under
+    task_data/ of the clone, as the target user on the desktop session bus;
+    the script frees each key from its current owner and assigns it to the
+    configured action, so the shortcut works without a session restart.
+    Shortcuts the parser does not support are skipped here (they were
+    already written to kglobalaccutsrc). Returns error text or None and
+    whether a shortcut actually changed.
     """
 
     assign: list[tuple[str, int]] = []
@@ -401,12 +336,19 @@ def _apply_hotkeys_live(
         result = run_command(
             _as_user_command(
                 cfg,
-                [system_python, "-c", _APPLY_HOTKEYS_SCRIPT, payload],
+                [
+                    system_python,
+                    "-c",
+                    script_path.read_text(encoding="utf-8"),
+                    payload,
+                ],
             ),
             extra_env={**home_env, **bus_env},
             timeout=timeout,
             capture=True,
         )
+    except OSError as exc:
+        return f"cannot read the hotkey script {script_path}: {exc}", False
     except subprocess.CalledProcessError as exc:
         detail = trim_whitespace(exc.stderr or "")
         suffix = f": {detail}" if detail else ""
@@ -575,6 +517,10 @@ def task(ctx: Context) -> TaskResult:
             hotkey_error, applied = _apply_hotkeys_live(
                 cfg,
                 cfg.layout_switch_shortcuts,
+                script_path=(
+                    task_data_dir(ctx.repo_root, ctx.task_name)
+                    / cfg.apply_hotkeys_script_file_name
+                ),
                 timeout=timeout,
                 home_env=home_env,
                 bus_env=bus_env,

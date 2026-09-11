@@ -50,20 +50,11 @@ from pyntara.utils import (
 # task_data/kde_settings/kwin in the clone, one directory per script; their
 # names and the files each one carries come from the config, and the root
 # comes from the context.
-# The embedded DBus client that prints the id of every virtual desktop,
-# one per line, in position order. The desktop list is a DBus property
-# of structs (position, id, name); qdbus6 cannot render that type, so the
-# task reads the ids through python3-dbus.
-_DESKTOP_IDS_CLIENT = (
-    "import dbus\n"
-    "bus = dbus.SessionBus()\n"
-    "obj = bus.get_object('org.kde.KWin', '/VirtualDesktopManager')\n"
-    "props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties')\n"
-    "data = props.Get('org.kde.KWin.VirtualDesktopManager', 'desktops')\n"
-    "for entry in data:\n"
-    "    fields = [getattr(part, 'pyobject', part) for part in entry]\n"
-    "    print(fields[1])\n"
-)
+# The client that prints the id of every virtual desktop, one per line, in
+# position order, ships under task_data/kde_settings/list_desktop_ids.py;
+# its name comes from the config. The desktop list is a DBus property of
+# structs (position, id, name), qdbus6 cannot render that type, so the task
+# reads the ids through python3-dbus.
 
 
 def _as_user_command(cfg: KdeSettingsConfig, command: list[str]) -> list[str]:
@@ -1472,6 +1463,7 @@ def _reload_kwin(
 def _apply_desktop_count_live(
     cfg: KdeSettingsConfig,
     *,
+    script_path: Path,
     timeout: float,
     env: dict[str, str] | None,
     system_python: str,
@@ -1541,10 +1533,12 @@ def _apply_desktop_count_live(
                 return f"cannot create desktop: {exc}"
         _log(f"created {target - current} desktops, live count now {target}")
     else:
+        try:
+            ids_client = script_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return f"cannot read the desktop list client {script_path}: {exc}"
         ids_result = run_command(
-            _as_user_command(
-                cfg, [system_python, "-c", _DESKTOP_IDS_CLIENT]
-            ),
+            _as_user_command(cfg, [system_python, "-c", ids_client]),
             extra_env=env,
             timeout=timeout,
             capture=True,
@@ -1745,7 +1739,8 @@ def task(ctx: Context) -> TaskResult:
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
             cfg,
-            task_data_dir(ctx.repo_root, ctx.task_name) / "kwin",
+            task_data_dir(ctx.repo_root, ctx.task_name)
+            / cfg.kwin_scripts_dir_name,
             timeout=timeout,
             force=force,
             env=apply_env,
@@ -1771,7 +1766,8 @@ def task(ctx: Context) -> TaskResult:
         "write the Konsole profile",
         lambda: _apply_konsole_profile(
             cfg,
-            task_data_dir(ctx.repo_root, ctx.task_name) / "Pyntara.profile",
+            task_data_dir(ctx.repo_root, ctx.task_name)
+            / cfg.konsole_profile_file_name,
             timeout=timeout,
             force=force,
         ),
@@ -1799,6 +1795,10 @@ def task(ctx: Context) -> TaskResult:
 
     desktop_error = _apply_desktop_count_live(
         cfg,
+        script_path=(
+            task_data_dir(ctx.repo_root, ctx.task_name)
+            / cfg.desktop_ids_script_file_name
+        ),
         timeout=timeout,
         env=apply_env,
         system_python=ctx.config.engine.system_python,

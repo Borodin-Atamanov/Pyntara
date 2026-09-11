@@ -80,3 +80,7 @@ layout_switcher_component_friendly = "Keyboard Layout Switcher"
 # shortcut may carry; the values are the flags of Qt itself, so a
 # shortcut the task applies live can be composed without a Qt library.
 shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }
+# The python script that applies the supported shortcuts through the
+# running daemon; it ships under task_data/ of the clone and is passed
+# to the interpreter with the hotkey payload as its argument.
+apply_hotkeys_script_file_name = "apply_hotkeys.py"

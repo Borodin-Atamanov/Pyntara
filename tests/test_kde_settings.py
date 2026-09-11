@@ -1754,16 +1754,31 @@ def test_kconfig_force_writes_even_when_matching(
     assert [command for command in writes if "LayoutName" in command]
 
 
+def _write_desktop_ids_client(tmp_path: Path) -> Path:
+    """Write the python desktop id client the task runs, return its path.
+
+    The task reads the client text from the file the config names and
+    passes it to the interpreter, so the test hands over a file of its own
+    and recognises the call by that exact text.
+    """
+
+    path = tmp_path / "list_desktop_ids.py"
+    path.write_text("import dbus\nprint('id')\n", encoding="utf-8")
+    return path
+
+
 def test_desktop_count_live_removes_extra_desktops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The live count is higher than the configured Number: the task reads
-    # the desktop ids through the embedded python3-dbus client and removes
-    # the trailing extras.
+    # the desktop ids through the python3-dbus client shipped as task data
+    # and removes the trailing extras.
     records = (
         KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
+    ids_client_path = _write_desktop_ids_client(tmp_path)
+    ids_client = ids_client_path.read_text(encoding="utf-8")
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -1771,7 +1786,7 @@ def test_desktop_count_live_removes_extra_desktops(
         joined = " ".join(command)
         if ".count" in joined:
             return _FakeProc(0, "6")
-        if task_module._DESKTOP_IDS_CLIENT in command:
+        if ids_client in command:
             return _FakeProc(0, "id1\nid2\nid3\nid4\nid5\nid6\n")
         if "removeDesktop" in joined:
             return _FakeProc(0, "")
@@ -1784,6 +1799,7 @@ def test_desktop_count_live_removes_extra_desktops(
     }
     error = task_module._apply_desktop_count_live(
         ctx.config.kde_settings,
+        script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
         system_python=ctx.config.engine.system_python,
@@ -1830,6 +1846,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
     }
     error = task_module._apply_desktop_count_live(
         ctx.config.kde_settings,
+        script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
         system_python=ctx.config.engine.system_python,
@@ -1847,6 +1864,41 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         )
         positions.append(command[method_index + 1])
     assert positions == ["3", "4"]
+
+
+def test_desktop_count_live_reports_a_missing_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A missing task data file is reported with its path before anything is
+    # removed, so the run never deletes desktops without its id list.
+    records = (
+        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    missing_client = tmp_path / "missing_desktop_ids.py"
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        if ".count" in " ".join(command):
+            return _FakeProc(0, "6")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {
+        "HOME": str(tmp_path),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+    error = task_module._apply_desktop_count_live(
+        ctx.config.kde_settings,
+        script_path=missing_client,
+        timeout=30.0,
+        env=env,
+        system_python=ctx.config.engine.system_python,
+    )
+    assert error is not None
+    assert str(missing_client) in error
+    assert not [command for command in calls if "removeDesktop" in " ".join(command)]
 
 
 def test_kconfig_record_failure_keeps_other_records(

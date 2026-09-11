@@ -1397,6 +1397,10 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             raw.get("layout_switch_shortcuts", {}),
             "kde_keyboard_setup.layout_switch_shortcuts",
         ),
+        apply_hotkeys_script_file_name=_nonempty_string_field(
+            raw.get("apply_hotkeys_script_file_name"),
+            "kde_keyboard_setup.apply_hotkeys_script_file_name",
+        ),
     )
 
 
@@ -1568,6 +1572,18 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         ),
         kwin_script_actions=_string_list(
             raw.get("kwin_script_actions"), "kde_settings.kwin_script_actions"
+        ),
+        desktop_ids_script_file_name=_nonempty_string_field(
+            raw.get("desktop_ids_script_file_name"),
+            "kde_settings.desktop_ids_script_file_name",
+        ),
+        kwin_scripts_dir_name=_nonempty_string_field(
+            raw.get("kwin_scripts_dir_name"),
+            "kde_settings.kwin_scripts_dir_name",
+        ),
+        konsole_profile_file_name=_nonempty_string_field(
+            raw.get("konsole_profile_file_name"),
+            "kde_settings.konsole_profile_file_name",
         ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"

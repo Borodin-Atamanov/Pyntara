@@ -20,6 +20,7 @@ from support import make_config, make_context
 
 from pyntara.config.kde_keyboard_setup import KdeKeyboardSetupConfig
 from pyntara.tasks import kde_keyboard_setup as task_module
+from pyntara.utils import task_data_dir
 
 
 def _keyboard_cfg() -> KdeKeyboardSetupConfig:
@@ -494,6 +495,40 @@ def test_session_hotkey_already_applied_is_idempotent(
     assert reloads == []
     assert restarts == []
     assert len(live_applies) == 1
+
+
+def test_live_apply_runs_the_script_the_config_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The client text comes from the task data file the config names, so
+    # editing that file changes what runs without touching the code.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    script_path = (
+        task_data_dir(ctx.repo_root, ctx.task_name)
+        / ctx.config.kde_keyboard_setup.apply_hotkeys_script_file_name
+    )
+    assert script_path.read_text(encoding="utf-8") in live_applies[0]
+
+
+def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
+    # A missing task data file is reported with its path, so the run tells
+    # the user which file is not there instead of crashing on it.
+    missing_script = tmp_path / "missing_apply_hotkeys.py"
+    error, changed = task_module._apply_hotkeys_live(
+        _keyboard_cfg(),
+        {SPANISH_ACTION: "Meta+Q"},
+        script_path=missing_script,
+        timeout=5.0,
+        home_env={},
+        bus_env={},
+        system_python="/usr/bin/python3",
+    )
+    assert changed is False
+    assert error is not None
+    assert str(missing_script) in error
 
 
 def test_session_hotkey_apply_failure_is_warning(
