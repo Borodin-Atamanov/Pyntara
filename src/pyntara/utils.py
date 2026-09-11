@@ -588,13 +588,14 @@ def ensure_port_free(
     return f"killed unknown process {pid} on port {port}"
 
 
-def ensure_root_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
-    """Set the configured owner when the process runs as root.
+def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
+    """Set the given file owner when the process runs as root.
 
-    The owner is the pair the [engine] config carries, root_owner_uid and
-    root_owner_gid, so no module writes the uid or the gid of root itself.
-    The installer runs under sudo, so the ownership is applied on real
-    machines; non-root test runs skip the chown, because it would fail
+    The pair comes from the caller: the [engine] table carries the owner of
+    a file the run creates as root (root_owner_uid and root_owner_gid), and
+    ssh_daemon_setup and tor_setup pass the uid and the gid of a user. The
+    installer runs under sudo, so the ownership is applied on real
+    machines; a non-root test run skips the chown, because it would fail
     without privileges.
     """
 

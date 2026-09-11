@@ -74,10 +74,10 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
+    apply_owner,
     backoff_delay,
     curl_flags,
     dpkg_architecture,
-    ensure_root_owner,
     install_package_once,
     run_command,
     service_is_active,
@@ -317,7 +317,7 @@ def _ensure_private_key(
     cfg.private_key_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.private_key_path.write_text(key_text, encoding="utf-8")
     os.chmod(cfg.private_key_path, cfg.private_key_file_mode)
-    ensure_root_owner(cfg.private_key_path, owner_uid, owner_gid)
+    apply_owner(cfg.private_key_path, owner_uid, owner_gid)
 
 
 def _write_config(
@@ -331,7 +331,7 @@ def _write_config(
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(_render_config(cfg, peers), encoding="utf-8")
     os.chmod(cfg.config_path, cfg.config_file_mode)
-    ensure_root_owner(cfg.config_path, owner_uid, owner_gid)
+    apply_owner(cfg.config_path, owner_uid, owner_gid)
 
 
 def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
@@ -628,7 +628,7 @@ def _ensure_interface_unmanaged(
         cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
         cfg.nm_unmanaged_conf_path.write_text(body, encoding="utf-8")
         os.chmod(cfg.nm_unmanaged_conf_path, cfg.nm_unmanaged_conf_file_mode)
-        ensure_root_owner(cfg.nm_unmanaged_conf_path, owner_uid, owner_gid)
+        apply_owner(cfg.nm_unmanaged_conf_path, owner_uid, owner_gid)
         changed = True
         _log(
             f"marked interface {cfg.if_name} as unmanaged in "
@@ -801,7 +801,7 @@ def _save_self_address(
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
             cfg.address_file_path.chmod(cfg.address_file_mode)
-            ensure_root_owner(cfg.address_file_path, owner_uid, owner_gid)
+            apply_owner(cfg.address_file_path, owner_uid, owner_gid)
             _log(f"saving self address to {cfg.address_file_path}: {address}")
             return True
         remaining = deadline - time.monotonic()

@@ -61,8 +61,8 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
+    apply_owner,
     curl_flags,
-    ensure_root_owner,
     install_package_once,
     package_is_installed,
     port_listener_pid,
@@ -164,7 +164,7 @@ def _ensure_repository(
                     timeout=timeout,
                 )
             cfg.keyring_path.chmod(cfg.file_mode)
-            ensure_root_owner(cfg.keyring_path, owner_uid, owner_gid)
+            apply_owner(cfg.keyring_path, owner_uid, owner_gid)
             changed = True
         content = _source_text(cfg.keyring_path)
         if not (
@@ -174,7 +174,7 @@ def _ensure_repository(
             cfg.apt_source_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.apt_source_path.write_text(content, encoding="utf-8")
             cfg.apt_source_path.chmod(cfg.file_mode)
-            ensure_root_owner(cfg.apt_source_path, owner_uid, owner_gid)
+            apply_owner(cfg.apt_source_path, owner_uid, owner_gid)
             changed = True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return changed, f"cannot register the Google Chrome apt repository: {exc}"
@@ -297,7 +297,7 @@ def _deploy_system_tree(
                 continue
             shutil.copyfile(path, target)
             target.chmod(cfg.file_mode)
-            ensure_root_owner(target, owner_uid, owner_gid)
+            apply_owner(target, owner_uid, owner_gid)
             changed = True
         except OSError as exc:
             warnings.append(f"cannot deploy {rel}: {exc}")
@@ -517,7 +517,7 @@ def _ensure_profile_mirror(
             unit_dir.mkdir(parents=True, exist_ok=True)
             unit_file.write_text(content, encoding="utf-8")
             unit_file.chmod(cfg.file_mode)
-            ensure_root_owner(unit_file, owner_uid, owner_gid)
+            apply_owner(unit_file, owner_uid, owner_gid)
             run_command(["systemctl", "daemon-reload"], timeout=timeout)
         run_command(["systemctl", "enable", "--now", unit_name], timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
@@ -625,7 +625,7 @@ def _ensure_desktop_override(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         target.chmod(cfg.file_mode)
-        ensure_root_owner(target, owner_uid, owner_gid)
+        apply_owner(target, owner_uid, owner_gid)
     except OSError as exc:
         return False, f"cannot write the desktop override: {exc}"
     return True, None

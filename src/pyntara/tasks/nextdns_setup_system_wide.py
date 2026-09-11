@@ -28,7 +28,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
-from pyntara.utils import ensure_root_owner
+from pyntara.utils import apply_owner
 
 # The module reads no repository path of its own: the source vault paths of
 # local_vault_setup are resolved against the clone root the context carries,
@@ -44,7 +44,7 @@ def _write_profile_id_file(
     """Record the selected profile ID for the System Metrics collector.
 
     The mode and the root ownership are applied through the shared
-    ensure_root_owner helper, so the owner is the configured pair and no
+    apply_owner helper, so the owner is the configured pair and no
     literal lives here. A failed write is journaled and reported, so the
     task fails loudly instead of silently losing the telemetry source.
     """
@@ -54,7 +54,7 @@ def _write_profile_id_file(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{profile_id}\n", encoding="utf-8")
         os.chmod(path, cfg.profile_id_file_mode)
-        ensure_root_owner(path, owner_uid, owner_gid)
+        apply_owner(path, owner_uid, owner_gid)
         return True
     except OSError as exc:
         _log(

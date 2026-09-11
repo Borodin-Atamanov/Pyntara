@@ -51,7 +51,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    ensure_root_owner,
+    apply_owner,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -397,7 +397,7 @@ def _ensure_spool_dir(spool_dir: Path, mode: int, owner_uid: int, owner_gid: int
 
     spool_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(spool_dir, mode)
-    ensure_root_owner(spool_dir, owner_uid, owner_gid)
+    apply_owner(spool_dir, owner_uid, owner_gid)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -661,7 +661,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"writing command {command_path}")
         try:
             _write_command_file(command_path, command_content, metrics.command_file_mode)
-            ensure_root_owner(command_path, owner_uid, owner_gid)
+            apply_owner(command_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,

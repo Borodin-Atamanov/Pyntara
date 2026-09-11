@@ -64,9 +64,9 @@ from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
+    apply_owner,
     curl_flags,
     dpkg_architecture,
-    ensure_root_owner,
     install_package_once,
     os_family_is_debian,
     read_os_release,
@@ -295,7 +295,7 @@ def _write_config(
     cfg.config_path.write_text(
         _render_config(cfg, template_path), encoding="utf-8"
     )
-    ensure_root_owner(cfg.config_path, owner_uid, owner_gid)
+    apply_owner(cfg.config_path, owner_uid, owner_gid)
 
 
 def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
@@ -320,7 +320,7 @@ def _write_tunnels_config(
     cfg.tunnels_config_path.write_text(
         _render_tunnels_config(cfg, ssh_port, template_path), encoding="utf-8"
     )
-    ensure_root_owner(cfg.tunnels_config_path, owner_uid, owner_gid)
+    apply_owner(cfg.tunnels_config_path, owner_uid, owner_gid)
 
 
 def _wait_active(
@@ -632,7 +632,7 @@ def task(ctx: Context) -> TaskResult:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
             cfg.address_file_path.chmod(cfg.address_file_mode)
-            ensure_root_owner(cfg.address_file_path, owner_uid, owner_gid)
+            apply_owner(cfg.address_file_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,

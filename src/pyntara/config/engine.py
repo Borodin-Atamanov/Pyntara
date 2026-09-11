@@ -22,7 +22,7 @@ class EngineConfig:
     journal_identifier is the name under which the engine mirrors its own
     messages into the system journal; the composition root hands it to the
     journal writer before the first message. root_owner_uid and
-    root_owner_gid are the owner the shared ensure_root_owner helper gives
+    root_owner_gid are the owner the shared apply_owner helper gives
     a file the run creates as root. desktop_username is the account
     of the desktop user whose live session the run reaches;
     session_environment_command prints that session's environment, one

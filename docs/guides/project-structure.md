@@ -43,7 +43,7 @@ src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks
 src/pyntara/models.py — TaskResult dataclass.  
 src/pyntara/context.py — Context frozen dataclass.  
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.  
-src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries, proquint_encode and proquint_decode pronounceable encoding of arbitrary bytes (draft-rayner-proquint) with the alphabet and bit layout fixed in the module, plus trim_whitespace, backoff_delay, ensure_root_owner, package and os-release helpers.  
+src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with timeout and return-code checks, service_is_enabled and service_is_active systemd status queries, proquint_encode and proquint_decode pronounceable encoding of arbitrary bytes (draft-rayner-proquint) with the alphabet and bit layout fixed in the module, plus trim_whitespace, backoff_delay, apply_owner, package and os-release helpers.  
 src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in config file through augtool. Used by ssh_daemon_setup and ssh_client_setup.  
 src/pyntara/config_edit.py — Line-level config editing helpers (see [Configuration editing](#configuration-editing)).  
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.  
@@ -110,7 +110,7 @@ Shared helpers that tasks import instead of reimplementing. When you need a capa
 Module              Public functions
 utils.py            run_command, package_is_installed, install_package_once,
                     read_os_release, os_family_is_debian, dpkg_architecture,
-                    service_is_enabled, service_is_active, ensure_root_owner,
+                    service_is_enabled, service_is_active, apply_owner,
                     proquint_encode, proquint_decode, trim_whitespace,
                     backoff_delay
 

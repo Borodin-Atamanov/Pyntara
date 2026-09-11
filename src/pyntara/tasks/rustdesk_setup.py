@@ -49,9 +49,9 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
+    apply_owner,
     curl_flags,
     dpkg_architecture,
-    ensure_root_owner,
     install_package_once,
     proquint_encode,
     run_command,
@@ -402,7 +402,7 @@ def _write_id_file(
         return False
     cfg.id_file_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.id_file_path.write_text(f"{machine_id}\n", encoding="utf-8")
-    ensure_root_owner(cfg.id_file_path, owner_uid, owner_gid)
+    apply_owner(cfg.id_file_path, owner_uid, owner_gid)
     cfg.id_file_path.chmod(cfg.id_file_mode)
     _log(f"wrote rustdesk ID {machine_id} to {cfg.id_file_path}")
     return True

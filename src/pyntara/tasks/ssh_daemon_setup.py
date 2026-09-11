@@ -53,7 +53,6 @@ import time
 from pathlib import Path
 
 from pyntara.augeas import (
-    apply_owner,
     ensure_augtool,
     include_covers_dropin,
     sync_dropin,
@@ -64,6 +63,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
+    apply_owner,
     install_package_once,
     package_is_installed,
     run_command,

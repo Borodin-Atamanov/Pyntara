@@ -102,7 +102,7 @@ def test_profile_file_owner_comes_from_the_engine_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The file gets the owner pair of the [engine] table through the shared
-    # ensure_root_owner helper, so no module writes the owner of root
+    # apply_owner helper, so no module writes the owner of root
     # itself; a non-root run applies no owner at all.
     _install_source_vault(tmp_path, monkeypatch)
     monkeypatch.setattr(task_module.os, "geteuid", lambda: 0)

@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from pyntara.utils import (
+    apply_owner,
     install_packages,
     package_is_installed,
     run_command,
@@ -255,18 +256,6 @@ def include_covers_dropin(config_path: Path, dropin_path: Path) -> bool:
             if fnmatch.fnmatch(str(dropin_path), str(relative)):
                 return True
     return False
-
-
-def apply_owner(path: Path, uid: int, gid: int) -> None:
-    """Set the file owner when the process runs as root.
-
-    The installer runs under sudo, so the ownership is applied on real
-    machines; non-root test runs skip the chown, because it would fail
-    without privileges.
-    """
-
-    if os.geteuid() == 0:
-        os.chown(path, uid, gid)
 
 
 def ensure_augtool(

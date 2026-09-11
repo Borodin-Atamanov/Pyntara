@@ -23,9 +23,9 @@ from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
+    apply_owner,
     curl_flags,
     dpkg_architecture,
-    ensure_root_owner,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -784,7 +784,7 @@ def _write_resolver_dropin(
         cfg.resolved_section,
     )
     path.chmod(cfg.resolved_dropin_file_mode)
-    ensure_root_owner(path, owner_uid, owner_gid)
+    apply_owner(path, owner_uid, owner_gid)
     return changed
 
 
@@ -848,7 +848,7 @@ def task(ctx: Context) -> TaskResult:
             )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)
-            ensure_root_owner(cfg.binary_path, owner_uid, owner_gid)
+            apply_owner(cfg.binary_path, owner_uid, owner_gid)
             changed = True
         discovered = (
             discover_dns_servers(cfg, timeout)
@@ -867,7 +867,7 @@ def task(ctx: Context) -> TaskResult:
             or service_path.read_text(encoding="utf-8") != service_content
         ):
             service_path.write_text(service_content, encoding="utf-8")
-            ensure_root_owner(service_path, owner_uid, owner_gid)
+            apply_owner(service_path, owner_uid, owner_gid)
             run_command(list(cfg.daemon_reload_command), timeout=timeout)
             changed = True
         active = service_is_active(cfg.service_unit_name, timeout)

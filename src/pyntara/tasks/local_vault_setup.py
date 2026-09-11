@@ -30,7 +30,7 @@ from pyntara.config import LocalVaultSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import ensure_root_owner
+from pyntara.utils import apply_owner
 
 
 def _resolve_source_vault(
@@ -261,7 +261,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot write runtime vault: {exc}")
     _log("runtime vault written")
     try:
-        ensure_root_owner(cfg.local_vault_path, owner_uid, owner_gid)
+        apply_owner(cfg.local_vault_path, owner_uid, owner_gid)
     except OSError:
         _log("cannot set owner of the runtime vault")
 
@@ -282,7 +282,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=f"cannot write password file: {exc}")
     _log("password file written")
     try:
-        ensure_root_owner(cfg.pass_file_path, owner_uid, owner_gid)
+        apply_owner(cfg.pass_file_path, owner_uid, owner_gid)
     except OSError:
         _log("cannot set owner of the password file")
 
