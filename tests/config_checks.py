@@ -532,6 +532,24 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     github_repo = _nonempty_string_field(
         raw.get("github_repo"), "dnsproxy_setup.github_repo"
     )
+    asset_name_template = _nonempty_string_field(
+        raw.get("asset_name_template"),
+        "dnsproxy_setup.asset_name_template",
+    )
+    asset_architecture_names = _string_map(
+        raw.get("asset_architecture_names"),
+        "dnsproxy_setup.asset_architecture_names",
+    )
+    binary_file_name = _nonempty_string_field(
+        raw.get("binary_file_name"), "dnsproxy_setup.binary_file_name"
+    )
+    staged_binary_file_name = _nonempty_string_field(
+        raw.get("staged_binary_file_name"),
+        "dnsproxy_setup.staged_binary_file_name",
+    )
+    extract_dir_name = _nonempty_string_field(
+        raw.get("extract_dir_name"), "dnsproxy_setup.extract_dir_name"
+    )
     download_dir = Path(
         _nonempty_string_field(raw.get("download_dir"), "dnsproxy_setup.download_dir")
     )
@@ -685,6 +703,11 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     )
     return DnsproxySetupConfig(
         github_repo=github_repo,
+        asset_name_template=asset_name_template,
+        asset_architecture_names=asset_architecture_names,
+        binary_file_name=binary_file_name,
+        staged_binary_file_name=staged_binary_file_name,
+        extract_dir_name=extract_dir_name,
         download_dir=download_dir,
         binary_path=binary_path,
         service_unit_name=service_unit_name,
@@ -733,6 +756,47 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         kill_command=commands[14],
         service_log_command=commands[15],
         verification_domain=verification_domain,
+        probe_address=_nonempty_string_field(
+            raw.get("probe_address"), "dnsproxy_setup.probe_address"
+        ),
+        probe_ident_bytes=_positive_int_field(
+            raw.get("probe_ident_bytes"), "dnsproxy_setup.probe_ident_bytes"
+        ),
+        tun_device_type=_nonempty_string_field(
+            raw.get("tun_device_type"), "dnsproxy_setup.tun_device_type"
+        ),
+        loopback_connection_name=_nonempty_string_field(
+            raw.get("loopback_connection_name"),
+            "dnsproxy_setup.loopback_connection_name",
+        ),
+        nmcli_auto_dns_ignored_value=_nonempty_string_field(
+            raw.get("nmcli_auto_dns_ignored_value"),
+            "dnsproxy_setup.nmcli_auto_dns_ignored_value",
+        ),
+        nmcli_ignore_auto_dns_value=_nonempty_string_field(
+            raw.get("nmcli_ignore_auto_dns_value"),
+            "dnsproxy_setup.nmcli_ignore_auto_dns_value",
+        ),
+        nmcli_restore_auto_dns_value=_nonempty_string_field(
+            raw.get("nmcli_restore_auto_dns_value"),
+            "dnsproxy_setup.nmcli_restore_auto_dns_value",
+        ),
+        service_stop_command=_string_list(
+            raw.get("service_stop_command"),
+            "dnsproxy_setup.service_stop_command",
+        ),
+        service_enable_command=_string_list(
+            raw.get("service_enable_command"),
+            "dnsproxy_setup.service_enable_command",
+        ),
+        service_start_command=_string_list(
+            raw.get("service_start_command"),
+            "dnsproxy_setup.service_start_command",
+        ),
+        service_restart_command=_string_list(
+            raw.get("service_restart_command"),
+            "dnsproxy_setup.service_restart_command",
+        ),
         verification_error_excerpt_length=verification_error_excerpt_length,
         service_log_excerpt_length=service_log_excerpt_length,
         profile_id_file_path=profile_id_file_path,

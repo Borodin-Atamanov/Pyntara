@@ -29,6 +29,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
 )
 
 VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
@@ -99,21 +100,25 @@ def discover_dns_servers(
     )
 
 
-def _asset_for_architecture(payload: dict[str, object], arch: str) -> tuple[str, str]:
+def _asset_for_architecture(
+    cfg: DnsproxySetupConfig, payload: dict[str, object], arch: str
+) -> tuple[str, str]:
     """The (name, url) of the dnsproxy tarball for this architecture.
 
-    The asset name carries the release tag and the upstream architecture
-    spelling: dnsproxy-linux-amd64-v0.84.1.tar.gz. An architecture that
-    upstream does not build is an error, not a fallback to another
-    architecture.
+    The asset name comes from the configured template; the architecture
+    spelling comes from the configured table, because dnsproxy names its
+    architectures itself and prefixes them. An architecture the table does
+    not name is an error, not a fallback to another architecture.
     """
 
     tag = release_tag(payload)
     assets = dict(asset_name_urls(payload))
-    suffix = {"amd64": "amd64", "arm64": "arm64", "armhf": "arm7"}.get(arch)
-    if suffix is None:
+    asset_arch = cfg.asset_architecture_names.get(arch)
+    if asset_arch is None:
         raise RuntimeError(f"unsupported dnsproxy architecture: {arch}")
-    expected = f"dnsproxy-linux-{suffix}-{tag}.tar.gz"
+    expected = cfg.asset_name_template.format(
+        asset_arch=asset_arch, release_tag=tag
+    )
     if expected in assets:
         return expected, assets[expected]
     raise RuntimeError(f"release {tag} has no asset {expected}")
@@ -173,15 +178,15 @@ def _download_binary(
         ],
         timeout=timeout,
     )
-    extract_dir = cfg.download_dir / "extract"
+    extract_dir = cfg.download_dir / cfg.extract_dir_name
     shutil.rmtree(extract_dir, ignore_errors=True)
     extract_dir.mkdir()
     with tarfile.open(archive, "r:gz") as package:
         package.extractall(extract_dir, filter="data")
-    candidates = list(extract_dir.rglob("dnsproxy"))
+    candidates = list(extract_dir.rglob(cfg.binary_file_name))
     if len(candidates) != 1 or not candidates[0].is_file():
         raise RuntimeError("dnsproxy archive does not contain exactly one binary")
-    staged = cfg.download_dir / "dnsproxy.staged"
+    staged = cfg.download_dir / cfg.staged_binary_file_name
     shutil.copyfile(candidates[0], staged)
     staged.chmod(cfg.staged_binary_file_mode)
     return staged
@@ -381,7 +386,7 @@ def _dns_probe_answers(cfg: DnsproxySetupConfig, timeout: float) -> bool:
     package is needed on the target.
     '''
 
-    ident = int.from_bytes(os.urandom(2), "big")
+    ident = int.from_bytes(os.urandom(cfg.probe_ident_bytes), "big")
     header = struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0)
     question = b"".join(
         struct.pack(">B", len(label)) + label
@@ -392,7 +397,7 @@ def _dns_probe_answers(cfg: DnsproxySetupConfig, timeout: float) -> bool:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                 sock.settimeout(cfg.start_check_retry_delay_seconds)
-                sock.sendto(query, ("127.0.0.1", cfg.listen_port))
+                sock.sendto(query, (cfg.probe_address, cfg.listen_port))
                 data, _ = sock.recvfrom(4096)
         except OSError:
             time.sleep(cfg.start_check_retry_delay_seconds)
@@ -449,7 +454,7 @@ def _tun_device_names(cfg: DnsproxySetupConfig, timeout: float) -> set[str]:
     names: set[str] = set()
     for line in status.splitlines():
         fields = line.split(":")
-        if len(fields) >= 2 and fields[1] == "tun":
+        if len(fields) >= 2 and fields[1] == cfg.tun_device_type:
             names.add(fields[0])
     return names
 
@@ -485,17 +490,14 @@ def _disable_auto_dns_active(
     changed: list[tuple[str, str]] = []
     for line in listing:
         fields = line.split(":")
-        if len(fields) < 2 or not fields[1] or fields[0] == "lo":
+        if len(fields) < 2 or not fields[1] or fields[0] == cfg.loopback_connection_name:
             continue
         uuid = fields[1]
         device = fields[2] if len(fields) > 2 else ""
         if device in tun_devices:
             continue
         state = run_command(
-            [
-                part.replace("{connection}", uuid)
-                for part in cfg.nmcli_dns_state_command
-            ],
+            substituted_command(cfg.nmcli_dns_state_command, {"connection": uuid}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -505,19 +507,20 @@ def _disable_auto_dns_active(
             for part in state.stdout.splitlines()
             if part.strip()
         }
-        if values == {"yes"}:
+        if values == {cfg.nmcli_auto_dns_ignored_value}:
             continue
-        command = [
-            part.replace("{connection}", uuid).replace("{value}", "true")
-            for part in cfg.nmcli_modify_command
-        ]
-        run_command(command, timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.nmcli_modify_command,
+                {"connection": uuid, "value": cfg.nmcli_ignore_auto_dns_value},
+            ),
+            timeout=timeout,
+        )
         if device:
             run_command(
-                [
-                    part.replace("{device}", device)
-                    for part in cfg.nmcli_reapply_command
-                ],
+                substituted_command(
+                    cfg.nmcli_reapply_command, {"device": device}
+                ),
                 timeout=timeout,
             )
         changed.append((uuid, device))
@@ -528,17 +531,19 @@ def _restore_auto_dns(
     cfg: DnsproxySetupConfig, changed: list[tuple[str, str]], timeout: float
 ) -> None:
     for uuid, device in changed:
-        command = [
-            part.replace("{connection}", uuid).replace("{value}", "false")
-            for part in cfg.nmcli_modify_command
-        ]
-        run_command(command, check=False, timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.nmcli_modify_command,
+                {"connection": uuid, "value": cfg.nmcli_restore_auto_dns_value},
+            ),
+            check=False,
+            timeout=timeout,
+        )
         if device:
             run_command(
-                [
-                    part.replace("{device}", device)
-                    for part in cfg.nmcli_reapply_command
-                ],
+                substituted_command(
+                    cfg.nmcli_reapply_command, {"device": device}
+                ),
                 check=False,
                 timeout=timeout,
             )
@@ -764,7 +769,10 @@ def _revert(
         )
     try:
         run_command(
-            ["systemctl", "stop", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_stop_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             check=False,
             timeout=timeout,
         )
@@ -822,7 +830,7 @@ def task(ctx: Context) -> TaskResult:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
         tag = release_tag(release)
         asset_name, asset_url = _asset_for_architecture(
-            release, dpkg_architecture(timeout)
+            cfg, release, dpkg_architecture(timeout)
         )
         target_version = _version_from_tag(tag)
     except (RuntimeError, subprocess.SubprocessError) as exc:
@@ -877,19 +885,32 @@ def task(ctx: Context) -> TaskResult:
                 return TaskResult(success=False, changed=changed, error=error)
         if not service_is_enabled(cfg.service_unit_name, timeout):
             run_command(
-                ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_enable_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
             changed = True
-        if not active or changed or ctx.force_tasks.intersection({"dnsproxy_setup"}):
+        if not active or changed or ctx.task_name in ctx.force_tasks:
+            service_command = (
+                cfg.service_restart_command if active else cfg.service_start_command
+            )
             run_command(
-                ["systemctl", "restart" if active else "start", cfg.service_unit_name],
+                substituted_command(
+                    service_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
                 timeout=timeout,
             )
             if not _wait_active(cfg, timeout):
                 excerpt = _service_log(cfg, timeout)
                 detail = f"; service log: {excerpt}" if excerpt else ""
                 run_command(
-                    ["systemctl", "stop", cfg.service_unit_name],
+                    substituted_command(
+                        cfg.service_stop_command,
+                        {"service_unit_name": cfg.service_unit_name},
+                    ),
                     check=False,
                     timeout=timeout,
                 )
@@ -900,7 +921,10 @@ def task(ctx: Context) -> TaskResult:
                 )
             if not _dns_probe_answers(cfg, timeout):
                 run_command(
-                    ["systemctl", "stop", cfg.service_unit_name],
+                    substituted_command(
+                        cfg.service_stop_command,
+                        {"service_unit_name": cfg.service_unit_name},
+                    ),
                     check=False,
                     timeout=timeout,
                 )

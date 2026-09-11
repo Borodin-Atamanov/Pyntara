@@ -1,5 +1,20 @@
 [dnsproxy_setup]
 github_repo = "AdguardTeam/dnsproxy"
+# Name of the release asset with {asset_arch} and {release_tag} substituted
+# and the architecture spelling of asset_architecture_names per dpkg
+# architecture. The tag keeps its leading v here, because the published
+# asset name carries it: dnsproxy-linux-amd64-v0.84.1.tar.gz. dnsproxy
+# names its own architectures, so the table belongs to this section and not
+# to the engine; an architecture the table does not name is an error and
+# never a fallback to another one.
+asset_name_template = "dnsproxy-linux-{asset_arch}-{release_tag}.tar.gz"
+asset_architecture_names = { amd64 = "amd64", arm64 = "arm64", armhf = "arm7" }
+# Name of the binary inside the archive and of the staged copy next to the
+# archive; the registered name is binary_path above.
+binary_file_name = "dnsproxy"
+staged_binary_file_name = "dnsproxy.staged"
+# Name of the directory the archive is unpacked into inside download_dir.
+extract_dir_name = "extract"
 download_dir = "/var/lib/pyntara/dnsproxy-download"
 binary_path = "/usr/local/bin/dnsproxy"
 service_unit_name = "dnsproxy.service"
@@ -198,6 +213,28 @@ resolvectl_dns_command = ["resolvectl", "dns"]
 nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
 verification_domain = "example.com"
 verification_command = ["resolvectl", "query", "--cache=no", "{domain}"]
+# Address the direct DNS probe sends its query to: the local listener over
+# the loopback interface, before the resolver cutover.
+probe_address = "127.0.0.1"
+# Number of random bytes of the probe query identifier.
+probe_ident_bytes = 2
+# Device type NetworkManager reports for a tunnel device in the device
+# status listing; such devices carry no DHCP-provided DNS.
+tun_device_type = "tun"
+# Name of the loopback connection in the active connection listing; the
+# auto DNS sweep skips it.
+loopback_connection_name = "lo"
+# Value the state query reports when a connection already ignores auto
+# DNS, and the values written to make it ignore or accept auto DNS again.
+nmcli_auto_dns_ignored_value = "yes"
+nmcli_ignore_auto_dns_value = "true"
+nmcli_restore_auto_dns_value = "false"
+# Commands that stop, enable, start and restart the service unit;
+# {service_unit_name} is the unit of this section.
+service_stop_command = ["systemctl", "stop", "{service_unit_name}"]
+service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+service_start_command = ["systemctl", "start", "{service_unit_name}"]
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
 # Characters of the failed verification output shown in the error text: a
 # long resolver error is cut to this length, an empty output becomes the
 # placeholder <no output>.

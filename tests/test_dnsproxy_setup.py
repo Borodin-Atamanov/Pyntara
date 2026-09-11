@@ -571,14 +571,35 @@ def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:
+    settings = make_config().dnsproxy_setup
     try:
         task_module._asset_for_architecture(
-            {"tag_name": "v0.84.1", "assets": []}, "riscv64"
+            settings, {"tag_name": "v0.84.1", "assets": []}, "riscv64"
         )
     except RuntimeError as error:
         assert "unsupported" in str(error)
     else:
         raise AssertionError("unsupported architecture was accepted")
+
+
+def test_asset_name_and_architecture_table_come_from_the_config() -> None:
+    # Another asset template and another architecture table in the config
+    # are the asset the task looks for, so the naming scheme of the release
+    # is a value and not a judgement of the code.
+    settings = replace(
+        make_config().dnsproxy_setup,
+        asset_name_template="dnsproxy-{asset_arch}-{release_tag}.bin",
+        asset_architecture_names={"riscv64": "riscv64"},
+    )
+    payload: dict[str, object] = {
+        "tag_name": "v9.9.9",
+        "assets": [
+            {"name": "dnsproxy-riscv64-v9.9.9.bin", "browser_download_url": "u"}
+        ],
+    }
+    name, url = task_module._asset_for_architecture(settings, payload, "riscv64")
+    assert name == "dnsproxy-riscv64-v9.9.9.bin"
+    assert url == "u"
 
 
 def test_release_and_download_curls_carry_configured_flags(
