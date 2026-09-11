@@ -125,6 +125,7 @@ def _ctx(
     return make_context(
         install_mode="server",
         force_tasks=frozenset({"system_metrics_setup"}) if force else frozenset(),
+        repo_root=tmp_path / "repo",
         task_data_root=tmp_path,
         skip_apt_update=True,
         config=config if config is not None else make_config(task_data_root=tmp_path),
@@ -181,25 +182,6 @@ def _install_fixtures(
     system_config_dir = tmp_path / "etc" / "pyntara"
     system_config = system_config_dir / "config.toml"
     systemd_dir = tmp_path / "systemd"
-    monkeypatch.setattr(system_metrics_setup, "REPO_ROOT", repo)
-    monkeypatch.setattr(system_metrics_setup, "TEMPLATE_PATH", service_template)
-    monkeypatch.setattr(
-        system_metrics_setup, "INGEST_SERVICE_TEMPLATE_PATH", ingest_service_template
-    )
-    monkeypatch.setattr(
-        system_metrics_setup, "INGEST_PATH_TEMPLATE_PATH", ingest_path_template
-    )
-    monkeypatch.setattr(
-        system_metrics_setup,
-        "COLLECTOR_SERVICE_TEMPLATE_PATH",
-        collector_service_template,
-    )
-    monkeypatch.setattr(
-        system_metrics_setup,
-        "COLLECTOR_TIMER_TEMPLATE_PATH",
-        collector_timer_template,
-    )
-    monkeypatch.setattr(system_metrics_setup, "COMMAND_TEMPLATE_PATH", command_template)
     config = make_config(
         task_data_root=tmp_path,
         systemd_unit_dir=systemd_dir,

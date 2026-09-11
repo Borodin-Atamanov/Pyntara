@@ -64,17 +64,16 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
-    REPO_ROOT,
     install_package_once,
     package_is_installed,
     run_command,
     service_is_active,
     service_is_enabled,
+    task_data_dir,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-SSH_DATA_DIR = REPO_ROOT / "task_data" / "ssh_daemon_setup"
 
 # The ownership comment of the drop-in, without the leading hash:
 # augeas stores and writes comment values without it.
@@ -332,17 +331,18 @@ def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.ssh_daemon_setup
     timeout = ctx.config.engine.command_timeout_seconds
     force = "ssh_daemon_setup" in ctx.force_tasks
+    ssh_data_dir = task_data_dir(ctx.repo_root, "ssh_daemon_setup")
 
-    private_source = SSH_DATA_DIR / cfg.private_key_file_name
-    public_source = SSH_DATA_DIR / cfg.public_key_file_name
-    pf_private_source = SSH_DATA_DIR / cfg.port_forwarding_private_key_file_name
-    pf_public_source = SSH_DATA_DIR / cfg.port_forwarding_public_key_file_name
+    private_source = ssh_data_dir / cfg.private_key_file_name
+    public_source = ssh_data_dir / cfg.public_key_file_name
+    pf_private_source = ssh_data_dir / cfg.port_forwarding_private_key_file_name
+    pf_public_source = ssh_data_dir / cfg.port_forwarding_public_key_file_name
     if not private_source.is_file() or not public_source.is_file():
         return TaskResult(
             success=False,
             error=(
                 f"key files {cfg.private_key_file_name} and "
-                f"{cfg.public_key_file_name} missing in {SSH_DATA_DIR}"
+                f"{cfg.public_key_file_name} missing in {ssh_data_dir}"
             ),
         )
     if not pf_private_source.is_file() or not pf_public_source.is_file():
@@ -352,7 +352,7 @@ def task(ctx: Context) -> TaskResult:
                 f"port-forwarding key files "
                 f"{cfg.port_forwarding_private_key_file_name} and "
                 f"{cfg.port_forwarding_public_key_file_name} "
-                f"missing in {SSH_DATA_DIR}"
+                f"missing in {ssh_data_dir}"
             ),
         )
     private_bytes = private_source.read_bytes()

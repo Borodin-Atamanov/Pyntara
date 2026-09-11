@@ -226,7 +226,9 @@ def _run_task(
         ),
     )
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
-    context = make_context(vault_password=PASSWORD, config=config)
+    context = make_context(
+        vault_password=PASSWORD, config=config, repo_root=Path.cwd()
+    )
     monkeypatch.setattr(
         task_module,
         "fetch_latest_release",
@@ -242,7 +244,6 @@ def _run_task(
     )
     monkeypatch.setattr(task_module, "dpkg_architecture", lambda *_: "amd64")
     monkeypatch.setattr(task_module, "_installed_version", lambda *_: "0.84.1")
-    monkeypatch.setattr(task_module, "REPO_ROOT", Path.cwd())
     monkeypatch.setattr(
         task_module, "_write_resolver_dropin", task_module._write_resolver_dropin
     )
@@ -354,7 +355,9 @@ def test_task_fails_early_without_the_nextdns_profile_file(
         dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
         dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
     )
-    context = make_context(vault_password=PASSWORD, config=config)
+    context = make_context(
+        vault_password=PASSWORD, config=config, repo_root=Path.cwd()
+    )
     result = task_module.task(context)
     assert result.success is False
     assert "nextdns_setup_system_wide" in (result.error or "")

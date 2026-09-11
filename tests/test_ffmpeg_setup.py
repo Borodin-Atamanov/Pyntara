@@ -27,6 +27,11 @@ TEST_PACKAGES = ("ffmpeg",)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
+# Clone root the ffmpeg fixtures use: _wayrecord_env writes the C sources
+# under it, and _ctx hands it to the task through the Context.
+_CLONE_ROOT = REPO_ROOT
+_FIXTURE_REPO: Path | None = None
+
 # The bytes the fake gcc writes to its output file; a deployed engine that
 # carries these bytes counts as already built.
 WAYRECORD_BINARY = b"\x7fELF-sentinel-wayrecord-binary\n"
@@ -39,12 +44,13 @@ def _wayrecord_env(
 ) -> tuple[Path, Path]:
     """Point the C sources and the deploy targets at tmp; return (bin, desktop).
 
-    REPO_ROOT is monkeypatched to a fixture clone that carries the wayrecord
-    C sources under task_data/ffmpeg_setup/, and the target binary plus the
-    desktop entry live in the tmp tree so the real /usr and /usr/local are
-    never touched.
+    The fixture clone carries the wayrecord C sources under
+    task_data/ffmpeg_setup/ and enters the task through the Context, and the
+    target binary plus the desktop entry live in the tmp tree so the real
+    /usr and /usr/local are never touched.
     """
 
+    global _FIXTURE_REPO
     repo = tmp_path / "repo"
     template_dir = repo / "task_data" / "ffmpeg_setup"
     template_dir.mkdir(parents=True)
@@ -52,7 +58,7 @@ def _wayrecord_env(
     (template_dir / "zkde-screencast-client.c").write_text(
         ZKDE_CLIENT_C, encoding="utf-8"
     )
-    monkeypatch.setattr(ffmpeg_setup, "REPO_ROOT", repo)
+    _FIXTURE_REPO = repo
     return (
         tmp_path / "bin" / "pyntara-wayrecord",
         tmp_path / "applications" / "pyntara-wayrecord.desktop",
@@ -76,9 +82,11 @@ def _ctx(
     wayrecord_desktop_path: Path,
     *,
     skip_apt_update: bool = False,
+    repo_root: Path | None = None,
 ) -> Context:
     return make_context(
         config=_test_config(wayrecord_bin_path, wayrecord_desktop_path),
+        repo_root=repo_root or _FIXTURE_REPO or _CLONE_ROOT,
         skip_apt_update=skip_apt_update,
     )
 
@@ -334,12 +342,11 @@ def test_wayrecord_missing_template_is_error(
     repo = tmp_path / "repo"
     template_dir = repo / "task_data" / "ffmpeg_setup"
     template_dir.mkdir(parents=True)
-    monkeypatch.setattr(ffmpeg_setup, "REPO_ROOT", repo)
     wayrecord_bin_path = tmp_path / "bin" / "pyntara-wayrecord"
     wayrecord_desktop_path = tmp_path / "applications" / "pyntara-wayrecord.desktop"
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(wayrecord_bin_path, wayrecord_desktop_path, repo_root=repo)
     )
     assert result.success is False
     assert "missing wayrecord source" in (result.error or "")

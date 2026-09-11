@@ -52,8 +52,6 @@ def _install_fixtures(
     venv_python = venv_dir / "bin" / "python"
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
-    monkeypatch.setattr(port_forwarding_setup, "REPO_ROOT", repo)
-    monkeypatch.setattr(port_forwarding_setup, "TEMPLATE_PATH", template)
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
     config = make_config(
         task_data_root=tmp_path,
@@ -62,7 +60,7 @@ def _install_fixtures(
         system_metrics_system_config_path=system_config,
         port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
     )
-    ctx = make_context(task_data_root=tmp_path, config=config)
+    ctx = make_context(task_data_root=tmp_path, config=config, repo_root=repo)
     return systemd_dir, venv_python, system_config, ctx
 
 
@@ -250,12 +248,12 @@ def test_missing_template_is_error(
     repo.mkdir(parents=True)
     task_data = repo / "task_data" / "port_forwarding_setup"
     task_data.mkdir(parents=True)
-    missing = task_data / "auto_port_forwarding.service"
-    monkeypatch.setattr(port_forwarding_setup, "REPO_ROOT", repo)
-    monkeypatch.setattr(port_forwarding_setup, "TEMPLATE_PATH", missing)
     ctx = make_context(
         task_data_root=tmp_path,
-        config=make_config(task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"),
+        repo_root=repo,
+        config=make_config(
+            task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"
+        ),
     )
     result = port_forwarding_setup.task(ctx)
     assert not result.success

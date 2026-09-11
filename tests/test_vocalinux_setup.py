@@ -37,8 +37,6 @@ def _write_templates(
     config_path.write_text(CONFIG_CONTENT, encoding="utf-8")
     echo_path = template_dir / "net.local.echo.desktop"
     echo_path.write_text(ECHO_CONTENT, encoding="utf-8")
-    monkeypatch.setattr(task_module, "CONFIG_TEMPLATE", config_path)
-    monkeypatch.setattr(task_module, "ECHO_DESKTOP_TEMPLATE", echo_path)
 
 
 def _ctx(
@@ -51,6 +49,7 @@ def _ctx(
     return make_context(
         install_mode="desktop",
         force_tasks=frozenset({"vocalinux_setup"}) if force else frozenset(),
+        repo_root=tmp_path,
         task_data_root=tmp_path,
         config=make_config(
             task_data_root=tmp_path,

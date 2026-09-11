@@ -1778,7 +1778,9 @@ def _remote_profile(
     for the operator when it is not, so exactly one of the two is set.
     """
 
-    source = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
+    source = open_source_vault(
+        ctx.repo_root, ctx.config.local_vault_setup, ctx.vault_password
+    )
     if source is None:
         return None, (
             "no source vault could be opened: the local proxy is not configured"

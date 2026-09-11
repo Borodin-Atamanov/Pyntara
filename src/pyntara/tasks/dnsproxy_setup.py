@@ -23,7 +23,6 @@ from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
-    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -274,9 +273,11 @@ def _command(
 
 
 def _render_service(
-    cfg: DnsproxySetupConfig, profile_id: str, discovered: DiscoveredDnsServers
+    cfg: DnsproxySetupConfig,
+    profile_id: str,
+    discovered: DiscoveredDnsServers,
+    template_path: Path,
 ) -> str:
-    template_path = REPO_ROOT / cfg.service_template_path
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_start=" ".join(_command(cfg, profile_id, discovered)),
@@ -851,7 +852,12 @@ def task(ctx: Context) -> TaskResult:
             else DiscoveredDnsServers((), (), ())
         )
         service_path = cfg.service_unit_path
-        service_content = _render_service(cfg, profile_id, discovered)
+        service_content = _render_service(
+            cfg,
+            profile_id,
+            discovered,
+            ctx.repo_root / cfg.service_template_path,
+        )
         if (
             not service_path.exists()
             or service_path.read_text(encoding="utf-8") != service_content

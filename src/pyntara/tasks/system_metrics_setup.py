@@ -50,44 +50,20 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    REPO_ROOT,
     ensure_root_owner,
     run_command,
     service_is_active,
     service_is_enabled,
+    task_data_dir,
     trim_whitespace,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-# Repository layout and the systemd unit directory are fixed machine
-# contracts (architecture contract, Configuration); the unit file names, the
-# deployment paths of the venv and the system config live in config.toml
-# through Context.
-TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics.service"
-)
-INGEST_SERVICE_TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics-ingest.service"
-)
-INGEST_PATH_TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics-ingest.path"
-)
-COLLECTOR_SERVICE_TEMPLATE_PATH = (
-    REPO_ROOT
-    / "task_data"
-    / "system_metrics_setup"
-    / "system_metrics_collector.service"
-)
-COLLECTOR_TIMER_TEMPLATE_PATH = (
-    REPO_ROOT
-    / "task_data"
-    / "system_metrics_setup"
-    / "system_metrics_collector.timer"
-)
-COMMAND_TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "system_metrics_setup" / "commit_system_metrics.sh"
-)
+# The unit, path and command templates of this task live under
+# task_data/system_metrics_setup in the clone and are read from the context;
+# the unit file names, the deployment paths of the venv and the system config
+# live in config.toml through Context.
 
 
 def _venv_package_version(venv_python: Path, timeout: float) -> str | None:
@@ -127,6 +103,7 @@ def _uv_path() -> str | None:
 
 
 def _ensure_venv(
+    repo_root: Path,
     uv: str,
     force: bool,
     timeout: float,
@@ -167,7 +144,7 @@ def _ensure_venv(
         uv,
         "sync",
         "--project",
-        str(REPO_ROOT),
+        str(repo_root),
         "--active",
         "--locked",
         "--no-dev",
@@ -175,7 +152,7 @@ def _ensure_venv(
     ]
     if force or (not venv_up_to_date and not created):
         sync += ["--reinstall-package", "pyntara"]
-    _log(f"installing pyntara into the venv from the lockfile of {REPO_ROOT}")
+    _log(f"installing pyntara into the venv from the lockfile of {repo_root}")
     try:
         run_command(
             sync,
@@ -188,10 +165,10 @@ def _ensure_venv(
     return True, None
 
 
-def _system_config_matches(system_config_path: Path) -> bool:
+def _system_config_matches(system_config_path: Path, config_source_dir: Path) -> bool:
     """True when the system config copy equals the repository config."""
 
-    source = REPO_ROOT / "config"
+    source = config_source_dir
     try:
         if not system_config_path.is_file():
             return False
@@ -203,7 +180,7 @@ def _system_config_matches(system_config_path: Path) -> bool:
         return False
 
 
-def _write_system_config(system_config_path: Path) -> None:
+def _write_system_config(system_config_path: Path, config_source_dir: Path) -> None:
     """Render the repository config to the configured system path.
 
     The copy is the single config of the target system: deployed services
@@ -212,7 +189,7 @@ def _write_system_config(system_config_path: Path) -> None:
     joined text load_config parses.
     """
 
-    source = REPO_ROOT / "config"
+    source = config_source_dir
     system_config_path.parent.mkdir(parents=True, exist_ok=True)
     system_config_path.write_text(
         render_config_source(source), encoding="utf-8"
@@ -220,7 +197,10 @@ def _write_system_config(system_config_path: Path) -> None:
 
 
 def _render_service_unit(
-    venv_python: Path, system_config_path: Path, journal_identifier: str
+    template_path: Path,
+    venv_python: Path,
+    system_config_path: Path,
+    journal_identifier: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
@@ -233,14 +213,17 @@ def _render_service_unit(
     command = " ".join(
         [str(venv_python), "-m", "pyntara.metrics", str(system_config_path)]
     )
-    template = Template(TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
     )
 
 
 def _render_ingest_service_unit(
-    venv_python: Path, system_config_path: Path, journal_identifier: str
+    template_path: Path,
+    venv_python: Path,
+    system_config_path: Path,
+    journal_identifier: str,
 ) -> str:
     """Render the ingest service unit with the ExecStart line substituted.
 
@@ -251,21 +234,24 @@ def _render_ingest_service_unit(
     command = " ".join(
         [str(venv_python), "-m", "pyntara.metrics_ingest", str(system_config_path)]
     )
-    template = Template(INGEST_SERVICE_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
     )
 
 
-def _render_ingest_path_unit(spool_dir: Path) -> str:
+def _render_ingest_path_unit(template_path: Path, spool_dir: Path) -> str:
     """Render the path unit that watches the spool directory."""
 
-    template = Template(INGEST_PATH_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(spool_dir=spool_dir)
 
 
 def _render_collector_service_unit(
-    venv_python: Path, system_config_path: Path, journal_identifier: str
+    template_path: Path,
+    venv_python: Path,
+    system_config_path: Path,
+    journal_identifier: str,
 ) -> str:
     """Render the collector oneshot unit with the ExecStart line substituted.
 
@@ -278,16 +264,17 @@ def _render_collector_service_unit(
     command = " ".join(
         [str(venv_python), "-m", "pyntara.metrics_collect", str(system_config_path)]
     )
-    template = Template(
-        COLLECTOR_SERVICE_TEMPLATE_PATH.read_text(encoding="utf-8")
-    )
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
     )
 
 
 def _render_collector_timer_unit(
-    boot_delay_seconds: int, daily_send_time: str, service_unit_name: str
+    template_path: Path,
+    boot_delay_seconds: int,
+    daily_send_time: str,
+    service_unit_name: str,
 ) -> str:
     """Render the timer unit that starts the collector after boot and daily.
 
@@ -297,7 +284,7 @@ def _render_collector_timer_unit(
     section Report collector).
     """
 
-    template = Template(COLLECTOR_TIMER_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         boot_delay_seconds=boot_delay_seconds,
         daily_send_time=daily_send_time,
@@ -306,7 +293,7 @@ def _render_collector_timer_unit(
 
 
 def _render_commit_command(
-    spool_dir: Path, journal_identifier: str, temp_prefix: str
+    template_path: Path, spool_dir: Path, journal_identifier: str, temp_prefix: str
 ) -> str:
     """Render the thin commit command with the configured values embedded.
 
@@ -316,7 +303,7 @@ def _render_commit_command(
     contract, Configuration).
     """
 
-    template = COMMAND_TEMPLATE_PATH.read_text(encoding="utf-8")
+    template = template_path.read_text(encoding="utf-8")
     # The command template is a bash script with @PLACEHOLDER@ markers:
     # string.Template would clash with bash variables, so plain text
     # replacement is used instead.
@@ -445,24 +432,40 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_name = metrics.collector.timer_unit_name
     spool_dir = metrics.spool_dir
     journal_identifier = metrics.service_journal_identifier
+    template_dir = task_data_dir(ctx.repo_root, "system_metrics_setup")
 
     service_unit = _render_service_unit(
-        venv_python, system_config_path, journal_identifier
+        template_dir / "system_metrics.service",
+        venv_python,
+        system_config_path,
+        journal_identifier,
     )
     ingest_service_unit = _render_ingest_service_unit(
-        venv_python, system_config_path, journal_identifier
+        template_dir / "system_metrics-ingest.service",
+        venv_python,
+        system_config_path,
+        journal_identifier,
     )
-    ingest_path_unit = _render_ingest_path_unit(spool_dir)
+    ingest_path_unit = _render_ingest_path_unit(
+        template_dir / "system_metrics-ingest.path", spool_dir
+    )
     collector_service_unit = _render_collector_service_unit(
-        venv_python, system_config_path, metrics.collector.journal_identifier
+        template_dir / "system_metrics_collector.service",
+        venv_python,
+        system_config_path,
+        metrics.collector.journal_identifier,
     )
     collector_timer_unit = _render_collector_timer_unit(
+        template_dir / "system_metrics_collector.timer",
         metrics.collector.boot_delay_seconds,
         metrics.collector.daily_send_time,
         collector_service_name,
     )
     command_content = _render_commit_command(
-        spool_dir, metrics.commit_journal_identifier, metrics.spool_temp_prefix
+        template_dir / "commit_system_metrics.sh",
+        spool_dir,
+        metrics.commit_journal_identifier,
+        metrics.spool_temp_prefix,
     )
 
     venv_python = venv_dir / "bin" / "python"
@@ -473,7 +476,9 @@ def task(ctx: Context) -> TaskResult:
         f"{'ok' if venv_ok else 'missing or stale'} "
         f"(venv {venv_version or 'none'}, repository {__version__})"
     )
-    config_ok = _system_config_matches(system_config_path)
+    config_ok = _system_config_matches(
+        system_config_path, ctx.repo_root / "config"
+    )
     unit_dir = ctx.config.engine.systemd_unit_dir
     service_unit_ok = _unit_matches(unit_dir, service_name, service_unit)
     ingest_service_unit_ok = _unit_matches(
@@ -542,7 +547,7 @@ def task(ctx: Context) -> TaskResult:
     if uv is None:
         return TaskResult(success=False, error="uv executable not found on PATH")
     venv_changed, error = _ensure_venv(
-        uv, force, timeout, venv_dir, metrics.python_version, venv_ok
+        ctx.repo_root, uv, force, timeout, venv_dir, metrics.python_version, venv_ok
     )
     if error is not None:
         return TaskResult(success=False, error=error)
@@ -551,7 +556,7 @@ def task(ctx: Context) -> TaskResult:
     if not config_ok or force:
         _log(f"writing system config {system_config_path}")
         try:
-            _write_system_config(system_config_path)
+            _write_system_config(system_config_path, ctx.repo_root / "config")
         except OSError as exc:
             return TaskResult(
                 success=False, changed=changed, error=f"cannot write system config: {exc}"

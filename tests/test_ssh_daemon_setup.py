@@ -119,6 +119,7 @@ def _ctx(
     return make_context(
         install_mode="server",
         force_tasks=frozenset({"ssh_daemon_setup"}) if force else frozenset(),
+        repo_root=tmp_path,
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
         config=make_config(
@@ -156,7 +157,6 @@ def _install_fixtures(
     (data_dir / cfg.port_forwarding_public_key_file_name).write_text(
         PF_PUBLIC_KEY_LINE + "\n"
     )
-    monkeypatch.setattr(ssh_daemon_setup, "SSH_DATA_DIR", data_dir)
     return data_dir
 
 
@@ -531,7 +531,7 @@ def test_missing_key_files_are_an_error(
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     cfg = ctx.config.ssh_daemon_setup
-    (Path(ssh_daemon_setup.SSH_DATA_DIR) / cfg.public_key_file_name).unlink()
+    (Path(ctx.repo_root) / "task_data" / "ssh_daemon_setup" / cfg.public_key_file_name).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
     assert "missing in" in (result.error or "")
@@ -548,7 +548,12 @@ def test_missing_port_forwarding_key_files_are_an_error(
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     cfg = ctx.config.ssh_daemon_setup
-    (Path(ssh_daemon_setup.SSH_DATA_DIR) / cfg.port_forwarding_private_key_file_name).unlink()
+    (
+        Path(ctx.repo_root)
+        / "task_data"
+        / "ssh_daemon_setup"
+        / cfg.port_forwarding_private_key_file_name
+    ).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is False
     assert "port-forwarding key files" in (result.error or "")

@@ -20,6 +20,10 @@ from pyntara.config import KConfigRecord
 from pyntara.config.kde_settings import KdeSettingsConfig
 from pyntara.tasks import kde_settings as task_module
 
+# The templates of the task live in the clone the tests run from, so a test
+# that pre-writes the files the task expects reads the shipped template.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _ctx(
     tmp_path: Path,
@@ -28,6 +32,7 @@ def _ctx(
     kcminputrc: str | None = None,
     virtual_keyboard_enabled: bool = True,
     system_look_and_feel_dir: Path | None = None,
+    repo_root: Path | None = None,
 ):
     """Context with the target user home rooted in tmp_path.
 
@@ -46,6 +51,7 @@ def _ctx(
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=repo_root if repo_root is not None else _REPO_ROOT,
         config=make_config(
             task_data_root=tmp_path,
             kde_settings_home_dir=str(tmp_path),
@@ -1108,18 +1114,17 @@ def test_apply_konsole_profile_renders_template(
     asset.write_text(
         "Directory={home_dir}/Downloads/\nName=Pyntara\n", encoding="utf-8"
     )
-    monkeypatch.setattr(task_module, "KONSOLE_PROFILE_TEMPLATE", asset)
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
     changed = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, timeout=5, force=False
+        ctx.config.kde_settings, asset, timeout=5, force=False
     )
     assert changed is True
     target = tmp_path / ".local/share/konsole/Pyntara.profile"
     expected = f"Directory={tmp_path}/Downloads/\nName=Pyntara\n"
     assert target.read_text(encoding="utf-8") == expected
     changed2 = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, timeout=5, force=False
+        ctx.config.kde_settings, asset, timeout=5, force=False
     )
     assert changed2 is False
 
@@ -1194,11 +1199,10 @@ def test_apply_kwin_scripts_installs_and_enables(
     # scripts are enabled in kwinrc [Plugins]; a second pass is a no-op.
     template_root = tmp_path / "kwin"
     _write_script_templates(template_root)
-    monkeypatch.setattr(task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", template_root)
     ctx = _ctx(tmp_path)
     writes, _ = _script_fakes(monkeypatch)
     changed = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, timeout=5, force=False
+        ctx.config.kde_settings, template_root, timeout=5, force=False
     )
     assert changed is True
     for script in ctx.config.kde_settings.kwin_scripts:
@@ -1213,7 +1217,7 @@ def test_apply_kwin_scripts_installs_and_enables(
     for script in ctx.config.kde_settings.kwin_scripts:
         assert f"{script}Enabled" in enabled
     changed2 = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, timeout=5, force=False
+        ctx.config.kde_settings, template_root, timeout=5, force=False
     )
     assert changed2 is False
 
@@ -1222,13 +1226,10 @@ def test_apply_kwin_scripts_missing_templates_skips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No templates: the step changes nothing and is not an error.
-    monkeypatch.setattr(
-        task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", tmp_path / "missing"
-    )
     ctx = _ctx(tmp_path)
     writes, _ = _script_fakes(monkeypatch)
     changed = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, timeout=5, force=False
+        ctx.config.kde_settings, tmp_path / "missing", timeout=5, force=False
     )
     assert changed is False
     assert writes == []
@@ -1308,9 +1309,8 @@ def test_kwin_scripts_installed_and_hotkeys_freed(
 ) -> None:
     # The full task installs the scripts, enables them and frees the
     # script hotkeys from the foreign actions.
-    template_root = tmp_path / "kwin"
+    template_root = tmp_path / "task_data" / "kde_settings" / "kwin"
     _write_script_templates(template_root)
-    monkeypatch.setattr(task_module, "KWIN_SCRIPTS_TEMPLATE_ROOT", template_root)
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "kglobalshortcutsrc").write_text(
@@ -1319,7 +1319,7 @@ def test_kwin_scripts_installed_and_hotkeys_freed(
         "Switch One Desktop Down=Meta+Ctrl+Down,Meta+Ctrl+Down,Switch One Desktop Down\n",
         encoding="utf-8",
     )
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(tmp_path, repo_root=tmp_path)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
@@ -1638,14 +1638,18 @@ def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
     (config_dir / "user-dirs.dirs").write_text(
         task_module._user_dirs_merged("", cfg.user_dirs), encoding="utf-8"
     )
-    profile = task_module.KONSOLE_PROFILE_TEMPLATE.read_text(encoding="utf-8")
+    profile = (
+        _REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
+    ).read_text(encoding="utf-8")
     profile = profile.replace("{home_dir}", cfg.home_dir)
     profile_dir = tmp_path / ".local/share/konsole"
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
     for script in cfg.kwin_scripts:
         for rel_file in cfg.kwin_script_files:
-            template = task_module.KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
+            template = (
+                _REPO_ROOT / "task_data" / "kde_settings" / "kwin" / script / rel_file
+            )
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")

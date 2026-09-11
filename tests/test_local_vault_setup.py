@@ -46,7 +46,6 @@ def _ctx(
 ) -> Context:
     """Context whose source vaults live in the temporary directory."""
 
-    monkeypatch.setattr(local_vault_setup, "REPO_ROOT", tmp_path)
     config = make_config(
         task_data_root=tmp_path,
         local_vault_source_production=Path("production.vault"),
@@ -57,6 +56,7 @@ def _ctx(
     return make_context(
         vault_password=vault_password,
         force_tasks=frozenset({"local_vault_setup"}) if force else frozenset(),
+        repo_root=tmp_path,
         config=config,
     )
 

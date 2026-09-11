@@ -29,6 +29,7 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         install_mode="server",
         vault_password=VAULT_PASSWORD,
         force_tasks=frozenset({"nextdns_setup_system_wide"}) if force else frozenset(),
+        repo_root=tmp_path,
         task_data_root=tmp_path,
         config=make_config(
             task_data_root=tmp_path,
@@ -59,7 +60,6 @@ def _install_source_vault(
     for profile_id in PROFILE_IDS:
         kp.add_entry(group, f"{profile_id} profile", profile_id, "")
     kp.save()
-    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
 
 
 def _selected_profile(tmp_path: Path, ctx) -> str:
@@ -132,7 +132,6 @@ def test_missing_group_fails_without_writing(
     vault = tmp_path / "secrets" / "production.vault"
     vault.parent.mkdir(parents=True)
     create_database(str(vault), password=VAULT_PASSWORD)
-    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
     assert result.success is False
@@ -149,7 +148,6 @@ def test_empty_group_fails_without_writing(
     kp = PyKeePass(str(vault), password=VAULT_PASSWORD)
     kp.add_group(kp.root_group, "NextDNS", notes="empty")
     kp.save()
-    monkeypatch.setattr("pyntara.tasks.local_vault_setup.REPO_ROOT", tmp_path)
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
     assert result.success is False

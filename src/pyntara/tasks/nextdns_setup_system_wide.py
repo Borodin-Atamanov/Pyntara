@@ -69,7 +69,9 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
     because it is a copy made once by local_vault_setup and may be stale.
     """
 
-    source = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
+    source = open_source_vault(
+        ctx.repo_root, ctx.config.local_vault_setup, ctx.vault_password
+    )
     if source is not None:
         return source[0]
     _log("source vaults unavailable, trying the runtime vault")

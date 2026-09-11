@@ -2730,7 +2730,7 @@ def _profile_source(monkeypatch: pytest.MonkeyPatch, link: str = PROFILE_LINK) -
 
     monkeypatch.setattr(
         "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
-        lambda _cfg, _password: (
+        lambda _repo_root, _cfg, _password: (
             _source_vault(link),
             Path("/repo/secrets/production.vault"),
         ),
@@ -2891,7 +2891,7 @@ class TestLocalProxyStage:
     ) -> None:
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
-            lambda _cfg, _password: None,
+            lambda _repo_root, _cfg, _password: None,
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())

@@ -21,11 +21,7 @@ from __future__ import annotations
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import REPO_ROOT, install_packages, package_is_installed
-
-# The template lives in the repository clone; REPO_ROOT, imported from
-# pyntara.utils, is monkeypatched by the tests to point at a fixture
-# (docs/guides/developer-guide.md).
+from pyntara.utils import install_packages, package_is_installed, task_data_dir
 
 
 def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
@@ -41,7 +37,9 @@ def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
     cfg = ctx.config.imagemagick_setup
     target = cfg.policy_path
     backup = target.with_name(f"{target.name}.bak")
-    template_path = REPO_ROOT / "task_data" / "imagemagick_setup" / "policy.xml"
+    template_path = (
+        task_data_dir(ctx.repo_root, "imagemagick_setup") / "policy.xml"
+    )
     try:
         template = template_path.read_text(encoding="utf-8")
     except OSError as exc:

@@ -36,23 +36,20 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    REPO_ROOT,
     install_package_once,
     package_is_installed,
     run_command,
     session_environment,
+    task_data_dir,
     trim_whitespace,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-KONSOLE_PROFILE_TEMPLATE = (
-    REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
-)
 # The KWin scripts the task installs and enables live as directories under
-# this root, one directory per script; their names and the files each one
-# carries come from the config.
-KWIN_SCRIPTS_TEMPLATE_ROOT = REPO_ROOT / "task_data" / "kde_settings" / "kwin"
+# task_data/kde_settings/kwin in the clone, one directory per script; their
+# names and the files each one carries come from the config, and the root
+# comes from the context.
 # The embedded DBus client that prints the id of every virtual desktop,
 # one per line, in position order. The desktop list is a DBus property
 # of structs (position, id, name); qdbus6 cannot render that type, so the
@@ -950,6 +947,7 @@ def _apply_kwin_scripts(
     into the user local share kwin scripts directory as the target user
     and enabled in kwinrc [Plugins]. Files are written only when their
     content differs, so repeated runs skip matching scripts. A script
+    scripts_template_root: Path,
     whose template is missing is skipped entirely, so no dangling
     kwinrc enable is written. A script that fails to install or enable
     is reported and the remaining scripts still apply.
@@ -959,7 +957,7 @@ def _apply_kwin_scripts(
     for script in cfg.kwin_scripts:
         try:
             templates = {
-                rel_file: KWIN_SCRIPTS_TEMPLATE_ROOT / script / rel_file
+                rel_file: scripts_template_root / script / rel_file
                 for rel_file in cfg.kwin_script_files
             }
             if any(not template.is_file() for template in templates.values()):
@@ -1299,7 +1297,8 @@ def _apply_konsole_profile(
     """
 
     try:
-        template = KONSOLE_PROFILE_TEMPLATE.read_text(encoding="utf-8")
+        template = template_path.read_text(encoding="utf-8")
+    template_path: Path,
     except OSError:
         _log("no konsole profile template, profile left as is")
         return False
@@ -1746,6 +1745,7 @@ def task(ctx: Context) -> TaskResult:
         lambda: _free_script_hotkeys(
             cfg,
             env=apply_env,
+            task_data_dir(ctx.repo_root, "kde_settings") / "kwin",
             timeout=timeout,
             system_python=ctx.config.engine.system_python,
             warnings=warnings,
@@ -1757,7 +1757,12 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= step(
         "write the Konsole profile",
-        lambda: _apply_konsole_profile(cfg, timeout=timeout, force=force),
+        lambda: _apply_konsole_profile(
+            cfg,
+            task_data_dir(ctx.repo_root, "kde_settings") / "Pyntara.profile",
+            timeout=timeout,
+            force=force,
+        ),
     )
     settings_changed |= step(
         "hide the configured Dolphin places",

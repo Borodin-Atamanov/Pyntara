@@ -32,12 +32,12 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
-    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     install_packages,
     package_is_installed,
     run_command,
+    task_data_dir,
     trim_whitespace,
 )
 
@@ -45,10 +45,8 @@ from pyntara.utils import (
 # against temporary fixtures instead of the real system (developer guide).
 # The working app config and the empty-action desktop file, byte-for-byte
 # the ones verified on the development machine (docs/spec/vocalinux-setup.md).
-CONFIG_TEMPLATE = REPO_ROOT / "task_data" / "vocalinux_setup" / "config.json"
-ECHO_DESKTOP_TEMPLATE = (
-    REPO_ROOT / "task_data" / "vocalinux_setup" / "net.local.echo.desktop"
-)
+# The templates of the app config and of the empty Meta+S action live under
+# task_data/vocalinux_setup in the clone and are read from the context.
 
 # The GitHub repository that publishes the Vocalinux releases.
 GITHUB_REPO = "VocaHQ/vocalinux"
@@ -480,16 +478,19 @@ def task(ctx: Context) -> TaskResult:
         changed = True
         messages.append(f"enabled the {cfg.service_unit_name} user unit")
 
-    if not CONFIG_TEMPLATE.is_file():
+    template_dir = task_data_dir(ctx.repo_root, "vocalinux_setup")
+    config_template = template_dir / "config.json"
+    echo_desktop_template = template_dir / "net.local.echo.desktop"
+    if not config_template.is_file():
         return TaskResult(
             success=False,
             changed=changed,
-            error=f"missing app config template: {CONFIG_TEMPLATE}",
+            error=f"missing app config template: {config_template}",
         )
     config_changed = _write_user_file(
         cfg,
         str(CONFIG_REL),
-        CONFIG_TEMPLATE.read_text(encoding="utf-8"),
+        config_template.read_text(encoding="utf-8"),
         file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,
@@ -510,16 +511,16 @@ def task(ctx: Context) -> TaskResult:
         changed = True
         messages.append(f"wrote the autostart entry to {Path(cfg.home_dir) / AUTOSTART_REL}")
 
-    if not ECHO_DESKTOP_TEMPLATE.is_file():
+    if not echo_desktop_template.is_file():
         return TaskResult(
             success=False,
             changed=changed,
-            error=f"missing empty-action desktop template: {ECHO_DESKTOP_TEMPLATE}",
+            error=f"missing empty-action desktop template: {echo_desktop_template}",
         )
     echo_changed = _write_user_file(
         cfg,
         str(ECHO_DESKTOP_REL),
-        ECHO_DESKTOP_TEMPLATE.read_text(encoding="utf-8"),
+        echo_desktop_template.read_text(encoding="utf-8"),
         file_mode=cfg.user_file_mode,
         timeout=timeout,
         force=force,

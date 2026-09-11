@@ -31,26 +31,24 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    REPO_ROOT,
     install_packages,
     package_is_installed,
     run_command,
+    task_data_dir,
 )
 
-# The templates live in the repository clone; REPO_ROOT, imported from
-# pyntara.utils, is monkeypatched by the tests to point at a fixture
-# (docs/guides/developer-guide.md).
 
-
-def _wayrecord_sources() -> list[Path]:
+def _wayrecord_sources(source_dir: Path) -> list[Path]:
     """The C sources of the capture engine, in compile order."""
 
-    base = REPO_ROOT / "task_data" / "ffmpeg_setup"
-    return [base / "wayrecord.c", base / "zkde-screencast-client.c"]
+    return [
+        source_dir / "wayrecord.c",
+        source_dir / "zkde-screencast-client.c",
+    ]
 
 
 def _build_wayrecord(
-    binary_path: Path, file_mode: int, timeout: float
+    source_dir: Path, binary_path: Path, file_mode: int, timeout: float
 ) -> tuple[bool, str | None]:
     """Compile the engine and install it; return (changed, error).
 
@@ -60,7 +58,7 @@ def _build_wayrecord(
     failed build or an install error is an error string.
     """
 
-    sources = _wayrecord_sources()
+    sources = _wayrecord_sources(source_dir)
     for source in sources:
         if not source.is_file():
             return False, f"missing wayrecord source: {source}"
@@ -186,7 +184,10 @@ def task(ctx: Context) -> TaskResult:
                 success=False, changed=bool(installed_packages), error=detail
             )
     engine_changed, engine_error = _build_wayrecord(
-        cfg.wayrecord_bin_path, cfg.wayrecord_file_mode, install_timeout
+        task_data_dir(ctx.repo_root, "ffmpeg_setup"),
+        cfg.wayrecord_bin_path,
+        cfg.wayrecord_file_mode,
+        install_timeout,
     )
     if engine_error:
         return TaskResult(

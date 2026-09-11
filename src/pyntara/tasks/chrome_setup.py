@@ -61,13 +61,13 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
-    REPO_ROOT,
     curl_flags,
     ensure_root_owner,
     install_package_once,
     package_is_installed,
     port_listener_pid,
     run_command,
+    task_data_dir,
     trim_whitespace,
 )
 
@@ -91,11 +91,6 @@ REPO_PREFERENCES_REL = Path("Default") / "Preferences"
 # preferences file inside it.
 PROFILE_DIR_REL = Path(".config") / "google-chrome"
 PROFILE_PREFERENCES_REL = PROFILE_DIR_REL / "Default" / "Preferences"
-# The template of the oneshot unit that restores the profile mirror bind
-# mount at every boot; the tests monkeypatch this path.
-MIRROR_UNIT_TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "chrome_setup" / "mount_chrome_user_dir.service"
-)
 
 
 def _source_text(keyring_path: Path) -> str:
@@ -469,6 +464,7 @@ def _render_mount_unit(
 def _ensure_profile_mirror(
     cfg: ChromeSetupConfig,
     unit_dir: Path,
+    template_path: Path,
     *,
     force: bool,
     timeout: float,
@@ -502,7 +498,7 @@ def _ensure_profile_mirror(
         )
     try:
         content = _render_mount_unit(
-            MIRROR_UNIT_TEMPLATE_PATH, profile_dir, mirror_path, cfg.username
+            template_path, profile_dir, mirror_path, cfg.username
         )
     except OSError as exc:
         return False, f"cannot read the profile mirror unit template: {exc}"
@@ -874,7 +870,12 @@ def task(ctx: Context) -> TaskResult:
 
     _log("mounting the Chrome profile mirror for the DevTools listener")
     mirror_mounted, mirror_note = _ensure_profile_mirror(
-        cfg, ctx.config.engine.systemd_unit_dir, force=force, timeout=timeout
+        cfg,
+        ctx.config.engine.systemd_unit_dir,
+        task_data_dir(ctx.repo_root, "chrome_setup")
+        / "mount_chrome_user_dir.service",
+        force=force,
+        timeout=timeout,
     )
     if mirror_note:
         warnings.append(mirror_note)

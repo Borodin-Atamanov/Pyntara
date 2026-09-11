@@ -30,20 +30,25 @@ POLICY_CONTENT = (
     '<policymap><policy domain="resource" name="memory" value="128GiB"/></policymap>'
 )
 
+# Clone root the policy fixture uses: _policy_env writes the template under
+# it, and _ctx hands it to the task through the Context.
+_FIXTURE_REPO: Path | None = None
+
 
 def _policy_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Point the template and the policy target at tmp; return the target.
 
-    REPO_ROOT is monkeypatched to a fixture clone that carries the policy
-    template under task_data/imagemagick_setup/, and the target policy file
-    lives in the tmp tree so the real /etc is never touched.
+    The fixture clone carries the policy template under
+    task_data/imagemagick_setup/, and the target policy file lives in the
+    tmp tree so the real /etc is never touched.
     """
 
+    global _FIXTURE_REPO
     repo = tmp_path / "repo"
     template_dir = repo / "task_data" / "imagemagick_setup"
     template_dir.mkdir(parents=True)
     (template_dir / "policy.xml").write_text(POLICY_CONTENT, encoding="utf-8")
-    monkeypatch.setattr(imagemagick_setup, "REPO_ROOT", repo)
+    _FIXTURE_REPO = repo
     return tmp_path / "policy.xml"
 
 
@@ -58,7 +63,9 @@ def _test_config(policy_path: Path) -> Config:
 
 def _ctx(*, skip_apt_update: bool = False, policy_path: Path) -> Context:
     return make_context(
-        config=_test_config(policy_path), skip_apt_update=skip_apt_update
+        config=_test_config(policy_path),
+        repo_root=_FIXTURE_REPO or REPO_ROOT,
+        skip_apt_update=skip_apt_update,
     )
 
 

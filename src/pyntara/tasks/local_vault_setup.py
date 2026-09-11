@@ -30,23 +30,26 @@ from pyntara.config import LocalVaultSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import REPO_ROOT, ensure_root_owner
+from pyntara.utils import ensure_root_owner
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 
 
-def _resolve_source_vault(cfg: LocalVaultSetupConfig) -> tuple[Path, Path]:
+def _resolve_source_vault(
+    repo_root: Path, cfg: LocalVaultSetupConfig
+) -> tuple[Path, Path]:
     """Source vault paths resolved against the repository root.
 
     The configured source paths are relative to the repository root, so
     the clone can live anywhere on the machine (/var/cache/pyntara/repo
-    in production, a temporary directory in tests).
+    in production, a temporary directory in tests); the root comes from
+    the context.
     """
 
     return (
-        REPO_ROOT / cfg.source_vault_production,
-        REPO_ROOT / cfg.source_vault_default,
+        repo_root / cfg.source_vault_production,
+        repo_root / cfg.source_vault_default,
     )
 
 
@@ -80,7 +83,7 @@ def _open_source_vault(
 
 
 def open_source_vault(
-    cfg: LocalVaultSetupConfig, password: str | None
+    repo_root: Path, cfg: LocalVaultSetupConfig, password: str | None
 ) -> tuple[PyKeePass, Path] | None:
     """Open the first source vault for a config and a run password, or None.
 
@@ -92,7 +95,7 @@ def open_source_vault(
     (project rules, General engineering requirements).
     """
 
-    return _open_source_vault(*_resolve_source_vault(cfg), password)
+    return _open_source_vault(*_resolve_source_vault(repo_root, cfg), password)
 
 
 def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str | None:
@@ -193,7 +196,7 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.local_vault_setup
     force = "local_vault_setup" in ctx.force_tasks
-    production_path, default_path = _resolve_source_vault(cfg)
+    production_path, default_path = _resolve_source_vault(ctx.repo_root, cfg)
 
     if not force and cfg.local_vault_path.exists():
         pass_state = "present" if cfg.pass_file_path.exists() else "missing"

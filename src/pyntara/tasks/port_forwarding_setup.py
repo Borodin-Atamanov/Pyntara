@@ -29,20 +29,18 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    REPO_ROOT,
     run_command,
     service_is_active,
     service_is_enabled,
+    task_data_dir,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-TEMPLATE_PATH = (
-    REPO_ROOT / "task_data" / "port_forwarding_setup" / "auto_port_forwarding.service"
-)
 
 
 def _render_service_unit(
+    template_path: Path,
     venv_python: Path,
     system_config_path: Path,
     journal_identifier: str,
@@ -65,7 +63,7 @@ def _render_service_unit(
             str(system_config_path),
         ]
     )
-    template = Template(TEMPLATE_PATH.read_text(encoding="utf-8"))
+    template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={command}",
         journal_identifier=journal_identifier,
@@ -152,7 +150,12 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         unit = _render_service_unit(
-            venv_python, system_config_path, pf.journal_identifier, pf.service_restart_seconds
+            task_data_dir(ctx.repo_root, "port_forwarding_setup")
+            / "auto_port_forwarding.service",
+            venv_python,
+            system_config_path,
+            pf.journal_identifier,
+            pf.service_restart_seconds,
         )
     except OSError as exc:
         return TaskResult(
