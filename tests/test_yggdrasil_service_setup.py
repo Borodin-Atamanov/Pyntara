@@ -893,7 +893,7 @@ def test_ensure_private_key_extracts_from_existing_config(
     ctx.config.yggdrasil_service_setup.config_path.write_text("{}", encoding="utf-8")
     calls = _install_fake(monkeypatch, tmp_path)
     yggdrasil_service_setup._ensure_private_key(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.yggdrasil_service_setup, 10, 0, 0
     )
     assert ctx.config.yggdrasil_service_setup.private_key_path.read_text(
         encoding="utf-8"
@@ -912,7 +912,7 @@ def test_ensure_private_key_generates_when_no_config(
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, tmp_path)
     yggdrasil_service_setup._ensure_private_key(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.yggdrasil_service_setup, 10, 0, 0
     )
     assert ctx.config.yggdrasil_service_setup.private_key_path.read_text(
         encoding="utf-8"
@@ -1168,11 +1168,11 @@ def test_ensure_interface_unmanaged_writes_dropin_and_reloads(
     cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     calls = _install_fake(monkeypatch, tmp_path)
     body = "[keyfile]\nunmanaged-devices=interface-name:ygg\n"
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
     assert cfg.nm_unmanaged_conf_path.read_text(encoding="utf-8") == body
     assert ["nmcli", "general", "reload"] in calls
     calls_before = len(calls)
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
     assert len(calls) == calls_before
 
 
@@ -1187,7 +1187,7 @@ def test_ensure_interface_unmanaged_rewrites_changed_dropin(
     cfg.nm_unmanaged_conf_path.write_text(
         "[keyfile]\nunmanaged-devices=interface-name:old\n", encoding="utf-8"
     )
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is True
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
     assert "interface-name:ygg" in cfg.nm_unmanaged_conf_path.read_text(
         encoding="utf-8"
     )
@@ -1207,7 +1207,7 @@ def test_ensure_interface_unmanaged_reports_unwritable_dropin(
         nm_unmanaged_conf_path=blocker / "conf.d" / "yggdrasil-unmanaged.conf",
     )
     _install_fake(monkeypatch, tmp_path)
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10) is False
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is False
 
 
 def test_cleanup_leftover_interface_moves_netplan_profile_aside(

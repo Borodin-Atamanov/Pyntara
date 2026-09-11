@@ -379,12 +379,19 @@ def _ensure_vault_credentials(
     return password, None, changed
 
 
-def _write_id_file(cfg: RustdeskSetupConfig, machine_id: str, force: bool) -> bool:
+def _write_id_file(
+    cfg: RustdeskSetupConfig,
+    machine_id: str,
+    force: bool,
+    owner_uid: int,
+    owner_gid: int,
+) -> bool:
     """Write the machine ID to id_file_path; return True when written.
 
     A normal run writes only when the file is missing or stale, so the
     report carries the current ID without touching a matching file;
-    force mode always rewrites.
+    force mode always rewrites. The written file gets the configured mode
+    and the configured owner of a file the run creates as root.
     """
 
     try:
@@ -395,7 +402,7 @@ def _write_id_file(cfg: RustdeskSetupConfig, machine_id: str, force: bool) -> bo
         return False
     cfg.id_file_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.id_file_path.write_text(f"{machine_id}\n", encoding="utf-8")
-    ensure_root_owner(cfg.id_file_path)
+    ensure_root_owner(cfg.id_file_path, owner_uid, owner_gid)
     cfg.id_file_path.chmod(cfg.id_file_mode)
     _log(f"wrote rustdesk ID {machine_id} to {cfg.id_file_path}")
     return True
@@ -451,6 +458,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.rustdesk_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -597,7 +606,7 @@ def task(ctx: Context) -> TaskResult:
             warnings=("cannot read the rustdesk machine ID",),
         )
     _log(f"rustdesk machine ID: {machine_id}")
-    if _write_id_file(cfg, machine_id, force):
+    if _write_id_file(cfg, machine_id, force, owner_uid, owner_gid):
         changed = True
 
     message = f"rustdesk ready, ID {machine_id}" if changed else "already configured"

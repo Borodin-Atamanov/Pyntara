@@ -772,7 +772,9 @@ def _revert(
         log_progress(f"revert: cannot stop dnsproxy: {exc}", priority=error_priority)
 
 
-def _write_resolver_dropin(cfg: DnsproxySetupConfig) -> bool:
+def _write_resolver_dropin(
+    cfg: DnsproxySetupConfig, owner_uid: int, owner_gid: int
+) -> bool:
     path = cfg.resolved_conf_dir / cfg.resolved_dropin_file_name
     path.parent.mkdir(parents=True, exist_ok=True)
     changed = sync_directives_by_key(
@@ -782,7 +784,7 @@ def _write_resolver_dropin(cfg: DnsproxySetupConfig) -> bool:
         cfg.resolved_section,
     )
     path.chmod(cfg.resolved_dropin_file_mode)
-    ensure_root_owner(path)
+    ensure_root_owner(path, owner_uid, owner_gid)
     return changed
 
 
@@ -797,6 +799,8 @@ def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
 def task(ctx: Context) -> TaskResult:
     cfg = ctx.config.dnsproxy_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -844,7 +848,7 @@ def task(ctx: Context) -> TaskResult:
             )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)
-            ensure_root_owner(cfg.binary_path)
+            ensure_root_owner(cfg.binary_path, owner_uid, owner_gid)
             changed = True
         discovered = (
             discover_dns_servers(cfg, timeout)
@@ -863,7 +867,7 @@ def task(ctx: Context) -> TaskResult:
             or service_path.read_text(encoding="utf-8") != service_content
         ):
             service_path.write_text(service_content, encoding="utf-8")
-            ensure_root_owner(service_path)
+            ensure_root_owner(service_path, owner_uid, owner_gid)
             run_command(list(cfg.daemon_reload_command), timeout=timeout)
             changed = True
         active = service_is_active(cfg.service_unit_name, timeout)
@@ -909,7 +913,7 @@ def task(ctx: Context) -> TaskResult:
                     ),
                 )
             changed = True
-        if _write_resolver_dropin(cfg):
+        if _write_resolver_dropin(cfg, owner_uid, owner_gid):
             dropin_changed = True
             changed = True
         cut_over = True

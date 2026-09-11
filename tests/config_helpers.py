@@ -38,6 +38,7 @@ def base_config() -> str:
         'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
         'system_python = "/usr/bin/python3"\n'
         'journal_identifier = "pyntara-engine"\n'
+        "root_owner_uid = 0\nroot_owner_gid = 0\n"
         "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"

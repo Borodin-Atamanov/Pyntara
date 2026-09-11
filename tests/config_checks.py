@@ -774,6 +774,8 @@ def _engine_table(raw: object) -> EngineConfig:
         journal_identifier=_nonempty_string_field(
             raw.get("journal_identifier"), "engine.journal_identifier"
         ),
+        root_owner_uid=_int_field(raw.get("root_owner_uid"), "engine.root_owner_uid"),
+        root_owner_gid=_int_field(raw.get("root_owner_gid"), "engine.root_owner_gid"),
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(

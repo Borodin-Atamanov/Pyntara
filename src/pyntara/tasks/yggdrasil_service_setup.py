@@ -259,7 +259,12 @@ def _render_config(
     return json.dumps(data, indent=2) + "\n"
 
 
-def _ensure_private_key(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
+def _ensure_private_key(
+    cfg: YggdrasilServiceSetupConfig,
+    timeout: float,
+    owner_uid: int,
+    owner_gid: int,
+) -> None:
     """Extract or generate the node private key into the PEM file.
 
     When the key file exists, nothing happens: the identity is kept.
@@ -312,16 +317,21 @@ def _ensure_private_key(cfg: YggdrasilServiceSetupConfig, timeout: float) -> Non
     cfg.private_key_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.private_key_path.write_text(key_text, encoding="utf-8")
     os.chmod(cfg.private_key_path, cfg.private_key_file_mode)
-    ensure_root_owner(cfg.private_key_path)
+    ensure_root_owner(cfg.private_key_path, owner_uid, owner_gid)
 
 
-def _write_config(cfg: YggdrasilServiceSetupConfig, peers: list[str]) -> None:
+def _write_config(
+    cfg: YggdrasilServiceSetupConfig,
+    peers: list[str],
+    owner_uid: int,
+    owner_gid: int,
+) -> None:
     """Write the rendered configuration into the configured path."""
 
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(_render_config(cfg, peers), encoding="utf-8")
     os.chmod(cfg.config_path, cfg.config_file_mode)
-    ensure_root_owner(cfg.config_path)
+    ensure_root_owner(cfg.config_path, owner_uid, owner_gid)
 
 
 def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
@@ -587,7 +597,10 @@ def _pick_best_peers(
 
 
 def _ensure_interface_unmanaged(
-    cfg: YggdrasilServiceSetupConfig, timeout: float
+    cfg: YggdrasilServiceSetupConfig,
+    timeout: float,
+    owner_uid: int,
+    owner_gid: int,
 ) -> bool:
     """Mark the yggdrasil interface as unmanaged in NetworkManager.
 
@@ -615,7 +628,7 @@ def _ensure_interface_unmanaged(
         cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
         cfg.nm_unmanaged_conf_path.write_text(body, encoding="utf-8")
         os.chmod(cfg.nm_unmanaged_conf_path, cfg.nm_unmanaged_conf_file_mode)
-        ensure_root_owner(cfg.nm_unmanaged_conf_path)
+        ensure_root_owner(cfg.nm_unmanaged_conf_path, owner_uid, owner_gid)
         changed = True
         _log(
             f"marked interface {cfg.if_name} as unmanaged in "
@@ -743,7 +756,10 @@ def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
 
 
 def _save_self_address(
-    cfg: YggdrasilServiceSetupConfig, timeout: float
+    cfg: YggdrasilServiceSetupConfig,
+    timeout: float,
+    owner_uid: int,
+    owner_gid: int,
 ) -> bool:
     """Save the node self address into the configured file; True when saved.
 
@@ -785,7 +801,7 @@ def _save_self_address(
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
             cfg.address_file_path.chmod(cfg.address_file_mode)
-            ensure_root_owner(cfg.address_file_path)
+            ensure_root_owner(cfg.address_file_path, owner_uid, owner_gid)
             _log(f"saving self address to {cfg.address_file_path}: {address}")
             return True
         remaining = deadline - time.monotonic()
@@ -864,6 +880,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.yggdrasil_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -987,7 +1005,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log(f"ensuring private key at {cfg.private_key_path}")
     try:
-        _ensure_private_key(cfg, timeout)
+        _ensure_private_key(cfg, timeout, owner_uid, owner_gid)
     except RuntimeError as exc:
         warnings.append(str(exc))
         return done("yggdrasil not configured", changed)
@@ -1009,7 +1027,7 @@ def task(ctx: Context) -> TaskResult:
         _log("service enabled")
         changed = True
 
-    if not _ensure_interface_unmanaged(cfg, timeout):
+    if not _ensure_interface_unmanaged(cfg, timeout, owner_uid, owner_gid):
         warnings.append(
             f"cannot mark interface {cfg.if_name} as unmanaged in "
             "NetworkManager; a later run may panic on an assumed "
@@ -1102,7 +1120,7 @@ def task(ctx: Context) -> TaskResult:
     def run_final_config(selected: list[str]) -> TaskResult:
         _log(f"writing configuration {cfg.config_path} with {len(selected)} peers")
         try:
-            _write_config(cfg, selected)
+            _write_config(cfg, selected, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write configuration: {exc}")
             return done("yggdrasil not configured", True)
@@ -1127,7 +1145,7 @@ def task(ctx: Context) -> TaskResult:
             )
         else:
             _log(f"service active with {live} live connections")
-        _save_self_address(cfg, timeout)
+        _save_self_address(cfg, timeout, owner_uid, owner_gid)
         return done(
             f"yggdrasil {version} installed, {len(selected)} peers "
             f"configured, service {cfg.service_unit_name} active",
@@ -1160,7 +1178,7 @@ def task(ctx: Context) -> TaskResult:
         )
         _log(f"writing configuration {cfg.config_path} with probe batch")
         try:
-            _write_config(cfg, batch)
+            _write_config(cfg, batch, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write configuration: {exc}")
             return done("yggdrasil not configured", True)
@@ -1221,7 +1239,7 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         _log(f"service active with {live} live connections")
-    _save_self_address(cfg, timeout)
+    _save_self_address(cfg, timeout, owner_uid, owner_gid)
     return done(
         f"yggdrasil {version} installed, no batch reached "
         f"{cfg.peer_target_count} working peers, keeping the last "

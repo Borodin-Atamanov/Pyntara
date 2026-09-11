@@ -22,7 +22,13 @@ VAULT_PASSWORD = "local-vault-password"
 PROFILE_IDS = ("39284e", "938263", "a47276", "b2e82c", "cb3874")
 
 
-def _ctx(tmp_path: Path, *, force: bool = False):
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    owner_uid: int = 0,
+    owner_gid: int = 0,
+):
     """Context with the task config rooted in the temporary directory."""
 
     return make_context(
@@ -34,6 +40,8 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         task_data_root=tmp_path,
         config=make_config(
             task_data_root=tmp_path,
+            root_owner_uid=owner_uid,
+            root_owner_gid=owner_gid,
             nextdns_vault_group_title="NextDNS",
             nextdns_profile_id_file_path=tmp_path
             / "var"
@@ -88,6 +96,27 @@ def test_records_profile_id_file(
     assert result.message is not None
     assert "NextDNS profile" in result.message
     assert "dnsproxy_setup" in result.message
+
+
+def test_profile_file_owner_comes_from_the_engine_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The file gets the owner pair of the [engine] table through the shared
+    # ensure_root_owner helper, so no module writes the owner of root
+    # itself; a non-root run applies no owner at all.
+    _install_source_vault(tmp_path, monkeypatch)
+    monkeypatch.setattr(task_module.os, "geteuid", lambda: 0)
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(
+        task_module.os,
+        "chown",
+        lambda path, uid, gid: chowned.append((path, uid, gid)),
+    )
+    ctx = _ctx(tmp_path, owner_uid=7, owner_gid=11)
+    result = task_module.task(ctx)
+    assert result.success is True
+    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    assert (profile_file, 7, 11) in chowned
 
 
 def test_already_done_when_file_matches(

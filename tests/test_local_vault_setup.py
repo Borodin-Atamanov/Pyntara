@@ -43,11 +43,15 @@ def _ctx(
     *,
     vault_password: str | None = "prod-pass",
     force: bool = False,
+    owner_uid: int = 0,
+    owner_gid: int = 0,
 ) -> Context:
     """Context whose source vaults live in the temporary directory."""
 
     config = make_config(
         task_data_root=tmp_path,
+        root_owner_uid=owner_uid,
+        root_owner_gid=owner_gid,
         local_vault_source_production=Path("production.vault"),
         local_vault_source_default=Path("default.vault"),
         local_vault_path=tmp_path / "secrets" / "pyntara.vault",
@@ -271,3 +275,25 @@ def test_owner_set_to_root_when_running_as_root(
     pass_file = tmp_path / "etc" / "pass"
     assert (local_vault, 0, 0) in chowned
     assert (pass_file, 0, 0) in chowned
+
+
+def test_owner_comes_from_the_engine_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Another owner pair in the [engine] table is the pair the run applies,
+    # so no module writes the owner of root itself.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    monkeypatch.setattr(local_vault_setup.os, "geteuid", lambda: 0)
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(
+        local_vault_setup.os,
+        "chown",
+        lambda path, uid, gid: chowned.append((path, uid, gid)),
+    )
+    ctx = _ctx(
+        monkeypatch, tmp_path, vault_password="prod-pass", owner_uid=7, owner_gid=11
+    )
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert (tmp_path / "secrets" / "pyntara.vault", 7, 11) in chowned
+    assert (tmp_path / "etc" / "pass", 7, 11) in chowned

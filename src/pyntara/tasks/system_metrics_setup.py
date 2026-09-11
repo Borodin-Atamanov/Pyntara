@@ -392,12 +392,12 @@ def _spool_dir_ok(spool_dir: Path, mode: int, permission_mask: int) -> bool:
         return False
 
 
-def _ensure_spool_dir(spool_dir: Path, mode: int) -> None:
+def _ensure_spool_dir(spool_dir: Path, mode: int, owner_uid: int, owner_gid: int) -> None:
     """Create the spool directory with the configured mode and root owner."""
 
     spool_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(spool_dir, mode)
-    ensure_root_owner(spool_dir)
+    ensure_root_owner(spool_dir, owner_uid, owner_gid)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -421,6 +421,8 @@ def task(ctx: Context) -> TaskResult:
 
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     metrics = ctx.config.system_metrics_setup
     venv_dir = metrics.venv_dir
     venv_python = venv_dir / "bin" / "python"
@@ -659,7 +661,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"writing command {command_path}")
         try:
             _write_command_file(command_path, command_content, metrics.command_file_mode)
-            ensure_root_owner(command_path)
+            ensure_root_owner(command_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,
@@ -672,7 +674,7 @@ def task(ctx: Context) -> TaskResult:
     if not spool_ok or force:
         _log(f"creating spool {spool_dir} with mode {metrics.spool_dir_mode:04o}")
         try:
-            _ensure_spool_dir(spool_dir, metrics.spool_dir_mode)
+            _ensure_spool_dir(spool_dir, metrics.spool_dir_mode, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,

@@ -177,7 +177,9 @@ def _read_dropin(dropin_path: Path) -> str | None:
         return None
 
 
-def _write_dropin(cfg: TorSetupConfig, ssh_port: int) -> None:
+def _write_dropin(
+    cfg: TorSetupConfig, ssh_port: int, owner_uid: int, owner_gid: int
+) -> None:
     """Write the rendered drop-in into the configured path."""
 
     cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,7 +187,7 @@ def _write_dropin(cfg: TorSetupConfig, ssh_port: int) -> None:
         _render_config(cfg, ssh_port), encoding="utf-8"
     )
     os.chmod(cfg.torrc_dropin_path, cfg.dropin_file_mode)
-    ensure_root_owner(cfg.torrc_dropin_path)
+    ensure_root_owner(cfg.torrc_dropin_path, owner_uid, owner_gid)
 
 
 def _ensure_hidden_service_dir(cfg: TorSetupConfig) -> None:
@@ -269,6 +271,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.tor_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     force = ctx.task_name in ctx.force_tasks
 
     installed = package_is_installed(cfg.package_name, timeout)
@@ -358,7 +362,7 @@ def task(ctx: Context) -> TaskResult:
     if config_changed:
         _log(f"writing drop-in {cfg.torrc_dropin_path}")
         try:
-            _write_dropin(cfg, ssh_port)
+            _write_dropin(cfg, ssh_port, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,
@@ -449,7 +453,7 @@ def task(ctx: Context) -> TaskResult:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
             cfg.address_file_path.chmod(cfg.address_file_mode)
-            ensure_root_owner(cfg.address_file_path)
+            ensure_root_owner(cfg.address_file_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,

@@ -746,3 +746,35 @@ class TestFetchUrlsInParallel:
         assert process.killed is True
 
 
+def test_ensure_root_owner_applies_the_configured_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner is the uid and the gid pair the [engine] config carries, so
+    # no module writes the owner of root itself.
+    target = tmp_path / "owned"
+    target.write_text("x", encoding="utf-8")
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(utils.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        utils.os, "chown", lambda path, uid, gid: chowned.append((path, uid, gid))
+    )
+    utils.ensure_root_owner(target, 7, 11)
+    assert chowned == [(target, 7, 11)]
+
+
+def test_ensure_root_owner_skips_outside_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A non-root process cannot chown, so the helper leaves the file alone;
+    # the deployed run is root and applies the configured owner.
+    target = tmp_path / "owned"
+    target.write_text("x", encoding="utf-8")
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(utils.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(
+        utils.os, "chown", lambda path, uid, gid: chowned.append((path, uid, gid))
+    )
+    utils.ensure_root_owner(target, 7, 11)
+    assert chowned == []
+
+

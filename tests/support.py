@@ -192,6 +192,8 @@ def make_config(
         "https://api.github.com/repos/{repo}/releases/latest"
     ),
     journal_identifier: str = "pyntara-engine",
+    root_owner_uid: int = 0,
+    root_owner_gid: int = 0,
     error_priority: int = 3,
     progress_priority: int = 7,
     process_check_timeout_seconds: int = 5,
@@ -455,6 +457,8 @@ def make_config(
             curl_retry_max_time_seconds=curl_retry_max_time_seconds,
             github_latest_release_url=github_latest_release_url,
             journal_identifier=journal_identifier,
+            root_owner_uid=root_owner_uid,
+            root_owner_gid=root_owner_gid,
             error_priority=error_priority,
             progress_priority=progress_priority,
             process_check_timeout_seconds=process_check_timeout_seconds,

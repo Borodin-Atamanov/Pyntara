@@ -283,14 +283,19 @@ def _read_config(config_path: Path) -> str | None:
         return None
 
 
-def _write_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> None:
+def _write_config(
+    cfg: I2pdServiceSetupConfig,
+    template_path: Path,
+    owner_uid: int,
+    owner_gid: int,
+) -> None:
     """Write the rendered configuration into the configured path."""
 
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.config_path.write_text(
         _render_config(cfg, template_path), encoding="utf-8"
     )
-    ensure_root_owner(cfg.config_path)
+    ensure_root_owner(cfg.config_path, owner_uid, owner_gid)
 
 
 def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
@@ -303,7 +308,11 @@ def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
 
 
 def _write_tunnels_config(
-    cfg: I2pdServiceSetupConfig, ssh_port: int, template_path: Path
+    cfg: I2pdServiceSetupConfig,
+    ssh_port: int,
+    template_path: Path,
+    owner_uid: int,
+    owner_gid: int,
 ) -> None:
     """Write the rendered tunnels configuration into the configured path."""
 
@@ -311,7 +320,7 @@ def _write_tunnels_config(
     cfg.tunnels_config_path.write_text(
         _render_tunnels_config(cfg, ssh_port, template_path), encoding="utf-8"
     )
-    ensure_root_owner(cfg.tunnels_config_path)
+    ensure_root_owner(cfg.tunnels_config_path, owner_uid, owner_gid)
 
 
 def _wait_active(
@@ -372,6 +381,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.i2pd_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name) / "i2pd.conf"
     )
@@ -531,7 +542,7 @@ def task(ctx: Context) -> TaskResult:
     if config_changed:
         _log(f"writing configuration {cfg.config_path}")
         try:
-            _write_config(cfg, template_path)
+            _write_config(cfg, template_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,
@@ -544,7 +555,9 @@ def task(ctx: Context) -> TaskResult:
     if tunnels_changed:
         _log(f"writing tunnels configuration {cfg.tunnels_config_path}")
         try:
-            _write_tunnels_config(cfg, ssh_port, tunnels_template_path)
+            _write_tunnels_config(
+                cfg, ssh_port, tunnels_template_path, owner_uid, owner_gid
+            )
         except OSError as exc:
             return TaskResult(
                 success=False,
@@ -619,7 +632,7 @@ def task(ctx: Context) -> TaskResult:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
             cfg.address_file_path.chmod(cfg.address_file_mode)
-            ensure_root_owner(cfg.address_file_path)
+            ensure_root_owner(cfg.address_file_path, owner_uid, owner_gid)
         except OSError as exc:
             return TaskResult(
                 success=False,

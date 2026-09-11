@@ -114,6 +114,8 @@ def _ensure_repository(
     connect_timeout: float,
     retry_max_time: int,
     retry_delay: int,
+    owner_uid: int,
+    owner_gid: int,
 ) -> tuple[bool, str | None]:
     """Register the Google apt source and its keyring; (changed, error).
 
@@ -162,7 +164,7 @@ def _ensure_repository(
                     timeout=timeout,
                 )
             cfg.keyring_path.chmod(cfg.file_mode)
-            ensure_root_owner(cfg.keyring_path)
+            ensure_root_owner(cfg.keyring_path, owner_uid, owner_gid)
             changed = True
         content = _source_text(cfg.keyring_path)
         if not (
@@ -172,7 +174,7 @@ def _ensure_repository(
             cfg.apt_source_path.parent.mkdir(parents=True, exist_ok=True)
             cfg.apt_source_path.write_text(content, encoding="utf-8")
             cfg.apt_source_path.chmod(cfg.file_mode)
-            ensure_root_owner(cfg.apt_source_path)
+            ensure_root_owner(cfg.apt_source_path, owner_uid, owner_gid)
             changed = True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return changed, f"cannot register the Google Chrome apt repository: {exc}"
@@ -266,7 +268,11 @@ def _sync_settings_repo(cfg: ChromeSetupConfig, *, timeout: float) -> tuple[bool
 
 
 def _deploy_system_tree(
-    cfg: ChromeSetupConfig, *, force: bool
+    cfg: ChromeSetupConfig,
+    *,
+    force: bool,
+    owner_uid: int,
+    owner_gid: int,
 ) -> tuple[bool, list[str]]:
     """Deploy the repository system/ tree under system_root; (changed, warnings).
 
@@ -291,7 +297,7 @@ def _deploy_system_tree(
                 continue
             shutil.copyfile(path, target)
             target.chmod(cfg.file_mode)
-            ensure_root_owner(target)
+            ensure_root_owner(target, owner_uid, owner_gid)
             changed = True
         except OSError as exc:
             warnings.append(f"cannot deploy {rel}: {exc}")
@@ -468,6 +474,8 @@ def _ensure_profile_mirror(
     *,
     force: bool,
     timeout: float,
+    owner_uid: int,
+    owner_gid: int,
 ) -> tuple[bool, str | None]:
     """Mount the live profile on the mirror path and keep it across boots.
 
@@ -509,7 +517,7 @@ def _ensure_profile_mirror(
             unit_dir.mkdir(parents=True, exist_ok=True)
             unit_file.write_text(content, encoding="utf-8")
             unit_file.chmod(cfg.file_mode)
-            ensure_root_owner(unit_file)
+            ensure_root_owner(unit_file, owner_uid, owner_gid)
             run_command(["systemctl", "daemon-reload"], timeout=timeout)
         run_command(["systemctl", "enable", "--now", unit_name], timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
@@ -592,6 +600,8 @@ def _ensure_desktop_override(
     proxy_server: str,
     user_data_dir: str,
     force: bool,
+    owner_uid: int,
+    owner_gid: int,
 ) -> tuple[bool, str | None]:
     """Write the desktop override with the launch flags; (changed, warning)."""
 
@@ -615,7 +625,7 @@ def _ensure_desktop_override(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         target.chmod(cfg.file_mode)
-        ensure_root_owner(target)
+        ensure_root_owner(target, owner_uid, owner_gid)
     except OSError as exc:
         return False, f"cannot write the desktop override: {exc}"
     return True, None
@@ -795,6 +805,8 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.chrome_setup
     timeout = ctx.config.engine.command_timeout_seconds
+    owner_uid = ctx.config.engine.root_owner_uid
+    owner_gid = ctx.config.engine.root_owner_gid
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -814,6 +826,8 @@ def task(ctx: Context) -> TaskResult:
         connect_timeout,
         retry_max_time,
         retry_delay,
+        owner_uid,
+        owner_gid,
     )
     if error:
         return TaskResult(success=False, changed=changed, error=error)
@@ -841,7 +855,9 @@ def task(ctx: Context) -> TaskResult:
         messages.append("updated the browser settings repository")
         changed = True
 
-    tree_changed, tree_warnings = _deploy_system_tree(cfg, force=force)
+    tree_changed, tree_warnings = _deploy_system_tree(
+        cfg, force=force, owner_uid=owner_uid, owner_gid=owner_gid
+    )
     warnings.extend(tree_warnings)
     if tree_changed:
         messages.append(f"deployed system browser settings to {cfg.system_root}")
@@ -876,6 +892,8 @@ def task(ctx: Context) -> TaskResult:
         / "mount_chrome_user_dir.service",
         force=force,
         timeout=timeout,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
     if mirror_note:
         warnings.append(mirror_note)
@@ -887,6 +905,8 @@ def task(ctx: Context) -> TaskResult:
         proxy_server=proxy_server,
         user_data_dir=str(cfg.profile_mirror_path) if mirror_mounted else "",
         force=force,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
     if override_note:
         warnings.append(override_note)
