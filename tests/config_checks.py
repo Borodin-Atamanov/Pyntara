@@ -2692,6 +2692,72 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("proxy_check_url"),
         "three_x_ui_xray_setup.proxy_check_url",
     )
+    panel_root_path = _nonempty_string_field(
+        raw.get("panel_root_path"), "three_x_ui_xray_setup.panel_root_path"
+    )
+    panel_login_path = _nonempty_string_field(
+        raw.get("panel_login_path"), "three_x_ui_xray_setup.panel_login_path"
+    )
+    panel_csrf_token_path = _nonempty_string_field(
+        raw.get("panel_csrf_token_path"),
+        "three_x_ui_xray_setup.panel_csrf_token_path",
+    )
+    panel_inbounds_list_path = _nonempty_string_field(
+        raw.get("panel_inbounds_list_path"),
+        "three_x_ui_xray_setup.panel_inbounds_list_path",
+    )
+    panel_inbounds_add_path = _nonempty_string_field(
+        raw.get("panel_inbounds_add_path"),
+        "three_x_ui_xray_setup.panel_inbounds_add_path",
+    )
+    panel_inbounds_update_path = _nonempty_string_field(
+        raw.get("panel_inbounds_update_path"),
+        "three_x_ui_xray_setup.panel_inbounds_update_path",
+    )
+    panel_inbounds_delete_path = _nonempty_string_field(
+        raw.get("panel_inbounds_delete_path"),
+        "three_x_ui_xray_setup.panel_inbounds_delete_path",
+    )
+    panel_client_get_path = _nonempty_string_field(
+        raw.get("panel_client_get_path"),
+        "three_x_ui_xray_setup.panel_client_get_path",
+    )
+    panel_client_add_path = _nonempty_string_field(
+        raw.get("panel_client_add_path"),
+        "three_x_ui_xray_setup.panel_client_add_path",
+    )
+    panel_client_links_path = _nonempty_string_field(
+        raw.get("panel_client_links_path"),
+        "three_x_ui_xray_setup.panel_client_links_path",
+    )
+    panel_x25519_cert_path = _nonempty_string_field(
+        raw.get("panel_x25519_cert_path"),
+        "three_x_ui_xray_setup.panel_x25519_cert_path",
+    )
+    panel_setting_all_path = _nonempty_string_field(
+        raw.get("panel_setting_all_path"),
+        "three_x_ui_xray_setup.panel_setting_all_path",
+    )
+    panel_setting_update_path = _nonempty_string_field(
+        raw.get("panel_setting_update_path"),
+        "three_x_ui_xray_setup.panel_setting_update_path",
+    )
+    panel_xray_status_path = _nonempty_string_field(
+        raw.get("panel_xray_status_path"),
+        "three_x_ui_xray_setup.panel_xray_status_path",
+    )
+    panel_xray_update_path = _nonempty_string_field(
+        raw.get("panel_xray_update_path"),
+        "three_x_ui_xray_setup.panel_xray_update_path",
+    )
+    panel_xray_geodata_validate_path = _nonempty_string_field(
+        raw.get("panel_xray_geodata_validate_path"),
+        "three_x_ui_xray_setup.panel_xray_geodata_validate_path",
+    )
+    panel_xray_route_test_path = _nonempty_string_field(
+        raw.get("panel_xray_route_test_path"),
+        "three_x_ui_xray_setup.panel_xray_route_test_path",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -2703,6 +2769,23 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_port=panel_port,
         ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,
+        panel_root_path=panel_root_path,
+        panel_login_path=panel_login_path,
+        panel_csrf_token_path=panel_csrf_token_path,
+        panel_inbounds_list_path=panel_inbounds_list_path,
+        panel_inbounds_add_path=panel_inbounds_add_path,
+        panel_inbounds_update_path=panel_inbounds_update_path,
+        panel_inbounds_delete_path=panel_inbounds_delete_path,
+        panel_client_get_path=panel_client_get_path,
+        panel_client_add_path=panel_client_add_path,
+        panel_client_links_path=panel_client_links_path,
+        panel_x25519_cert_path=panel_x25519_cert_path,
+        panel_setting_all_path=panel_setting_all_path,
+        panel_setting_update_path=panel_setting_update_path,
+        panel_xray_status_path=panel_xray_status_path,
+        panel_xray_update_path=panel_xray_update_path,
+        panel_xray_geodata_validate_path=panel_xray_geodata_validate_path,
+        panel_xray_route_test_path=panel_xray_route_test_path,
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,

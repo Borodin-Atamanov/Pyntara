@@ -32,6 +32,23 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_port": 35353,
         "ssl_enabled": True,
         "panel_http_address": "127.0.0.1",
+        "panel_root_path": "/",
+        "panel_login_path": "/login",
+        "panel_csrf_token_path": "/csrf-token",
+        "panel_inbounds_list_path": "/panel/api/inbounds/list",
+        "panel_inbounds_add_path": "/panel/api/inbounds/add",
+        "panel_inbounds_update_path": "/panel/api/inbounds/update/{inbound_id}",
+        "panel_inbounds_delete_path": "/panel/api/inbounds/del/{inbound_id}",
+        "panel_client_get_path": "/panel/api/clients/get/{email}",
+        "panel_client_add_path": "/panel/api/clients/add",
+        "panel_client_links_path": "/panel/api/clients/links/{email}",
+        "panel_x25519_cert_path": "/panel/api/server/getNewX25519Cert",
+        "panel_setting_all_path": "/panel/api/setting/all",
+        "panel_setting_update_path": "/panel/api/setting/update",
+        "panel_xray_status_path": "/panel/api/xray/",
+        "panel_xray_update_path": "/panel/api/xray/update",
+        "panel_xray_geodata_validate_path": "/panel/api/xray/geodata/validate",
+        "panel_xray_route_test_path": "/panel/api/xray/routeTest",
         "vault_entry_title": "three_x_ui_credentials",
         "connection_vault_entry_title": "xray_connection",
         "share_addr_strategy": "custom",
@@ -751,6 +768,73 @@ class TestUpdateInbound:
         )
         assert ok is False
         assert message == "port busy"
+
+
+class TestPanelPathsComeFromConfig:
+    """Every panel call uses the path of the configuration."""
+
+    def test_login_session_uses_the_configured_paths(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[tuple[str, dict[str, object]]] = []
+
+        def fake_request(
+            opener: object, url: str, **kwargs: object
+        ) -> tuple[int, str]:
+            del opener
+            headers = kwargs.get("headers", {})
+            seen.append((url, headers if isinstance(headers, dict) else {}))
+            if url.endswith("/custom-csrf"):
+                return (200, json.dumps({"success": True, "obj": "tok123"}))
+            return (200, json.dumps({"success": True}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+        cfg = _cfg(
+            panel_root_path="/custom-root",
+            panel_login_path="/custom-login",
+            panel_csrf_token_path="/custom-csrf",
+            panel_inbounds_list_path="/custom-inbounds",
+        )
+        env = {
+            "XUI_USERNAME": "admin",
+            "XUI_PASSWORD": "pass",
+            "XUI_PANEL_PORT": "3579",
+        }
+        assert xui_client.login_and_verify(cfg, env, 5) is True
+        assert [url for url, _headers in seen] == [
+            "http://127.0.0.1:3579/custom-csrf",
+            "http://127.0.0.1:3579/custom-login",
+            "http://127.0.0.1:3579/custom-inbounds",
+        ]
+        assert seen[1][1]["Referer"] == "http://127.0.0.1:3579/custom-root"
+
+    def test_bearer_calls_use_the_configured_paths(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[str] = []
+
+        def fake_request(
+            opener: object, url: str, **kwargs: object
+        ) -> tuple[int, str]:
+            del opener, kwargs
+            seen.append(url)
+            return (200, json.dumps({"success": True, "obj": {"links": []}}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+        cfg = _cfg(
+            panel_inbounds_delete_path="/custom/del/{inbound_id}",
+            panel_client_links_path="/custom/links/{email}",
+            panel_xray_status_path="/custom/xray",
+        )
+        env = {"XUI_PANEL_PORT": "3579"}
+        assert xui_client.delete_inbound(cfg, env, 9, 5)[0] is True
+        xui_client.client_links(cfg, env, "a b", 5)
+        xui_client.read_xray_template(cfg, env, 5)
+        assert seen == [
+            "http://127.0.0.1:3579/custom/del/9",
+            "http://127.0.0.1:3579/custom/links/a%20b",
+            "http://127.0.0.1:3579/custom/xray",
+        ]
 
 
 class TestFindClient:

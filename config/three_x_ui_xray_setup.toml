@@ -45,6 +45,28 @@ ssl_enabled = true
 # HTTP address of the panel for REST API calls. 127.0.0.1 is the local
 # machine; the panel listens on localhost and on the public interface.
 panel_http_address = "127.0.0.1"
+# Paths of the panel REST API, relative to panel_http_address: the login
+# session, the inbound, client, server and settings endpoints, and the
+# xray endpoints the task uses. A path is written as the panel serves it,
+# with {placeholders} for the values of one call, which the call site
+# fills in.
+panel_root_path = "/"
+panel_login_path = "/login"
+panel_csrf_token_path = "/csrf-token"
+panel_inbounds_list_path = "/panel/api/inbounds/list"
+panel_inbounds_add_path = "/panel/api/inbounds/add"
+panel_inbounds_update_path = "/panel/api/inbounds/update/{inbound_id}"
+panel_inbounds_delete_path = "/panel/api/inbounds/del/{inbound_id}"
+panel_client_get_path = "/panel/api/clients/get/{email}"
+panel_client_add_path = "/panel/api/clients/add"
+panel_client_links_path = "/panel/api/clients/links/{email}"
+panel_x25519_cert_path = "/panel/api/server/getNewX25519Cert"
+panel_setting_all_path = "/panel/api/setting/all"
+panel_setting_update_path = "/panel/api/setting/update"
+panel_xray_status_path = "/panel/api/xray/"
+panel_xray_update_path = "/panel/api/xray/update"
+panel_xray_geodata_validate_path = "/panel/api/xray/geodata/validate"
+panel_xray_route_test_path = "/panel/api/xray/routeTest"
 # Title of the runtime vault entry that stores the panel credentials.
 # The entry must exist in the [vault_structure] table.
 vault_entry_title = "three_x_ui_credentials"

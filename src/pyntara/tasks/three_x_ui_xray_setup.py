@@ -1218,7 +1218,7 @@ def _wait_panel_http(
                     "/dev/null",
                     "--header",
                     "X-Requested-With: XMLHttpRequest",
-                    f"{base_url}/csrf-token",
+                    f"{base_url}{cfg.panel_csrf_token_path}",
                 ],
                 check=False,
                 capture=True,

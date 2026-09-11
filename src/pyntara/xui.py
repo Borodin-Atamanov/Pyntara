@@ -229,7 +229,7 @@ def login_and_verify(
     # Step 1: fetch CSRF token.
     status, body = _request(
         opener,
-        f"{base_url}/csrf-token",
+        f"{base_url}{cfg.panel_csrf_token_path}",
         headers={"X-Requested-With": "XMLHttpRequest"},
         timeout=timeout,
     )
@@ -248,13 +248,13 @@ def login_and_verify(
     ).encode("utf-8")
     status, body = _request(
         opener,
-        f"{base_url}/login",
+        f"{base_url}{cfg.panel_login_path}",
         data=login_data,
         headers={
             "Content-Type": "application/x-www-form-urlencoded",
             "X-CSRF-Token": token,
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{base_url}/",
+            "Referer": f"{base_url}{cfg.panel_root_path}",
         },
         method="POST",
         timeout=timeout,
@@ -265,7 +265,7 @@ def login_and_verify(
     # Step 3: verify the session by calling a protected API.
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/list",
+        f"{base_url}{cfg.panel_inbounds_list_path}",
         headers={"X-Requested-With": "XMLHttpRequest"},
         timeout=timeout,
     )
@@ -294,7 +294,7 @@ def verify_bearer(
     opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/list",
+        f"{base_url}{cfg.panel_inbounds_list_path}",
         headers={
             "Authorization": f"Bearer {env.get('XUI_API_TOKEN', '')}",
             "X-Requested-With": "XMLHttpRequest",
@@ -348,7 +348,7 @@ def list_inbounds(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/list",
+        f"{base_url}{cfg.panel_inbounds_list_path}",
         headers=_bearer_headers(env),
         timeout=timeout,
     )
@@ -448,7 +448,7 @@ def create_inbound(
     headers["Content-Type"] = "application/json"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/add",
+        f"{base_url}{cfg.panel_inbounds_add_path}",
         data=data,
         headers=headers,
         method="POST",
@@ -470,7 +470,7 @@ def generate_reality_key(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/server/getNewX25519Cert",
+        f"{base_url}{cfg.panel_x25519_cert_path}",
         headers=_bearer_headers(env),
         timeout=timeout,
     )
@@ -562,7 +562,7 @@ def panel_settings(
     headers["Content-Type"] = "application/json"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/setting/all",
+        f"{base_url}{cfg.panel_setting_all_path}",
         data=b"{}",
         headers=headers,
         method="POST",
@@ -603,7 +603,7 @@ def update_panel_settings(
     headers["Content-Type"] = "application/json"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/setting/update",
+        f"{base_url}{cfg.panel_setting_update_path}",
         data=data,
         headers=headers,
         method="POST",
@@ -665,7 +665,7 @@ def update_inbound(
     headers["Content-Type"] = "application/json"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/update/{inbound.get('id')}",
+        f"{base_url}{cfg.panel_inbounds_update_path.format(inbound_id=inbound.get('id'))}",
         data=data,
         headers=headers,
         method="POST",
@@ -712,7 +712,7 @@ def delete_inbound(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/inbounds/del/{inbound_id}",
+        f"{base_url}{cfg.panel_inbounds_delete_path.format(inbound_id=inbound_id)}",
         headers=_bearer_headers(env),
         method="POST",
         timeout=timeout,
@@ -737,7 +737,7 @@ def find_client(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/clients/get/{urllib.parse.quote(email)}",
+        f"{base_url}{cfg.panel_client_get_path.format(email=urllib.parse.quote(email))}",
         headers=_bearer_headers(env),
         timeout=timeout,
     )
@@ -787,7 +787,7 @@ def create_client(
     headers["Content-Type"] = "application/json"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/clients/add",
+        f"{base_url}{cfg.panel_client_add_path}",
         data=data,
         headers=headers,
         method="POST",
@@ -812,7 +812,7 @@ def client_links(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/clients/links/{urllib.parse.quote(email)}",
+        f"{base_url}{cfg.panel_client_links_path.format(email=urllib.parse.quote(email))}",
         headers=_bearer_headers(env),
         timeout=timeout,
     )
@@ -862,7 +862,7 @@ def read_xray_template(
     base_url, opener = _bearer_opener(cfg, env)
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/xray/",
+        f"{base_url}{cfg.panel_xray_status_path}",
         headers=_bearer_headers(env),
         method="POST",
         timeout=timeout,
@@ -929,7 +929,7 @@ def write_xray_template(
     headers["Content-Type"] = "application/x-www-form-urlencoded"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/xray/update",
+        f"{base_url}{cfg.panel_xray_update_path}",
         data=form,
         headers=headers,
         method="POST",
@@ -967,7 +967,7 @@ def validate_geodata_tokens(
     headers["Content-Type"] = "application/x-www-form-urlencoded"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/xray/geodata/validate",
+        f"{base_url}{cfg.panel_xray_geodata_validate_path}",
         data=form,
         headers=headers,
         method="POST",
@@ -1037,7 +1037,7 @@ def route_test(
     headers["Content-Type"] = "application/x-www-form-urlencoded"
     status, body = _request(
         opener,
-        f"{base_url}/panel/api/xray/routeTest",
+        f"{base_url}{cfg.panel_xray_route_test_path}",
         data=form,
         headers=headers,
         method="POST",
