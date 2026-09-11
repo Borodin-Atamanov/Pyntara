@@ -6,37 +6,19 @@ the tests only touch temporary fixtures (docs/guides/developer-guide.md).
 
 from __future__ import annotations
 
-import subprocess
-from typing import Any
-
 import pytest
 
 from pyntara import public_address as public_address_module
 from pyntara.public_address import (
     PublicAddresses,
     default_route_address,
+    directly_connected_networks,
     fetch_public_addresses,
     local_addresses,
     parse_public_addresses,
 )
 
 SERVICES = ("https://api4.ipify.org", "https://ipv6.ipify.org")
-
-
-class _Process:
-    """A Popen double that returns a fixed output from communicate."""
-
-    def __init__(self, output: str) -> None:
-        self.output = output
-        self.killed = False
-        self.timeout_used: float | None = None
-
-    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
-        self.timeout_used = timeout
-        return (self.output, "")
-
-    def kill(self) -> None:
-        self.killed = True
 
 
 class _Completed:
@@ -102,6 +84,46 @@ class TestLocalAddresses:
         assert local_addresses(30.0) == ()
 
 
+class TestDirectlyConnectedNetworks:
+    """Tests for reading the machine's own subnets."""
+
+    def test_collects_both_families_without_repeats(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        outputs = {
+            "-4": (
+                "10.10.0.0/24 dev enp1s0 proto kernel scope link src 10.10.0.1\n"
+                "127.0.0.0/8 dev lo proto kernel scope link src 127.0.0.1\n"
+            ),
+            "-6": (
+                "200::/7 dev ygg proto kernel metric 256 pref medium\n"
+                "fe80::/64 dev ygg proto kernel metric 256 pref medium\n"
+            ),
+        }
+
+        def fake_run(command: list[str], **kwargs: object) -> _Completed:
+            # The command is ip -o <family> route show proto kernel.
+            family = command[2]
+            return _Completed(outputs[family])
+
+        monkeypatch.setattr(public_address_module, "run_command", fake_run)
+        assert directly_connected_networks(30.0) == (
+            "10.10.0.0/24",
+            "127.0.0.0/8",
+            "200::/7",
+            "fe80::/64",
+        )
+
+    def test_reports_nothing_without_the_ip_tool(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(command: object, **kwargs: object) -> object:
+            raise OSError("ip not found")
+
+        monkeypatch.setattr(public_address_module, "run_command", fail)
+        assert directly_connected_networks(30.0) == ()
+
+
 class TestDefaultRouteAddress:
     """Tests for reading the address that reaches the router."""
 
@@ -131,69 +153,40 @@ class TestDefaultRouteAddress:
 
 
 class TestCollectPublicAddresses:
-    """Tests for the parallel query through the shared helper."""
+    """Tests for the delegation to the shared parallel query."""
 
-    def test_queries_all_services_in_one_parallel_call(
+    def test_queries_the_services_through_the_shared_helper(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Every service runs in the same curl process, so a slow service
-        # cannot delay the others one by one.
-        commands: list[list[str]] = []
-        process = _Process("203.0.113.5\n203.0.113.5\n2001:db8::1\n")
+        # The module delegates the query, so the shape of the parallel
+        # curl call and its timeout policy live in utils alone and the
+        # country detection uses exactly the same mechanism.
+        calls: list[tuple[tuple[str, ...], int, float]] = []
 
-        def fake_popen(command: list[str], **kwargs: Any) -> _Process:
-            commands.append(command)
-            return process
+        def fake_fetch(
+            urls: tuple[str, ...], query_timeout: int, command_timeout: float
+        ) -> str:
+            calls.append((urls, query_timeout, command_timeout))
+            return "203.0.113.5\n203.0.113.5\n2001:db8::1\n"
 
-        monkeypatch.setattr(public_address_module.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(
+            public_address_module, "fetch_urls_in_parallel", fake_fetch
+        )
         addresses = fetch_public_addresses(SERVICES, 60, 1800.0)
         assert addresses == PublicAddresses(
             ipv4=("203.0.113.5",),
             ipv6=("2001:db8::1",),
         )
-        command = commands[0]
-        assert "--parallel" in command
-        assert command[command.index("--max-time") + 1] == "60"
-        assert command[-len(SERVICES) :] == list(SERVICES)
-        assert process.timeout_used == 1800.0
+        assert calls == [(SERVICES, 60, 1800.0)]
 
     def test_returns_nothing_when_the_service_list_is_empty(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # An empty list must not start a process at all.
-        def fail_popen(command: list[str], **kwargs: Any) -> _Process:
-            raise AssertionError("no process expected")
+        # An empty list must not start a query at all.
+        def fail_fetch(*args: object, **kwargs: object) -> str:
+            raise AssertionError("no query expected")
 
-        monkeypatch.setattr(public_address_module.subprocess, "Popen", fail_popen)
-        assert fetch_public_addresses((), 60, 1800.0).is_empty is True
-
-    def test_returns_nothing_when_curl_is_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def fail_popen(command: list[str], **kwargs: Any) -> _Process:
-            raise OSError("curl not found")
-
-        monkeypatch.setattr(public_address_module.subprocess, "Popen", fail_popen)
-        assert fetch_public_addresses(SERVICES, 60, 1800.0).is_empty is True
-
-    def test_kills_the_process_when_the_command_timeout_expires(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # The command timeout bounds the call even when curl never ends.
-        process = _Process("203.0.113.5\n")
-
-        def communicate_with_timeout(
-            timeout: float | None = None,
-        ) -> tuple[str, str]:
-            process.timeout_used = timeout
-            if not process.killed:
-                raise subprocess.TimeoutExpired("curl", timeout or 0)
-            return (process.output, "")
-
-        process.communicate = communicate_with_timeout  # type: ignore[method-assign]
         monkeypatch.setattr(
-            public_address_module.subprocess, "Popen", lambda *a, **k: process
+            public_address_module, "fetch_urls_in_parallel", fail_fetch
         )
-        addresses = fetch_public_addresses(SERVICES, 60, 1800.0)
-        assert addresses.ipv4 == ("203.0.113.5",)
-        assert process.killed is True
+        assert fetch_public_addresses((), 60, 1800.0).is_empty is True

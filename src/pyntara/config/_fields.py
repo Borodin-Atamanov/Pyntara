@@ -50,3 +50,9 @@ CLICK_METHODS: tuple[str, ...] = ("clickfinger", "clickareas", "none")
 
 
 SHARE_ADDR_STRATEGIES: tuple[str, ...] = ("node", "listen", "custom")
+
+
+# The domain resolution strategies of the Xray routing block: AsIs keeps
+# every name unresolved, IPIfNonMatch resolves a name only when no domain
+# rule matched it, IPOnDemand resolves before matching at all.
+DOMAIN_STRATEGIES: tuple[str, ...] = ("AsIs", "IPIfNonMatch", "IPOnDemand")

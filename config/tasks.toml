@@ -115,7 +115,7 @@ modes = ["server", "desktop"]
 
 [[tasks]]
 name = "three_x_ui_xray_setup"
-description = "Install the 3x-ui Xray panel from GitHub releases as a system service via the official installer."
+description = "Install the 3x-ui Xray panel as a system service, serve the universal server inbound, and make this machine a client of the remote server: a local proxy inbound plus the routing policy that sends each connection to the right outbound."
 depends = ["yggdrasil_service_setup", "tor_setup", "i2pd_service_setup"]
 modes = ["server", "desktop"]
 

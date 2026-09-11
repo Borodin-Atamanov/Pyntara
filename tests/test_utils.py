@@ -12,6 +12,7 @@ from support import FakeProc as _FakeProc
 from pyntara.utils import (
     curl_flags,
     ensure_port_free,
+    fetch_urls_in_parallel,
     port_listener_pid,
     proquint_decode,
     proquint_encode,
@@ -21,6 +22,34 @@ from pyntara.utils import (
     service_main_pid,
     trim_whitespace,
 )
+
+# Two URLs for the parallel query tests: the shape of the addresses does
+# not matter there, only that both transfers run in one call.
+URLS = ("https://api4.ipify.org", "https://ipv6.ipify.org")
+
+
+class _FakePopen:
+    """A Popen double that captures the pipe output of one curl call.
+
+    communicate records the timeout it was given and returns the fixed
+    output; with kill_before_output the first call raises TimeoutExpired,
+    so the caller must kill the process before the output appears.
+    """
+
+    def __init__(self, output: str = "", kill_before_output: bool = False) -> None:
+        self.output = output
+        self.kill_before_output = kill_before_output
+        self.killed = False
+        self.timeout_used: float | None = None
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        self.timeout_used = timeout
+        if self.kill_before_output and not self.killed:
+            raise subprocess.TimeoutExpired("curl", timeout or 0)
+        return (self.output, "")
+
+    def kill(self) -> None:
+        self.killed = True
 
 
 def test_curl_flags_returns_retry_and_timeout_flags() -> None:
@@ -632,4 +661,64 @@ class TestPortFreeing:
             ensure_port_free(
                 35353, "x-ui.service", timeout=30, service_process_name="x-ui"
             )
+
+
+class TestFetchUrlsInParallel:
+    """Tests for the one curl call that queries every URL at once.
+
+    The process double lives here and not in support.py: the shared
+    support module is edited by other work in this repository, and a test
+    helper with one user does not belong there.
+    """
+
+    def test_queries_every_url_in_one_parallel_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Every URL runs in the same curl process, so a slow service
+        # cannot delay the others one by one.
+        commands: list[list[str]] = []
+        process = _FakePopen("first\nsecond\n")
+
+        def fake_popen(command: list[str], **kwargs: Any) -> _FakePopen:
+            commands.append(command)
+            return process
+
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", fake_popen)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "first\nsecond\n"
+        command = commands[0]
+        assert "--parallel" in command
+        assert command[command.index("--max-time") + 1] == "60"
+        assert command[-len(URLS) :] == list(URLS)
+        assert process.timeout_used == 1800.0
+
+    def test_returns_nothing_when_the_url_list_is_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An empty list must not start a process at all.
+        def fail_popen(command: list[str], **kwargs: Any) -> _FakePopen:
+            raise AssertionError("no process expected")
+
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
+        assert fetch_urls_in_parallel((), 60, 1800.0) == ""
+
+    def test_returns_nothing_when_curl_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail_popen(command: list[str], **kwargs: Any) -> _FakePopen:
+            raise OSError("curl not found")
+
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == ""
+
+    def test_kills_the_process_when_the_command_timeout_expires(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The command timeout bounds the call even when curl never ends.
+        process = _FakePopen("answer\n", kill_before_output=True)
+        monkeypatch.setattr(
+            "pyntara.utils.subprocess.Popen", lambda *a, **k: process
+        )
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
+        assert process.killed is True
+
 

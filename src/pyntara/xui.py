@@ -8,8 +8,14 @@ these functions to check that the panel is reachable and the credentials
 are valid before storing them in the runtime vault. Stage 3 uses the
 Bearer-token API helpers (list_inbounds, find_inbound_by_port,
 create_inbound, generate_reality_key, build_vless_reality_payload) for
-inbound management. The functions are stateless and take the config and
-timeout as parameters, so they are testable without a running panel.
+inbound management. Stage 6 and 7 use the Xray template helpers
+(read_xray_template, write_xray_template), the inbound upsert
+(upsert_inbound, delete_inbound), the category check
+(validate_geodata_tokens) and the routing check (route_test) to turn the
+panel into the client of a remote server and to verify that the running
+core routes what the policy intends. The functions are stateless and take
+the config and timeout as parameters, so they are testable without a
+running panel.
 """
 
 from __future__ import annotations
@@ -21,10 +27,17 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.utils import run_command
+
+# The two token families the geodata check knows: domain tokens are looked
+# up in the geosite files, address tokens in the geoip files.
+GEODATA_DOMAIN_KIND = "domain"
+GEODATA_IP_KIND = "ip"
+GEODATA_KINDS = (GEODATA_DOMAIN_KIND, GEODATA_IP_KIND)
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -372,6 +385,27 @@ def find_inbound_by_port(
     return None
 
 
+def find_inbound_by_tag(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    tag: str,
+    timeout: float,
+) -> dict[str, object] | None:
+    """Find an inbound by the tag its traffic carries.
+
+    The panel keeps the routing tag in the tag field of an inbound and the
+    human label in remark, and only the tag is what the routing rules
+    match with inboundTag, so the search uses the tag. Returns the inbound
+    dict or None when no inbound carries that tag.
+    """
+
+    inbounds = list_inbounds(cfg, env, timeout)
+    for inbound in inbounds:
+        if isinstance(inbound, dict) and inbound.get("tag") == tag:
+            return inbound
+    return None
+
+
 def _message_result(status: int, body: str, ok_default: str) -> tuple[bool, str]:
     """Parse a panel write response into (success, message).
 
@@ -640,6 +674,52 @@ def update_inbound(
     return _message_result(status, body, "inbound updated")
 
 
+def upsert_inbound(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    payload: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Create the inbound or replace the one that carries the same tag.
+
+    The tag comes from the payload tag field. A machine that already has
+    the inbound gets its definition replaced, so a rerun with a new port
+    or protocol converges instead of failing on a duplicate tag; a machine
+    without it gets the inbound created. The messages tell the two apart
+    for the log.
+    """
+
+    tag = payload.get("tag")
+    if not isinstance(tag, str) or not tag:
+        return False, "inbound payload has no tag to identify it by"
+    existing = find_inbound_by_tag(cfg, env, tag, timeout)
+    if existing is None:
+        return create_inbound(cfg, env, payload, timeout)
+    replacement = dict(payload)
+    replacement["id"] = existing.get("id")
+    ok, message = update_inbound(cfg, env, replacement, timeout)
+    return ok, message if not ok else f"inbound {tag} updated: {message}"
+
+
+def delete_inbound(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    inbound_id: int,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Delete one inbound by its id through the Bearer API."""
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/inbounds/del/{inbound_id}",
+        headers=_bearer_headers(env),
+        method="POST",
+        timeout=timeout,
+    )
+    return _message_result(status, body, "inbound deleted")
+
+
 def find_client(
     cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
@@ -748,3 +828,236 @@ def client_links(
     if not isinstance(obj, list):
         return []
     return [item for item in obj if isinstance(item, str) and item]
+
+
+@dataclass(frozen=True)
+class XrayTemplate:
+    """The Xray configuration the panel stores, and its outbound test URL.
+
+    The panel keeps the whole Xray document plus a few values it needs for
+    its own UI in one blob; the settings field is the document itself, the
+    part a routing policy rewrites, and outbound_test_url is kept so a
+    written document never loses the panel's own setting.
+    """
+
+    settings: dict[str, object]
+    outbound_test_url: str
+
+
+def read_xray_template(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> XrayTemplate | None:
+    """Read the stored Xray template through the Bearer API.
+
+    The panel answers only POST on its Xray template endpoint and returns
+    the blob as a JSON string, whose xraySetting member holds the Xray
+    document itself. Both the string and the already parsed form of that
+    member are accepted, because the panel has shipped both. None means
+    the panel was unreachable or answered something unreadable, and the
+    caller must not write a template it never read.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/xray/",
+        headers=_bearer_headers(env),
+        method="POST",
+        timeout=timeout,
+    )
+    if status != 200:
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    blob = _decoded_json_object(data.get("obj"))
+    if blob is None:
+        return None
+    settings_text = blob.get("xraySetting")
+    settings = _decoded_json_object(settings_text)
+    if settings is None:
+        return None
+    test_url = blob.get("outboundTestUrl")
+    return XrayTemplate(
+        settings=settings,
+        outbound_test_url=test_url if isinstance(test_url, str) else "",
+    )
+
+
+def _decoded_json_object(value: object) -> dict[str, object] | None:
+    """The dict behind a value that is a dict or a JSON string of one."""
+
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def write_xray_template(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    template: XrayTemplate,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Write the Xray template back through the Bearer API.
+
+    The panel takes the document and its test URL as form fields and
+    applies the result to the running core at once, by hot reload when the
+    change allows it. Returns (success, message); the caller verifies the
+    running core afterwards, because a stored template alone has already
+    been observed to disagree with what the core routes.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    form = urllib.parse.urlencode(
+        {
+            "xraySetting": json.dumps(template.settings),
+            "outboundTestUrl": template.outbound_test_url,
+        }
+    ).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/xray/update",
+        data=form,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    return _message_result(status, body, "xray template applied")
+
+
+def validate_geodata_tokens(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    kind: str,
+    tokens: list[str],
+    timeout: float,
+) -> dict[str, str]:
+    """Check routing tokens against the geodata files the panel installed.
+
+    kind is the value from GeodataKind: domain tokens are resolved against
+    the geosite files, address tokens against the geoip files. Returns a
+    mapping of the tokens the panel rejects to the reason it gives; an
+    empty mapping means every token resolved. An unreachable panel returns
+    every token mapped to "panel unreachable", which is what the caller
+    needs to hear: it cannot treat an unverified token as a working one.
+    """
+
+    if kind not in GEODATA_KINDS:
+        raise ValueError(f"unknown geodata kind {kind!r}, expected one of {GEODATA_KINDS}")
+    if not tokens:
+        return {}
+    base_url, opener = _bearer_opener(cfg, env)
+    form = urllib.parse.urlencode(
+        {"kind": kind, "tokens": ",".join(tokens)}
+    ).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/xray/geodata/validate",
+        data=form,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    if status != 200:
+        return {token: "panel unreachable" for token in tokens}
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return {token: f"unexpected response (HTTP {status})" for token in tokens}
+    if not isinstance(data, dict) or not data.get("success"):
+        return {token: "the panel rejected the check" for token in tokens}
+    obj = data.get("obj")
+    if not isinstance(obj, list):
+        return {token: "the panel answered no result" for token in tokens}
+    rejected: dict[str, str] = {}
+    for item in obj:
+        if not isinstance(item, dict):
+            continue
+        token = item.get("token")
+        if not isinstance(token, str) or not token:
+            continue
+        reason = item.get("reason")
+        rejected[token] = reason if isinstance(reason, str) and reason else "rejected"
+    return rejected
+
+
+def route_test(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    *,
+    inbound_tag: str,
+    domain: str = "",
+    address: str = "",
+    port: int = 0,
+    network: str = "tcp",
+    protocol: str = "tls",
+    timeout: float,
+) -> tuple[bool, str]:
+    """Ask the running core which outbound it picks for a destination.
+
+    Exactly one of domain and address is given. The answer comes from the
+    core's own routing engine, so it is the only honest check that a
+    written policy reached the traffic; a stored template can disagree
+    with the core. Returns (matched, answer): on success matched is True
+    and answer is the tag of the chosen outbound, otherwise matched is
+    False and answer says why (the panel was unreachable, the panel
+    reported an error, or no rule matched the destination).
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    fields: dict[str, str] = {
+        "port": str(port),
+        "network": network,
+        "protocol": protocol,
+        "inboundTag": inbound_tag,
+    }
+    if domain:
+        fields["domain"] = domain
+    elif address:
+        fields["ip"] = address
+    else:
+        raise ValueError("route_test needs a domain or an address")
+    form = urllib.parse.urlencode(fields).encode("utf-8")
+    headers = _bearer_headers(env)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    status, body = _request(
+        opener,
+        f"{base_url}/panel/api/xray/routeTest",
+        data=form,
+        headers=headers,
+        method="POST",
+        timeout=timeout,
+    )
+    if status == 0:
+        return False, "panel unreachable"
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return False, f"unexpected response (HTTP {status})"
+    if not isinstance(data, dict):
+        return False, f"unexpected response (HTTP {status})"
+    if not data.get("success"):
+        message = data.get("msg")
+        return False, message if isinstance(message, str) and message else "route test failed"
+    obj = data.get("obj")
+    if not isinstance(obj, dict):
+        return False, "the panel answered no routing decision"
+    outbound_tag = obj.get("outboundTag")
+    if not obj.get("matched") or not isinstance(outbound_tag, str) or not outbound_tag:
+        return False, "no routing rule matched the destination"
+    return True, outbound_tag

@@ -121,3 +121,142 @@ upnp_client_command = "upnpc"
 # Description of the created mapping, shown in the router interface so
 # the user can tell which rule belongs to Pyntara.
 upnp_mapping_description = "pyntara xray"
+# Stage 6: make this machine a client of the remote server through its own
+# panel. The panel already runs Xray on the machine, so the client is an
+# inbound of that panel plus the outbounds and rules that tell its core
+# where each connection goes; no second Xray process is installed.
+# Title of the vault entry holding the canonical vless link of the remote
+# server. The entry is read from the source vault, production first, and
+# must exist in the [vault_structure] table. An absent entry or an empty
+# url means no profile is configured: the stage reports a warning and
+# leaves the panel alone.
+client_profile_entry_title = "xray_client_profile"
+# Tag of the local proxy inbound, also used as its panel label. The
+# routing rules are scoped to this tag, so it must differ from the tags of
+# the other inbounds.
+local_proxy_tag = "pyntara-local-proxy"
+# Address the local proxy listens on. 127.0.0.1 keeps the proxy out of
+# reach of the local network: the client is this machine alone.
+local_proxy_listen_address = "127.0.0.1"
+# Port of the local proxy. The panel mixes SOCKS5 and HTTP on one port, so
+# a program points at the same number whether it speaks SOCKS5 or HTTP.
+local_proxy_port = 10800
+# Whether the local proxy carries UDP. QUIC and DNS through the proxy need
+# it; a program that only speaks TCP is unaffected either way.
+local_proxy_udp = true
+# Protocols the panel sniffs to learn the requested name. Sniffing is what
+# lets the rules decide by name instead of by address, and a name that the
+# remote server can resolve is what makes the country rules work.
+local_proxy_sniffing_protocols = ["http", "tls", "quic"]
+# Stage 7: routing policy of that proxy. The tags name the objects the
+# policy owns: a rerun replaces its own outbounds and rules and leaves
+# every foreign one as it is.
+remote_outbound_tag = "pyntara-remote"
+tor_outbound_tag = "pyntara-tor"
+i2p_outbound_tag = "pyntara-i2p"
+# Tags of the panel's own outbounds, used as jump targets: direct is the
+# freedom outbound, blocked is the panel blackhole.
+direct_outbound_tag = "direct"
+blocked_outbound_tag = "blocked"
+# Local proxies that already reach the anonymity networks: the tor SOCKS
+# port and the i2pd HTTP proxy port. Onion hosts only answer through tor,
+# i2p hosts only through i2pd, and both are local, so neither depends on
+# the remote server.
+tor_proxy_address = "127.0.0.1:9050"
+i2p_proxy_address = "127.0.0.1:4444"
+# Domain categories whose connections are dropped: advertising and
+# tracking endpoints. The categories come from the geodata files the panel
+# installs; the task verifies every token against them before applying.
+ad_block_domain_categories = ["geosite:category-ads-all"]
+# Domains that must never leave the machine, because a remote server
+# cannot resolve them: local hostnames and the private name suffixes.
+direct_domains = [
+    "domain:localhost",
+    "domain:.local",
+    "domain:.home.arpa",
+    "domain:.lan",
+    "domain:.internal",
+]
+# Address ranges handled directly: the reserved and private set of the
+# geoip data, plus the overlay networks of this project. Yggdrasil uses
+# 200::/7 and the project reserves 300::/7 for the same purpose; the
+# address of a yggdrasil peer is not reachable through the remote server
+# and must not be sent to it.
+direct_ip_categories = ["geoip:private"]
+direct_ip_networks = ["200::/7", "300::/7"]
+# Services that report the country of this machine, in the order they are
+# asked. All of them are queried at once and the answers are merged, so a
+# silent service costs nothing but a shorter answer list. Only a service
+# that names the country in words is used, because a bare two-letter code
+# is also what a colo code looks like ("GRU" is Sao Paulo).
+country_services = [
+    "https://ip2c.org/self",
+    "https://ifconfig.co/json",
+    "https://ipwho.is/",
+]
+# The word that decides "this machine is in Russia": it is searched for in
+# the answers, ignoring case and separators, so "russia", "Russia",
+# "russian federation" and "loc=Russia" all match, while "GRU", "Peru" and
+# "Belarus" do not. The search is a plain occurrence, so a word merely
+# containing it would match too.
+country_word = "russia"
+# Timeout in seconds of one country service query (curl --max-time) and of
+# the whole parallel query. The first bounds a slow service, the second
+# bounds the stage even when every service hangs.
+country_query_timeout_seconds = 10
+country_command_timeout_seconds = 20
+# Categories of the resources blocked inside Russia. A machine in Russia
+# reaches them through the remote server, which is outside the block.
+russia_blocked_domain_categories = ["ext-site:geosite_RU.dat:ru-blocked-all"]
+russia_blocked_ip_categories = [
+    "ext-ip:geoip_RU.dat:ru-blocked",
+    "ext-ip:geoip_RU.dat:ru-blocked-community",
+]
+# Categories of the resources that only answer inside Russia. A machine in
+# Russia reaches them directly, because they are the ones the remote
+# server cannot serve.
+russia_direct_domain_categories = [
+    "ext-site:geosite_RU.dat:ru-available-only-inside",
+]
+russia_direct_ip_categories = ["ext-ip:geoip_RU.dat:ru-whitelist"]
+# Services that refuse to serve Russia on their own: AI services, the
+# streaming catalogues and the social networks that block Russian
+# addresses. They are reached through the remote server from a machine in
+# Russia; outside Russia the catch-all rule already sends them there.
+geo_restricted_domain_categories = [
+    "geosite:category-ai-!cn",
+    "geosite:openai",
+    "geosite:xai",
+    "geosite:netflix",
+    "geosite:spotify",
+    "geosite:category-social-media-!cn",
+]
+# Domain resolution strategy of the routing block. A machine in Russia
+# uses IPIfNonMatch so an address can be matched against the lists of
+# resources blocked inside Russia, which are address lists for the most
+# part; outside Russia AsIs keeps every name local, because the catch-all
+# rule sends the connection to the remote server anyway and resolving a
+# name first would leak it and cost a query.
+russia_domain_strategy = "IPIfNonMatch"
+outside_russia_domain_strategy = "AsIs"
+# Destinations the task asks the running core about after applying the
+# policy. Each one has an answer that follows from the configuration, so a
+# disagreeing answer means the running core did not take the policy.
+# A domain of the advertising category, blocked on every machine.
+route_check_ad_domain = "doubleclick.net"
+# A plain foreign domain that no category list carries: through the remote
+# server outside Russia, directly in Russia.
+route_check_foreign_domain = "example.com"
+# A hidden service of tor and one of i2p, both local.
+route_check_onion_domain = "pyntara-check.onion"
+route_check_i2p_domain = "pyntara-check.i2p"
+# A domain of the direct list.
+route_check_direct_domain = "localhost"
+# A domain of the resources blocked inside Russia, used on a machine in
+# Russia only.
+route_check_russia_blocked_domain = "instagram.com"
+# URL queried once through the local proxy to prove the whole path works,
+# not only the routing decision: the answer must be the address of the
+# remote server when the link carries one, and must at least differ from
+# this machine's own address.
+proxy_check_url = "https://api4.ipify.org"

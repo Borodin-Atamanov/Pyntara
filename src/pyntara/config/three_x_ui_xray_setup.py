@@ -33,6 +33,22 @@ class ThreeXuiXraySetupConfig:
     where the credentials are stored. server_ip_services lists the echo
     services queried for the public IPv4 address and
     server_ip_timeout_seconds bounds one such query.
+
+    Stage 6 fields turn this machine into a client of the remote server
+    through the same panel: client_profile_entry_title names the vault
+    entry whose url is the canonical vless link of that server, and the
+    local_proxy_ fields describe the inbound the panel serves for the
+    machine itself (tag, listen address, port, UDP, sniffed protocols).
+
+    Stage 7 fields are the routing policy of that proxy: the outbound
+    tags the policy owns and the panel tags it jumps to, the local tor
+    and i2p proxy addresses, the category lists (advertising, direct
+    domains, direct address ranges, blocked in Russia, reachable only
+    inside Russia, geo-restricted services), the two domain strategies,
+    the country services with the word that names Russia, and the
+    destinations the task asks the running core about afterwards.
+    proxy_check_url is the URL queried once through the local proxy to
+    prove the whole path.
     """
 
     github_repo: str
@@ -73,3 +89,38 @@ class ThreeXuiXraySetupConfig:
     upnp_package: str
     upnp_client_command: str
     upnp_mapping_description: str
+    client_profile_entry_title: str
+    local_proxy_tag: str
+    local_proxy_listen_address: str
+    local_proxy_port: int
+    local_proxy_udp: bool
+    local_proxy_sniffing_protocols: tuple[str, ...]
+    remote_outbound_tag: str
+    tor_outbound_tag: str
+    i2p_outbound_tag: str
+    direct_outbound_tag: str
+    blocked_outbound_tag: str
+    tor_proxy_address: str
+    i2p_proxy_address: str
+    ad_block_domain_categories: tuple[str, ...]
+    direct_domains: tuple[str, ...]
+    direct_ip_categories: tuple[str, ...]
+    direct_ip_networks: tuple[str, ...]
+    country_services: tuple[str, ...]
+    country_word: str
+    country_query_timeout_seconds: int
+    country_command_timeout_seconds: int
+    russia_blocked_domain_categories: tuple[str, ...]
+    russia_blocked_ip_categories: tuple[str, ...]
+    russia_direct_domain_categories: tuple[str, ...]
+    russia_direct_ip_categories: tuple[str, ...]
+    geo_restricted_domain_categories: tuple[str, ...]
+    russia_domain_strategy: str
+    outside_russia_domain_strategy: str
+    route_check_ad_domain: str
+    route_check_foreign_domain: str
+    route_check_onion_domain: str
+    route_check_i2p_domain: str
+    route_check_direct_domain: str
+    route_check_russia_blocked_domain: str
+    proxy_check_url: str

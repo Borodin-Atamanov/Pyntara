@@ -7,6 +7,7 @@ monkeypatch; the tests only touch temporary fixtures.
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 from typing import Any, cast
 
@@ -61,6 +62,65 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "upnp_package": "miniupnpc",
         "upnp_client_command": "upnpc",
         "upnp_mapping_description": "pyntara xray",
+        "client_profile_entry_title": "xray_client_profile",
+        "local_proxy_tag": "pyntara-local-proxy",
+        "local_proxy_listen_address": "127.0.0.1",
+        "local_proxy_port": 10800,
+        "local_proxy_udp": True,
+        "local_proxy_sniffing_protocols": ("http", "tls", "quic"),
+        "remote_outbound_tag": "pyntara-remote",
+        "tor_outbound_tag": "pyntara-tor",
+        "i2p_outbound_tag": "pyntara-i2p",
+        "direct_outbound_tag": "direct",
+        "blocked_outbound_tag": "blocked",
+        "tor_proxy_address": "127.0.0.1:9050",
+        "i2p_proxy_address": "127.0.0.1:4444",
+        "ad_block_domain_categories": ("geosite:category-ads-all",),
+        "direct_domains": (
+            "domain:localhost",
+            "domain:.local",
+            "domain:.home.arpa",
+            "domain:.lan",
+            "domain:.internal",
+        ),
+        "direct_ip_categories": ("geoip:private",),
+        "direct_ip_networks": ("200::/7", "300::/7"),
+        "country_services": (
+            "https://ip2c.org/self",
+            "https://ifconfig.co/json",
+            "https://ipwho.is/",
+        ),
+        "country_word": "russia",
+        "country_query_timeout_seconds": 10,
+        "country_command_timeout_seconds": 20,
+        "russia_blocked_domain_categories": (
+            "ext-site:geosite_RU.dat:ru-blocked-all",
+        ),
+        "russia_blocked_ip_categories": (
+            "ext-ip:geoip_RU.dat:ru-blocked",
+            "ext-ip:geoip_RU.dat:ru-blocked-community",
+        ),
+        "russia_direct_domain_categories": (
+            "ext-site:geosite_RU.dat:ru-available-only-inside",
+        ),
+        "russia_direct_ip_categories": ("ext-ip:geoip_RU.dat:ru-whitelist",),
+        "geo_restricted_domain_categories": (
+            "geosite:category-ai-!cn",
+            "geosite:openai",
+            "geosite:xai",
+            "geosite:netflix",
+            "geosite:spotify",
+            "geosite:category-social-media-!cn",
+        ),
+        "russia_domain_strategy": "IPIfNonMatch",
+        "outside_russia_domain_strategy": "AsIs",
+        "route_check_ad_domain": "doubleclick.net",
+        "route_check_foreign_domain": "example.com",
+        "route_check_onion_domain": "pyntara-check.onion",
+        "route_check_i2p_domain": "pyntara-check.i2p",
+        "route_check_direct_domain": "localhost",
+        "route_check_russia_blocked_domain": "instagram.com",
+        "proxy_check_url": "https://api4.ipify.org",
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]
@@ -815,3 +875,499 @@ class TestClientLinks:
             )
             == []
         )
+
+
+class _RecordedRequest:
+    """One call the code under test made to the HTTP layer."""
+
+    def __init__(self, url: str, kwargs: dict[str, object]) -> None:
+        self.url = url
+        self.kwargs = kwargs
+
+    def header(self, name: str) -> str:
+        headers = self.kwargs.get("headers")
+        if not isinstance(headers, dict):
+            return ""
+        value = headers.get(name)
+        return value if isinstance(value, str) else ""
+
+    def form(self) -> dict[str, str]:
+        data = self.kwargs.get("data")
+        if not isinstance(data, bytes):
+            return {}
+        parsed = urllib.parse.parse_qs(data.decode("utf-8"))
+        return {key: values[0] for key, values in parsed.items()}
+
+    def json_body(self) -> dict[str, object]:
+        data = self.kwargs.get("data")
+        if not isinstance(data, bytes):
+            return {}
+        decoded = json.loads(data.decode("utf-8"))
+        return decoded if isinstance(decoded, dict) else {}
+
+
+def _record_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    *answers: tuple[int, str],
+) -> list[_RecordedRequest]:
+    """Answer the HTTP layer with the given answers and record the calls.
+
+    The answers are used in order, so a test that expects a read and then
+    a write passes two; the last answer repeats when more calls arrive.
+    """
+
+    recorded: list[_RecordedRequest] = []
+
+    def fake_request(
+        opener: object, url: str, **kwargs: object
+    ) -> tuple[int, str]:
+        del opener
+        recorded.append(_RecordedRequest(url, kwargs))
+        index = min(len(recorded), len(answers)) - 1
+        return answers[index]
+
+    monkeypatch.setattr("pyntara.xui._request", fake_request)
+    return recorded
+
+
+_ENV = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
+
+
+class TestFindInboundByTag:
+    """Tests for find_inbound_by_tag."""
+
+    def _mock_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        inbounds: list[dict[str, object]],
+    ) -> None:
+        monkeypatch.setattr(
+            "pyntara.xui._request",
+            lambda _opener, _url, **_kwargs: (
+                200,
+                json.dumps({"success": True, "obj": inbounds}),
+            ),
+        )
+
+    def test_finds_the_inbound_that_carries_the_tag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(
+            monkeypatch,
+            [
+                {"id": 1, "remark": "universal", "tag": "in-443-tcp", "port": 443},
+                {
+                    "id": 2,
+                    "remark": "pyntara local proxy",
+                    "tag": "pyntara-local-proxy",
+                    "port": 10800,
+                },
+            ],
+        )
+        found = xui_client.find_inbound_by_tag(
+            _cfg(), _ENV, "pyntara-local-proxy", 5
+        )
+        assert found is not None
+        assert found["id"] == 2
+
+    def test_the_human_label_is_not_the_tag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(
+            monkeypatch,
+            [{"id": 2, "remark": "pyntara local proxy", "tag": "pyntara-local-proxy"}],
+        )
+        assert (
+            xui_client.find_inbound_by_tag(_cfg(), _ENV, "pyntara local proxy", 5)
+            is None
+        )
+
+    def test_returns_none_when_the_tag_is_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._mock_request(monkeypatch, [{"id": 1, "tag": "in-443-tcp"}])
+        assert (
+            xui_client.find_inbound_by_tag(_cfg(), _ENV, "pyntara-local-proxy", 5)
+            is None
+        )
+
+
+class TestUpsertInbound:
+    """Tests for upsert_inbound."""
+
+    def test_creates_the_inbound_when_the_tag_is_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": []})),
+            (200, json.dumps({"success": True, "msg": "inbound added"})),
+        )
+        ok, message = xui_client.upsert_inbound(
+            _cfg(),
+            _ENV,
+            {"tag": "pyntara-local-proxy", "port": 10800},
+            5,
+        )
+        assert ok is True
+        assert message == "inbound added"
+        assert recorded[0].url.endswith("/panel/api/inbounds/list")
+        assert recorded[1].url.endswith("/panel/api/inbounds/add")
+        assert recorded[1].json_body()["tag"] == "pyntara-local-proxy"
+
+    def test_replaces_the_inbound_that_carries_the_tag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {
+                                "id": 2,
+                                "remark": "pyntara local proxy",
+                                "tag": "pyntara-local-proxy",
+                                "port": 10801,
+                            }
+                        ],
+                    }
+                ),
+            ),
+            (200, json.dumps({"success": True, "msg": "inbound updated"})),
+        )
+        ok, message = xui_client.upsert_inbound(
+            _cfg(),
+            _ENV,
+            {"tag": "pyntara-local-proxy", "remark": "pyntara local proxy", "port": 10800},
+            5,
+        )
+        assert ok is True
+        assert message == "inbound pyntara-local-proxy updated: inbound updated"
+        assert recorded[1].url.endswith("/panel/api/inbounds/update/2")
+        assert recorded[1].json_body()["port"] == 10800
+
+    def test_refuses_a_payload_without_a_tag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(monkeypatch, (200, "{}"))
+        ok, message = xui_client.upsert_inbound(_cfg(), _ENV, {"port": 10800}, 5)
+        assert ok is False
+        assert "tag" in message
+        assert recorded == []
+
+    def test_reports_a_failed_write(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": []})),
+            (200, json.dumps({"success": False, "msg": "port already used"})),
+        )
+        ok, message = xui_client.upsert_inbound(
+            _cfg(), _ENV, {"tag": "pyntara-local-proxy", "port": 10800}, 5
+        )
+        assert ok is False
+        assert message == "port already used"
+
+
+class TestDeleteInbound:
+    """Tests for delete_inbound."""
+
+    def test_deletes_by_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        recorded = _record_requests(
+            monkeypatch, (200, json.dumps({"success": True, "msg": "inbound deleted"}))
+        )
+        ok, message = xui_client.delete_inbound(_cfg(), _ENV, 3, 5)
+        assert ok is True
+        assert message == "inbound deleted"
+        assert recorded[0].url.endswith("/panel/api/inbounds/del/3")
+        assert recorded[0].header("Authorization") == "Bearer tok123"
+
+    def test_reports_an_unreachable_panel(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        ok, message = xui_client.delete_inbound(_cfg(), _ENV, 3, 5)
+        assert ok is False
+        assert message == "panel unreachable"
+
+
+class TestReadXrayTemplate:
+    """Tests for read_xray_template."""
+
+    def _template_body(self, xray_setting: object) -> tuple[int, str]:
+        blob = json.dumps(
+            {
+                "xraySetting": xray_setting,
+                "inboundTags": ["in-443-tcp"],
+                "clientReverseTags": [],
+                "outboundTestUrl": "https://www.google.com/generate_204",
+            }
+        )
+        return (200, json.dumps({"success": True, "obj": blob}))
+
+    def test_reads_the_blob_the_panel_stores(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            self._template_body(json.dumps({"outbounds": [{"tag": "direct"}]})),
+        )
+        template = xui_client.read_xray_template(_cfg(), _ENV, 5)
+        assert template is not None
+        assert template.settings == {"outbounds": [{"tag": "direct"}]}
+        assert template.outbound_test_url == "https://www.google.com/generate_204"
+        assert recorded[0].url.endswith("/panel/api/xray/")
+        assert recorded[0].kwargs.get("method") == "POST"
+
+    def test_accepts_an_already_parsed_document(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch, self._template_body({"outbounds": [{"tag": "direct"}]})
+        )
+        template = xui_client.read_xray_template(_cfg(), _ENV, 5)
+        assert template is not None
+        assert template.settings == {"outbounds": [{"tag": "direct"}]}
+
+    def test_reports_nothing_when_the_panel_is_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+
+    def test_reports_nothing_on_an_unreadable_blob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (200, json.dumps({"success": True, "obj": "not json"})))
+        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+
+    def test_reports_nothing_when_the_document_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": json.dumps({"outboundTestUrl": ""})})),
+        )
+        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+
+
+class TestWriteXrayTemplate:
+    """Tests for write_xray_template."""
+
+    def test_sends_the_document_as_a_form_field(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "msg": "xray template updated"})),
+        )
+        template = xui_client.XrayTemplate(
+            settings={"outbounds": [{"tag": "pyntara-remote"}]},
+            outbound_test_url="https://www.google.com/generate_204",
+        )
+        ok, message = xui_client.write_xray_template(_cfg(), _ENV, template, 5)
+        assert ok is True
+        assert message == "xray template updated"
+        request = recorded[0]
+        assert request.url.endswith("/panel/api/xray/update")
+        assert request.kwargs.get("method") == "POST"
+        assert request.header("Content-Type") == "application/x-www-form-urlencoded"
+        form = request.form()
+        assert json.loads(form["xraySetting"]) == template.settings
+        assert form["outboundTestUrl"] == template.outbound_test_url
+
+    def test_reports_a_rejected_apply(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": False, "msg": "invalid xray config: line 3"})),
+        )
+        template = xui_client.XrayTemplate(settings={}, outbound_test_url="")
+        ok, message = xui_client.write_xray_template(_cfg(), _ENV, template, 5)
+        assert ok is False
+        assert message == "invalid xray config: line 3"
+
+
+class TestValidateGeodataTokens:
+    """Tests for validate_geodata_tokens."""
+
+    def test_returns_only_the_rejected_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {
+                                "token": "geosite:nosuchcat",
+                                "reason": "categoryMissing",
+                                "file": "geosite.dat",
+                                "code": "nosuchcat",
+                            }
+                        ],
+                    }
+                ),
+            ),
+        )
+        rejected = xui_client.validate_geodata_tokens(
+            _cfg(),
+            _ENV,
+            xui_client.GEODATA_DOMAIN_KIND,
+            ["geosite:openai", "geosite:nosuchcat"],
+            5,
+        )
+        assert rejected == {"geosite:nosuchcat": "categoryMissing"}
+        request = recorded[0]
+        assert request.url.endswith("/panel/api/xray/geodata/validate")
+        assert request.form() == {
+            "kind": "domain",
+            "tokens": "geosite:openai,geosite:nosuchcat",
+        }
+
+    def test_reports_every_token_when_the_panel_is_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        rejected = xui_client.validate_geodata_tokens(
+            _cfg(), _ENV, xui_client.GEODATA_IP_KIND, ["geoip:private", "200::/7"], 5
+        )
+        assert set(rejected) == {"geoip:private", "200::/7"}
+        assert rejected["geoip:private"] == "panel unreachable"
+
+    def test_asks_nothing_without_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(monkeypatch, (200, "{}"))
+        assert (
+            xui_client.validate_geodata_tokens(
+                _cfg(), _ENV, xui_client.GEODATA_IP_KIND, [], 5
+            )
+            == {}
+        )
+        assert recorded == []
+
+    def test_rejects_an_unknown_kind(self) -> None:
+        with pytest.raises(ValueError, match="unknown geodata kind"):
+            xui_client.validate_geodata_tokens(_cfg(), _ENV, "hostname", ["x"], 5)
+
+
+class TestRouteTest:
+    """Tests for route_test."""
+
+    def test_reports_the_outbound_the_core_chose(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {"success": True, "obj": {"matched": True, "outboundTag": "pyntara-tor"}}
+                ),
+            ),
+        )
+        matched, answer = xui_client.route_test(
+            _cfg(),
+            _ENV,
+            inbound_tag="pyntara-local-proxy",
+            domain="abcdef.onion",
+            port=80,
+            network="tcp",
+            protocol="http",
+            timeout=5,
+        )
+        assert matched is True
+        assert answer == "pyntara-tor"
+        request = recorded[0]
+        assert request.url.endswith("/panel/api/xray/routeTest")
+        assert request.form() == {
+            "port": "80",
+            "network": "tcp",
+            "protocol": "http",
+            "inboundTag": "pyntara-local-proxy",
+            "domain": "abcdef.onion",
+        }
+
+    def test_asks_with_an_address_when_given_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {"success": True, "obj": {"matched": True, "outboundTag": "direct"}}
+                ),
+            ),
+        )
+        matched, answer = xui_client.route_test(
+            _cfg(),
+            _ENV,
+            inbound_tag="pyntara-local-proxy",
+            address="10.10.0.1",
+            port=443,
+            timeout=5,
+        )
+        assert (matched, answer) == (True, "direct")
+        assert recorded[0].form()["ip"] == "10.10.0.1"
+        assert "domain" not in recorded[0].form()
+
+    def test_reports_a_destination_no_rule_matched(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": {"matched": False, "outboundTag": ""}})),
+        )
+        matched, answer = xui_client.route_test(
+            _cfg(),
+            _ENV,
+            inbound_tag="pyntara-local-proxy",
+            domain="example.com",
+            timeout=5,
+        )
+        assert matched is False
+        assert "no routing rule" in answer
+
+    def test_reports_the_panel_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": False, "msg": "invalid inbound tag"})),
+        )
+        matched, answer = xui_client.route_test(
+            _cfg(),
+            _ENV,
+            inbound_tag="pyntara-local-proxy",
+            domain="example.com",
+            timeout=5,
+        )
+        assert matched is False
+        assert answer == "invalid inbound tag"
+
+    def test_reports_an_unreachable_panel(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        matched, answer = xui_client.route_test(
+            _cfg(),
+            _ENV,
+            inbound_tag="pyntara-local-proxy",
+            domain="example.com",
+            timeout=5,
+        )
+        assert matched is False
+        assert answer == "panel unreachable"
+
+    def test_refuses_a_request_without_a_destination(self) -> None:
+        with pytest.raises(ValueError, match="domain or an address"):
+            xui_client.route_test(
+                _cfg(), _ENV, inbound_tag="pyntara-local-proxy", timeout=5
+            )
+

@@ -297,6 +297,125 @@ def run_command(
     return result
 
 
+# The marker curl writes after every parallel transfer, so a merged
+# answer text can be split back into one block per service; the effective
+# URL follows the marker on the same line.
+SOURCE_MARKER = "@@pyntara-source@@"
+
+
+def _parallel_curl_command(
+    urls: tuple[str, ...], timeout_seconds: float
+) -> list[str]:
+    """The one curl call that queries every URL at the same time.
+
+    --parallel runs the transfers together and --parallel-max keeps them
+    all in flight; --write-out adds a marker line with the effective URL
+    after each answer, so every answer can be attributed to the service
+    that gave it even though the answers arrive interleaved. Each
+    transfer is bounded by timeout_seconds, so the call takes at most that
+    long even when a service never answers.
+    """
+
+    return [
+        "curl",
+        "--parallel",
+        "--parallel-max",
+        str(len(urls)),
+        "--silent",
+        "--max-time",
+        str(timeout_seconds),
+        "--write-out",
+        f"\n{SOURCE_MARKER} %{{url_effective}}\n",
+        *urls,
+    ]
+
+
+def split_url_answers(text: str) -> tuple[tuple[str, str], ...]:
+    """Split marked curl output into (service URL, answer) pairs.
+
+    curl writes the marker of a transfer after that transfer finished and
+    after its answer, so the lines collected before a marker are the
+    answer of the service that marker names. The order follows the
+    completion of the transfers, not the order of the URL list, and a
+    transfer that answered nothing still carries its marker, so an empty
+    answer is told apart from a service that was never asked.
+    """
+
+    answers: list[tuple[str, str]] = []
+    pending: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(SOURCE_MARKER):
+            url = line[len(SOURCE_MARKER) :].strip()
+            answers.append((url, "\n".join(pending).strip()))
+            pending = []
+            continue
+        pending.append(line)
+    return tuple(answers)
+
+
+def fetch_urls_in_parallel(
+    urls: tuple[str, ...],
+    query_timeout_seconds: float,
+    command_timeout_seconds: float,
+) -> str:
+    """Query every URL in one parallel curl call and return the answers.
+
+    All URLs run in the same process at the same time, so one slow service
+    delays the result by at most query_timeout_seconds instead of being
+    waited for in turn, and the answers that did arrive are kept.
+    command_timeout_seconds bounds the whole process; a process that
+    exceeds it is killed, so the call always returns.
+
+    A nonzero curl exit code means at least one transfer failed (a service
+    that is down or that answered too late); the answers of the other
+    transfers are still in the output, so the exit code decides nothing
+    here and the caller sees exactly the answers the machine could get.
+    Returns an empty string for an empty URL list, when curl is missing or
+    when the process cannot start.
+
+    The helper is shared by every service that must ask several addresses
+    at once (the public address detection and the country detection), so
+    the query shape and its timeout policy live in one place. The answers
+    carry the source markers of split_url_answers, so a caller that needs
+    to know which service said what splits them with that helper.
+    """
+
+    if not urls:
+        return ""
+    try:
+        process = subprocess.Popen(
+            _parallel_curl_command(urls, query_timeout_seconds),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return ""
+    try:
+        output, _ = process.communicate(timeout=command_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        output, _ = process.communicate()
+    return output
+
+
+def fetch_urls_by_source(
+    urls: tuple[str, ...],
+    query_timeout_seconds: float,
+    command_timeout_seconds: float,
+) -> tuple[tuple[str, str], ...]:
+    """Query every URL in parallel; return (service URL, answer) pairs.
+
+    The same call as fetch_urls_in_parallel, split per service, so a
+    caller that must standardize and merge the answers of different
+    services knows which service produced which answer.
+    """
+
+    return split_url_answers(
+        fetch_urls_in_parallel(urls, query_timeout_seconds, command_timeout_seconds)
+    )
+
+
 def service_is_enabled(name: str, timeout: float) -> bool:
     """True when the systemd service is enabled for boot.
 

@@ -55,6 +55,24 @@ reality. In force mode on an existing panel the task also applies fresh
 proquint credentials and webBasePath directly through `x-ui setting`,
 because the installer preserves them on a non-default panel; normal runs
 never touch them.
+
+Stage 6 makes this machine a client of the remote server whose vless link
+sits in the vault entry named by client_profile_entry_title: the panel
+already runs Xray here, so the client is one inbound of that panel that
+serves SOCKS5 and HTTP on a local address, and no second Xray process is
+installed. Stage 7 routes what enters that inbound: advertising is
+dropped, .onion goes to the local tor proxy and .i2p to the local i2pd
+proxy, the machine's own names and networks go directly, and the rest
+depends on the country the configured services report. A machine outside
+Russia sends everything else to the remote server; a machine in Russia
+sends the resources blocked there and the services that refuse to serve
+Russia through the remote server, reaches what only answers inside Russia
+directly, and sends everything else directly as well. Every category
+token is checked against the geodata the panel installed before it is
+applied, and every class of destination is then verified against the
+running core with its routing test, because the core can hold a rule set
+the stored template no longer matches. The machine that is the remote
+server itself skips both stages: it does not connect to itself.
 """
 
 import json
@@ -66,17 +84,20 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from pyntara import metrics, upnp
+from pyntara import metrics, routing_policy, upnp
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
+from pyntara.location import describe_answers, detect_country
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.public_address import (
     PublicAddresses,
+    directly_connected_networks,
     fetch_public_addresses,
     local_addresses,
 )
+from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
     curl_flags,
@@ -1772,6 +1793,520 @@ def _stage_ssl(
     return None
 
 
+def _remote_profile(
+    cfg: ThreeXuiXraySetupConfig, ctx: Context
+) -> tuple[routing_policy.VlessProfile | None, str]:
+    """The profile of the remote server, and a reason when it is unavailable.
+
+    The vless link comes from the entry named by
+    client_profile_entry_title in the source vault, production first: the
+    link is the single source of truth for the profile, because it already
+    carries the REALITY public key, the short id and the spider path. The
+    reason is an empty string when the profile is returned and a sentence
+    for the operator when it is not, so exactly one of the two is set.
+    """
+
+    source = open_source_vault(ctx.config.local_vault_setup, ctx.vault_password)
+    if source is None:
+        return None, (
+            "no source vault could be opened: the local proxy is not configured"
+        )
+    kp, path = source
+    entry = kp.find_entries(
+        title=cfg.client_profile_entry_title,
+        group=kp.root_group,
+        recursive=False,
+        first=True,
+    )
+    link = (entry.url or "").strip() if entry is not None else ""
+    if not link:
+        return None, (
+            f"no vless link in {cfg.client_profile_entry_title} of {path.name}: "
+            "the local proxy is not configured"
+        )
+    profile = routing_policy.parse_vless_link(link)
+    if profile is None:
+        return None, (
+            f"the url of {cfg.client_profile_entry_title} is not a usable "
+            "vless link: the local proxy is not configured"
+        )
+    return profile, ""
+
+
+def _is_remote_server(profile: routing_policy.VlessProfile, facts: _RunFacts) -> bool:
+    """True when the profile points at this machine itself.
+
+    A machine that runs the remote server must not connect to itself, so
+    the address of the link is compared with the addresses of this
+    machine's interfaces and with the addresses the echo services
+    reported.
+    """
+
+    if profile.address in facts.local_addresses:
+        return True
+    return profile.address in (
+        facts.public_addresses.ipv4 + facts.public_addresses.ipv6
+    )
+
+
+def _inbound_matches(
+    existing: dict[str, object], payload: dict[str, object]
+) -> bool:
+    """True when the stored inbound already carries the wanted definition.
+
+    Only the keys of the payload are compared, and the traffic counters
+    are left out: the panel counts traffic into up and down, so comparing
+    them would report a change on every run. The nested blocks are
+    compared key by key for the same reason, so a panel that adds a value
+    of its own does not make the inbound different.
+    """
+
+    for key, wanted in payload.items():
+        if key in ("up", "down"):
+            continue
+        stored = existing.get(key)
+        if isinstance(wanted, dict):
+            if not isinstance(stored, dict):
+                return False
+            for name, value in wanted.items():
+                if stored.get(name) != value:
+                    return False
+            continue
+        if stored != wanted:
+            return False
+    return True
+
+
+def _stage_local_proxy(
+    cfg: ThreeXuiXraySetupConfig,
+    ctx: Context,
+    timeout: float,
+    facts: _RunFacts,
+) -> TaskResult | None:
+    """Stage 6: serve a local proxy for this machine through the panel.
+
+    The panel already runs Xray on this machine, so the client of the
+    remote server is an inbound of that panel: one listener that serves
+    SOCKS5 and HTTP on the configured local address, without a password,
+    without a traffic limit and without an expiry date. The inbound is
+    created once and replaced when its definition differs, so a rerun with
+    another port or another sniffing set converges. Returns None when the
+    inbound already matches or when this machine is the remote server, and
+    a TaskResult carrying the change or the reason it could not be made.
+    """
+
+    profile, reason = _remote_profile(cfg, ctx)
+    if profile is None:
+        return TaskResult(success=True, warnings=(reason,))
+    if _is_remote_server(profile, facts):
+        _log(
+            "the profile points at this machine, which is the remote server: "
+            "no local proxy is configured on it"
+        )
+        return None
+    try:
+        env = _panel_env(cfg, timeout)
+    except (FileNotFoundError, RuntimeError) as exc:
+        return TaskResult(
+            success=True,
+            warnings=(f"local proxy not configured: {exc}",),
+        )
+    payload = routing_policy.build_local_proxy_inbound(
+        tag=cfg.local_proxy_tag,
+        remark=cfg.local_proxy_tag,
+        listen_address=cfg.local_proxy_listen_address,
+        port=cfg.local_proxy_port,
+        udp_enabled=cfg.local_proxy_udp,
+        sniffing_protocols=cfg.local_proxy_sniffing_protocols,
+    )
+    existing = xui_client.find_inbound_by_tag(cfg, env, cfg.local_proxy_tag, timeout)
+    if existing is not None and _inbound_matches(existing, payload):
+        _log(f"local proxy {cfg.local_proxy_tag} is already configured")
+        return None
+    ok, message = xui_client.upsert_inbound(cfg, env, payload, timeout)
+    if not ok:
+        return TaskResult(
+            success=True,
+            warnings=(f"local proxy not configured: {message}",),
+        )
+    _log(
+        f"local proxy {cfg.local_proxy_tag} on "
+        f"{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}: {message}"
+    )
+    return TaskResult(
+        success=True,
+        changed=True,
+        message=(
+            f"local proxy on "
+            f"{cfg.local_proxy_listen_address}:{cfg.local_proxy_port} configured"
+        ),
+    )
+
+
+def _checked_categories(
+    cfg: ThreeXuiXraySetupConfig, env: dict[str, str], timeout: float
+) -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:
+    """The configured category lists with only the categories that resolve.
+
+    The routing tokens name categories of the geodata files the panel
+    installed, and those files are community maintained: a token the panel
+    cannot resolve would make the whole Xray configuration invalid and
+    take the panel down with it, so it is dropped from the policy and
+    reported. Literal tokens (a domain name, an address range) are
+    accepted by the panel as they are, so they always survive. Returns the
+    lists by config name and one warning per dropped token.
+    """
+
+    domain_lists: dict[str, tuple[str, ...]] = {
+        "ad_block_domain_categories": cfg.ad_block_domain_categories,
+        "direct_domains": cfg.direct_domains,
+        "russia_direct_domain_categories": cfg.russia_direct_domain_categories,
+        "russia_blocked_domain_categories": cfg.russia_blocked_domain_categories,
+        "geo_restricted_domain_categories": cfg.geo_restricted_domain_categories,
+    }
+    ip_lists: dict[str, tuple[str, ...]] = {
+        "direct_ip_categories": cfg.direct_ip_categories,
+        "russia_direct_ip_categories": cfg.russia_direct_ip_categories,
+        "russia_blocked_ip_categories": cfg.russia_blocked_ip_categories,
+    }
+    rejected = {
+        **xui_client.validate_geodata_tokens(
+            cfg,
+            env,
+            xui_client.GEODATA_DOMAIN_KIND,
+            [token for tokens in domain_lists.values() for token in tokens],
+            timeout,
+        ),
+        **xui_client.validate_geodata_tokens(
+            cfg,
+            env,
+            xui_client.GEODATA_IP_KIND,
+            [token for tokens in ip_lists.values() for token in tokens],
+            timeout,
+        ),
+    }
+    lists = {
+        name: tuple(token for token in tokens if token not in rejected)
+        for name, tokens in {**domain_lists, **ip_lists}.items()
+    }
+    warnings = tuple(
+        f"routing category {token} dropped: {reason}"
+        for token, reason in sorted(rejected.items())
+    )
+    return lists, warnings
+
+
+def _own_network_address(own_networks: tuple[str, ...]) -> str | None:
+    """The network address of the first IPv4 subnet of the machine, or None.
+
+    The routing check asks the core about an address of the machine's own
+    networks; an IPv4 subnet carries no zone and no ambiguity, so it is
+    the simpler of the two families to ask about.
+    """
+
+    for network in own_networks:
+        address = network.split("/", 1)[0]
+        if address and ":" not in address:
+            return address
+    return None
+
+
+def _route_expectations(
+    cfg: ThreeXuiXraySetupConfig, policy: routing_policy.LocalProxyPolicy
+) -> tuple[tuple[str, str, str], ...]:
+    """The destinations to ask the core about and the outbound each must take.
+
+    Each entry is a destination, its kind ("domain" or "address") and the
+    tag of the outbound the policy sends it to. The expectations follow
+    from the policy itself, so a disagreement means the running core did
+    not take the policy: the two hidden services are local, the direct
+    domain and the machine's own subnet go directly, the advertising
+    domain is dropped, and the country decides the rest.
+    """
+
+    checks: list[tuple[str, str, str]] = [
+        (cfg.route_check_onion_domain, "domain", policy.tor_outbound_tag),
+        (cfg.route_check_i2p_domain, "domain", policy.i2p_outbound_tag),
+        (cfg.route_check_ad_domain, "domain", policy.blocked_outbound_tag),
+        (cfg.route_check_direct_domain, "domain", policy.direct_outbound_tag),
+    ]
+    own_address = _own_network_address(policy.own_networks)
+    if own_address is not None:
+        checks.append((own_address, "address", policy.direct_outbound_tag))
+    if policy.in_russia:
+        checks.append(
+            (cfg.route_check_foreign_domain, "domain", policy.direct_outbound_tag)
+        )
+        checks.append(
+            (
+                cfg.route_check_russia_blocked_domain,
+                "domain",
+                policy.remote_outbound_tag,
+            )
+        )
+    else:
+        checks.append(
+            (cfg.route_check_foreign_domain, "domain", policy.remote_outbound_tag)
+        )
+    return tuple(checks)
+
+
+def _verify_routes(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+    policy: routing_policy.LocalProxyPolicy,
+) -> tuple[str, ...]:
+    """Ask the running core about every destination class, and report.
+
+    The routing engine of the running core answers, so this is the only
+    honest check that the policy reached the traffic: the stored template
+    has already been seen to disagree with the core. A check that matches
+    is logged with the outbound it took; every disagreement is returned as
+    a warning naming the destination, the expected outbound and the answer.
+    """
+
+    failures: list[str] = []
+    for destination, kind, expected in _route_expectations(cfg, policy):
+        if kind == "domain":
+            matched, answer = xui_client.route_test(
+                cfg,
+                env,
+                inbound_tag=policy.inbound_tag,
+                domain=destination,
+                port=443,
+                timeout=timeout,
+            )
+        else:
+            matched, answer = xui_client.route_test(
+                cfg,
+                env,
+                inbound_tag=policy.inbound_tag,
+                address=destination,
+                port=443,
+                timeout=timeout,
+            )
+        if matched and answer == expected:
+            _log(f"routing check {destination}: {answer}")
+            continue
+        observed = answer if matched else f"no decision ({answer})"
+        failures.append(
+            f"routing check {destination}: expected {expected}, got {observed}"
+        )
+    return tuple(failures)
+
+
+def _check_proxy_path(
+    cfg: ThreeXuiXraySetupConfig,
+    profile: routing_policy.VlessProfile,
+    facts: _RunFacts,
+    timeout: float,
+) -> str:
+    """Query one URL through the local proxy and check where it left.
+
+    The routing checks prove the decision of the core; this proves the
+    path: a request through the local proxy must leave by the remote
+    server. An empty string means the answer is the remote server, and
+    anything else is returned as a warning naming the address the request
+    answered, so a proxy that quietly falls back to a direct connection is
+    reported instead of trusted.
+    """
+
+    proxy = (
+        f"socks5h://{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}"
+    )
+    _log(f"checking the local proxy with one request through {proxy}")
+    try:
+        result = run_command(
+            [
+                "curl",
+                "--silent",
+                "--proxy",
+                proxy,
+                "--connect-timeout",
+                str(cfg.country_query_timeout_seconds),
+                "--max-time",
+                str(cfg.country_query_timeout_seconds),
+                cfg.proxy_check_url,
+            ],
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return f"the local proxy did not answer: {exc}"
+    answer = trim_whitespace(result.stdout)
+    if result.returncode != 0 or not answer:
+        return (
+            f"the local proxy answered nothing for {cfg.proxy_check_url} "
+            f"(curl exit {result.returncode})"
+        )
+    if answer == profile.address:
+        _log(f"the local proxy works: the request left by {answer}")
+        return ""
+    if answer in facts.local_addresses or answer in (
+        facts.public_addresses.ipv4 + facts.public_addresses.ipv6
+    ):
+        return (
+            f"the local proxy answered {answer}, which is this machine: "
+            "the connection did not leave by the remote server"
+        )
+    return (
+        f"the local proxy answered {answer}, while the remote server is "
+        f"{profile.address}: the path may not go through it"
+    )
+
+
+def _stage_routing_policy(
+    cfg: ThreeXuiXraySetupConfig,
+    ctx: Context,
+    timeout: float,
+    facts: _RunFacts,
+) -> TaskResult | None:
+    """Stage 7: route the traffic of the local proxy.
+
+    The policy decides, for every connection that enters the local proxy,
+    which outbound takes it: advertising is dropped, the hidden services
+    of tor and i2p go to the local proxies of those networks, the machine's
+    own names and networks go directly, and the rest depends on the country
+    of the machine (a machine outside Russia sends it to the remote
+    server, a machine in Russia sends only what is blocked there and the
+    services that refuse to serve Russia through the remote server).
+    The template is read, rewritten and written back only when something
+    really differs, the categories are checked against the installed
+    geodata first, and every class of destination is then verified against
+    the running core, because the core can keep a rule set the stored
+    template no longer matches. Returns None when the policy is already in
+    place, and a TaskResult with the change and the warnings otherwise.
+    """
+
+    profile, reason = _remote_profile(cfg, ctx)
+    if profile is None:
+        return TaskResult(success=True, warnings=(reason,))
+    if _is_remote_server(profile, facts):
+        _log(
+            "the profile points at this machine, which is the remote server: "
+            "no routing policy is configured on it"
+        )
+        return None
+    try:
+        env = _panel_env(cfg, timeout)
+    except (FileNotFoundError, RuntimeError) as exc:
+        return TaskResult(
+            success=True,
+            warnings=(f"routing policy not applied: {exc}",),
+        )
+    template = xui_client.read_xray_template(cfg, env, timeout)
+    if template is None:
+        return TaskResult(
+            success=True,
+            warnings=(
+                (
+                    "routing policy not applied: the panel did not return its "
+                    "Xray configuration"
+                ),
+            ),
+        )
+
+    lists, category_warnings = _checked_categories(cfg, env, timeout)
+    warnings = list(category_warnings)
+    own_networks = directly_connected_networks(timeout)
+    report = detect_country(
+        cfg.country_services,
+        cfg.country_word,
+        cfg.country_query_timeout_seconds,
+        cfg.country_command_timeout_seconds,
+    )
+    for line in describe_answers(report):
+        _log(f"country check {line}")
+    if report.in_country:
+        _log(
+            f"country check: an answer named {cfg.country_word}, the machine "
+            "is treated as inside it"
+        )
+    else:
+        _log(
+            f"country check: no answer named {cfg.country_word}, the machine "
+            "is treated as outside it"
+        )
+
+    policy = routing_policy.LocalProxyPolicy(
+        inbound_tag=cfg.local_proxy_tag,
+        remote_outbound_tag=cfg.remote_outbound_tag,
+        tor_outbound_tag=cfg.tor_outbound_tag,
+        i2p_outbound_tag=cfg.i2p_outbound_tag,
+        direct_outbound_tag=cfg.direct_outbound_tag,
+        blocked_outbound_tag=cfg.blocked_outbound_tag,
+        tor_proxy_address=cfg.tor_proxy_address,
+        i2p_proxy_address=cfg.i2p_proxy_address,
+        ad_block_domain_categories=lists["ad_block_domain_categories"],
+        direct_domains=lists["direct_domains"],
+        direct_ip_categories=lists["direct_ip_categories"],
+        direct_ip_networks=cfg.direct_ip_networks,
+        own_networks=own_networks,
+        in_russia=report.in_country,
+        russia_blocked_domain_categories=lists["russia_blocked_domain_categories"],
+        russia_blocked_ip_categories=lists["russia_blocked_ip_categories"],
+        russia_direct_domain_categories=lists["russia_direct_domain_categories"],
+        russia_direct_ip_categories=lists["russia_direct_ip_categories"],
+        geo_restricted_domain_categories=lists["geo_restricted_domain_categories"],
+        russia_domain_strategy=cfg.russia_domain_strategy,
+        outside_russia_domain_strategy=cfg.outside_russia_domain_strategy,
+    )
+    updated, differs = routing_policy.apply_routing_policy(
+        template.settings,
+        policy,
+        remote_outbound=routing_policy.build_remote_outbound(
+            cfg.remote_outbound_tag, profile
+        ),
+        remove_panel_restrictions=True,
+    )
+    wanted = xui_client.XrayTemplate(
+        settings=updated,
+        outbound_test_url=template.outbound_test_url,
+    )
+    applied = False
+    if differs:
+        ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+        if not ok:
+            return TaskResult(
+                success=True,
+                warnings=tuple(warnings)
+                + (f"routing policy not applied: {message}",),
+            )
+        applied = True
+        _log(f"routing policy applied: {message}")
+
+    failures = _verify_routes(cfg, env, timeout, policy)
+    if failures:
+        # The running core can hold a rule set the stored template no longer
+        # matches, a state the panel reaches on its own after an inbound is
+        # renamed. Writing the same template again is what brings the core
+        # back, so it is tried once before the disagreement is reported.
+        ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+        if ok:
+            applied = True
+            _log(f"routing policy written again: {message}")
+            failures = _verify_routes(cfg, env, timeout, policy)
+    warnings.extend(failures)
+
+    path_warning = _check_proxy_path(cfg, profile, facts, timeout)
+    if path_warning:
+        warnings.append(path_warning)
+
+    if applied:
+        return TaskResult(
+            success=True,
+            changed=True,
+            message="routing policy applied",
+            warnings=tuple(warnings),
+        )
+    if warnings:
+        return TaskResult(success=True, warnings=tuple(warnings))
+    _log("routing policy is already configured and verified")
+    return None
+
+
 def _stage_settings(
     cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> tuple[bool, str] | None:
@@ -1810,8 +2345,13 @@ def task(ctx: Context) -> TaskResult:
     panel credentials, verifies the session through the REST API and
     stores them in the runtime vault. Stage 3 creates a VLESS+REALITY
     inbound on the configured port through the panel API; on a rerun it
-    finds the existing inbound by port and returns done. Every step is
-    reported to stdout:
+    finds the existing inbound by port and returns done. Stage 5 ensures
+    the panel client and stores the connection profile. Stages 6 and 7
+    make this machine a client of the remote server named by that profile
+    through the same panel: stage 6 serves a local proxy inbound, stage 7
+    applies the routing policy of that proxy and verifies it against the
+    running core. A machine that IS the remote server skips stages 6 and
+    7. Every step is reported to stdout:
     measurements and decisions as single lines that include their result,
     long-running commands as a line before and a line after. Any failure
     is returned as an error TaskResult: the runner continues with the
@@ -2081,12 +2621,39 @@ def task(ctx: Context) -> TaskResult:
                 if part
             )
 
+    # Stage 6: serve the local proxy of this machine through the panel,
+    # and stage 7: route what enters it. Both stages skip a machine that is
+    # the remote server itself, because it does not connect to itself.
+    proxy_result = _stage_local_proxy(cfg, ctx, timeout, facts)
+    proxy_warnings: tuple[str, ...] = ()
+    proxy_changed = False
+    if proxy_result is not None:
+        proxy_warnings = proxy_result.warnings or ()
+        proxy_changed = proxy_result.changed
+        if proxy_result.message:
+            result.message = "; ".join(
+                part for part in (result.message, proxy_result.message) if part
+            )
+
+    routing_result = _stage_routing_policy(cfg, ctx, timeout, facts)
+    routing_warnings: tuple[str, ...] = ()
+    routing_changed = False
+    if routing_result is not None:
+        routing_warnings = routing_result.warnings or ()
+        routing_changed = routing_result.changed
+        if routing_result.message:
+            result.message = "; ".join(
+                part for part in (result.message, routing_result.message) if part
+            )
+
     all_warnings = (
         ssl_warnings
         + stage2_warnings
         + settings_warnings
         + stage3_warnings
         + connection_warnings
+        + proxy_warnings
+        + routing_warnings
     )
     if (
         all_warnings
@@ -2094,6 +2661,8 @@ def task(ctx: Context) -> TaskResult:
         or settings_changed
         or stage3_changed
         or connection_changed
+        or proxy_changed
+        or routing_changed
     ):
         return TaskResult(
             success=True,
@@ -2103,6 +2672,8 @@ def task(ctx: Context) -> TaskResult:
                 or settings_changed
                 or stage3_changed
                 or connection_changed
+                or proxy_changed
+                or routing_changed
             ),
             message=result.message,
             warnings=all_warnings or (),

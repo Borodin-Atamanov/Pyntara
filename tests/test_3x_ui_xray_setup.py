@@ -22,8 +22,11 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
+from pyntara import routing_policy
+from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
+from pyntara.location import CountryReport
 from pyntara.models import TaskResult
 from pyntara.public_address import PublicAddresses
 from pyntara.tasks.three_x_ui_xray_setup import _RunFacts as RunFacts
@@ -2666,3 +2669,602 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
         cfg = make_config().three_x_ui_xray_setup
         assert xui._forward_upnp_ports(cfg, _facts(), 30.0) is None
+
+
+# The vless link a test machine is a client of; the address is a
+# documentation address, so no test can reach a real server.
+PROFILE_LINK = (
+    "vless://client-id@203.0.113.9:443?fp=chrome&pbk=PUBLICKEY"
+    "&security=reality&sid=6ba85179e30d4fc2&sni=www.google.com"
+    "&spx=%2Fspider&type=tcp#test"
+)
+
+
+def _source_vault(link: str = PROFILE_LINK) -> Mock:
+    """A source vault whose profile entry carries the given link."""
+
+    entry = Mock()
+    entry.url = link
+    kp = Mock()
+    kp.root_group = Mock()
+    kp.find_entries.return_value = entry
+    return kp
+
+
+def _profile_source(monkeypatch: pytest.MonkeyPatch, link: str = PROFILE_LINK) -> None:
+    """Make the source vault helper answer with a vault holding the link."""
+
+    monkeypatch.setattr(
+        "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
+        lambda _cfg, _password: (
+            _source_vault(link),
+            Path("/repo/secrets/production.vault"),
+        ),
+    )
+
+
+def _panel_env_fake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer the panel environment read without a panel on the machine."""
+
+    monkeypatch.setattr(
+        xui,
+        "_panel_env",
+        lambda _cfg, _timeout: {
+            "XUI_API_TOKEN": "tok123",
+            "XUI_PANEL_PORT": "3579",
+            "XUI_SCHEME": "https",
+        },
+    )
+
+
+def _template_settings() -> dict[str, object]:
+    """An Xray template as the panel ships it, with its own restrictions."""
+
+    return {
+        "log": {"loglevel": "warning"},
+        "outbounds": [
+            {
+                "tag": "direct",
+                "protocol": "freedom",
+                "settings": {
+                    "finalRules": [
+                        {"outboundTag": "blocked", "ip": ["geoip:private"]}
+                    ]
+                },
+            },
+            {"tag": "blocked", "protocol": "blackhole", "settings": {}},
+        ],
+        "routing": {
+            "rules": [
+                {"type": "field", "inboundTag": ["api"], "outboundTag": "api"},
+                {"type": "field", "ip": ["geoip:private"], "outboundTag": "blocked"},
+                {"type": "field", "protocol": ["bittorrent"], "outboundTag": "blocked"},
+            ],
+            "domainStrategy": "AsIs",
+        },
+    }
+
+
+class TestLocalProxyStage:
+    """Tests for stage 6, the local proxy inbound of the panel."""
+
+    def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
+        return _ctx(tmp_path).config.three_x_ui_xray_setup
+
+    def test_creates_the_inbound_when_the_tag_is_free(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        created: list[dict[str, object]] = []
+        monkeypatch.setattr("pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None)
+
+        def fake_upsert(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            created.append(payload)
+            return True, "inbound added"
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert created[0]["tag"] == "pyntara-local-proxy"
+        assert created[0]["remark"] == "pyntara-local-proxy"
+        assert created[0]["port"] == 10800
+        assert created[0]["listen"] == "127.0.0.1"
+        assert created[0]["protocol"] == "mixed"
+        assert created[0]["total"] == 0
+        assert created[0]["expiryTime"] == 0
+        assert created[0]["sniffing"] == {
+            "enabled": True,
+            "destOverride": ["http", "tls", "quic"],
+            "metadataOnly": False,
+            "routeOnly": False,
+        }
+
+    def test_does_nothing_when_the_inbound_already_matches(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        stored = {
+            "id": 2,
+            "tag": "pyntara-local-proxy",
+            "remark": "pyntara-local-proxy",
+            "listen": "127.0.0.1",
+            "port": 10800,
+            "protocol": "mixed",
+            "enable": True,
+            "expiryTime": 0,
+            "total": 0,
+            "up": 4096,
+            "down": 8192,
+            "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
+            "sniffing": {
+                "enabled": True,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": False,
+                "routeOnly": False,
+            },
+        }
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: stored
+        )
+
+        def fail_upsert(*args: object, **kwargs: object) -> object:
+            raise AssertionError("the inbound must not be written again")
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fail_upsert)
+        cfg = self._cfg(tmp_path)
+        assert xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
+
+    def test_replaces_the_inbound_when_the_definition_differs(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        stored = {
+            "id": 2,
+            "tag": "pyntara-local-proxy",
+            "remark": "pyntara-local-proxy",
+            "listen": "0.0.0.0",
+            "port": 10801,
+            "protocol": "mixed",
+        }
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: stored
+        )
+        written: list[dict[str, object]] = []
+
+        def fake_upsert(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            written.append(payload)
+            return True, "inbound pyntara-local-proxy updated: updated"
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert written[0]["port"] == 10800
+        assert written[0]["listen"] == "127.0.0.1"
+
+    def test_warns_without_a_client_profile(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
+            lambda _cfg, _password: None,
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.success is True
+        assert result.changed is False
+        assert any("not configured" in w for w in result.warnings or ())
+
+    def test_skips_the_machine_that_is_the_remote_server(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _profile_source(monkeypatch)
+
+        def fail_upsert(*args: object, **kwargs: object) -> object:
+            raise AssertionError("the server must not become its own client")
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fail_upsert)
+        cfg = self._cfg(tmp_path)
+        facts = _facts(local=("203.0.113.9",))
+        assert xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, facts) is None
+
+
+class TestRoutingPolicyStage:
+    """Tests for stage 7, the routing policy of the local proxy."""
+
+    def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
+        return _ctx(tmp_path).config.three_x_ui_xray_setup
+
+    def _prepare(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        *,
+        in_country: bool = False,
+        settings: dict[str, object] | None = None,
+        rejected: dict[str, str] | None = None,
+    ) -> list[dict[str, object]]:
+        """Prepare the stage: patch the panel, the country and the writes."""
+
+        _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        monkeypatch.setattr(
+            xui, "directly_connected_networks", lambda _t: ("10.10.0.0/24",)
+        )
+        monkeypatch.setattr(
+            xui,
+            "detect_country",
+            lambda *_args, **_kwargs: CountryReport(
+                answers=(),
+                values=(),
+                matched_word="russia" if in_country else None,
+            ),
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.validate_geodata_tokens",
+            lambda _c, _e, kind, tokens, _t: {
+                token: reason
+                for token, reason in (rejected or {}).items()
+                if token in tokens
+            },
+        )
+        template = xui_client.XrayTemplate(
+            settings=settings if settings is not None else _template_settings(),
+            outbound_test_url="https://www.google.com/generate_204",
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.read_xray_template", lambda _c, _e, _t: template
+        )
+        writes: list[dict[str, object]] = []
+
+        def fake_write(
+            _cfg: object,
+            _env: object,
+            wanted: xui_client.XrayTemplate,
+            _timeout: object,
+        ) -> tuple[bool, str]:
+            writes.append(wanted.settings)
+            return True, "applied"
+
+        monkeypatch.setattr("pyntara.xui.write_xray_template", fake_write)
+        return writes
+
+    def _route_fake(self, expected: dict[str, str], seen: list[str]) -> object:
+        """Answer the routing checks, refusing a destination not expected."""
+
+        def fake(_cfg: object, _env: object, **kwargs: object) -> tuple[bool, str]:
+            destination = kwargs.get("domain") or kwargs.get("address")
+            seen.append(str(destination))
+            if not isinstance(destination, str) or destination not in expected:
+                raise AssertionError(f"unexpected routing check for {destination}")
+            return True, expected[destination]
+
+        return fake
+
+    def _rules(self, settings: dict[str, object]) -> list[dict[str, object]]:
+        routing = settings["routing"]
+        assert isinstance(routing, dict)
+        rules = routing["rules"]
+        assert isinstance(rules, list)
+        return cast("list[dict[str, object]]", rules)
+
+    def test_applies_the_policy_of_a_machine_outside_russia(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        writes = self._prepare(monkeypatch, tmp_path)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(
+                {
+                    "pyntara-check.onion": "pyntara-tor",
+                    "pyntara-check.i2p": "pyntara-i2p",
+                    "doubleclick.net": "blocked",
+                    "localhost": "direct",
+                    "10.10.0.0": "direct",
+                    "example.com": "pyntara-remote",
+                },
+                seen,
+            ),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert not result.warnings
+        assert sorted(seen) == [
+            "10.10.0.0",
+            "doubleclick.net",
+            "example.com",
+            "localhost",
+            "pyntara-check.i2p",
+            "pyntara-check.onion",
+        ]
+        rules = self._rules(writes[0])
+        assert rules[0] == {
+            "type": "field",
+            "inboundTag": ["api"],
+            "outboundTag": "api",
+        }
+        assert rules[1] == {
+            "type": "field",
+            "inboundTag": ["pyntara-local-proxy"],
+            "domain": ["geosite:category-ads-all"],
+            "outboundTag": "blocked",
+        }
+        assert rules[-1] == {
+            "type": "field",
+            "inboundTag": ["pyntara-local-proxy"],
+            "outboundTag": "pyntara-remote",
+        }
+        outbounds = cast("list[dict[str, object]]", writes[0]["outbounds"])
+        assert [outbound["tag"] for outbound in outbounds] == [
+            "direct",
+            "blocked",
+            "pyntara-remote",
+            "pyntara-tor",
+            "pyntara-i2p",
+        ]
+        routing = writes[0]["routing"]
+        assert isinstance(routing, dict)
+        assert routing["domainStrategy"] == "AsIs"
+
+    def test_applies_the_policy_of_a_machine_in_russia(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        writes = self._prepare(monkeypatch, tmp_path, in_country=True)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(
+                {
+                    "pyntara-check.onion": "pyntara-tor",
+                    "pyntara-check.i2p": "pyntara-i2p",
+                    "doubleclick.net": "blocked",
+                    "localhost": "direct",
+                    "10.10.0.0": "direct",
+                    "example.com": "direct",
+                    "instagram.com": "pyntara-remote",
+                },
+                seen,
+            ),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert not result.warnings
+        assert "instagram.com" in seen
+        rules = self._rules(writes[0])
+        blocked = [
+            rule
+            for rule in rules
+            if rule.get("outboundTag") == "pyntara-remote"
+            and rule.get("domain")
+        ]
+        assert len(blocked) == 2
+        domains = [cast("list[str]", rule["domain"]) for rule in blocked]
+        assert domains[0] == [
+            "geosite:category-ai-!cn",
+            "geosite:openai",
+            "geosite:xai",
+            "geosite:netflix",
+            "geosite:spotify",
+            "geosite:category-social-media-!cn",
+        ]
+        assert domains[1] == ["ext-site:geosite_RU.dat:ru-blocked-all"]
+        direct_rules = [
+            rule
+            for rule in rules
+            if rule.get("outboundTag") == "direct" and rule.get("domain")
+        ]
+        assert any(
+            "ext-site:geosite_RU.dat:ru-available-only-inside" in cast("list[str]", rule["domain"])
+            for rule in direct_rules
+        )
+        routing = writes[0]["routing"]
+        assert isinstance(routing, dict)
+        assert routing["domainStrategy"] == "IPIfNonMatch"
+        assert rules[-1] == {
+            "type": "field",
+            "inboundTag": ["pyntara-local-proxy"],
+            "outboundTag": "direct",
+        }
+
+    def test_drops_a_category_the_panel_does_not_know(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        writes = self._prepare(
+            monkeypatch,
+            tmp_path,
+            rejected={"geosite:netflix": "categoryMissing"},
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            lambda _c, _e, **kwargs: (True, "pyntara-remote"),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert any("geosite:netflix" in w for w in result.warnings or ())
+        applied = json.dumps(writes[0])
+        assert "geosite:netflix" not in applied
+
+    def test_writes_again_when_the_core_kept_an_older_rule_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The first pass answers nothing for every check, the second pass
+        # answers correctly: the template is written once more and the
+        # disagreement disappears without a warning.
+        writes = self._prepare(monkeypatch, tmp_path)
+        expected = {
+            "pyntara-check.onion": "pyntara-tor",
+            "pyntara-check.i2p": "pyntara-i2p",
+            "doubleclick.net": "blocked",
+            "localhost": "direct",
+            "10.10.0.0": "direct",
+            "example.com": "pyntara-remote",
+        }
+        answers: list[tuple[bool, str]] = [(False, "")] * 6
+
+        def fake_route(_cfg: object, _env: object, **kwargs: object) -> tuple[bool, str]:
+            destination = kwargs.get("domain") or kwargs.get("address")
+            if answers:
+                return answers.pop(0)
+            return True, expected[cast("str", destination)]
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert len(writes) == 2
+        assert not any("expected" in w for w in result.warnings or ())
+
+    def test_reports_a_route_that_stays_wrong(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        writes = self._prepare(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            lambda _c, _e, **kwargs: (True, "direct"),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert len(writes) == 2
+        assert sum(1 for w in result.warnings or () if "expected" in w) == 4
+
+    def test_warns_when_the_proxy_path_does_not_leave(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._prepare(monkeypatch, tmp_path)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(
+                {
+                    "pyntara-check.onion": "pyntara-tor",
+                    "pyntara-check.i2p": "pyntara-i2p",
+                    "doubleclick.net": "blocked",
+                    "localhost": "direct",
+                    "10.10.0.0": "direct",
+                    "example.com": "pyntara-remote",
+                },
+                seen,
+            ),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n")
+        )
+        cfg = self._cfg(tmp_path)
+        facts = _facts(local=("190.55.165.52",))
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
+        assert result is not None
+        assert any("did not leave by the remote server" in w for w in result.warnings or ())
+
+    def test_does_nothing_when_the_policy_is_already_in_place(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The stored template already carries the policy: nothing is
+        # written and the checks pass, so the stage reports no change.
+        base = _template_settings()
+        seeded, _ = routing_policy.apply_routing_policy(
+            base,
+            self._policy(self._cfg(tmp_path)),
+            remote_outbound=routing_policy.build_remote_outbound(
+                "pyntara-remote", self._profile()
+            ),
+            remove_panel_restrictions=True,
+        )
+        writes = self._prepare(monkeypatch, tmp_path, settings=seeded)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(
+                {
+                    "pyntara-check.onion": "pyntara-tor",
+                    "pyntara-check.i2p": "pyntara-i2p",
+                    "doubleclick.net": "blocked",
+                    "localhost": "direct",
+                    "10.10.0.0": "direct",
+                    "example.com": "pyntara-remote",
+                },
+                seen,
+            ),
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
+        assert writes == []
+
+    def _profile(self) -> routing_policy.VlessProfile:
+        profile = routing_policy.parse_vless_link(PROFILE_LINK)
+        assert profile is not None
+        return profile
+
+    def _policy(
+        self, cfg: ThreeXuiXraySetupConfig
+    ) -> routing_policy.LocalProxyPolicy:
+        return routing_policy.LocalProxyPolicy(
+            inbound_tag=cfg.local_proxy_tag,
+            remote_outbound_tag=cfg.remote_outbound_tag,
+            tor_outbound_tag=cfg.tor_outbound_tag,
+            i2p_outbound_tag=cfg.i2p_outbound_tag,
+            direct_outbound_tag=cfg.direct_outbound_tag,
+            blocked_outbound_tag=cfg.blocked_outbound_tag,
+            tor_proxy_address=cfg.tor_proxy_address,
+            i2p_proxy_address=cfg.i2p_proxy_address,
+            ad_block_domain_categories=cfg.ad_block_domain_categories,
+            direct_domains=cfg.direct_domains,
+            direct_ip_categories=cfg.direct_ip_categories,
+            direct_ip_networks=cfg.direct_ip_networks,
+            own_networks=("10.10.0.0/24",),
+            in_russia=False,
+            russia_blocked_domain_categories=cfg.russia_blocked_domain_categories,
+            russia_blocked_ip_categories=cfg.russia_blocked_ip_categories,
+            russia_direct_domain_categories=cfg.russia_direct_domain_categories,
+            russia_direct_ip_categories=cfg.russia_direct_ip_categories,
+            geo_restricted_domain_categories=cfg.geo_restricted_domain_categories,
+            russia_domain_strategy=cfg.russia_domain_strategy,
+            outside_russia_domain_strategy=cfg.outside_russia_domain_strategy,
+        )
+
+    def test_skips_the_machine_that_is_the_remote_server(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _profile_source(monkeypatch)
+
+        def fail_read(*args: object, **kwargs: object) -> object:
+            raise AssertionError("the server must not route through itself")
+
+        monkeypatch.setattr("pyntara.xui.read_xray_template", fail_read)
+        cfg = self._cfg(tmp_path)
+        facts = _facts(public=("203.0.113.9",))
+        assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts) is None

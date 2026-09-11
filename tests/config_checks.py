@@ -64,6 +64,7 @@ from pyntara.config import (
 )
 from pyntara.config._fields import (
     CLICK_METHODS,
+    DOMAIN_STRATEGIES,
     NUMLOCK_STATES,
     SHARE_ADDR_STRATEGIES,
 )
@@ -2415,6 +2416,164 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("upnp_mapping_description"),
         "three_x_ui_xray_setup.upnp_mapping_description",
     )
+    client_profile_entry_title = _nonempty_string_field(
+        raw.get("client_profile_entry_title"),
+        "three_x_ui_xray_setup.client_profile_entry_title",
+    )
+    local_proxy_tag = _tag_field(
+        raw.get("local_proxy_tag"),
+        "three_x_ui_xray_setup.local_proxy_tag",
+    )
+    local_proxy_listen_address = _nonempty_string_field(
+        raw.get("local_proxy_listen_address"),
+        "three_x_ui_xray_setup.local_proxy_listen_address",
+    )
+    local_proxy_port = _port_field(
+        raw.get("local_proxy_port"),
+        "three_x_ui_xray_setup.local_proxy_port",
+    )
+    if local_proxy_port in (panel_port, inbound_port):
+        raise ConfigError(
+            "three_x_ui_xray_setup.local_proxy_port must differ from "
+            "panel_port and inbound_port"
+        )
+    local_proxy_udp = _bool_field(
+        raw.get("local_proxy_udp"),
+        "three_x_ui_xray_setup.local_proxy_udp",
+    )
+    local_proxy_sniffing_protocols = _string_list(
+        raw.get("local_proxy_sniffing_protocols"),
+        "three_x_ui_xray_setup.local_proxy_sniffing_protocols",
+    )
+    outbound_tags = {
+        name: _tag_field(
+            raw.get(name),
+            f"three_x_ui_xray_setup.{name}",
+        )
+        for name in (
+            "remote_outbound_tag",
+            "tor_outbound_tag",
+            "i2p_outbound_tag",
+            "direct_outbound_tag",
+            "blocked_outbound_tag",
+        )
+    }
+    if len(set(outbound_tags.values())) != len(outbound_tags):
+        raise ConfigError(
+            "three_x_ui_xray_setup outbound tags must differ from each other"
+        )
+    if local_proxy_tag in set(outbound_tags.values()):
+        raise ConfigError(
+            "three_x_ui_xray_setup.local_proxy_tag must differ from the "
+            "outbound tags"
+        )
+    tor_proxy_address = _address_port_field(
+        raw.get("tor_proxy_address"),
+        "three_x_ui_xray_setup.tor_proxy_address",
+    )
+    i2p_proxy_address = _address_port_field(
+        raw.get("i2p_proxy_address"),
+        "three_x_ui_xray_setup.i2p_proxy_address",
+    )
+    ad_block_domain_categories = _string_list(
+        raw.get("ad_block_domain_categories"),
+        "three_x_ui_xray_setup.ad_block_domain_categories",
+    )
+    direct_domains = _string_list(
+        raw.get("direct_domains"),
+        "three_x_ui_xray_setup.direct_domains",
+    )
+    direct_ip_categories = _string_list(
+        raw.get("direct_ip_categories"),
+        "three_x_ui_xray_setup.direct_ip_categories",
+    )
+    direct_ip_networks = _string_list(
+        raw.get("direct_ip_networks"),
+        "three_x_ui_xray_setup.direct_ip_networks",
+    )
+    country_services = _string_list(
+        raw.get("country_services"),
+        "three_x_ui_xray_setup.country_services",
+    )
+    country_word = _nonempty_string_field(
+        raw.get("country_word"),
+        "three_x_ui_xray_setup.country_word",
+    )
+    if any(character.isdigit() for character in country_word):
+        raise ConfigError(
+            "three_x_ui_xray_setup.country_word must be a word, not a code"
+        )
+    country_query_timeout_seconds = _positive_int_field(
+        raw.get("country_query_timeout_seconds"),
+        "three_x_ui_xray_setup.country_query_timeout_seconds",
+    )
+    country_command_timeout_seconds = _positive_int_field(
+        raw.get("country_command_timeout_seconds"),
+        "three_x_ui_xray_setup.country_command_timeout_seconds",
+    )
+    if country_command_timeout_seconds < country_query_timeout_seconds:
+        raise ConfigError(
+            "three_x_ui_xray_setup.country_command_timeout_seconds must not be "
+            "smaller than country_query_timeout_seconds"
+        )
+    russia_blocked_domain_categories = _string_list(
+        raw.get("russia_blocked_domain_categories"),
+        "three_x_ui_xray_setup.russia_blocked_domain_categories",
+    )
+    russia_blocked_ip_categories = _string_list(
+        raw.get("russia_blocked_ip_categories"),
+        "three_x_ui_xray_setup.russia_blocked_ip_categories",
+    )
+    russia_direct_domain_categories = _string_list(
+        raw.get("russia_direct_domain_categories"),
+        "three_x_ui_xray_setup.russia_direct_domain_categories",
+    )
+    russia_direct_ip_categories = _string_list(
+        raw.get("russia_direct_ip_categories"),
+        "three_x_ui_xray_setup.russia_direct_ip_categories",
+    )
+    geo_restricted_domain_categories = _string_list(
+        raw.get("geo_restricted_domain_categories"),
+        "three_x_ui_xray_setup.geo_restricted_domain_categories",
+    )
+    russia_domain_strategy = _enum_field(
+        raw.get("russia_domain_strategy"),
+        "three_x_ui_xray_setup.russia_domain_strategy",
+        DOMAIN_STRATEGIES,
+    )
+    outside_russia_domain_strategy = _enum_field(
+        raw.get("outside_russia_domain_strategy"),
+        "three_x_ui_xray_setup.outside_russia_domain_strategy",
+        DOMAIN_STRATEGIES,
+    )
+    route_check_ad_domain = _nonempty_string_field(
+        raw.get("route_check_ad_domain"),
+        "three_x_ui_xray_setup.route_check_ad_domain",
+    )
+    route_check_foreign_domain = _nonempty_string_field(
+        raw.get("route_check_foreign_domain"),
+        "three_x_ui_xray_setup.route_check_foreign_domain",
+    )
+    route_check_onion_domain = _nonempty_string_field(
+        raw.get("route_check_onion_domain"),
+        "three_x_ui_xray_setup.route_check_onion_domain",
+    )
+    route_check_i2p_domain = _nonempty_string_field(
+        raw.get("route_check_i2p_domain"),
+        "three_x_ui_xray_setup.route_check_i2p_domain",
+    )
+    route_check_direct_domain = _nonempty_string_field(
+        raw.get("route_check_direct_domain"),
+        "three_x_ui_xray_setup.route_check_direct_domain",
+    )
+    route_check_russia_blocked_domain = _nonempty_string_field(
+        raw.get("route_check_russia_blocked_domain"),
+        "three_x_ui_xray_setup.route_check_russia_blocked_domain",
+    )
+    proxy_check_url = _nonempty_string_field(
+        raw.get("proxy_check_url"),
+        "three_x_ui_xray_setup.proxy_check_url",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -2454,7 +2613,74 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         upnp_package=upnp_package,
         upnp_client_command=upnp_client_command,
         upnp_mapping_description=upnp_mapping_description,
+        client_profile_entry_title=client_profile_entry_title,
+        local_proxy_tag=local_proxy_tag,
+        local_proxy_listen_address=local_proxy_listen_address,
+        local_proxy_port=local_proxy_port,
+        local_proxy_udp=local_proxy_udp,
+        local_proxy_sniffing_protocols=local_proxy_sniffing_protocols,
+        remote_outbound_tag=outbound_tags["remote_outbound_tag"],
+        tor_outbound_tag=outbound_tags["tor_outbound_tag"],
+        i2p_outbound_tag=outbound_tags["i2p_outbound_tag"],
+        direct_outbound_tag=outbound_tags["direct_outbound_tag"],
+        blocked_outbound_tag=outbound_tags["blocked_outbound_tag"],
+        tor_proxy_address=tor_proxy_address,
+        i2p_proxy_address=i2p_proxy_address,
+        ad_block_domain_categories=ad_block_domain_categories,
+        direct_domains=direct_domains,
+        direct_ip_categories=direct_ip_categories,
+        direct_ip_networks=direct_ip_networks,
+        country_services=country_services,
+        country_word=country_word,
+        country_query_timeout_seconds=country_query_timeout_seconds,
+        country_command_timeout_seconds=country_command_timeout_seconds,
+        russia_blocked_domain_categories=russia_blocked_domain_categories,
+        russia_blocked_ip_categories=russia_blocked_ip_categories,
+        russia_direct_domain_categories=russia_direct_domain_categories,
+        russia_direct_ip_categories=russia_direct_ip_categories,
+        geo_restricted_domain_categories=geo_restricted_domain_categories,
+        russia_domain_strategy=russia_domain_strategy,
+        outside_russia_domain_strategy=outside_russia_domain_strategy,
+        route_check_ad_domain=route_check_ad_domain,
+        route_check_foreign_domain=route_check_foreign_domain,
+        route_check_onion_domain=route_check_onion_domain,
+        route_check_i2p_domain=route_check_i2p_domain,
+        route_check_direct_domain=route_check_direct_domain,
+        route_check_russia_blocked_domain=route_check_russia_blocked_domain,
+        proxy_check_url=proxy_check_url,
     )
+
+
+def _tag_field(value: object, name: str) -> str:
+    """An Xray tag: a non-empty string without whitespace.
+
+    A tag is what the routing rules match with inboundTag and what names an
+    outbound, so a tag with a space in it would never match the token the
+    task builds from it.
+    """
+
+    text = _nonempty_string_field(value, name)
+    if any(character.isspace() for character in text):
+        raise ConfigError(f"{name} must not contain whitespace")
+    return text
+
+
+def _address_port_field(value: object, name: str) -> str:
+    """An address:port value with a valid port.
+
+    The local tor and i2p proxies are named this way; the address part stays
+    opaque because an IPv6 address carries colons of its own, so only the
+    port after the last colon is checked.
+    """
+
+    text = _nonempty_string_field(value, name)
+    address, separator, port = text.rpartition(":")
+    if not address or not separator or not port.isdigit():
+        raise ConfigError(f"{name} must be an address:port value")
+    number = int(port)
+    if number < 1 or number > 65535:
+        raise ConfigError(f"{name} port must be between 1 and 65535")
+    return text
 
 
 def _subscription_path_field(value: object, name: str) -> str:

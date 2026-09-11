@@ -129,6 +129,46 @@ The profile is then built from the panel, never from local guesses: the canonica
 
 The entry title comes from `connection_vault_entry_title` and must name an entry of the `[vault_structure]` table, which the config loader checks. When the entry already carries exactly that link and those notes, the stage reports done without writing, so a rerun is a no-op.
 
+## Stage 6: local proxy inbound
+
+Stage 6 makes this machine a client of the remote server whose canonical vless link sits in the source vault, in the entry named by `client_profile_entry_title` (`xray_client_profile`). The production vault wins over the default vault, exactly like the runtime vault build: the link is read through the shared `open_source_vault` helper, so one password rule and one vault reader exist in the project. An absent entry, an empty url, a url that is not a usable vless link and a source vault that does not open all end in the same honest place: a warning that the local proxy is not configured, and no change to the panel. The link is the single source of truth for the profile, because it already carries the REALITY public key, the short id and the spider path that the connection profile of the server entry repeats only partly.
+
+No second Xray process is installed. The panel already runs an Xray core on this machine, so the client is an inbound of that core and the policy lives in the same template the panel uses for its own inbounds; the panel applies a written template to the running core at once. The inbound is created through `POST /panel/api/inbounds/add` with the tag from `local_proxy_tag`, and replaced through `POST /panel/api/inbounds/update/{id}` when the tag is already taken, so a rerun with another port or another sniffing set converges instead of failing on a duplicate tag. The panel keeps the routing tag of an inbound in its `tag` field and the human label in `remark`, and the rules match the tag, so the stage finds its inbound by tag and never by label. Writing a template whose tag the panel already stores is not enough on its own: the panel can rewrite its stored rules while the running core keeps the previous set, which is why stage 7 verifies the core (below).
+
+The inbound is a `mixed` listener, because the panel has no plain `socks` protocol and `mixed` serves SOCKS5 and HTTP on one port, which is exactly a local proxy. It listens on `local_proxy_listen_address` (`127.0.0.1`) so the proxy stays on the machine, carries UDP when `local_proxy_udp` is set, needs no password, and is created with `expiryTime` 0 and `total` 0, which the panel reads as "no limit" and "no expiry": a local proxy that stops working after a quota is worse than useless. Sniffing is enabled for the configured protocols, because sniffing is what lets the rules decide by the requested name instead of by the address, and the country rules depend on names.
+
+A machine that IS the remote server skips stages 6 and 7: the address of the link is compared with the addresses of the machine's interfaces and with the addresses the echo services reported, and a match means the machine must not connect to itself. The skip is a progress line, not a warning, and the machine keeps the routing of a plain server.
+
+## Stage 7: routing policy
+
+Stage 7 decides, for every connection that enters the local proxy, which outbound takes it. The rules are built by `pyntara.routing_policy`, a pure module: it takes the policy values and the Xray template and returns the updated template plus whether anything really differs, so the panel is written only when the document changed and a rerun is a no-op. The module owns only its own outbounds and its own rules: every other outbound, rule and section of the template is kept as it is, so a panel that grows a setting or an operator who edits the template by hand never loses work. The two outbound tags the panel ships (`direct` and `blocked`) are jumped to, and the panel's own restrictions are removed only on a machine that applies this policy: the block of the private range and of the bittorrent protocol, and the internal block rules of the direct outbound, would make the local proxy less useful than it can be. Removing them is safe because every rule of the policy is scoped to the local proxy inbound.
+
+The rule order is fixed:
+
+1. the configured advertising categories go to the panel blackhole, on every machine, so advertising and tracking endpoints are dropped;
+2. `.onion` goes to the local tor SOCKS proxy and `.i2p` to the local i2pd HTTP proxy, because those are the only ways the names resolve at all;
+3. the configured local domains go directly, because a remote server can never resolve them;
+4. the configured address categories, the configured overlay networks and the subnets the kernel reports as directly connected go directly, so a local network, a bridge and the yggdrasil mesh never leave the machine;
+5. everything else depends on the country.
+
+Outside Russia everything else goes through the remote server: the machine gets a complete tunnel with one rule, and the direct traffic is exactly the local traffic of rules 3 and 4. The routing domain strategy stays `AsIs`, so no name is resolved before the decision: resolving a name would hand it to the local resolver and cost a query, while the catch-all rule sends the connection to the remote server anyway.
+
+In Russia the rest is split four ways: the categories that answer only inside Russia go directly, because the remote server cannot serve them; the categories of the resources blocked inside Russia go through the remote server, which sits outside the block; the categories of the services that refuse to serve Russia on their own (the AI services, the streaming catalogues, the social networks that block Russian addresses) go through the remote server as well; and everything else goes directly, so ordinary traffic keeps the latency of the country of the machine. In Russia the routing domain strategy is `IPIfNonMatch`: the datasets of that profile carry address lists for the most part, and an address list can only decide a connection after the name has been resolved, so the core resolves a name when no domain rule matched it. The price is a resolution for the connections no domain list decides, which is exactly the traffic the address lists are meant to sort.
+
+### Country detection
+
+The country comes from the configured services, all queried in one parallel curl call, so one slow service costs at most `country_query_timeout_seconds` and hides nothing. Every answer is standardized without losing anything: a JSON document is flattened with its paths, a `key=value` or `key: value` line becomes a named field, a `;`-separated record becomes one value per part, and anything else stays a plain value. The values of every answer are merged in arrival order with the repeats removed.
+
+The machine is treated as being in Russia when the configured `country_word` appears in one of those values, compared after case folding and after every non-alphanumeric character has become a space: `Russia`, `russian federation` and `loc=Russia` all match, while `GRU`, `Peru` and `Belarus` do not. The search is a plain occurrence rather than a whole word, so `Prussia` matches as well; that is the accepted price of a rule that must also catch `Russian Federation`. A bare two-letter code is deliberately not the rule: the same shape appears as a colo code (`GRU` is Sao Paulo), so a code rule would place machines in Russia by accident. When no service answers or no answer carries the word, the machine is treated as outside Russia and the stage says so in the log: the catch-all rule then sends everything to the remote server, which is the useful default for a machine whose country nobody could confirm.
+
+### Categories and verification
+
+Every configured category token is checked against the geodata files the panel installed before it is applied (`POST /panel/api/xray/geodata/validate` with `kind=domain` for the site lists and `kind=ip` for the address lists). Those files are community maintained and a token the panel cannot resolve would make the whole Xray configuration invalid and take the panel down with it, so a rejected token is dropped from the policy and reported as a warning naming the token and the reason, and the rest of the policy is applied. Literal tokens (a `domain:` name, an address range) are accepted by the panel as they are and always survive. The task never updates the geodata files: the panel does that on demand, so a stale dataset gives stale decisions.
+
+After the template is written, the stage asks the running core about one destination of every class (`POST /panel/api/xray/routeTest` with the domain or the address, the port, the network, the protocol and the inbound tag) and compares the answer with the outbound the policy intends: a hidden service must take the tor or the i2p outbound, an advertising domain must be dropped, a direct domain and an address of the machine's own networks must go directly, and the country decides the rest. The core answers from its own routing engine, so this is the only honest check that the policy reached the traffic. When a check disagrees, the stage writes the same template once more and asks again, which is what brings a core that kept an older rule set back; a disagreement that survives the second write is reported as a warning naming the destination, the expected outbound and the answer, and it never fails the task.
+
+The path is then proven once with a real request: `proxy_check_url` is queried through the local proxy with curl and the answer must be the address of the remote server. An answer that is an address of this machine means the connection did not leave by the server, and any other answer is reported with both addresses, so a proxy that quietly falls back to a direct connection is visible instead of trusted.
+
 ### Config reference
 
 New fields in the `[three_x_ui_xray_setup]` table:  
@@ -154,13 +194,44 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `subscription_clash_path` (string, optional, default `"/c/"`): Clash subscription path, moved off the well-known default `"/clash/"` for the same reason. Must start and end with a slash.  
 `reality_fingerprint` (string, optional, default `"chrome"`): the uTLS fingerprint that the REALITY settings advertise to clients and that the panel renders in the share link. Must not be empty.  
 `connection_vault_entry_title` (string, optional, default `"xray_connection"`): title of the runtime vault entry that carries the connection profile of the client. Must name an entry of the `[vault_structure]` table.  
-`share_addr_strategy` (string, optional, default `"custom"`): how the panel picks the host of the share links; one of `node`, `listen`, `custom`, and only `custom` makes the panel use the address the task sets.
+`share_addr_strategy` (string, optional, default `"custom"`): how the panel picks the host of the share links; one of `node`, `listen`, `custom`, and only `custom` makes the panel use the address the task sets.  
+`client_profile_entry_title` (string, optional, default `"xray_client_profile"`): title of the source vault entry whose url carries the canonical vless link of the remote server this machine connects to as a client. Must name an entry of the `[vault_structure]` table. An absent entry or an empty url means no profile is configured, and stages 6 and 7 then report a warning instead of changing the panel.  
+`local_proxy_tag` (string, optional, default `"pyntara-local-proxy"`): tag of the local proxy inbound, used both as its routing tag and as its panel label. Must not contain whitespace and must differ from the outbound tags.  
+`local_proxy_listen_address` (string, optional, default `"127.0.0.1"`): address the local proxy listens on. The loopback address keeps the proxy on this machine; any other address hands the remote server to whoever reaches that address.  
+`local_proxy_port` (integer, optional, default `10800`): port of the local proxy, serving SOCKS5 and HTTP at once. Must be between 1 and 65535 and must differ from `panel_port` and `inbound_port`.  
+`local_proxy_udp` (boolean, optional, default `true`): whether the local proxy carries UDP, which QUIC and DNS through the proxy need.  
+`local_proxy_sniffing_protocols` (array of strings, optional, default `["http", "tls", "quic"]`): protocols the panel sniffs to learn the requested name.  
+`remote_outbound_tag`, `tor_outbound_tag`, `i2p_outbound_tag` (strings, optional, defaults `"pyntara-remote"`, `"pyntara-tor"`, `"pyntara-i2p"`): tags of the outbounds the policy owns. They must all differ from each other and from `local_proxy_tag`, so a rerun can replace its own objects and no tag collides.  
+`direct_outbound_tag`, `blocked_outbound_tag` (strings, optional, defaults `"direct"`, `"blocked"`): tags of the panel's own outbounds the policy jumps to, the freedom outbound and the blackhole.  
+`tor_proxy_address`, `i2p_proxy_address` (strings, optional, defaults `"127.0.0.1:9050"`, `"127.0.0.1:4444"`): local SOCKS proxy of tor and local HTTP proxy of i2pd. Each must be an address:port value with a port between 1 and 65535.  
+`ad_block_domain_categories` (array of strings, optional): domain categories of advertising and tracking endpoints, dropped on every machine.  
+`direct_domains` (array of strings, optional): domain tokens that must go directly, the private name suffixes among them.  
+`direct_ip_categories` (array of strings, optional): address categories that must go directly, the reserved and private range among them.  
+`direct_ip_networks` (array of strings, optional): literal address ranges that must go directly, the overlay networks of this project among them. They are not categories, so they are applied as they are written.  
+`country_services` (array of strings, optional): services queried in parallel for the country of this machine. A service that stays silent costs at most the query timeout and hides nothing else.  
+`country_word` (string, optional, default `"russia"`): the word that decides that this machine is in Russia. Must be non-empty and must not contain digits, so a code never passes as a word.  
+`country_query_timeout_seconds` (integer, optional, default `10`): timeout of one country service query, also used as the timeout of the proxy path check. Must be positive.  
+`country_command_timeout_seconds` (integer, optional, default `20`): timeout of the whole parallel country query. Must not be smaller than `country_query_timeout_seconds`.  
+`russia_blocked_domain_categories`, `russia_blocked_ip_categories` (arrays of strings, optional): the resources blocked inside Russia, reached through the remote server from a machine in Russia.  
+`russia_direct_domain_categories`, `russia_direct_ip_categories` (arrays of strings, optional): the resources that answer only inside Russia, reached directly from a machine in Russia.  
+`geo_restricted_domain_categories` (array of strings, optional): the services that refuse to serve Russia on their own, reached through the remote server from a machine in Russia.  
+`russia_domain_strategy`, `outside_russia_domain_strategy` (strings, optional, defaults `"IPIfNonMatch"`, `"AsIs"`): the routing domain strategy of the two country profiles; each must be one of `AsIs`, `IPIfNonMatch`, `IPOnDemand`.  
+`route_check_ad_domain`, `route_check_foreign_domain`, `route_check_onion_domain`, `route_check_i2p_domain`, `route_check_direct_domain`, `route_check_russia_blocked_domain` (strings, optional): the destinations the task asks the running core about after applying the policy, one per class. The expectations follow from the configuration, so a disagreeing answer means the core did not take the policy.  
+`proxy_check_url` (string, optional): the URL queried once through the local proxy to prove the whole path, not only the routing decision.
 
 ### Limitations
 
 One node receives one client, not one client per person: every connection to the node shares a single identity, so the panel statistics do not separate users and revoking one person means rotating the identity for everyone. Managing a client per user, per-user limits and per-user subscription links are outside the scope of this task.
 
-The node stores a connection profile in the runtime vault; consuming that profile from another node, which means reading the vault entry and building a local proxy client out of it, is a separate task and is not part of this one.
+The node stores a connection profile in the runtime vault and the same task consumes the profile of the remote server: stages 6 and 7 read the vless link of the source vault entry named by `client_profile_entry_title` and configure this machine as a client of that server, so the server half and the client half are one task with one config. The machine that runs the server skips the client stages, because its link points at itself.
+
+The routing decisions rest on community maintained data: the geoip and geosite files, and the country lists of the profile in use. The task verifies a token before it uses it and never updates a file, so a dataset the panel has not refreshed gives decisions of the day it was built, and a name the list does not carry yet is routed by the catch-all rule.
+
+The country rule is a word search over what the services answer: a machine that reaches the internet through a VPN, a proxy or another country's exit is placed by the country of that exit, and the configured word is the only way to move the boundary.
+
+The local proxy has no authentication because it listens on the loopback address, where only programs of this machine can reach it. Binding `local_proxy_listen_address` to another address hands the remote server to every machine that reaches that address.
+
+The client outbound is a plain vless client: it carries no fallback, no balancer and no observatory, because the project configures exactly one remote server. A machine that must survive the failure of that server needs a second entry and a policy for it, which is not part of this task.
 
 The inbound is created with `enable: true` and starts accepting connections immediately after the panel applies the configuration.
 

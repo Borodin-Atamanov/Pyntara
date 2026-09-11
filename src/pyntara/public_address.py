@@ -5,10 +5,12 @@ splits the answers into IPv4 and IPv6 lists. The caller passes the
 service list and the timeout, and receives a frozen result, so tasks and
 commands share one implementation instead of writing their own query.
 
-The services are queried in parallel through a single curl process: a
-sequential query would wait for every slow service in turn, while the
-parallel call returns as soon as all transfers have finished and never
-discards an answer that arrived. The machine is asked for both address
+The services are queried in parallel through the shared curl helper of
+utils: a sequential query would wait for every slow service in turn,
+while the parallel call returns as soon as all transfers have finished
+and never discards an answer that arrived. The same helper answers the
+country question in pyntara.location, so both services share one query
+shape and one timeout policy. The machine is asked for both address
 families at once, because a machine behind NAT often has no public IPv4
 address but does have a public IPv6 address.
 """
@@ -19,7 +21,7 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
-from pyntara.utils import run_command
+from pyntara.utils import fetch_urls_in_parallel, run_command
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,39 @@ def local_addresses(timeout: float) -> tuple[str, ...]:
     return tuple(addresses)
 
 
+def directly_connected_networks(timeout: float) -> tuple[str, ...]:
+    """Every subnet the kernel reports as directly connected, in order.
+
+    Parsed from the kernel routes of both address families
+    (`ip -o -4 route show proto kernel` and its -6 counterpart). These are
+    the machine's own networks: a local network, a bridge and the
+    yggdrasil overlay all appear here, so a routing policy can send them
+    to the direct outbound whatever range they use. The subnets are read
+    from the kernel instead of being configured, so a machine with an
+    unusual local range is still handled correctly.
+    """
+
+    networks: list[str] = []
+    for family in ("-4", "-6"):
+        try:
+            result = run_command(
+                ["ip", "-o", family, "route", "show", "proto", "kernel"],
+                check=False,
+                capture=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if not fields or "/" not in fields[0]:
+                continue
+            network = fields[0]
+            if network not in networks:
+                networks.append(network)
+    return tuple(networks)
+
+
 def default_route_address(timeout: float) -> str | None:
     """The address the machine uses to reach the internet, or None.
 
@@ -93,30 +128,6 @@ def default_route_address(timeout: float) -> str | None:
             if field == "src" and index + 1 < len(fields):
                 return fields[index + 1]
     return None
-
-
-def _curl_command(services: tuple[str, ...], timeout_seconds: int) -> list[str]:
-    """The one curl call that queries every service at the same time.
-
-    --parallel runs the transfers together and --parallel-max keeps them
-    all in flight; --write-out adds a newline after each answer, so the
-    answers can be told apart even though they arrive interleaved. Each
-    transfer is bounded by timeout_seconds, so the call takes at most
-    that long even when a service never answers.
-    """
-
-    return [
-        "curl",
-        "--parallel",
-        "--parallel-max",
-        str(len(services)),
-        "--silent",
-        "--max-time",
-        str(timeout_seconds),
-        "--write-out",
-        "\n",
-        *services,
-    ]
 
 
 def parse_public_addresses(text: str) -> PublicAddresses:
@@ -151,35 +162,21 @@ def fetch_public_addresses(
 ) -> PublicAddresses:
     """Query every service in parallel and collect the addresses reported.
 
-    All services run at the same time and the call returns when every
-    transfer has finished, so one slow service delays the result by at
-    most query_timeout_seconds and the answers that did arrive are kept.
-    command_timeout_seconds bounds the whole process; a process that
-    exceeds it is killed, so the call always returns. Returns empty lists
-    when no service reports an address, when curl is missing or when the
-    service list is empty.
-
-    A nonzero curl exit code means at least one transfer failed (a
-    service that is down or that answered too late); the answers of the
-    other transfers are still in the output and are parsed, so the exit
-    code decides nothing here and the caller sees exactly the addresses
-    the machine could prove.
+    The parallel query itself is the shared fetch_urls_in_parallel helper,
+    so the query shape and its timeout policy live in one place and the
+    country detection uses the same mechanism. All services run at the
+    same time and the call returns when every transfer has finished, so
+    one slow service delays the result by at most query_timeout_seconds
+    and the answers that did arrive are kept. command_timeout_seconds
+    bounds the whole process, so the call always returns. Returns empty
+    lists when no service reports an address, when curl is missing or when
+    the service list is empty.
     """
 
     if not services:
         return PublicAddresses()
-    try:
-        process = subprocess.Popen(
-            _curl_command(services, query_timeout_seconds),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
+    return parse_public_addresses(
+        fetch_urls_in_parallel(
+            services, query_timeout_seconds, command_timeout_seconds
         )
-    except OSError:
-        return PublicAddresses()
-    try:
-        output, _ = process.communicate(timeout=command_timeout_seconds)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        output, _ = process.communicate()
-    return parse_public_addresses(output)
+    )
