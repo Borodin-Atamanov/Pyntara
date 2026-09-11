@@ -114,6 +114,11 @@ cert_dir = "/root/cert/ip"
 # challenge cannot reach the machine (behind NAT without a port-80
 # forward), so the panel still serves HTTPS instead of plain HTTP.
 self_signed_cert_dir = "/root/cert/selfsigned"
+# File modes of the certificate pair the panel serves, octal strings: the
+# private key stays readable to its owner only, the full chain is world
+# readable. Both the Let's Encrypt pair and the self-signed pair use them.
+cert_privkey_file_mode = "0600"
+cert_fullchain_file_mode = "0644"
 # Timeout in seconds of a single echo-service query used to detect the
 # public IPv4 address (curl --max-time). A short value makes the
 # detection fail on a slow link, so the timeout lets a slow answer

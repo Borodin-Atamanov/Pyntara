@@ -36,6 +36,7 @@ class DnsproxySetupConfig:
     resolved_conf_dir: Path
     resolved_dropin_file_name: str
     resolved_dropin_file_mode: int
+    staged_binary_file_mode: int
     resolved_dropin_header: str
     resolved_section: str
     resolved_dns_directives: tuple[str, ...]

@@ -83,4 +83,5 @@ class YggdrasilServiceSetupConfig:
     connection_wait_multiplier: int
     connection_wait_max_seconds: int
     nm_unmanaged_conf_path: Path
+    nm_unmanaged_conf_file_mode: int
     netplan_dir_path: Path

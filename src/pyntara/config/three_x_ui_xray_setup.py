@@ -96,6 +96,8 @@ class ThreeXuiXraySetupConfig:
     cert_dir: Path
     cert_fullchain: Path
     cert_privkey: Path
+    cert_privkey_file_mode: int
+    cert_fullchain_file_mode: int
     self_signed_cert_dir: Path
     self_signed_cert_fullchain: Path
     self_signed_cert_privkey: Path

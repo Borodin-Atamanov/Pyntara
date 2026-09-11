@@ -76,6 +76,11 @@ user_look_and_feel_dir = ".local/share/plasma/look-and-feel"
 user_places_file = ".local/share/user-places.xbel"
 user_dirs_file = "user-dirs.dirs"
 konsole_profile_path = ".local/share/konsole/Pyntara.profile"
+# File modes of the user files the task writes, octal strings: the KWin
+# script files are readable by the desktop session, the files that carry
+# this machine's own settings stay private to the user.
+script_file_mode = "0644"
+default_file_mode = "0600"
 # The system copy of the global themes and the directory inside a theme
 # that carries its defaults. The task copies a theme whose defaults carry
 # the configured cursor theme from the system directory into the user one.

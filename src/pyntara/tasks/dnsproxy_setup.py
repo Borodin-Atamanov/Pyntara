@@ -184,7 +184,7 @@ def _download_binary(
         raise RuntimeError("dnsproxy archive does not contain exactly one binary")
     staged = cfg.download_dir / "dnsproxy.staged"
     shutil.copyfile(candidates[0], staged)
-    staged.chmod(0o755)
+    staged.chmod(cfg.staged_binary_file_mode)
     return staged
 
 

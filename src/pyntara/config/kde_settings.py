@@ -94,6 +94,8 @@ class KdeSettingsConfig:
     user_places_file: Path
     user_dirs_file: str
     konsole_profile_path: Path
+    script_file_mode: int
+    default_file_mode: int
     system_look_and_feel_dir: Path
     theme_defaults_dir: Path
     sddm_autologin_user: str

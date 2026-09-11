@@ -140,21 +140,26 @@ def _write_local_vault(
 
 
 def _write_password_file(
-    password: str, pass_file_path: Path, pass_dir_mode: int, pass_file_mode: int
+    password: str,
+    pass_file_path: Path,
+    pass_dir_mode: int,
+    pass_file_mode: int,
+    pass_file_writable_mode: int,
 ) -> None:
     """Write the password file: trimmed password, no trailing newline.
 
     The file holds exactly the password: surrounding whitespace is trimmed
     and no newline is appended, so consumers that read the file get the
     password without post-processing. An existing password file is read-only
-    (0400), so before a force rewrite it is made writable for its owner and
-    the restrictive mode is restored after the write.
+    (0400), so before a force rewrite it is made writable for its owner with
+    the configured pass_file_writable_mode and the restrictive mode is
+    restored after the write.
     """
 
     pass_file_path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(pass_file_path.parent, pass_dir_mode)
     if pass_file_path.exists():
-        os.chmod(pass_file_path, 0o600)
+        os.chmod(pass_file_path, pass_file_writable_mode)
     pass_file_path.write_text(password.strip(), encoding="utf-8")
     os.chmod(pass_file_path, pass_file_mode)
 
@@ -259,7 +264,11 @@ def task(ctx: Context) -> TaskResult:
     try:
         _log(f"writing password file {cfg.pass_file_path}")
         _write_password_file(
-            local_password, cfg.pass_file_path, cfg.pass_dir_mode, cfg.pass_file_mode
+            local_password,
+            cfg.pass_file_path,
+            cfg.pass_dir_mode,
+            cfg.pass_file_mode,
+            cfg.pass_file_writable_mode,
         )
     except (OSError, ValueError) as exc:
         _log(

@@ -37,6 +37,9 @@ command_path = "/usr/local/bin/commit_system_metrics"
 # commit time, so the sent file is named <hostname>.kdbx
 # (docs/spec/system-metrics.md, section Runtime vault backup).
 vault_backup_file_name = "{hostname}.kdbx"
+# File mode of the temporary copy of the runtime vault while the commit
+# command reads it, octal string.
+vault_backup_file_mode = "0600"
 # Root directory of the System Metrics queue on the target machine. The
 # ingest service moves committed files from the spool into main_outbox
 # inside this directory; the deployed service fans them out into the
@@ -166,6 +169,9 @@ lock_file_path = "/run/pyntara/system_metrics_collector.lock"
 # suffix of the ingest, so daily reports with the same name coexist in
 # the queue.
 report_file_name = "network-{hostname}.json"
+# File mode of the report file the collector writes into the system temp
+# directory, octal string.
+report_file_mode = "0600"
 
 # Network modules: console commands whose full output forms the network
 # section of the report. ready_percent counts only these modules, so the

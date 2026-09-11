@@ -54,6 +54,8 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             "own_addresses_timeout_seconds = 15\n"
             "agent_start_timeout_seconds = 15\n"
             "key_unlock_timeout_seconds = 30\n"
+            'askpass_helper_file_mode = "0700"\n'
+            'state_file_mode = "0600"\n'
             "backoff_base_seconds = 2\n"
             "backoff_multiplier = 2\n"
             "backoff_max_seconds = 1024\n"

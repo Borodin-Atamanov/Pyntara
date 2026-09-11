@@ -65,6 +65,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "cert_dir": Path("/root/cert/ip"),
         "cert_fullchain": Path("/root/cert/ip/fullchain.pem"),
         "cert_privkey": Path("/root/cert/ip/privkey.pem"),
+        "cert_privkey_file_mode": 0o600,
+        "cert_fullchain_file_mode": 0o644,
         "self_signed_cert_dir": Path("/root/cert/selfsigned"),
         "self_signed_cert_fullchain": Path(
             "/root/cert/selfsigned/fullchain.pem"

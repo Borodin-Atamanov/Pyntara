@@ -177,6 +177,9 @@ start_check_retry_delay_seconds = 3.0
 resolved_conf_dir = "/etc/systemd/resolved.conf.d"
 resolved_dropin_file_name = "pyntara-dnsproxy.conf"
 resolved_dropin_file_mode = "0644"
+# File mode of the downloaded binary before it is moved into place, octal
+# string; the staged copy must be executable for the version probe.
+staged_binary_file_mode = "0755"
 resolved_dropin_header = "# Managed by the Pyntara dnsproxy_setup task."
 resolved_section = "[Resolve]"
 resolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]

@@ -183,6 +183,7 @@ def _start_agent(
     key_path: Path,
     agent_start_timeout_seconds: int,
     key_unlock_timeout_seconds: int,
+    askpass_helper_file_mode: int,
 ) -> dict[str, str] | None:
     """Start a dedicated ssh-agent and unlock the key; the agent env or None.
 
@@ -192,7 +193,9 @@ def _start_agent(
     long-running ssh processes sign through the agent without ever seeing
     the passphrase. A failed agent start or a failed unlock is logged and
     None is returned. agent_start_timeout_seconds bounds the ssh-agent
-    start and key_unlock_timeout_seconds bounds the ssh-add unlock.
+    start and key_unlock_timeout_seconds bounds the ssh-add unlock;
+    askpass_helper_file_mode is the mode of the helper script, which must
+    stay executable by its owner only.
     """
 
     try:
@@ -222,7 +225,7 @@ def _start_agent(
     helper_dir = Path(tempfile.mkdtemp(prefix="pyntara-pf-"))
     helper = helper_dir / "askpass.sh"
     helper.write_text('#!/bin/sh\necho "$PF_KEY_PASSPHRASE"\n', encoding="utf-8")
-    helper.chmod(0o700)
+    helper.chmod(askpass_helper_file_mode)
     add_env = dict(env)
     add_env.update(
         {
@@ -453,7 +456,9 @@ def load_state(path: Path) -> dict[str, dict[str, int]]:
     return result
 
 
-def save_state(path: Path, state: dict[str, dict[str, int]]) -> None:
+def save_state(
+    path: Path, state: dict[str, dict[str, int]], state_file_mode: int
+) -> None:
     """Persist the state atomically with root-only mode; errors are logged.
 
     The write goes through a temporary file in the same directory, so a
@@ -466,7 +471,7 @@ def save_state(path: Path, state: dict[str, dict[str, int]]) -> None:
         temp.write_text(
             json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        os.chmod(temp, 0o600)
+        os.chmod(temp, state_file_mode)
         os.replace(temp, path)
     except OSError as exc:
         _log(f"cannot save the port-forwarding state {path}: {exc}")
@@ -593,7 +598,7 @@ def run_forward_loop(
             with lock:
                 if state.get(server, {}).get(str(local_port)) != port:
                     state.setdefault(server, {})[str(local_port)] = port
-                    save_state(pf.state_file_path, state)
+                    save_state(pf.state_file_path, state, pf.state_file_mode)
                     changed_port = True
             if changed_port:
                 trigger_collector(cfg)
@@ -683,6 +688,7 @@ def main() -> None:
         key_path,
         pf.agent_start_timeout_seconds,
         pf.key_unlock_timeout_seconds,
+        pf.askpass_helper_file_mode,
     )
     if env is None:
         _log("cannot unlock the port-forwarding key", priority=pf.error_priority)

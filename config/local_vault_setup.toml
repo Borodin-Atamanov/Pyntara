@@ -25,5 +25,9 @@ secrets_dir_mode = "0700"
 local_vault_file_mode = "0640"
 pass_dir_mode = "0700"
 pass_file_mode = "0400"
+# Mode that makes an existing read-only password file writable by its owner
+# before a force rewrite, octal string; the configured pass_file_mode is
+# restored right after the write.
+pass_file_writable_mode = "0600"
 # Syslog priority used when journaling a serious vault failure, 0 to 7.
 error_priority = 3

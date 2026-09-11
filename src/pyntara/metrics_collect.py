@@ -246,7 +246,7 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
     try:
         with open(report_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
-        os.chmod(report_path, 0o600)
+        os.chmod(report_path, collector.report_file_mode)
     except OSError as exc:
         _log(
             f"collecting report: cannot write {report_path}: {exc}",

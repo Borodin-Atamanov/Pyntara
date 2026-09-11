@@ -899,16 +899,16 @@ def _write_user_file(
     rel_path: str,
     content: str,
     *,
-    mode: str,
+    mode: int,
     timeout: float,
     force: bool,
 ) -> bool:
     """Write one user-owned file as the target user; True when written.
 
     The directory is created as the target user, the content is written by
-    the root process and then chowned and chmodded to the target user, so
-    the file keeps the user ownership a desktop config file needs. A file
-    that already holds the content is skipped.
+    the root process and then chowned and chmodded to the target user with
+    the given mode, so the file keeps the user ownership a desktop config
+    file needs. A file that already holds the content is skipped.
     """
 
     target = Path(cfg.home_dir) / rel_path
@@ -931,7 +931,7 @@ def _write_user_file(
         ["chown", f"{cfg.username}:{cfg.username}", str(target)],
         timeout=timeout,
     )
-    run_command(["chmod", mode, str(target)], timeout=timeout)
+    run_command(["chmod", f"{mode:04o}", str(target)], timeout=timeout)
     _log(f"wrote {target}")
     return True
 
@@ -971,7 +971,7 @@ def _apply_kwin_scripts(
                     cfg,
                     str(cfg.user_kwin_scripts_dir / script / rel_file),
                     content,
-                    mode="0644",
+                    mode=cfg.script_file_mode,
                     timeout=timeout,
                     force=force,
                 )
@@ -1259,7 +1259,7 @@ def _apply_places_hidden(
         cfg,
         str(cfg.user_places_file),
         content,
-        mode="0600",
+        mode=cfg.default_file_mode,
         timeout=timeout,
         force=force,
     )
@@ -1280,7 +1280,7 @@ def _apply_user_dirs(
         cfg,
         f"{cfg.user_config_dir}/{cfg.user_dirs_file}",
         content,
-        mode="0600",
+        mode=cfg.default_file_mode,
         timeout=timeout,
         force=force,
     )
@@ -1308,7 +1308,7 @@ def _apply_konsole_profile(
         cfg,
         str(cfg.konsole_profile_path),
         content,
-        mode="0600",
+        mode=cfg.default_file_mode,
         timeout=timeout,
         force=force,
     )

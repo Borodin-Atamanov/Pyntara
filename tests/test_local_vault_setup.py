@@ -96,6 +96,25 @@ def test_creates_runtime_vault_and_password_file(
     assert _file_mode(pass_file) == 0o400
 
 
+def test_password_file_writable_mode_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An existing read-only password file is made writable with the
+    # configured mode before the rewrite, so a stricter or looser value is
+    # answered in the config and not in the code.
+    seen: list[int] = []
+    monkeypatch.setattr(
+        local_vault_setup.os, "chmod", lambda path, mode: seen.append(mode)
+    )
+    pass_file = tmp_path / "pass"
+    pass_file.write_text("old", encoding="utf-8")
+    local_vault_setup._write_password_file(
+        "new", pass_file, 0o700, 0o400, pass_file_writable_mode=0o640
+    )
+    assert seen == [0o700, 0o640, 0o400]
+    assert pass_file.read_text(encoding="utf-8") == "new"
+
+
 def test_skips_when_runtime_vault_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

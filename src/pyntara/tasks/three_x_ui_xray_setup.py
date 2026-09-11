@@ -1470,8 +1470,8 @@ def _issue_ip_certificate(
     if not cfg.cert_fullchain.is_file() or not cfg.cert_privkey.is_file():
         return False, "certificate files missing after acme.sh installcert"
     try:
-        os.chmod(cfg.cert_privkey, 0o600)
-        os.chmod(cfg.cert_fullchain, 0o644)
+        os.chmod(cfg.cert_privkey, cfg.cert_privkey_file_mode)
+        os.chmod(cfg.cert_fullchain, cfg.cert_fullchain_file_mode)
     except OSError as exc:
         return False, f"cannot secure certificate permissions: {exc}"
     try:
@@ -1646,8 +1646,8 @@ def _ensure_self_signed_cert(
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"cannot generate a self-signed certificate: {exc}"
         try:
-            os.chmod(cfg.self_signed_cert_privkey, 0o600)
-            os.chmod(cfg.self_signed_cert_fullchain, 0o644)
+            os.chmod(cfg.self_signed_cert_privkey, cfg.cert_privkey_file_mode)
+            os.chmod(cfg.self_signed_cert_fullchain, cfg.cert_fullchain_file_mode)
         except OSError as exc:
             return False, f"cannot secure certificate permissions: {exc}"
     try:

@@ -72,7 +72,7 @@ def task(ctx: Context) -> TaskResult:
     _log(f"committing runtime vault {vault_path} as {backup_name}")
     try:
         shutil.copyfile(vault_path, temp_path)
-        os.chmod(temp_path, 0o600)
+        os.chmod(temp_path, ctx.config.system_metrics_setup.vault_backup_file_mode)
     except OSError as exc:
         temp_path.unlink(missing_ok=True)
         return TaskResult(

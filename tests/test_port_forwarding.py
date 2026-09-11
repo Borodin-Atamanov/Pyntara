@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,6 +28,7 @@ from pyntara.port_forwarding import (
     read_passphrase,
     read_server_addresses,
     run_forward_loop,
+    save_state,
     start_forward,
     trigger_collector,
 )
@@ -332,6 +334,13 @@ class TestRunForwardLoop:
             run_forward_loop(
                 self.config, state, lock, "server", 30222, 30222, self.key, env
             )
+
+    def test_state_file_carries_the_given_mode(self, tmp_path: Path) -> None:
+        # The mode of the state file is an argument of the save, so the
+        # caller passes the configured value and no literal can slip in.
+        target = tmp_path / "state.json"
+        save_state(target, {"server": {"30222": 20000}}, 0o640)
+        assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
     def test_connects_records_and_triggers_collector(self) -> None:
         # A free desired port: the loop records it, saves the state and

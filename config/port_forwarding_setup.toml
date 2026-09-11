@@ -37,6 +37,10 @@ desired_port_max = 60999
 # probes before the connection is considered dead.
 server_alive_interval_seconds = 61
 server_alive_count_max = 3
+# File modes of the files the service writes, octal strings: the askpass
+# helper must be executable by its owner only, the state file private.
+askpass_helper_file_mode = "0700"
+state_file_mode = "0600"
 # Seconds a single ssh connection attempt may take before it is given up.
 connect_timeout_seconds = 31
 # Seconds the ip call that lists this machine's own addresses may take:

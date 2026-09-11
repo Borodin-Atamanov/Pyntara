@@ -384,6 +384,28 @@ def test_apply_env_without_session_has_no_bus(
     assert env == {"HOME": str(tmp_path)}
 
 
+def test_written_user_file_mode_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The chmod of a written user file carries the mode the caller passes,
+    # which is the configured value at every call site, so a stricter or
+    # looser mode is answered in the config.
+    chmods: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "chmod":
+            chmods.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    cfg = replace(make_config().kde_settings, home_dir=str(tmp_path))
+    written = task_module._write_user_file(
+        cfg, "notes.txt", "content", mode=0o640, timeout=5, force=True
+    )
+    assert written is True
+    assert chmods == [["chmod", "0640", str(tmp_path / "notes.txt")]]
+
+
 def test_one_config_failure_does_not_stop_other_steps(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

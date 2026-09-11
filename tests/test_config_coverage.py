@@ -15,6 +15,7 @@ These tests read the real config directory and compare the two forms.
 from __future__ import annotations
 
 import importlib
+import re
 import tomllib
 from dataclasses import fields, is_dataclass
 from pathlib import Path
@@ -246,3 +247,20 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
         name for name, title in referenced.items() if title not in titles
     )
     assert not missing, f"vault entry titles missing from the factory: {missing}"
+
+
+def test_no_module_applies_a_literal_file_mode() -> None:
+    # A file mode the run applies is a config value: the mode key names it
+    # and the code reads it. A literal mode in the code is a permission the
+    # reader of the config cannot see, so the suite refuses it. Masks that
+    # only compare the stat result against a configured mode are not modes
+    # the run applies and stay where the comparison lives.
+    mode_call = re.compile(r"\.chmod\(\s*0o[0-7]+")
+    literal_mode_argument = re.compile(r'mode="0[0-7]{3}"')
+    src_root = REPOSITORY_CONFIG_DIR.parent / "src"
+    offenders: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if mode_call.search(text) or literal_mode_argument.search(text):
+            offenders.append(str(path.relative_to(src_root)))
+    assert not offenders, f"modules applying a literal file mode: {offenders}"

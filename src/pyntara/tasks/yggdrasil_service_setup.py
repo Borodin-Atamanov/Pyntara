@@ -614,7 +614,7 @@ def _ensure_interface_unmanaged(
             return True
         cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
         cfg.nm_unmanaged_conf_path.write_text(body, encoding="utf-8")
-        os.chmod(cfg.nm_unmanaged_conf_path, 0o644)
+        os.chmod(cfg.nm_unmanaged_conf_path, cfg.nm_unmanaged_conf_file_mode)
         ensure_root_owner(cfg.nm_unmanaged_conf_path)
         changed = True
         _log(

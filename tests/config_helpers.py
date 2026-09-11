@@ -102,6 +102,8 @@ def base_config() -> str:
         'user_kwin_scripts_dir = ".local/share/kwin/scripts"\n'
         'user_look_and_feel_dir = ".local/share/plasma/look-and-feel"\n'
         'user_places_file = ".local/share/user-places.xbel"\n'
+        'script_file_mode = "0644"\n'
+        'default_file_mode = "0600"\n'
         'user_dirs_file = "user-dirs.dirs"\n'
         'places_namespaces = { bookmark = "http://freedesktop.org/standards/desktop-bookmarks", kdepriv = "http://www.kde.org/kdepriv", mime = "http://freedesktop.org/standards/shared-mime-info" }\n'
         'places_metadata_owner = "http://www.kde.org"\n'
@@ -231,6 +233,7 @@ def base_config() -> str:
         "connection_wait_multiplier = 2\n"
         "connection_wait_max_seconds = 30\n"
         'nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"\n'
+        'nm_unmanaged_conf_file_mode = "0644"\n'
         'netplan_dir_path = "/etc/netplan"\n'
         "[[yggdrasil_service_setup.multicast_interfaces]]\n"
         'regex = ".*"\n'
@@ -279,6 +282,8 @@ def base_config() -> str:
         "acme_port = 80\n"
         'cert_dir = "/root/cert/ip"\n'
         'self_signed_cert_dir = "/root/cert/selfsigned"\n'
+        'cert_privkey_file_mode = "0600"\n'
+        'cert_fullchain_file_mode = "0644"\n'
         "server_ip_timeout_seconds = 60\n"
         'server_ip_services = ["https://api4.ipify.org", "https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", "https://ipv4.myexternalip.com/raw", "https://4.ident.me", "https://check-host.net/ip"]\n'
         "probe_timeout_seconds = 60\n"
@@ -392,6 +397,8 @@ def base_config() -> str:
         "own_addresses_timeout_seconds = 15\n"
         "agent_start_timeout_seconds = 15\n"
         "key_unlock_timeout_seconds = 30\n"
+        'askpass_helper_file_mode = "0700"\n'
+        'state_file_mode = "0600"\n'
         "backoff_base_seconds = 2\n"
         "backoff_multiplier = 2\n"
         "backoff_max_seconds = 1024\n"
@@ -420,6 +427,7 @@ def base_config() -> str:
         'start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n'
         'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
         'resolved_dropin_file_name = "pyntara-dnsproxy.conf"\nresolved_dropin_file_mode = "0644"\n'
+        'staged_binary_file_mode = "0755"\n'
         'resolved_dropin_header = "# Managed by the Pyntara dnsproxy_setup task."\n'
         'resolved_section = "[Resolve]"\nresolved_dns_directives = ["DNS=127.0.0.1:53053", "DNS=[::1]:53053"]\n'
         'resolved_domains_directive = "Domains=~."\nmanage_networkmanager = true\n'
@@ -509,6 +517,7 @@ def base_config() -> str:
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'
         'vault_backup_file_name = "{hostname}.kdbx"\n'
+        'vault_backup_file_mode = "0600"\n'
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
@@ -539,6 +548,7 @@ def base_config() -> str:
         'journal_identifier = "system_metrics_collector"\n'
         'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
         'report_file_name = "network.json"\n'
+        'report_file_mode = "0600"\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "ipv4"\n'
         'command = ["ip", "-4", "addr", "show", "scope", "global"]\n'
@@ -567,7 +577,7 @@ def base_config() -> str:
         'pass_file_path = "/etc/pyntara/pass"\n'
         'vault_password_entry_title = "pyntara_local_vault_password"\n'
         'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
-        'pass_dir_mode = "0700"\npass_file_mode = "0400"\nerror_priority = 3\n'
+        'pass_dir_mode = "0700"\npass_file_mode = "0400"\npass_file_writable_mode = "0600"\nerror_priority = 3\n'
         '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
         "depends = []\nmodes = [\"minimal\"]\n"
     )

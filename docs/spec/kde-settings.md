@@ -52,6 +52,7 @@ look_and_feel_package_key, color_scheme_key, automatic_look_and_feel_key, automa
 numlock_values and click_method_values, the value each configuration choice takes in the file, and automatic_theme_switch_idle_interval, the idle wait of the native day and night switch.  
 places_root_tag, places_bookmark_tag, places_title_tag, places_metadata_path, places_metadata_owner_attribute, places_hidden_element and places_hidden_value, the structure of user-places.xbel the task matches on.  
 kwin_scripts, kwin_script_files, kwin_script_hotkeys and kwin_script_actions, the KWin scripts installed, the files each one carries, the combinations the scripts claim and the actions that own them.  
+script_file_mode and default_file_mode, the modes of the user files the task writes as octal strings: the KWin script files are readable by the desktop session, the files that carry this machine's own settings stay private to the user.  
 color_scheme and look_and_feel, the dark theme values that describe the night side of the day and night switch.  
 look_and_feel_light, the light theme the day and night switch alternates to.  
 automatic_look_and_feel, whether the native day and night switch is enabled.  

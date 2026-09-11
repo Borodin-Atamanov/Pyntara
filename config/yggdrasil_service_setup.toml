@@ -26,6 +26,8 @@ private_key_path = "/etc/yggdrasil/private-key.pem"
 config_file_mode = "0640"
 # File mode of the private key PEM file, octal string.
 private_key_file_mode = "0600"
+# File mode of the NetworkManager unmanaged-devices drop-in, octal string.
+nm_unmanaged_conf_file_mode = "0644"
 # TUN interface name; a fixed name instead of auto.
 if_name = "ygg"
 # TUN interface MTU; the yggdrasil range is 1280 to 65535.

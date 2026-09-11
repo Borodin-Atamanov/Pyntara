@@ -530,6 +530,9 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     resolved_dropin_file_mode = _octal_mode_field(
         raw.get("resolved_dropin_file_mode"), "dnsproxy_setup.resolved_dropin_file_mode"
     )
+    staged_binary_file_mode = _octal_mode_field(
+        raw.get("staged_binary_file_mode"), "dnsproxy_setup.staged_binary_file_mode"
+    )
     resolved_dropin_header = _nonempty_string_field(
         raw.get("resolved_dropin_header"), "dnsproxy_setup.resolved_dropin_header"
     )
@@ -611,6 +614,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         resolved_conf_dir=resolved_conf_dir,
         resolved_dropin_file_name=resolved_dropin_file_name,
         resolved_dropin_file_mode=resolved_dropin_file_mode,
+        staged_binary_file_mode=staged_binary_file_mode,
         resolved_dropin_header=resolved_dropin_header,
         resolved_section=resolved_section,
         resolved_dns_directives=resolved_dns_directives,
@@ -1370,6 +1374,12 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
                 raw.get("konsole_profile_path"), "kde_settings.konsole_profile_path"
             )
         ),
+        script_file_mode=_octal_mode_field(
+            raw.get("script_file_mode"), "kde_settings.script_file_mode"
+        ),
+        default_file_mode=_octal_mode_field(
+            raw.get("default_file_mode"), "kde_settings.default_file_mode"
+        ),
         system_look_and_feel_dir=Path(
             _nonempty_string_field(
                 raw.get("system_look_and_feel_dir"),
@@ -1613,6 +1623,12 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         raw.get("key_unlock_timeout_seconds"),
         section + "key_unlock_timeout_seconds",
     )
+    askpass_helper_file_mode = _octal_mode_field(
+        raw.get("askpass_helper_file_mode"), section + "askpass_helper_file_mode"
+    )
+    state_file_mode = _octal_mode_field(
+        raw.get("state_file_mode"), section + "state_file_mode"
+    )
     backoff_base_seconds = _positive_int_field(
         raw.get("backoff_base_seconds"), section + "backoff_base_seconds"
     )
@@ -1651,6 +1667,8 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         own_addresses_timeout_seconds=own_addresses_timeout_seconds,
         agent_start_timeout_seconds=agent_start_timeout_seconds,
         key_unlock_timeout_seconds=key_unlock_timeout_seconds,
+        askpass_helper_file_mode=askpass_helper_file_mode,
+        state_file_mode=state_file_mode,
         backoff_base_seconds=backoff_base_seconds,
         backoff_multiplier=backoff_multiplier,
         backoff_max_seconds=backoff_max_seconds,
@@ -2234,6 +2252,10 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
             raw.get("report_file_name"),
             "system_metrics_setup.collector.report_file_name",
         ),
+        report_file_mode=_octal_mode_field(
+            raw.get("report_file_mode"),
+            "system_metrics_setup.collector.report_file_mode",
+        ),
         network_modules=_collector_modules_field(
             raw.get("network_modules"),
             "system_metrics_setup.collector.network_modules",
@@ -2326,6 +2348,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raw.get("vault_backup_file_name"),
         "system_metrics_setup.vault_backup_file_name",
     )
+    vault_backup_file_mode = _octal_mode_field(
+        raw.get("vault_backup_file_mode"),
+        "system_metrics_setup.vault_backup_file_mode",
+    )
     system_metrics_dir = raw.get("system_metrics_dir")
     if not isinstance(system_metrics_dir, str) or not system_metrics_dir:
         raise ConfigError(
@@ -2414,6 +2440,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         system_config_path=Path(system_config_path),
         command_path=Path(command_path),
         vault_backup_file_name=vault_backup_file_name,
+        vault_backup_file_mode=vault_backup_file_mode,
         system_metrics_dir=Path(system_metrics_dir),
         system_metrics_dir_mode=_octal_mode_field(
             raw.get("system_metrics_dir_mode"),
@@ -2741,6 +2768,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.self_signed_cert_dir",
         )
     )
+    cert_privkey_file_mode = _octal_mode_field(
+        raw.get("cert_privkey_file_mode"),
+        "three_x_ui_xray_setup.cert_privkey_file_mode",
+    )
+    cert_fullchain_file_mode = _octal_mode_field(
+        raw.get("cert_fullchain_file_mode"),
+        "three_x_ui_xray_setup.cert_fullchain_file_mode",
+    )
     server_ip_timeout_seconds = _int_field(
         raw.get("server_ip_timeout_seconds"),
         "three_x_ui_xray_setup.server_ip_timeout_seconds",
@@ -3062,6 +3097,8 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         cert_dir=cert_dir,
         cert_fullchain=cert_dir / "fullchain.pem",
         cert_privkey=cert_dir / "privkey.pem",
+        cert_privkey_file_mode=cert_privkey_file_mode,
+        cert_fullchain_file_mode=cert_fullchain_file_mode,
         self_signed_cert_dir=self_signed_cert_dir,
         self_signed_cert_fullchain=self_signed_cert_dir / "fullchain.pem",
         self_signed_cert_privkey=self_signed_cert_dir / "privkey.pem",
@@ -3532,6 +3569,7 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         local_vault_file_mode=_file_mode_field("local_vault_file_mode"),
         pass_dir_mode=_file_mode_field("pass_dir_mode"),
         pass_file_mode=_file_mode_field("pass_file_mode"),
+        pass_file_writable_mode=_file_mode_field("pass_file_writable_mode"),
         error_priority=error_priority,
     )
 
@@ -3836,6 +3874,10 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
             "yggdrasil_service_setup.nm_unmanaged_conf_path",
         )
     )
+    nm_unmanaged_conf_file_mode = _octal_mode_field(
+        raw.get("nm_unmanaged_conf_file_mode"),
+        "yggdrasil_service_setup.nm_unmanaged_conf_file_mode",
+    )
     netplan_dir_path = Path(
         _nonempty_string_field(
             raw.get("netplan_dir_path"),
@@ -3872,6 +3914,7 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         connection_wait_multiplier=connection_wait_multiplier,
         connection_wait_max_seconds=connection_wait_max_seconds,
         nm_unmanaged_conf_path=nm_unmanaged_conf_path,
+        nm_unmanaged_conf_file_mode=nm_unmanaged_conf_file_mode,
         netplan_dir_path=netplan_dir_path,
     )
 

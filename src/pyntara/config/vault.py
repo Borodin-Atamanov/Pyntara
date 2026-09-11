@@ -103,4 +103,5 @@ class LocalVaultSetupConfig:
     local_vault_file_mode: int
     pass_dir_mode: int
     pass_file_mode: int
+    pass_file_writable_mode: int
     error_priority: int

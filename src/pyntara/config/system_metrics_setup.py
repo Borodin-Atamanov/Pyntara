@@ -58,6 +58,7 @@ class SystemMetricsCollectorConfig:
     journal_identifier: str
     lock_file_path: Path
     report_file_name: str
+    report_file_mode: int
     network_modules: tuple[CollectorModuleConfig, ...]
     system_modules: tuple[CollectorModuleConfig, ...]
 
@@ -123,6 +124,7 @@ class SystemMetricsSetupConfig:
     system_config_path: Path
     command_path: Path
     vault_backup_file_name: str
+    vault_backup_file_mode: int
     system_metrics_dir: Path
     system_metrics_dir_mode: int
     queue_file_mode: int
