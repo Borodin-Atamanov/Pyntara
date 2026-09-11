@@ -3077,11 +3077,20 @@ class TestRoutingPolicyStage:
                 seen,
             ),
         )
-        monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
-        )
         cfg = self._cfg(tmp_path)
-        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [(0, "77.245.209.27\n200")],
+                    cfg.proxy_check_blocked_url: [(0, '{"error": "no key"}\n401')],
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(
+            cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
         assert result is not None
         assert not result.warnings
         assert "instagram.com" in seen
@@ -3262,6 +3271,133 @@ class TestRoutingPolicyStage:
         profile = routing_policy.parse_vless_link(PROFILE_LINK)
         assert profile is not None
         return profile
+
+    def _answers_by_url(
+        self, answers: dict[str, list[tuple[int, str]]]
+    ) -> object:
+        """Answer each check URL from its own queue of curl results."""
+
+        queues = {url: list(items) for url, items in answers.items()}
+
+        def fake(command: list[str], **kwargs: object) -> object:
+            del kwargs
+            url = command[-1]
+            queue = queues.get(url)
+            if not queue:
+                raise AssertionError(f"unexpected request for {url}")
+            code, body = queue.pop(0) if len(queue) > 1 else queue[0]
+            # curl prints the write-out marker without a trailing newline.
+            return _FakeProc(code, body.rstrip("\n"))
+
+        return fake
+
+    def test_accepts_the_direct_egress_of_a_machine_in_russia(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # In Russia the policy sends an ordinary foreign name directly, so
+        # the address of this machine is the expected answer and the remote
+        # path is proven separately by a URL that must use the tunnel.
+        self._prepare(monkeypatch, tmp_path, in_country=True)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", lambda _c, _e, **kwargs: (True, "direct")
+        )
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [(0, "77.245.209.27\n200")],
+                    cfg.proxy_check_blocked_url: [(0, '{"error": "no key"}\n401')],
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(
+            cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
+        assert result is not None
+        assert not [w for w in result.warnings or () if "proxy" in w or "remote path" in w]
+
+    def test_reports_a_machine_in_russia_that_uses_the_server_for_the_plain_url(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The plain URL went through the remote server although the policy
+        # routes it directly: the policy is not in place on this machine.
+        self._prepare(monkeypatch, tmp_path, in_country=True)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", lambda _c, _e, **kwargs: (True, "direct")
+        )
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [(0, "203.0.113.9\n200")],
+                    cfg.proxy_check_blocked_url: [(0, "ok\n200")],
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(
+            cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
+        assert result is not None
+        assert any("policy may not be in place" in w for w in result.warnings or ())
+
+    def test_reports_a_proxied_url_that_never_answers_in_russia(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._prepare(monkeypatch, tmp_path, in_country=True)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", lambda _c, _e, **kwargs: (True, "direct")
+        )
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [(0, "77.245.209.27\n200")],
+                    cfg.proxy_check_blocked_url: [(28, "")],
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(
+            cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
+        assert result is not None
+        warnings = [w for w in result.warnings or () if cfg.proxy_check_blocked_url in w]
+        assert warnings
+        assert "curl exit 28" in warnings[0]
+
+    def test_a_stalled_request_is_attempted_twice(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The first attempt stalls and the second answers: the check does
+        # not raise an alarm for a single stall of a working tunnel.
+        self._prepare(monkeypatch, tmp_path)
+        attempts: list[str] = []
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            lambda _c, _e, **kwargs: (True, "pyntara-remote"),
+        )
+
+        def fake(command: list[str], **kwargs: object) -> object:
+            del kwargs
+            url = command[-1]
+            if url == cfg.proxy_check_url:
+                attempts.append(url)
+                if len(attempts) == 1:
+                    return _FakeProc(28, "")
+                return _FakeProc(0, "203.0.113.9\n200")
+            raise AssertionError(f"unexpected request for {url}")
+
+        monkeypatch.setattr(xui, "run_command", fake)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert len(attempts) == 2
+        assert not [w for w in result.warnings or () if "two attempts" in w]
 
     def _policy(
         self, cfg: ThreeXuiXraySetupConfig

@@ -2070,65 +2070,192 @@ def _verify_routes(
     return tuple(failures)
 
 
-def _check_proxy_path(
-    cfg: ThreeXuiXraySetupConfig,
-    profile: routing_policy.VlessProfile,
-    facts: _RunFacts,
-    timeout: float,
-) -> str:
-    """Query one URL through the local proxy and check where it left.
+def _proxy_request(
+    cfg: ThreeXuiXraySetupConfig, proxy: str, url: str
+) -> tuple[str, str, int]:
+    """One request through the local proxy: body, HTTP code, curl exit code.
 
-    The routing checks prove the decision of the core; this proves the
-    path: a request through the local proxy must leave by the remote
-    server. An empty string means the answer is the remote server, and
-    anything else is returned as a warning naming the address the request
-    answered, so a proxy that quietly falls back to a direct connection is
-    reported instead of trusted.
+    The HTTP code comes from a write-out marker, so a refused or timed out
+    transfer is reported as 000 instead of being mistaken for a body. The
+    request is not retried here: the caller decides how many attempts a
+    check is worth, so a stalling tunnel is reported with the number of
+    attempts it got instead of being hidden by a retry loop.
     """
 
-    proxy = (
-        f"socks5h://{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}"
-    )
-    _log(f"checking the local proxy with one request through {proxy}")
     try:
         result = run_command(
             [
                 "curl",
                 "--silent",
+                "--show-error",
                 "--proxy",
                 proxy,
                 "--connect-timeout",
-                str(cfg.country_query_timeout_seconds),
+                str(cfg.proxy_check_timeout_seconds),
                 "--max-time",
-                str(cfg.country_query_timeout_seconds),
-                cfg.proxy_check_url,
+                str(cfg.proxy_check_timeout_seconds),
+                "--write-out",
+                "\n%{http_code}",
+                url,
             ],
             check=False,
             capture=True,
-            timeout=timeout,
+            timeout=cfg.proxy_check_timeout_seconds * 2 + 10,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"the local proxy did not answer: {exc}"
-    answer = trim_whitespace(result.stdout)
-    if result.returncode != 0 or not answer:
+        return f"the request could not be run: {exc}", "000", 1
+    output = result.stdout
+    body, _, code = output.rpartition("\n")
+    return trim_whitespace(body), trim_whitespace(code) or "000", result.returncode
+
+
+def _own_addresses(facts: _RunFacts) -> tuple[str, ...]:
+    """Every address this machine answers to, as the run facts know them."""
+
+    return facts.local_addresses + facts.public_addresses.ipv4 + facts.public_addresses.ipv6
+
+
+def _check_egress_address(
+    cfg: ThreeXuiXraySetupConfig,
+    policy: routing_policy.LocalProxyPolicy,
+    profile: routing_policy.VlessProfile,
+    facts: _RunFacts,
+    proxy: str,
+) -> tuple[str, ...]:
+    """Check where a request through the local proxy leaves, per country.
+
+    Outside Russia the policy sends an ordinary foreign name through the
+    remote server, so the answer must be the address of that server. In
+    Russia the same name is sent directly on purpose, so the answer must be
+    an address of this machine: expecting the remote server there is what
+    made an earlier version of this check report a working proxy as broken.
+    The request is attempted twice, because the path to the remote server
+    can stall once and answer on the next attempt, which is a fact of the
+    network rather than a reason to raise an alarm.
+    """
+
+    _log(f"checking where a request through {proxy} leaves")
+    answer = ""
+    code = 0
+    http_code = "000"
+    for attempt in (1, 2):
+        answer, http_code, code = _proxy_request(cfg, proxy, cfg.proxy_check_url)
+        if code == 0 and answer:
+            break
+        if attempt == 1:
+            _log(f"the first attempt answered nothing (curl exit {code}), trying again")
+    if code != 0 or not answer:
         return (
-            f"the local proxy answered nothing for {cfg.proxy_check_url} "
-            f"(curl exit {result.returncode})"
+            (
+                f"the local proxy answered nothing for {cfg.proxy_check_url} "
+                f"in two attempts (curl exit {code}, HTTP {http_code})"
+            ),
+        )
+    expected = (
+        f"an address of this machine ({', '.join(_own_addresses(facts)) or 'none known'})"
+        if policy.in_russia
+        else f"the remote server {profile.address}"
+    )
+    if policy.in_russia:
+        if answer in _own_addresses(facts):
+            _log(f"the local proxy works: the request left by {answer}, directly as intended")
+            return ()
+        if answer == profile.address:
+            return (
+                (
+                    f"the local proxy answered {answer}, which is the remote server, "
+                    f"while the policy routes {cfg.proxy_check_url} directly: the "
+                    "policy may not be in place"
+                ),
+            )
+        return (
+            (
+                f"the local proxy answered {answer}, while {expected} was expected: "
+                "the request left somewhere unexpected"
+            ),
         )
     if answer == profile.address:
         _log(f"the local proxy works: the request left by {answer}")
-        return ""
-    if answer in facts.local_addresses or answer in (
-        facts.public_addresses.ipv4 + facts.public_addresses.ipv6
-    ):
+        return ()
+    if answer in _own_addresses(facts):
         return (
-            f"the local proxy answered {answer}, which is this machine: "
-            "the connection did not leave by the remote server"
+            (
+                f"the local proxy answered {answer}, which is this machine: "
+                "the connection did not leave by the remote server"
+            ),
         )
     return (
-        f"the local proxy answered {answer}, while the remote server is "
-        f"{profile.address}: the path may not go through it"
+        (
+            f"the local proxy answered {answer}, while {expected} was expected: "
+            "the path may not go through it"
+        ),
     )
+
+
+def _check_remote_path(
+    cfg: ThreeXuiXraySetupConfig, proxy: str
+) -> tuple[str, ...]:
+    """Check that a destination the policy proxies really answers, in Russia.
+
+    On a machine in Russia the plain check URL is routed directly, so it
+    says nothing about the remote server; the check that does is a URL of a
+    class the policy sends through the server, a resource blocked in Russia
+    or a service that refuses to serve it. Such a service does not report
+    the address of its client, so an HTTP answer is the evidence: no answer
+    means the tunnel does not carry that class, which is exactly what the
+    machine needs to hear. The request is attempted twice for the same
+    reason as the egress check.
+    """
+
+    url = cfg.proxy_check_blocked_url
+    _log(f"checking the remote path through {proxy} with {url}")
+    http_code = "000"
+    code = 0
+    for attempt in (1, 2):
+        _, http_code, code = _proxy_request(cfg, proxy, url)
+        if code == 0 and http_code not in ("000", ""):
+            _log(f"the remote path works: {url} answered HTTP {http_code}")
+            return ()
+        if attempt == 1:
+            _log(f"the first attempt answered nothing (curl exit {code}), trying again")
+    reason = (
+        f"curl exit {code}, HTTP {http_code}"
+        if code != 0
+        else f"HTTP {http_code}"
+    )
+    return (
+        (
+            f"the local proxy answered nothing for {url} in two attempts ({reason}): "
+            "a destination that must use the remote server does not reach it"
+        ),
+    )
+
+
+def _check_proxy_path(
+    cfg: ThreeXuiXraySetupConfig,
+    policy: routing_policy.LocalProxyPolicy,
+    profile: routing_policy.VlessProfile,
+    facts: _RunFacts,
+) -> tuple[str, ...]:
+    """Prove the path of the local proxy: where it leaves and what it carries.
+
+    The routing checks prove the decision of the core; these two prove the
+    path. The first request asks an address-reporting service where the
+    traffic left, and its expected answer follows from the policy: the
+    remote server outside Russia, this machine in Russia, because the
+    policy sends an ordinary foreign name directly there. The second
+    request, on a machine in Russia only, asks a destination that the
+    policy sends through the remote server whether it answers at all, so a
+    tunnel that carries nothing is visible instead of trusted. Every
+    disagreement is returned as a warning naming what was asked, what was
+    expected and what came back.
+    """
+
+    proxy = f"socks5h://{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}"
+    warnings = list(_check_egress_address(cfg, policy, profile, facts, proxy))
+    if policy.in_russia:
+        warnings.extend(_check_remote_path(cfg, proxy))
+    return tuple(warnings)
 
 
 def _stage_routing_policy(
@@ -2264,9 +2391,8 @@ def _stage_routing_policy(
             failures = _verify_routes(cfg, env, timeout, policy)
     warnings.extend(failures)
 
-    path_warning = _check_proxy_path(cfg, profile, facts, timeout)
-    if path_warning:
-        warnings.append(path_warning)
+    path_warnings = _check_proxy_path(cfg, policy, profile, facts)
+    warnings.extend(path_warnings)
 
     if applied:
         return TaskResult(

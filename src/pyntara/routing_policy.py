@@ -15,12 +15,27 @@ server inbound of a panel, for example) keeps its own routing:
 1. advertising domains go to the blocked outbound;
 2. .onion goes to the tor outbound, .i2p to the i2p outbound;
 3. local names go directly, they cannot be resolved by a remote server;
-4. the machine's own subnets and the private ranges go directly;
-5. on a machine in Russia the resources that are reachable only from
-   inside Russia go directly, the services that refuse to serve Russia
-   and the resources blocked in Russia go through the remote server, and
-   everything else goes directly;
-6. anywhere else everything else goes through the remote server.
+4. on a machine in Russia the names that are reachable only from inside
+   Russia go directly, and the names that refuse to serve Russia and the
+   names blocked in Russia go through the remote server;
+5. the private ranges, the overlay networks and the machine's own subnets
+   go directly, and on a machine in Russia the Russian ranges go directly
+   while the ranges blocked in Russia go through the remote server;
+6. everything else goes through the remote server, or directly on a
+   machine in Russia.
+
+Every name rule comes before the first address rule, and that order is
+the point rather than a detail. The routing domain strategy of a machine
+in Russia is IPIfNonMatch, and the core resolves a name as soon as it
+reaches the first rule that carries addresses, in order to match them.
+A name that a name list already carries must therefore be decided before
+that happens: otherwise the address of the name decides instead, and the
+address of a site that is blocked in Russia can fall into a range that is
+routed directly, which sends a site that must use the remote server
+directly into the block. Measured on a machine in Russia: the domain
+api.openai.com was routed to the remote server while the address this
+machine resolves for it was routed directly, and the site broke whenever
+the address decided.
 
 A machine that is the remote server itself has no remote outbound, so the
 rules that point at it are not built at all: nothing connects to itself.
@@ -301,6 +316,13 @@ def build_routing_rules(
 ) -> list[dict[str, object]]:
     """The rules the policy owns, in their fixed order.
 
+    Every name rule is built before the first address rule. The core
+    resolves a name at the first rule that carries addresses when the
+    strategy is IPIfNonMatch, so a name that a name list carries has to be
+    decided by name first; otherwise the address decides, and the address
+    of a site blocked in Russia can fall into a range that goes directly.
+    The module docstring records the measurement behind this order.
+
     With remote_outbound_available=False the machine is the remote server
     itself: the rules that would send traffic to it are left out, so
     nothing connects to its own address and no rule points at an outbound
@@ -332,30 +354,13 @@ def build_routing_rules(
                 policy.inbound_tag, policy.direct_outbound_tag, domain=list(policy.direct_domains)
             )
         )
-    direct_ips = policy.direct_ip_values()
-    if direct_ips:
-        rules.append(
-            _field_rule(
-                policy.inbound_tag, policy.direct_outbound_tag, ip=direct_ips
-            )
-        )
-    if not remote_outbound_available:
-        return rules
-    if policy.in_russia:
+    if remote_outbound_available and policy.in_russia:
         if policy.russia_direct_domain_categories:
             rules.append(
                 _field_rule(
                     policy.inbound_tag,
                     policy.direct_outbound_tag,
                     domain=list(policy.russia_direct_domain_categories),
-                )
-            )
-        if policy.russia_direct_ip_categories:
-            rules.append(
-                _field_rule(
-                    policy.inbound_tag,
-                    policy.direct_outbound_tag,
-                    ip=list(policy.russia_direct_ip_categories),
                 )
             )
         if policy.geo_restricted_domain_categories:
@@ -372,6 +377,24 @@ def build_routing_rules(
                     policy.inbound_tag,
                     policy.remote_outbound_tag,
                     domain=list(policy.russia_blocked_domain_categories),
+                )
+            )
+    direct_ips = policy.direct_ip_values()
+    if direct_ips:
+        rules.append(
+            _field_rule(
+                policy.inbound_tag, policy.direct_outbound_tag, ip=direct_ips
+            )
+        )
+    if not remote_outbound_available:
+        return rules
+    if policy.in_russia:
+        if policy.russia_direct_ip_categories:
+            rules.append(
+                _field_rule(
+                    policy.inbound_tag,
+                    policy.direct_outbound_tag,
+                    ip=list(policy.russia_direct_ip_categories),
                 )
             )
         if policy.russia_blocked_ip_categories:

@@ -323,10 +323,10 @@ class TestBuildRoutingRules:
             "pyntara-i2p",
             "direct",
             "direct",
-            "direct",
-            "direct",
             "pyntara-remote",
             "pyntara-remote",
+            "direct",
+            "direct",
             "pyntara-remote",
             "direct",
         ]
@@ -336,6 +336,45 @@ class TestBuildRoutingRules:
         assert len(blocked_domains) == 1
         assert blocked_domains[0]["outboundTag"] == "pyntara-remote"
         assert rules[-1]["outboundTag"] == "direct"
+
+    def test_every_name_rule_comes_before_the_first_address_rule(self) -> None:
+        # The core resolves a name at the first rule carrying addresses
+        # when the strategy is IPIfNonMatch, so a name a name list carries
+        # must be decided by name first. Otherwise the locally resolved
+        # address decides, and the address of a site blocked in Russia can
+        # fall into a range that goes directly.
+        for in_russia in (True, False):
+            rules = build_routing_rules(
+                make_policy(in_russia=in_russia), remote_outbound_available=True
+            )
+            name_indexes = [
+                index for index, rule in enumerate(rules) if rule.get("domain")
+            ]
+            address_indexes = [index for index, rule in enumerate(rules) if rule.get("ip")]
+            assert name_indexes, "the policy must carry name rules"
+            assert address_indexes, "the policy must carry address rules"
+            assert max(name_indexes) < min(address_indexes)
+
+    def test_the_blocked_name_is_decided_before_its_blocked_address(self) -> None:
+        # A resource blocked in Russia is carried by a name list and by an
+        # address list. The name list has to win, so the same destination
+        # cannot be sent directly through a locally resolved address.
+        rules = build_routing_rules(
+            make_policy(in_russia=True), remote_outbound_available=True
+        )
+        names = [
+            index
+            for index, rule in enumerate(rules)
+            if rule.get("domain") == ["ext-site:geosite_RU.dat:ru-blocked-all"]
+        ]
+        addresses = [
+            index
+            for index, rule in enumerate(rules)
+            if isinstance(rule.get("ip"), list)
+            and "ext-ip:geoip_RU.dat:ru-blocked" in cast("list[str]", rule["ip"])
+        ]
+        assert names and addresses
+        assert names[0] < addresses[0]
 
     def test_the_server_machine_has_no_rule_pointing_at_itself(self) -> None:
         rules = build_routing_rules(

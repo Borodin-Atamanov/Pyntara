@@ -140,6 +140,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "route_check_direct_domain": "localhost",
         "route_check_russia_blocked_domain": "instagram.com",
         "proxy_check_url": "https://api4.ipify.org",
+        "proxy_check_blocked_url": "https://api.openai.com/v1/models",
+        "proxy_check_timeout_seconds": 20,
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]

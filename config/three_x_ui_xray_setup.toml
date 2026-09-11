@@ -284,6 +284,16 @@ route_check_direct_domain = "localhost"
 route_check_russia_blocked_domain = "instagram.com"
 # URL queried once through the local proxy to prove the whole path works,
 # not only the routing decision: the answer must be the address of the
-# remote server when the link carries one, and must at least differ from
-# this machine's own address.
+# remote server outside Russia, and an address of this machine in Russia,
+# because the policy sends an ordinary foreign name directly there.
 proxy_check_url = "https://api4.ipify.org"
+# URL queried through the local proxy on a machine in Russia only, of a
+# class the policy sends through the remote server: a resource blocked in
+# Russia or a service that refuses to serve it. Such a service does not
+# report the address of its client, so an HTTP answer is the evidence
+# that the tunnel carries that class.
+proxy_check_blocked_url = "https://api.openai.com/v1/models"
+# Timeout in seconds of one request of the two path checks above. It
+# bounds the connection phase and the whole transfer, so a stalling
+# tunnel is reported after a predictable wait instead of holding the run.
+proxy_check_timeout_seconds = 20

@@ -335,6 +335,8 @@ def base_config() -> str:
         'route_check_direct_domain = "localhost"\n'
         'route_check_russia_blocked_domain = "instagram.com"\n'
         'proxy_check_url = "https://api4.ipify.org"\n'
+        'proxy_check_blocked_url = "https://api.openai.com/v1/models"\n'
+        "proxy_check_timeout_seconds = 20\n"
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'

@@ -50,7 +50,9 @@ class ThreeXuiXraySetupConfig:
     the country services with the word that names Russia, and the
     destinations the task asks the running core about afterwards.
     proxy_check_url is the URL queried once through the local proxy to
-    prove the whole path.
+    prove the whole path, proxy_check_blocked_url is the URL of a class
+    the policy sends through the remote server, queried on a machine in
+    Russia, and proxy_check_timeout_seconds bounds one such request.
     """
 
     github_repo: str
@@ -145,3 +147,5 @@ class ThreeXuiXraySetupConfig:
     route_check_direct_domain: str
     route_check_russia_blocked_domain: str
     proxy_check_url: str
+    proxy_check_blocked_url: str
+    proxy_check_timeout_seconds: int
