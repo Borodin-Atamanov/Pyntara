@@ -19,6 +19,9 @@ class EngineConfig:
     template whose {repo} is replaced by the repository of the task.
     system_python is the interpreter of the managed system, used by a task
     that runs an embedded client against the system packages.
+    journal_identifier is the name under which the engine mirrors its own
+    messages into the system journal; the composition root hands it to the
+    journal writer before the first message.
     """
 
     task_data_root: Path
@@ -33,6 +36,7 @@ class EngineConfig:
     curl_retry_max_time_seconds: int
     github_latest_release_url: str
     system_python: str
+    journal_identifier: str
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int

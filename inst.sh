@@ -49,8 +49,9 @@ LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 # contract (bootstrap contract, Logging). An empty value disables journal
 # forwarding, matching the engine semantics in logger.py; only an unset
 # variable falls back to the contract identifier. The variable is not
-# exported, so the Python engine keeps its own identifier (pyntara-engine)
-# when launched by run_pyntara.
+# exported, so the Python engine keeps its own identifier, the
+# journal_identifier value of its [engine] table, when launched by
+# run_pyntara.
 JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-pyntara-install}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
@@ -227,7 +228,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # pre-commit hook (hooks/pre-commit). The value is informational.
-PYNTARA_VERSION="0.3.240"
+PYNTARA_VERSION="0.3.241"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then

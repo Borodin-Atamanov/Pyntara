@@ -116,16 +116,19 @@ def _write_to_priority_journal(text: str, identifier: str, priority: int) -> Non
 def _send_to_journal(message: str, priority: int = 6) -> None:
     """Duplicate one message into the system journal, best effort.
 
-    The journal identifier comes from PYNTARA_JOURNAL_IDENTIFIER; an empty
-    value disables journal forwarding, which unit tests use. The priority
-    is the syslog level as a number, 6 (informational) by default, and is
-    passed to systemd-cat as a number, never embedded in the message text.
+    The journal identifier comes from PYNTARA_JOURNAL_IDENTIFIER, which the
+    composition root sets from [engine] journal_identifier before the first
+    message of the run. An unset or empty variable forwards nothing: the
+    console and the install log keep working, and a component started
+    outside the engine never guesses a name for itself. The priority is the
+    syslog level as a number, 6 (informational) by default, and is passed
+    to systemd-cat as a number, never embedded in the message text.
     Informational messages flow through a reused process; a different
     priority spawns a short-lived process, because the priority is fixed
     at process start.
     """
 
-    identifier = os.environ.get("PYNTARA_JOURNAL_IDENTIFIER", "pyntara-engine")
+    identifier = os.environ.get("PYNTARA_JOURNAL_IDENTIFIER")
     if not identifier:
         return
     text = _ANSI_RE.sub("", message) + "\n"

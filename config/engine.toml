@@ -60,6 +60,11 @@ github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest
 # project venv could shadow python3 with an interpreter that cannot see
 # those packages.
 system_python = "/usr/bin/python3"
+# Identifier under which the engine mirrors its own messages into the
+# system journal (bootstrap contract, Logging). It stays distinct from the
+# pyntara-install identifier of the bootstrap, so a journal query separates
+# the installer from the run it launched.
+journal_identifier = "pyntara-engine"
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

@@ -1,3 +1,3 @@
 """Pyntara package."""
 
-__version__ = "0.3.240"
+__version__ = "0.3.241"

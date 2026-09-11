@@ -36,6 +36,7 @@ def base_config() -> str:
         "curl_retry_max_time_seconds = 7777\n"
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
         'system_python = "/usr/bin/python3"\n'
+        'journal_identifier = "pyntara-engine"\n'
         "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"

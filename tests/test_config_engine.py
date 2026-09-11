@@ -86,6 +86,14 @@ from config_helpers import (
         base_config().replace(
             "task_start_delay_seconds = 0.5", 'task_start_delay_seconds = "0.5"'
         ),
+        # journal_identifier is a number, not a string
+        base_config().replace(
+            'journal_identifier = "pyntara-engine"', "journal_identifier = 42"
+        ),
+        # journal_identifier is empty
+        base_config().replace(
+            'journal_identifier = "pyntara-engine"', 'journal_identifier = ""'
+        ),
         # desktop_detect_processes is a string, not an array
         base_config().replace(
             'desktop_detect_processes = ["kwin_wayland", "plasmashell"]',

@@ -657,6 +657,9 @@ def _engine_table(raw: object) -> EngineConfig:
         system_python=_nonempty_string_field(
             raw.get("system_python"), "engine.system_python"
         ),
+        journal_identifier=_nonempty_string_field(
+            raw.get("journal_identifier"), "engine.journal_identifier"
+        ),
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(

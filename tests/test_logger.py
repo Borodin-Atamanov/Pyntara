@@ -348,17 +348,14 @@ def test_empty_identifier_disables_forwarding(monkeypatch: pytest.MonkeyPatch) -
     assert logger._journal_proc is None
 
 
-def test_default_identifier_is_pyntara_engine(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
-) -> None:
-    # Without the variable the identifier falls back to pyntara-engine;
-    # the unique marker is found among the real engine entries.
-    if not journal_available:
-        pytest.skip("systemd journal is not available")
-    marker = f"default-{uuid.uuid4().hex[:8]}"
+def test_unset_identifier_forwards_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without the variable nothing is sent: the engine hands the identifier
+    # over before its first message, so an unset variable means the caller
+    # is not the engine and no name may be invented for it. The missing
+    # systemd-cat process is the deterministic proof that nothing was sent.
     monkeypatch.delenv("PYNTARA_JOURNAL_IDENTIFIER")
-    logger.log_event(marker)
-    assert _wait_for("pyntara-engine", marker)
+    logger.log_event("must not reach the journal")
+    assert logger._journal_proc is None
 
 
 def test_missing_systemd_cat_is_silent(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -223,6 +224,47 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
         f"Finished 1 of {expected} tasks, skipped {expected - 1}"
         in result.output
     )
+
+
+def test_run_exports_the_journal_identifier_from_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The journal writer reads its identifier from the environment and the
+    # run fills it from [engine] journal_identifier before the first
+    # message, so the engine announces itself under the configured name.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config",
+        lambda path: make_config(
+            journal_identifier="pyntara-journal-test",
+            task_start_delay_seconds=0,
+            tasks=REAL_TASKS,
+        ),
+    )
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert os.environ["PYNTARA_JOURNAL_IDENTIFIER"] == "pyntara-journal-test"
+
+
+def test_run_leaves_an_absent_journal_identifier_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A config without the key reads as an absent value, which the run never
+    # replaces with an invented name: the engine keeps the identifier its
+    # caller set (here empty, so nothing reaches the journal) and reports
+    # the missing task catalog instead of crashing.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "")
+    monkeypatch.setattr(
+        "pyntara.pyntara.load_config",
+        lambda path: load_config(Path("/nonexistent-config")),
+    )
+    result = runner.invoke(app, [])
+    assert result.exit_code == 1
+    assert os.environ["PYNTARA_JOURNAL_IDENTIFIER"] == ""
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
