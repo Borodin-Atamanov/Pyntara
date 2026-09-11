@@ -50,6 +50,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    REPO_ROOT,
     ensure_root_owner,
     run_command,
     service_is_active,
@@ -63,7 +64,6 @@ from pyntara.utils import (
 # contracts (architecture contract, Configuration); the unit file names, the
 # deployment paths of the venv and the system config live in config.toml
 # through Context.
-REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "system_metrics_setup" / "system_metrics.service"
 )

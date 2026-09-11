@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
 
+from pyntara import utils
 from pyntara.utils import (
     curl_flags,
     ensure_port_free,
@@ -661,6 +663,21 @@ class TestPortFreeing:
             ensure_port_free(
                 35353, "x-ui.service", timeout=30, service_process_name="x-ui"
             )
+
+
+def test_repository_root_is_computed_once() -> None:
+    # The root of the clone is computed in utils.py and imported by every
+    # module that reads a shipped file. A module that computes its own copy
+    # is one more place to change and points elsewhere as soon as the file
+    # moves, so the suite refuses the second copy.
+    src_root = Path(utils.__file__).resolve().parent
+    duplicated: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        if path.resolve() == Path(utils.__file__).resolve():
+            continue
+        if "REPO_ROOT = " in path.read_text(encoding="utf-8"):
+            duplicated.append(str(path.relative_to(src_root)))
+    assert not duplicated, f"modules computing their own REPO_ROOT: {duplicated}"
 
 
 class TestFetchUrlsInParallel:

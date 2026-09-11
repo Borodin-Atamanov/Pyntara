@@ -23,6 +23,7 @@ from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
+    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -31,7 +32,6 @@ from pyntara.utils import (
     service_is_enabled,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 OS_RELEASE_PATH = Path("/etc/os-release")
 VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
 PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\Z")

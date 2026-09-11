@@ -23,6 +23,13 @@ from pyntara import logger
 # The single definition lives here so tasks cannot diverge.
 APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
 
+# Root of the clone this code runs from: the package lives in src/pyntara/, so
+# the root is two directories above this file. It is computed once here and
+# imported where a template under task_data/ or the config directory is read,
+# because a module that computes its own copy points somewhere else the
+# moment the layout or the installation directory changes.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def package_is_installed(package: str, timeout: float) -> bool:
     """True when dpkg considers the package fully installed.

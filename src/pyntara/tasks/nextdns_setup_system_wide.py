@@ -18,7 +18,6 @@ hostname never changes.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from pykeepass import PyKeePass
 
@@ -30,13 +29,9 @@ from pyntara.models import TaskResult
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 
-# Module-level path constant is monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide):
-# the source vault paths of local_vault_setup are resolved against the
-# repository root, so the clone can live anywhere on the machine. It is
-# an approved repository layout path exception (architecture contract,
-# Configuration).
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# The module reads no repository path of its own: the source vault paths of
+# local_vault_setup are resolved against the REPO_ROOT of that module, which
+# the tests point at a fixture.
 
 
 def _write_profile_id_file(cfg: NextdnsSetupSystemWideConfig, profile_id: str) -> bool:

@@ -32,6 +32,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     CURL_DOWNLOAD_WRITE_OUT,
+    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     install_packages,
@@ -42,7 +43,6 @@ from pyntara.utils import (
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-REPO_ROOT = Path(__file__).resolve().parents[3]
 # The working app config and the empty-action desktop file, byte-for-byte
 # the ones verified on the development machine (docs/spec/vocalinux-setup.md).
 CONFIG_TEMPLATE = REPO_ROOT / "task_data" / "vocalinux_setup" / "config.json"

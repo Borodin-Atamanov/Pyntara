@@ -30,11 +30,10 @@ from pyntara.config import LocalVaultSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import ensure_root_owner
+from pyntara.utils import REPO_ROOT, ensure_root_owner
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _resolve_source_vault(cfg: LocalVaultSetupConfig) -> tuple[Path, Path]:

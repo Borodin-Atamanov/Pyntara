@@ -31,11 +31,10 @@ from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_enabled
+from pyntara.utils import REPO_ROOT, run_command, service_is_enabled
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "zram_service" / "zram.service"
 MEMINFO_PATH = Path("/proc/meminfo")
 CPUINFO_PATH = Path("/proc/cpuinfo")

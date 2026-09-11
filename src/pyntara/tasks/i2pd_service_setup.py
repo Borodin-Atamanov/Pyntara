@@ -64,6 +64,7 @@ from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     APT_NONINTERACTIVE_ENV,
     CURL_DOWNLOAD_WRITE_OUT,
+    REPO_ROOT,
     curl_flags,
     dpkg_architecture,
     ensure_root_owner,
@@ -78,8 +79,7 @@ from pyntara.utils import (
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 # /etc/os-release is a fixed machine contract (architecture contract,
-# Configuration); the repository layout path is fixed by the repo itself.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# Configuration); the repository root comes from pyntara.utils.
 TEMPLATE_PATH = REPO_ROOT / "task_data" / "i2pd_service_setup" / "i2pd.conf"
 TUNNELS_TEMPLATE_PATH = (
     REPO_ROOT / "task_data" / "i2pd_service_setup" / "tunnels.conf"

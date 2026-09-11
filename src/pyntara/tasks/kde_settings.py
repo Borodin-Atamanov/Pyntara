@@ -36,6 +36,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    REPO_ROOT,
     install_package_once,
     package_is_installed,
     run_command,
@@ -45,7 +46,6 @@ from pyntara.utils import (
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
-REPO_ROOT = Path(__file__).resolve().parents[3]
 KONSOLE_PROFILE_TEMPLATE = (
     REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
 )

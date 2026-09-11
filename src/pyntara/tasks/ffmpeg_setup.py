@@ -30,11 +30,16 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import install_packages, package_is_installed, run_command
+from pyntara.utils import (
+    REPO_ROOT,
+    install_packages,
+    package_is_installed,
+    run_command,
+)
 
-# The templates live in the repository clone; REPO_ROOT is monkeypatched by
-# the tests to point at a fixture (docs/guides/developer-guide.md).
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# The templates live in the repository clone; REPO_ROOT, imported from
+# pyntara.utils, is monkeypatched by the tests to point at a fixture
+# (docs/guides/developer-guide.md).
 
 
 def _wayrecord_sources() -> list[Path]:
