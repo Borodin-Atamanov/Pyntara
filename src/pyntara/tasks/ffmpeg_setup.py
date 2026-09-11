@@ -12,21 +12,23 @@ a package that still fails is an error TaskResult: the runner continues with
 the remaining tasks and never stops here.
 
 After the packages are in place the task builds the wayrecord capture
-engine: the C source task_data/ffmpeg_setup/wayrecord.c is compiled with
-gcc against libwayland-client and libpipewire to the configured system path
-(pyntara-wayrecord), and a desktop entry is written that lists
-X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1, so KWin grants the
-direct screencast interface to the engine. Recording through the portal is
-not needed and no screen dialog is ever shown. The build and the desktop
-deploy are idempotent: an engine or entry that already matches the built
-artifact is left alone.
+engine: the C sources under task_data/ of the clone are compiled to the
+configured system path with the configured compile command, whose build
+flags the configured flags command prints, and a desktop entry rendered
+from the configured template is written that grants the direct screencast
+interface to the engine. Recording through the portal is not needed and no
+screen dialog is ever shown. The build and the desktop deploy are
+idempotent: an engine or entry that already matches the built artifact is
+left alone.
 """
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from string import Template
 
+from pyntara.config import FfmpegSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -38,32 +40,30 @@ from pyntara.utils import (
 )
 
 
-def _wayrecord_sources(source_dir: Path) -> list[Path]:
+def _wayrecord_sources(source_dir: Path, file_names: tuple[str, ...]) -> list[Path]:
     """The C sources of the capture engine, in compile order."""
 
-    return [
-        source_dir / "wayrecord.c",
-        source_dir / "zkde-screencast-client.c",
-    ]
+    return [source_dir / name for name in file_names]
 
 
 def _build_wayrecord(
-    source_dir: Path, binary_path: Path, file_mode: int, timeout: float
+    cfg: FfmpegSetupConfig, source_dir: Path, timeout: float
 ) -> tuple[bool, str | None]:
     """Compile the engine and install it; return (changed, error).
 
-    The build flags come from pkg-config; the binary is compiled to a
-    sibling .build file first, so an identical engine is detected by byte
-    comparison and left alone (idempotent deploy). A missing source, a
-    failed build or an install error is an error string.
+    The build flags come from the configured flags command; the binary is
+    compiled to a sibling file first, so an identical engine is detected
+    by byte comparison and left alone (idempotent deploy). A missing
+    source, a failed build or an install error is an error string.
     """
 
-    sources = _wayrecord_sources(source_dir)
+    binary_path = cfg.wayrecord_bin_path
+    sources = _wayrecord_sources(source_dir, cfg.wayrecord_source_file_names)
     for source in sources:
         if not source.is_file():
             return False, f"missing wayrecord source: {source}"
     flags_result = run_command(
-        ["pkg-config", "--cflags", "--libs", "wayland-client", "libpipewire-0.3"],
+        list(cfg.wayrecord_build_flags_command),
         capture=True,
         check=False,
         timeout=timeout,
@@ -71,22 +71,20 @@ def _build_wayrecord(
     if flags_result.returncode != 0:
         return False, (
             "cannot resolve build flags "
-            "(pkg-config wayland-client libpipewire-0.3)"
+            f"({' '.join(cfg.wayrecord_build_flags_command)})"
         )
     flags = flags_result.stdout.strip().split()
-    build_path = binary_path.parent / (binary_path.name + ".build")
+    build_path = binary_path.parent / (
+        binary_path.name + cfg.wayrecord_build_file_suffix
+    )
     try:
         binary_path.parent.mkdir(parents=True, exist_ok=True)
+        compile_command = [
+            part.replace("{output}", str(build_path))
+            for part in cfg.wayrecord_compile_command
+        ]
         run_command(
-            [
-                "gcc",
-                "-O2",
-                "-o",
-                str(build_path),
-                str(sources[0]),
-                str(sources[1]),
-                *flags,
-            ],
+            [*compile_command, *(str(source) for source in sources), *flags],
             check=True,
             timeout=timeout,
         )
@@ -99,39 +97,32 @@ def _build_wayrecord(
             build_path.unlink(missing_ok=True)
             return False, None
         build_path.replace(binary_path)
-        binary_path.chmod(file_mode)
+        binary_path.chmod(cfg.wayrecord_file_mode)
     except OSError as exc:
         build_path.unlink(missing_ok=True)
         return False, f"cannot install wayrecord engine: {exc}"
     return True, None
 
 
-def _desktop_content(bin_path: Path) -> str:
-    """The desktop entry that grants the screencast interface to the engine.
+def _desktop_content(template_path: Path, bin_path: Path) -> str:
+    """The desktop entry rendered from the configured template.
 
     KWin matches the running engine by its Exec path and grants the
-    interfaces listed in X-KDE-Wayland-Interfaces, exactly like Spectacle.
+    interfaces the template lists in X-KDE-Wayland-Interfaces, exactly
+    like Spectacle.
     """
 
-    return (
-        "[Desktop Entry]\n"
-        "Name=Pyntara Wayrecord\n"
-        "Comment=Wayland screen capture source for ffmpeg\n"
-        f"Exec={bin_path}\n"
-        "Icon=camera-video\n"
-        "Type=Application\n"
-        "NoDisplay=true\n"
-        "X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1\n"
-    )
+    template = Template(template_path.read_text(encoding="utf-8"))
+    return template.substitute(bin_path=str(bin_path))
 
 
-def _deploy_desktop(ctx: Context) -> tuple[bool, str | None]:
+def _deploy_desktop(ctx: Context, template_path: Path) -> tuple[bool, str | None]:
     """Write the trusted-app desktop entry; return (changed, error)."""
 
     cfg = ctx.config.ffmpeg_setup
     target = cfg.wayrecord_desktop_path
-    content = _desktop_content(cfg.wayrecord_bin_path)
     try:
+        content = _desktop_content(template_path, cfg.wayrecord_bin_path)
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -183,19 +174,17 @@ def task(ctx: Context) -> TaskResult:
             return TaskResult(
                 success=False, changed=bool(installed_packages), error=detail
             )
-    engine_changed, engine_error = _build_wayrecord(
-        task_data_dir(ctx.repo_root, ctx.task_name),
-        cfg.wayrecord_bin_path,
-        cfg.wayrecord_file_mode,
-        install_timeout,
-    )
+    source_dir = task_data_dir(ctx.repo_root, ctx.task_name)
+    engine_changed, engine_error = _build_wayrecord(cfg, source_dir, install_timeout)
     if engine_error:
         return TaskResult(
             success=False,
             changed=bool(installed_packages),
             error=engine_error,
         )
-    desktop_changed, desktop_error = _deploy_desktop(ctx)
+    desktop_changed, desktop_error = _deploy_desktop(
+        ctx, source_dir / cfg.wayrecord_desktop_template_file_name
+    )
     if desktop_error:
         return TaskResult(
             success=False,

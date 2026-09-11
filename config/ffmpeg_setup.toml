@@ -24,6 +24,21 @@ wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"
 # The mode of the built recording engine: it is executed by the user, so it
 # needs the executable bits and nothing wider.
 wayrecord_file_mode = "0755"
+# Names of the C sources of the engine under task_data/ffmpeg_setup/ of the
+# clone, in compile order.
+wayrecord_source_file_names = ["wayrecord.c", "zkde-screencast-client.c"]
+# Name of the desktop entry template under task_data/ffmpeg_setup/ of the
+# clone; the run substitutes $bin_path with the built engine path.
+wayrecord_desktop_template_file_name = "pyntara-wayrecord.desktop"
+# Suffix of the staged build next to the engine path: the compiler writes it
+# there first, so an unchanged engine is detected by byte comparison.
+wayrecord_build_file_suffix = ".build"
+# Command that prints the compile flags of the engine; the run appends its
+# output to the compile command.
+wayrecord_build_flags_command = ["pkg-config", "--cflags", "--libs", "wayland-client", "libpipewire-0.3"]
+# Compiler command of the engine. The run substitutes {output} with the
+# staged binary path and appends the sources and the resolved flags.
+wayrecord_compile_command = ["gcc", "-O2", "-o", "{output}"]
 
 #package set
 packages = [

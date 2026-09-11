@@ -34,5 +34,10 @@ packages - the package names to install, the meta package ffmpeg first, then the
 wayrecord_bin_path - the system path the wayrecord capture engine is built to
 wayrecord_desktop_path - the desktop entry that grants the screencast interface to the engine
 wayrecord_file_mode - the mode of the built recording engine
+wayrecord_source_file_names - the C sources of the engine under task_data/ffmpeg_setup/ of the clone, in compile order
+wayrecord_desktop_template_file_name - the desktop entry template under task_data/ffmpeg_setup/ of the clone, with $bin_path as its placeholder
+wayrecord_build_file_suffix - the suffix of the staged build next to the engine path
+wayrecord_build_flags_command - the command that prints the compile flags of the engine
+wayrecord_compile_command - the compiler command, with {output} substituted by the staged binary path
 package_status_timeout_seconds - seconds the dpkg status query may take
 package_install_retries - retry attempts after a failed package install

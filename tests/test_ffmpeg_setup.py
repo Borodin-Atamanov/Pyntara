@@ -8,6 +8,7 @@ via monkeypatch; the tests never touch the real system
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,27 @@ WAYRECORD_BINARY = b"\x7fELF-sentinel-wayrecord-binary\n"
 WAYRECORD_C = "int main(void) { return 0; }\n"
 ZKDE_CLIENT_C = "/* generated wayland protocol stubs */\n"
 
+# The desktop entry template the fixture clone carries; it mirrors the
+# shipped task_data/ffmpeg_setup/pyntara-wayrecord.desktop.
+DESKTOP_TEMPLATE = (
+    "[Desktop Entry]\n"
+    "Name=Pyntara Wayrecord\n"
+    "Comment=Wayland screen capture source for ffmpeg\n"
+    "Exec=$bin_path\n"
+    "Icon=camera-video\n"
+    "Type=Application\n"
+    "NoDisplay=true\n"
+    "X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1\n"
+)
+
+
+def _desktop_template_path() -> Path:
+    """The desktop entry template of the clone the fixture points at."""
+
+    repo = _FIXTURE_REPO or _CLONE_ROOT
+    name = make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+    return repo / "task_data" / "ffmpeg_setup" / name
+
 
 def _wayrecord_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -58,6 +80,8 @@ def _wayrecord_env(
     (template_dir / "zkde-screencast-client.c").write_text(
         ZKDE_CLIENT_C, encoding="utf-8"
     )
+    template_name = make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+    (template_dir / template_name).write_text(DESKTOP_TEMPLATE, encoding="utf-8")
     _FIXTURE_REPO = repo
     return (
         tmp_path / "bin" / "pyntara-wayrecord",
@@ -177,7 +201,10 @@ def test_all_installed_skips_apt_and_rebuild(
     wayrecord_bin_path.chmod(0o755)
     wayrecord_desktop_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_desktop_path.write_text(
-        ffmpeg_setup._desktop_content(wayrecord_bin_path), encoding="utf-8"
+        ffmpeg_setup._desktop_content(
+            _desktop_template_path(), wayrecord_bin_path
+        ),
+        encoding="utf-8",
     )
     calls = _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
@@ -276,7 +303,10 @@ def test_wayrecord_idempotent_when_matching(
     wayrecord_bin_path.chmod(0o755)
     wayrecord_desktop_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_desktop_path.write_text(
-        ffmpeg_setup._desktop_content(wayrecord_bin_path), encoding="utf-8"
+        ffmpeg_setup._desktop_content(
+            _desktop_template_path(), wayrecord_bin_path
+        ),
+        encoding="utf-8",
     )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
@@ -285,6 +315,40 @@ def test_wayrecord_idempotent_when_matching(
     assert result.success is True
     assert result.changed is False
     assert result.message == "already installed"
+
+
+def test_desktop_template_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The fixture clone carries only the template name the config gives, so
+    # a name written in the code could not find a template at all.
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
+        monkeypatch, tmp_path
+    )
+    template_dir = _desktop_template_path().parent
+    (template_dir / "pyntara-wayrecord.desktop").unlink()
+    (template_dir / "other.desktop").write_text(
+        DESKTOP_TEMPLATE.replace("Pyntara Wayrecord", "Other Wayrecord"),
+        encoding="utf-8",
+    )
+    ctx = _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+    config = ctx.config
+    ctx = replace(
+        ctx,
+        config=replace(
+            config,
+            ffmpeg_setup=replace(
+                config.ffmpeg_setup,
+                wayrecord_desktop_template_file_name="other.desktop",
+            ),
+        ),
+    )
+    _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = ffmpeg_setup.task(ctx)
+    assert result.success is True
+    content = wayrecord_desktop_path.read_text(encoding="utf-8")
+    assert "Other Wayrecord" in content
+    assert f"Exec={wayrecord_bin_path}" in content
 
 
 def test_wayrecord_rebuilt_when_different(
@@ -331,7 +395,9 @@ def test_desktop_written_when_missing(
         _ctx(wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
-    expected = ffmpeg_setup._desktop_content(wayrecord_bin_path)
+    expected = ffmpeg_setup._desktop_content(
+        _desktop_template_path(), wayrecord_bin_path
+    )
     assert wayrecord_desktop_path.read_text(encoding="utf-8") == expected
     assert "X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1" in expected
     assert "desktop entry" in (result.message or "")

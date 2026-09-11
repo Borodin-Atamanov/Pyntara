@@ -15,5 +15,10 @@ class FfmpegSetupConfig:
     wayrecord_bin_path: Path
     wayrecord_desktop_path: Path
     wayrecord_file_mode: int
+    wayrecord_source_file_names: tuple[str, ...]
+    wayrecord_desktop_template_file_name: str
+    wayrecord_build_file_suffix: str
+    wayrecord_build_flags_command: tuple[str, ...]
+    wayrecord_compile_command: tuple[str, ...]
     package_status_timeout_seconds: int
     package_install_retries: int

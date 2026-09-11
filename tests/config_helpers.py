@@ -62,6 +62,11 @@ def base_config() -> str:
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
         'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
         'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\nwayrecord_file_mode = "0755"\n'
+        'wayrecord_source_file_names = ["wayrecord.c", "zkde-screencast-client.c"]\n'
+        'wayrecord_desktop_template_file_name = "pyntara-wayrecord.desktop"\n'
+        'wayrecord_build_file_suffix = ".build"\n'
+        'wayrecord_build_flags_command = ["pkg-config", "--cflags", "--libs", "wayland-client", "libpipewire-0.3"]\n'
+        'wayrecord_compile_command = ["gcc", "-O2", "-o", "{output}"]\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'

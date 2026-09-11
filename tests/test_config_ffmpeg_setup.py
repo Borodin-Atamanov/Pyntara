@@ -42,9 +42,7 @@ from config_helpers import (
         ),
         # package_status_timeout_seconds of this section is a string
         base_config().replace(
-            'wayrecord_file_mode = "0755"\n'
             "package_status_timeout_seconds = 30\n",
-            'wayrecord_file_mode = "0755"\n'
             'package_status_timeout_seconds = "30"\n',
         ),
         # package_install_retries is a string
@@ -53,6 +51,31 @@ from config_helpers import (
             "package_install_retries = 3\n",
             "package_status_timeout_seconds = 30\n"
             'package_install_retries = "3"\n',
+        ),
+        # wayrecord_source_file_names is a string, not an array
+        base_config().replace(
+            'wayrecord_source_file_names = ["wayrecord.c", "zkde-screencast-client.c"]',
+            'wayrecord_source_file_names = "wayrecord.c"',
+        ),
+        # wayrecord_desktop_template_file_name is a number, not a string
+        base_config().replace(
+            'wayrecord_desktop_template_file_name = "pyntara-wayrecord.desktop"',
+            "wayrecord_desktop_template_file_name = 42",
+        ),
+        # wayrecord_build_file_suffix is an empty string
+        base_config().replace(
+            'wayrecord_build_file_suffix = ".build"',
+            'wayrecord_build_file_suffix = ""',
+        ),
+        # wayrecord_build_flags_command is an empty array
+        base_config().replace(
+            'wayrecord_build_flags_command = ["pkg-config", "--cflags", "--libs", "wayland-client", "libpipewire-0.3"]',
+            "wayrecord_build_flags_command = []",
+        ),
+        # wayrecord_compile_command is an empty array
+        base_config().replace(
+            'wayrecord_compile_command = ["gcc", "-O2", "-o", "{output}"]',
+            "wayrecord_compile_command = []",
         ),
     ],
 )
@@ -71,5 +94,26 @@ def test_load_config_ffmpeg_values(tmp_path: Path) -> None:
         "/usr/share/applications/pyntara-wayrecord.desktop"
     )
     assert config.ffmpeg_setup.wayrecord_file_mode == 0o755
+    assert config.ffmpeg_setup.wayrecord_source_file_names == (
+        "wayrecord.c",
+        "zkde-screencast-client.c",
+    )
+    assert config.ffmpeg_setup.wayrecord_desktop_template_file_name == (
+        "pyntara-wayrecord.desktop"
+    )
+    assert config.ffmpeg_setup.wayrecord_build_file_suffix == ".build"
+    assert config.ffmpeg_setup.wayrecord_build_flags_command == (
+        "pkg-config",
+        "--cflags",
+        "--libs",
+        "wayland-client",
+        "libpipewire-0.3",
+    )
+    assert config.ffmpeg_setup.wayrecord_compile_command == (
+        "gcc",
+        "-O2",
+        "-o",
+        "{output}",
+    )
     assert config.ffmpeg_setup.package_status_timeout_seconds == 30
     assert config.ffmpeg_setup.package_install_retries == 3

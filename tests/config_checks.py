@@ -836,6 +836,30 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
     wayrecord_desktop_path = raw.get("wayrecord_desktop_path")
     if not isinstance(wayrecord_desktop_path, str):
         raise ConfigError("ffmpeg_setup.wayrecord_desktop_path must be a string")
+    wayrecord_source_file_names = raw.get("wayrecord_source_file_names")
+    if not isinstance(wayrecord_source_file_names, list) or not all(
+        isinstance(name, str) and name for name in wayrecord_source_file_names
+    ):
+        raise ConfigError(
+            "ffmpeg_setup.wayrecord_source_file_names must be an array of "
+            "non-empty strings"
+        )
+    wayrecord_desktop_template_file_name = _nonempty_string_field(
+        raw.get("wayrecord_desktop_template_file_name"),
+        "ffmpeg_setup.wayrecord_desktop_template_file_name",
+    )
+    wayrecord_build_file_suffix = _nonempty_string_field(
+        raw.get("wayrecord_build_file_suffix"),
+        "ffmpeg_setup.wayrecord_build_file_suffix",
+    )
+    wayrecord_build_flags_command = _string_list(
+        raw.get("wayrecord_build_flags_command"),
+        "ffmpeg_setup.wayrecord_build_flags_command",
+    )
+    wayrecord_compile_command = _string_list(
+        raw.get("wayrecord_compile_command"),
+        "ffmpeg_setup.wayrecord_compile_command",
+    )
     return FfmpegSetupConfig(
         packages=tuple(packages),
         wayrecord_bin_path=Path(wayrecord_bin_path),
@@ -843,6 +867,11 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
         wayrecord_file_mode=_octal_mode_field(
             raw.get("wayrecord_file_mode"), "ffmpeg_setup.wayrecord_file_mode"
         ),
+        wayrecord_source_file_names=tuple(wayrecord_source_file_names),
+        wayrecord_desktop_template_file_name=wayrecord_desktop_template_file_name,
+        wayrecord_build_file_suffix=wayrecord_build_file_suffix,
+        wayrecord_build_flags_command=wayrecord_build_flags_command,
+        wayrecord_compile_command=wayrecord_compile_command,
         package_status_timeout_seconds=_int_field(
             raw.get("package_status_timeout_seconds"),
             "ffmpeg_setup.package_status_timeout_seconds",

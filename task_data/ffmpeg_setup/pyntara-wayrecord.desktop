@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Pyntara Wayrecord
+Comment=Wayland screen capture source for ffmpeg
+Exec=$bin_path
+Icon=camera-video
+Type=Application
+NoDisplay=true
+X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1
