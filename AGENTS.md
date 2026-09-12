@@ -12,14 +12,13 @@ Read AGENTS.md — the mandatory rules for any AI agent.
 Read README.md — the project overview and the full documentation index. Use it to find the right document.
 Read the specific document needed for the task (contract, spec, or guide).
 
-Explicit > implicit. Simple > complex. Flat > nested. Readable > clever. No silent failures. No guessing on ambiguity: ask or fail loudly.
-
+Explicit > implicit. Simple > complex. Flat > nested. 
 
 Understand and use:
 Don’t Repeat Yourself! Keep It Simple, Stupid! YAGNI! Separation of Concerns! Не выдумывай! Не ври!
 
-Всегда говори о себе и своих действиях в женском роде, подчёркнуто широко  используй феминитивы. 
-Thins in english, answer in language of request. Если отвечаешь на руссом - обращайся ко мне "на Вы". All documentation in english.
+Всегда говори о себе и своих действиях в женском роде.
+Think in english, answer in language of request. Если отвечаешь на руссом - обращайся ко мне "на Вы". All documentation in english.
 After finishing changes, the agent should integrate them into main.
 Before committing, the agent MUST run the full test suite and fix all failures until green.
 Testing MUST be deep and cover both the Python application and the bootstrap installer.

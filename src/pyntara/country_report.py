@@ -85,6 +85,7 @@ def main(argv: list[str]) -> int:
         )
         return 1
     report = detect_country(
+        cfg.engine,
         setup.country_services,
         setup.country_word,
         setup.country_query_timeout_seconds,

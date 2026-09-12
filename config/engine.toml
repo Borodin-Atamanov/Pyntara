@@ -64,6 +64,22 @@ curl_download_write_out = "\nDownloaded %{size_download} bytes in %{time_total}s
 # writes and {write_out} is the text above.
 curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]
 curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]
+# The parallel query the run uses when it must ask several addresses at
+# once, for example the public address services. --parallel runs the
+# transfers together and --parallel-max keeps them all in flight;
+# {parallel_max} is replaced by the number of URLs, {timeout_seconds} by
+# the per-transfer bound and {write_out} by the text below. The URLs are
+# the last arguments.
+curl_parallel_command = ["curl", "--parallel", "--parallel-max", "{parallel_max}", "--silent", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]
+# Write-out text of a parallel transfer: the marker followed by the
+# effective URL, so a merged answer text can be split back into one block
+# per service. It carries %{url_effective} and is therefore a value of its
+# own, and it must carry the marker below, otherwise no answer can be
+# attributed to the service that gave it.
+curl_parallel_write_out = "\n@@pyntara-source@@ %{url_effective}\n"
+# The marker that separates the answers of a parallel query; it must be
+# the marker inside curl_parallel_write_out.
+curl_parallel_source_marker = "@@pyntara-source@@"
 # Query URL of the latest release of a GitHub repository; every release
 # query of every task uses this one value, with {repo} replaced by the
 # configured owner/name pair, so a mirror or a proxy is configured in one

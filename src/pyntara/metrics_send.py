@@ -32,7 +32,7 @@ import pyntara.metrics
 from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
-from pyntara.utils import run_command
+from pyntara.utils import run_command, substituted_command
 
 
 def dispatch_entries(cfg: Config) -> None:
@@ -254,21 +254,14 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     data = base64.b64encode(content).decode("ascii")
     name = restore_original_name(entry.name, metrics.queue_file_suffix_length)
     timeout = metrics.google_script_timeout_seconds
-    command = [
-        "curl",
-        "--location",
-        "--max-time",
-        str(timeout),
-        "--silent",
-        "--show-error",
-        "--data-urlencode",
-        f"filename={name}",
-        "--data-urlencode",
-        f"pass={key}",
-        "--data-urlencode",
-        "data@-",
-        url,
-    ]
+    command = substituted_command(
+        metrics.google_script_upload_command,
+        {
+            "timeout_seconds": str(timeout),
+            "file_name": name,
+            "key": key,
+        },
+    ) + [url]
     try:
         result = run_command(
             command,

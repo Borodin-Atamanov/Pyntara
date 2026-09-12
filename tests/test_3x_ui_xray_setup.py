@@ -249,7 +249,9 @@ def _install_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(
+        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
+    )
     monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
@@ -322,7 +324,9 @@ def _panel_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(
+        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
+    )
     monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
@@ -521,7 +525,9 @@ def test_release_json_failure_reports_error(
     # subprocess.Popen, which the curl fake below does not intercept.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(
+        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
+    )
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -1886,11 +1892,7 @@ class TestSelfSignedCert:
             lambda _cfg, ip, _timeout: (True, "certificate issued"),
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
-        monkeypatch.setattr(
-            xui,
-            "_collect_run_facts",
-            lambda _cfg, _t: _facts(public=("203.0.113.5",)),
-        )
+        monkeypatch.setattr(xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts(public=("203.0.113.5",)))
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -2598,7 +2600,9 @@ class TestCollectRunFacts:
         # asking again, which keeps a run short.
         router_calls: list[float] = []
         monkeypatch.setattr(
-            xui, "_public_addresses", lambda _c, _t: _addresses(ipv4=("203.0.113.5",))
+            xui,
+            "_public_addresses",
+            lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ("10.0.0.1",))
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: True)
@@ -2608,7 +2612,11 @@ class TestCollectRunFacts:
             return "190.55.165.52"
 
         monkeypatch.setattr("pyntara.upnp.router_external_address", fake_router)
-        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        facts = xui._collect_run_facts(
+            make_config().engine,
+            make_config().three_x_ui_xray_setup,
+            30.0,
+        )
         assert facts.public_addresses.ipv4 == ("203.0.113.5",)
         assert facts.local_addresses == ("10.0.0.1",)
         assert facts.router_address == "190.55.165.52"
@@ -2626,21 +2634,27 @@ class TestCollectRunFacts:
         def fail_router(*args: object, **kwargs: object) -> str:  # pragma: no cover
             raise AssertionError("the router must not be asked")
 
-        monkeypatch.setattr(xui, "_public_addresses", lambda _c, _t: _addresses())
+        monkeypatch.setattr(
+            xui, "_public_addresses", lambda _e, _c, _t: _addresses()
+        )
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
         monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        facts = xui._collect_run_facts(cfg, 30.0)
+        facts = xui._collect_run_facts(make_config().engine, cfg, 30.0)
         assert facts.router_address is None
 
     def test_reports_no_router_when_the_client_cannot_be_installed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xui, "_public_addresses", lambda _c, _t: _addresses())
+        monkeypatch.setattr(xui, "_public_addresses", lambda _e, _c, _t: _addresses())
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: False)
-        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        facts = xui._collect_run_facts(
+            make_config().engine,
+            make_config().three_x_ui_xray_setup,
+            30.0,
+        )
         assert facts.router_address is None
 
     def test_skips_upnp_when_the_machine_owns_a_public_address(
@@ -2658,12 +2672,16 @@ class TestCollectRunFacts:
         monkeypatch.setattr(
             xui,
             "_public_addresses",
-            lambda _c, _t: _addresses(ipv4=("203.0.113.5",)),
+            lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ("203.0.113.5",))
         monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
-        facts = xui._collect_run_facts(make_config().three_x_ui_xray_setup, 30.0)
+        facts = xui._collect_run_facts(
+            make_config().engine,
+            make_config().three_x_ui_xray_setup,
+            30.0,
+        )
         assert facts.router_address is None
 
 

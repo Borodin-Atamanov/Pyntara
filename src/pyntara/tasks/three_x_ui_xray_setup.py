@@ -764,7 +764,7 @@ def _stage_connection(
 
 
 def _public_addresses(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> PublicAddresses:
     """The public addresses the configured echo services report.
 
@@ -773,6 +773,7 @@ def _public_addresses(
     """
 
     return fetch_public_addresses(
+        engine,
         cfg.server_ip_services,
         cfg.server_ip_timeout_seconds,
         timeout,
@@ -780,7 +781,7 @@ def _public_addresses(
 
 
 def _collect_run_facts(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> _RunFacts:
     """Collect the addresses and the router address once for this run.
 
@@ -793,7 +794,7 @@ def _collect_run_facts(
     router is never asked.
     """
 
-    public = _public_addresses(cfg, timeout)
+    public = _public_addresses(engine, cfg, timeout)
     local = local_addresses(timeout)
     router_address: str | None = None
     if cfg.upnp_enabled:
@@ -2284,6 +2285,7 @@ def _stage_routing_policy(
     warnings = list(category_warnings)
     own_networks = directly_connected_networks(timeout)
     report = detect_country(
+        ctx.config.engine,
         cfg.country_services,
         cfg.country_word,
         cfg.country_query_timeout_seconds,
@@ -2436,7 +2438,7 @@ def task(ctx: Context) -> TaskResult:
     # Addresses and the UPnP router are read once per run: the stages below
     # reuse them, so a machine without UPnP is not asked about its router
     # for every port and the echo services are queried once.
-    facts = _collect_run_facts(cfg, timeout)
+    facts = _collect_run_facts(ctx.config.engine, cfg, timeout)
     facts = replace(facts, client_address=_forward_upnp_ports(cfg, facts, timeout))
 
     _log(f"querying the latest release of {cfg.github_repo}")

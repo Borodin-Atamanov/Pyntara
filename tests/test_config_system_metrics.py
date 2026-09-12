@@ -244,6 +244,11 @@ from config_helpers import (
             "google_script_timeout_seconds = 60",
             "google_script_timeout_seconds = 0",
         ),
+        # system_metrics_setup google_script_upload_command is a string
+        base_config().replace(
+            'google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]',
+            'google_script_upload_command = "curl"',
+        ),
         # system_metrics_setup google_script_key_entry_title is a number
         base_config().replace(
             'google_script_key_entry_title = "google_script_key"',
@@ -395,6 +400,37 @@ from config_helpers import (
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
+    assert_config_error(tmp_path, content)
+
+
+def test_load_config_google_script_upload_command(tmp_path: Path) -> None:
+    # The upload call of the Google Drive channel round-trips with the
+    # placeholders the sender fills.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    command = config.system_metrics_setup.google_script_upload_command
+    assert command[0] == "curl"
+    joined = " ".join(command)
+    for placeholder in ("{timeout_seconds}", "{file_name}", "{key}"):
+        assert placeholder in joined
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # the upload command is empty
+        base_config().replace(
+            'google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]',
+            "google_script_upload_command = []",
+        ),
+        # the upload command carries no {key} placeholder
+        base_config().replace(
+            '"pass={key}"', '"pass=secret"'
+        ),
+    ],
+)
+def test_load_config_wrong_google_script_upload_command_raises(
+    tmp_path: Path, content: str
+) -> None:
     assert_config_error(tmp_path, content)
 
 

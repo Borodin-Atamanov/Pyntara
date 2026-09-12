@@ -95,6 +95,7 @@ def main(argv: list[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     addresses = fetch_public_addresses(
+        cfg.engine,
         echo.server_ip_services,
         echo.server_ip_timeout_seconds,
         cfg.system_metrics_setup.collector.command_timeout_seconds,

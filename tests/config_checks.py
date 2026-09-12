@@ -810,6 +810,25 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
 # from engine.py
 
 
+def _checked_parallel_source_marker(
+    write_out_text: str, source_marker: str
+) -> str:
+    """The source marker of the parallel query, checked against its text.
+
+    The marker is what split_url_answers looks for in the merged output,
+    so a marker that does not appear in curl_parallel_write_out would
+    leave every answer unattributed; the two values live in one table and
+    this check keeps them in step.
+    """
+
+    if source_marker not in write_out_text:
+        raise ConfigError(
+            "engine.curl_parallel_source_marker must appear in "
+            "engine.curl_parallel_write_out"
+        )
+    return source_marker
+
+
 def _engine_table(raw: object) -> EngineConfig:
     """Validate the [engine] table and build EngineConfig."""
 
@@ -925,6 +944,25 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if not curl_query_command:
         raise ConfigError("engine.curl_query_command must not be empty")
+    curl_parallel_command = _string_list(
+        raw.get("curl_parallel_command"), "engine.curl_parallel_command"
+    )
+    if not curl_parallel_command:
+        raise ConfigError("engine.curl_parallel_command must not be empty")
+    for placeholder in ("{parallel_max}", "{timeout_seconds}", "{write_out}"):
+        if placeholder not in " ".join(curl_parallel_command):
+            raise ConfigError(
+                "engine.curl_parallel_command must carry the "
+                f"{placeholder} placeholder"
+            )
+    curl_parallel_write_out = _nonempty_string_field(
+        raw.get("curl_parallel_write_out"),
+        "engine.curl_parallel_write_out",
+    )
+    curl_parallel_source_marker = _nonempty_string_field(
+        raw.get("curl_parallel_source_marker"),
+        "engine.curl_parallel_source_marker",
+    )
     os_release_family_keys = _string_list(
         raw.get("os_release_family_keys"), "engine.os_release_family_keys"
     )
@@ -964,6 +1002,11 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_retry_max_time_seconds=curl_retry_max_time_seconds,
         curl_download_command=curl_download_command,
         curl_query_command=curl_query_command,
+        curl_parallel_command=curl_parallel_command,
+        curl_parallel_write_out=curl_parallel_write_out,
+        curl_parallel_source_marker=_checked_parallel_source_marker(
+            curl_parallel_write_out, curl_parallel_source_marker
+        ),
         curl_download_write_out=curl_download_write_out,
         os_release_family_keys=os_release_family_keys,
         os_release_debian_family_names=os_release_debian_family_names,
@@ -2928,6 +2971,20 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.google_script_timeout_seconds must be positive"
         )
+    google_script_upload_command = _string_list(
+        raw.get("google_script_upload_command"),
+        "system_metrics_setup.google_script_upload_command",
+    )
+    if not google_script_upload_command:
+        raise ConfigError(
+            "system_metrics_setup.google_script_upload_command must not be empty"
+        )
+    for placeholder in ("{timeout_seconds}", "{file_name}", "{key}"):
+        if placeholder not in " ".join(google_script_upload_command):
+            raise ConfigError(
+                "system_metrics_setup.google_script_upload_command must carry "
+                f"the {placeholder} placeholder"
+            )
     google_script_key_entry_title = _nonempty_string_field(
         raw.get("google_script_key_entry_title"),
         "system_metrics_setup.google_script_key_entry_title",
@@ -3033,6 +3090,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_dir=google_script_dir,
         main_sent_dir=main_sent_dir,
         google_script_timeout_seconds=google_script_timeout_seconds,
+        google_script_upload_command=google_script_upload_command,
         google_script_key_entry_title=google_script_key_entry_title,
         google_script_deployment_url_regex=google_script_deployment_url_regex,
         collector=_system_metrics_collector_table(raw.get("collector")),

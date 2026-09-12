@@ -114,6 +114,13 @@ google_script_dir = "google_script"
 main_sent_dir = "main_sent"
 # curl timeout of a single Google Drive channel upload, in seconds.
 google_script_timeout_seconds = 7777
+# The upload call of the Google Drive channel, a curl command whose
+# {timeout_seconds}, {file_name} and {key} the sender fills: the timeout
+# above, the original name of the entry and the shared auth key. The form
+# fields travel as --data-urlencode arguments and the content arrives on
+# stdin through data@-, because a payload argument would hit the argv
+# length limit of the kernel; the endpoint URL is the last argument.
+google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]
 # Title of the vault entry that carries the Google Drive web app
 # credentials: url holds the endpoint, password holds the shared auth
 # key (docs/spec/secrets-model.md). The value must name an entry of the

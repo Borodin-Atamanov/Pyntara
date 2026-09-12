@@ -7,6 +7,7 @@ the tests only touch temporary fixtures (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import pytest
+from support import make_config
 
 from pyntara import public_address as public_address_module
 from pyntara.public_address import (
@@ -164,7 +165,10 @@ class TestCollectPublicAddresses:
         calls: list[tuple[tuple[str, ...], int, float]] = []
 
         def fake_fetch(
-            urls: tuple[str, ...], query_timeout: int, command_timeout: float
+            engine: object,
+            urls: tuple[str, ...],
+            query_timeout: int,
+            command_timeout: float,
         ) -> str:
             calls.append((urls, query_timeout, command_timeout))
             return "203.0.113.5\n203.0.113.5\n2001:db8::1\n"
@@ -172,7 +176,7 @@ class TestCollectPublicAddresses:
         monkeypatch.setattr(
             public_address_module, "fetch_urls_in_parallel", fake_fetch
         )
-        addresses = fetch_public_addresses(SERVICES, 60, 1800.0)
+        addresses = fetch_public_addresses(make_config().engine, SERVICES, 60, 1800.0)
         assert addresses == PublicAddresses(
             ipv4=("203.0.113.5",),
             ipv6=("2001:db8::1",),
@@ -189,4 +193,4 @@ class TestCollectPublicAddresses:
         monkeypatch.setattr(
             public_address_module, "fetch_urls_in_parallel", fail_fetch
         )
-        assert fetch_public_addresses((), 60, 1800.0).is_empty is True
+        assert fetch_public_addresses(make_config().engine, (), 60, 1800.0).is_empty is True

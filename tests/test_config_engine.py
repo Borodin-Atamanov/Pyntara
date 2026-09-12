@@ -236,6 +236,29 @@ def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
     assert_config_error(tmp_path, content, match="must be a boolean")
 
 
+def test_load_config_parallel_query_values(tmp_path: Path) -> None:
+    # The parallel query, its write-out text and its source marker
+    # round-trip, and the marker is the token inside the text, so the
+    # parser and the query can never disagree.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    engine = config.engine
+    assert "--parallel" in engine.curl_parallel_command
+    assert engine.curl_parallel_source_marker in engine.curl_parallel_write_out
+    assert engine.curl_parallel_write_out.endswith("\n")
+
+
+def test_load_config_parallel_marker_outside_the_text_raises(
+    tmp_path: Path,
+) -> None:
+    # A marker the write-out text does not print would leave every answer
+    # unattributed, so the checks refuse it.
+    content = base_config().replace(
+        'curl_parallel_source_marker = "@@pyntara-source@@"',
+        'curl_parallel_source_marker = "@@other@@"',
+    )
+    assert_config_error(tmp_path, content)
+
+
 def test_load_config_os_release_vocabulary(tmp_path: Path) -> None:
     # The fields of the distribution identity file and the values that mean
     # a Debian-based system round-trip from the shared document.

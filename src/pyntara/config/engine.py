@@ -23,7 +23,12 @@ class EngineConfig:
     prints after a transfer; curl_query_command is the curl call that
     fetches one metadata answer as text; the shared helper of both inserts
     the retry and timeout flags of the curl settings above before the URL,
-    so a task never spells the flags itself. os_release_family_keys are the
+    so a task never spells the flags itself. curl_parallel_command is the
+    call that queries several URLs in one process, its {parallel_max},
+    {timeout_seconds} and {write_out} filled by the shared helper, and
+    curl_parallel_source_marker is the token curl_parallel_write_out prints
+    before the effective URL of each transfer, by which the merged output
+    is split back into one answer per service. os_release_family_keys are the
     fields of the distribution identity file that name the distribution and
     os_release_debian_family_names are the values of those fields that mean
     a Debian-based system, which the shared os_family_is_debian helper
@@ -60,6 +65,9 @@ class EngineConfig:
     curl_download_command: tuple[str, ...]
     curl_download_write_out: str
     curl_query_command: tuple[str, ...]
+    curl_parallel_command: tuple[str, ...]
+    curl_parallel_write_out: str
+    curl_parallel_source_marker: str
     github_latest_release_url: str
     github_release_download_url: str
     release_asset_architectures: dict[str, str]

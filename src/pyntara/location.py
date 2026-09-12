@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from pyntara.config import EngineConfig
 from pyntara.utils import fetch_urls_by_source
 
 # The word that names the country. The search is case-insensitive, so the
@@ -232,6 +233,7 @@ def merge_values(answers: tuple[ServiceAnswer, ...]) -> tuple[str, ...]:
 
 
 def detect_country(
+    engine: EngineConfig,
     services: tuple[str, ...],
     word: str,
     query_timeout_seconds: float,
@@ -247,7 +249,7 @@ def detect_country(
     answers = tuple(
         standardize_answer(source, raw)
         for source, raw in fetch_urls_by_source(
-            services, query_timeout_seconds, command_timeout_seconds
+            engine, services, query_timeout_seconds, command_timeout_seconds
         )
     )
     values = merge_values(answers)

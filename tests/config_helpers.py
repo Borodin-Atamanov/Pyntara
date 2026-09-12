@@ -37,6 +37,9 @@ def base_config() -> str:
         'curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]\n'
         'curl_download_write_out = "took %{time_total}s"\n'
         'curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]\n'
+        'curl_parallel_command = ["curl", "--parallel", "--parallel-max", "{parallel_max}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
+        'curl_parallel_write_out = "\\n@@pyntara-source@@ %{url_effective}\\n"\n'
+        'curl_parallel_source_marker = "@@pyntara-source@@"\n'
         'os_release_family_keys = ["ID", "ID_LIKE"]\n'
         'os_release_debian_family_names = ["debian", "ubuntu"]\n'
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
@@ -685,6 +688,7 @@ def base_config() -> str:
         'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
+        'google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]\n'
         'google_script_key_entry_title = "google_script_key"\n'
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
         '[system_metrics_setup.collector]\n'

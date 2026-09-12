@@ -421,54 +421,56 @@ def run_command(
 
 
 # The marker curl writes after every parallel transfer, so a merged
-# answer text can be split back into one block per service; the effective
-# URL follows the marker on the same line.
-SOURCE_MARKER = "@@pyntara-source@@"
+# answer text can be split back into one block per service, is the
+# configured engine.curl_parallel_source_marker; the write-out text of
+# the query prints it, and a check keeps the two values in step.
 
 
 def _parallel_curl_command(
-    urls: tuple[str, ...], timeout_seconds: float
+    engine: EngineConfig, urls: tuple[str, ...], timeout_seconds: float
 ) -> list[str]:
     """The one curl call that queries every URL at the same time.
 
-    --parallel runs the transfers together and --parallel-max keeps them
-    all in flight; --write-out adds a marker line with the effective URL
-    after each answer, so every answer can be attributed to the service
-    that gave it even though the answers arrive interleaved. Each
-    transfer is bounded by timeout_seconds, so the call takes at most that
-    long even when a service never answers.
+    The command is the configured curl_parallel_command: --parallel runs
+    the transfers together and --parallel-max keeps them all in flight,
+    and the write-out text adds a marker line with the effective URL after
+    each answer, so every answer can be attributed to the service that
+    gave it even though the answers arrive interleaved. Each transfer is
+    bounded by timeout_seconds, so the call takes at most that long even
+    when a service never answers. The URLs are the last arguments.
     """
 
-    return [
-        "curl",
-        "--parallel",
-        "--parallel-max",
-        str(len(urls)),
-        "--silent",
-        "--max-time",
-        str(timeout_seconds),
-        "--write-out",
-        f"\n{SOURCE_MARKER} %{{url_effective}}\n",
-        *urls,
-    ]
+    return substituted_command(
+        engine.curl_parallel_command,
+        {
+            "parallel_max": str(len(urls)),
+            "timeout_seconds": str(timeout_seconds),
+            "write_out": engine.curl_parallel_write_out,
+        },
+    ) + list(urls)
 
 
-def split_url_answers(text: str) -> tuple[tuple[str, str], ...]:
+def split_url_answers(
+    engine: EngineConfig, text: str
+) -> tuple[tuple[str, str], ...]:
     """Split marked curl output into (service URL, answer) pairs.
 
     curl writes the marker of a transfer after that transfer finished and
     after its answer, so the lines collected before a marker are the
-    answer of the service that marker names. The order follows the
-    completion of the transfers, not the order of the URL list, and a
-    transfer that answered nothing still carries its marker, so an empty
-    answer is told apart from a service that was never asked.
+    answer of the service that marker names. The marker is the configured
+    curl_parallel_source_marker, the same token the write-out text of the
+    query prints. The order follows the completion of the transfers, not
+    the order of the URL list, and a transfer that answered nothing still
+    carries its marker, so an empty answer is told apart from a service
+    that was never asked.
     """
 
+    source_marker = engine.curl_parallel_source_marker
     answers: list[tuple[str, str]] = []
     pending: list[str] = []
     for line in text.splitlines():
-        if line.startswith(SOURCE_MARKER):
-            url = line[len(SOURCE_MARKER) :].strip()
+        if line.startswith(source_marker):
+            url = line[len(source_marker) :].strip()
             answers.append((url, "\n".join(pending).strip()))
             pending = []
             continue
@@ -477,6 +479,7 @@ def split_url_answers(text: str) -> tuple[tuple[str, str], ...]:
 
 
 def fetch_urls_in_parallel(
+    engine: EngineConfig,
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
@@ -507,7 +510,7 @@ def fetch_urls_in_parallel(
         return ""
     try:
         process = subprocess.Popen(
-            _parallel_curl_command(urls, query_timeout_seconds),
+            _parallel_curl_command(engine, urls, query_timeout_seconds),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -523,6 +526,7 @@ def fetch_urls_in_parallel(
 
 
 def fetch_urls_by_source(
+    engine: EngineConfig,
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
@@ -535,7 +539,10 @@ def fetch_urls_by_source(
     """
 
     return split_url_answers(
-        fetch_urls_in_parallel(urls, query_timeout_seconds, command_timeout_seconds)
+        engine,
+        fetch_urls_in_parallel(
+            engine, urls, query_timeout_seconds, command_timeout_seconds
+        ),
     )
 
 

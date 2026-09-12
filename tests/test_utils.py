@@ -782,11 +782,13 @@ class TestFetchUrlsInParallel:
             return process
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fake_popen)
-        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "first\nsecond\n"
+        engine = make_config().engine
+        assert fetch_urls_in_parallel(engine, URLS, 60, 1800.0) == "first\nsecond\n"
         command = commands[0]
         assert "--parallel" in command
         assert command[command.index("--max-time") + 1] == "60"
         assert command[-len(URLS) :] == list(URLS)
+        assert engine.curl_parallel_write_out in command
         assert process.timeout_used == 1800.0
 
     def test_returns_nothing_when_the_url_list_is_empty(
@@ -797,7 +799,7 @@ class TestFetchUrlsInParallel:
             raise AssertionError("no process expected")
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
-        assert fetch_urls_in_parallel((), 60, 1800.0) == ""
+        assert fetch_urls_in_parallel(make_config().engine, (), 60, 1800.0) == ""
 
     def test_returns_nothing_when_curl_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -806,7 +808,7 @@ class TestFetchUrlsInParallel:
             raise OSError("curl not found")
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
-        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == ""
+        assert fetch_urls_in_parallel(make_config().engine, URLS, 60, 1800.0) == ""
 
     def test_kills_the_process_when_the_command_timeout_expires(
         self, monkeypatch: pytest.MonkeyPatch
@@ -816,7 +818,7 @@ class TestFetchUrlsInParallel:
         monkeypatch.setattr(
             "pyntara.utils.subprocess.Popen", lambda *a, **k: process
         )
-        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
+        assert fetch_urls_in_parallel(make_config().engine, URLS, 60, 1800.0) == "answer\n"
         assert process.killed is True
 
 

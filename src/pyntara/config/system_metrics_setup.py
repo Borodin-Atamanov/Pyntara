@@ -115,7 +115,9 @@ class SystemMetricsSetupConfig:
     google_script_dir and main_sent_dir are the queue directory names
     of the Google Drive channel and of the sent archive;
     google_script_timeout_seconds is the curl timeout of the Google
-    Drive channel upload; google_script_key_entry_title is the title of
+    Drive channel upload, which google_script_upload_command spells out as
+    its {timeout_seconds} placeholder together with {file_name} and {key};
+    google_script_key_entry_title is the title of
     the vault entry that carries the web app credentials;
     google_script_deployment_url_regex is the Python regular expression
     of the web app deployment URL, whose single capture group yields the
@@ -158,6 +160,7 @@ class SystemMetricsSetupConfig:
     google_script_dir: str
     main_sent_dir: str
     google_script_timeout_seconds: int
+    google_script_upload_command: tuple[str, ...]
     google_script_key_entry_title: str
     google_script_deployment_url_regex: str
     collector: SystemMetricsCollectorConfig

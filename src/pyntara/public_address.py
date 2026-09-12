@@ -21,6 +21,7 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
+from pyntara.config import EngineConfig
 from pyntara.utils import fetch_urls_in_parallel, run_command
 
 
@@ -156,6 +157,7 @@ def parse_public_addresses(text: str) -> PublicAddresses:
 
 
 def fetch_public_addresses(
+    engine: EngineConfig,
     services: tuple[str, ...],
     query_timeout_seconds: int,
     command_timeout_seconds: float,
@@ -177,6 +179,6 @@ def fetch_public_addresses(
         return PublicAddresses()
     return parse_public_addresses(
         fetch_urls_in_parallel(
-            services, query_timeout_seconds, command_timeout_seconds
+            engine, services, query_timeout_seconds, command_timeout_seconds
         )
     )
