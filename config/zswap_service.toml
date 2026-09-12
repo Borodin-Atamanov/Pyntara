@@ -31,3 +31,7 @@ parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshol
 unit_template_file_name = "zswap.service"
 # Name of the systemd oneshot service unit that repeats the writes at boot.
 service_unit_name = "zswap.service"
+# systemctl calls of the task, each carrying the unit name as its
+# placeholder.
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]

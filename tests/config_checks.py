@@ -5261,6 +5261,10 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
     integers between 1 and 100, the meaningful range for a percentage that
     the kernel accepts on the sysfs attributes. A pool ceiling of zero
     would disable zswap entirely, so it is rejected here.
+
+    parameter_names, unit_template_file_name and the two systemctl command
+    arrays are the names and the commands of the task; the enable command
+    must carry its "{service_unit_name}" placeholder.
     """
 
     if not isinstance(raw, dict):
@@ -5307,6 +5311,15 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
         unit_template_file_name=_nonempty_string_field(
             raw.get("unit_template_file_name"),
             "zswap_service.unit_template_file_name",
+        ),
+        systemctl_daemon_reload_command=_string_list(
+            raw.get("systemctl_daemon_reload_command"),
+            "zswap_service.systemctl_daemon_reload_command",
+        ),
+        systemctl_enable_command=_placeholder_command_field(
+            raw.get("systemctl_enable_command"),
+            "zswap_service.systemctl_enable_command",
+            ("{service_unit_name}",),
         ),
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"), "zswap_service.service_unit_name"

@@ -32,3 +32,5 @@ class ZswapServiceConfig:
     parameter_names: tuple[str, ...]
     unit_template_file_name: str
     service_unit_name: str
+    systemctl_daemon_reload_command: tuple[str, ...]
+    systemctl_enable_command: tuple[str, ...]

@@ -26,7 +26,12 @@ from pyntara.config import ZswapServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_enabled, task_data_dir
+from pyntara.utils import (
+    run_command,
+    service_is_enabled,
+    substituted_command,
+    task_data_dir,
+)
 
 
 def _parameter_paths(cfg: ZswapServiceConfig) -> dict[str, Path]:
@@ -206,10 +211,18 @@ def task(ctx: Context) -> TaskResult:
     _log("unit file written")
     try:
         _log("reloading systemd: systemctl daemon-reload")
-        run_command(["systemctl", "daemon-reload"], timeout=timeout)
+        run_command(
+            list(cfg.systemctl_daemon_reload_command), timeout=timeout
+        )
         _log("systemd reloaded")
         _log(f"enabling service: systemctl enable {service_name}")
-        run_command(["systemctl", "enable", service_name], timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.systemctl_enable_command,
+                {"service_unit_name": service_name},
+            ),
+            timeout=timeout,
+        )
         _log("service enabled")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(

@@ -278,12 +278,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             'run_command(["systemctl", "enable", service_name], timeout=timeout)',
         }
     ),
-    "src/pyntara/tasks/zswap_service.py": frozenset(
-        {
-            'run_command(["systemctl", "daemon-reload"], timeout=timeout)',
-            'run_command(["systemctl", "enable", service_name], timeout=timeout)',
-        }
-    ),
     "src/pyntara/utils.py": frozenset(
         {
             '["apt-get", "install", "-y", package],',

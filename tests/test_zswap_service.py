@@ -55,7 +55,16 @@ DEFAULTS = {
 }
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    enable_command: tuple[str, ...] = (
+        "systemctl",
+        "enable",
+        "{service_unit_name}",
+    ),
+) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
@@ -69,6 +78,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
             task_data_root=tmp_path,
             systemd_unit_dir=tmp_path / "systemd",
             zswap_parameters_dir_path=tmp_path / "sys" / "module" / "zswap" / "parameters",
+            zswap_systemctl_enable_command=enable_command,
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -277,6 +287,20 @@ def test_normalize_maps_bool_spellings() -> None:
     assert zswap_service._normalize("N", "0") == "N"
     assert zswap_service._normalize("Y", "y") == "Y"
     assert zswap_service._normalize("zstd", "zstd") == "zstd"
+
+
+def test_enable_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The systemctl call the task makes is a config value: another command
+    # with the same placeholder is the argv the run carries out.
+    fixtures = _install_fixtures(tmp_path, current=TARGET)
+    calls, _writes = _install_fake(monkeypatch, fixtures, enabled=False)
+    result = zswap_service.task(
+        _ctx(tmp_path, enable_command=("my-enable", "{service_unit_name}"))
+    )
+    assert result.success is True
+    assert ["my-enable", "zswap.service"] in calls
 
 
 def test_nonstandard_bool_spelling_still_skips(

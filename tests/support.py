@@ -313,6 +313,12 @@ def make_config(
         "{service_unit_name}",
     ),
     zswap_parameters_dir_path: Path = Path("/sys/module/zswap/parameters"),
+    zswap_systemctl_enable_command: tuple[str, ...] = (
+        "systemctl",
+        "enable",
+        "{service_unit_name}",
+    ),
+
     zram_reset_busy_attempts: int = 5,
     zram_reset_busy_retry_delay_seconds: float = 0.5,
     i2pd_download_dir: Path = Path("/var/lib/pyntara/i2pd-download"),
@@ -624,6 +630,7 @@ def make_config(
         zswap_service=replace(
             base.zswap_service,
             parameters_dir_path=zswap_parameters_dir_path,
+            systemctl_enable_command=zswap_systemctl_enable_command,
         ),
         zram_service=replace(
             base.zram_service,

@@ -229,6 +229,8 @@ def base_config() -> str:
         'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]\n'
         'unit_template_file_name = "zswap.service"\n'
         'service_unit_name = "zswap.service"\n'
+        'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
+        'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
