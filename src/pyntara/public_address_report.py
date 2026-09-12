@@ -28,7 +28,7 @@ import json
 import sys
 from pathlib import Path
 
-from pyntara.config import absent_config_keys, load_config
+from pyntara.config import Config, absent_config_keys, load_config
 from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
@@ -38,23 +38,31 @@ NO_ANSWER_REASON = "no echo service reported an address of this family"
 
 
 def address_records(
-    addresses: PublicAddresses, ssh_port: int
+    cfg: Config, addresses: PublicAddresses, ssh_port: int
 ) -> list[dict[str, object]]:
-    """One record per reported address, plus a reason per silent family."""
+    """One record per reported address, plus a reason per silent family.
 
+    The field names and the ssh command come from the config, so the
+    report shape lives in one place.
+    """
+
+    engine = cfg.engine
+    keys = engine.report_record_keys
     records: list[dict[str, object]] = []
     for family, values in (
         ("ipv4", addresses.ipv4),
         ("ipv6", addresses.ipv6),
     ):
         if not values:
-            records.append({"family": family, "reason": NO_ANSWER_REASON})
+            records.append(
+                {keys["family"]: family, "reason": NO_ANSWER_REASON}
+            )
             continue
         records.extend(
             {
-                "address": address,
-                "family": family,
-                "ssh": ssh_command(address, ssh_port),
+                keys["address"]: address,
+                keys["family"]: family,
+                keys["ssh"]: ssh_command(engine, address, ssh_port),
             }
             for address in values
         )
@@ -108,7 +116,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         json.dumps(
-            address_records(addresses, ssh_port), ensure_ascii=False, indent=2
+            address_records(cfg, addresses, ssh_port),
+            ensure_ascii=False,
+            indent=cfg.engine.report_json_indent,
         )
     )
     return 0

@@ -28,7 +28,16 @@ class EngineConfig:
     {timeout_seconds} and {write_out} filled by the shared helper, and
     curl_parallel_source_marker is the token curl_parallel_write_out prints
     before the effective URL of each transfer, by which the merged output
-    is split back into one answer per service. os_release_family_keys are the
+    is split back into one answer per service. report_json_indent is the
+    indentation of every JSON document an address command prints;
+    ssh_report_command_format is the ssh command a report record carries,
+    with {port}, {address} and {proxy_option} filled by the shared
+    builder, ssh_report_proxy_option_format is the proxy option of an
+    anonymity channel, ssh_report_socks_command_format is the netcat
+    command that routes a connection through the local SOCKS proxy and
+    ssh_report_proxy_host is the host of that proxy; report_record_keys
+    are the field names of a record, by the meaning of each field, so the
+    commands and the collector agree on the shape in one place. os_release_family_keys are the
     fields of the distribution identity file that name the distribution and
     os_release_debian_family_names are the values of those fields that mean
     a Debian-based system, which the shared os_family_is_debian helper
@@ -68,6 +77,12 @@ class EngineConfig:
     curl_parallel_command: tuple[str, ...]
     curl_parallel_write_out: str
     curl_parallel_source_marker: str
+    report_json_indent: int
+    ssh_report_command_format: str
+    ssh_report_proxy_option_format: str
+    ssh_report_socks_command_format: str
+    ssh_report_proxy_host: str
+    report_record_keys: dict[str, str]
     github_latest_release_url: str
     github_release_download_url: str
     release_asset_architectures: dict[str, str]

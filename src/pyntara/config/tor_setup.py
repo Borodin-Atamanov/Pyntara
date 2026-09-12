@@ -69,6 +69,7 @@ class TorSetupConfig:
     service_enable_command: tuple[str, ...]
     service_start_command: tuple[str, ...]
     service_restart_command: tuple[str, ...]
+    report_channel_name: str
     install_retries: int
     start_check_attempts: int
     start_check_retry_delay_seconds: float

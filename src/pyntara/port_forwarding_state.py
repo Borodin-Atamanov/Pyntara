@@ -26,11 +26,8 @@ import json
 import sys
 from pathlib import Path
 
-from pyntara.config import absent_config_keys, load_config
+from pyntara.config import Config, absent_config_keys, load_config
 from pyntara.ssh_access import host_from_address, ssh_command
-
-# The channel name every record carries.
-CHANNEL = "port_forwarding"
 
 
 def local_port_number(value: object) -> int | str:
@@ -47,14 +44,18 @@ def local_port_number(value: object) -> int | str:
         return str(value)
 
 
-def state_records(raw: object) -> list[dict[str, object]]:
+def state_records(cfg: Config, raw: object) -> list[dict[str, object]]:
     """One record per server and local port of the parsed state file.
 
     A malformed entry is skipped instead of raising: the file is written
     by the service, and one unreadable entry must not hide the rest of
-    the forwarding state.
+    the forwarding state. The channel name, the field names and the ssh
+    command come from the config.
     """
 
+    engine = cfg.engine
+    keys = engine.report_record_keys
+    channel = cfg.port_forwarding_setup.report_channel_name
     records: list[dict[str, object]] = []
     if not isinstance(raw, dict):
         return records
@@ -67,11 +68,11 @@ def state_records(raw: object) -> list[dict[str, object]]:
             host = host_from_address(server)
             records.append(
                 {
-                    "channel": CHANNEL,
-                    "server": host,
-                    "local_port": local_port_number(written_local_port),
-                    "remote_port": remote_port,
-                    "ssh": ssh_command(host, remote_port),
+                    keys["channel"]: channel,
+                    keys["server"]: host,
+                    keys["local_port"]: local_port_number(written_local_port),
+                    keys["remote_port"]: remote_port,
+                    keys["ssh"]: ssh_command(engine, host, remote_port),
                 }
             )
     return records
@@ -109,10 +110,12 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    records = state_records(raw)
+    records = state_records(cfg, raw)
     if not records:
         return 0
-    print(json.dumps(records, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(records, ensure_ascii=False, indent=cfg.engine.report_json_indent)
+    )
     return 0
 
 

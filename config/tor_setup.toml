@@ -95,3 +95,6 @@ service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
 service_start_command = ["systemctl", "start", "{service_unit_name}"]
 # Command that restarts the service unit when it is already active.
 service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
+# Name the record of this channel carries in the network report, so a
+# reader sees which network the reported ssh command goes through.
+report_channel_name = "tor"

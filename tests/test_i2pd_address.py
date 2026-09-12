@@ -70,6 +70,42 @@ def test_record_from_keys(capsys: pytest.CaptureFixture[str], tmp_path: Path) ->
     assert captured.err == ""
 
 
+def test_record_follows_the_configured_report_vocabulary(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # The channel name of the record and the field names of the report
+    # come from the config, so a renamed channel or field never needs a
+    # code change; the indentation of the document follows too.
+    keys = tmp_path / "ssh.dat"
+    keys.write_bytes(i2pd_keys_file_bytes())
+    content = base_config().replace('report_channel_name = "i2p"', 'report_channel_name = "anon"')
+    content = content.replace(
+        'report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }',
+        'report_record_keys = { channel = "kind", address = "target", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }',
+    )
+    content = (
+        content.replace(
+            'tunnel_keys_path = "/var/lib/i2pd/ssh.dat"',
+            f'tunnel_keys_path = "{keys}"',
+        )
+        .replace(
+            "[ssh_client_setup]",
+            "[[ssh_daemon_setup.directives]]\n"
+            'name = "Port"\n'
+            f'value = "{SSH_PORT}"\n'
+            "[ssh_client_setup]",
+        )
+    )
+    config_path = write_config(tmp_path, content)
+    assert i2pd_address.main(["i2pd_address", str(config_path)]) == 0
+    captured = capsys.readouterr()
+    record = json.loads(captured.out)
+    assert record["kind"] == "anon"
+    assert record["target"] == i2pd_keys_b32_address()
+    assert "channel" not in record
+    assert captured.out.startswith("{\n  \"kind\":")
+
+
 def test_record_falls_back_to_saved_file(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:

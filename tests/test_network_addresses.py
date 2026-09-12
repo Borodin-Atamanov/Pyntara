@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
-from support import FakeProc
+from support import FakeProc, make_config
 
 from pyntara import network_addresses
 
@@ -66,7 +66,9 @@ def _config(tmp_path: Path) -> Path:
 def test_address_records_carry_the_ssh_command() -> None:
     # Every address of the family becomes a record with its interface,
     # its scope and the ssh command that connects to it.
-    assert network_addresses.address_records(IP_DOCUMENT, "ipv4", 30222) == [
+    assert network_addresses.address_records(
+        make_config(), IP_DOCUMENT, "ipv4", 30222
+    ) == [
         {
             "address": "127.0.0.1",
             "family": "ipv4",
@@ -87,7 +89,9 @@ def test_address_records_carry_the_ssh_command() -> None:
 def test_link_scope_address_carries_its_zone_in_the_command() -> None:
     # An IPv6 link scope address is ambiguous without its interface, so
     # the address field stays plain and the ssh target carries the zone.
-    records = network_addresses.address_records(IP_DOCUMENT, "ipv6", 30222)
+    records = network_addresses.address_records(
+        make_config(), IP_DOCUMENT, "ipv6", 30222
+    )
     assert [record["address"] for record in records] == [
         "::1",
         "fe80::b1e1:869:8e81:2526",

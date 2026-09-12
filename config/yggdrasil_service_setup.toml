@@ -85,6 +85,9 @@ address_save_retry_max_seconds = 67
 connection_wait_base_seconds = 1
 connection_wait_multiplier = 2
 connection_wait_max_seconds = 30
+# Name the record of this channel carries in the network report, so a
+# reader sees which network the reported ssh command goes through.
+report_channel_name = "yggdrasil"
 # NetworkManager conf drop-in that marks the yggdrasil interface as
 # unmanaged, so NetworkManager never assumes it as an external device
 # and no other task can persist an ephemeral profile for it.

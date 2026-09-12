@@ -91,6 +91,7 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             "forward_outcome_poll_seconds = 0.2\n"
             'state_temp_file_suffix = ".tmp"\n'
             "state_json_indent = 2\n"
+            'report_channel_name = "port_forwarding"\n'
             "error_priority = 3\n",
             "",
         ),

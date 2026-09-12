@@ -977,6 +977,59 @@ def _engine_table(raw: object) -> EngineConfig:
     curl_download_write_out = _nonempty_string_field(
         raw.get("curl_download_write_out"), "engine.curl_download_write_out"
     )
+    report_json_indent = _int_field(
+        raw.get("report_json_indent"), "engine.report_json_indent"
+    )
+    if report_json_indent < 0:
+        raise ConfigError("engine.report_json_indent must not be negative")
+    ssh_report_command_format = _nonempty_string_field(
+        raw.get("ssh_report_command_format"),
+        "engine.ssh_report_command_format",
+    )
+    for placeholder in ("{port}", "{address}", "{proxy_option}"):
+        if placeholder not in ssh_report_command_format:
+            raise ConfigError(
+                "engine.ssh_report_command_format must carry the "
+                f"{placeholder} placeholder"
+            )
+    ssh_report_proxy_option_format = _nonempty_string_field(
+        raw.get("ssh_report_proxy_option_format"),
+        "engine.ssh_report_proxy_option_format",
+    )
+    if "{proxy_command}" not in ssh_report_proxy_option_format:
+        raise ConfigError(
+            "engine.ssh_report_proxy_option_format must carry the "
+            "{proxy_command} placeholder"
+        )
+    ssh_report_socks_command_format = _nonempty_string_field(
+        raw.get("ssh_report_socks_command_format"),
+        "engine.ssh_report_socks_command_format",
+    )
+    if "{proxy}" not in ssh_report_socks_command_format:
+        raise ConfigError(
+            "engine.ssh_report_socks_command_format must carry the "
+            "{proxy} placeholder"
+        )
+    ssh_report_proxy_host = _nonempty_string_field(
+        raw.get("ssh_report_proxy_host"), "engine.ssh_report_proxy_host"
+    )
+    report_record_keys = _string_map(
+        raw.get("report_record_keys"), "engine.report_record_keys"
+    )
+    for field in (
+        "channel",
+        "address",
+        "port",
+        "ssh",
+        "note",
+        "server",
+        "local_port",
+        "remote_port",
+    ):
+        if not report_record_keys.get(field):
+            raise ConfigError(
+                f"engine.report_record_keys must name the {field} field"
+            )
     bytes_per_kib = _positive_int_field(
         raw.get("bytes_per_kib"), "engine.bytes_per_kib"
     )
@@ -1007,6 +1060,12 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_parallel_source_marker=_checked_parallel_source_marker(
             curl_parallel_write_out, curl_parallel_source_marker
         ),
+        report_json_indent=report_json_indent,
+        ssh_report_command_format=ssh_report_command_format,
+        ssh_report_proxy_option_format=ssh_report_proxy_option_format,
+        ssh_report_socks_command_format=ssh_report_socks_command_format,
+        ssh_report_proxy_host=ssh_report_proxy_host,
+        report_record_keys=report_record_keys,
         curl_download_write_out=curl_download_write_out,
         os_release_family_keys=os_release_family_keys,
         os_release_debian_family_names=os_release_debian_family_names,
@@ -1385,6 +1444,10 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         config_false_value=config_false_value,
         address_check_attempts=address_check_attempts,
         address_check_retry_delay_seconds=address_check_retry_delay_seconds,
+        report_channel_name=_nonempty_string_field(
+            raw.get("report_channel_name"),
+            "i2pd_service_setup.report_channel_name",
+        ),
     )
 
 
@@ -2315,6 +2378,10 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         forward_outcome_poll_seconds=forward_outcome_poll_seconds,
         state_temp_file_suffix=state_temp_file_suffix,
         state_json_indent=state_json_indent,
+        report_channel_name=_nonempty_string_field(
+            raw.get("report_channel_name"),
+            "port_forwarding_setup.report_channel_name",
+        ),
         error_priority=error_priority,
     )
 
@@ -4207,6 +4274,9 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         service_enable_command=service_enable_command,
         service_start_command=service_start_command,
         service_restart_command=service_restart_command,
+        report_channel_name=_nonempty_string_field(
+            raw.get("report_channel_name"), "tor_setup.report_channel_name"
+        ),
         install_retries=install_retries,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
@@ -4857,6 +4927,10 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         connection_wait_base_seconds=connection_wait_base_seconds,
         connection_wait_multiplier=connection_wait_multiplier,
         connection_wait_max_seconds=connection_wait_max_seconds,
+        report_channel_name=_nonempty_string_field(
+            raw.get("report_channel_name"),
+            "yggdrasil_service_setup.report_channel_name",
+        ),
         nm_unmanaged_conf_path=nm_unmanaged_conf_path,
         nm_unmanaged_conf_file_mode=nm_unmanaged_conf_file_mode,
         netplan_dir_path=netplan_dir_path,

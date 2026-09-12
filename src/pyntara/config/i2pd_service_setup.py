@@ -94,3 +94,4 @@ class I2pdServiceSetupConfig:
     config_false_value: str
     address_check_attempts: int
     address_check_retry_delay_seconds: float
+    report_channel_name: str

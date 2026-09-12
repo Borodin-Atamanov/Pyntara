@@ -102,3 +102,6 @@ config_false_value = "false"
 # pause until these attempts run out and then reports what it found.
 address_check_attempts = 10
 address_check_retry_delay_seconds = 2
+# Name the record of this channel carries in the network report, so a
+# reader sees which network the reported ssh command goes through.
+report_channel_name = "i2p"

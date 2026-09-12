@@ -30,7 +30,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyntara.config import load_config
+from pyntara.config import Config, load_config
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.utils import run_command
@@ -117,17 +117,23 @@ def parse_interface_addresses(
 
 
 def address_records(
-    document: object, family: str, ssh_port: int
+    cfg: Config, document: object, family: str, ssh_port: int
 ) -> list[dict[str, object]]:
-    """The report records of every address of one family."""
+    """The report records of every address of one family.
 
+    The field names and the ssh command of a record come from the config,
+    so the shape of the report lives in one place.
+    """
+
+    engine = cfg.engine
+    keys = engine.report_record_keys
     return [
         {
-            "address": entry.address,
-            "family": entry.family,
-            "interface": entry.interface,
-            "scope": entry.scope,
-            "ssh": ssh_command(entry.ssh_target, ssh_port),
+            keys["address"]: entry.address,
+            keys["family"]: entry.family,
+            keys["interface"]: entry.interface,
+            keys["scope"]: entry.scope,
+            keys["ssh"]: ssh_command(engine, entry.ssh_target, ssh_port),
         }
         for entry in parse_interface_addresses(document, family)
     ]
@@ -172,10 +178,12 @@ def main(argv: list[str]) -> int:
     except json.JSONDecodeError as exc:
         print(f"error: cannot read the ip JSON output: {exc}", file=sys.stderr)
         return 1
-    records = address_records(document, family, ssh_port)
+    records = address_records(cfg, document, family, ssh_port)
     if not records:
         return 0
-    print(json.dumps(records, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(records, ensure_ascii=False, indent=cfg.engine.report_json_indent)
+    )
     return 0
 
 

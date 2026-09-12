@@ -116,4 +116,5 @@ class PortForwardingSetupConfig:
     forward_outcome_poll_seconds: float
     state_temp_file_suffix: str
     state_json_indent: int
+    report_channel_name: str
     error_priority: int

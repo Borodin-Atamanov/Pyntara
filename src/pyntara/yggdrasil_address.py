@@ -33,9 +33,6 @@ from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.yggdrasil import self_address_from_output
 
-# The channel name the record carries.
-CHANNEL = "yggdrasil"
-
 
 def _live_self_address() -> tuple[str | None, str]:
     """The (self address, reason) from yggdrasilctl getSelf.
@@ -97,14 +94,16 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
         port = ssh_port_from_directives(cfg.ssh_daemon_setup.directives)
     except RuntimeError as exc:
         return None, str(exc)
+    engine = cfg.engine
+    keys = engine.report_record_keys
     record: dict[str, object] = {
-        "channel": CHANNEL,
-        "address": address,
-        "port": port,
-        "ssh": ssh_command(address, port),
+        keys["channel"]: setup.report_channel_name,
+        keys["address"]: address,
+        keys["port"]: port,
+        keys["ssh"]: ssh_command(engine, address, port),
     }
     if note:
-        record["note"] = note
+        record[keys["note"]] = note
     return record, ""
 
 
@@ -119,7 +118,7 @@ def main(argv: list[str]) -> int:
     if record is None:
         print(error, file=sys.stderr)
         return 1
-    print(json.dumps(record, ensure_ascii=False, indent=2))
+    print(json.dumps(record, ensure_ascii=False, indent=cfg.engine.report_json_indent))
     return 0
 
 

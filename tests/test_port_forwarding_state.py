@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
+from support import make_config
 
 from pyntara import port_forwarding_state
 
@@ -46,7 +47,8 @@ def test_records_carry_the_ssh_command_of_every_forward() -> None:
     # The remote port is the port a person connects to on the server, and
     # the local port is the sshd port the reverse tunnel delivers to.
     assert port_forwarding_state.state_records(
-        {"https://vpn.example.com": {str(LOCAL_PORT): 46132}}
+        make_config(),
+        {"https://vpn.example.com": {str(LOCAL_PORT): 46132}},
     ) == [
         {
             "channel": "port_forwarding",
@@ -61,11 +63,12 @@ def test_records_carry_the_ssh_command_of_every_forward() -> None:
 def test_malformed_entries_are_skipped() -> None:
     # One unreadable entry must not hide the rest of the forwarding state.
     records = port_forwarding_state.state_records(
+        make_config(),
         {
             "169.58.51.98": {str(LOCAL_PORT): "not a port"},
             "broken": "not a table",
             "2001:db8::1": {"5000": 48012},
-        }
+        },
     )
     assert records == [
         {

@@ -134,3 +134,6 @@ forward_outcome_poll_seconds = 0.2
 # the JSON it carries.
 state_temp_file_suffix = ".tmp"
 state_json_indent = 2
+# Name the record of this channel carries in the network report, so a
+# reader sees which network the reported ssh command goes through.
+report_channel_name = "port_forwarding"

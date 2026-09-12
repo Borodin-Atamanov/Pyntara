@@ -101,7 +101,7 @@ def main(argv: list[str]) -> int:
         json.dumps(
             country_document(report, setup.country_word),
             ensure_ascii=False,
-            indent=2,
+            indent=cfg.engine.report_json_indent,
         )
     )
     return 0

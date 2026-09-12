@@ -40,6 +40,12 @@ def base_config() -> str:
         'curl_parallel_command = ["curl", "--parallel", "--parallel-max", "{parallel_max}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
         'curl_parallel_write_out = "\\n@@pyntara-source@@ %{url_effective}\\n"\n'
         'curl_parallel_source_marker = "@@pyntara-source@@"\n'
+        "report_json_indent = 2\n"
+        'ssh_report_command_format = "ssh -v -p {port}{proxy_option} {address}"\n'
+        'ssh_report_proxy_option_format = \' -o ProxyCommand="{proxy_command}"\'\n'
+        'ssh_report_socks_command_format = "nc -X 5 -x {proxy} %h %p"\n'
+        'ssh_report_proxy_host = "127.0.0.1"\n'
+        'report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }\n'
         'os_release_family_keys = ["ID", "ID_LIKE"]\n'
         'os_release_debian_family_names = ["debian", "ubuntu"]\n'
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
@@ -254,6 +260,7 @@ def base_config() -> str:
         'config_false_value = "false"\n'
         "address_check_attempts = 10\n"
         "address_check_retry_delay_seconds = 2\n"
+        'report_channel_name = "i2p"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'
@@ -282,6 +289,7 @@ def base_config() -> str:
         "connection_wait_base_seconds = 1\n"
         "connection_wait_multiplier = 2\n"
         "connection_wait_max_seconds = 30\n"
+        'report_channel_name = "yggdrasil"\n'
         'nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"\n'
         'nm_unmanaged_conf_file_mode = "0644"\n'
         'netplan_dir_path = "/etc/netplan"\n'
@@ -412,6 +420,7 @@ def base_config() -> str:
         'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
         'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
+        'report_channel_name = "tor"\n'
         "[ssh_daemon_setup]\n"
         'package_name = "openssh-server"\n'
         'augeas_tools_package_name = "augeas-tools"\n'
@@ -503,6 +512,7 @@ def base_config() -> str:
         'askpass_helper_content = "#!/bin/sh\\necho \\"$PF_KEY_PASSPHRASE\\"\\n"\n'
         "forward_outcome_poll_seconds = 0.2\n"
         'state_temp_file_suffix = ".tmp"\nstate_json_indent = 2\n'
+        'report_channel_name = "port_forwarding"\n'
         "error_priority = 3\n"
         "[dnsproxy_setup]\n"
         'github_repo = "AdguardTeam/dnsproxy"\n'

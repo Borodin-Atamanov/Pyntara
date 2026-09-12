@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
+from support import make_config
 
 from pyntara import public_address_report
 from pyntara.public_address import PublicAddresses
@@ -41,6 +42,7 @@ def _fake_detection(addresses: PublicAddresses):
 
 def test_records_list_every_address_with_its_command() -> None:
     records = public_address_report.address_records(
+        make_config(),
         PublicAddresses(ipv4=("190.55.165.52",), ipv6=("2a01:4f9:c012:8091::1",)),
         30222,
     )
@@ -62,7 +64,7 @@ def test_a_silent_family_carries_its_reason() -> None:
     # A machine without a public IPv6 address is a normal machine, and
     # the report says which family did not answer instead of dropping it.
     records = public_address_report.address_records(
-        PublicAddresses(ipv4=("190.55.165.52",)), 30222
+        make_config(), PublicAddresses(ipv4=("190.55.165.52",)), 30222
     )
     assert records[-1] == {
         "family": "ipv6",

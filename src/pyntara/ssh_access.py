@@ -22,26 +22,17 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-# The client and its verbose flag. -v prints the detailed connection
-# messages, so a failing link shows where it stops; the name is written
-# in full because the reader copies the line into a shell of another
-# machine.
-SSH_CLIENT = "ssh"
-SSH_VERBOSE_FLAG = "-v"
-
-# Host part of the local SOCKS proxy of the anonymity routers.
-ANONYMITY_PROXY_HOST = "127.0.0.1"
-
-# The netcat client of the operator machine routes the connection
-# through that proxy; %h and %p are the ssh placeholders for the target
-# host and port (docs/spec/i2pd-service.md, section Connecting over I2P).
-SOCKS_PROXY_COMMAND = "nc -X 5 -x {proxy} %h %p"
+from pyntara.config import EngineConfig
 
 
-def socks_proxy_address(port: int) -> str:
-    """The local SOCKS proxy address of an anonymity router."""
+def socks_proxy_address(engine: EngineConfig, port: int) -> str:
+    """The local SOCKS proxy address of an anonymity router.
 
-    return f"{ANONYMITY_PROXY_HOST}:{port}"
+    The host comes from the engine, so the two routers and every reported
+    command share one spelling of the loopback address the proxies bind.
+    """
+
+    return f"{engine.ssh_report_proxy_host}:{port}"
 
 
 def host_from_address(address: str) -> str:
@@ -60,19 +51,30 @@ def host_from_address(address: str) -> str:
     return address
 
 
-def ssh_command(address: str, port: int, socks_proxy: str | None = None) -> str:
+def ssh_command(
+    engine: EngineConfig,
+    address: str,
+    port: int,
+    socks_proxy: str | None = None,
+) -> str:
     """The ssh command that reaches address on port.
 
-    The port is always written, so a reader never has to know a default.
-    socks_proxy adds the ProxyCommand of the anonymity network the
-    address belongs to; None builds a direct connection. An address that
-    carries a zone index (fe80::1%eth0) is used as it is, because the
-    zone is what makes a link scope address reachable.
+    The command is built from the engine texts, so its form lives in the
+    config: the client is verbose, the port is always written so a reader
+    never has to know a default, and socks_proxy adds the ProxyCommand of
+    the anonymity network the address belongs to. An address that carries
+    a zone index (fe80::1%eth0) is used as it is, because the zone is what
+    makes a link scope address reachable.
     """
 
-    parts = [SSH_CLIENT, SSH_VERBOSE_FLAG, "-p", str(port)]
+    proxy_option = ""
     if socks_proxy:
-        proxy_command = SOCKS_PROXY_COMMAND.format(proxy=socks_proxy)
-        parts += ["-o", f'ProxyCommand="{proxy_command}"']
-    parts.append(address)
-    return " ".join(parts)
+        proxy_command = engine.ssh_report_socks_command_format.format(
+            proxy=socks_proxy
+        )
+        proxy_option = engine.ssh_report_proxy_option_format.format(
+            proxy_command=proxy_command
+        )
+    return engine.ssh_report_command_format.format(
+        port=port, address=address, proxy_option=proxy_option
+    )

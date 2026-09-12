@@ -80,6 +80,28 @@ curl_parallel_write_out = "\n@@pyntara-source@@ %{url_effective}\n"
 # The marker that separates the answers of a parallel query; it must be
 # the marker inside curl_parallel_write_out.
 curl_parallel_source_marker = "@@pyntara-source@@"
+# Indentation of every JSON document the address commands of the report
+# print, so the collector reads one shape and a person reads it by eye.
+report_json_indent = 2
+# The ssh command one record carries: the text a person copies to reach
+# an address over the channel the record belongs to. The client is
+# verbose on purpose, the port is always written so a reader never needs
+# a default, an anonymity channel adds the proxy option below, and the
+# user stays absent because the operator chooses it. {port}, {address}
+# and {proxy_option} are filled by the shared builder.
+ssh_report_command_format = "ssh -v -p {port}{proxy_option} {address}"
+ssh_report_proxy_option_format = " -o ProxyCommand=\"{proxy_command}\""
+# The netcat client routes the connection through the local SOCKS proxy
+# of an anonymity router; {proxy} is the proxy address and %h and %p are
+# the ssh placeholders for the target host and port.
+ssh_report_socks_command_format = "nc -X 5 -x {proxy} %h %p"
+# Host part of that proxy: both routers bind their SOCKS proxy to the
+# loopback interface of the machine the report describes.
+ssh_report_proxy_host = "127.0.0.1"
+# Field names of one report record, by the meaning of the field. Every
+# address command builds its records through them, so the collector and
+# the commands agree on the shape in one place.
+report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }
 # Query URL of the latest release of a GitHub repository; every release
 # query of every task uses this one value, with {repo} replaced by the
 # configured owner/name pair, so a mirror or a proxy is configured in one
