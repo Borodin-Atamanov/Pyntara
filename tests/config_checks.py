@@ -925,6 +925,17 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if not curl_query_command:
         raise ConfigError("engine.curl_query_command must not be empty")
+    os_release_family_keys = _string_list(
+        raw.get("os_release_family_keys"), "engine.os_release_family_keys"
+    )
+    if not os_release_family_keys:
+        raise ConfigError("engine.os_release_family_keys must not be empty")
+    os_release_debian_family_names = _string_list(
+        raw.get("os_release_debian_family_names"),
+        "engine.os_release_debian_family_names",
+    )
+    if not os_release_debian_family_names:
+        raise ConfigError("engine.os_release_debian_family_names must not be empty")
     curl_download_write_out = _nonempty_string_field(
         raw.get("curl_download_write_out"), "engine.curl_download_write_out"
     )
@@ -954,6 +965,8 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_download_command=curl_download_command,
         curl_query_command=curl_query_command,
         curl_download_write_out=curl_download_write_out,
+        os_release_family_keys=os_release_family_keys,
+        os_release_debian_family_names=os_release_debian_family_names,
         github_latest_release_url=_nonempty_string_field(
             raw.get("github_latest_release_url"),
             "engine.github_latest_release_url",

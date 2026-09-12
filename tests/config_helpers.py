@@ -37,6 +37,8 @@ def base_config() -> str:
         'curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]\n'
         'curl_download_write_out = "took %{time_total}s"\n'
         'curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]\n'
+        'os_release_family_keys = ["ID", "ID_LIKE"]\n'
+        'os_release_debian_family_names = ["debian", "ubuntu"]\n'
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
         'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
         'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }\n'

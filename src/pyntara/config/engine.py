@@ -23,7 +23,11 @@ class EngineConfig:
     prints after a transfer; curl_query_command is the curl call that
     fetches one metadata answer as text; the shared helper of both inserts
     the retry and timeout flags of the curl settings above before the URL,
-    so a task never spells the flags itself.
+    so a task never spells the flags itself. os_release_family_keys are the
+    fields of the distribution identity file that name the distribution and
+    os_release_debian_family_names are the values of those fields that mean
+    a Debian-based system, which the shared os_family_is_debian helper
+    reads.
     system_python is the interpreter of the managed system, used by a task
     that runs an embedded client against the system packages.
     journal_identifier is the name under which the engine mirrors its own
@@ -60,6 +64,8 @@ class EngineConfig:
     github_release_download_url: str
     release_asset_architectures: dict[str, str]
     partial_download_file_suffix: str
+    os_release_family_keys: tuple[str, ...]
+    os_release_debian_family_names: tuple[str, ...]
     system_python: str
     journal_identifier: str
     root_owner_uid: int

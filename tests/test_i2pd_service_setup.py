@@ -522,6 +522,8 @@ def test_non_debian_os_reports_error(
     result = i2pd_service_setup.task(ctx)
     assert result.success is False
     assert "Debian-based" in (result.error or "")
+    assert "os-release ID=arch" in (result.error or "")
+    assert "os-release ID_LIKE=archlinux" in (result.error or "")
     assert not any(call[0] == "curl" for call in calls)
 
 

@@ -236,6 +236,14 @@ def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
     assert_config_error(tmp_path, content, match="must be a boolean")
 
 
+def test_load_config_os_release_vocabulary(tmp_path: Path) -> None:
+    # The fields of the distribution identity file and the values that mean
+    # a Debian-based system round-trip from the shared document.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    assert config.engine.os_release_family_keys == ("ID", "ID_LIKE")
+    assert config.engine.os_release_debian_family_names == ("debian", "ubuntu")
+
+
 def test_load_config_curl_command_templates(tmp_path: Path) -> None:
     # The two command templates and the write-out text round-trip, and the
     # download template carries the placeholders the shared helper fills.

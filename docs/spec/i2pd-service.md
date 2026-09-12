@@ -12,7 +12,7 @@ The installed version comes from i2pd --version: the first dotted version triple
 
 ## Operating system and architecture
 
-The distribution is read from /etc/os-release through the shared helpers in pyntara.utils: read_os_release parses the shell-style variables, os_family_is_debian checks ID and ID_LIKE for the debian or ubuntu family, and dpkg_architecture runs dpkg --print-architecture. The helpers are shared with future tasks that need the same facts.
+The distribution is read from /etc/os-release through the shared helpers in pyntara.utils: read_os_release parses the shell-style variables, os_family_is_debian checks the fields of engine.os_release_family_keys for a value of engine.os_release_debian_family_names, and dpkg_architecture runs dpkg --print-architecture. The vocabulary of the file is a config value and not a constant, because a distribution that renames its family field or reports a new family name must not need a code change; the helpers stay shared with every future task that needs the same facts.
 
 Only Debian-based distributions are supported: the release assets are deb packages, and a distribution outside the Debian family is reported as a task error before any download. The deb asset is chosen by the dpkg architecture and the VERSION_CODENAME of the os-release file:
 

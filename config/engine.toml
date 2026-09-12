@@ -86,6 +86,13 @@ release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }
 # final name. Every task that downloads a file uses the same suffix, so a
 # half written download is never mistaken for a complete one.
 partial_download_file_suffix = ".download"
+# The os-release vocabulary the run reads to learn the distribution family:
+# the fields of the file that name the distribution, and the values of those
+# fields that mean a Debian-based system. A derivative declares the family
+# in ID_LIKE instead of ID, so both fields are searched and a value with
+# several words is matched word by word.
+os_release_family_keys = ["ID", "ID_LIKE"]
+os_release_debian_family_names = ["debian", "ubuntu"]
 # The Python interpreter of the managed system, the one that carries the
 # system packages such as python3-dbus. The absolute path keeps a task
 # that runs an embedded client independent of the caller PATH, where the

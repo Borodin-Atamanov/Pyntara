@@ -434,13 +434,15 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=False, error=f"cannot read {cfg.os_release_file_path}: {exc}"
         )
-    if not os_family_is_debian(os_release):
+    if not os_family_is_debian(ctx.config.engine, os_release):
         return TaskResult(
             success=False,
             error=(
                 "i2pd deb packages require a Debian-based distribution; "
-                f"os-release ID={os_release.get('ID', '')} "
-                f"ID_LIKE={os_release.get('ID_LIKE', '')}"
+                + " ".join(
+                    f"os-release {key}={os_release.get(key, '')}"
+                    for key in ctx.config.engine.os_release_family_keys
+                )
             ),
         )
     _log(

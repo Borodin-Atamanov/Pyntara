@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,26 @@ def test_release_query_command_uses_the_query_template() -> None:
     assert "--silent" in command
     assert "--retry" in command
     assert command[-1] == "https://api.example.invalid/releases/latest"
+
+
+def test_os_family_is_debian_reads_the_configured_vocabulary() -> None:
+    # The family fields and the accepted values come from the engine: a
+    # derivative that declares the family in ID_LIKE is accepted, a value
+    # outside the configured list is not, and a rearranged vocabulary is
+    # honoured without touching the code.
+    engine = make_config().engine
+    assert utils.os_family_is_debian(
+        engine, {"ID": "ubuntu"}
+    )
+    assert utils.os_family_is_debian(
+        engine, {"ID_LIKE": "ubuntu debian"}
+    )
+    assert not utils.os_family_is_debian(engine, {"ID": "arch"})
+    narrowed = replace(engine, os_release_debian_family_names=("ubuntu",))
+    assert not utils.os_family_is_debian(narrowed, {"ID": "debian"})
+    renamed = replace(engine, os_release_family_keys=("FAMILY",))
+    assert utils.os_family_is_debian(renamed, {"FAMILY": "debian"})
+    assert not utils.os_family_is_debian(renamed, {"ID": "debian"})
 
 
 def test_curl_command_refuses_an_unknown_placeholder() -> None:

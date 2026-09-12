@@ -161,18 +161,26 @@ def read_os_release(path: Path) -> dict[str, str]:
     return result
 
 
-def os_family_is_debian(os_release: dict[str, str]) -> bool:
-    """True when the os-release ID or ID_LIKE names Debian or Ubuntu.
+def os_family_is_debian(engine: EngineConfig, os_release: dict[str, str]) -> bool:
+    """True when the os-release family fields name a Debian-based system.
 
     Debian-based distributions declare ID=debian or ID=ubuntu, and
-    derivatives declare ID_LIKE=debian. The check covers both fields, so
-    a derivative of a derivative such as ID_LIKE="ubuntu debian" still
-    resolves to Debian family.
+    derivatives declare ID_LIKE=debian. The checked fields come from
+    engine.os_release_family_keys, so the check is not tied to one
+    spelling of the file, and the accepted values come from
+    engine.os_release_debian_family_names. Every field is split into
+    words before the comparison, so a derivative of a derivative such as
+    ID_LIKE="ubuntu debian" still resolves to the Debian family.
     """
 
-    fields = f"{os_release.get('ID', '')} {os_release.get('ID_LIKE', '')}"
-    tokens = {token.casefold() for token in fields.split()}
-    return bool(tokens & {"debian", "ubuntu"})
+    words: set[str] = set()
+    for key in engine.os_release_family_keys:
+        words.update(word.casefold() for word in os_release.get(key, "").split())
+    return bool(
+        words & {
+            name.casefold() for name in engine.os_release_debian_family_names
+        }
+    )
 
 
 def dpkg_architecture(timeout: float) -> str:
