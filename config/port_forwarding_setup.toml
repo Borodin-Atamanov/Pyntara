@@ -91,3 +91,46 @@ start_check_attempts = 10
 start_check_retry_delay_seconds = 1
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
+# The commands the deployed service runs itself. The own addresses come
+# from the ip call below; the port-forwarding key is loaded into a
+# dedicated agent, started by agent_start_command and filled by
+# key_add_command; the collector is woken by collector_trigger_command,
+# and collector_trigger_timeout_seconds bounds that call.
+own_addresses_command = ["ip", "-o", "addr", "show"]
+agent_start_command = ["ssh-agent", "-s"]
+key_add_command = ["ssh-add", "{key_path}"]
+collector_trigger_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]
+collector_trigger_timeout_seconds = 31
+# The ssh call that holds one reverse tunnel open, with every argument
+# that is ours to choose: the port, the options that keep the client from
+# prompting or offering another identity, the keepalive and connect
+# bounds of the values above, the key, the reverse forward and the
+# destination. The remote side of the forward binds the address below, so
+# a forwarded port is reachable through the server only.
+ssh_forward_command = ["ssh", "-p", "{ssh_port}", "-N", "-v", "-o", "ExitOnForwardFailure=yes", "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval={server_alive_interval_seconds}", "-o", "ServerAliveCountMax={server_alive_count_max}", "-o", "ConnectTimeout={connect_timeout_seconds}", "-i", "{key_path}", "-R", "{remote_port}:{remote_bind_address}:{local_port}", "{user}@{host}"]
+remote_bind_address = "localhost"
+# Names the service reads from or writes into the environment around the
+# agent: the socket and the process id ssh-agent reports, the display the
+# helper is given, the askpass variables of ssh and the variable that
+# carries the passphrase to the helper. askpass_env is a table of the
+# variables the unlock sets; {helper_path} is the helper script below.
+agent_socket_env_key = "SSH_AUTH_SOCK"
+agent_pid_env_key = "SSH_AGENT_PID"
+display_env_key = "DISPLAY"
+passphrase_env_key = "PF_KEY_PASSPHRASE"
+askpass_env = { SSH_ASKPASS = "{helper_path}", SSH_ASKPASS_REQUIRE = "force" }
+# The helper script of the unlock: written next to nothing else in its
+# own temporary directory, it prints the passphrase variable and is
+# removed right after the key is in the agent. The directory prefix and
+# the file name are values, and the content must name passphrase_env_key.
+askpass_helper_dir_prefix = "pyntara-pf-"
+askpass_helper_file_name = "askpass.sh"
+askpass_helper_content = "#!/bin/sh\necho \"$PF_KEY_PASSPHRASE\"\n"
+# Seconds between two reads of the ssh output while the service waits for
+# the server to confirm or refuse the forward, so the wait costs no spin.
+forward_outcome_poll_seconds = 0.2
+# State file writing: the suffix of the temporary file the state is
+# written through before it is moved into place, and the indentation of
+# the JSON it carries.
+state_temp_file_suffix = ".tmp"
+state_json_indent = 2

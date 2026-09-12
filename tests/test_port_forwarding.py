@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -160,7 +161,7 @@ class TestOwnServers:
         monkeypatch.setattr(
             pf.subprocess, "run", lambda *args, **kwargs: FakeProc(0, stdout)
         )
-        assert own_addresses(15) == {
+        assert own_addresses(make_config()) == {
             "127.0.0.1",
             "::1",
             "192.168.1.5",
@@ -179,9 +180,13 @@ class TestOwnServers:
             return FakeProc(0, "")
 
         monkeypatch.setattr(pf.subprocess, "run", _run)
-        configured = make_config().port_forwarding_setup.own_addresses_timeout_seconds
-        own_addresses(configured)
-        assert seen == [float(configured)]
+        config = make_config()
+        own_addresses(config)
+        assert seen == [
+            float(
+                config.port_forwarding_setup.own_addresses_timeout_seconds
+            )
+        ]
 
     def test_own_addresses_failure_keeps_everything(
         self, monkeypatch: pytest.MonkeyPatch
@@ -191,7 +196,7 @@ class TestOwnServers:
         monkeypatch.setattr(
             pf.subprocess, "run", lambda *args, **kwargs: FakeProc(1, "")
         )
-        assert own_addresses(15) == set()
+        assert own_addresses(make_config()) == set()
 
     def test_filter_own_servers_splits_by_matching_address(self) -> None:
         own = {"127.0.0.1", "192.168.1.5", "fe80::1"}
@@ -307,6 +312,127 @@ class TestStartForward:
         proc.wait(timeout=5)
 
 
+class TestBuildSshCommand:
+    def test_reads_the_configured_template(self) -> None:
+        # The whole ssh call, arguments and options alike, comes from the
+        # config, so a machine that needs another option changes the
+        # table and never the module.
+        config = make_config()
+        section = config.port_forwarding_setup
+        configured = (
+            "ssh",
+            "-p",
+            "{ssh_port}",
+            "-N",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-i",
+            "{key_path}",
+            "-R",
+            "{remote_port}:{remote_bind_address}:{local_port}",
+            "{user}@{host}",
+            "-o",
+            "ExtraOption=yes",
+        )
+        config = replace(
+            config,
+            port_forwarding_setup=replace(
+                section,
+                ssh_forward_command=configured,
+                remote_bind_address="127.0.0.1",
+            ),
+        )
+        command = pf._build_ssh_command(
+            config, Path("/key"), 30222, "server", "i", "41000", 30222
+        )
+        assert command[-2:] == ["-o", "ExtraOption=yes"]
+        assert "41000:127.0.0.1:30222" in command
+        assert "i@server" in command
+        assert command[command.index("-p") + 1] == "30222"
+        assert command[command.index("-i") + 1] == "/key"
+
+    def test_keepalive_and_connect_bounds_come_from_the_config(self) -> None:
+        # The keepalive and connect values fill the placeholders of the
+        # ssh command, so they keep one home.
+        config = make_config()
+        config = replace(
+            config,
+            port_forwarding_setup=replace(
+                config.port_forwarding_setup,
+                server_alive_interval_seconds=77,
+                server_alive_count_max=5,
+                connect_timeout_seconds=9,
+            ),
+        )
+        command = pf._build_ssh_command(
+            config, Path("/key"), 30222, "server", "i", "41000", 30222
+        )
+        assert "ServerAliveInterval=77" in command
+        assert "ServerAliveCountMax=5" in command
+        assert "ConnectTimeout=9" in command
+
+
+class TestStartAgent:
+    def test_env_names_helper_and_command_come_from_the_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The unlock sets the variables the config names, writes the
+        # helper the config spells and runs the configured ssh-add call,
+        # so the passphrase never travels through a literal of the module.
+        config = make_config()
+        section = config.port_forwarding_setup
+        calls: list[list[str]] = []
+        captured: dict[str, str] = {}
+
+        def fake_run(command: list[str], **kwargs: object) -> FakeProc:
+            calls.append(list(command))
+            if command[0] == "ssh-agent":
+                return FakeProc(
+                    0,
+                    f"{section.agent_socket_env_key}=/tmp/sock; export x;\n"
+                    f"{section.agent_pid_env_key}=4242; export x;\n",
+                )
+            environment = kwargs.get("env")
+            if isinstance(environment, dict):
+                for name, value in environment.items():
+                    captured[str(name)] = str(value)
+            return FakeProc(0, "")
+
+        monkeypatch.setattr(pf.subprocess, "run", fake_run)
+        key = tmp_path / "key"
+        key.write_text("key", encoding="utf-8")
+        env = pf._start_agent(config, "passphrase", key)
+        assert env is not None
+        assert calls[0] == list(section.agent_start_command)
+        assert calls[-1] == [
+            part.format(key_path=str(key)) for part in section.key_add_command
+        ]
+        assert captured[section.display_env_key] == section.askpass_display
+        assert captured[section.passphrase_env_key] == "passphrase"
+        askpass_variable = next(iter(section.askpass_env))
+        assert captured[askpass_variable].endswith(
+            section.askpass_helper_file_name
+        )
+
+
+def test_state_write_uses_the_configured_suffix_and_indent(
+    tmp_path: Path,
+) -> None:
+    # The temporary file of the atomic write and the indentation of the
+    # JSON are values, so the state layout is readable in the config.
+    config = make_config(port_forwarding_state_file_path=tmp_path / "state.json")
+    section = config.port_forwarding_setup
+    state = {"server": {"30222": 20000}}
+    save_state(config, state)
+    target = tmp_path / "state.json"
+    assert target.read_text(encoding="utf-8") == json.dumps(
+        state, ensure_ascii=False, indent=section.state_json_indent
+    )
+    assert not (
+        tmp_path / f"state.json{section.state_temp_file_suffix}"
+    ).exists()
+
+
 class TestRunForwardLoop:
     @pytest.fixture(autouse=True)
     def _env(
@@ -357,11 +483,16 @@ class TestRunForwardLoop:
             )
 
     def test_state_file_carries_the_given_mode(self, tmp_path: Path) -> None:
-        # The mode of the state file is an argument of the save, so the
-        # caller passes the configured value and no literal can slip in.
-        target = tmp_path / "state.json"
-        save_state(target, {"server": {"30222": 20000}}, 0o640)
-        assert stat.S_IMODE(target.stat().st_mode) == 0o640
+        # The mode and the location of the state file come from the
+        # config, so no literal of the write can slip in.
+        config = make_config(
+            port_forwarding_state_file_path=tmp_path / "state.json"
+        )
+        save_state(config, {"server": {"30222": 20000}})
+        target = config.port_forwarding_setup.state_file_path
+        assert stat.S_IMODE(target.stat().st_mode) == (
+            config.port_forwarding_setup.state_file_mode
+        )
 
     def test_connects_records_and_triggers_collector(self) -> None:
         # A free desired port: the loop records it, saves the state and

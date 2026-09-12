@@ -28,6 +28,7 @@ import ipaddress
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -43,7 +44,7 @@ from pyntara.config import Config, load_config
 from pyntara.logger import log_progress as _log
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
-from pyntara.utils import backoff_delay
+from pyntara.utils import backoff_delay, substituted_command
 
 # The server prints the granted random port to the client stderr; the
 # pattern is the only source of the granted port, so the service reads it
@@ -111,22 +112,23 @@ def _normalize_host(host: str) -> str:
     return host.lower()
 
 
-def own_addresses(timeout_seconds: int) -> set[str]:
-    """The machine's own IP addresses from ip -o addr, or an empty set.
+def own_addresses(cfg: Config) -> set[str]:
+    """The machine's own IP addresses from the configured ip call.
 
     The addresses come from the local interfaces, both families, so a
     server address that appears here is the machine itself. A failed or
     missing ip call yields an empty set, so the filter then keeps every
     server: that errs toward forwarding instead of dropping a real
-    server. timeout_seconds is the configured bound of the call.
+    server. The command and its timeout are values of the table.
     """
 
+    pf = cfg.port_forwarding_setup
     try:
         result = subprocess.run(
-            ["ip", "-o", "addr", "show"],
+            list(pf.own_addresses_command),
             capture_output=True,
             text=True,
-            timeout=timeout_seconds,
+            timeout=pf.own_addresses_timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -179,33 +181,31 @@ def read_passphrase(kp: PyKeePass, entry_title: str) -> str | None:
 
 
 def _start_agent(
+    cfg: Config,
     passphrase: str,
     key_path: Path,
-    agent_start_timeout_seconds: int,
-    key_unlock_timeout_seconds: int,
-    askpass_helper_file_mode: int,
-    askpass_display: str,
 ) -> dict[str, str] | None:
     """Start a dedicated ssh-agent and unlock the key; the agent env or None.
 
     The key is passphrase-protected, so it is loaded into a dedicated
-    ssh-agent through SSH_ASKPASS_REQUIRE=force and a helper script that
-    echoes the passphrase; after the load the helper is removed, and the
-    long-running ssh processes sign through the agent without ever seeing
-    the passphrase. A failed agent start or a failed unlock is logged and
-    None is returned. agent_start_timeout_seconds bounds the ssh-agent
-    start and key_unlock_timeout_seconds bounds the ssh-add unlock;
-    askpass_helper_file_mode is the mode of the helper script, which must
-    stay executable by its owner only, and askpass_display is the display
-    ssh-add hands to that helper.
+    ssh-agent through the configured askpass variables and a helper script
+    that echoes the passphrase; after the load the helper is removed, and
+    the long-running ssh processes sign through the agent without ever
+    seeing the passphrase. A failed agent start or a failed unlock is
+    logged and None is returned. agent_start_timeout_seconds bounds the
+    ssh-agent start and key_unlock_timeout_seconds bounds the ssh-add
+    unlock; askpass_helper_file_mode is the mode of the helper script,
+    which must stay executable by its owner only, and askpass_display is
+    the display ssh-add hands to that helper.
     """
 
+    pf = cfg.port_forwarding_setup
     try:
         agent_out = subprocess.run(
-            ["ssh-agent", "-s"],
+            list(pf.agent_start_command),
             capture_output=True,
             text=True,
-            timeout=agent_start_timeout_seconds,
+            timeout=pf.agent_start_timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -214,47 +214,47 @@ def _start_agent(
     if agent_out.returncode != 0:
         _log(f"cannot start the ssh-agent: exited {agent_out.returncode}")
         return None
+    socket_setting = pf.agent_socket_env_key + "="
+    pid_setting = pf.agent_pid_env_key + "="
     env = dict(os.environ)
     for line in agent_out.stdout.splitlines():
         line = line.strip()
-        if line.startswith("SSH_AUTH_SOCK="):
-            env["SSH_AUTH_SOCK"] = line.split("=", 1)[1].split(";", 1)[0]
-        elif line.startswith("SSH_AGENT_PID="):
-            env["SSH_AGENT_PID"] = line.split("=", 1)[1].split(";", 1)[0]
-    if "SSH_AUTH_SOCK" not in env:
+        if line.startswith(socket_setting):
+            env[pf.agent_socket_env_key] = line.split("=", 1)[1].split(";", 1)[0]
+        elif line.startswith(pid_setting):
+            env[pf.agent_pid_env_key] = line.split("=", 1)[1].split(";", 1)[0]
+    if pf.agent_socket_env_key not in env:
         _log("cannot start the ssh-agent: no socket reported")
         return None
-    helper_dir = Path(tempfile.mkdtemp(prefix="pyntara-pf-"))
-    helper = helper_dir / "askpass.sh"
-    helper.write_text('#!/bin/sh\necho "$PF_KEY_PASSPHRASE"\n', encoding="utf-8")
-    helper.chmod(askpass_helper_file_mode)
+    helper_dir = Path(tempfile.mkdtemp(prefix=pf.askpass_helper_dir_prefix))
+    helper = helper_dir / pf.askpass_helper_file_name
+    helper.write_text(pf.askpass_helper_content, encoding="utf-8")
+    helper.chmod(pf.askpass_helper_file_mode)
     add_env = dict(env)
-    add_env.update(
-        {
-            "SSH_ASKPASS": str(helper),
-            "SSH_ASKPASS_REQUIRE": "force",
-            "DISPLAY": askpass_display,
-            "PF_KEY_PASSPHRASE": passphrase,
-        }
-    )
+    for name, value in pf.askpass_env.items():
+        add_env[name] = value.format(helper_path=str(helper))
+    add_env[pf.display_env_key] = pf.askpass_display
+    add_env[pf.passphrase_env_key] = passphrase
     try:
         added = subprocess.run(
-            ["ssh-add", str(key_path)],
+            substituted_command(
+                pf.key_add_command, {"key_path": str(key_path)}
+            ),
             env=add_env,
             capture_output=True,
             text=True,
-            timeout=key_unlock_timeout_seconds,
+            timeout=pf.key_unlock_timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(f"cannot unlock the port-forwarding key: {exc}")
         _remove_helper(helper_dir)
-        _kill_agent(env)
+        _kill_agent(cfg, env)
         return None
     _remove_helper(helper_dir)
     if added.returncode != 0:
         _log(f"cannot unlock the port-forwarding key {key_path}")
-        _kill_agent(env)
+        _kill_agent(cfg, env)
         return None
     return env
 
@@ -279,19 +279,22 @@ def _remove_helper(helper_dir: Path) -> None:
         pass
 
 
-def _kill_agent(env: dict[str, str]) -> None:
+def _kill_agent(cfg: Config, env: dict[str, str]) -> None:
     """Kill the dedicated agent process, best effort.
 
     Called when the key unlock failed and the agent is useless, or when
     the service stops on its own; on a normal stop systemd kills the
     whole service control group, so the agent does not outlive the
-    service either way.
+    service either way. The variable that carries the process id and the
+    signal are values of the table and of the standard library.
     """
 
-    agent_pid = env.get("SSH_AGENT_PID")
+    pf = cfg.port_forwarding_setup
+
+    agent_pid = env.get(pf.agent_pid_env_key)
     if agent_pid:
         try:
-            os.kill(int(agent_pid), 15)
+            os.kill(int(agent_pid), signal.SIGTERM)
         except (OSError, ValueError):
             pass
 
@@ -315,36 +318,28 @@ def _build_ssh_command(
     flag is the positive forward confirmation source: ssh prints
     "remote forward success" once the server accepted the port, so the
     supervisor confirms a fixed-port forward by its success line instead
-    of guessing.
+    of guessing. Every argument of the call is a value of the table, so no
+    option of the tunnel lives in the module.
     """
 
     pf = cfg.port_forwarding_setup
-    return [
-        "ssh",
-        "-p",
-        str(ssh_port),
-        "-N",
-        "-v",
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "IdentitiesOnly=yes",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-o",
-        f"ServerAliveInterval={pf.server_alive_interval_seconds}",
-        "-o",
-        f"ServerAliveCountMax={pf.server_alive_count_max}",
-        "-o",
-        f"ConnectTimeout={pf.connect_timeout_seconds}",
-        "-i",
-        str(key_path),
-        "-R",
-        f"{remote_port}:localhost:{local_port}",
-        f"{user}@{host_from_address(server)}",
-    ]
+    return substituted_command(
+        pf.ssh_forward_command,
+        {
+            "ssh_port": str(ssh_port),
+            "key_path": str(key_path),
+            "remote_port": remote_port,
+            "local_port": str(local_port),
+            "user": user,
+            "host": host_from_address(server),
+            "remote_bind_address": pf.remote_bind_address,
+            "server_alive_interval_seconds": str(
+                pf.server_alive_interval_seconds
+            ),
+            "server_alive_count_max": str(pf.server_alive_count_max),
+            "connect_timeout_seconds": str(pf.connect_timeout_seconds),
+        },
+    )
 
 
 def start_forward(
@@ -372,6 +367,7 @@ def start_forward(
     command = _build_ssh_command(
         cfg, key_path, ssh_port, server, user, remote_port, local_port
     )
+    poll_seconds = cfg.port_forwarding_setup.forward_outcome_poll_seconds
     proc = subprocess.Popen(
         command,
         stdout=subprocess.DEVNULL,
@@ -418,7 +414,7 @@ def start_forward(
         if chunk:
             buffer += chunk
         else:
-            time.sleep(0.2)
+            time.sleep(poll_seconds)
     # The process may have exited with output still buffered in the pipe;
     # drain it so a just-printed error or grant is not lost.
     while True:
@@ -459,21 +455,26 @@ def load_state(path: Path) -> dict[str, dict[str, int]]:
 
 
 def save_state(
-    path: Path, state: dict[str, dict[str, int]], state_file_mode: int
+    cfg: Config, state: dict[str, dict[str, int]]
 ) -> None:
     """Persist the state atomically with root-only mode; errors are logged.
 
     The write goes through a temporary file in the same directory, so a
-    crash never leaves a half-written state file behind.
+    crash never leaves a half-written state file behind. The suffix of
+    that file, the mode of the state file and the indentation of its JSON
+    are values of the table.
     """
 
+    pf = cfg.port_forwarding_setup
+    path = pf.state_file_path
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp = path.with_name(f"{path.name}.tmp")
+        temp = path.with_name(path.name + pf.state_temp_file_suffix)
         temp.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(state, ensure_ascii=False, indent=pf.state_json_indent),
+            encoding="utf-8",
         )
-        os.chmod(temp, state_file_mode)
+        os.chmod(temp, pf.state_file_mode)
         os.replace(temp, path)
     except OSError as exc:
         _log(f"cannot save the port-forwarding state {path}: {exc}")
@@ -494,10 +495,13 @@ def trigger_collector(cfg: Config) -> None:
     collector_service = cfg.system_metrics_setup.collector.service_unit_name
     try:
         result = subprocess.run(
-            ["systemctl", "start", "--no-block", collector_service],
+            substituted_command(
+                cfg.port_forwarding_setup.collector_trigger_command,
+                {"service_unit_name": collector_service},
+            ),
             capture_output=True,
             text=True,
-            timeout=cfg.port_forwarding_setup.connect_timeout_seconds,
+            timeout=cfg.port_forwarding_setup.collector_trigger_timeout_seconds,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -600,7 +604,7 @@ def run_forward_loop(
             with lock:
                 if state.get(server, {}).get(str(local_port)) != port:
                     state.setdefault(server, {})[str(local_port)] = port
-                    save_state(pf.state_file_path, state, pf.state_file_mode)
+                    save_state(cfg, state)
                     changed_port = True
             if changed_port:
                 trigger_collector(cfg)
@@ -656,7 +660,7 @@ def main() -> None:
         )
         raise SystemExit(1)
     servers = read_server_addresses(kp, pf.vault_group_title)
-    own = own_addresses(pf.own_addresses_timeout_seconds)
+    own = own_addresses(cfg)
     servers, skipped = filter_own_servers(servers, own)
     if skipped:
         _log(f"skipping own server address(es): {', '.join(skipped)}")
@@ -685,14 +689,7 @@ def main() -> None:
             priority=pf.error_priority,
         )
         raise SystemExit(1)
-    env = _start_agent(
-        passphrase,
-        key_path,
-        pf.agent_start_timeout_seconds,
-        pf.key_unlock_timeout_seconds,
-        pf.askpass_helper_file_mode,
-        pf.askpass_display,
-    )
+    env = _start_agent(cfg, passphrase, key_path)
     if env is None:
         _log("cannot unlock the port-forwarding key", priority=pf.error_priority)
         raise SystemExit(1)

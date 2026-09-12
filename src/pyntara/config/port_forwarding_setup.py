@@ -46,8 +46,27 @@ class PortForwardingSetupConfig:
     systemctl_* commands drive that unit, each carrying the unit name as
     its {service_unit_name} placeholder except the daemon reload, and
     start_check_attempts with start_check_retry_delay_seconds bound the
-    loop that decides whether a started service failed; journal_identifier
-    and error_priority control logging.
+    loop that decides whether a started service failed. The deployed
+    service reads its own commands from the table as well:
+    own_addresses_command lists this machine's addresses, agent_start_command
+    starts the dedicated agent and key_add_command loads the key into it,
+    collector_trigger_command wakes the System Metrics collector with
+    collector_trigger_timeout_seconds as its bound, and ssh_forward_command
+    is the whole ssh call that holds one reverse tunnel open, with
+    {ssh_port}, {key_path}, {remote_port}, {local_port}, {user}, {host},
+    {remote_bind_address} and the keepalive and connect bounds
+    substituted, so no argument of the tunnel is hidden in the module.
+    agent_socket_env_key and agent_pid_env_key name what the service reads
+    from the agent output, display_env_key and passphrase_env_key name the
+    display and the passphrase variable of the unlock, and askpass_env
+    carries the askpass variables with {helper_path} substituted.
+    askpass_helper_dir_prefix, askpass_helper_file_name and
+    askpass_helper_content describe the helper script that answers the
+    unlock with the passphrase variable, and
+    forward_outcome_poll_seconds bounds the pause between two reads of the
+    ssh output. state_temp_file_suffix and state_json_indent describe how
+    the state file is written. journal_identifier and error_priority
+    control logging.
     """
 
     vault_group_title: str
@@ -79,4 +98,22 @@ class PortForwardingSetupConfig:
     systemctl_is_failed_command: tuple[str, ...]
     start_check_attempts: int
     start_check_retry_delay_seconds: float
+    own_addresses_command: tuple[str, ...]
+    agent_start_command: tuple[str, ...]
+    key_add_command: tuple[str, ...]
+    collector_trigger_command: tuple[str, ...]
+    collector_trigger_timeout_seconds: int
+    ssh_forward_command: tuple[str, ...]
+    remote_bind_address: str
+    agent_socket_env_key: str
+    agent_pid_env_key: str
+    display_env_key: str
+    passphrase_env_key: str
+    askpass_env: dict[str, str]
+    askpass_helper_dir_prefix: str
+    askpass_helper_file_name: str
+    askpass_helper_content: str
+    forward_outcome_poll_seconds: float
+    state_temp_file_suffix: str
+    state_json_indent: int
     error_priority: int

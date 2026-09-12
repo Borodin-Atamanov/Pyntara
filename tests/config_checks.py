@@ -2165,6 +2165,99 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
             "port_forwarding_setup.start_check_retry_delay_seconds "
             "must be positive"
         )
+    service_commands: dict[str, tuple[str, ...]] = {}
+    for key, required_placeholders in (
+        ("own_addresses_command", ()),
+        ("agent_start_command", ()),
+        ("key_add_command", ("{key_path}",)),
+        ("collector_trigger_command", ("{service_unit_name}",)),
+        (
+            "ssh_forward_command",
+            (
+                "{ssh_port}",
+                "{key_path}",
+                "{remote_port}",
+                "{local_port}",
+                "{user}",
+                "{host}",
+                "{remote_bind_address}",
+                "{server_alive_interval_seconds}",
+                "{server_alive_count_max}",
+                "{connect_timeout_seconds}",
+            ),
+        ),
+    ):
+        command = _string_list(raw.get(key), section + key)
+        if not command:
+            raise ConfigError(f"port_forwarding_setup.{key} must not be empty")
+        joined = " ".join(command)
+        for placeholder in required_placeholders:
+            if placeholder not in joined:
+                raise ConfigError(
+                    f"port_forwarding_setup.{key} must carry the "
+                    f"{placeholder} placeholder"
+                )
+        service_commands[key] = command
+    collector_trigger_timeout_seconds = _positive_int_field(
+        raw.get("collector_trigger_timeout_seconds"),
+        section + "collector_trigger_timeout_seconds",
+    )
+    remote_bind_address = _nonempty_string_field(
+        raw.get("remote_bind_address"), section + "remote_bind_address"
+    )
+    agent_socket_env_key = _nonempty_string_field(
+        raw.get("agent_socket_env_key"), section + "agent_socket_env_key"
+    )
+    agent_pid_env_key = _nonempty_string_field(
+        raw.get("agent_pid_env_key"), section + "agent_pid_env_key"
+    )
+    display_env_key = _nonempty_string_field(
+        raw.get("display_env_key"), section + "display_env_key"
+    )
+    passphrase_env_key = _nonempty_string_field(
+        raw.get("passphrase_env_key"), section + "passphrase_env_key"
+    )
+    askpass_env = _string_map(raw.get("askpass_env"), section + "askpass_env")
+    if not askpass_env:
+        raise ConfigError("port_forwarding_setup.askpass_env must not be empty")
+    if "{helper_path}" not in " ".join(askpass_env.values()):
+        raise ConfigError(
+            "port_forwarding_setup.askpass_env must carry the "
+            "{helper_path} placeholder"
+        )
+    askpass_helper_dir_prefix = _nonempty_string_field(
+        raw.get("askpass_helper_dir_prefix"),
+        section + "askpass_helper_dir_prefix",
+    )
+    askpass_helper_file_name = _nonempty_string_field(
+        raw.get("askpass_helper_file_name"), section + "askpass_helper_file_name"
+    )
+    askpass_helper_content = _nonempty_string_field(
+        raw.get("askpass_helper_content"), section + "askpass_helper_content"
+    )
+    if passphrase_env_key not in askpass_helper_content:
+        raise ConfigError(
+            "port_forwarding_setup.askpass_helper_content must print "
+            "port_forwarding_setup.passphrase_env_key"
+        )
+    forward_outcome_poll_seconds = _float_field(
+        raw.get("forward_outcome_poll_seconds"),
+        section + "forward_outcome_poll_seconds",
+    )
+    if forward_outcome_poll_seconds <= 0:
+        raise ConfigError(
+            "port_forwarding_setup.forward_outcome_poll_seconds must be positive"
+        )
+    state_temp_file_suffix = _nonempty_string_field(
+        raw.get("state_temp_file_suffix"), section + "state_temp_file_suffix"
+    )
+    state_json_indent = _int_field(
+        raw.get("state_json_indent"), section + "state_json_indent"
+    )
+    if state_json_indent < 0:
+        raise ConfigError(
+            "port_forwarding_setup.state_json_indent must not be negative"
+        )
     error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
     if not 0 <= error_priority <= 7:
         raise ConfigError(
@@ -2204,6 +2297,24 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         ],
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        own_addresses_command=service_commands["own_addresses_command"],
+        agent_start_command=service_commands["agent_start_command"],
+        key_add_command=service_commands["key_add_command"],
+        collector_trigger_command=service_commands["collector_trigger_command"],
+        collector_trigger_timeout_seconds=collector_trigger_timeout_seconds,
+        ssh_forward_command=service_commands["ssh_forward_command"],
+        remote_bind_address=remote_bind_address,
+        agent_socket_env_key=agent_socket_env_key,
+        agent_pid_env_key=agent_pid_env_key,
+        display_env_key=display_env_key,
+        passphrase_env_key=passphrase_env_key,
+        askpass_env=askpass_env,
+        askpass_helper_dir_prefix=askpass_helper_dir_prefix,
+        askpass_helper_file_name=askpass_helper_file_name,
+        askpass_helper_content=askpass_helper_content,
+        forward_outcome_poll_seconds=forward_outcome_poll_seconds,
+        state_temp_file_suffix=state_temp_file_suffix,
+        state_json_indent=state_json_indent,
         error_priority=error_priority,
     )
 

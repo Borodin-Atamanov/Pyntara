@@ -486,6 +486,23 @@ def base_config() -> str:
         'systemctl_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
         'systemctl_is_failed_command = ["systemctl", "is-failed", "{service_unit_name}"]\n'
         "start_check_attempts = 10\nstart_check_retry_delay_seconds = 1\n"
+        'own_addresses_command = ["ip", "-o", "addr", "show"]\n'
+        'agent_start_command = ["ssh-agent", "-s"]\n'
+        'key_add_command = ["ssh-add", "{key_path}"]\n'
+        'collector_trigger_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]\n'
+        "collector_trigger_timeout_seconds = 31\n"
+        'ssh_forward_command = ["ssh", "-p", "{ssh_port}", "-N", "-v", "-o", "ExitOnForwardFailure=yes", "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval={server_alive_interval_seconds}", "-o", "ServerAliveCountMax={server_alive_count_max}", "-o", "ConnectTimeout={connect_timeout_seconds}", "-i", "{key_path}", "-R", "{remote_port}:{remote_bind_address}:{local_port}", "{user}@{host}"]\n'
+        'remote_bind_address = "localhost"\n'
+        'agent_socket_env_key = "SSH_AUTH_SOCK"\n'
+        'agent_pid_env_key = "SSH_AGENT_PID"\n'
+        'display_env_key = "DISPLAY"\n'
+        'passphrase_env_key = "PF_KEY_PASSPHRASE"\n'
+        'askpass_env = { SSH_ASKPASS = "{helper_path}", SSH_ASKPASS_REQUIRE = "force" }\n'
+        'askpass_helper_dir_prefix = "pyntara-pf-"\n'
+        'askpass_helper_file_name = "askpass.sh"\n'
+        'askpass_helper_content = "#!/bin/sh\\necho \\"$PF_KEY_PASSPHRASE\\"\\n"\n'
+        "forward_outcome_poll_seconds = 0.2\n"
+        'state_temp_file_suffix = ".tmp"\nstate_json_indent = 2\n'
         "error_priority = 3\n"
         "[dnsproxy_setup]\n"
         'github_repo = "AdguardTeam/dnsproxy"\n'
