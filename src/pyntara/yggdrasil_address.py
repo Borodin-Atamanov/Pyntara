@@ -1,14 +1,15 @@
 """Command: the yggdrasil self address of this machine and its ssh command.
 
-The command asks the running yggdrasil daemon through yggdrasilctl
-getSelf, parses the JSON with the standard library and prints one JSON
-record: the self address, the sshd port and the ssh command that reaches
-the SSH daemon over the overlay. When the live source fails, the saved
-address file written by the yggdrasil_service_setup task is the
-fallback: the record then carries the reason as a note, so a collector
-that keeps the document keeps the error instead of losing it. When
-neither source yields an address, the command exits nonzero with the
-reason and the raw yggdrasilctl output on stderr.
+The command asks the running yggdrasil daemon through the configured
+admin socket call (yggdrasilctl -json getSelf by default), parses the
+JSON with the standard library and prints one JSON record: the self
+address, the sshd port and the ssh command that reaches the SSH daemon
+over the overlay. When the live source fails, the saved address file
+written by the yggdrasil_service_setup task is the fallback: the record
+then carries the reason as a note, so a collector that keeps the document
+keeps the error instead of losing it. When neither source yields an
+address, the command exits nonzero with the reason and the raw output of
+the query on stderr.
 
 The sshd port comes from the single system config the command is given,
 which is the same source the SSH daemon task writes, so the report can
@@ -34,30 +35,37 @@ from pyntara.ssh_access import ssh_command
 from pyntara.yggdrasil import self_address_from_output
 
 
-def _live_self_address() -> tuple[str | None, str]:
-    """The (self address, reason) from yggdrasilctl getSelf.
+def _live_self_address(
+    cfg: Config,
+) -> tuple[str | None, str]:
+    """The (self address, reason) from the configured admin socket call.
 
-    A failed call, a nonzero exit or an unparsable output yields
-    (None, reason) with the raw utility output kept, so the caller can
-    report it as is.
+    The command and the address field come from the
+    [yggdrasil_service_setup] table, which the task uses as well, so the
+    task and the command read the node address the same way. A failed
+    call, a nonzero exit or an unparsable output yields (None, reason)
+    with the raw utility output kept, so the caller can report it as is.
     """
 
+    setup = cfg.yggdrasil_service_setup
     try:
         result = subprocess.run(
-            ["yggdrasilctl", "-json", "getSelf"],
+            list(setup.self_address_command),
             capture_output=True,
             text=True,
             check=False,
         )
     except OSError as exc:
-        return None, f"cannot run yggdrasilctl: {exc}"
+        return None, f"cannot run the self address query: {exc}"
     output = result.stdout
     if result.returncode != 0:
         combined = f"{output}\n{result.stderr}".strip()
-        return None, f"yggdrasilctl exited {result.returncode}: {combined}"
-    address = self_address_from_output(output)
+        return None, f"the self address query exited {result.returncode}: {combined}"
+    address = self_address_from_output(
+        output, setup.admin_output_keys["address"]
+    )
     if address is None:
-        return None, f"cannot parse yggdrasilctl output: {output.strip()}"
+        return None, f"cannot parse the self address output: {output.strip()}"
     return address, ""
 
 
@@ -71,7 +79,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     """
 
     setup = cfg.yggdrasil_service_setup
-    address, reason = _live_self_address()
+    address, reason = _live_self_address(cfg)
     note = ""
     if not address:
         missing = absent_config_keys(setup, ("address_file_path",))

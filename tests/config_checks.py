@@ -4708,6 +4708,42 @@ def _yggdrasil_multicast_field(
     return tuple(result)
 
 
+def _yggdrasil_command_fields(raw: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    """Validate the command arrays of the [yggdrasil_service_setup] table.
+
+    Every command is a non-empty array of non-empty strings, and every
+    placeholder the task fills in must be present, so a mistyped
+    placeholder is caught here instead of raising on the target machine.
+    """
+
+    required_placeholders: dict[str, tuple[str, ...]] = {
+        "installed_version_command": (),
+        "export_key_from_config_command": ("{config_path}",),
+        "generate_config_command": (),
+        "export_key_from_stdin_command": (),
+        "peers_latency_command": (),
+        "self_address_command": (),
+        "journal_connected_query_command": ("{service_unit_name}", "{probe_seconds}"),
+        "service_start_command": ("{service_unit_name}",),
+        "service_restart_command": ("{service_unit_name}",),
+        "service_enable_command": ("{service_unit_name}",),
+        "nmcli_reload_command": (),
+        "nmcli_connection_show_command": ("{connection_name}",),
+        "nmcli_connection_delete_command": ("{connection_name}",),
+        "ip_link_show_command": ("{interface_name}",),
+        "ip_link_delete_command": ("{interface_name}",),
+    }
+    commands: dict[str, tuple[str, ...]] = {}
+    for key, placeholders in required_placeholders.items():
+        name = f"yggdrasil_service_setup.{key}"
+        command = _string_list(raw.get(key), name)
+        for placeholder in placeholders:
+            if not any(placeholder in part for part in command):
+                raise ConfigError(f"{name} must carry the {placeholder} placeholder")
+        commands[key] = command
+    return commands
+
+
 def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     """Validate the [yggdrasil_service_setup] table and build the config.
 
@@ -4723,6 +4759,16 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     string; address_save_retry_base_seconds is positive,
     address_save_retry_multiplier is at least 2 and
     address_save_retry_max_seconds is not below the base.
+
+    asset_name_template carries its version and architecture
+    placeholders and release_tag_prefix is a non-empty string; every
+    command array is non-empty and carries the placeholders the task
+    fills in; nm_unmanaged_conf_body and netplan_interface_marker carry
+    the interface placeholder; the suffixes, the temporary file name
+    parts, line_separator and config_json_indent are values of their
+    types; config_document_keys names every key of the rendered
+    configuration and admin_output_keys every field the task reads from
+    the admin socket output.
     """
 
     if not isinstance(raw, dict):
@@ -4898,6 +4944,101 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
             "yggdrasil_service_setup.netplan_dir_path",
         )
     )
+    asset_name_template = _nonempty_string_field(
+        raw.get("asset_name_template"),
+        "yggdrasil_service_setup.asset_name_template",
+    )
+    for placeholder in ("{version}", "{arch}"):
+        if placeholder not in asset_name_template:
+            raise ConfigError(
+                "yggdrasil_service_setup.asset_name_template must carry the "
+                f"{placeholder} placeholder"
+            )
+    release_tag_prefix = _nonempty_string_field(
+        raw.get("release_tag_prefix"),
+        "yggdrasil_service_setup.release_tag_prefix",
+    )
+    commands = _yggdrasil_command_fields(raw)
+    nm_unmanaged_conf_body = _nonempty_string_field(
+        raw.get("nm_unmanaged_conf_body"),
+        "yggdrasil_service_setup.nm_unmanaged_conf_body",
+    )
+    netplan_interface_marker = _nonempty_string_field(
+        raw.get("netplan_interface_marker"),
+        "yggdrasil_service_setup.netplan_interface_marker",
+    )
+    for key, text in (
+        ("nm_unmanaged_conf_body", nm_unmanaged_conf_body),
+        ("netplan_interface_marker", netplan_interface_marker),
+    ):
+        if "{interface_name}" not in text:
+            raise ConfigError(
+                f"yggdrasil_service_setup.{key} must carry the "
+                "{interface_name} placeholder"
+            )
+    netplan_file_suffix = _nonempty_string_field(
+        raw.get("netplan_file_suffix"),
+        "yggdrasil_service_setup.netplan_file_suffix",
+    )
+    netplan_backup_suffix = _nonempty_string_field(
+        raw.get("netplan_backup_suffix"),
+        "yggdrasil_service_setup.netplan_backup_suffix",
+    )
+    peers_tarball_temp_prefix = _nonempty_string_field(
+        raw.get("peers_tarball_temp_prefix"),
+        "yggdrasil_service_setup.peers_tarball_temp_prefix",
+    )
+    peers_tarball_temp_suffix = _nonempty_string_field(
+        raw.get("peers_tarball_temp_suffix"),
+        "yggdrasil_service_setup.peers_tarball_temp_suffix",
+    )
+    peer_markdown_suffix = _nonempty_string_field(
+        raw.get("peer_markdown_suffix"),
+        "yggdrasil_service_setup.peer_markdown_suffix",
+    )
+    line_separator = _nonempty_string_field(
+        raw.get("line_separator"),
+        "yggdrasil_service_setup.line_separator",
+    )
+    config_json_indent = _int_field(
+        raw.get("config_json_indent"),
+        "yggdrasil_service_setup.config_json_indent",
+    )
+    if config_json_indent < 0:
+        raise ConfigError(
+            "yggdrasil_service_setup.config_json_indent must not be negative"
+        )
+    config_document_keys = _string_map(
+        raw.get("config_document_keys"),
+        "yggdrasil_service_setup.config_document_keys",
+    )
+    for key in (
+        "private_key_path",
+        "admin_listen",
+        "if_name",
+        "if_mtu",
+        "listen",
+        "multicast_interfaces",
+        "multicast_regex",
+        "multicast_beacon",
+        "multicast_listen",
+        "peers",
+    ):
+        if not config_document_keys.get(key):
+            raise ConfigError(
+                "yggdrasil_service_setup.config_document_keys must name the "
+                f"{key} key of the configuration document"
+            )
+    admin_output_keys = _string_map(
+        raw.get("admin_output_keys"),
+        "yggdrasil_service_setup.admin_output_keys",
+    )
+    for key in ("address", "peers", "remote", "latency"):
+        if not admin_output_keys.get(key):
+            raise ConfigError(
+                "yggdrasil_service_setup.admin_output_keys must name the "
+                f"{key} field of the admin socket output"
+            )
     return YggdrasilServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -4934,6 +5075,38 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         nm_unmanaged_conf_path=nm_unmanaged_conf_path,
         nm_unmanaged_conf_file_mode=nm_unmanaged_conf_file_mode,
         netplan_dir_path=netplan_dir_path,
+        asset_name_template=asset_name_template,
+        release_tag_prefix=release_tag_prefix,
+        installed_version_command=commands["installed_version_command"],
+        export_key_from_config_command=commands["export_key_from_config_command"],
+        generate_config_command=commands["generate_config_command"],
+        export_key_from_stdin_command=commands["export_key_from_stdin_command"],
+        peers_latency_command=commands["peers_latency_command"],
+        self_address_command=commands["self_address_command"],
+        journal_connected_query_command=commands[
+            "journal_connected_query_command"
+        ],
+        service_start_command=commands["service_start_command"],
+        service_restart_command=commands["service_restart_command"],
+        service_enable_command=commands["service_enable_command"],
+        nmcli_reload_command=commands["nmcli_reload_command"],
+        nmcli_connection_show_command=commands["nmcli_connection_show_command"],
+        nmcli_connection_delete_command=commands[
+            "nmcli_connection_delete_command"
+        ],
+        ip_link_show_command=commands["ip_link_show_command"],
+        ip_link_delete_command=commands["ip_link_delete_command"],
+        nm_unmanaged_conf_body=nm_unmanaged_conf_body,
+        netplan_interface_marker=netplan_interface_marker,
+        netplan_file_suffix=netplan_file_suffix,
+        netplan_backup_suffix=netplan_backup_suffix,
+        peers_tarball_temp_prefix=peers_tarball_temp_prefix,
+        peers_tarball_temp_suffix=peers_tarball_temp_suffix,
+        peer_markdown_suffix=peer_markdown_suffix,
+        line_separator=line_separator,
+        config_json_indent=config_json_indent,
+        config_document_keys=config_document_keys,
+        admin_output_keys=admin_output_keys,
     )
 
 

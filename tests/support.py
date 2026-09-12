@@ -372,6 +372,8 @@ def make_config(
     vocalinux_download_dir: Path = Path("/var/cache/pyntara/vocalinux"),
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_install_retries: int = 3,
+    yggdrasil_asset_name_template: str = "yggdrasil-{version}-{arch}.deb",
+    yggdrasil_release_tag_prefix: str = "v",
     yggdrasil_config_path: Path = Path("/etc/yggdrasil/yggdrasil.conf"),
     yggdrasil_private_key_path: Path = Path("/etc/yggdrasil/private-key.pem"),
     yggdrasil_listen: tuple[str, ...] = (
@@ -396,6 +398,9 @@ def make_config(
         "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
     ),
     yggdrasil_netplan_dir_path: Path = Path("/etc/netplan"),
+    yggdrasil_config_document_keys: dict[str, str] | None = None,
+    yggdrasil_admin_output_keys: dict[str, str] | None = None,
+    yggdrasil_line_separator: str = "\n",
     tor_torrc_path: Path = Path("/etc/tor/torrc"),
     tor_torrc_dropin_path: Path = Path("/etc/tor/pyntara.conf"),
     tor_torrc_include_path: str = "/etc/tor/pyntara.conf",
@@ -673,6 +678,19 @@ def make_config(
             connection_wait_max_seconds=yggdrasil_connection_wait_max_seconds,
             nm_unmanaged_conf_path=yggdrasil_nm_unmanaged_conf_path,
             netplan_dir_path=yggdrasil_netplan_dir_path,
+            asset_name_template=yggdrasil_asset_name_template,
+            release_tag_prefix=yggdrasil_release_tag_prefix,
+            config_document_keys=(
+                base.yggdrasil_service_setup.config_document_keys
+                if yggdrasil_config_document_keys is None
+                else yggdrasil_config_document_keys
+            ),
+            admin_output_keys=(
+                base.yggdrasil_service_setup.admin_output_keys
+                if yggdrasil_admin_output_keys is None
+                else yggdrasil_admin_output_keys
+            ),
+            line_separator=yggdrasil_line_separator,
         ),
         tor_setup=replace(
             base.tor_setup,

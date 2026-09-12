@@ -77,6 +77,7 @@ def _ctx(
     connection_wait_base_seconds: int = 1,
     connection_wait_multiplier: int = 2,
     connection_wait_max_seconds: int = 1,
+    asset_name_template: str = "yggdrasil-{version}-{arch}.deb",
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -115,6 +116,7 @@ def _ctx(
             yggdrasil_connection_wait_base_seconds=connection_wait_base_seconds,
             yggdrasil_connection_wait_multiplier=connection_wait_multiplier,
             yggdrasil_connection_wait_max_seconds=connection_wait_max_seconds,
+            yggdrasil_asset_name_template=asset_name_template,
             yggdrasil_nm_unmanaged_conf_path=tmp_path
             / "etc"
             / "NetworkManager"
@@ -845,42 +847,93 @@ def test_service_never_active_warns(
     )
 
 
-def test_select_asset_by_architecture() -> None:
-    # The asset name uses the bare version and the dpkg architecture;
-    # the leading v of the tag is stripped before the lookup.
+def test_select_asset_by_architecture(tmp_path: Path) -> None:
+    # The asset name comes from the configured template with the bare
+    # version and the dpkg architecture; the version is the tag without
+    # the configured prefix, and an architecture without an asset of
+    # that name has no candidate.
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     release = json.loads(_release_json())
-    selected = yggdrasil_service_setup._select_asset(release, VERSION, "amd64")
+    assert TAG.removeprefix(cfg.release_tag_prefix) == VERSION
+    selected = yggdrasil_service_setup._select_asset(cfg, release, VERSION, "amd64")
     assert selected == (
-        f"yggdrasil-{VERSION}-amd64.deb",
+        cfg.asset_name_template.format(version=VERSION, arch="amd64"),
         (
             "https://github.com/yggdrasil-network/yggdrasil-go/releases/"
             f"download/{TAG}/yggdrasil-{VERSION}-amd64.deb"
         ),
     )
     assert (
-        yggdrasil_service_setup._select_asset(release, VERSION, "s390x") is None
+        yggdrasil_service_setup._select_asset(cfg, release, VERSION, "s390x")
+        is None
+    )
+
+
+def test_select_asset_follows_the_configured_name_template(
+    tmp_path: Path,
+) -> None:
+    # The asset name is a value of the config: a machine whose release
+    # names its package differently selects it without a code change.
+    ctx = _ctx(tmp_path, asset_name_template="yggdrasil-{version}-{arch}.pkg")
+    cfg = ctx.config.yggdrasil_service_setup
+    release = json.loads(_release_json())
+    assert (
+        yggdrasil_service_setup._select_asset(cfg, release, VERSION, "amd64")
+        is None
     )
 
 
 def test_render_config_fields() -> None:
     # The rendered config carries the key path, the interface settings,
-    # the listeners, the multicast blocks and the peers, and never the
-    # key material.
+    # the listeners, the multicast blocks and the peers under the
+    # configured key names, and never the key material.
     ctx = _ctx(Path("/tmp"))
+    cfg = ctx.config.yggdrasil_service_setup
+    keys = cfg.config_document_keys
     rendered = yggdrasil_service_setup._render_config(
-        ctx.config.yggdrasil_service_setup, ["tcp://1.2.3.4:1234"]
+        cfg, ["tcp://1.2.3.4:1234"]
     )
     data = json.loads(rendered)
-    assert data["PrivateKeyPath"] == str(
-        ctx.config.yggdrasil_service_setup.private_key_path
-    )
-    assert data["IfName"] == "ygg"
-    assert data["IfMTU"] == 65535
-    assert "tls://[::]:0" in data["Listen"]
-    assert data["MulticastInterfaces"][0]["Regex"] == ".*"
-    assert data["MulticastInterfaces"][0]["Beacon"] is True
-    assert data["Peers"] == ["tcp://1.2.3.4:1234"]
+    assert data[keys["private_key_path"]] == str(cfg.private_key_path)
+    assert data[keys["if_name"]] == "ygg"
+    assert data[keys["if_mtu"]] == 65535
+    assert "tls://[::]:0" in data[keys["listen"]]
+    assert data[keys["multicast_interfaces"]][0][keys["multicast_regex"]] == ".*"
+    assert data[keys["multicast_interfaces"]][0][keys["multicast_beacon"]] is True
+    assert data[keys["peers"]] == ["tcp://1.2.3.4:1234"]
     assert "PrivateKey" not in data
+    assert rendered.endswith(cfg.line_separator)
+
+
+def test_render_config_follows_the_configured_key_names(tmp_path: Path) -> None:
+    # The key names, the line separator and the indentation of the
+    # rendered document are config values, and the same names are the
+    # ones the task reads back: a machine whose yggdrasil carries a
+    # different schema needs no code change.
+    keys = {
+        "private_key_path": "key_path",
+        "admin_listen": "admin",
+        "if_name": "ifname",
+        "if_mtu": "mtu",
+        "listen": "listen",
+        "multicast_interfaces": "multicast",
+        "multicast_regex": "regex",
+        "multicast_beacon": "beacon",
+        "multicast_listen": "listen",
+        "peers": "peers",
+    }
+    cfg = make_config(
+        task_data_root=tmp_path,
+        yggdrasil_config_path=tmp_path / "yggdrasil.conf",
+        yggdrasil_config_document_keys=keys,
+        yggdrasil_line_separator="\r\n",
+    ).yggdrasil_service_setup
+    rendered = yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"])
+    assert '"key_path"' in rendered
+    assert '"PrivateKeyPath"' not in rendered
+    assert rendered.endswith("\r\n")
+    cfg.config_path.write_text(rendered, encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers(cfg) is True
 
 
 def test_ensure_private_key_extracts_from_existing_config(
@@ -986,10 +1039,37 @@ def test_journal_connected_addrs_parses_lines(
         "source [::]:36046\n"
     )
     calls = _install_fake(monkeypatch, tmp_path, journal_output=journal)
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     assert yggdrasil_service_setup._journal_connected_addrs(
-        "yggdrasil.service", 30, 10
+        cfg, 30, 10
     ) == {("10.0.0.1", 1001), ("2001:db8::1", 1002)}
     assert any(call[0] == "journalctl" for call in calls)
+
+
+def test_journal_query_follows_the_configured_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The journal query is a config value: its placeholders receive the
+    # configured unit and the probe window in whole seconds.
+    cfg = replace(
+        _ctx(tmp_path).config.yggdrasil_service_setup,
+        journal_connected_query_command=(
+            "journal-reader",
+            "--unit",
+            "{service_unit_name}",
+            "--window",
+            "{probe_seconds}",
+        ),
+    )
+    calls = _install_fake(monkeypatch, tmp_path)
+    assert yggdrasil_service_setup._journal_connected_addrs(cfg, 30.4, 10) == set()
+    assert [
+        "journal-reader",
+        "--unit",
+        "yggdrasil.service",
+        "--window",
+        "30",
+    ] in calls
 
 
 def test_latencies_from_ctl(
@@ -1010,7 +1090,8 @@ def test_latencies_from_ctl(
         _fake_getaddrinfo({"10.0.0.1": "10.0.0.1"}),
     )
     calls = _install_fake(monkeypatch, tmp_path, ctl_peers_json=ctl)
-    assert yggdrasil_service_setup._latencies_from_ctl(10) == {
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    assert yggdrasil_service_setup._latencies_from_ctl(cfg, 10) == {
         ("10.0.0.1", 1001): 5000000.0
     }
     assert any(call[0] == "yggdrasilctl" for call in calls)
@@ -1062,15 +1143,16 @@ def test_installed_version_parsing(
         "pyntara.utils.subprocess.run",
         lambda *a, **k: _FakeProc(0, "Build version: 0.5.14\n"),
     )
-    assert yggdrasil_service_setup._installed_version(10) == "0.5.14"
+    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    assert yggdrasil_service_setup._installed_version(cfg, 10) == "0.5.14"
     monkeypatch.setattr(
         "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(1, "")
     )
-    assert yggdrasil_service_setup._installed_version(10) is None
+    assert yggdrasil_service_setup._installed_version(cfg, 10) is None
     monkeypatch.setattr(
         "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(0, "unknown output")
     )
-    assert yggdrasil_service_setup._installed_version(10) is None
+    assert yggdrasil_service_setup._installed_version(cfg, 10) is None
 
 
 def test_cleanup_leftover_interface_deletes_profile_and_iface(
@@ -1291,7 +1373,7 @@ def test_wait_for_connections_returns_live_count(
     cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     live = {("10.0.0.1", 1001): 1.0, ("10.0.0.2", 1002): 2.0}
     monkeypatch.setattr(
-        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: live
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda cfg, timeout: live
     )
     assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 2
     assert _fake_time == []
@@ -1306,7 +1388,7 @@ def test_wait_for_connections_gives_up_without_peers(
         tmp_path, connection_wait_max_seconds=3
     ).config.yggdrasil_service_setup
     monkeypatch.setattr(
-        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: {}
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda cfg, timeout: {}
     )
     assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 0
     # The helper retried within the budget and then gave up instead of
@@ -1325,8 +1407,10 @@ def test_wait_for_connections_retries_until_peers_appear(
     ).config.yggdrasil_service_setup
     state = {"calls": 0}
 
-    def fake_latencies(timeout: float) -> dict[tuple[str, int], float]:
-        del timeout
+    def fake_latencies(
+        cfg: object, timeout: float
+    ) -> dict[tuple[str, int], float]:
+        del cfg, timeout
         state["calls"] += 1
         if state["calls"] == 1:
             return {}

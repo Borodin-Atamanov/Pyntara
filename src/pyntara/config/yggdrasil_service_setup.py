@@ -52,6 +52,32 @@ class YggdrasilServiceSetupConfig:
     socket is not ready immediately after a restart, so the getSelf
     query is repeated while the total retry budget
     address_save_retry_max_seconds lasts.
+
+    asset_name_template is the name of the release asset the task
+    installs, with {version} and {arch} as its placeholders, and
+    release_tag_prefix the prefix the repository tags carry and the
+    version does not. The commands of the tools the task drives are
+    values of this section as well: installed_version_command,
+    export_key_from_config_command, generate_config_command,
+    export_key_from_stdin_command, peers_latency_command,
+    self_address_command, journal_connected_query_command,
+    service_start_command, service_restart_command,
+    service_enable_command, nmcli_reload_command,
+    nmcli_connection_show_command, nmcli_connection_delete_command,
+    ip_link_show_command and ip_link_delete_command, each carrying the
+    name it acts on as a {placeholder}. nm_unmanaged_conf_body is the
+    body of the NetworkManager drop-in, netplan_interface_marker the
+    line that identifies the netplan YAML of the yggdrasil connection,
+    netplan_file_suffix and netplan_backup_suffix the suffixes of that
+    file and of its backup, peers_tarball_temp_prefix and
+    peers_tarball_temp_suffix the name of the temporary tarball,
+    peer_markdown_suffix the suffix of the peer list files,
+    line_separator the separator of the lines the task writes and
+    config_json_indent the indentation of the rendered configuration.
+    config_document_keys names every key of the rendered yggdrasil
+    configuration and admin_output_keys every field of the admin socket
+    answer, so the schema of both documents is visible in the config
+    instead of the task module.
     """
 
     github_repo: str
@@ -86,3 +112,31 @@ class YggdrasilServiceSetupConfig:
     nm_unmanaged_conf_path: Path
     nm_unmanaged_conf_file_mode: int
     netplan_dir_path: Path
+    asset_name_template: str
+    release_tag_prefix: str
+    installed_version_command: tuple[str, ...]
+    export_key_from_config_command: tuple[str, ...]
+    generate_config_command: tuple[str, ...]
+    export_key_from_stdin_command: tuple[str, ...]
+    peers_latency_command: tuple[str, ...]
+    self_address_command: tuple[str, ...]
+    journal_connected_query_command: tuple[str, ...]
+    service_start_command: tuple[str, ...]
+    service_restart_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]
+    nmcli_reload_command: tuple[str, ...]
+    nmcli_connection_show_command: tuple[str, ...]
+    nmcli_connection_delete_command: tuple[str, ...]
+    ip_link_show_command: tuple[str, ...]
+    ip_link_delete_command: tuple[str, ...]
+    nm_unmanaged_conf_body: str
+    netplan_interface_marker: str
+    netplan_file_suffix: str
+    netplan_backup_suffix: str
+    peers_tarball_temp_prefix: str
+    peers_tarball_temp_suffix: str
+    peer_markdown_suffix: str
+    line_separator: str
+    config_json_indent: int
+    config_document_keys: dict[str, str]
+    admin_output_keys: dict[str, str]

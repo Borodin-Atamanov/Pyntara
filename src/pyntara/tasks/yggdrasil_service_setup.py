@@ -12,12 +12,13 @@ add a failure point without protecting the install.
 
 The task owns the configuration and the node identity. The package
 postinst generates /etc/yggdrasil/yggdrasil.conf with a fresh key pair;
-the task extracts the key once into a separate PEM file referenced by
-PrivateKeyPath, so rewriting the configuration never changes the node
-identity. The configuration is rendered as JSON from config.toml: the
-TUN interface name and MTU, the admin socket, the inbound listeners
-(tcp, tls, quic and ws on all stacks with random ports) and the multicast
-discovery blocks.
+the task extracts the key once into a separate PEM file referenced by the
+configured private key path field, so rewriting the configuration never
+changes the node identity. The configuration is rendered as JSON from
+config.toml, and every key name of the document comes from
+config_document_keys: the TUN interface name and MTU, the admin socket,
+the inbound listeners (tcp, tls, quic and ws on all stacks with random
+ports) and the multicast discovery blocks.
 
 The peer list comes from the official public-peers repository: the task
 downloads the repository tarball, parses every markdown file into URI
@@ -81,12 +82,13 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
 )
 from pyntara.yggdrasil import self_address_from_output
 
 # The yggdrasil version string from yggdrasil -version, e.g. Build
-# version: 0.5.14; the release tag carries a leading v, the asset and the
-# version output do not.
+# version: 0.5.14; the release tag carries a configured prefix, the asset
+# and the version output do not.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 # One peer URI inside a backtick line of the public-peers markdown files.
@@ -106,24 +108,25 @@ CONNECTED_PATTERN = re.compile(
 
 
 def _select_asset(
+    cfg: YggdrasilServiceSetupConfig,
     release: dict[str, object],
     version: str,
     arch: str,
 ) -> tuple[str, str] | None:
     """The (name, url) of the .deb asset for this machine, or None.
 
-    The asset name is yggdrasil-{version}-{arch}.deb; the architecture
+    The asset name comes from the configured template; the architecture
     part matches the dpkg architecture, so no codename-specific fallback
     is needed.
     """
 
-    name = f"yggdrasil-{version}-{arch}.deb"
+    name = cfg.asset_name_template.format(version=version, arch=arch)
     url = dict(asset_name_urls(release)).get(name)
     return (name, url) if url else None
 
 
-def _installed_version(timeout: float) -> str | None:
-    """The installed yggdrasil version from yggdrasil -version, or None.
+def _installed_version(cfg: YggdrasilServiceSetupConfig, timeout: float) -> str | None:
+    """The installed yggdrasil version from the configured version call, or None.
 
     A missing binary, a nonzero exit or a hang means yggdrasil is not
     installed: the task treats the version as absent and reinstalls it.
@@ -134,7 +137,7 @@ def _installed_version(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["yggdrasil", "-version"],
+            list(cfg.installed_version_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -216,27 +219,34 @@ def _cleanup_downloads(download_dir: Path, name: str) -> None:
 def _render_config(
     cfg: YggdrasilServiceSetupConfig, peers: list[str]
 ) -> str:
-    """Render the yggdrasil configuration JSON with the given peers.
+    """Render the yggdrasil configuration document with the given peers.
 
     The key lives in the separate PEM file, so the rendered document
-    carries PrivateKeyPath instead of the key material. Keys are emitted
-    in a fixed order, so the rendered file, the idempotency comparison
-    and the written configuration share one representation.
+    carries the configured private key path instead of the key material.
+    The key names come from the config, so the schema of the document is
+    visible there; keys are emitted in a fixed order, so the rendered
+    file, the idempotency comparison and the written configuration share
+    one representation.
     """
 
+    keys = cfg.config_document_keys
     data = {
-        "PrivateKeyPath": str(cfg.private_key_path),
-        "AdminListen": cfg.admin_listen,
-        "IfName": cfg.if_name,
-        "IfMTU": cfg.if_mtu,
-        "Listen": list(cfg.listen),
-        "MulticastInterfaces": [
-            {"Regex": entry.regex, "Beacon": entry.beacon, "Listen": entry.listen}
+        keys["private_key_path"]: str(cfg.private_key_path),
+        keys["admin_listen"]: cfg.admin_listen,
+        keys["if_name"]: cfg.if_name,
+        keys["if_mtu"]: cfg.if_mtu,
+        keys["listen"]: list(cfg.listen),
+        keys["multicast_interfaces"]: [
+            {
+                keys["multicast_regex"]: entry.regex,
+                keys["multicast_beacon"]: entry.beacon,
+                keys["multicast_listen"]: entry.listen,
+            }
             for entry in cfg.multicast_interfaces
         ],
-        "Peers": list(peers),
+        keys["peers"]: list(peers),
     }
-    return json.dumps(data, indent=2) + "\n"
+    return json.dumps(data, indent=cfg.config_json_indent) + cfg.line_separator
 
 
 def _ensure_private_key(
@@ -249,21 +259,18 @@ def _ensure_private_key(
 
     When the key file exists, nothing happens: the identity is kept.
     Otherwise the key is extracted from the existing package-generated
-    configuration with yggdrasil -useconffile -exportkey, or generated
-    through -genconf piped into -useconf -exportkey when the
-    configuration is absent. Raises RuntimeError when the export fails.
+    configuration, or generated from a fresh document when the
+    configuration is absent. Raises RuntimeError when an export fails.
     """
 
     if cfg.private_key_path.is_file():
         return
     if cfg.config_path.is_file():
         result = run_command(
-            [
-                "yggdrasil",
-                "-useconffile",
-                str(cfg.config_path),
-                "-exportkey",
-            ],
+            substituted_command(
+                cfg.export_key_from_config_command,
+                {"config_path": str(cfg.config_path)},
+            ),
             check=False,
             capture=True,
             timeout=timeout,
@@ -273,7 +280,7 @@ def _ensure_private_key(
         key_text = result.stdout
     else:
         generated = run_command(
-            ["yggdrasil", "-genconf", "-json"],
+            list(cfg.generate_config_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -283,7 +290,7 @@ def _ensure_private_key(
                 f"cannot generate config: exit {generated.returncode}"
             )
         exported = run_command(
-            ["yggdrasil", "-useconf", "-exportkey"],
+            list(cfg.export_key_from_stdin_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -327,7 +334,7 @@ def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
         return False
     if not isinstance(data, dict):
         return False
-    peers = data.get("Peers")
+    peers = data.get(cfg.config_document_keys["peers"])
     return isinstance(peers, list) and len(peers) > 0
 
 
@@ -374,7 +381,10 @@ def _download_peers(
     Raises RuntimeError when the download fails or yields no peers.
     """
 
-    tmp_fd, tmp_name = tempfile.mkstemp(prefix="yggdrasil-peers-", suffix=".tar.gz")
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix=cfg.peers_tarball_temp_prefix,
+        suffix=cfg.peers_tarball_temp_suffix,
+    )
     os.close(tmp_fd)
     try:
         run_command(
@@ -386,7 +396,8 @@ def _download_peers(
                 members = [
                     member
                     for member in archive.getmembers()
-                    if member.isfile() and member.name.endswith(".md")
+                    if member.isfile()
+                    and member.name.endswith(cfg.peer_markdown_suffix)
                 ]
                 peers: list[str] = []
                 for member in members:
@@ -408,7 +419,9 @@ def _download_peers(
     if not peers:
         raise RuntimeError("peers list is empty")
     cfg.peers_full_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.peers_full_path.write_text("\n".join(peers) + "\n", encoding="utf-8")
+    cfg.peers_full_path.write_text(
+        cfg.line_separator.join(peers) + cfg.line_separator, encoding="utf-8"
+    )
     return peers
 
 
@@ -459,25 +472,23 @@ def _resolve_uri_addrs(uri: str) -> list[tuple[str, int]]:
 
 
 def _journal_connected_addrs(
-    service_unit_name: str, probe_seconds: float, timeout: float
+    cfg: YggdrasilServiceSetupConfig, probe_seconds: float, timeout: float
 ) -> set[tuple[str, int]]:
     """The (ip, port) pairs of Connected lines in the recent journal.
 
-    Reads the yggdrasil journal for the last probe window; a failed
-    journalctl call yields an empty set, so the batch is simply treated
-    as having connected nothing.
+    Reads the configured journal query for the last probe window; a
+    failed call yields an empty set, so the batch is simply treated as
+    having connected nothing.
     """
 
     result = run_command(
-        [
-            "journalctl",
-            "-u",
-            service_unit_name,
-            "--since",
-            f"-{int(probe_seconds)}s",
-            "--no-pager",
-            "--output=short-iso",
-        ],
+        substituted_command(
+            cfg.journal_connected_query_command,
+            {
+                "service_unit_name": cfg.service_unit_name,
+                "probe_seconds": str(int(probe_seconds)),
+            },
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -492,8 +503,10 @@ def _journal_connected_addrs(
     return addrs
 
 
-def _latencies_from_ctl(timeout: float) -> dict[tuple[str, int], float]:
-    """The peer (ip, port) to latency map from yggdrasilctl getPeers.
+def _latencies_from_ctl(
+    cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> dict[tuple[str, int], float]:
+    """The peer (ip, port) to latency map from the configured peers call.
 
     The admin socket reports the latency of each connected peer in
     nanoseconds; only entries whose remote host parses as an IP are kept,
@@ -502,9 +515,10 @@ def _latencies_from_ctl(timeout: float) -> dict[tuple[str, int], float]:
     batch order.
     """
 
+    keys = cfg.admin_output_keys
     try:
         result = run_command(
-            ["yggdrasilctl", "-json", "getPeers"],
+            list(cfg.peers_latency_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -517,18 +531,18 @@ def _latencies_from_ctl(timeout: float) -> dict[tuple[str, int], float]:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
         return {}
-    entries = data.get("peers") if isinstance(data, dict) else None
+    entries = data.get(keys["peers"]) if isinstance(data, dict) else None
     if not isinstance(entries, list):
         return {}
     latencies: dict[tuple[str, int], float] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        remote = entry.get("remote")
+        remote = entry.get(keys["remote"])
         if not isinstance(remote, str):
             continue
         ip_port = _resolve_uri_addrs(remote)
-        latency = entry.get("latency")
+        latency = entry.get(keys["latency"])
         if not isinstance(latency, (int, float)) or not ip_port:
             continue
         for addr in ip_port:
@@ -576,7 +590,7 @@ def _ensure_interface_unmanaged(
     keeps the warning.
     """
 
-    body = "[keyfile]\nunmanaged-devices=interface-name:" + cfg.if_name + "\n"
+    body = cfg.nm_unmanaged_conf_body.format(interface_name=cfg.if_name)
     changed = False
     try:
         if (
@@ -599,7 +613,7 @@ def _ensure_interface_unmanaged(
     if changed:
         try:
             run_command(
-                ["nmcli", "general", "reload"],
+                list(cfg.nmcli_reload_command),
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -632,7 +646,10 @@ def _cleanup_leftover_interface(
     try:
         exists = (
             run_command(
-                ["ip", "link", "show", "dev", cfg.if_name],
+                substituted_command(
+                    cfg.ip_link_show_command,
+                    {"interface_name": cfg.if_name},
+                ),
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -652,7 +669,10 @@ def _cleanup_leftover_interface(
     try:
         profile_exists = (
             run_command(
-                ["nmcli", "connection", "show", cfg.if_name],
+                substituted_command(
+                    cfg.nmcli_connection_show_command,
+                    {"connection_name": cfg.if_name},
+                ),
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -661,7 +681,10 @@ def _cleanup_leftover_interface(
         )
         if profile_exists:
             run_command(
-                ["nmcli", "connection", "delete", cfg.if_name],
+                substituted_command(
+                    cfg.nmcli_connection_delete_command,
+                    {"connection_name": cfg.if_name},
+                ),
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -671,7 +694,10 @@ def _cleanup_leftover_interface(
         pass
     try:
         run_command(
-            ["ip", "link", "del", cfg.if_name],
+            substituted_command(
+                cfg.ip_link_delete_command,
+                {"interface_name": cfg.if_name},
+            ),
             check=False,
             capture=True,
             timeout=timeout,
@@ -680,15 +706,19 @@ def _cleanup_leftover_interface(
         pass
     try:
         if cfg.netplan_dir_path.is_dir():
-            marker = 'connection.interface-name: "' + cfg.if_name + '"'
-            for candidate in cfg.netplan_dir_path.glob("*.yaml"):
+            marker = cfg.netplan_interface_marker.format(interface_name=cfg.if_name)
+            for candidate in cfg.netplan_dir_path.glob(
+                f"*{cfg.netplan_file_suffix}"
+            ):
                 try:
                     text = candidate.read_text(encoding="utf-8")
                 except OSError:
                     continue
                 if marker not in text:
                     continue
-                backup = candidate.with_name(candidate.name + ".bak")
+                backup = candidate.with_name(
+                    candidate.name + cfg.netplan_backup_suffix
+                )
                 candidate.replace(backup)
                 _log(
                     f"moved netplan profile {candidate.name} for interface "
@@ -707,11 +737,21 @@ def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
 
     if service_is_active(cfg.service_unit_name, timeout):
         run_command(
-            ["systemctl", "restart", cfg.service_unit_name], timeout=timeout
+            substituted_command(
+                cfg.service_restart_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
+            timeout=timeout,
         )
         return
     _cleanup_leftover_interface(cfg, timeout)
-    run_command(["systemctl", "start", cfg.service_unit_name], timeout=timeout)
+    run_command(
+        substituted_command(
+            cfg.service_start_command,
+            {"service_unit_name": cfg.service_unit_name},
+        ),
+        timeout=timeout,
+    )
 
 
 def _save_self_address(
@@ -743,22 +783,26 @@ def _save_self_address(
         address: str | None = None
         try:
             result = run_command(
-                ["yggdrasilctl", "-json", "getSelf"],
+                list(cfg.self_address_command),
                 check=False,
                 capture=True,
                 timeout=timeout,
             )
             if result.returncode != 0:
-                reason = f"yggdrasilctl getSelf exited {result.returncode}"
+                reason = f"the self address query exited {result.returncode}"
             else:
-                address = self_address_from_output(result.stdout)
+                address = self_address_from_output(
+                    result.stdout, cfg.admin_output_keys["address"]
+                )
                 if address is None:
-                    reason = "yggdrasilctl getSelf output has no self address"
+                    reason = "the self address query reported no address"
         except (subprocess.TimeoutExpired, OSError):
-            reason = "yggdrasilctl getSelf unavailable"
+            reason = "the self address query is unavailable"
         if address is not None:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
-            cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
+            cfg.address_file_path.write_text(
+                address + cfg.line_separator, encoding="utf-8"
+            )
             cfg.address_file_path.chmod(cfg.address_file_mode)
             apply_owner(cfg.address_file_path, owner_uid, owner_gid)
             _log(f"saving self address to {cfg.address_file_path}: {address}")
@@ -799,7 +843,7 @@ def _wait_for_connections(
     attempts = 0
     while True:
         attempts += 1
-        live = _latencies_from_ctl(timeout)
+        live = _latencies_from_ctl(cfg, timeout)
         if live:
             return len(live)
         remaining = deadline - time.monotonic()
@@ -867,10 +911,10 @@ def task(ctx: Context) -> TaskResult:
     except RuntimeError as exc:
         warnings.append(str(exc))
         return done("yggdrasil not configured", False)
-    version = tag.removeprefix("v")
+    version = tag.removeprefix(cfg.release_tag_prefix)
     _log(f"checking latest release: {version}")
 
-    selected = _select_asset(release, version, arch)
+    selected = _select_asset(cfg, release, version, arch)
     if selected is None:
         warnings.append(
             f"release {version} has no yggdrasil-{version}-{arch}.deb asset"
@@ -879,7 +923,7 @@ def task(ctx: Context) -> TaskResult:
     asset_name, asset_url = selected
     _log(f"selected asset: {asset_name}")
 
-    installed_version = _installed_version(timeout)
+    installed_version = _installed_version(cfg, timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
     enabled = service_is_enabled(cfg.service_unit_name, timeout)
@@ -902,7 +946,7 @@ def task(ctx: Context) -> TaskResult:
     # socket reports at least one connected peer. A config with peers is
     # not enough: the peers may have gone stale, so the task must not
     # treat a dead node as already configured.
-    has_connections = bool(_latencies_from_ctl(timeout))
+    has_connections = bool(_latencies_from_ctl(cfg, timeout))
     _log(
         "checking live connections: "
         f"{'present' if has_connections else 'none'}"
@@ -969,7 +1013,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
         try:
             run_command(
-                ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_enable_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl enable failed: {exc}")
@@ -1005,7 +1053,11 @@ def task(ctx: Context) -> TaskResult:
             _cleanup_leftover_interface(cfg, timeout)
             try:
                 run_command(
-                    ["systemctl", "start", cfg.service_unit_name], timeout=timeout
+                    substituted_command(
+                        cfg.service_start_command,
+                        {"service_unit_name": cfg.service_unit_name},
+                    ),
+                    timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 warnings.append(f"systemctl start failed: {exc}")
@@ -1021,7 +1073,7 @@ def task(ctx: Context) -> TaskResult:
                 "after start"
             )
             return done("yggdrasil node not running", changed)
-        if not _latencies_from_ctl(timeout):
+        if not _latencies_from_ctl(cfg, timeout):
             warnings.append(
                 f"service {cfg.service_unit_name} is active but has no "
                 "connections; rerun in force mode to re-select peers"
@@ -1139,7 +1191,7 @@ def task(ctx: Context) -> TaskResult:
         )
         time.sleep(cfg.peer_probe_timeout_seconds)
         connected = _journal_connected_addrs(
-            cfg.service_unit_name, cfg.peer_probe_timeout_seconds, timeout
+            cfg, cfg.peer_probe_timeout_seconds, timeout
         )
         _log(f"journal shows {len(connected)} connected peer address(es)")
         working: list[str] = []
@@ -1152,7 +1204,7 @@ def task(ctx: Context) -> TaskResult:
             f"peers connected"
         )
         if len(working) >= cfg.peer_target_count:
-            latencies = _latencies_from_ctl(timeout)
+            latencies = _latencies_from_ctl(cfg, timeout)
             _log(f"read latencies for {len(latencies)} peer address(es)")
             best_peers = _pick_best_peers(
                 working, latencies, cfg.peer_target_count

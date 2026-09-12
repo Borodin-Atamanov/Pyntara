@@ -14,6 +14,13 @@ service_unit_name = "yggdrasil.service"
 # Retry attempts after a failed package install; total attempts are
 # retries plus one.
 install_retries = 3
+# Name template of the release asset the task installs: {version} is the
+# release tag without its prefix and {arch} the dpkg architecture.
+asset_name_template = "yggdrasil-{version}-{arch}.deb"
+# Prefix the release tag of the repository carries and the version does
+# not, so the version used in the asset name and in the idempotency
+# comparison is the tag without this prefix.
+release_tag_prefix = "v"
 # Main configuration file the task writes. It must match the
 # DefaultConfigFile embedded in the package, otherwise the values are
 # ignored.
@@ -98,6 +105,113 @@ nm_unmanaged_conf_path = "/etc/NetworkManager/conf.d/yggdrasil-unmanaged.conf"
 # moved here aside as a .bak when the service is cleaned up.
 # (docs/spec/yggdrasil-service.md).
 netplan_dir_path = "/etc/netplan"
+# Command that reports the installed version; the version triple is
+# searched in its output with a regular expression (spec Exceptions).
+installed_version_command = ["yggdrasil", "-version"]
+# Command that exports the node private key from the package-generated
+# configuration; {config_path} is the configured configuration file.
+export_key_from_config_command = [
+    "yggdrasil",
+    "-useconffile",
+    "{config_path}",
+    "-exportkey",
+]
+# Command that generates a fresh configuration document on stdout, used
+# when neither the key file nor the package configuration exists.
+generate_config_command = ["yggdrasil", "-genconf", "-json"]
+# Command that exports the key from a configuration read on stdin, so the
+# freshly generated document is exported without touching the disk.
+export_key_from_stdin_command = ["yggdrasil", "-useconf", "-exportkey"]
+# Command that reports every connected peer with its latency through the
+# admin socket; the -json flag is part of the call, because the shared
+# parser reads JSON and the admin socket prints a table without it.
+peers_latency_command = ["yggdrasilctl", "-json", "getPeers"]
+# Command that reports the node self address through the admin socket.
+# The deployed address command runs this same call, so the node address
+# is read the same way by the task and by the collector.
+self_address_command = ["yggdrasilctl", "-json", "getSelf"]
+# Journal query of one probe window: the unit, the window of the last
+# {probe_seconds} seconds and a timestamp format a machine can compare.
+journal_connected_query_command = [
+    "journalctl",
+    "-u",
+    "{service_unit_name}",
+    "--since",
+    "-{probe_seconds}s",
+    "--no-pager",
+    "--output=short-iso",
+]
+# systemctl calls of the task, each carrying the unit name as its
+# placeholder.
+service_start_command = ["systemctl", "start", "{service_unit_name}"]
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
+service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+# NetworkManager and iproute2 calls of the unmanaged rule and of the
+# leftover interface cleanup, each carrying the name it acts on.
+nmcli_reload_command = ["nmcli", "general", "reload"]
+nmcli_connection_show_command = [
+    "nmcli",
+    "connection",
+    "show",
+    "{connection_name}",
+]
+nmcli_connection_delete_command = [
+    "nmcli",
+    "connection",
+    "delete",
+    "{connection_name}",
+]
+ip_link_show_command = ["ip", "link", "show", "dev", "{interface_name}"]
+ip_link_delete_command = ["ip", "link", "del", "{interface_name}"]
+# Body of the NetworkManager drop-in that marks the yggdrasil interface
+# as unmanaged, so NetworkManager never assumes the device and no task
+# can persist an assumed profile for it; {interface_name} is the
+# configured interface name.
+nm_unmanaged_conf_body = "[keyfile]\nunmanaged-devices=interface-name:{interface_name}\n"
+# Line a netplan YAML carries for the yggdrasil connection; the file that
+# holds it is the one that would recreate the leftover interface.
+netplan_interface_marker = 'connection.interface-name: "{interface_name}"'
+# Suffix of the netplan YAML files the task inspects in netplan_dir_path.
+netplan_file_suffix = ".yaml"
+# Suffix a netplan profile is moved aside with, so netplan stops reading
+# it and cannot regenerate the deleted connection at the next boot.
+netplan_backup_suffix = ".bak"
+# Prefix and suffix of the temporary file the peer tarball is downloaded
+# into before it is unpacked.
+peers_tarball_temp_prefix = "yggdrasil-peers-"
+peers_tarball_temp_suffix = ".tar.gz"
+# Suffix of the markdown files of the public-peers repository that carry
+# the peer URIs.
+peer_markdown_suffix = ".md"
+# Separator of the lines of the text files the task writes, so the saved
+# peer list and the saved address file carry one line each and no file
+# ends without a final separator.
+line_separator = "\n"
+# Indentation of the JSON configuration document the task renders, in
+# spaces; the rendered file and the comparison that decides whether it
+# must be rewritten share it.
+config_json_indent = 2
+# Key names of the yggdrasil configuration document the task renders and
+# reads back. The schema belongs to yggdrasil, so it is visible here
+# instead of hidden in the task module (docs/spec/yggdrasil-service.md).
+[yggdrasil_service_setup.config_document_keys]
+private_key_path = "PrivateKeyPath"
+admin_listen = "AdminListen"
+if_name = "IfName"
+if_mtu = "IfMTU"
+listen = "Listen"
+multicast_interfaces = "MulticastInterfaces"
+multicast_regex = "Regex"
+multicast_beacon = "Beacon"
+multicast_listen = "Listen"
+peers = "Peers"
+# Field names of the JSON document the admin socket answers with, shared
+# by the task and by the deployed address command.
+[yggdrasil_service_setup.admin_output_keys]
+address = "address"
+peers = "peers"
+remote = "remote"
+latency = "latency"
 # Multicast peer discovery: regex of interface names, beacon (advertise
 # presence) and listen (connect to discovered neighbours). One block
 # matching every interface with both switches covers the local network.
