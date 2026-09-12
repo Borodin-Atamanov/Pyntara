@@ -130,6 +130,16 @@ in the code is a permission the reader of the config cannot see, so no octal
 literal lives in a module under src/ and the suite refuses one
 (tests/test_config_coverage.py, test_no_module_applies_a_literal_file_mode).
 
+The rule of this document is not left to attention: tests/test_config_value_guard.py
+reads the modules of the package and refuses a value of a listed type written in
+code. It recognises a module level constant of a value, a command argv written as
+a list literal, an absolute path literal outside the kernel and device prefixes of
+the Exceptions section, and a regular expression that two or more modules share.
+Each shape carries the allowlist of the values that are still in code, documented
+either as an exception or as the work of the migration, and the comparison is
+symmetric: a new value fails the suite, and an allowlist entry whose value has
+moved into the config fails it as well, so the lists can only shrink.
+
 ## Exceptions
 
 A value of one of these types never goes into the config.
