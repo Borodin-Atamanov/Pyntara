@@ -84,3 +84,6 @@ shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x020000
 # running daemon; it ships under task_data/ of the clone and is passed
 # to the interpreter with the hotkey payload as its argument.
 apply_hotkeys_script_file_name = "apply_hotkeys.py"
+# Prefix that runs a command as the desktop user, so the task reaches the
+# session files the user owns; {username} is the account of the machine.
+runuser_command = ["runuser", "-u", "{username}", "--"]

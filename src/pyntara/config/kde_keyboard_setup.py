@@ -64,3 +64,4 @@ class KdeKeyboardSetupConfig:
     layout_switcher_component_friendly: str
     shortcut_modifier_bits: dict[str, int]
     apply_hotkeys_script_file_name: str
+    runuser_command: tuple[str, ...]

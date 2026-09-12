@@ -128,6 +128,7 @@ def base_config() -> str:
         'layout_switcher_component_friendly = "Keyboard Layout Switcher"\n'
         'shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }\n'
         'apply_hotkeys_script_file_name = "apply_hotkeys.py"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
         '[kde_settings]\n'
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
@@ -187,6 +188,7 @@ def base_config() -> str:
         'user_dirs = { "XDG_DOCUMENTS_DIR" = "$HOME/Downloads", "XDG_MUSIC_DIR" = "$HOME/Downloads", "XDG_PICTURES_DIR" = "$HOME/Downloads", "XDG_PUBLICSHARE_DIR" = "$HOME/Downloads", "XDG_TEMPLATES_DIR" = "$HOME/Downloads", "XDG_VIDEOS_DIR" = "$HOME/Downloads" }\n'
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
         'look_and_feel_light = "org.kubuntulight.desktop"\n'
         "automatic_look_and_feel = true\n"
         'cursor_theme = "Oxygen_Yellow"\n'
@@ -712,6 +714,7 @@ def base_config() -> str:
         'mount_service_unit_name = "mount_chrome_user_dir.service"\n'
         "cdp_port = 19222\n"
         'cdp_address = "127.0.0.1"\nfile_mode = "0644"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
         "[playwright_setup]\n"
         'username = "i"\n'
         'home_dir = "/home/i"\n'
@@ -750,6 +753,7 @@ def base_config() -> str:
         "package_status_timeout_seconds = 30\n"
         "package_install_retries = 3\n"
         'user_file_mode = "0644"\nexecutable_file_mode = "0755"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

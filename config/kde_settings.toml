@@ -173,6 +173,10 @@ konsole_profile_file_name = "Pyntara.profile"
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.
+# Prefix that runs a command as the desktop user, so the task reaches the
+# session files the user owns; {username} is the account of the machine.
+runuser_command = ["runuser", "-u", "{username}", "--"]
+
 [kde_settings.user_dirs]
 XDG_DOCUMENTS_DIR = "$HOME/Downloads"
 XDG_MUSIC_DIR = "$HOME/Downloads"

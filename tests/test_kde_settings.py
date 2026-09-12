@@ -1996,3 +1996,15 @@ def test_free_script_hotkeys_release_failure_is_warning(
     assert changed is True
     assert writes
     assert any("release" in warning for warning in warnings)
+
+
+def test_user_command_prefix_comes_from_the_config() -> None:
+    # The wrapper that runs a command as the desktop user is a config value:
+    # another wrapper in the section is the argv the task builds.
+    cfg = replace(
+        make_config().kde_settings,
+        runuser_command=("sudo", "-u", "{username}", "--"),
+    )
+    assert task_module._as_user_command(
+        cfg, ["kwriteconfig6", "--file", "kwinrc"]
+    ) == ["sudo", "-u", cfg.username, "--", "kwriteconfig6", "--file", "kwinrc"]

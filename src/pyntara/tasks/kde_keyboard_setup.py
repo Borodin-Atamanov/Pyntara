@@ -37,6 +37,7 @@ from pyntara.utils import (
     package_is_installed,
     run_command,
     session_bus_address,
+    substituted_command,
     task_data_dir,
     trim_whitespace,
 )
@@ -48,9 +49,16 @@ from pyntara.utils import (
 
 
 def _as_user_command(cfg: KdeKeyboardSetupConfig, command: list[str]) -> list[str]:
-    """Prefix a command with runuser so it runs as the target user."""
+    """Prefix a command with the configured wrapper of the target user.
 
-    return ["runuser", "-u", cfg.username, "--", *command]
+    The wrapper is a config value of the section, so a machine whose
+    desktop user is reached another way is a config change.
+    """
+
+    return [
+        *substituted_command(cfg.runuser_command, {"username": cfg.username}),
+        *command,
+    ]
 
 
 def _home_env(cfg: KdeKeyboardSetupConfig) -> dict[str, str]:

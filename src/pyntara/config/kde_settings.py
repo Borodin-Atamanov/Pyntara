@@ -153,6 +153,7 @@ class KdeSettingsConfig:
     desktop_ids_script_file_name: str
     kwin_scripts_dir_name: str
     konsole_profile_file_name: str
+    runuser_command: tuple[str, ...]
     places_hidden: tuple[str, ...] = ()
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

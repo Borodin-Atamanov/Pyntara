@@ -581,3 +581,15 @@ def test_unsupported_shortcut_is_written_not_applied_live(
         if "kglobalshortcutsrc" in " ".join(command)
     ]
     assert any(SPANISH_ACTION in " ".join(command) for command in hotkey_writes)
+
+
+def test_user_command_prefix_comes_from_the_config() -> None:
+    # The wrapper that runs a command as the desktop user is a config value:
+    # another wrapper in the section is the argv the task builds.
+    cfg = replace(
+        make_config().kde_keyboard_setup,
+        runuser_command=("sudo", "-u", "{username}", "--"),
+    )
+    assert task_module._as_user_command(
+        cfg, ["kreadconfig6", "--file", "kxkbrc"]
+    ) == ["sudo", "-u", cfg.username, "--", "kreadconfig6", "--file", "kxkbrc"]

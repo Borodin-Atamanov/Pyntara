@@ -853,3 +853,15 @@ def test_sync_leaves_current_repository_alone(
     assert not changed
     assert error is None
     assert not any("reset" in call for call in calls)
+
+
+def test_user_command_prefix_comes_from_the_config() -> None:
+    # The wrapper that runs a command as the desktop user is a config value:
+    # another wrapper in the section is the argv the task builds.
+    cfg = replace(
+        make_config().chrome_setup,
+        runuser_command=("sudo", "-u", "{username}"),
+    )
+    assert chrome_setup._as_user_command(
+        cfg, ["kwriteconfig6", "--file", "plasmashellrc"]
+    ) == ["sudo", "-u", cfg.username, "kwriteconfig6", "--file", "plasmashellrc"]

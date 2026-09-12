@@ -118,3 +118,6 @@ mount_unit_template_file_name = "mount_chrome_user_dir.service"
 cdp_port = 19222
 cdp_address = "127.0.0.1"
 file_mode = "0644"
+# Prefix that runs a command as the desktop user, so the task reaches the
+# session files the user owns; {username} is the account of the machine.
+runuser_command = ["runuser", "-u", "{username}", "--"]

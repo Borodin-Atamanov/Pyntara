@@ -413,3 +413,23 @@ def test_release_download_url_comes_from_the_config() -> None:
     assert url == (
         "https://mirror.example/Owner/App/v1.2.3/App-1.2.3-x86_64.AppImage"
     )
+
+
+def test_user_command_prefix_comes_from_the_config() -> None:
+    # The wrapper that runs a command as the target user is a config value:
+    # another wrapper in the section is the argv the task builds.
+    cfg = replace(
+        make_config().vocalinux_setup,
+        runuser_command=("sudo", "-u", "{username}", "--"),
+    )
+    assert task_module._as_user_command(
+        cfg, ["kwriteconfig6", "--file", "kglobalshortcutsrc"]
+    ) == [
+        "sudo",
+        "-u",
+        cfg.username,
+        "--",
+        "kwriteconfig6",
+        "--file",
+        "kglobalshortcutsrc",
+    ]

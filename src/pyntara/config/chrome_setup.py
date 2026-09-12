@@ -88,3 +88,4 @@ class ChromeSetupConfig:
     cdp_port: int
     cdp_address: str
     file_mode: int
+    runuser_command: tuple[str, ...]

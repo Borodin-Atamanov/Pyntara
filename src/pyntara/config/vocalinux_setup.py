@@ -62,3 +62,4 @@ class VocalinuxSetupConfig:
     package_install_retries: int
     user_file_mode: int
     executable_file_mode: int
+    runuser_command: tuple[str, ...]

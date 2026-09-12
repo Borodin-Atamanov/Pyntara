@@ -64,3 +64,6 @@ package_install_retries = 3
 # by the app and the desktop, the AppImage is executed by the user.
 user_file_mode = "0644"
 executable_file_mode = "0755"
+# Prefix that runs a command as the desktop user, so the task reaches the
+# session files the user owns; {username} is the account of the machine.
+runuser_command = ["runuser", "-u", "{username}", "--"]

@@ -464,6 +464,11 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
         cdp_address=_nonempty_string_field(
             raw.get("cdp_address"), "chrome_setup.cdp_address"
         ),
+        runuser_command=_placeholder_command_field(
+            raw.get("runuser_command"),
+            "chrome_setup.runuser_command",
+            ("{username}",),
+        ),
         file_mode=_octal_mode_field(
             raw.get("file_mode"), "chrome_setup.file_mode"
         ),
@@ -1621,6 +1626,11 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             raw.get("apply_hotkeys_script_file_name"),
             "kde_keyboard_setup.apply_hotkeys_script_file_name",
         ),
+        runuser_command=_placeholder_command_field(
+            raw.get("runuser_command"),
+            "kde_keyboard_setup.runuser_command",
+            ("{username}",),
+        ),
     )
 
 
@@ -1804,6 +1814,11 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         konsole_profile_file_name=_nonempty_string_field(
             raw.get("konsole_profile_file_name"),
             "kde_settings.konsole_profile_file_name",
+        ),
+        runuser_command=_placeholder_command_field(
+            raw.get("runuser_command"),
+            "kde_settings.runuser_command",
+            ("{username}",),
         ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
@@ -4711,6 +4726,11 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
         executable_file_mode=_octal_mode_field(
             raw.get("executable_file_mode"),
             "vocalinux_setup.executable_file_mode",
+        ),
+        runuser_command=_placeholder_command_field(
+            raw.get("runuser_command"),
+            "vocalinux_setup.runuser_command",
+            ("{username}",),
         ),
     )
 
