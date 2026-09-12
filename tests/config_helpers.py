@@ -336,6 +336,11 @@ def base_config() -> str:
         "probe_timeout_seconds = 60\n"
         "probe_port_80_timeout_seconds = 10\n"
         "probe_listener_start_seconds = 1\n"
+        'port_forward_probe_command = ["curl", "--silent", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}"]\n'
+        'port_forward_probe_url_format = "http://{host}:{port}/"\n'
+        'panel_probe_command = ["curl", "--silent", "--max-time", "{timeout_seconds}", "--insecure", "--output", "/dev/null", "--header", "X-Requested-With: XMLHttpRequest"]\n'
+        'tunnel_probe_command = ["curl", "--silent", "--show-error", "--proxy", "{proxy_address}", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
+        'tunnel_probe_write_out = "\\n%{http_code}"\n'
         "upnp_enabled = true\n"
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'
@@ -377,6 +382,7 @@ def base_config() -> str:
         'proxy_check_url = "https://api4.ipify.org"\n'
         'proxy_check_blocked_url = "https://api.openai.com/v1/models"\n'
         "proxy_check_timeout_seconds = 20\n"
+        "proxy_check_command_timeout_seconds = 50\n"
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'

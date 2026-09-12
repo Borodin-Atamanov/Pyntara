@@ -3377,6 +3377,49 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.probe_listener_start_seconds "
             "must be positive"
         )
+    port_forward_probe_command = _string_list(
+        raw.get("port_forward_probe_command"),
+        "three_x_ui_xray_setup.port_forward_probe_command",
+    )
+    if not port_forward_probe_command:
+        raise ConfigError(
+            "three_x_ui_xray_setup.port_forward_probe_command must not be empty"
+        )
+    if "{timeout_seconds}" not in " ".join(port_forward_probe_command):
+        raise ConfigError(
+            "three_x_ui_xray_setup.port_forward_probe_command must carry "
+            "the {timeout_seconds} placeholder"
+        )
+    port_forward_probe_url_format = _nonempty_string_field(
+        raw.get("port_forward_probe_url_format"),
+        "three_x_ui_xray_setup.port_forward_probe_url_format",
+    )
+    panel_probe_command = _string_list(
+        raw.get("panel_probe_command"),
+        "three_x_ui_xray_setup.panel_probe_command",
+    )
+    if not panel_probe_command:
+        raise ConfigError(
+            "three_x_ui_xray_setup.panel_probe_command must not be empty"
+        )
+    tunnel_probe_command = _string_list(
+        raw.get("tunnel_probe_command"),
+        "three_x_ui_xray_setup.tunnel_probe_command",
+    )
+    if not tunnel_probe_command:
+        raise ConfigError(
+            "three_x_ui_xray_setup.tunnel_probe_command must not be empty"
+        )
+    for placeholder in ("{proxy_address}", "{timeout_seconds}", "{write_out}"):
+        if placeholder not in " ".join(tunnel_probe_command):
+            raise ConfigError(
+                "three_x_ui_xray_setup.tunnel_probe_command must carry the "
+                f"{placeholder} placeholder"
+            )
+    tunnel_probe_write_out = _nonempty_string_field(
+        raw.get("tunnel_probe_write_out"),
+        "three_x_ui_xray_setup.tunnel_probe_write_out",
+    )
     server_ip_services = _string_list(
         raw.get("server_ip_services"),
         "three_x_ui_xray_setup.server_ip_services",
@@ -3683,6 +3726,11 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         probe_timeout_seconds=probe_timeout_seconds,
         probe_port_80_timeout_seconds=probe_port_80_timeout_seconds,
         probe_listener_start_seconds=probe_listener_start_seconds,
+        port_forward_probe_command=port_forward_probe_command,
+        port_forward_probe_url_format=port_forward_probe_url_format,
+        panel_probe_command=panel_probe_command,
+        tunnel_probe_command=tunnel_probe_command,
+        tunnel_probe_write_out=tunnel_probe_write_out,
         upnp_enabled=upnp_enabled,
         upnp_package=upnp_package,
         upnp_client_command=upnp_client_command,
@@ -3724,6 +3772,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         proxy_check_url=proxy_check_url,
         proxy_check_blocked_url=proxy_check_blocked_url,
         proxy_check_timeout_seconds=proxy_check_timeout_seconds,
+        proxy_check_command_timeout_seconds=_positive_int_field(
+            raw.get("proxy_check_command_timeout_seconds"),
+            "three_x_ui_xray_setup.proxy_check_command_timeout_seconds",
+        ),
     )
 
 

@@ -108,6 +108,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
     trim_whitespace,
 )
 
@@ -1026,17 +1027,20 @@ def _probe_port_80_forward(
         return False
     try:
         time.sleep(cfg.probe_listener_start_seconds)
+        probe_url = cfg.port_forward_probe_url_format.format(
+            host=public_ip, port=cfg.acme_port
+        )
         try:
             result = run_command(
-                [
-                    "curl",
-                    "--silent",
-                    "--connect-timeout",
-                    str(cfg.probe_port_80_timeout_seconds),
-                    "--max-time",
-                    str(cfg.probe_port_80_timeout_seconds),
-                    f"http://{public_ip}:{cfg.acme_port}/",
-                ],
+                substituted_command(
+                    cfg.port_forward_probe_command,
+                    {
+                        "timeout_seconds": str(
+                            cfg.probe_port_80_timeout_seconds
+                        )
+                    },
+                )
+                + [probe_url],
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -1187,18 +1191,11 @@ def _wait_panel_http(
     for _ in range(attempts):
         try:
             result = run_command(
-                [
-                    "curl",
-                    "--silent",
-                    "--max-time",
-                    str(cfg.probe_timeout_seconds),
-                    "--insecure",
-                    "--output",
-                    "/dev/null",
-                    "--header",
-                    "X-Requested-With: XMLHttpRequest",
-                    f"{base_url}{cfg.panel_csrf_token_path}",
-                ],
+                substituted_command(
+                    cfg.panel_probe_command,
+                    {"timeout_seconds": str(cfg.probe_timeout_seconds)},
+                )
+                + [f"{base_url}{cfg.panel_csrf_token_path}"],
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -2063,23 +2060,18 @@ def _proxy_request(
 
     try:
         result = run_command(
-            [
-                "curl",
-                "--silent",
-                "--show-error",
-                "--proxy",
-                proxy,
-                "--connect-timeout",
-                str(cfg.proxy_check_timeout_seconds),
-                "--max-time",
-                str(cfg.proxy_check_timeout_seconds),
-                "--write-out",
-                "\n%{http_code}",
-                url,
-            ],
+            substituted_command(
+                cfg.tunnel_probe_command,
+                {
+                    "proxy_address": proxy,
+                    "timeout_seconds": str(cfg.proxy_check_timeout_seconds),
+                    "write_out": cfg.tunnel_probe_write_out,
+                },
+            )
+            + [url],
             check=False,
             capture=True,
-            timeout=cfg.proxy_check_timeout_seconds * 2 + 10,
+            timeout=cfg.proxy_check_command_timeout_seconds,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return f"the request could not be run: {exc}", "000", 1

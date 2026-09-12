@@ -108,6 +108,11 @@ class ThreeXuiXraySetupConfig:
     probe_timeout_seconds: int
     probe_port_80_timeout_seconds: int
     probe_listener_start_seconds: int
+    port_forward_probe_command: tuple[str, ...]
+    port_forward_probe_url_format: str
+    panel_probe_command: tuple[str, ...]
+    tunnel_probe_command: tuple[str, ...]
+    tunnel_probe_write_out: str
     upnp_enabled: bool
     upnp_package: str
     upnp_client_command: str
@@ -149,3 +154,4 @@ class ThreeXuiXraySetupConfig:
     proxy_check_url: str
     proxy_check_blocked_url: str
     proxy_check_timeout_seconds: int
+    proxy_check_command_timeout_seconds: int

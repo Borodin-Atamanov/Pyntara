@@ -25,6 +25,23 @@ probe_port_80_timeout_seconds = 10
 # Seconds to wait after starting the temporary listener of the port 80
 # self-test, so the listener is bound before the probe call runs.
 probe_listener_start_seconds = 1
+# The probe calls of the task, each a curl command whose {timeout_seconds}
+# placeholder is filled with the timeout of that probe:
+# port_forward_probe_command asks the machine's own public address through
+# the port forward under test, panel_probe_command only asks whether the
+# panel listener answers, and tunnel_probe_command reports the HTTP status
+# of the checked URL through the local proxy. The arguments of a probe are
+# ours to choose, so they live here with the timeouts above.
+port_forward_probe_command = ["curl", "--silent", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}"]
+# URL format of the port forward self-test: {host} is the public address
+# the probe reaches and {port} the port the forward must deliver.
+port_forward_probe_url_format = "http://{host}:{port}/"
+panel_probe_command = ["curl", "--silent", "--max-time", "{timeout_seconds}", "--insecure", "--output", "/dev/null", "--header", "X-Requested-With: XMLHttpRequest"]
+tunnel_probe_command = ["curl", "--silent", "--show-error", "--proxy", "{proxy_address}", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]
+# Write-out text of the tunnel probe: the HTTP status code of the answer.
+# It is a value of its own and not part of the command above, because curl
+# reads its fields as %{name} and the command template is a format string.
+tunnel_probe_write_out = "\n%{http_code}"
 # Readiness loop after the installer runs: attempts and pause between
 # two is-active checks.
 start_check_attempts = 10
@@ -297,3 +314,7 @@ proxy_check_blocked_url = "https://api.openai.com/v1/models"
 # bounds the connection phase and the whole transfer, so a stalling
 # tunnel is reported after a predictable wait instead of holding the run.
 proxy_check_timeout_seconds = 20
+# Outer timeout in seconds of one tunnel check call: it stays above the
+# probe timeout, so curl reports its own give-up with a clear message
+# before the run kills the process.
+proxy_check_command_timeout_seconds = 50
