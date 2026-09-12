@@ -321,6 +321,17 @@ def make_config(
 
     zram_reset_busy_attempts: int = 5,
     zram_reset_busy_retry_delay_seconds: float = 0.5,
+    zram_module_load_command: tuple[str, ...] = ("modprobe", "{module_name}"),
+    zram_swap_on_command: tuple[str, ...] = (
+        "swapon",
+        "--priority",
+        "{swap_priority}",
+        "{device_path}",
+    ),
+    zram_unit_algorithm_line: str = (
+        "ExecStart=/bin/sh -c 'echo {compressor} > {algorithm_attribute}'"
+    ),
+    zram_unit_template_file_name: str = "zram.service",
     i2pd_download_dir: Path = Path("/var/lib/pyntara/i2pd-download"),
     i2pd_os_release_file_path: Path = Path("/etc/os-release"),
     i2pd_config_path: Path = Path("/etc/i2pd/i2pd.conf"),
@@ -636,6 +647,10 @@ def make_config(
             base.zram_service,
             reset_busy_attempts=zram_reset_busy_attempts,
             reset_busy_retry_delay_seconds=zram_reset_busy_retry_delay_seconds,
+            module_load_command=zram_module_load_command,
+            swap_on_command=zram_swap_on_command,
+            unit_algorithm_line=zram_unit_algorithm_line,
+            unit_template_file_name=zram_unit_template_file_name,
         ),
         i2pd_service_setup=replace(
             base.i2pd_service_setup,

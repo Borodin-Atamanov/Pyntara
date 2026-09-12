@@ -34,3 +34,19 @@ class ZramServiceConfig:
     reset_busy_attempts: int
     reset_busy_retry_delay_seconds: float
     hot_add_readable_mode_bit: int
+    module_name: str
+    unit_template_file_name: str
+    swap_show_command: tuple[str, ...]
+    module_load_command: tuple[str, ...]
+    swap_off_command: tuple[str, ...]
+    format_command: tuple[str, ...]
+    swap_on_command: tuple[str, ...]
+    systemctl_daemon_reload_command: tuple[str, ...]
+    systemctl_enable_command: tuple[str, ...]
+    unit_load_line: str
+    unit_add_read_line: str
+    unit_add_write_line: str
+    unit_algorithm_line: str
+    unit_disksize_line: str
+    unit_format_line: str
+    unit_swap_on_line: str

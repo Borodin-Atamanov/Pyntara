@@ -26,3 +26,29 @@ service_unit_name = "zram.service"
 # readable attribute is the kernel 7.0 read-to-add interface, a write-only
 # one is the older write-to-add interface.
 hot_add_readable_mode_bit = "0400"
+# Name of the kernel module that provides the compressed devices; the task
+# loads it and the boot service repeats the load.
+module_name = "zram"
+# Name of the unit template under task_data/zram_service/ of the clone.
+unit_template_file_name = "zram.service"
+# Commands of the run, each carrying what it acts on as its placeholder.
+swap_show_command = ["swapon", "--show", "--noheadings"]
+module_load_command = ["modprobe", "{module_name}"]
+swap_off_command = ["swapoff", "{device_path}"]
+format_command = ["mkswap", "{device_path}"]
+swap_on_command = ["swapon", "--priority", "{swap_priority}", "{device_path}"]
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+# Lines of the ExecStart block that the rendered unit carries: the boot
+# service repeats the install-time setup, so every line shape is a value of
+# this section. The programs, the systemd directive and the redirections
+# belong to the line text; {module_name}, {hot_add_path},
+# {algorithm_attribute}, {disksize_attribute}, {size_bytes}, {device_path}
+# and {swap_priority} are filled in by the run.
+unit_load_line = "ExecStart=/bin/sh -c 'modprobe {module_name} || true'"
+unit_add_read_line = "ExecStart=/bin/cat {hot_add_path}"
+unit_add_write_line = "ExecStart=/bin/sh -c 'echo 1 > {hot_add_path}'"
+unit_algorithm_line = "ExecStart=/bin/sh -c 'echo {compressor} > {algorithm_attribute}'"
+unit_disksize_line = "ExecStart=/bin/sh -c 'echo {size_bytes} > {disksize_attribute}'"
+unit_format_line = "ExecStart=/sbin/mkswap {device_path}"
+unit_swap_on_line = "ExecStart=/sbin/swapon --priority {swap_priority} {device_path}"

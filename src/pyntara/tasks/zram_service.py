@@ -31,7 +31,12 @@ from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_enabled, task_data_dir
+from pyntara.utils import (
+    run_command,
+    service_is_enabled,
+    substituted_command,
+    task_data_dir,
+)
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -234,16 +239,19 @@ def _add_devices(count: int, read_interface: bool) -> str | None:
     return None
 
 
-def _active_swap_devices(timeout: float) -> set[str]:
+def _active_swap_devices(
+    cfg: ZramServiceConfig, timeout: float
+) -> set[str]:
     """Paths of every active swap device, including the disk swapfile.
 
-    swapon --show lists all activated swaps; the set includes both the
-    zram devices and a file-backed swap such as /swapfile, so the caller
-    checks the zram paths it cares about individually.
+    The configured swap listing command reports all activated swaps; the
+    set includes both the zram devices and a file-backed swap such as
+    /swapfile, so the caller checks the zram paths it cares about
+    individually.
     """
 
     result = run_command(
-        ["swapon", "--show", "--noheadings"],
+        list(cfg.swap_show_command),
         check=False,
         capture=True,
         timeout=timeout,
@@ -301,26 +309,47 @@ def _render_unit(
     trip on stray dollar signs.
     """
 
-    lines: list[str] = ["ExecStart=/bin/sh -c 'modprobe zram || true'"]
+    lines: list[str] = [
+        cfg.unit_load_line.format(module_name=cfg.module_name)
+    ]
     for index in range(1, device_count):
         if read_interface:
-            lines.append("ExecStart=/bin/cat /sys/class/zram-control/hot_add")
+            lines.append(
+                cfg.unit_add_read_line.format(
+                    hot_add_path=str(ZRAM_HOT_ADD_PATH)
+                )
+            )
         else:
             lines.append(
-                "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
+                cfg.unit_add_write_line.format(
+                    hot_add_path=str(ZRAM_HOT_ADD_PATH)
+                )
             )
     for index in range(device_count):
         lines.append(
-            f"ExecStart=/bin/sh -c 'echo {cfg.compressor} > "
-            f"/sys/block/zram{index}/comp_algorithm'"
+            cfg.unit_algorithm_line.format(
+                compressor=cfg.compressor,
+                algorithm_attribute=str(
+                    SYS_BLOCK_PATH / f"zram{index}" / "comp_algorithm"
+                ),
+            )
         )
         lines.append(
-            f"ExecStart=/bin/sh -c 'echo {per_device_bytes} > "
-            f"/sys/block/zram{index}/disksize'"
+            cfg.unit_disksize_line.format(
+                size_bytes=per_device_bytes,
+                disksize_attribute=str(
+                    SYS_BLOCK_PATH / f"zram{index}" / "disksize"
+                ),
+            )
         )
-        lines.append(f"ExecStart=/sbin/mkswap /dev/zram{index}")
         lines.append(
-            f"ExecStart=/sbin/swapon --priority {cfg.swap_priority} /dev/zram{index}"
+            cfg.unit_format_line.format(device_path=f"/dev/zram{index}")
+        )
+        lines.append(
+            cfg.unit_swap_on_line.format(
+                swap_priority=cfg.swap_priority,
+                device_path=f"/dev/zram{index}",
+            )
         )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(exec_lines="\n".join(lines))
@@ -379,7 +408,7 @@ def task(ctx: Context) -> TaskResult:
         f"each, total {total_mb} MiB"
     )
 
-    active_paths = _active_swap_devices(timeout)
+    active_paths = _active_swap_devices(cfg, timeout)
     enabled = service_is_enabled(service_name, timeout)
     existing_count = _existing_device_count()
     _log(f"checking existing zram devices: {existing_count}")
@@ -403,7 +432,12 @@ def task(ctx: Context) -> TaskResult:
         if device_path in active_paths:
             _log(f"deactivating swap: swapoff {device_path}")
             try:
-                run_command(["swapoff", device_path], timeout=timeout)
+                run_command(
+                    substituted_command(
+                        cfg.swap_off_command, {"device_path": device_path}
+                    ),
+                    timeout=timeout,
+                )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 return TaskResult(
                     success=False, error=f"cannot deactivate {device_path}: {exc}"
@@ -440,9 +474,14 @@ def task(ctx: Context) -> TaskResult:
 
     # Load the module, then create the devices that are still missing. The
     # module creates zram0 itself; the rest come from hot_add.
-    _log("loading module: modprobe zram")
+    _log(f"loading module: modprobe {cfg.module_name}")
     try:
-        run_command(["modprobe", "zram"], timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.module_load_command, {"module_name": cfg.module_name}
+            ),
+            timeout=timeout,
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(success=False, error=f"cannot load zram module: {exc}")
     _log("module loaded")
@@ -478,10 +517,21 @@ def task(ctx: Context) -> TaskResult:
         _log(f"zram{index} configured: {per_device_bytes} bytes")
         _log(f"formatting zram{index}: mkswap {device_path}")
         try:
-            run_command(["mkswap", device_path], timeout=timeout)
+            run_command(
+                substituted_command(
+                    cfg.format_command, {"device_path": device_path}
+                ),
+                timeout=timeout,
+            )
             _log(f"activating zram{index}: swapon --priority {cfg.swap_priority}")
             run_command(
-                ["swapon", "--priority", str(cfg.swap_priority), device_path],
+                substituted_command(
+                    cfg.swap_on_command,
+                    {
+                        "swap_priority": str(cfg.swap_priority),
+                        "device_path": device_path,
+                    },
+                ),
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -492,7 +542,7 @@ def task(ctx: Context) -> TaskResult:
     # Verify the configured state by reading the system files back.
     _log("verifying zram configuration")
     problems: list[str] = []
-    verified_active = _active_swap_devices(timeout)
+    verified_active = _active_swap_devices(cfg, timeout)
     for index in range(device_count):
         if _read_disksize(index) != per_device_bytes:
             problems.append(f"zram{index} disksize mismatch")
@@ -506,7 +556,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, changed=True, error="; ".join(problems))
     _log("verification passed")
 
-    template_path = task_data_dir(ctx.repo_root, ctx.task_name) / "zram.service"
+    template_path = (
+        task_data_dir(ctx.repo_root, ctx.task_name) / cfg.unit_template_file_name
+    )
     _log(f"rendering unit template from {template_path}")
     try:
         content = _render_unit(
@@ -527,10 +579,18 @@ def task(ctx: Context) -> TaskResult:
     _log("unit file written")
     try:
         _log("reloading systemd: systemctl daemon-reload")
-        run_command(["systemctl", "daemon-reload"], timeout=timeout)
+        run_command(
+            list(cfg.systemctl_daemon_reload_command), timeout=timeout
+        )
         _log("systemd reloaded")
         _log(f"enabling service: systemctl enable {service_name}")
-        run_command(["systemctl", "enable", service_name], timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.systemctl_enable_command,
+                {"service_unit_name": service_name},
+            ),
+            timeout=timeout,
+        )
         _log("service enabled")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(

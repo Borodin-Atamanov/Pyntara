@@ -267,17 +267,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '_as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),',
         }
     ),
-    "src/pyntara/tasks/zram_service.py": frozenset(
-        {
-            '["swapon", "--priority", str(cfg.swap_priority), device_path],',
-            '["swapon", "--show", "--noheadings"],',
-            'run_command(["mkswap", device_path], timeout=timeout)',
-            'run_command(["modprobe", "zram"], timeout=timeout)',
-            'run_command(["swapoff", device_path], timeout=timeout)',
-            'run_command(["systemctl", "daemon-reload"], timeout=timeout)',
-            'run_command(["systemctl", "enable", service_name], timeout=timeout)',
-        }
-    ),
     "src/pyntara/utils.py": frozenset(
         {
             '["apt-get", "install", "-y", package],',

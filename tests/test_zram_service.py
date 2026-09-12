@@ -46,6 +46,16 @@ def _ctx(
     force: bool = False,
     busy_attempts: int = 5,
     busy_retry_delay_seconds: float = 0.5,
+    module_load_command: tuple[str, ...] = ("modprobe", "{module_name}"),
+    swap_on_command: tuple[str, ...] = (
+        "swapon",
+        "--priority",
+        "{swap_priority}",
+        "{device_path}",
+    ),
+    unit_algorithm_line: str = (
+        "ExecStart=/bin/sh -c 'echo {compressor} > {algorithm_attribute}'"
+    ),
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -64,6 +74,9 @@ def _ctx(
             swapfile_path=tmp_path / "swapfile",
             zram_reset_busy_attempts=busy_attempts,
             zram_reset_busy_retry_delay_seconds=busy_retry_delay_seconds,
+            zram_module_load_command=module_load_command,
+            zram_swap_on_command=swap_on_command,
+            zram_unit_algorithm_line=unit_algorithm_line,
         ),
     )
 
@@ -133,7 +146,11 @@ def _install_fixtures(
     hot_remove = tmp_path / "sys" / "class" / "zram-control" / "hot_remove"
     hot_remove.parent.mkdir(parents=True)
     hot_remove.write_text("", encoding="utf-8")
-    hot_add = _FakeHotAdd(sys_block, read_interface=read_interface)
+    hot_add = _FakeHotAdd(
+        sys_block,
+        path_text=str(hot_remove.parent / "hot_add"),
+        read_interface=read_interface,
+    )
     monkeypatch.setattr(zram_service, "ZRAM_HOT_ADD_PATH", hot_add)
     monkeypatch.setattr(zram_service, "ZRAM_HOT_REMOVE_PATH", hot_remove)
     return {
@@ -191,10 +208,26 @@ class _FakeHotAdd:
     A read on the read interface creates one device and returns its id.
     """
 
-    def __init__(self, sys_block: Path, *, read_interface: bool = True) -> None:
+    def __init__(
+        self,
+        sys_block: Path,
+        *,
+        path_text: str,
+        read_interface: bool = True,
+    ) -> None:
         self.sys_block = sys_block
+        self.path_text = path_text
         self.read_interface = read_interface
         self.read_count = 0
+
+    def __str__(self) -> str:
+        """The path the attribute has on the machine the fixture stands for.
+
+        The rendered unit carries the path of the attribute, so the fake
+        reports the path of its fixture instead of the repr of the object.
+        """
+
+        return self.path_text
 
     def stat(self) -> _Stat:
         return _Stat(0o400 if self.read_interface else 0o200)
@@ -284,34 +317,41 @@ def _install_fake(
 
 
 def _expected_unit(
-    device_count: int, per_device_bytes: int, *, read_interface: bool = True
+    fixtures: ZramFixtures,
+    device_count: int,
+    per_device_bytes: int,
+    *,
+    read_interface: bool = True,
 ) -> str:
-    """The unit file the task must render for the given target."""
+    """The unit file the task must render for the given target.
 
+    The paths of the block are the paths of the fixtures, because the
+    fixture directory stands for the kernel file systems of the machine.
+    """
+
+    hot_add = str(fixtures["hot_add"])
+    sys_block = fixtures["sys_block"]
     lines = ["ExecStart=/bin/sh -c 'modprobe zram || true'"]
     for index in range(1, device_count):
         if read_interface:
-            lines.append("ExecStart=/bin/cat /sys/class/zram-control/hot_add")
+            lines.append(f"ExecStart=/bin/cat {hot_add}")
         else:
-            lines.append(
-                "ExecStart=/bin/sh -c 'echo 1 > /sys/class/zram-control/hot_add'"
-            )
+            lines.append(f"ExecStart=/bin/sh -c 'echo 1 > {hot_add}'")
     for index in range(device_count):
         lines.append(
             f"ExecStart=/bin/sh -c 'echo zstd > "
-            f"/sys/block/zram{index}/comp_algorithm'"
+            f"{sys_block}/zram{index}/comp_algorithm'"
         )
         lines.append(
             f"ExecStart=/bin/sh -c 'echo {per_device_bytes} > "
-            f"/sys/block/zram{index}/disksize'"
+            f"{sys_block}/zram{index}/disksize'"
         )
         lines.append(f"ExecStart=/sbin/mkswap /dev/zram{index}")
         lines.append(f"ExecStart=/sbin/swapon --priority 1111 /dev/zram{index}")
     return UNIT_TEMPLATE.replace("$exec_lines", "\n".join(lines))
 
 
-def test_calculate_devices_uses_96_percent_and_core_count() -> None:
-    # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
+def test_calculate_devices_uses_96_percent_and_core_count() -> None:    # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
     # of RAM rounded down to the 4096-byte zram page size.
     config = make_config()
     device_count, per_device_bytes = zram_service._calculate_devices(
@@ -412,7 +452,7 @@ def test_creates_devices_and_service(
     assert active == {"/dev/zram0", "/dev/zram1"}
     unit = tmp_path / "systemd" / "zram.service"
     assert unit.read_text(encoding="utf-8") == _expected_unit(
-        device_count, per_device_bytes, read_interface=True
+        fixtures, device_count, per_device_bytes, read_interface=True
     )
 
 
@@ -642,5 +682,43 @@ def test_write_interface_creates_devices_and_renders_write_unit(
     assert active == {"/dev/zram0", "/dev/zram1"}
     unit = tmp_path / "systemd" / "zram.service"
     assert unit.read_text(encoding="utf-8") == _expected_unit(
-        device_count, per_device_bytes, read_interface=False
+        fixtures, device_count, per_device_bytes, read_interface=False
     )
+
+
+def test_commands_and_unit_lines_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The commands of the run and the lines of the ExecStart block are
+    # config values: another load command, another activation call and
+    # another algorithm line are what the run carries out and writes, with
+    # the placeholders of the section filled in.
+    fixtures = _install_fixtures(monkeypatch, tmp_path)
+    calls, _writes, _active = _install_fake(
+        monkeypatch, fixtures, enabled=False, active=set()
+    )
+    result = zram_service.task(
+        _ctx(
+            tmp_path,
+            module_load_command=("my-load", "{module_name}"),
+            swap_on_command=(
+                "swapon",
+                "--discard",
+                "--priority",
+                "{swap_priority}",
+                "{device_path}",
+            ),
+            unit_algorithm_line=(
+                "ExecStart=/sbin/zram-ctl --set {compressor} {algorithm_attribute}"
+            ),
+        )
+    )
+    assert result.success is True
+    assert ["my-load", "zram"] in calls
+    assert ["swapon", "--discard", "--priority", "1111", "/dev/zram0"] in calls
+    written = (tmp_path / "systemd" / "zram.service").read_text(encoding="utf-8")
+    assert (
+        f"ExecStart=/sbin/zram-ctl --set zstd "
+        f"{fixtures['sys_block']}/zram0/comp_algorithm" in written
+    )
+    assert "ExecStart=/bin/sh -c 'echo zstd" not in written

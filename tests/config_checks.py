@@ -2824,6 +2824,23 @@ def _placeholder_command_field(
     return command
 
 
+def _placeholder_text_field(
+    raw: object, name: str, placeholders: tuple[str, ...]
+) -> str:
+    """Validate a line template and demand the placeholders it is filled with.
+
+    A line of a file the run writes is a config value with placeholders,
+    so a mistyped one would raise on the target machine; the checks refuse
+    it here instead.
+    """
+
+    text = _nonempty_string_field(raw, name)
+    for placeholder in placeholders:
+        if placeholder not in text:
+            raise ConfigError(f"{name} must carry the {placeholder} placeholder")
+    return text
+
+
 def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig:
     """Validate the [swapfile_service_install] table and build the config.
 
@@ -5243,6 +5260,80 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         hot_add_readable_mode_bit=_octal_mode_field(
             raw.get("hot_add_readable_mode_bit"),
             "zram_service.hot_add_readable_mode_bit",
+        ),
+        module_name=_nonempty_string_field(
+            raw.get("module_name"), "zram_service.module_name"
+        ),
+        unit_template_file_name=_nonempty_string_field(
+            raw.get("unit_template_file_name"),
+            "zram_service.unit_template_file_name",
+        ),
+        swap_show_command=_string_list(
+            raw.get("swap_show_command"), "zram_service.swap_show_command"
+        ),
+        module_load_command=_placeholder_command_field(
+            raw.get("module_load_command"),
+            "zram_service.module_load_command",
+            ("{module_name}",),
+        ),
+        swap_off_command=_placeholder_command_field(
+            raw.get("swap_off_command"),
+            "zram_service.swap_off_command",
+            ("{device_path}",),
+        ),
+        format_command=_placeholder_command_field(
+            raw.get("format_command"),
+            "zram_service.format_command",
+            ("{device_path}",),
+        ),
+        swap_on_command=_placeholder_command_field(
+            raw.get("swap_on_command"),
+            "zram_service.swap_on_command",
+            ("{swap_priority}", "{device_path}"),
+        ),
+        systemctl_daemon_reload_command=_string_list(
+            raw.get("systemctl_daemon_reload_command"),
+            "zram_service.systemctl_daemon_reload_command",
+        ),
+        systemctl_enable_command=_placeholder_command_field(
+            raw.get("systemctl_enable_command"),
+            "zram_service.systemctl_enable_command",
+            ("{service_unit_name}",),
+        ),
+        unit_load_line=_placeholder_text_field(
+            raw.get("unit_load_line"),
+            "zram_service.unit_load_line",
+            ("{module_name}",),
+        ),
+        unit_add_read_line=_placeholder_text_field(
+            raw.get("unit_add_read_line"),
+            "zram_service.unit_add_read_line",
+            ("{hot_add_path}",),
+        ),
+        unit_add_write_line=_placeholder_text_field(
+            raw.get("unit_add_write_line"),
+            "zram_service.unit_add_write_line",
+            ("{hot_add_path}",),
+        ),
+        unit_algorithm_line=_placeholder_text_field(
+            raw.get("unit_algorithm_line"),
+            "zram_service.unit_algorithm_line",
+            ("{compressor}", "{algorithm_attribute}"),
+        ),
+        unit_disksize_line=_placeholder_text_field(
+            raw.get("unit_disksize_line"),
+            "zram_service.unit_disksize_line",
+            ("{size_bytes}", "{disksize_attribute}"),
+        ),
+        unit_format_line=_placeholder_text_field(
+            raw.get("unit_format_line"),
+            "zram_service.unit_format_line",
+            ("{device_path}",),
+        ),
+        unit_swap_on_line=_placeholder_text_field(
+            raw.get("unit_swap_on_line"),
+            "zram_service.unit_swap_on_line",
+            ("{swap_priority}", "{device_path}"),
         ),
     )
 
