@@ -117,4 +117,5 @@ class SshClientSetupConfig:
     augeas_tools_package_name: str
     package_status_timeout_seconds: int
     install_retries: int
+    effective_config_command: tuple[str, ...]
     directives: tuple[SshDirective, ...]

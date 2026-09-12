@@ -2812,6 +2812,10 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
         augeas_tools_package_name=augeas_tools_package_name,
         package_status_timeout_seconds=package_status_timeout_seconds,
         install_retries=install_retries,
+        effective_config_command=_string_list(
+            raw.get("effective_config_command"),
+            "ssh_client_setup.effective_config_command",
+        ),
         directives=directives,
     )
 

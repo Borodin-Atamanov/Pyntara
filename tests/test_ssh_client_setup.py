@@ -373,3 +373,35 @@ def test_verify_reports_drift(
     result = ssh_client_setup.task(ctx)
     assert result.success is False
     assert "ssh -G reports addressfamily as unset" in (result.error or "")
+
+
+def test_probe_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The command that prints the effective client configuration is a config
+    # value: another probe command is the argv the task runs to verify the
+    # drop-in.
+    ctx = make_context(
+        task_name="ssh_client_setup",
+        install_mode="server",
+        task_data_root=tmp_path,
+        repo_root=tmp_path,
+        config=make_config(
+            task_data_root=tmp_path,
+            ssh_client_ssh_config_path=tmp_path / "etc" / "ssh" / "ssh_config",
+            ssh_client_ssh_config_dropin_path=(
+                tmp_path / "etc" / "ssh" / "ssh_config.d" / "pyntara.conf"
+            ),
+            ssh_client_effective_config_command=(
+                "ssh",
+                "-G",
+                "probe.example",
+            ),
+        ),
+    )
+    _write_ssh_config(ctx)
+    calls = _install_fake(monkeypatch)
+    result = ssh_client_setup.task(ctx)
+    assert result.success is True
+    assert ["ssh", "-G", "probe.example"] in calls
+    assert ["ssh", "-G", "example.com"] not in calls

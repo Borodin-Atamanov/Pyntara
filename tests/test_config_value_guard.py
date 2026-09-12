@@ -217,7 +217,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             'run_command(["chmod", f"{mode:04o}", str(target)], timeout=timeout)',
         }
     ),
-    "src/pyntara/tasks/ssh_client_setup.py": frozenset({'["ssh", "-G", "example.com"],'}),
     "src/pyntara/tasks/ssh_daemon_setup.py": frozenset(
         {
             '["ss", "-tlnp"], check=False, capture=True, timeout=timeout',

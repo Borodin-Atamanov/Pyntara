@@ -26,7 +26,7 @@ from __future__ import annotations
 import subprocess
 
 from pyntara.augeas import ensure_augtool, include_covers_dropin, sync_dropin
-from pyntara.config import SshDirective
+from pyntara.config import SshClientSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -34,26 +34,29 @@ from pyntara.utils import run_command
 
 
 def _verify_effective_config(
-    directives: tuple[SshDirective, ...], timeout: float
+    cfg: SshClientSetupConfig,
+    directives: tuple[SshDirective, ...],
+    timeout: float,
 ) -> str | None:
     """Error text when a configured directive is not effective; None when OK.
 
-    ssh -G prints the effective client configuration after every file of
-    the Include chain is applied, so the check is independent of the
-    version and of other files in the drop-in directory: a directive
-    that a later file overrides, or a keyword the client does not know,
-    is reported as an error instead of being silently accepted.
+    The configured probe command prints the effective client configuration
+    after every file of the Include chain is applied, so the check is
+    independent of the version and of other files in the drop-in
+    directory: a directive that a later file overrides, or a keyword the
+    client does not know, is reported as an error instead of being
+    silently accepted.
     """
 
     try:
         result = run_command(
-            ["ssh", "-G", "example.com"],
+            list(cfg.effective_config_command),
             check=False,
             capture=True,
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"cannot run ssh -G: {exc}"
+        return f"cannot probe the effective client configuration: {exc}"
     if result.returncode != 0:
         return f"ssh -G exited {result.returncode}: {result.stderr.strip()}"
     effective: dict[str, str] = {}
@@ -135,7 +138,7 @@ def task(ctx: Context) -> TaskResult:
         _log("drop-in synced through augeas")
 
     if (changed or force) and cfg.directives:
-        verify = _verify_effective_config(cfg.directives, timeout)
+        verify = _verify_effective_config(cfg, cfg.directives, timeout)
         if verify is not None:
             return TaskResult(success=False, changed=changed, error=verify)
         _log("effective configuration verified through ssh -G")

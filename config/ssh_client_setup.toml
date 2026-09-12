@@ -17,6 +17,10 @@ dropin_file_mode = "0644"
 # Ownership comment of the drop-in. It is written without the leading hash,
 # because augeas stores and writes comment values without it.
 dropin_header = "Managed by the Pyntara ssh_client_setup task."
+# Command that prints the effective SSH client configuration, used to
+# verify that every configured directive is in force after the drop-in is
+# written; the host is the one the probe asks about.
+effective_config_command = ["ssh", "-G", "example.com"]
 # augeas lens for the ssh_config syntax, the container node the directives
 # are placed under, and the pattern that node carries, so they apply to
 # every connection.

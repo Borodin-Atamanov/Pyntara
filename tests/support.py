@@ -460,6 +460,11 @@ def make_config(
     ssh_client_ssh_config_dropin_path: Path = Path(
         "/etc/ssh/ssh_config.d/pyntara.conf"
     ),
+    ssh_client_effective_config_command: tuple[str, ...] = (
+        "ssh",
+        "-G",
+        "example.com",
+    ),
     ssh_client_directives: tuple[SshDirective, ...] = (SshDirective(
         name="AddressFamily", value="any"
     ),),
@@ -762,6 +767,7 @@ def make_config(
             base.ssh_client_setup,
             ssh_config_path=ssh_client_ssh_config_path,
             ssh_config_dropin_path=ssh_client_ssh_config_dropin_path,
+            effective_config_command=ssh_client_effective_config_command,
             directives=ssh_client_directives,
         ),
         system_metrics_setup=replace(

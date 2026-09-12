@@ -512,6 +512,7 @@ def base_config() -> str:
         'ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"\n'
         'dropin_file_mode = "0644"\n'
         'dropin_header = "Managed by the Pyntara ssh_client_setup task."\n'
+        'effective_config_command = ["ssh", "-G", "example.com"]\n'
         'augeas_lens = "Ssh.lns"\n'
         'augeas_container = "Host"\n'
         'augeas_container_value = "*"\n'
