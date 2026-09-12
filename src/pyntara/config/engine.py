@@ -106,3 +106,9 @@ class EngineConfig:
     session_environment_keys: tuple[str, ...] = ()
     session_bus_key: str = ""
     session_display_keys: tuple[str, ...] = ()
+    upnpc_status_command: tuple[str, ...] = ()
+    upnpc_mapping_list_command: tuple[str, ...] = ()
+    upnpc_mapping_add_command: tuple[str, ...] = ()
+    upnpc_external_address_key: str = ""
+    upnpc_protocol_names: tuple[str, ...] = ()
+    upnpc_mapping_arrow: str = ""

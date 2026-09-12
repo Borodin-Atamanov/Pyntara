@@ -252,7 +252,7 @@ def _install_fake(
     monkeypatch.setattr(
         xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
     )
-    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
@@ -327,7 +327,7 @@ def _panel_fake(
     monkeypatch.setattr(
         xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
     )
-    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
     if mock_stage_ssl:
         monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
@@ -2607,7 +2607,8 @@ class TestCollectRunFacts:
         monkeypatch.setattr(xui, "local_addresses", lambda _t: ("10.0.0.1",))
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: True)
 
-        def fake_router(command: str, timeout: float) -> str:
+        def fake_router(engine: object, command: str, timeout: float) -> str:
+            del engine, command
             router_calls.append(timeout)
             return "190.55.165.52"
 
@@ -2701,13 +2702,24 @@ class TestForwardUpnpPorts:
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config().three_x_ui_xray_setup
+        engine = make_config().engine
         facts = _facts(public=("190.55.165.52",), router="190.55.165.52")
-        assert xui._forward_upnp_ports(cfg, facts, 30.0) == "190.55.165.52"
-        assert calls[0][:4] == ("upnpc", "pyntara xray", cfg.inbound_port, "TCP")
-        assert calls[0][4] == ("190.55.165.52",)
-        assert calls[0][6] == "190.55.165.52"
-        assert calls[1][:4] == ("upnpc", "pyntara xray", cfg.acme_port, "TCP")
-        assert calls[1][6] == "190.55.165.52"
+        assert xui._forward_upnp_ports(engine, cfg, facts, 30.0) == "190.55.165.52"
+        assert calls[0][1:5] == (
+            "upnpc",
+            "pyntara xray",
+            cfg.inbound_port,
+            cfg.upnp_protocol,
+        )
+        assert calls[0][5] == ("190.55.165.52",)
+        assert calls[0][7] == "190.55.165.52"
+        assert calls[1][1:5] == (
+            "upnpc",
+            "pyntara xray",
+            cfg.acme_port,
+            cfg.upnp_protocol,
+        )
+        assert calls[1][7] == "190.55.165.52"
 
     def test_skips_the_acme_port_when_ssl_is_disabled(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2721,8 +2733,8 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config(three_x_ui_ssl_enabled=False).three_x_ui_xray_setup
         facts = _facts(router="190.55.165.52")
-        xui._forward_upnp_ports(cfg, facts, 30.0)
-        assert [call[2] for call in calls] == [cfg.inbound_port]
+        xui._forward_upnp_ports(make_config().engine, cfg, facts, 30.0)
+        assert [call[3] for call in calls] == [cfg.inbound_port]
 
     def test_does_nothing_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2733,7 +2745,7 @@ class TestForwardUpnpPorts:
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._forward_upnp_ports(cfg, _facts(), 30.0) is None
+        assert xui._forward_upnp_ports(make_config().engine, cfg, _facts(), 30.0) is None
 
 
 # The vless link a test machine is a client of; the address is a

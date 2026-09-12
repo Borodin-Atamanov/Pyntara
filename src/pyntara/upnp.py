@@ -8,8 +8,9 @@ such a router can then be reached from the internet even though its own
 interface carries a private address.
 
 The module installs nothing and knows no package names: it runs the
-command it is given. Everything is best effort, so a missing utility or
-a router that stays silent reports no mapping instead of raising.
+command it is given, together with the vocabulary of the client from the
+[engine] table, so the calls, the field of the status output and the
+format of the mapping list are values of the config.
 """
 
 from __future__ import annotations
@@ -17,25 +18,26 @@ from __future__ import annotations
 import ipaddress
 import subprocess
 
+from pyntara.config import EngineConfig
 from pyntara.logger import log_progress
 from pyntara.public_address import default_route_address
-from pyntara.utils import run_command, trim_whitespace
-
-# The upnpc status output prints the router internet address as a
-# key = value line; the value is the only part we read.
-EXTERNAL_ADDRESS_KEY = "ExternalIPAddress"
+from pyntara.utils import run_command, substituted_command, trim_whitespace
 
 
-def parse_external_address(text: str) -> str | None:
+def parse_external_address(
+    text: str, address_key: str
+) -> str | None:
     """The router internet address from the upnpc status output, or None.
 
-    The value is accepted only when it is a valid IP address, so a line
-    that reports something else (a zero address, an error text) is not
+    The field the address is printed under is a config value, so another
+    client version that names it differently needs a config change. The
+    value is accepted only when it is a valid IP address, so a line that
+    reports something else (a zero address, an error text) is not
     mistaken for an address.
     """
 
     for line in text.splitlines():
-        if EXTERNAL_ADDRESS_KEY not in line or "=" not in line:
+        if address_key not in line or "=" not in line:
             continue
         candidate = trim_whitespace(line.split("=", 1)[1])
         try:
@@ -47,28 +49,31 @@ def parse_external_address(text: str) -> str | None:
     return None
 
 
-def parse_port_mappings(text: str) -> list[tuple[str, int, str, int]]:
+def parse_port_mappings(
+    text: str, protocol_names: tuple[str, ...], arrow: str
+) -> list[tuple[str, int, str, int]]:
     """The active mappings of the upnpc list output.
 
     Every mapping line looks like ` 1 TCP   443->192.168.1.2:443  'desc'`,
-    so a line whose second field is a protocol and whose third field holds
-    an arrow describes one mapping; anything else (headers, notices) is
-    skipped. Returns tuples of (protocol, external port, internal
-    address, internal port).
+    so a line whose second field is one of the configured protocols and
+    whose third field holds the configured arrow describes one mapping;
+    anything else (headers, notices) is skipped. Returns tuples of
+    (protocol, external port, internal address, internal port).
     """
 
+    protocols = {name.upper() for name in protocol_names}
     mappings: list[tuple[str, int, str, int]] = []
     for line in text.splitlines():
         fields = line.split()
         if len(fields) < 3:
             continue
         protocol = fields[1].upper()
-        if protocol not in ("TCP", "UDP"):
+        if protocol not in protocols:
             continue
-        arrow = fields[2]
-        if "->" not in arrow:
+        field = fields[2]
+        if arrow not in field:
             continue
-        external, _, internal = arrow.partition("->")
+        external, _, internal = field.partition(arrow)
         internal_address, _, internal_port = internal.partition(":")
         if not external.isdigit() or not internal_port.isdigit():
             continue
@@ -78,17 +83,27 @@ def parse_port_mappings(text: str) -> list[tuple[str, int, str, int]]:
     return mappings
 
 
-def mapping_exists(text: str, port: int, protocol: str) -> bool:
+def mapping_exists(
+    text: str,
+    port: int,
+    protocol: str,
+    protocol_names: tuple[str, ...],
+    arrow: str,
+) -> bool:
     """True when the list output already carries a mapping for the port."""
 
     wanted = protocol.upper()
     return any(
         mapping_protocol == wanted and external_port == port
-        for mapping_protocol, external_port, _, _ in parse_port_mappings(text)
+        for mapping_protocol, external_port, _, _ in parse_port_mappings(
+            text, protocol_names, arrow
+        )
     )
 
 
-def router_external_address(command: str, timeout: float) -> str | None:
+def router_external_address(
+    engine: EngineConfig, command: str, timeout: float
+) -> str | None:
     """The address the router reports for its internet side, or None.
 
     None means the router does not answer UPnP at all, which is the
@@ -97,19 +112,31 @@ def router_external_address(command: str, timeout: float) -> str | None:
 
     try:
         result = run_command(
-            [command, "-s"], check=False, capture=True, timeout=timeout
+            substituted_command(
+                engine.upnpc_status_command, {"command": command}
+            ),
+            check=False,
+            capture=True,
+            timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
-    return parse_external_address(result.stdout)
+    return parse_external_address(result.stdout, engine.upnpc_external_address_key)
 
 
-def list_mappings(command: str, timeout: float) -> str:
+def list_mappings(
+    engine: EngineConfig, command: str, timeout: float
+) -> str:
     """The raw upnpc mapping list, empty when the router stays silent."""
 
     try:
         result = run_command(
-            [command, "-l"], check=False, capture=True, timeout=timeout
+            substituted_command(
+                engine.upnpc_mapping_list_command, {"command": command}
+            ),
+            check=False,
+            capture=True,
+            timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
         return ""
@@ -117,6 +144,7 @@ def list_mappings(command: str, timeout: float) -> str:
 
 
 def forward_inbound_port(
+    engine: EngineConfig,
     command: str,
     description: str,
     port: int,
@@ -145,7 +173,7 @@ def forward_inbound_port(
     """
 
     if router_address is None:
-        router_address = router_external_address(command, timeout)
+        router_address = router_external_address(engine, command, timeout)
     if router_address is None:
         log_progress("no UPnP router on this network, port forwarding skipped")
         return None
@@ -156,7 +184,7 @@ def forward_inbound_port(
         )
         return None
     if not ensure_port_forwarding(
-        command, description, internal_address, port, protocol, timeout
+        engine, command, description, internal_address, port, protocol, timeout
     ):
         log_progress(f"router refused the port {port} mapping")
         return None
@@ -174,6 +202,7 @@ def forward_inbound_port(
 
 
 def ensure_port_forwarding(
+    engine: EngineConfig,
     command: str,
     description: str,
     internal_address: str,
@@ -190,24 +219,36 @@ def ensure_port_forwarding(
     Returns whether the mapping is in place after the call.
     """
 
-    if mapping_exists(list_mappings(command, timeout), port, protocol):
+    if mapping_exists(
+        list_mappings(engine, command, timeout),
+        port,
+        protocol,
+        engine.upnpc_protocol_names,
+        engine.upnpc_mapping_arrow,
+    ):
         return True
     try:
         run_command(
-            [
-                command,
-                "-e",
-                description,
-                "-a",
-                internal_address,
-                str(port),
-                str(port),
-                protocol,
-            ],
+            substituted_command(
+                engine.upnpc_mapping_add_command,
+                {
+                    "command": command,
+                    "description": description,
+                    "internal_address": internal_address,
+                    "port": str(port),
+                    "protocol": protocol,
+                },
+            ),
             check=False,
             capture=True,
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
         return False
-    return mapping_exists(list_mappings(command, timeout), port, protocol)
+    return mapping_exists(
+        list_mappings(engine, command, timeout),
+        port,
+        protocol,
+        engine.upnpc_protocol_names,
+        engine.upnpc_mapping_arrow,
+    )

@@ -80,6 +80,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "upnp_enabled": True,
         "upnp_package": "miniupnpc",
         "upnp_client_command": "upnpc",
+        "upnp_protocol": "TCP",
         "upnp_mapping_description": "pyntara xray",
         "client_profile_entry_title": "xray_client_profile",
         "local_proxy_tag": "pyntara-local-proxy",

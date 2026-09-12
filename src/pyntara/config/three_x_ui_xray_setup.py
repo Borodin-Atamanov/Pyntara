@@ -116,6 +116,7 @@ class ThreeXuiXraySetupConfig:
     upnp_enabled: bool
     upnp_package: str
     upnp_client_command: str
+    upnp_protocol: str
     upnp_mapping_description: str
     client_profile_entry_title: str
     local_proxy_tag: str

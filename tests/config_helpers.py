@@ -66,6 +66,12 @@ def base_config() -> str:
         'session_environment_keys = ["DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"]\n'
         'session_bus_key = "DBUS_SESSION_BUS_ADDRESS"\n'
         'session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]\n'
+        'upnpc_status_command = ["{command}", "-s"]\n'
+        'upnpc_mapping_list_command = ["{command}", "-l"]\n'
+        'upnpc_mapping_add_command = ["{command}", "-e", "{description}", "-a", "{internal_address}", "{port}", "{port}", "{protocol}"]\n'
+        'upnpc_external_address_key = "ExternalIPAddress"\n'
+        'upnpc_protocol_names = ["TCP", "UDP"]\n'
+        'upnpc_mapping_arrow = "->"\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 
@@ -412,6 +418,7 @@ def base_config() -> str:
         "upnp_enabled = true\n"
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'
+        'upnp_protocol = "TCP"\n'
         'upnp_mapping_description = "pyntara xray"\n'
         'client_profile_entry_title = "xray_client_profile"\n'
         'local_proxy_tag = "pyntara-local-proxy"\n'

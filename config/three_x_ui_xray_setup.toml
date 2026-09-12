@@ -162,6 +162,9 @@ upnp_enabled = true
 upnp_package = "miniupnpc"
 # Name of the upnpc binary the task runs.
 upnp_client_command = "upnpc"
+# Protocol of the forwarding mappings the task asks the router for; the
+# client sends it as the protocol of the rule.
+upnp_protocol = "TCP"
 # Description of the created mapping, shown in the router interface so
 # the user can tell which rule belongs to Pyntara.
 upnp_mapping_description = "pyntara xray"

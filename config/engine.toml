@@ -192,3 +192,23 @@ session_bus_key = "DBUS_SESSION_BUS_ADDRESS"
 # that cannot connect and the tool aborts. The session counts as live only when
 # session_bus_key and one display key are present.
 session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]
+# Vocabulary of the UPnP client (miniupnpc) the tasks drive through
+# pyntara.upnp: the calls of the client with the {command} placeholder for
+# the binary the caller names, the field of its status output that carries
+# the router internet address, the protocols of a mapping and the arrow of
+# a mapping line of its list output.
+upnpc_status_command = ["{command}", "-s"]
+upnpc_mapping_list_command = ["{command}", "-l"]
+upnpc_mapping_add_command = [
+    "{command}",
+    "-e",
+    "{description}",
+    "-a",
+    "{internal_address}",
+    "{port}",
+    "{port}",
+    "{protocol}",
+]
+upnpc_external_address_key = "ExternalIPAddress"
+upnpc_protocol_names = ["TCP", "UDP"]
+upnpc_mapping_arrow = "->"

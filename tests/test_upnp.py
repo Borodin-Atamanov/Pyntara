@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
+from support import make_config
 
 from pyntara import upnp as upnp_module
 from pyntara.upnp import (
@@ -20,6 +21,11 @@ from pyntara.upnp import (
     parse_port_mappings,
     router_external_address,
 )
+
+# The engine table of the shared test document: the vocabulary of the
+# upnpc client lives there, so the expectations follow the config instead
+# of repeating its values.
+ENGINE = make_config().engine
 
 STATUS_OUTPUT = """upnpc: miniupnpc library test client
 ExternalIPAddress = 190.55.165.52
@@ -36,35 +42,103 @@ class TestParseExternalAddress:
     """Tests for reading the router address from the status output."""
 
     def test_reads_the_address(self) -> None:
-        assert parse_external_address(STATUS_OUTPUT) == "190.55.165.52"
+        assert (
+            parse_external_address(STATUS_OUTPUT, ENGINE.upnpc_external_address_key)
+            == "190.55.165.52"
+        )
 
     def test_ignores_an_empty_address(self) -> None:
         # A router without a connection reports a zero address; it is not
         # an address a client could use.
-        assert parse_external_address("ExternalIPAddress = 0.0.0.0\n") is None
+        assert (
+            parse_external_address(
+                "ExternalIPAddress = 0.0.0.0\n",
+                ENGINE.upnpc_external_address_key,
+            )
+            is None
+        )
 
     def test_ignores_a_router_that_does_not_answer(self) -> None:
-        assert parse_external_address("No IGD UPnP Device found\n") is None
+        assert (
+            parse_external_address(
+                "No IGD UPnP Device found\n", ENGINE.upnpc_external_address_key
+            )
+            is None
+        )
+
+    def test_another_field_name_in_the_config_is_read(self) -> None:
+        # The field the address is printed under is a config value: another
+        # client version that names it differently is handled by the config.
+        assert (
+            parse_external_address("RouterAddress = 190.55.165.52\n", "RouterAddress")
+            == "190.55.165.52"
+        )
 
 
 class TestParsePortMappings:
     """Tests for reading the mapping list."""
 
     def test_reads_both_mappings(self) -> None:
-        assert parse_port_mappings(LIST_OUTPUT) == [
+        assert parse_port_mappings(
+            LIST_OUTPUT, ENGINE.upnpc_protocol_names, ENGINE.upnpc_mapping_arrow
+        ) == [
             ("TCP", 443, "192.168.1.5", 443),
             ("UDP", 6881, "192.168.1.5", 6881),
         ]
 
     def test_ignores_headers_and_notices(self) -> None:
-        assert parse_port_mappings("No IGD UPnP Device found on the network\n") == []
+        assert (
+            parse_port_mappings(
+                "No IGD UPnP Device found on the network\n",
+                ENGINE.upnpc_protocol_names,
+                ENGINE.upnpc_mapping_arrow,
+            )
+            == []
+        )
+
+    def test_ignores_a_protocol_outside_the_configured_vocabulary(self) -> None:
+        # The protocol of a mapping line comes from the config, so a line
+        # of a protocol this client version names differently is skipped.
+        assert (
+            parse_port_mappings(
+                LIST_OUTPUT, ("tcp",), ENGINE.upnpc_mapping_arrow
+            )
+            == [("TCP", 443, "192.168.1.5", 443)]
+        )
 
     def test_finds_a_mapping_for_the_port(self) -> None:
-        assert mapping_exists(LIST_OUTPUT, 443, "TCP") is True
+        assert (
+            mapping_exists(
+                LIST_OUTPUT,
+                443,
+                "TCP",
+                ENGINE.upnpc_protocol_names,
+                ENGINE.upnpc_mapping_arrow,
+            )
+            is True
+        )
 
     def test_reports_a_missing_mapping(self) -> None:
-        assert mapping_exists(LIST_OUTPUT, 8443, "TCP") is False
-        assert mapping_exists(LIST_OUTPUT, 443, "UDP") is False
+        assert (
+            mapping_exists(
+                LIST_OUTPUT,
+                8443,
+                "TCP",
+                ENGINE.upnpc_protocol_names,
+                ENGINE.upnpc_mapping_arrow,
+            )
+            is False
+        )
+        assert (
+            mapping_exists(
+                LIST_OUTPUT,
+                443,
+                "UDP",
+                ENGINE.upnpc_protocol_names,
+                ENGINE.upnpc_mapping_arrow,
+            )
+            is False
+        )
 
 
 class TestEnsurePortForwarding:
@@ -81,7 +155,9 @@ class TestEnsurePortForwarding:
             return _FakeProc(0, LIST_OUTPUT)
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
-        assert ensure_port_forwarding("upnpc", "d", "192.168.1.5", 443, "TCP", 30.0)
+        assert ensure_port_forwarding(
+            ENGINE, "upnpc", "d", "192.168.1.5", 443, "TCP", 30.0
+        )
         assert all("-a" not in command for command in commands)
 
     def test_adds_the_mapping_and_reads_it_back(
@@ -104,7 +180,7 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
+            ENGINE, "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
         )
         add = next(command for command in commands if "-a" in command)
         assert add[add.index("-a") + 1 :] == ["192.168.1.5", "443", "443", "TCP"]
@@ -117,7 +193,9 @@ class TestEnsurePortForwarding:
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
         assert (
-            ensure_port_forwarding("upnpc", "d", "192.168.1.5", 443, "TCP", 30.0)
+            ensure_port_forwarding(
+                ENGINE, "upnpc", "d", "192.168.1.5", 443, "TCP", 30.0
+            )
             is False
         )
 
@@ -127,7 +205,7 @@ class TestEnsurePortForwarding:
         monkeypatch.setattr(
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
-        assert router_external_address("upnpc", 30.0) is None
+        assert router_external_address(ENGINE, "upnpc", 30.0) is None
 
 
 class TestForwardInboundPort:
@@ -142,7 +220,7 @@ class TestForwardInboundPort:
         forwarded: bool = True,
     ) -> None:
         monkeypatch.setattr(
-            upnp_module, "router_external_address", lambda _c, _t: router
+            upnp_module, "router_external_address", lambda _e, _c, _t: router
         )
         monkeypatch.setattr(
             upnp_module, "default_route_address", lambda _t: internal
@@ -159,6 +237,7 @@ class TestForwardInboundPort:
         self._requirements(monkeypatch)
         assert (
             forward_inbound_port(
+                ENGINE,
                 "upnpc",
                 "pyntara xray",
                 443,
@@ -176,7 +255,7 @@ class TestForwardInboundPort:
         # router answer is the only available source.
         self._requirements(monkeypatch)
         assert (
-            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0)
+            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0)
             == "190.55.165.52"
         )
 
@@ -186,6 +265,7 @@ class TestForwardInboundPort:
         self._requirements(monkeypatch, router="100.64.0.7")
         assert (
             forward_inbound_port(
+                ENGINE,
                 "upnpc",
                 "d",
                 443,
@@ -201,7 +281,7 @@ class TestForwardInboundPort:
     ) -> None:
         self._requirements(monkeypatch, router=None)
         assert (
-            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
+            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
         )
 
     def test_returns_nothing_when_the_mapping_is_refused(
@@ -209,7 +289,7 @@ class TestForwardInboundPort:
     ) -> None:
         self._requirements(monkeypatch, forwarded=False)
         assert (
-            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
+            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
         )
 
     def test_returns_nothing_when_the_program_is_missing(
@@ -222,5 +302,5 @@ class TestForwardInboundPort:
 
         monkeypatch.setattr(upnp_module, "run_command", fail)
         assert (
-            forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
+            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
         )

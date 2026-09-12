@@ -806,7 +806,7 @@ def _collect_run_facts(
         elif _ensure_upnp_client(cfg, timeout):
             _log("looking for a UPnP router")
             router_address = upnp.router_external_address(
-                cfg.upnp_client_command, timeout
+                engine, cfg.upnp_client_command, timeout
             )
             if router_address is None:
                 _log(
@@ -824,7 +824,10 @@ def _collect_run_facts(
 
 
 def _forward_upnp_ports(
-    cfg: ThreeXuiXraySetupConfig, facts: _RunFacts, timeout: float
+    engine: EngineConfig,
+    cfg: ThreeXuiXraySetupConfig,
+    facts: _RunFacts,
+    timeout: float,
 ) -> str | None:
     """Forward the inbound and the ACME port once, and report the host.
 
@@ -840,10 +843,11 @@ def _forward_upnp_ports(
     observed = (*facts.public_addresses.ipv4, *facts.public_addresses.ipv6)
     _log(f"asking the router to forward port {cfg.inbound_port} for clients")
     client_address = upnp.forward_inbound_port(
+        engine,
         cfg.upnp_client_command,
         cfg.upnp_mapping_description,
         cfg.inbound_port,
-        "TCP",
+        cfg.upnp_protocol,
         observed,
         timeout,
         facts.router_address,
@@ -854,10 +858,11 @@ def _forward_upnp_ports(
             "for the certificate challenge"
         )
         upnp.forward_inbound_port(
+            engine,
             cfg.upnp_client_command,
             cfg.upnp_mapping_description,
             cfg.acme_port,
-            "TCP",
+            cfg.upnp_protocol,
             (),
             timeout,
             facts.router_address,
@@ -2432,14 +2437,18 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.three_x_ui_xray_setup
+    engine = ctx.config.engine
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
 
     # Addresses and the UPnP router are read once per run: the stages below
     # reuse them, so a machine without UPnP is not asked about its router
     # for every port and the echo services are queried once.
-    facts = _collect_run_facts(ctx.config.engine, cfg, timeout)
-    facts = replace(facts, client_address=_forward_upnp_ports(cfg, facts, timeout))
+    facts = _collect_run_facts(engine, cfg, timeout)
+    facts = replace(
+        facts,
+        client_address=_forward_upnp_ports(engine, cfg, facts, timeout),
+    )
 
     _log(f"querying the latest release of {cfg.github_repo}")
     try:

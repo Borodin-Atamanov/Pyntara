@@ -1118,6 +1118,37 @@ def _engine_table(raw: object) -> EngineConfig:
         session_environment_keys=tuple(session_environment_keys),
         session_bus_key=session_bus_key,
         session_display_keys=tuple(session_display_keys),
+        upnpc_status_command=_placeholder_command_field(
+            raw.get("upnpc_status_command"),
+            "engine.upnpc_status_command",
+            ("{command}",),
+        ),
+        upnpc_mapping_list_command=_placeholder_command_field(
+            raw.get("upnpc_mapping_list_command"),
+            "engine.upnpc_mapping_list_command",
+            ("{command}",),
+        ),
+        upnpc_mapping_add_command=_placeholder_command_field(
+            raw.get("upnpc_mapping_add_command"),
+            "engine.upnpc_mapping_add_command",
+            (
+                "{command}",
+                "{description}",
+                "{internal_address}",
+                "{port}",
+                "{protocol}",
+            ),
+        ),
+        upnpc_external_address_key=_nonempty_string_field(
+            raw.get("upnpc_external_address_key"),
+            "engine.upnpc_external_address_key",
+        ),
+        upnpc_protocol_names=_string_list(
+            raw.get("upnpc_protocol_names"), "engine.upnpc_protocol_names"
+        ),
+        upnpc_mapping_arrow=_nonempty_string_field(
+            raw.get("upnpc_mapping_arrow"), "engine.upnpc_mapping_arrow"
+        ),
     )
 
 
@@ -4122,6 +4153,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         upnp_enabled=upnp_enabled,
         upnp_package=upnp_package,
         upnp_client_command=upnp_client_command,
+        upnp_protocol=_nonempty_string_field(
+            raw.get("upnp_protocol"), "three_x_ui_xray_setup.upnp_protocol"
+        ),
         upnp_mapping_description=upnp_mapping_description,
         client_profile_entry_title=client_profile_entry_title,
         local_proxy_tag=local_proxy_tag,

@@ -155,7 +155,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
         }
     ),
     "src/pyntara/tor_address.py": frozenset({"FALLBACK_NOTE = ("}),
-    "src/pyntara/upnp.py": frozenset({'EXTERNAL_ADDRESS_KEY = "ExternalIPAddress"'}),
     "src/pyntara/utils.py": frozenset(
         {
             'APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}',
