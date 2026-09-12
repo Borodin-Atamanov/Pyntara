@@ -32,8 +32,6 @@ When you receive a task and I say "plan", follow the planning procedure defined 
 
 Do not withhold implementation details: state which decisions you are making before implementing them.
 
-This is a single-developer project: all the code is written by you, the AI agentess, under the guidance of a human (me).
-
 Цель проекта - создание настроенной хорошо работающей системы на целевой машине. Руководствуйся этой целью, делая выборы. Находи способы, чтобы на целевой машине код достил цели, а не глупо падал. На целевой машине нет разработчика, только пользователь, нужно показывать информативные сообщения о процессе работы. 
 
 Удалять можно только в корзину.
