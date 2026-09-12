@@ -2807,6 +2807,23 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
 # from swapfile_service_install.py
 
 
+def _placeholder_command_field(
+    raw: object, name: str, placeholders: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Validate a command array and demand the placeholders its call fills.
+
+    A command whose arguments are ours to choose lives in the config with
+    {placeholders}; the task fills them in, so a mistyped placeholder would
+    raise on the target machine. The checks refuse it here instead.
+    """
+
+    command = _string_list(raw, name)
+    for placeholder in placeholders:
+        if not any(placeholder in part for part in command):
+            raise ConfigError(f"{name} must carry the {placeholder} placeholder")
+    return command
+
+
 def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig:
     """Validate the [swapfile_service_install] table and build the config.
 
@@ -2862,6 +2879,48 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"),
             "swapfile_service_install.service_unit_name",
+        ),
+        unit_template_file_name=_nonempty_string_field(
+            raw.get("unit_template_file_name"),
+            "swapfile_service_install.unit_template_file_name",
+        ),
+        swap_show_command=_string_list(
+            raw.get("swap_show_command"),
+            "swapfile_service_install.swap_show_command",
+        ),
+        swap_on_command=_placeholder_command_field(
+            raw.get("swap_on_command"),
+            "swapfile_service_install.swap_on_command",
+            ("{swapfile_path}",),
+        ),
+        swap_off_command=_placeholder_command_field(
+            raw.get("swap_off_command"),
+            "swapfile_service_install.swap_off_command",
+            ("{swapfile_path}",),
+        ),
+        create_command=_placeholder_command_field(
+            raw.get("create_command"),
+            "swapfile_service_install.create_command",
+            ("{size_mb}", "{swapfile_path}"),
+        ),
+        chmod_command=_placeholder_command_field(
+            raw.get("chmod_command"),
+            "swapfile_service_install.chmod_command",
+            ("{file_mode}", "{swapfile_path}"),
+        ),
+        format_command=_placeholder_command_field(
+            raw.get("format_command"),
+            "swapfile_service_install.format_command",
+            ("{swapfile_path}",),
+        ),
+        systemctl_daemon_reload_command=_string_list(
+            raw.get("systemctl_daemon_reload_command"),
+            "swapfile_service_install.systemctl_daemon_reload_command",
+        ),
+        systemctl_enable_command=_placeholder_command_field(
+            raw.get("systemctl_enable_command"),
+            "swapfile_service_install.systemctl_enable_command",
+            ("{service_unit_name}",),
         ),
     )
 

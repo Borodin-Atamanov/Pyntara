@@ -213,6 +213,15 @@ def base_config() -> str:
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
         'service_unit_name = "swapfile.service"\n'
+        'unit_template_file_name = "swapfile.service"\n'
+        'swap_show_command = ["swapon", "--show", "--noheadings"]\n'
+        'swap_on_command = ["swapon", "{swapfile_path}"]\n'
+        'swap_off_command = ["swapoff", "{swapfile_path}"]\n'
+        'create_command = ["fallocate", "-l", "{size_mb}M", "{swapfile_path}"]\n'
+        'chmod_command = ["chmod", "{file_mode}", "{swapfile_path}"]\n'
+        'format_command = ["mkswap", "{swapfile_path}"]\n'
+        'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
+        'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
         'shrinker_enabled = true\n'

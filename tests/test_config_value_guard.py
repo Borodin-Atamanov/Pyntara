@@ -232,18 +232,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["systemctl", "start", cfg.service_unit_name], timeout=timeout',
         }
     ),
-    "src/pyntara/tasks/swapfile_service_install.py": frozenset(
-        {
-            '["chmod", f"{cfg.swapfile_mode:o}", str(cfg.swapfile_path)],',
-            '["fallocate", "-l", f"{target_mb}M", str(cfg.swapfile_path)],',
-            '["swapon", "--show", "--noheadings"],',
-            'run_command(["mkswap", str(cfg.swapfile_path)], timeout=timeout)',
-            'run_command(["swapoff", str(cfg.swapfile_path)], timeout=timeout)',
-            'run_command(["swapon", str(cfg.swapfile_path)], timeout=timeout)',
-            'run_command(["systemctl", "daemon-reload"], timeout=timeout)',
-            'run_command(["systemctl", "enable", service_name], timeout=timeout)',
-        }
-    ),
     "src/pyntara/tasks/system_metrics_setup.py": frozenset(
         {
             '["systemctl", "restart", collector_timer_name], timeout=timeout',

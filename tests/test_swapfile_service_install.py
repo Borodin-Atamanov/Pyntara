@@ -49,7 +49,24 @@ class _FakeDiskUsage:
         self.free = free
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    unit_template_file_name: str = "swapfile.service",
+    create_command: tuple[str, ...] = (
+        "fallocate",
+        "-l",
+        "{size_mb}M",
+        "{swapfile_path}",
+    ),
+    chmod_command: tuple[str, ...] = ("chmod", "{file_mode}", "{swapfile_path}"),
+    enable_command: tuple[str, ...] = (
+        "systemctl",
+        "enable",
+        "{service_unit_name}",
+    ),
+) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
     return make_context(
@@ -67,6 +84,10 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
+            swapfile_unit_template_file_name=unit_template_file_name,
+            swapfile_create_command=create_command,
+            swapfile_chmod_command=chmod_command,
+            swapfile_systemctl_enable_command=enable_command,
         ),
     )
 
@@ -76,13 +97,16 @@ def _install_fixtures(
     tmp_path: Path,
     *,
     free_bytes: int = FREE_BYTES,
+    unit_template_file_name: str = "swapfile.service",
 ) -> Path:
     """Point the task at temporary fixtures; return the swapfile path."""
 
     meminfo = tmp_path / "meminfo"
     meminfo.write_text(f"MemTotal:       {RAM_KIB} kB\n", encoding="utf-8")
     monkeypatch.setattr(swapfile_service_install, "MEMINFO_PATH", meminfo)
-    template = tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service"
+    template = (
+        tmp_path / "task_data" / "swapfile_service_install" / unit_template_file_name
+    )
     template.parent.mkdir(parents=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     monkeypatch.setattr(
@@ -283,3 +307,48 @@ def test_missing_template_reports_error(
     assert result.success is False
     assert "template" in (result.error or "")
     assert ["fallocate", "-l", f"{TARGET_MB}M", str(swapfile)] in calls
+
+
+def test_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Every command of the task is a config value: another allocation call,
+    # another mode call and another enable call in the config are the argv
+    # the run carries out, with the placeholders of the section filled in.
+    swapfile = _install_fixtures(monkeypatch, tmp_path)
+    calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
+    result = swapfile_service_install.task(
+        _ctx(
+            tmp_path,
+            create_command=("my-allocate", "--length", "{size_mb}M", "{swapfile_path}"),
+            chmod_command=("my-chmod", "{file_mode}", "{swapfile_path}"),
+            enable_command=("my-enable", "{service_unit_name}"),
+        )
+    )
+    assert result.success is True
+    assert ["my-allocate", "--length", f"{TARGET_MB}M", str(swapfile)] in calls
+    assert ["my-chmod", "600", str(swapfile)] in calls
+    assert ["my-enable", "swapfile.service"] in calls
+
+
+def test_unit_template_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The template of the unit is named by the config: the run renders the
+    # file the config names and leaves the other template of the directory
+    # unread.
+    swapfile = _install_fixtures(
+        monkeypatch, tmp_path, unit_template_file_name="other.service"
+    )
+    (tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service").write_text(
+        "[Unit]\nDescription=wrong\n", encoding="utf-8"
+    )
+    calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
+    result = swapfile_service_install.task(
+        _ctx(tmp_path, unit_template_file_name="other.service")
+    )
+    assert result.success is True
+    written = (tmp_path / "systemd" / "swapfile.service").read_text(encoding="utf-8")
+    assert "wrong" not in written
+    assert str(swapfile) in written
+    assert ["systemctl", "enable", "swapfile.service"] in calls

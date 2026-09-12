@@ -4,14 +4,15 @@ The swap size is min(RAM * ram_multiplier + ram_extra_mb,
 free_disk * disk_fraction), where the parameters come from config.toml
 through ctx.config.swapfile_service_install and the RAM and free disk
 space are measured on the target machine. The task creates the swapfile
-with fallocate, formats it with mkswap, activates it with swapon and
-installs a systemd oneshot service that re-activates the swap at every
-boot. The unit file is rendered from the template at
-task_data/swapfile_service_install/swapfile.service with the swapfile
-path substituted (string.Template); the service never reads config.toml
-itself. The task is idempotent: it skips when the swapfile already has
-the computed size, is active and the service is enabled; force mode
-reruns it and recreates the swapfile.
+with the configured allocation command, writes its signature with the
+configured format command, activates it with the configured swap commands
+and installs a systemd oneshot service that re-activates the swap at every
+boot. The unit file is rendered from the template the config names under
+task_data/swapfile_service_install/ with the swapfile path substituted
+(string.Template); the service never reads config.toml itself. The task is
+idempotent: it skips when the swapfile already has the computed size, is
+active and the service is enabled; force mode reruns it and recreates the
+swapfile.
 """
 
 from __future__ import annotations
@@ -25,10 +26,14 @@ from pyntara.config import SwapfileServiceInstallConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command, service_is_enabled, task_data_dir
+from pyntara.utils import (
+    run_command,
+    service_is_enabled,
+    substituted_command,
+    task_data_dir,
+)
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
+# Path of the kernel information the RAM size is read from.
 MEMINFO_PATH = Path("/proc/meminfo")
 
 
@@ -77,16 +82,21 @@ def _current_swap_size_mb(path: Path, bytes_per_mib: int) -> int | None:
     return size // bytes_per_mib
 
 
-def _swap_active(path: Path, timeout: float) -> bool:
-    """True when the swapfile is currently activated (swapon --show)."""
+def _swap_active(cfg: SwapfileServiceInstallConfig, timeout: float) -> bool:
+    """True when the swapfile is currently activated.
+
+    The configured swap listing command reports every active swap device;
+    the configured swapfile path found in its output means the file is in
+    use.
+    """
 
     result = run_command(
-        ["swapon", "--show", "--noheadings"],
+        list(cfg.swap_show_command),
         check=False,
         capture=True,
         timeout=timeout,
     )
-    return result.returncode == 0 and str(path) in result.stdout
+    return result.returncode == 0 and str(cfg.swapfile_path) in result.stdout
 
 
 def _render_unit(template_path: Path, swapfile_path: Path) -> str:
@@ -157,7 +167,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking swapfile {cfg.swapfile_path}: absent")
     else:
         _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
-    active = _swap_active(cfg.swapfile_path, timeout)
+    active = _swap_active(cfg, timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
     enabled = service_is_enabled(service_name, timeout)
     _log(
@@ -187,7 +197,13 @@ def task(ctx: Context) -> TaskResult:
         if not active:
             _log(f"activating swap: swapon {cfg.swapfile_path}")
             try:
-                run_command(["swapon", str(cfg.swapfile_path)], timeout=timeout)
+                run_command(
+                    substituted_command(
+                        cfg.swap_on_command,
+                        {"swapfile_path": str(cfg.swapfile_path)},
+                    ),
+                    timeout=timeout,
+                )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 return TaskResult(success=False, error=f"swapon failed: {exc}")
             _log("swap active")
@@ -206,7 +222,13 @@ def task(ctx: Context) -> TaskResult:
         if active:
             _log(f"deactivating swap: swapoff {cfg.swapfile_path}")
             try:
-                run_command(["swapoff", str(cfg.swapfile_path)], timeout=timeout)
+                run_command(
+                    substituted_command(
+                        cfg.swap_off_command,
+                        {"swapfile_path": str(cfg.swapfile_path)},
+                    ),
+                    timeout=timeout,
+                )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 return TaskResult(
                     success=False, error=f"cannot deactivate old swapfile: {exc}"
@@ -221,21 +243,45 @@ def task(ctx: Context) -> TaskResult:
         try:
             _log(f"creating swapfile: fallocate -l {target_mb}M {cfg.swapfile_path}")
             run_command(
-                ["fallocate", "-l", f"{target_mb}M", str(cfg.swapfile_path)],
+                substituted_command(
+                    cfg.create_command,
+                    {
+                        "size_mb": str(target_mb),
+                        "swapfile_path": str(cfg.swapfile_path),
+                    },
+                ),
                 timeout=timeout,
             )
             _log(f"swapfile created: {target_mb} MiB")
             _log(f"setting permissions: chmod {cfg.swapfile_mode:o} {cfg.swapfile_path}")
             run_command(
-                ["chmod", f"{cfg.swapfile_mode:o}", str(cfg.swapfile_path)],
+                substituted_command(
+                    cfg.chmod_command,
+                    {
+                        "file_mode": f"{cfg.swapfile_mode:o}",
+                        "swapfile_path": str(cfg.swapfile_path),
+                    },
+                ),
                 timeout=timeout,
             )
             _log("permissions set")
             _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
-            run_command(["mkswap", str(cfg.swapfile_path)], timeout=timeout)
+            run_command(
+                substituted_command(
+                    cfg.format_command,
+                    {"swapfile_path": str(cfg.swapfile_path)},
+                ),
+                timeout=timeout,
+            )
             _log("swapfile formatted")
             _log(f"activating swap: swapon {cfg.swapfile_path}")
-            run_command(["swapon", str(cfg.swapfile_path)], timeout=timeout)
+            run_command(
+                substituted_command(
+                    cfg.swap_on_command,
+                    {"swapfile_path": str(cfg.swapfile_path)},
+                ),
+                timeout=timeout,
+            )
             _log("swap active")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"swapfile setup failed: {exc}")
@@ -243,7 +289,7 @@ def task(ctx: Context) -> TaskResult:
 
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / "swapfile.service"
+        / cfg.unit_template_file_name
     )
     _log(f"rendering unit template from {template_path}")
     try:
@@ -263,10 +309,18 @@ def task(ctx: Context) -> TaskResult:
     _log("unit file written")
     try:
         _log("reloading systemd: systemctl daemon-reload")
-        run_command(["systemctl", "daemon-reload"], timeout=timeout)
+        run_command(
+            list(cfg.systemctl_daemon_reload_command), timeout=timeout
+        )
         _log("systemd reloaded")
         _log(f"enabling service: systemctl enable {service_name}")
-        run_command(["systemctl", "enable", service_name], timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.systemctl_enable_command,
+                {"service_unit_name": service_name},
+            ),
+            timeout=timeout,
+        )
         _log("service enabled")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(

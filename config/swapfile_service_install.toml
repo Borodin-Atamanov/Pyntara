@@ -17,3 +17,25 @@ swapfile_mode = "0600"
 size_tolerance_mb = 1
 # Name of the systemd oneshot service unit that activates the swap at boot.
 service_unit_name = "swapfile.service"
+# Name of the unit template under task_data/swapfile_service_install/ of
+# the clone; the run renders it with the swapfile path.
+unit_template_file_name = "swapfile.service"
+# Command that lists the active swap devices; the swapfile path found in
+# its output is the active swap.
+swap_show_command = ["swapon", "--show", "--noheadings"]
+# Commands that activate and deactivate the swapfile; {swapfile_path} is
+# the configured swap file.
+swap_on_command = ["swapon", "{swapfile_path}"]
+swap_off_command = ["swapoff", "{swapfile_path}"]
+# Command that allocates the swapfile at the computed size; {size_mb} is
+# the target size in mebibytes.
+create_command = ["fallocate", "-l", "{size_mb}M", "{swapfile_path}"]
+# Command that applies the configured file mode; {file_mode} is the mode
+# of the section in the octal form chmod expects.
+chmod_command = ["chmod", "{file_mode}", "{swapfile_path}"]
+# Command that writes the swap signature into the file.
+format_command = ["mkswap", "{swapfile_path}"]
+# systemctl calls of the task, each carrying the unit name as its
+# placeholder.
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]
