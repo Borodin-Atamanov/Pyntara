@@ -233,6 +233,19 @@ def base_config() -> str:
         'tunnel_keys_path = "/var/lib/i2pd/ssh.dat"\n'
         'address_file_path = "/var/lib/pyntara/i2pd_ssh_address"\n'
         'address_file_mode = "0644"\n'
+        'codename_asset_name_template = "i2pd_{release_tag}-1{codename}1_{arch}.deb"\n'
+        'generic_asset_name_template = "i2pd_{release_tag}-1_{arch}.deb"\n'
+        'os_release_codename_key = "VERSION_CODENAME"\n'
+        'version_command = ["i2pd", "--version"]\n'
+        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
+        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
+        'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
+        'config_template_file_name = "i2pd.conf"\n'
+        'tunnels_template_file_name = "tunnels.conf"\n'
+        'config_true_value = "true"\n'
+        'config_false_value = "false"\n'
+        "address_check_attempts = 10\n"
+        "address_check_retry_delay_seconds = 2\n"
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'

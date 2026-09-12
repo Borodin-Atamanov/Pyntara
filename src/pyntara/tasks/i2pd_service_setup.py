@@ -29,11 +29,12 @@ record: the first 387 bytes are the IdentityEx (encryption key, signing
 key and certificate), and the I2P address is the lowercase unpadded
 base32 of the SHA-256 hash of that IdentityEx. The task parses the
 certificate to learn the identity length, computes the address and
-reports it; on the first start the file does not exist yet, so the
-message says the address appears after the first start. Once the address
-is known, the task saves it into the configured address_file_path with
-the configured mode, so the deployed address command can fall back to
-the saved value when the keys file cannot be decoded.
+reports it. i2pd writes the identity only after the router is up, so
+after a start the task waits for the file with the configured address
+loop, saves the address into the configured address_file_path with the
+configured mode and reports it in the same run, so the deployed address
+command finds the saved value; a machine where the identity never
+appears ends the wait and says the address is not available yet.
 
 The service
 is enabled and started or restarted immediately, and the task waits with
@@ -73,6 +74,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
     task_data_dir,
 )
 
@@ -98,8 +100,14 @@ def _render_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> str:
         bandwidth=str(cfg.bandwidth),
         share=str(cfg.share),
         tunnels_config_path=str(cfg.tunnels_config_path),
-        http_enabled="true" if cfg.http_enabled else "false",
-        socks_proxy_enabled="true" if cfg.socks_proxy_enabled else "false",
+        http_enabled=(
+            cfg.config_true_value if cfg.http_enabled else cfg.config_false_value
+        ),
+        socks_proxy_enabled=(
+            cfg.config_true_value
+            if cfg.socks_proxy_enabled
+            else cfg.config_false_value
+        ),
         socks_proxy_port=str(cfg.socks_proxy_port),
     )
 
@@ -131,6 +139,7 @@ VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 
 def _select_asset(
+    cfg: I2pdServiceSetupConfig,
     release: dict[str, object],
     tag: str,
     codename: str | None,
@@ -138,24 +147,34 @@ def _select_asset(
 ) -> tuple[str, str] | None:
     """The (name, url) of the .deb asset for this machine, or None.
 
-    The codename-specific asset i2pd_{tag}-1{codename}1_{arch}.deb wins,
-    because it is built against this distribution; the generic asset
-    i2pd_{tag}-1_{arch}.deb is the fallback.
+    The candidate names come from the configured templates, formatted
+    with the release tag, the codename and the architecture: the
+    codename-specific asset wins, because it is built against this
+    distribution, and the generic asset is the fallback. A distribution
+    without a codename leaves the generic candidate alone.
     """
 
     assets = dict(asset_name_urls(release))
     candidates: list[str] = []
     if codename:
-        candidates.append(f"i2pd_{tag}-1{codename}1_{arch}.deb")
-    candidates.append(f"i2pd_{tag}-1_{arch}.deb")
+        candidates.append(
+            cfg.codename_asset_name_template.format(
+                release_tag=tag, codename=codename, arch=arch
+            )
+        )
+    candidates.append(
+        cfg.generic_asset_name_template.format(release_tag=tag, arch=arch)
+    )
     for candidate in candidates:
         if candidate in assets:
             return candidate, assets[candidate]
     return None
 
 
-def _installed_version(timeout: float) -> str | None:
-    """The installed i2pd version from i2pd --version, or None.
+def _installed_version(
+    cfg: I2pdServiceSetupConfig, timeout: float
+) -> str | None:
+    """The installed i2pd version from the configured version command.
 
     A missing binary, a nonzero exit or a hang means i2pd is not
     installed: the task treats the version as absent and reinstalls it.
@@ -166,7 +185,7 @@ def _installed_version(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["i2pd", "--version"],
+            list(cfg.version_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -338,6 +357,25 @@ def _wait_active(
     return False
 
 
+def _wait_tunnel_address(cfg: I2pdServiceSetupConfig) -> str | None:
+    """The .b32.i2p address once i2pd wrote the tunnel identity file.
+
+    The keys file appears only after the first start of the router, so
+    the decode is repeated with a pause of
+    address_check_retry_delay_seconds between two attempts until
+    address_check_attempts run out; the last decode is the result either
+    way, and None means the identity is still not there.
+    """
+
+    address = b32_address(cfg.tunnel_keys_path)
+    for _ in range(cfg.address_check_attempts):
+        if address:
+            return address
+        time.sleep(cfg.address_check_retry_delay_seconds)
+        address = b32_address(cfg.tunnel_keys_path)
+    return address
+
+
 def _saved_address_matches(address_file_path: Path, address: str | None) -> bool:
     """True when the saved address file carries exactly the address.
 
@@ -366,8 +404,10 @@ def task(ctx: Context) -> TaskResult:
     the release, installs it, writes the configuration and the tunnels
     file, enables the service, starts or restarts it and waits for it to
     become active. The .b32.i2p address of the tunnel is read from the
-    keys file and reported; before the first start created the keys file
-    the message says the address appears after the first start.
+    keys file and reported; i2pd writes the identity only after the
+    router is up, so a start is followed by the configured identity wait,
+    and a machine where the file never appears reports that the address
+    is not available yet instead of hanging.
     Every step is reported to stdout:
     measurements and decisions as single lines that include their
     result, long-running commands as a line before and a line after. Any
@@ -379,12 +419,33 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
-    template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / "i2pd.conf"
-    )
-    tunnels_template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / "tunnels.conf"
-    )
+    missing_commands = [
+        name
+        for name, command in (
+            ("version_command", cfg.version_command),
+            ("service_enable_command", cfg.service_enable_command),
+            ("service_start_command", cfg.service_start_command),
+            ("service_restart_command", cfg.service_restart_command),
+        )
+        if not command
+    ]
+    if missing_commands:
+        return TaskResult(
+            success=False,
+            error=(
+                "the i2pd_service_setup commands are not configured: "
+                + ", ".join(missing_commands)
+            ),
+        )
+    task_data_path = task_data_dir(ctx.repo_root, ctx.task_name)
+    template_path = task_data_path / cfg.config_template_file_name
+    tunnels_template_path = task_data_path / cfg.tunnels_template_file_name
+    for missing_template in (template_path, tunnels_template_path):
+        if not missing_template.is_file():
+            return TaskResult(
+                success=False,
+                error=f"missing task data template: {missing_template}",
+            )
     download_timeout = ctx.config.engine.curl_download_timeout_seconds
     curl_retries = ctx.config.engine.curl_retries
     retry_delay = ctx.config.engine.curl_retry_delay_seconds
@@ -409,7 +470,8 @@ def task(ctx: Context) -> TaskResult:
         )
     _log(
         f"reading {cfg.os_release_file_path}: ID={os_release.get('ID', '')}, "
-        f"VERSION_CODENAME={os_release.get('VERSION_CODENAME', '')}"
+        f"{cfg.os_release_codename_key}="
+        f"{os_release.get(cfg.os_release_codename_key, '')}"
     )
     try:
         arch = dpkg_architecture(timeout)
@@ -426,8 +488,8 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest release: {tag}")
 
-    codename = os_release.get("VERSION_CODENAME")
-    selected = _select_asset(release, tag, codename, arch)
+    codename = os_release.get(cfg.os_release_codename_key)
+    selected = _select_asset(cfg, release, tag, codename, arch)
     if selected is None:
         return TaskResult(
             success=False,
@@ -439,7 +501,7 @@ def task(ctx: Context) -> TaskResult:
     asset_name, asset_url = selected
     _log(f"selected asset: {asset_name}")
 
-    installed_version = _installed_version(timeout)
+    installed_version = _installed_version(cfg, timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
     target_config = _render_config(cfg, template_path)
@@ -564,16 +626,18 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     if not enabled:
-        _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
+        enable_argv = substituted_command(
+            cfg.service_enable_command,
+            {"service_unit_name": cfg.service_unit_name},
+        )
+        _log(f"enabling service: {' '.join(enable_argv)}")
         try:
-            run_command(
-                ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
-            )
+            run_command(enable_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False,
                 changed=changed,
-                error=f"systemctl enable failed: {exc}",
+                error=f"{enable_argv[0]} enable failed: {exc}",
             )
         _log("service enabled")
         changed = True
@@ -587,18 +651,22 @@ def task(ctx: Context) -> TaskResult:
         or force
     ):
         action = "restart" if active else "start"
-        _log(
-            f"{action}ing service: systemctl {action} {cfg.service_unit_name}"
+        service_command = (
+            cfg.service_restart_command
+            if active
+            else cfg.service_start_command
         )
+        service_argv = substituted_command(
+            service_command, {"service_unit_name": cfg.service_unit_name}
+        )
+        _log(f"{action}ing service: {' '.join(service_argv)}")
         try:
-            run_command(
-                ["systemctl", action, cfg.service_unit_name], timeout=timeout
-            )
+            run_command(service_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False,
                 changed=changed,
-                error=f"systemctl {action} failed: {exc}",
+                error=f"{service_argv[0]} {action} failed: {exc}",
             )
         _log(f"service {action}ed")
         _log(
@@ -623,6 +691,13 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     address = b32_address(cfg.tunnel_keys_path)
+    if address is None:
+        _log(
+            f"waiting for the tunnel identity file {cfg.tunnel_keys_path} "
+            f"(up to {cfg.address_check_attempts} checks)"
+        )
+        address = _wait_tunnel_address(cfg)
+        _log(f"tunnel address: {address or 'not available yet'}")
     if address and not _saved_address_matches(cfg.address_file_path, address):
         try:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)

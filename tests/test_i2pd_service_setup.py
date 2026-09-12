@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -132,6 +133,7 @@ def _ctx(
             i2pd_install_retries=retries,
             i2pd_start_check_attempts=check_attempts,
             i2pd_start_check_retry_delay_seconds=0.0,
+            i2pd_address_check_retry_delay_seconds=0.0,
             ssh_daemon_directives=tuple(directives),
         ),
     )
@@ -582,20 +584,24 @@ def test_release_json_failure_reports_error(
 def test_select_asset_prioritizes_codename() -> None:
     # The codename-specific asset wins over the generic one; without a
     # codename only the generic asset matches; an unknown architecture
-    # matches nothing.
+    # matches nothing. The candidate names come from the configured
+    # templates.
+    cfg = make_config().i2pd_service_setup
     release = json.loads(_release_json())
     specific_asset = i2pd_service_setup._select_asset(
-        release, TAG, "resolute", "amd64"
+        cfg, release, TAG, "resolute", "amd64"
     )
     assert specific_asset is not None
     specific, _ = specific_asset
     assert specific == f"i2pd_{TAG}-1resolute1_amd64.deb"
-    generic_asset = i2pd_service_setup._select_asset(release, TAG, None, "amd64")
+    generic_asset = i2pd_service_setup._select_asset(
+        cfg, release, TAG, None, "amd64"
+    )
     assert generic_asset is not None
     generic, _ = generic_asset
     assert generic == f"i2pd_{TAG}-1_amd64.deb"
     assert (
-        i2pd_service_setup._select_asset(release, TAG, "resolute", "s390x")
+        i2pd_service_setup._select_asset(cfg, release, TAG, "resolute", "s390x")
         is None
     )
 
@@ -660,6 +666,76 @@ def test_first_run_message_without_keys_file(
     assert "appears after the first start" in (result.message or "")
     assert ctx.config.i2pd_service_setup.tunnels_config_path.is_file()
     assert ["systemctl", "start", "i2pd.service"] in calls
+
+
+def test_wait_tunnel_address_returns_the_address_once_it_appears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The identity file appears only after the first start of the router:
+    # the wait decodes again after a pause and finds the address.
+    cfg = make_config(
+        i2pd_tunnel_keys_path=tmp_path / "ssh.dat"
+    ).i2pd_service_setup
+    pauses: list[float] = []
+
+    def create_identity_file(seconds: float) -> None:
+        pauses.append(seconds)
+        cfg.tunnel_keys_path.write_bytes(i2pd_keys_file_bytes())
+
+    monkeypatch.setattr(i2pd_service_setup.time, "sleep", create_identity_file)
+    address = i2pd_service_setup._wait_tunnel_address(cfg)
+    assert address == i2pd_keys_b32_address()
+    assert pauses == [cfg.address_check_retry_delay_seconds]
+
+
+def test_wait_tunnel_address_returns_none_when_the_identity_stays_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without the identity file the wait still ends after the configured
+    # attempts and reports that there is no address.
+    cfg = make_config(
+        i2pd_tunnel_keys_path=tmp_path / "ssh.dat"
+    ).i2pd_service_setup
+    monkeypatch.setattr(i2pd_service_setup.time, "sleep", lambda seconds: None)
+    assert i2pd_service_setup._wait_tunnel_address(cfg) is None
+
+
+def test_missing_commands_are_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An empty command list is a broken config: the task reports which
+    # command is not configured and never starts the work.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    calls = _install_fake(monkeypatch)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            i2pd_service_setup=replace(
+                ctx.config.i2pd_service_setup, version_command=()
+            ),
+        ),
+    )
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is False
+    assert "version_command" in (result.error or "")
+    assert calls == []
+
+
+def test_missing_template_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A missing task data file is reported with its path before anything
+    # is downloaded or written.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    (ctx.repo_root / "task_data" / "i2pd_service_setup" / "tunnels.conf").unlink()
+    calls = _install_fake(monkeypatch)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is False
+    assert "tunnels.conf" in (result.error or "")
+    assert calls == []
 
 
 def test_address_reported_when_keys_exist(

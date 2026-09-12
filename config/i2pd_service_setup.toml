@@ -66,3 +66,39 @@ address_file_path = "/var/lib/pyntara/i2pd_ssh_address"
 # File mode of the saved address file, as an octal string. The address
 # is not secret, so the file is readable by every user.
 address_file_mode = "0644"
+# Name templates of the two candidate .deb assets of a release, formatted
+# with {release_tag}, {codename} and {arch}. The codename-specific build
+# wins, because it is built against this distribution; the generic build
+# is the fallback, so a release without a build for this codename still
+# installs.
+codename_asset_name_template = "i2pd_{release_tag}-1{codename}1_{arch}.deb"
+generic_asset_name_template = "i2pd_{release_tag}-1_{arch}.deb"
+# Key of the os-release file that carries the distribution codename the
+# codename-specific asset name is built from.
+os_release_codename_key = "VERSION_CODENAME"
+# Command that prints the installed version; the task reads the first
+# dotted version triple from its output. A missing binary or a nonzero
+# exit means i2pd is not installed, so the task reinstalls it.
+version_command = ["i2pd", "--version"]
+# Command that enables the service unit; {service_unit_name} is replaced
+# with the unit name above.
+service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+# Command that starts the service unit when it is inactive.
+service_start_command = ["systemctl", "start", "{service_unit_name}"]
+# Command that restarts the service unit when it is already active.
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
+# Names of the two templates under task_data/i2pd_service_setup/ of the
+# clone: the main configuration and the tunnels file. The run fills their
+# placeholders with the values of this table.
+config_template_file_name = "i2pd.conf"
+tunnels_template_file_name = "tunnels.conf"
+# Boolean spelling i2pd accepts in its configuration file. The rendered
+# file, the idempotency comparison and the written file share it, so one
+# representation covers all three.
+config_true_value = "true"
+config_false_value = "false"
+# Readiness loop of the tunnel identity: the keys file appears only after
+# the first start of the router, so the task repeats the decode with a
+# pause until these attempts run out and then reports what it found.
+address_check_attempts = 10
+address_check_retry_delay_seconds = 2

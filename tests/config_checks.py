@@ -1106,6 +1106,15 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
     are non-empty strings; address_file_path is a non-empty string and
     address_file_mode is an octal mode string.
+    codename_asset_name_template and generic_asset_name_template are
+    non-empty strings, os_release_codename_key names the os-release field
+    the codename comes from, and config_true_value and
+    config_false_value are non-empty strings; version_command and the
+    three service commands are string lists, and
+    config_template_file_name and tunnels_template_file_name are
+    non-empty strings. address_check_attempts is a positive integer and
+    address_check_retry_delay_seconds is positive, so the identity wait
+    always pauses between two decodes.
     """
 
     if not isinstance(raw, dict):
@@ -1207,6 +1216,50 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
             "i2pd_service_setup.os_release_file_path",
         )
     )
+    codename_asset_name_template = _nonempty_string_field(
+        raw.get("codename_asset_name_template"),
+        "i2pd_service_setup.codename_asset_name_template",
+    )
+    generic_asset_name_template = _nonempty_string_field(
+        raw.get("generic_asset_name_template"),
+        "i2pd_service_setup.generic_asset_name_template",
+    )
+    os_release_codename_key = _nonempty_string_field(
+        raw.get("os_release_codename_key"),
+        "i2pd_service_setup.os_release_codename_key",
+    )
+    config_template_file_name = _nonempty_string_field(
+        raw.get("config_template_file_name"),
+        "i2pd_service_setup.config_template_file_name",
+    )
+    tunnels_template_file_name = _nonempty_string_field(
+        raw.get("tunnels_template_file_name"),
+        "i2pd_service_setup.tunnels_template_file_name",
+    )
+    config_true_value = _nonempty_string_field(
+        raw.get("config_true_value"),
+        "i2pd_service_setup.config_true_value",
+    )
+    config_false_value = _nonempty_string_field(
+        raw.get("config_false_value"),
+        "i2pd_service_setup.config_false_value",
+    )
+    address_check_attempts = _int_field(
+        raw.get("address_check_attempts"),
+        "i2pd_service_setup.address_check_attempts",
+    )
+    if address_check_attempts < 1:
+        raise ConfigError(
+            "i2pd_service_setup.address_check_attempts must be positive"
+        )
+    address_check_retry_delay_seconds = _float_field(
+        raw.get("address_check_retry_delay_seconds"),
+        "i2pd_service_setup.address_check_retry_delay_seconds",
+    )
+    if address_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "i2pd_service_setup.address_check_retry_delay_seconds must be positive"
+        )
     return I2pdServiceSetupConfig(
         github_repo=github_repo,
         download_dir=download_dir,
@@ -1228,6 +1281,30 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         tunnel_keys_path=tunnel_keys_path,
         address_file_path=address_file_path,
         address_file_mode=address_file_mode,
+        codename_asset_name_template=codename_asset_name_template,
+        generic_asset_name_template=generic_asset_name_template,
+        os_release_codename_key=os_release_codename_key,
+        version_command=_string_list(
+            raw.get("version_command"), "i2pd_service_setup.version_command"
+        ),
+        service_enable_command=_string_list(
+            raw.get("service_enable_command"),
+            "i2pd_service_setup.service_enable_command",
+        ),
+        service_start_command=_string_list(
+            raw.get("service_start_command"),
+            "i2pd_service_setup.service_start_command",
+        ),
+        service_restart_command=_string_list(
+            raw.get("service_restart_command"),
+            "i2pd_service_setup.service_restart_command",
+        ),
+        config_template_file_name=config_template_file_name,
+        tunnels_template_file_name=tunnels_template_file_name,
+        config_true_value=config_true_value,
+        config_false_value=config_false_value,
+        address_check_attempts=address_check_attempts,
+        address_check_retry_delay_seconds=address_check_retry_delay_seconds,
     )
 
 

@@ -44,6 +44,21 @@ class I2pdServiceSetupConfig:
     cannot be decoded. The tunnel port is not configured here: it is
     read from the ssh_daemon_setup Port directive, so the tunnel and the
     SSH daemon can never diverge.
+    codename_asset_name_template and generic_asset_name_template are the
+    two candidate names of the .deb asset of a release, formatted with
+    the release tag, the codename read under os_release_codename_key and
+    the dpkg architecture: the codename-specific build wins and the
+    generic build is the fallback. version_command prints the installed
+    version; service_enable_command, service_start_command and
+    service_restart_command drive the unit and carry the unit name as
+    their {service_unit_name} placeholder. config_template_file_name and
+    tunnels_template_file_name name the two templates under task_data/ of
+    the clone, and config_true_value and config_false_value are the
+    boolean spelling the rendered configuration uses.
+    address_check_attempts and address_check_retry_delay_seconds bound
+    the loop that waits for the tunnel identity file after the first
+    start, so the run reports the address instead of leaving it to the
+    next run.
     """
 
     github_repo: str
@@ -66,3 +81,16 @@ class I2pdServiceSetupConfig:
     tunnel_keys_path: Path
     address_file_path: Path
     address_file_mode: int
+    codename_asset_name_template: str
+    generic_asset_name_template: str
+    os_release_codename_key: str
+    version_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]
+    service_start_command: tuple[str, ...]
+    service_restart_command: tuple[str, ...]
+    config_template_file_name: str
+    tunnels_template_file_name: str
+    config_true_value: str
+    config_false_value: str
+    address_check_attempts: int
+    address_check_retry_delay_seconds: float
