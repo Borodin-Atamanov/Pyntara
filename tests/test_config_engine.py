@@ -236,6 +236,51 @@ def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
     assert_config_error(tmp_path, content, match="must be a boolean")
 
 
+def test_load_config_curl_command_templates(tmp_path: Path) -> None:
+    # The two command templates and the write-out text round-trip, and the
+    # download template carries the placeholders the shared helper fills.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    engine = config.engine
+    assert engine.curl_download_command[0] == "curl"
+    assert "{output_path}" in engine.curl_download_command
+    assert "{write_out}" in engine.curl_download_command
+    assert engine.curl_query_command == (
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+    )
+    assert engine.curl_download_write_out == "took %{time_total}s"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # curl_download_command carries no {output_path}
+        base_config().replace(
+            '"--output", "{output_path}"', '"--output", "archive.bin"'
+        ),
+        # curl_download_command carries no {write_out}
+        base_config().replace('"--write-out", "{write_out}"', '"--write-out", "x"'),
+        # curl_query_command is empty
+        base_config().replace(
+            'curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]',
+            "curl_query_command = []",
+        ),
+        # curl_download_write_out is empty
+        base_config().replace(
+            'curl_download_write_out = "took %{time_total}s"',
+            'curl_download_write_out = ""',
+        ),
+    ],
+)
+def test_load_config_wrong_curl_commands_raise(
+    tmp_path: Path, content: str
+) -> None:
+    assert_config_error(tmp_path, content)
+
+
 def test_load_config_bool_not_accepted_as_timeout(tmp_path: Path) -> None:
     # TOML booleans parse as Python bool, which is a subclass of int and must
     # not be accepted as a countdown value.

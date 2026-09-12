@@ -305,9 +305,12 @@ def test_already_configured_skips(
 def test_download_curl_shows_progress_and_writes_summary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A package download runs without --silent, so curl draws its live
-    # progress meter on a terminal, and carries --write-out so a one-line
-    # summary of bytes, time and speed follows the transfer.
+    # A package download runs the engine-wide download command: curl runs
+    # without --silent, so it draws its live progress meter on a terminal,
+    # it carries --write-out with the configured summary of bytes, time and
+    # speed, it writes the file the caller names, and the shared retry
+    # flags follow before the URL.
+    engine = make_config().engine
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -316,15 +319,11 @@ def test_download_curl_shows_progress_and_writes_summary(
 
     monkeypatch.setattr(i2pd_service_setup, "run_command", fake_run)
     i2pd_service_setup._download_asset(
+        engine,
         tmp_path,
         "i2pd_2.61.0-1_amd64.deb",
         "https://example.invalid/i2pd_2.61.0-1_amd64.deb",
         8000,
-        7777,
-        17,
-        60,
-        7777,
-        3,
     )
     assert len(calls) == 1
     download_call = calls[0]
@@ -332,7 +331,12 @@ def test_download_curl_shows_progress_and_writes_summary(
     assert "--silent" not in download_call
     assert "--show-error" in download_call
     assert "--write-out" in download_call
-    assert i2pd_service_setup.CURL_DOWNLOAD_WRITE_OUT in download_call
+    assert engine.curl_download_write_out in download_call
+    assert download_call[download_call.index("--output") + 1] == str(
+        tmp_path / "i2pd_2.61.0-1_amd64.deb"
+    )
+    assert "--retry" in download_call
+    assert download_call[-1] == "https://example.invalid/i2pd_2.61.0-1_amd64.deb"
 
 
 def test_missing_binary_is_treated_as_not_installed(

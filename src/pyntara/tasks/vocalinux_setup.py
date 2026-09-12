@@ -32,8 +32,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
-    curl_flags,
+    download_command,
     dpkg_architecture,
     install_packages,
     package_is_installed,
@@ -235,11 +234,6 @@ def _install_appimage(
     engine: EngineConfig,
     *,
     timeout: float,
-    curl_download_timeout_seconds: float,
-    curl_retries: int,
-    curl_connect_timeout_seconds: float,
-    curl_retry_max_time_seconds: int,
-    curl_retry_delay_seconds: int,
     force: bool,
 ) -> tuple[bool, str | None]:
     """Install the pinned AppImage under the user home; (changed, error).
@@ -277,24 +271,7 @@ def _install_appimage(
         )
         try:
             run_command(
-                [
-                    "curl",
-                    "--fail",
-                    "--location",
-                    "--silent",
-                    "--show-error",
-                    "--output",
-                    str(partial),
-                    "--write-out",
-                    CURL_DOWNLOAD_WRITE_OUT,
-                    *curl_flags(
-                        curl_download_timeout_seconds,
-                        curl_retries,
-                        curl_connect_timeout_seconds,
-                        curl_retry_max_time_seconds,
-                        curl_retry_delay_seconds,
-                    ),                    url,
-                ],
+                download_command(engine, partial, url),
                 timeout=timeout,
             )
             partial.replace(cache)
@@ -451,13 +428,8 @@ def task(ctx: Context) -> TaskResult:
 
     appimage_changed, appimage_error = _install_appimage(
         cfg,
-        ctx.config.engine,
+        engine,
         timeout=timeout,
-        curl_download_timeout_seconds=engine.curl_download_timeout_seconds,
-        curl_retries=engine.curl_retries,
-        curl_connect_timeout_seconds=engine.curl_connect_timeout_seconds,
-        curl_retry_max_time_seconds=engine.curl_retry_max_time_seconds,
-        curl_retry_delay_seconds=engine.curl_retry_delay_seconds,
         force=force,
     )
     if appimage_error:

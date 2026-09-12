@@ -32,6 +32,7 @@ class TelegramSetupConfig:
     home_dir: str
     download_dir: Path
     latest_url: str
+    latest_url_command: tuple[str, ...]
     icon_url: str
     install_dir_relative_path: str
     launcher_relative_path: str

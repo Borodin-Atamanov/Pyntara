@@ -41,8 +41,8 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
-    curl_flags,
+    curl_command,
+    download_command,
     run_command,
     task_data_dir,
 )
@@ -90,48 +90,37 @@ def _cache_name(url: str) -> str:
     return url.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _resolve_latest_url(engine: EngineConfig, latest_url: str) -> str:
+def _resolve_latest_url(
+    engine: EngineConfig, cfg: TelegramSetupConfig
+) -> str:
     """The download url the latest_url redirect resolves to.
 
     A HEAD request follows the redirect chain and reports the final url
     through --write-out, so the newest release is discovered without
-    downloading the archive. The retry bounds come from the engine table,
-    so the download settings live in one place. Raises RuntimeError when
+    downloading the archive. The command is the configured
+    latest_url_command and the retry bounds come from the engine table,
+    so the request settings live in the config. Raises RuntimeError when
     the request fails.
     """
 
     result = run_command(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--head",
-            "--location",
-            "--output",
-            "/dev/null",
-            "--write-out",
-            "%{url_effective}",
-            *curl_flags(
-                engine.curl_timeout_seconds,
-                engine.curl_retries,
-                engine.curl_connect_timeout_seconds,
-                engine.curl_retry_max_time_seconds,
-                engine.curl_retry_delay_seconds,
-            ),
-            latest_url,
-        ],
+        curl_command(
+            engine,
+            cfg.latest_url_command,
+            cfg.latest_url,
+            timeout_seconds=engine.curl_timeout_seconds,
+        ),
         check=False,
         capture=True,
         timeout=engine.command_timeout_seconds,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"cannot resolve {latest_url}: curl exit {result.returncode}"
+            f"cannot resolve {cfg.latest_url}: curl exit {result.returncode}"
         )
     url = result.stdout.strip()
     if not url:
-        raise RuntimeError(f"cannot resolve {latest_url}: empty download url")
+        raise RuntimeError(f"cannot resolve {cfg.latest_url}: empty download url")
     return url
 
 
@@ -152,24 +141,7 @@ def _download_archive(
     partial = cfg.download_dir / (name + engine.partial_download_file_suffix)
     try:
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                str(partial),
-                "--write-out",
-                CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(
-                    engine.curl_download_timeout_seconds,
-                    engine.curl_retries,
-                    engine.curl_connect_timeout_seconds,
-                    engine.curl_retry_max_time_seconds,
-                    engine.curl_retry_delay_seconds,
-                ),
-                url,
-            ],
+            download_command(engine, partial, url),
             timeout=engine.command_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -314,22 +286,7 @@ def _ensure_icon(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                str(path),
-                *curl_flags(
-                    engine.curl_download_timeout_seconds,
-                    engine.curl_retries,
-                    engine.curl_connect_timeout_seconds,
-                    engine.curl_retry_max_time_seconds,
-                    engine.curl_retry_delay_seconds,
-                ),
-                cfg.icon_url,
-            ],
+            download_command(engine, path, cfg.icon_url),
             timeout=engine.command_timeout_seconds,
         )
         path.chmod(cfg.icon_file_mode)
@@ -368,7 +325,7 @@ def task(ctx: Context) -> TaskResult:
     paths = _install_paths(cfg)
 
     try:
-        url = _resolve_latest_url(engine, cfg.latest_url)
+        url = _resolve_latest_url(engine, cfg)
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
     name = _cache_name(url)

@@ -119,6 +119,7 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'home_dir = "/home/i"\n'
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
+        'latest_url_command = ["curl", "--fail", "--head", "--write-out", "%{url_effective}"]\n'
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
         'install_dir_relative_path = ".local/share/Telegram"\n'
         'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"\n'

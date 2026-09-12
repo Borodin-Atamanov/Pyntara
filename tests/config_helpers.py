@@ -34,6 +34,9 @@ def base_config() -> str:
         "curl_download_timeout_seconds = 7777\ncurl_retries = 17\n"
         "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
         "curl_retry_max_time_seconds = 7777\n"
+        'curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]\n'
+        'curl_download_write_out = "took %{time_total}s"\n'
+        'curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]\n'
         'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
         'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
         'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }\n'
@@ -557,6 +560,7 @@ def base_config() -> str:
         'home_dir = "/home/i"\n'
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
+        'latest_url_command = ["curl", "--fail", "--head", "--write-out", "%{url_effective}"]\n'
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
         'install_dir_relative_path = ".local/share/Telegram"\n'
         'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"\n'

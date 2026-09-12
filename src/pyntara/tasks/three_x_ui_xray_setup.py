@@ -86,7 +86,7 @@ from pathlib import Path
 
 from pyntara import metrics, routing_policy, upnp
 from pyntara import xui as xui_client
-from pyntara.config import Config, ThreeXuiXraySetupConfig
+from pyntara.config import Config, EngineConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.github_release import fetch_latest_release, release_tag
 from pyntara.location import describe_answers, detect_country
@@ -100,8 +100,7 @@ from pyntara.public_address import (
 )
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
-    curl_flags,
+    download_command,
     ensure_port_free,
     install_package_once,
     package_is_installed,
@@ -162,42 +161,22 @@ def _installed_version(
 
 
 def _download_installer(
+    engine: EngineConfig,
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> Path:
     """Download the official installer into a temporary file.
 
-    Returns the path of the downloaded script. Raises RuntimeError when
-    curl fails, so the caller reports the reason.
+    Returns the path of the downloaded script. The command is the
+    engine-wide download call. Raises RuntimeError when curl fails, so the
+    caller reports the reason.
     """
 
     _fd, name = tempfile.mkstemp(prefix="x-ui-install-", suffix=".sh")
     script_path = Path(name)
     try:
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                str(script_path),
-                "--write-out",
-                CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
-                ),
-                cfg.install_script_url,
-            ],
+            download_command(engine, script_path, cfg.install_script_url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -2460,11 +2439,6 @@ def task(ctx: Context) -> TaskResult:
 
     cfg = ctx.config.three_x_ui_xray_setup
     timeout = ctx.config.engine.command_timeout_seconds
-    download_timeout = ctx.config.engine.curl_download_timeout_seconds
-    curl_retries = ctx.config.engine.curl_retries
-    retry_delay = ctx.config.engine.curl_retry_delay_seconds
-    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
-    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = ctx.task_name in ctx.force_tasks
 
     # Addresses and the UPnP router are read once per run: the stages below
@@ -2556,13 +2530,9 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading installer {cfg.install_script_url}")
         try:
             script_path = _download_installer(
+                ctx.config.engine,
                 cfg,
                 timeout,
-                download_timeout,
-                curl_retries,
-                connect_timeout,
-                retry_max_time,
-                retry_delay,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))

@@ -55,14 +55,17 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara.config import ChromeSetupConfig, ThreeXuiXraySetupConfig
+from pyntara.config import (
+    ChromeSetupConfig,
+    EngineConfig,
+    ThreeXuiXraySetupConfig,
+)
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
-    curl_flags,
+    download_command,
     install_package_once,
     package_is_installed,
     port_listener_pid,
@@ -91,23 +94,20 @@ def _source_text(template_path: Path, keyring_path: Path) -> str:
 
 
 def _ensure_repository(
+    engine: EngineConfig,
     cfg: ChromeSetupConfig,
     apt_source_template_path: Path,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
     owner_uid: int,
     owner_gid: int,
 ) -> tuple[bool, str | None]:
     """Register the Google apt source and its keyring; (changed, error).
 
-    The keyring is downloaded from Google when missing and dearmored into
-    the configured path; the deb822 source file is rendered from its
-    template and written when its content differs. Both files are
-    root-owned with the configured mode.
+    The keyring is downloaded from Google when missing, with the
+    engine-wide download command, and dearmored into the configured path;
+    the deb822 source file is rendered from its template and written when
+    its content differs. Both files are root-owned with the configured
+    mode.
     """
 
     changed = False
@@ -121,24 +121,7 @@ def _ensure_repository(
             ) as tmp:
                 armored = Path(tmp) / "google-chrome-key.pub"
                 run_command(
-                    [
-                        "curl",
-                        "--fail",
-                        "--location",
-                        "--show-error",
-                        "--output",
-                        str(armored),
-                        "--write-out",
-                        CURL_DOWNLOAD_WRITE_OUT,
-                        *curl_flags(
-                            download_timeout,
-                            retries,
-                            connect_timeout,
-                            retry_max_time,
-                            retry_delay,
-                        ),
-                        cfg.google_key_url,
-                    ],
+                    download_command(engine, armored, cfg.google_key_url),
                     timeout=timeout,
                 )
                 run_command(
@@ -812,14 +795,10 @@ def task(ctx: Context) -> TaskResult:
 
     _log("registering the Google Chrome apt repository")
     repo_changed, error = _ensure_repository(
+        engine,
         cfg,
         apt_source_template_path,
         timeout,
-        engine.curl_download_timeout_seconds,
-        engine.curl_retries,
-        engine.curl_connect_timeout_seconds,
-        engine.curl_retry_max_time_seconds,
-        engine.curl_retry_delay_seconds,
         owner_uid,
         owner_gid,
     )

@@ -67,16 +67,15 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from pyntara.config import YggdrasilServiceSetupConfig
+from pyntara.config import EngineConfig, YggdrasilServiceSetupConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
     backoff_delay,
-    curl_flags,
+    download_command,
     dpkg_architecture,
     install_package_once,
     run_command,
@@ -149,18 +148,16 @@ def _installed_version(timeout: float) -> str | None:
 
 
 def _download_asset(
+    engine: EngineConfig,
     download_dir: Path,
     name: str,
     url: str,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> None:
     """Download the package into the download directory.
 
+    The command is the engine-wide download call, so the flags and the
+    progress text are the same as in every other download of the run.
     Raises RuntimeError when curl fails, so the caller reports the
     reason.
     """
@@ -168,24 +165,7 @@ def _download_asset(
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                str(download_dir / name),
-                "--write-out",
-                CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
-                ),
-                url,
-            ],
+            download_command(engine, download_dir / name, url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -381,45 +361,24 @@ def _parse_md_peers(text: str) -> list[str]:
 
 
 def _download_peers(
+    engine: EngineConfig,
     cfg: YggdrasilServiceSetupConfig,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> list[str]:
     """Download and parse the public-peers list; save it next to the config.
 
-    Downloads the repository tarball with curl, extracts every markdown
-    file and collects the backtick peer URIs. The full list is saved to
-    peers_full_path for reference, while the configuration only ever
-    carries the selected working peers. Raises RuntimeError when the
-    download fails or yields no peers.
+    Downloads the repository tarball with the engine-wide download
+    command, extracts every markdown file and collects the backtick peer
+    URIs. The full list is saved to peers_full_path for reference, while
+    the configuration only ever carries the selected working peers.
+    Raises RuntimeError when the download fails or yields no peers.
     """
 
     tmp_fd, tmp_name = tempfile.mkstemp(prefix="yggdrasil-peers-", suffix=".tar.gz")
     os.close(tmp_fd)
     try:
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                tmp_name,
-                "--write-out",
-                CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
-                ),
-                cfg.peers_tarball_url,
-            ],
+            download_command(engine, Path(tmp_name), cfg.peers_tarball_url),
             timeout=timeout,
         )
         try:
@@ -882,11 +841,6 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
-    download_timeout = ctx.config.engine.curl_download_timeout_seconds
-    curl_retries = ctx.config.engine.curl_retries
-    retry_delay = ctx.config.engine.curl_retry_delay_seconds
-    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
-    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = ctx.task_name in ctx.force_tasks
     warnings: list[str] = []
 
@@ -971,15 +925,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading {asset_name} into {cfg.download_dir}")
         try:
             _download_asset(
+                ctx.config.engine,
                 cfg.download_dir,
                 asset_name,
                 asset_url,
                 timeout,
-                download_timeout,
-                curl_retries,
-                connect_timeout,
-                retry_max_time,
-                retry_delay,
             )
         except RuntimeError as exc:
             warnings.append(str(exc))
@@ -1091,13 +1041,9 @@ def task(ctx: Context) -> TaskResult:
     downloaded: list[str] | None = None
     try:
         downloaded = _download_peers(
+            ctx.config.engine,
             cfg,
             timeout,
-            download_timeout,
-            curl_retries,
-            connect_timeout,
-            retry_max_time,
-            retry_delay,
         )
     except RuntimeError as exc:
         _log(f"peer list download failed, using static_peers: {exc}")

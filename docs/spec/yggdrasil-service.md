@@ -72,7 +72,7 @@ Outside force mode, when the configuration already carries peers and the saved a
 
 ## Parameters
 
-All parameters live in the [yggdrasil_service_setup] table of the config/ directory. The release query, the package download and the peer list download run with the engine-wide curl settings from the [engine] table: curl_timeout_seconds for the metadata query, curl_download_timeout_seconds for both downloads, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds for the retries.
+All parameters live in the [yggdrasil_service_setup] table of the config/ directory. The release query, the package download and the peer list download run with the engine-wide curl settings from the [engine] table: curl_query_command is the query call and curl_download_command the download call, curl_download_write_out is the progress text a download prints, curl_timeout_seconds is the per-attempt budget of the metadata query, curl_download_timeout_seconds the one of both downloads, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds are the retry bounds; one shared helper inserts those flags before the URL, so no task spells a curl flag itself.
 
 The live connection check after the final restart uses the geometric backoff connection_wait_base_seconds, connection_wait_multiplier and connection_wait_max_seconds, mirroring the address save retry: a pause never exceeds the remaining budget up to connection_wait_max_seconds.
 

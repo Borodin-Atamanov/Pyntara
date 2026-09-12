@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
+from support import make_config
 
 from pyntara import utils
 from pyntara.utils import (
@@ -70,6 +71,58 @@ def test_curl_flags_returns_retry_and_timeout_flags() -> None:
         "7777",
         "--retry-connrefused",
     ]
+
+
+def test_download_command_fills_the_template_and_appends_the_url(
+    tmp_path: Path,
+) -> None:
+    # The configured download template is filled from the values of the
+    # call, the retry flags of the engine follow it and the URL closes the
+    # command, so every task downloads with one definition.
+    engine = make_config().engine
+    command = utils.download_command(
+        engine, tmp_path / "archive.tar.gz", "https://example.invalid/a.tar.gz"
+    )
+    assert command[:2] == ["curl", "--fail"]
+    assert command[command.index("--output") + 1] == str(
+        tmp_path / "archive.tar.gz"
+    )
+    assert command[command.index("--write-out") + 1] == (
+        engine.curl_download_write_out
+    )
+    assert "--retry" in command
+    assert str(engine.curl_download_timeout_seconds) in command
+    assert command[-1] == "https://example.invalid/a.tar.gz"
+    assert "{output_path}" not in command
+
+
+def test_release_query_command_uses_the_query_template() -> None:
+    # The release query is the configured query call plus the retry flags
+    # and the URL, so every task asks a release API the same way.
+    engine = make_config().engine
+    command = utils.release_query_command(
+        engine, "https://api.example.invalid/releases/latest"
+    )
+    assert command[: len(engine.curl_query_command)] == list(
+        engine.curl_query_command
+    )
+    assert "--silent" in command
+    assert "--retry" in command
+    assert command[-1] == "https://api.example.invalid/releases/latest"
+
+
+def test_curl_command_refuses_an_unknown_placeholder() -> None:
+    # A template with a placeholder nobody fills fails loudly instead of
+    # running a command with a literal brace in it.
+    engine = make_config().engine
+    with pytest.raises(KeyError):
+        utils.curl_command(
+            engine,
+            ("curl", "--output", "{wrong_placeholder}"),
+            "https://example.invalid",
+            timeout_seconds=1.0,
+            substitutions={"output_path": "/tmp/out"},
+        )
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:

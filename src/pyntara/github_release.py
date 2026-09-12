@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 
 from pyntara.config import EngineConfig
-from pyntara.utils import curl_flags, run_command
+from pyntara.utils import release_query_command, run_command
 
 
 def fetch_latest_release(repository: str, engine: EngineConfig) -> dict[str, object]:
@@ -22,29 +22,15 @@ def fetch_latest_release(repository: str, engine: EngineConfig) -> dict[str, obj
 
     repository is the owner/name pair, for example AdguardTeam/dnsproxy.
     The URL is the engine-wide github_latest_release_url with {repo}
-    replaced and the flags are the engine-wide curl settings, so every task
-    queries a release the same way. Raises RuntimeError when the request
-    fails or the payload is not usable JSON, so the caller reports the
-    reason instead of a raw exception.
+    replaced and the command is the engine-wide release query, so every
+    task queries a release the same way. Raises RuntimeError when the
+    request fails or the payload is not usable JSON, so the caller reports
+    the reason instead of a raw exception.
     """
 
     url = engine.github_latest_release_url.format(repo=repository)
     result = run_command(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            *curl_flags(
-                engine.curl_timeout_seconds,
-                engine.curl_retries,
-                engine.curl_connect_timeout_seconds,
-                engine.curl_retry_max_time_seconds,
-                engine.curl_retry_delay_seconds,
-            ),
-            url,
-        ],
+        release_query_command(engine, url),
         check=False,
         capture=True,
         timeout=engine.command_timeout_seconds,

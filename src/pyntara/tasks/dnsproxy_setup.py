@@ -15,16 +15,15 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import DnsproxySetupConfig
+from pyntara.config import DnsproxySetupConfig, EngineConfig
 from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
-    curl_flags,
+    download_command,
     dpkg_architecture,
     run_command,
     service_is_active,
@@ -145,37 +144,16 @@ def _version_from_tag(tag: str) -> str:
 
 
 def _download_binary(
+    engine: EngineConfig,
     cfg: DnsproxySetupConfig,
     url: str,
     name: str,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> Path:
     cfg.download_dir.mkdir(parents=True, exist_ok=True)
     archive = cfg.download_dir / name
     run_command(
-        [
-            "curl",
-            "--fail",
-            "--show-error",
-            "--location",
-            "--output",
-            str(archive),
-            "--write-out",
-            CURL_DOWNLOAD_WRITE_OUT,
-            *curl_flags(
-                download_timeout,
-                retries,
-                connect_timeout,
-                retry_max_time,
-                retry_delay,
-            ),
-            url,
-        ],
+        download_command(engine, archive, url),
         timeout=timeout,
     )
     extract_dir = cfg.download_dir / cfg.extract_dir_name
@@ -809,11 +787,6 @@ def task(ctx: Context) -> TaskResult:
     timeout = ctx.config.engine.command_timeout_seconds
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
-    download_timeout = ctx.config.engine.curl_download_timeout_seconds
-    curl_retries = ctx.config.engine.curl_retries
-    retry_delay = ctx.config.engine.curl_retry_delay_seconds
-    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
-    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     error_priority = ctx.config.engine.error_priority
     progress_priority = ctx.config.engine.progress_priority
     profile_id = _read_profile_id(cfg)
@@ -844,15 +817,11 @@ def task(ctx: Context) -> TaskResult:
     try:
         if installed != target_version:
             staged = _download_binary(
+                ctx.config.engine,
                 cfg,
                 asset_url,
                 asset_name,
                 timeout,
-                download_timeout,
-                curl_retries,
-                connect_timeout,
-                retry_max_time,
-                retry_delay,
             )
             cfg.binary_path.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(cfg.binary_path)

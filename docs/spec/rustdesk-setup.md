@@ -32,7 +32,7 @@ Screen capture on a KDE Wayland session goes through the xdg-desktop-portal Scre
 
 ## Parameters
 
-All parameters live in the [rustdesk_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl settings from the [engine] table: curl_timeout_seconds for the metadata query, curl_download_timeout_seconds for the download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds for the retries.
+All parameters live in the [rustdesk_setup] table of the config/ directory. The release query and the package download run with the engine-wide curl settings from the [engine] table: curl_query_command is the query call and curl_download_command the download call, curl_download_write_out is the progress text the download prints, curl_timeout_seconds is the per-attempt budget of the metadata query, curl_download_timeout_seconds the one of the download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds are the retry bounds of both; one shared helper inserts those flags before the URL, so no task spells a curl flag itself.
 
 github_repo - the owner and name pair of the release repository the deb comes from
 asset_name_template - the name of the release asset with {version} and {asset_arch} substituted; the architecture part comes from the engine mapping release_asset_architectures, because every task that downloads a release asset maps the dpkg architecture the same way

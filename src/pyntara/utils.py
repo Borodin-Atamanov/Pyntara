@@ -14,10 +14,11 @@ import re
 import signal
 import subprocess
 import time
-from collections.abc import Iterable, Mapping, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import Path
 
 from pyntara import logger
+from pyntara.config.engine import EngineConfig
 
 # apt must never ask questions; every package operation runs noninteractive.
 # The single definition lives here so tasks cannot diverge.
@@ -259,13 +260,83 @@ def curl_flags(
 
 # One-line summary curl prints after a completed download: the actual byte
 # count, total time and average speed. The leading newline separates it
-# from the progress meter, which ends without one. Download curls add
-# --write-out with this format; release query curls stay silent, because
-# their stdout is parsed as JSON.
-CURL_DOWNLOAD_WRITE_OUT = (
-    "\nDownloaded %{size_download} bytes in %{time_total}s "
-    "at %{speed_download} bytes/s\n"
-)
+# from the progress meter, which ends without one. The download template
+# of the [engine] table carries this format, and the release query curl
+# stays silent, because its stdout is parsed as JSON.
+
+
+def curl_command(
+    engine: EngineConfig,
+    template: Sequence[str],
+    url: str,
+    *,
+    timeout_seconds: float,
+    substitutions: Mapping[str, str] | None = None,
+) -> list[str]:
+    """Build one curl call of the run from a configured command template.
+
+    The template carries the arguments that describe the call itself, and
+    its placeholders are replaced from substitutions. The retry and
+    timeout flags of the engine curl settings follow the template, and the
+    URL is the last argument, because curl reads its options before the
+    URL. One definition covers every curl call of every task, so the flags
+    can never diverge between them (architecture contract, Configuration).
+    """
+
+    body = (
+        substituted_command(template, substitutions)
+        if substitutions is not None
+        else list(template)
+    )
+    return [
+        *body,
+        *curl_flags(
+            timeout_seconds,
+            engine.curl_retries,
+            engine.curl_connect_timeout_seconds,
+            engine.curl_retry_max_time_seconds,
+            engine.curl_retry_delay_seconds,
+        ),
+        url,
+    ]
+
+
+def download_command(
+    engine: EngineConfig, output_path: Path, url: str
+) -> list[str]:
+    """The curl call that downloads one URL into one file.
+
+    The command comes from the engine-wide curl_download_command template
+    with {output_path} replaced and the engine-wide download timeout, so
+    every task that fetches a release asset downloads it the same way.
+    """
+
+    return curl_command(
+        engine,
+        engine.curl_download_command,
+        url,
+        timeout_seconds=engine.curl_download_timeout_seconds,
+        substitutions={
+            "output_path": str(output_path),
+            "write_out": engine.curl_download_write_out,
+        },
+    )
+
+
+def release_query_command(engine: EngineConfig, url: str) -> list[str]:
+    """The curl call that fetches one metadata answer as text.
+
+    The command comes from the engine-wide curl_query_command template and
+    the engine-wide metadata timeout, so the release query of every task
+    that resolves a version is the same call.
+    """
+
+    return curl_command(
+        engine,
+        engine.curl_query_command,
+        url,
+        timeout_seconds=engine.curl_timeout_seconds,
+    )
 
 
 def run_command(
@@ -615,7 +686,7 @@ def ensure_port_free(
 
 
 def substituted_command(
-    command: tuple[str, ...], values: dict[str, str]
+    command: Sequence[str], values: Mapping[str, str]
 ) -> list[str]:
     """The configured command with its {placeholders} filled in.
 

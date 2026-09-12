@@ -55,7 +55,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import I2pdServiceSetupConfig
+from pyntara.config import EngineConfig, I2pdServiceSetupConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.i2pd import b32_address
@@ -63,9 +63,8 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
-    CURL_DOWNLOAD_WRITE_OUT,
     apply_owner,
-    curl_flags,
+    download_command,
     dpkg_architecture,
     install_package_once,
     os_family_is_debian,
@@ -199,18 +198,16 @@ def _installed_version(
 
 
 def _download_asset(
+    engine: EngineConfig,
     download_dir: Path,
     name: str,
     url: str,
     timeout: float,
-    download_timeout: float,
-    retries: int,
-    connect_timeout: float,
-    retry_max_time: int,
-    retry_delay: int,
 ) -> None:
     """Download the package into the download directory.
 
+    The command is the engine-wide download call, so the flags and the
+    progress text are the same as in every other download of the run.
     Raises RuntimeError when curl fails, so the caller reports the
     reason.
     """
@@ -218,24 +215,7 @@ def _download_asset(
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_command(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--show-error",
-                "--output",
-                str(download_dir / name),
-                "--write-out",
-                CURL_DOWNLOAD_WRITE_OUT,
-                *curl_flags(
-                    download_timeout,
-                    retries,
-                    connect_timeout,
-                    retry_max_time,
-                    retry_delay,
-                ),
-                url,
-            ],
+            download_command(engine, download_dir / name, url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -446,11 +426,6 @@ def task(ctx: Context) -> TaskResult:
                 success=False,
                 error=f"missing task data template: {missing_template}",
             )
-    download_timeout = ctx.config.engine.curl_download_timeout_seconds
-    curl_retries = ctx.config.engine.curl_retries
-    retry_delay = ctx.config.engine.curl_retry_delay_seconds
-    connect_timeout = ctx.config.engine.curl_connect_timeout_seconds
-    retry_max_time = ctx.config.engine.curl_retry_max_time_seconds
     force = ctx.task_name in ctx.force_tasks
 
     try:
@@ -562,15 +537,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading {asset_name} into {cfg.download_dir}")
         try:
             _download_asset(
+                ctx.config.engine,
                 cfg.download_dir,
                 asset_name,
                 asset_url,
                 timeout,
-                download_timeout,
-                curl_retries,
-                connect_timeout,
-                retry_max_time,
-                retry_delay,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))

@@ -23,6 +23,12 @@ home_dir = "/home/i"
 download_dir = "/var/cache/pyntara/telegram"
 # Official download link that redirects to the newest tsetup archive.
 latest_url = "https://telegram.org/dl/desktop/linux"
+# Command that resolves the download url the link above redirects to. A
+# HEAD request follows the redirect chain without transferring the archive
+# and reports the final url through --write-out, which the task reads from
+# the command output; the retry and timeout flags of the [engine] curl
+# settings are inserted before the URL.
+latest_url_command = ["curl", "--fail", "--silent", "--show-error", "--head", "--location", "--output", "/dev/null", "--write-out", "%{url_effective}"]
 # Official Telegram icon downloaded for the launcher entry.
 icon_url = "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/Telegram/Resources/art/icon512.png"
 # Relative path of the install directory under the home of the desktop

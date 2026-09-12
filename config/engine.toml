@@ -49,6 +49,21 @@ curl_connect_timeout_seconds = 60
 # the download budget, so a retry of a large download is not cut short by
 # the total window.
 curl_retry_max_time_seconds = 7777
+# The write-out text of a download: the byte count, the total time and the
+# average speed curl reports after the transfer. The leading newline
+# separates it from the progress meter, which ends without one. It is a
+# value of its own and not part of the command below, because curl reads
+# its fields as %{name} and the command template is a format string.
+curl_download_write_out = "\nDownloaded %{size_download} bytes in %{time_total}s at %{speed_download} bytes/s\n"
+# The two curl calls every task of the run uses to obtain a release asset
+# or release metadata, so the flags and the progress text of a download
+# live in one place and can never diverge between tasks. The retry and
+# timeout flags of the settings above are inserted before the URL and the
+# URL is always the last argument, because curl reads its options before
+# the URL. {output_path} of the download command is the file the transfer
+# writes and {write_out} is the text above.
+curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]
+curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]
 # Query URL of the latest release of a GitHub repository; every release
 # query of every task uses this one value, with {repo} replaced by the
 # configured owner/name pair, so a mirror or a proxy is configured in one

@@ -17,6 +17,13 @@ class EngineConfig:
     the one directory the tasks that deploy a systemd unit write it to.
     github_latest_release_url is the endpoint of every release query, a
     template whose {repo} is replaced by the repository of the task.
+    curl_download_command is the curl call that downloads one URL into one
+    file, its {output_path} replaced by the file the transfer writes and
+    its {write_out} replaced by curl_download_write_out, the summary curl
+    prints after a transfer; curl_query_command is the curl call that
+    fetches one metadata answer as text; the shared helper of both inserts
+    the retry and timeout flags of the curl settings above before the URL,
+    so a task never spells the flags itself.
     system_python is the interpreter of the managed system, used by a task
     that runs an embedded client against the system packages.
     journal_identifier is the name under which the engine mirrors its own
@@ -46,6 +53,9 @@ class EngineConfig:
     curl_retry_delay_seconds: int
     curl_connect_timeout_seconds: int
     curl_retry_max_time_seconds: int
+    curl_download_command: tuple[str, ...]
+    curl_download_write_out: str
+    curl_query_command: tuple[str, ...]
     github_latest_release_url: str
     github_release_download_url: str
     release_asset_architectures: dict[str, str]

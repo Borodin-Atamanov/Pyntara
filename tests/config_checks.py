@@ -907,6 +907,27 @@ def _engine_table(raw: object) -> EngineConfig:
     )
     if curl_retry_max_time_seconds <= 0:
         raise ConfigError("engine.curl_retry_max_time_seconds must be positive")
+    curl_download_command = _string_list(
+        raw.get("curl_download_command"), "engine.curl_download_command"
+    )
+    if not curl_download_command:
+        raise ConfigError("engine.curl_download_command must not be empty")
+    if "{output_path}" not in " ".join(curl_download_command):
+        raise ConfigError(
+            "engine.curl_download_command must carry the {output_path} placeholder"
+        )
+    if "{write_out}" not in " ".join(curl_download_command):
+        raise ConfigError(
+            "engine.curl_download_command must carry the {write_out} placeholder"
+        )
+    curl_query_command = _string_list(
+        raw.get("curl_query_command"), "engine.curl_query_command"
+    )
+    if not curl_query_command:
+        raise ConfigError("engine.curl_query_command must not be empty")
+    curl_download_write_out = _nonempty_string_field(
+        raw.get("curl_download_write_out"), "engine.curl_download_write_out"
+    )
     bytes_per_kib = _positive_int_field(
         raw.get("bytes_per_kib"), "engine.bytes_per_kib"
     )
@@ -930,6 +951,9 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_retry_delay_seconds=curl_retry_delay_seconds,
         curl_connect_timeout_seconds=curl_connect_timeout_seconds,
         curl_retry_max_time_seconds=curl_retry_max_time_seconds,
+        curl_download_command=curl_download_command,
+        curl_query_command=curl_query_command,
+        curl_download_write_out=curl_download_write_out,
         github_latest_release_url=_nonempty_string_field(
             raw.get("github_latest_release_url"),
             "engine.github_latest_release_url",
@@ -3098,6 +3122,10 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
         ),
         latest_url=_nonempty_string_field(
             raw.get("latest_url"), "telegram_setup.latest_url"
+        ),
+        latest_url_command=_string_list(
+            raw.get("latest_url_command"),
+            "telegram_setup.latest_url_command",
         ),
         icon_url=_nonempty_string_field(
             raw.get("icon_url"), "telegram_setup.icon_url"
