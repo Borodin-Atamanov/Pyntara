@@ -9,12 +9,14 @@ disabled by conftest.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from string import Template
 
 import pytest
 from support import FakeProc, make_config, make_context
 
+from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
 
@@ -96,7 +98,7 @@ def _install_fake(
 
 
 def _expected_unit(
-    venv_python: Path, system_config: Path, journal_identifier: str, restart_seconds: int
+    venv_python: Path, system_config: Path, cfg: PortForwardingSetupConfig
 ) -> str:
     """The unit the task must render for the given fixtures."""
 
@@ -104,14 +106,14 @@ def _expected_unit(
         [
             str(venv_python),
             "-m",
-            "pyntara.port_forwarding",
+            cfg.service_module_name,
             str(system_config),
         ]
     )
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=journal_identifier,
-        restart_seconds=restart_seconds,
+        journal_identifier=cfg.journal_identifier,
+        restart_seconds=cfg.service_restart_seconds,
     )
 
 
@@ -127,14 +129,52 @@ def test_deploys_unit_and_starts_service(
     expected = _expected_unit(
         venv_python,
         system_config,
-        ctx.config.port_forwarding_setup.journal_identifier,
-        ctx.config.port_forwarding_setup.service_restart_seconds,
+        ctx.config.port_forwarding_setup,
     )
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     command_names = [tuple(command) for command in calls]
     assert ("systemctl", "daemon-reload") in command_names
     assert ("systemctl", "enable", service) in command_names
     assert ("systemctl", "restart", service) in command_names
+
+
+def test_renders_the_configured_module_and_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The unit runs the module the config names and the task drives the
+    # unit with the configured commands, so a renamed module or a command
+    # that grew an argument is a config change and never a code change.
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            port_forwarding_setup=replace(
+                ctx.config.port_forwarding_setup,
+                service_module_name="other.module",
+                systemctl_restart_command=(
+                    "systemctl",
+                    "restart",
+                    "{service_unit_name}",
+                    "--no-block",
+                ),
+            ),
+        ),
+    )
+    calls = _install_fake(monkeypatch, active=True)
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    pf = ctx.config.port_forwarding_setup
+    unit = (systemd_dir / pf.service_unit_name).read_text(encoding="utf-8")
+    expected = _expected_unit(venv_python, system_config, pf)
+    assert unit == expected
+    assert "-m other.module" in unit
+    assert (
+        "systemctl",
+        "restart",
+        pf.service_unit_name,
+        "--no-block",
+    ) in [tuple(command) for command in calls]
 
 
 def test_skips_when_already_configured(
@@ -145,8 +185,7 @@ def test_skips_when_already_configured(
     expected = _expected_unit(
         venv_python,
         system_config,
-        ctx.config.port_forwarding_setup.journal_identifier,
-        ctx.config.port_forwarding_setup.service_restart_seconds,
+        ctx.config.port_forwarding_setup,
     )
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
@@ -177,8 +216,7 @@ def test_force_rewrites_and_restarts(
     expected = _expected_unit(
         venv_python,
         system_config,
-        ctx.config.port_forwarding_setup.journal_identifier,
-        ctx.config.port_forwarding_setup.service_restart_seconds,
+        ctx.config.port_forwarding_setup,
     )
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     assert any(command[1] == "restart" for command in calls)

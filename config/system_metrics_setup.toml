@@ -23,6 +23,10 @@ error_priority = 3
 # Directory of the dedicated venv the task creates for the deployed
 # service on the target machine.
 venv_dir = "/usr/local/lib/pyntara/venv"
+# Layout of the interpreter inside that directory: the path of the python
+# binary relative to venv_dir, so every module that runs the deployed code
+# composes it the same way.
+venv_python_relative_path = "bin/python"
 # Path of the single system config copied from the repository root; the
 # deployed service reads it through the same loader as the installer.
 system_config_path = "/etc/pyntara/config.toml"

@@ -425,7 +425,7 @@ def task(ctx: Context) -> TaskResult:
     owner_gid = ctx.config.engine.root_owner_gid
     metrics = ctx.config.system_metrics_setup
     venv_dir = metrics.venv_dir
-    venv_python = venv_dir / "bin" / "python"
+    venv_python = venv_dir / metrics.venv_python_relative_path
     system_config_path = metrics.system_config_path
     command_path = metrics.command_path
     service_name = metrics.service_unit_name
@@ -471,7 +471,7 @@ def task(ctx: Context) -> TaskResult:
         metrics.spool_temp_prefix,
     )
 
-    venv_python = venv_dir / "bin" / "python"
+    venv_python = venv_dir / metrics.venv_python_relative_path
     venv_version = _venv_package_version(venv_python, timeout)
     venv_ok = venv_version == __version__
     _log(

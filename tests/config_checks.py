@@ -2125,6 +2125,46 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     journal_identifier = _nonempty_string_field(
         raw.get("journal_identifier"), section + "journal_identifier"
     )
+    service_template_file_name = _nonempty_string_field(
+        raw.get("service_template_file_name"),
+        section + "service_template_file_name",
+    )
+    service_module_name = _nonempty_string_field(
+        raw.get("service_module_name"), section + "service_module_name"
+    )
+    command_checks: dict[str, tuple[str, ...]] = {}
+    for key in (
+        "systemctl_daemon_reload_command",
+        "systemctl_enable_command",
+        "systemctl_restart_command",
+        "systemctl_is_failed_command",
+    ):
+        command = _string_list(raw.get(key), section + key)
+        if not command:
+            raise ConfigError(f"port_forwarding_setup.{key} must not be empty")
+        command_checks[key] = command
+    for key in (
+        "systemctl_enable_command",
+        "systemctl_restart_command",
+        "systemctl_is_failed_command",
+    ):
+        if "{service_unit_name}" not in " ".join(command_checks[key]):
+            raise ConfigError(
+                f"port_forwarding_setup.{key} must carry the "
+                "{service_unit_name} placeholder"
+            )
+    start_check_attempts = _positive_int_field(
+        raw.get("start_check_attempts"), section + "start_check_attempts"
+    )
+    start_check_retry_delay_seconds = _float_field(
+        raw.get("start_check_retry_delay_seconds"),
+        section + "start_check_retry_delay_seconds",
+    )
+    if start_check_retry_delay_seconds <= 0:
+        raise ConfigError(
+            "port_forwarding_setup.start_check_retry_delay_seconds "
+            "must be positive"
+        )
     error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
     if not 0 <= error_priority <= 7:
         raise ConfigError(
@@ -2152,6 +2192,18 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         service_unit_name=service_unit_name,
         service_restart_seconds=service_restart_seconds,
         journal_identifier=journal_identifier,
+        service_template_file_name=service_template_file_name,
+        service_module_name=service_module_name,
+        systemctl_daemon_reload_command=command_checks[
+            "systemctl_daemon_reload_command"
+        ],
+        systemctl_enable_command=command_checks["systemctl_enable_command"],
+        systemctl_restart_command=command_checks["systemctl_restart_command"],
+        systemctl_is_failed_command=command_checks[
+            "systemctl_is_failed_command"
+        ],
+        start_check_attempts=start_check_attempts,
+        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         error_priority=error_priority,
     )
 
@@ -2898,6 +2950,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.venv_dir must be a non-empty string"
         )
+    venv_python_relative_path = _nonempty_string_field(
+        raw.get("venv_python_relative_path"),
+        "system_metrics_setup.venv_python_relative_path",
+    )
     system_config_path = raw.get("system_config_path")
     if not isinstance(system_config_path, str) or not system_config_path:
         raise ConfigError(
@@ -3019,6 +3075,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         python_version=python_version,
         error_priority=error_priority,
         venv_dir=Path(venv_dir),
+        venv_python_relative_path=venv_python_relative_path,
         system_config_path=Path(system_config_path),
         command_path=Path(command_path),
         commit_command=commit_command,

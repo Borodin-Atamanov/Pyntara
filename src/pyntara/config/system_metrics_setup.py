@@ -82,6 +82,8 @@ class SystemMetricsSetupConfig:
     venv; error_priority is the syslog level of a failed vault open by
     the senders; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
+    venv_python_relative_path is the interpreter inside the venv, so every
+    module that runs the deployed code composes the same path,
     command_path being the system path of the generated
     commit_system_metrics command file, and commit_command is the hand-off
     command that passes one file to the queue, with {command_path} and
@@ -132,6 +134,7 @@ class SystemMetricsSetupConfig:
     python_version: str
     error_priority: int
     venv_dir: Path
+    venv_python_relative_path: str
     system_config_path: Path
     command_path: Path
     commit_command: tuple[str, ...]

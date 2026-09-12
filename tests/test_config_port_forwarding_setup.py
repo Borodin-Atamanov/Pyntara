@@ -65,6 +65,14 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             'service_unit_name = "auto_port_forwarding.service"\n'
             "service_restart_seconds = 30\n"
             'journal_identifier = "auto_port_forwarding"\n'
+            'service_template_file_name = "auto_port_forwarding.service"\n'
+            'service_module_name = "pyntara.port_forwarding"\n'
+            'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
+            'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
+            'systemctl_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
+            'systemctl_is_failed_command = ["systemctl", "is-failed", "{service_unit_name}"]\n'
+            "start_check_attempts = 10\n"
+            "start_check_retry_delay_seconds = 1\n"
             "error_priority = 3\n",
             "",
         ),

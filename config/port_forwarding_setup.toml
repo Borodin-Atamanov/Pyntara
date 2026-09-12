@@ -72,5 +72,22 @@ service_unit_name = "auto_port_forwarding.service"
 service_restart_seconds = 30
 # Journal identifier of the service.
 journal_identifier = "auto_port_forwarding"
+# Name of the unit template under task_data/port_forwarding_setup/ of the
+# clone; the run fills its ExecStart, journal and restart placeholders.
+service_template_file_name = "auto_port_forwarding.service"
+# Python module the deployed unit runs from the shared deployment venv.
+service_module_name = "pyntara.port_forwarding"
+# The systemctl calls of the task, each carrying the unit name as its
+# {service_unit_name} placeholder except the daemon reload.
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+systemctl_restart_command = ["systemctl", "restart", "{service_unit_name}"]
+systemctl_is_failed_command = ["systemctl", "is-failed", "{service_unit_name}"]
+# Readiness loop of the service after a start: attempts and pause between
+# two checks. An inactive service is not a failure, because the service
+# exits cleanly on a machine whose vault carries no port-forwarding data;
+# only the failed state ends the loop as an error.
+start_check_attempts = 10
+start_check_retry_delay_seconds = 1
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3

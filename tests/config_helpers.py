@@ -479,6 +479,13 @@ def base_config() -> str:
         'service_unit_name = "auto_port_forwarding.service"\n'
         "service_restart_seconds = 30\n"
         'journal_identifier = "auto_port_forwarding"\n'
+        'service_template_file_name = "auto_port_forwarding.service"\n'
+        'service_module_name = "pyntara.port_forwarding"\n'
+        'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
+        'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
+        'systemctl_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
+        'systemctl_is_failed_command = ["systemctl", "is-failed", "{service_unit_name}"]\n'
+        "start_check_attempts = 10\nstart_check_retry_delay_seconds = 1\n"
         "error_priority = 3\n"
         "[dnsproxy_setup]\n"
         'github_repo = "AdguardTeam/dnsproxy"\n'
@@ -666,6 +673,7 @@ def base_config() -> str:
         "backoff_max_seconds = 14400\n"
         'python_version = "3"\nerror_priority = 3\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
+        'venv_python_relative_path = "bin/python"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
         'command_path = "/usr/local/bin/commit_system_metrics"\n'
         'commit_command = ["{command_path}", "{file}"]\n'

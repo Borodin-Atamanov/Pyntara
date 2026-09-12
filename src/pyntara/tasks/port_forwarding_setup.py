@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from string import Template
 
+from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -32,6 +33,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
     task_data_dir,
 )
 
@@ -42,16 +44,17 @@ from pyntara.utils import (
 def _render_service_unit(
     template_path: Path,
     venv_python: Path,
+    module_name: str,
     system_config_path: Path,
     journal_identifier: str,
     restart_seconds: int,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
-    The service runs the venv python with the port_forwarding module and
-    the configured system config path as its only argument; the line is
-    fully expanded here, so the template carries no shell variables of
-    its own. The journal identifier and the restart pause come from the
+    The service runs the venv python with the configured port_forwarding
+    module and the configured system config path as its only argument; the
+    line is fully expanded here, so the template carries no shell variables
+    of its own. The journal identifier and the restart pause come from the
     config.
     """
 
@@ -59,7 +62,7 @@ def _render_service_unit(
         [
             str(venv_python),
             "-m",
-            "pyntara.port_forwarding",
+            module_name,
             str(system_config_path),
         ]
     )
@@ -90,11 +93,15 @@ def _write_unit(unit_dir: Path, name: str, content: str) -> None:
     (unit_dir / name).write_text(content, encoding="utf-8")
 
 
-def _service_is_failed(service_name: str, timeout: float) -> bool:
+def _service_is_failed(
+    command: tuple[str, ...], service_name: str, timeout: float
+) -> bool:
     """True when the systemd service is in the failed state."""
 
     result = run_command(
-        ["systemctl", "is-failed", service_name],
+        substituted_command(
+            command, {"service_unit_name": service_name}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -103,9 +110,8 @@ def _service_is_failed(service_name: str, timeout: float) -> bool:
 
 
 def _started_ok(
+    cfg: PortForwardingSetupConfig,
     service_name: str,
-    attempts: int,
-    retry_delay_seconds: float,
     timeout: float,
 ) -> bool:
     """True when the service either runs or exited cleanly.
@@ -117,12 +123,14 @@ def _started_ok(
     as ok, failed ends as an error.
     """
 
-    for _ in range(attempts):
+    for _ in range(cfg.start_check_attempts):
         if service_is_active(service_name, timeout):
             return True
-        if _service_is_failed(service_name, timeout):
+        if _service_is_failed(
+            cfg.systemctl_is_failed_command, service_name, timeout
+        ):
             return False
-        time.sleep(retry_delay_seconds)
+        time.sleep(cfg.start_check_retry_delay_seconds)
     return True
 
 
@@ -144,15 +152,16 @@ def task(ctx: Context) -> TaskResult:
     force = ctx.task_name in ctx.force_tasks
     pf = ctx.config.port_forwarding_setup
     metrics = ctx.config.system_metrics_setup
-    venv_python = metrics.venv_dir / "bin" / "python"
+    venv_python = metrics.venv_dir / metrics.venv_python_relative_path
     system_config_path = metrics.system_config_path
     service_name = pf.service_unit_name
 
     try:
         unit = _render_service_unit(
             task_data_dir(ctx.repo_root, ctx.task_name)
-            / "auto_port_forwarding.service",
+            / pf.service_template_file_name,
             venv_python,
+            pf.service_module_name,
             system_config_path,
             pf.journal_identifier,
             pf.service_restart_seconds,
@@ -185,15 +194,23 @@ def task(ctx: Context) -> TaskResult:
         _log(f"unit {service_name} written")
         changed = True
         try:
-            run_command(["systemctl", "daemon-reload"], timeout=timeout)
+            run_command(
+                substituted_command(
+                    pf.systemctl_daemon_reload_command, {}
+                ),
+                timeout=timeout,
+            )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False, changed=changed, error=f"cannot reload systemd: {exc}"
             )
 
     if not enabled:
+        enable_argv = substituted_command(
+            pf.systemctl_enable_command, {"service_unit_name": service_name}
+        )
         try:
-            run_command(["systemctl", "enable", service_name], timeout=timeout)
+            run_command(enable_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
                 success=False, changed=changed, error=f"cannot enable {service_name}: {exc}"
@@ -218,8 +235,11 @@ def task(ctx: Context) -> TaskResult:
             _log(f"port-forwarding state {state_path} removed for a fresh port")
             changed = True
 
+    restart_argv = substituted_command(
+        pf.systemctl_restart_command, {"service_unit_name": service_name}
+    )
     try:
-        run_command(["systemctl", "restart", service_name], timeout=timeout)
+        run_command(restart_argv, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return TaskResult(
             success=False,
@@ -227,7 +247,7 @@ def task(ctx: Context) -> TaskResult:
             error=f"cannot start {service_name}: {exc}",
         )
     _log(f"service {service_name} started")
-    if not _started_ok(service_name, 10, 1.0, timeout):
+    if not _started_ok(pf, service_name, timeout):
         return TaskResult(
             success=False,
             changed=changed,

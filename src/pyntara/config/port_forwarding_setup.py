@@ -41,8 +41,13 @@ class PortForwardingSetupConfig:
     state_file_path is the root-only JSON file that records the assigned
     remote ports; the System Metrics collector reads it into the network
     report. service_unit_name and service_restart_seconds configure the
-    deployed service unit; journal_identifier and error_priority control
-    logging.
+    deployed service unit, whose template and module the task reads from
+    service_template_file_name and service_module_name; the four
+    systemctl_* commands drive that unit, each carrying the unit name as
+    its {service_unit_name} placeholder except the daemon reload, and
+    start_check_attempts with start_check_retry_delay_seconds bound the
+    loop that decides whether a started service failed; journal_identifier
+    and error_priority control logging.
     """
 
     vault_group_title: str
@@ -66,4 +71,12 @@ class PortForwardingSetupConfig:
     service_unit_name: str
     service_restart_seconds: int
     journal_identifier: str
+    service_template_file_name: str
+    service_module_name: str
+    systemctl_daemon_reload_command: tuple[str, ...]
+    systemctl_enable_command: tuple[str, ...]
+    systemctl_restart_command: tuple[str, ...]
+    systemctl_is_failed_command: tuple[str, ...]
+    start_check_attempts: int
+    start_check_retry_delay_seconds: float
     error_priority: int
