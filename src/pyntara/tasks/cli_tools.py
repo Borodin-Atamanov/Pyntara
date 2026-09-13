@@ -26,12 +26,13 @@ def task(ctx: Context) -> TaskResult:
 
     The installed share is the number of configured packages that are in
     the installed state after the run, divided by the total package set. A
-    share below cli_tools.package_success_threshold_percent is a fatal
-    error; at or above it the task succeeds and every failing package is
-    reported. The report names the installed packages: the set already in
-    the installed state before the run plus the ones installed by this run.
-    Timeouts and the retry count come from config.toml through Context; the
-    apt index refresh can be skipped through ctx.skip_apt_update.
+    share below cli_tools.package_success_threshold_percent is a warning of
+    a completed task carrying the shortfall and the reasons; every failing
+    package is reported either way. The report names the installed packages:
+    the set already in the installed state before the run plus the ones
+    installed by this run. Timeouts and the retry count come from
+    config.toml through Context; the apt index refresh can be skipped
+    through ctx.skip_apt_update.
     """
 
     cli = ctx.config.cli_tools
@@ -65,12 +66,20 @@ def task(ctx: Context) -> TaskResult:
     )
     failed_detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
     if installed_percent < cli.package_success_threshold_percent:
+        # Below the threshold every package that could be installed was
+        # installed; the shortfall is reported as a warning of a completed
+        # task so the run continues and the reason stays visible.
         detail = installed_summary
         if failed_detail:
             detail = f"{detail}; failed: {failed_detail}"
-        if warnings:
-            detail = f"{detail}; {'; '.join(warnings)}"
-        return TaskResult(success=False, changed=bool(installed), error=detail)
+        all_warnings = list(warnings)
+        all_warnings.append(detail)
+        return TaskResult(
+            success=True,
+            changed=bool(installed),
+            message=detail,
+            warnings=tuple(all_warnings),
+        )
     message = (
         f"{installed_summary}; threshold "
         f"{cli.package_success_threshold_percent}%"

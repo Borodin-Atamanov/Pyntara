@@ -157,9 +157,9 @@ def test_config_files_leftover_counts_as_not_installed(
     ]
 
 
-def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apt_failure_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     # Every package fails and the index refresh fails too: nothing could be
-    # installed, so the task reports a failure with the reasons.
+    # installed, so the task reports the reasons in the warnings.
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
@@ -167,11 +167,11 @@ def test_apt_failure_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(_ctx())
-    assert result.success is False
+    assert result.success is True
     assert result.changed is False
-    assert result.error
-    assert "mc" in (result.error or "")
-    assert "htop" in (result.error or "")
+    assert result.warnings
+    assert any("mc" in warning for warning in result.warnings)
+    assert any("htop" in warning for warning in result.warnings)
 
 
 def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -271,8 +271,10 @@ def test_missing_package_does_not_block_others(
     assert "failed: hollywood" in (result.message or "")
 
 
-def test_all_packages_missing_is_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    # No package can be installed at all: the task must fail with reasons.
+def test_all_packages_missing_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No package can be installed at all: the task reports the reasons.
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
@@ -280,11 +282,11 @@ def test_all_packages_missing_is_failure(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(_ctx())
-    assert result.success is False
+    assert result.success is True
     assert result.changed is False
-    assert result.error
-    assert "mc" in (result.error or "")
-    assert "hollywood" in (result.error or "")
+    assert result.warnings
+    assert any("mc" in warning for warning in result.warnings)
+    assert any("hollywood" in warning for warning in result.warnings)
 
 
 def test_update_failure_still_installs_from_cache(
@@ -397,11 +399,12 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(ctx)
-    assert result.success is False
+    assert result.success is True
     installs = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert len(installs) == 1
+    assert result.warnings
 
 
 def test_skip_apt_update_skips_index_refresh(
@@ -482,9 +485,9 @@ def test_single_failure_within_threshold_is_not_fatal(
     assert "failed: hollywood" in (result.message or "")
 
 
-def test_below_threshold_is_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     # Three of four packages fail: only 25 percent installed, far below the
-    # 70 percent threshold, so the task fails with the reasons.
+    # 70 percent threshold, so the task reports the reasons as warnings.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -501,9 +504,9 @@ def test_below_threshold_is_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(_ctx())
-    assert result.success is False
-    assert "htop" in (result.error or "")
-    assert "hollywood" in (result.error or "")
+    assert result.success is True
+    assert any("htop" in warning for warning in result.warnings)
+    assert any("hollywood" in warning for warning in result.warnings)
 
 
 def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
