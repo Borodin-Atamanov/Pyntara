@@ -14,29 +14,12 @@ import sys
 from pathlib import Path
 
 from pyntara.config import (
+    INGEST_CONFIG_KEYS,
     absent_config_keys,
     describe_absent_config_keys,
     load_config,
 )
 from pyntara.metrics_commit import ingest_spool
-
-# The config keys the ingest service reads. A key the ingest starts reading
-# is added to this list: the deployed service reports the keys it cannot find
-# in words, so the journal of a machine shows config keys and not a Python
-# error. Nothing is judged here and no key is required to have a particular
-# shape: the rules of the config live in tests/config_checks.py.
-INGEST_CONFIG_KEYS = (
-    "spool_dir",
-    "spool_temp_prefix",
-    "system_metrics_dir",
-    "system_metrics_dir_mode",
-    "main_outbox_dir",
-    "temp_dir",
-    "max_queue_file_size_bytes",
-    "queue_file_mode",
-    "queue_file_suffix_length",
-    "queue_link_attempts",
-)
 
 
 def main() -> None:

@@ -79,14 +79,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'FALLBACK_NOTE = "address read from the saved file, the keys file is missing or broken"',
         }
     ),
-    "src/pyntara/metrics.py": frozenset({"SERVICE_CONFIG_KEYS = ("}),
-    "src/pyntara/metrics_collect.py": frozenset(
-        {
-            'COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")',
-            "COLLECTOR_TABLE_KEYS = (",
-        }
-    ),
-    "src/pyntara/metrics_ingest.py": frozenset({"INGEST_CONFIG_KEYS = ("}),
     "src/pyntara/nextdns.py": frozenset({'PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")'}),
     "src/pyntara/port_forwarding.py": frozenset(
         {

@@ -45,6 +45,10 @@ from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
+    COLLECTOR_SECTION_KEYS,
+    COLLECTOR_TABLE_KEYS,
+    INGEST_CONFIG_KEYS,
+    SERVICE_CONFIG_KEYS,
     CollectorModuleConfig,
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
@@ -69,7 +73,11 @@ from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
 __all__ = [
+    "COLLECTOR_SECTION_KEYS",
+    "COLLECTOR_TABLE_KEYS",
+    "INGEST_CONFIG_KEYS",
     "MODES",
+    "SERVICE_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",

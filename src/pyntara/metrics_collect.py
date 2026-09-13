@@ -40,29 +40,13 @@ from pathlib import Path
 from typing import TextIO
 
 from pyntara.config import (
+    COLLECTOR_SECTION_KEYS,
+    COLLECTOR_TABLE_KEYS,
     CollectorModuleConfig,
     Config,
     absent_config_keys,
     describe_absent_config_keys,
     load_config,
-)
-
-# The config keys the collector service reads, by table. A key the collector
-# starts reading is added to this list: the deployed service reports the keys
-# it cannot find in words, so the journal of a machine shows config keys and
-# not a Python error. Nothing is judged here and no key is required to have a
-# particular shape: the rules of the config live in tests/config_checks.py.
-COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
-COLLECTOR_TABLE_KEYS = (
-    "lock_file_path",
-    "report_file_name",
-    "command_timeout_seconds",
-    "network_modules",
-    "system_modules",
-    "threshold_percent",
-    "retry_base_seconds",
-    "retry_multiplier",
-    "retry_max_seconds",
 )
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay, substituted_command, trim_whitespace

@@ -26,6 +26,7 @@ from pykeepass.exceptions import CredentialsError
 
 import pyntara.metrics_send
 from pyntara.config import (
+    SERVICE_CONFIG_KEYS,
     Config,
     absent_config_keys,
     describe_absent_config_keys,
@@ -33,30 +34,6 @@ from pyntara.config import (
 )
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay
-
-# The config keys the send loop reads. A key the loop starts reading is added
-# to this list: the deployed service reports the keys it cannot find in
-# words, so the journal of a machine shows config keys and not a Python
-# error. Nothing is judged here and no key is required to have a particular
-# shape: the rules of the config live in tests/config_checks.py. The loop
-# stops when a key is absent instead of repeating a failure it can never get
-# past.
-SERVICE_CONFIG_KEYS = (
-    "backoff_base_seconds",
-    "backoff_multiplier",
-    "backoff_max_seconds",
-    "error_priority",
-    "system_metrics_dir",
-    "system_metrics_dir_mode",
-    "main_outbox_dir",
-    "google_script_dir",
-    "main_sent_dir",
-    "send_order",
-    "max_queue_file_size_bytes",
-    "queue_file_suffix_length",
-    "google_script_key_entry_title",
-    "google_script_timeout_seconds",
-)
 
 
 def _read_password(path: Path) -> str | None:

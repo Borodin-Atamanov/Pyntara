@@ -59,17 +59,34 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
 }
 
 # The config keys each deployed metrics component reads, with the table they
-# belong to: the list is written in the module of the component, and the
-# component names the keys it cannot find instead of showing a Python error.
-COMPONENT_KEY_LISTS: tuple[tuple[str, str, type[Any]], ...] = (
-    ("pyntara.metrics_collect", "COLLECTOR_SECTION_KEYS", SystemMetricsSetupConfig),
+# belong to: the list lives in the config layer, next to the fields it names,
+# and the component reads it from there, so the component names the keys it
+# cannot find instead of showing a Python error.
+COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
     (
         "pyntara.metrics_collect",
+        "pyntara.config.system_metrics_setup",
+        "COLLECTOR_SECTION_KEYS",
+        SystemMetricsSetupConfig,
+    ),
+    (
+        "pyntara.metrics_collect",
+        "pyntara.config.system_metrics_setup",
         "COLLECTOR_TABLE_KEYS",
         SystemMetricsCollectorConfig,
     ),
-    ("pyntara.metrics_ingest", "INGEST_CONFIG_KEYS", SystemMetricsSetupConfig),
-    ("pyntara.metrics", "SERVICE_CONFIG_KEYS", SystemMetricsSetupConfig),
+    (
+        "pyntara.metrics_ingest",
+        "pyntara.config.system_metrics_setup",
+        "INGEST_CONFIG_KEYS",
+        SystemMetricsSetupConfig,
+    ),
+    (
+        "pyntara.metrics",
+        "pyntara.config.system_metrics_setup",
+        "SERVICE_CONFIG_KEYS",
+        SystemMetricsSetupConfig,
+    ),
 )
 
 
@@ -199,21 +216,29 @@ def test_test_document_leaves_out_only_recorded_optional_keys() -> None:
 
 
 def test_component_key_lists_name_keys_of_their_table() -> None:
-    # Each list is written in the module of the component that reads those
-    # keys, and the component reports an incomplete config by naming them.
-    # A name that is not a key of the table it belongs to would make that
-    # report point at a value nobody can set, while the key that truly
-    # prevented the run would stay unnamed. The reverse direction is not
-    # provable here: a component reads its keys through the shared modules
-    # it calls (the ingest delegates to metrics_commit.ingest_spool), so the
-    # list cannot be derived from one module source, and a key read without
-    # being listed still meets the catch-all line of the component.
+    # Each list lives in the config layer next to the fields it names, the
+    # component reads that same list, and the component reports an incomplete
+    # config by naming those keys. A name that is not a key of the table it
+    # belongs to would make that report point at a value nobody can set,
+    # while the key that truly prevented the run would stay unnamed. The
+    # reverse direction is not provable here: a component reads its keys
+    # through the shared modules it calls (the ingest delegates to
+    # metrics_commit.ingest_spool), so the list cannot be derived from one
+    # module source, and a key read without being listed still meets the
+    # catch-all line of the component.
     unknown: list[str] = []
-    for module_name, list_name, table_type in COMPONENT_KEY_LISTS:
-        module = importlib.import_module(module_name)
-        names = set(getattr(module, list_name))
+    for consumer_name, source_name, list_name, table_type in COMPONENT_KEY_LISTS:
+        source = importlib.import_module(source_name)
+        consumer = importlib.import_module(consumer_name)
+        assert getattr(consumer, list_name) is getattr(source, list_name), (
+            f"{consumer_name}.{list_name} is not the list of {source_name}: "
+            "a component must read the list of the config layer"
+        )
+        names = set(getattr(source, list_name))
         for name in sorted(names - _section_field_names(table_type)):
-            unknown.append(f"{module_name}.{list_name}: {table_type.__name__}.{name}")
+            unknown.append(
+                f"{source_name}.{list_name}: {table_type.__name__}.{name}"
+            )
     assert not unknown, f"component key lists naming no config key: {unknown}"
 
 

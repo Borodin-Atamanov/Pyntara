@@ -66,6 +66,26 @@ class SystemMetricsCollectorConfig:
     system_modules: tuple[CollectorModuleConfig, ...]
 
 
+# The config keys the deployed collector service reads from the
+# [system_metrics_setup.collector] table. A key the collector starts reading
+# is added to this list, which lives next to the fields it names: the
+# deployed service reports the keys it cannot find in words, so the journal
+# of a machine shows config keys and not a Python error. Nothing is judged
+# here and no key is required to have a particular shape: the rules of the
+# config live in tests/config_checks.py.
+COLLECTOR_TABLE_KEYS = (
+    "lock_file_path",
+    "report_file_name",
+    "command_timeout_seconds",
+    "network_modules",
+    "system_modules",
+    "threshold_percent",
+    "retry_base_seconds",
+    "retry_multiplier",
+    "retry_max_seconds",
+)
+
+
 @dataclass(frozen=True)
 class SystemMetricsSetupConfig:
     """Runtime parameters of the long-running System Metrics service.
@@ -175,3 +195,43 @@ class SystemMetricsSetupConfig:
     google_script_key_entry_title: str
     google_script_deployment_url_regex: str
     collector: SystemMetricsCollectorConfig
+
+
+# The config keys the deployed metrics services read from the
+# [system_metrics_setup] table, one list per service that reads it. A key a
+# service starts reading is added to the list of that service, and the lists
+# live next to the fields they name: the deployed service reports the keys it
+# cannot find in words, so the journal of a machine shows config keys and not
+# a Python error. Nothing is judged here and no key is required to have a
+# particular shape: the rules of the config live in tests/config_checks.py.
+# The send loop stops when a key is absent instead of repeating a failure it
+# can never get past.
+SERVICE_CONFIG_KEYS = (
+    "backoff_base_seconds",
+    "backoff_multiplier",
+    "backoff_max_seconds",
+    "error_priority",
+    "system_metrics_dir",
+    "system_metrics_dir_mode",
+    "main_outbox_dir",
+    "google_script_dir",
+    "main_sent_dir",
+    "send_order",
+    "max_queue_file_size_bytes",
+    "queue_file_suffix_length",
+    "google_script_key_entry_title",
+    "google_script_timeout_seconds",
+)
+INGEST_CONFIG_KEYS = (
+    "spool_dir",
+    "spool_temp_prefix",
+    "system_metrics_dir",
+    "system_metrics_dir_mode",
+    "main_outbox_dir",
+    "temp_dir",
+    "max_queue_file_size_bytes",
+    "queue_file_mode",
+    "queue_file_suffix_length",
+    "queue_link_attempts",
+)
+COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
