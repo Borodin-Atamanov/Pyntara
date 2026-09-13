@@ -429,8 +429,9 @@ def task(ctx: Context) -> TaskResult:
     changed=False. A missing version, a version mismatch or force mode
     downloads and installs the newest deb; force mode additionally
     regenerates the password and the machine identity.
-    Every step is reported to stdout with its result; a failure is an
-    error TaskResult, so the runner continues with the remaining tasks.
+    Every step is reported to stdout with its result; a step that cannot
+    run is a warning of a completed task and the missing mechanism skips
+    that step alone, so the runner continues with the remaining tasks.
     """
 
     cfg = ctx.config.rustdesk_setup
@@ -439,63 +440,76 @@ def task(ctx: Context) -> TaskResult:
     owner_gid = ctx.config.engine.root_owner_gid
     force = ctx.task_name in ctx.force_tasks
     changed = False
+    warnings: list[str] = []
 
+    release: dict[str, object] = {}
+    tag = ""
     try:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
         tag = version_without_tag_prefix(release_tag(release))
     except (RuntimeError, TypeError) as exc:
-        return TaskResult(success=False, error=str(exc))
-    _log(f"checking latest rustdesk release: {tag}")
+        # Without the release tag the installed version cannot be
+        # compared, so the download and the install are skipped while the
+        # service, the options, the credentials and the ID file are still
+        # handled.
+        warnings.append(str(exc))
+    _log(f"checking latest rustdesk release: {tag or 'unknown'}")
 
     installed = _installed_version(cfg, timeout)
     _log(f"checking installed rustdesk version: {installed or 'not installed'}")
 
-    if installed != tag:
+    if tag and installed != tag:
+        arch = ""
         try:
             arch = dpkg_architecture(ctx.config.engine, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(success=False, error=f"cannot read dpkg architecture: {exc}")
-        selected = _select_asset(
-            cfg, release, tag, arch, ctx.config.engine.release_asset_architectures
+            warnings.append(f"cannot read dpkg architecture: {exc}")
+        selected = (
+            _select_asset(
+                cfg, release, tag, arch, ctx.config.engine.release_asset_architectures
+            )
+            if arch
+            else None
         )
         if selected is None:
-            return TaskResult(
-                success=False,
-                error=(
+            if arch:
+                warnings.append(
                     f"no rustdesk deb asset for architecture {arch} in "
                     f"release {tag}"
-                ),
-            )
-        name, url = selected
-        _log(f"downloading rustdesk {tag} deb")
-        try:
-            _download_deb(
-                ctx.config.engine,
-                cfg.download_dir,
-                name,
-                url,
-                timeout,
-            )
-        except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
-        _log("installing rustdesk deb")
-        ok, error = _install_deb(
-            ctx.config.engine,
-            cfg.download_dir,
-            name,
-            install_timeout=cfg.install_timeout_seconds,
-            update_timeout=cfg.apt_update_timeout_seconds,
-            retries=cfg.install_retries,
-            skip_update=ctx.skip_apt_update,
-        )
-        if not ok:
-            return TaskResult(
-                success=False, changed=True, error=f"rustdesk install failed: {error}"
-            )
-        _cleanup_download(cfg.download_dir, name)
-        _log("rustdesk installed")
-        changed = True
-    else:
+                )
+        else:
+            name, url = selected
+            _log(f"downloading rustdesk {tag} deb")
+            downloaded = True
+            try:
+                _download_deb(
+                    ctx.config.engine,
+                    cfg.download_dir,
+                    name,
+                    url,
+                    timeout,
+                )
+            except RuntimeError as exc:
+                warnings.append(str(exc))
+                downloaded = False
+            if downloaded:
+                _log("installing rustdesk deb")
+                ok, error = _install_deb(
+                    ctx.config.engine,
+                    cfg.download_dir,
+                    name,
+                    install_timeout=cfg.install_timeout_seconds,
+                    update_timeout=cfg.apt_update_timeout_seconds,
+                    retries=cfg.install_retries,
+                    skip_update=ctx.skip_apt_update,
+                )
+                if ok:
+                    _cleanup_download(cfg.download_dir, name)
+                    _log("rustdesk installed")
+                    changed = True
+                else:
+                    warnings.append(f"rustdesk install failed: {error}")
+    elif tag:
         _log("newest rustdesk version already installed")
 
     # Force mode regenerates the machine identity: stop the service,
@@ -538,12 +552,9 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     if not _wait_ready(cfg, timeout):
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error="rustdesk daemon did not answer after the service start",
-        )
-    _log("rustdesk daemon ready")
+        warnings.append("rustdesk daemon did not answer after the service start")
+    else:
+        _log("rustdesk daemon ready")
 
     # The machine ID is stable while the identity persists; it is read
     # once after the daemon answers and feeds both the vault entry and
@@ -553,9 +564,7 @@ def task(ctx: Context) -> TaskResult:
 
     options_changed, options_error = _apply_options(cfg, timeout)
     if options_error:
-        return TaskResult(
-            success=True, changed=changed, warnings=(options_error,)
-        )
+        warnings.append(options_error)
     if options_changed:
         changed = True
 
@@ -563,31 +572,26 @@ def task(ctx: Context) -> TaskResult:
         ctx, machine_id, force
     )
     if password is None:
-        return TaskResult(
-            success=True,
-            changed=changed,
-            warnings=(password_warning or "rustdesk password unavailable",),
-        )
-    _log("applying the permanent rustdesk password")
-    ok, password_error = _set_password(cfg, password, timeout)
-    if not ok:
-        return TaskResult(
-            success=True,
-            changed=True,
-            warnings=(f"cannot set rustdesk password: {password_error}",),
-        )
-    if vault_changed:
-        changed = True
+        warnings.append(password_warning or "rustdesk password unavailable")
+    else:
+        _log("applying the permanent rustdesk password")
+        ok, password_error = _set_password(cfg, password, timeout)
+        if ok:
+            if vault_changed:
+                changed = True
+        else:
+            warnings.append(f"cannot set rustdesk password: {password_error}")
 
     if machine_id is None:
-        return TaskResult(
-            success=True,
-            changed=changed,
-            warnings=("cannot read the rustdesk machine ID",),
-        )
-    _log(f"rustdesk machine ID: {machine_id}")
-    if _write_id_file(cfg, machine_id, force, owner_uid, owner_gid):
-        changed = True
+        warnings.append("cannot read the rustdesk machine ID")
+    else:
+        _log(f"rustdesk machine ID: {machine_id}")
+        if _write_id_file(cfg, machine_id, force, owner_uid, owner_gid):
+            changed = True
 
     message = f"rustdesk ready, ID {machine_id}" if changed else "already configured"
-    return TaskResult(success=True, changed=changed, message=message, warnings=())
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )

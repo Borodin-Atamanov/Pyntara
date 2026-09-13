@@ -307,11 +307,14 @@ def test_client_commands_come_from_the_config(
     ] in calls
 
 
-def test_no_asset_for_unknown_architecture_fails(
+def test_no_asset_for_unknown_architecture_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The release carries no deb for this architecture: the install is
+    # skipped with the reason while the service and the credentials are
+    # still handled.
     config = _config(tmp_path=tmp_path)
-    _fake_run(
+    calls = _fake_run(
         monkeypatch,
         installed_version=None,
         dpkg_arch="s390x",
@@ -319,8 +322,13 @@ def test_no_asset_for_unknown_architecture_fails(
     )
     _vault(monkeypatch)
     result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
-    assert result.success is False
-    assert "no rustdesk deb asset" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "no rustdesk deb asset" in warning for warning in result.warnings
+    )
+    assert not any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
+    )
 
 
 def test_applies_options_idempotently(
