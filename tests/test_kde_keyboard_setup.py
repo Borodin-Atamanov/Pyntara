@@ -49,6 +49,7 @@ def _ctx(
     force: bool = False,
     appletsrc: str = SAMPLE_APPLETSRC,
     hotkeys: dict[str, str] | None = None,
+    mkdir_command: tuple[str, ...] | None = None,
 ):
     """Context with the target config directory rooted in tmp_path."""
 
@@ -68,6 +69,7 @@ def _ctx(
             kde_keyboard_setup_home_dir=str(tmp_path),
             kde_keyboard_setup_config_dir=str(config_dir),
             kde_keyboard_setup_layout_switch_shortcuts=hotkeys,
+            kde_keyboard_setup_mkdir_command=mkdir_command,
         ),
     )
 
@@ -614,4 +616,36 @@ def test_kconfig_calls_come_from_the_config() -> None:
         "Layout",
         "--entry",
         "LayoutList",
+    ]
+
+
+def test_mkdir_command_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The maker of the target config directory is a config value: another
+    # program in the section is the command the task runs before its
+    # writes.
+    mkdir_commands: list[list[str]] = []
+    real_as_user_command = task_module._as_user_command
+
+    def recording_as_user_command(
+        cfg: Any, command: list[str]
+    ) -> list[str]:
+        if command[0] == "mymkdir":
+            mkdir_commands.append(list(command))
+            # The path is the last element of the rendered template; the
+            # shared fake only answers the plain maker of directories.
+            command = ["mkdir", "-p", command[-1]]
+        return real_as_user_command(cfg, command)
+
+    monkeypatch.setattr(
+        task_module, "_as_user_command", recording_as_user_command
+    )
+    ctx = _ctx(
+        tmp_path, mkdir_command=("mymkdir", "--parents", "{path}")
+    )
+    _install_fakes(monkeypatch)
+    task_module.task(ctx)
+    assert mkdir_commands == [
+        ["mymkdir", "--parents", str(tmp_path / ".config")]
     ]

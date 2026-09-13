@@ -276,6 +276,7 @@ def make_config(
     kde_keyboard_setup_home_dir: str = "/home/i",
     kde_keyboard_setup_config_dir: str = "/home/i/.config",
     kde_keyboard_setup_layout_switch_shortcuts: dict[str, str] | None = None,
+    kde_keyboard_setup_mkdir_command: tuple[str, ...] | None = None,
     kde_settings_packages: tuple[str, ...] = (
         "plasma-workspace",
         "libkf6config-bin",
@@ -625,6 +626,11 @@ def make_config(
                 kde_keyboard_setup_layout_switch_shortcuts
                 if kde_keyboard_setup_layout_switch_shortcuts is not None
                 else {}
+            ),
+            mkdir_command=(
+                kde_keyboard_setup_mkdir_command
+                if kde_keyboard_setup_mkdir_command is not None
+                else base.kde_keyboard_setup.mkdir_command
             ),
         ),
         kde_settings=replace(

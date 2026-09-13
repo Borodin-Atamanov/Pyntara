@@ -189,20 +189,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["ip", "-o", family, "route", "show", "proto", "kernel"],',
         }
     ),
-    "src/pyntara/tasks/kde_keyboard_setup.py": frozenset(
-        {
-            '_as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),',
-        }
-    ),
-    "src/pyntara/tasks/kde_settings.py": frozenset(
-        {
-            '["chown", "-R", f"{cfg.username}:{cfg.username}", str(target)],',
-            '["chown", f"{cfg.username}:{cfg.username}", str(target)],',
-            '_as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),',
-            'cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / cfg.user_config_dir)]',
-            'run_command(["chmod", f"{mode:04o}", str(target)], timeout=timeout)',
-        }
-    ),
     "src/pyntara/tasks/ssh_daemon_setup.py": frozenset(
         {
             '["ss", "-tlnp"], check=False, capture=True, timeout=timeout',
@@ -236,14 +222,9 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     ),
     "src/pyntara/tasks/vocalinux_setup.py": frozenset(
         {
-            '["chmod", f"{cfg.executable_file_mode:o}", str(target)], timeout=timeout',
             '["id", "-nG", cfg.username],',
             'prefix = ["systemctl", "--user", "--machine", f"{cfg.username}@.host"]',
-            'run_command(["chmod", f"{file_mode:o}", str(target)], timeout=timeout)',
-            'run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)',
             'run_command(["usermod", "-aG", cfg.input_group, cfg.username], timeout=timeout)',
-            '_as_user_command(cfg, ["mkdir", "-p", str(install_dir)]),',
-            '_as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),',
         }
     ),
     "src/pyntara/utils.py": frozenset(

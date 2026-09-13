@@ -455,3 +455,42 @@ def test_kconfig_calls_come_from_the_config() -> None:
         "--entry",
         "myservice",
     ]
+
+
+def test_file_operations_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The maker of the parent directory, the owner writer and the mode
+    # writer are config values: another program in the section is the argv
+    # the task runs around a user service file.
+    cfg = replace(
+        make_config().vocalinux_setup,
+        home_dir=str(tmp_path),
+        mkdir_command=("mymkdir", "--parents", "{path}"),
+        chown_command=("mychown", "--owner", "{owner}", "{path}"),
+        chmod_command=("mychmod", "--mode", "{file_mode}", "{path}"),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    assert task_module._write_user_file(
+        cfg,
+        ".config/systemd/user/ydotool.service",
+        "body\n",
+        file_mode=0o644,
+        timeout=30.0,
+        force=True,
+    )
+    target = tmp_path / ".config" / "systemd" / "user" / "ydotool.service"
+    assert seen[0][4:] == ["mymkdir", "--parents", str(target.parent)]
+    assert seen[1] == [
+        "mychown",
+        "--owner",
+        f"{cfg.username}:{cfg.username}",
+        str(target),
+    ]
+    assert seen[2] == ["mychmod", "--mode", f"{0o644:o}", str(target)]

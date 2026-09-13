@@ -446,7 +446,12 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         run_command(
-            _as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),
+            _as_user_command(
+                cfg,
+                substituted_command(
+                    cfg.mkdir_command, {"path": cfg.config_dir}
+                ),
+            ),
             extra_env=home_env,
             timeout=timeout,
         )

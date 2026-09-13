@@ -74,3 +74,8 @@ kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]
 kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]
 config_group_flag = ["--group", "{group}"]
 config_key_flag = ["--key", "{key}"]
+# Commands of the file operations the task runs for the desktop user:
+# {path}, {owner} and {file_mode} are filled in at the call site.
+mkdir_command = ["mkdir", "-p", "{path}"]
+chown_command = ["chown", "{owner}", "{path}"]
+chmod_command = ["chmod", "{file_mode}", "{path}"]

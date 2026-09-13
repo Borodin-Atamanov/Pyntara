@@ -140,6 +140,7 @@ def base_config() -> str:
         'config_group_flag = ["--group", "{group}"]\n'
         'config_key_flag = ["--key", "{key}"]\n'
         'config_bool_type_flag = ["--type", "bool"]\n'
+        'mkdir_command = ["mkdir", "-p", "{path}"]\n'
         '[kde_settings]\n'
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
@@ -210,6 +211,10 @@ def base_config() -> str:
         'apply_look_and_feel_command = ["plasma-apply-lookandfeel", "-a", "{look_and_feel}"]\n'
         'apply_color_scheme_command = ["plasma-apply-colorscheme", "{color_scheme}"]\n'
         'apply_cursor_theme_command = ["plasma-apply-cursortheme", "{cursor_theme}"]\n'
+        'mkdir_command = ["mkdir", "-p", "{path}"]\n'
+        'chown_command = ["chown", "{owner}", "{path}"]\n'
+        'chown_recursive_command = ["chown", "-R", "{owner}", "{path}"]\n'
+        'chmod_command = ["chmod", "{file_mode}", "{path}"]\n'
         'look_and_feel_light = "org.kubuntulight.desktop"\n'
         "automatic_look_and_feel = true\n"
         'cursor_theme = "Oxygen_Yellow"\n'
@@ -785,6 +790,9 @@ def base_config() -> str:
         'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
         'config_group_flag = ["--group", "{group}"]\n'
         'config_key_flag = ["--key", "{key}"]\n'
+        'mkdir_command = ["mkdir", "-p", "{path}"]\n'
+        'chown_command = ["chown", "{owner}", "{path}"]\n'
+        'chmod_command = ["chmod", "{file_mode}", "{path}"]\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

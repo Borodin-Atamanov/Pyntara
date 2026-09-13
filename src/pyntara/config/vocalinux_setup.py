@@ -67,3 +67,6 @@ class VocalinuxSetupConfig:
     kwriteconfig_command: tuple[str, ...]
     config_group_flag: tuple[str, ...]
     config_key_flag: tuple[str, ...]
+    mkdir_command: tuple[str, ...]
+    chown_command: tuple[str, ...]
+    chmod_command: tuple[str, ...]

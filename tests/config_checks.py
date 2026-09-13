@@ -1706,6 +1706,11 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             raw.get("config_bool_type_flag"),
             "kde_keyboard_setup.config_bool_type_flag",
         ),
+        mkdir_command=_placeholder_command_field(
+            raw.get("mkdir_command"),
+            "kde_keyboard_setup.mkdir_command",
+            ("{path}",),
+        ),
     )
 
 
@@ -1941,6 +1946,26 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("apply_cursor_theme_command"),
             "kde_settings.apply_cursor_theme_command",
             ("{cursor_theme}",),
+        ),
+        mkdir_command=_placeholder_command_field(
+            raw.get("mkdir_command"),
+            "kde_settings.mkdir_command",
+            ("{path}",),
+        ),
+        chown_command=_placeholder_command_field(
+            raw.get("chown_command"),
+            "kde_settings.chown_command",
+            ("{owner}", "{path}"),
+        ),
+        chown_recursive_command=_placeholder_command_field(
+            raw.get("chown_recursive_command"),
+            "kde_settings.chown_recursive_command",
+            ("{owner}", "{path}"),
+        ),
+        chmod_command=_placeholder_command_field(
+            raw.get("chmod_command"),
+            "kde_settings.chmod_command",
+            ("{file_mode}", "{path}"),
         ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
@@ -4880,6 +4905,21 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
             raw.get("config_key_flag"),
             "vocalinux_setup.config_key_flag",
             ("{key}",),
+        ),
+        mkdir_command=_placeholder_command_field(
+            raw.get("mkdir_command"),
+            "vocalinux_setup.mkdir_command",
+            ("{path}",),
+        ),
+        chown_command=_placeholder_command_field(
+            raw.get("chown_command"),
+            "vocalinux_setup.chown_command",
+            ("{owner}", "{path}"),
+        ),
+        chmod_command=_placeholder_command_field(
+            raw.get("chmod_command"),
+            "vocalinux_setup.chmod_command",
+            ("{file_mode}", "{path}"),
         ),
     )
 

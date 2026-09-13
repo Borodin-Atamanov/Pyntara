@@ -137,14 +137,34 @@ def _write_user_file(
         except OSError:
             pass
     run_command(
-        _as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),
+        _as_user_command(
+            cfg,
+            substituted_command(
+                cfg.mkdir_command, {"path": str(target.parent)}
+            ),
+        ),
         extra_env=_home_env(cfg),
         timeout=timeout,
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)
-    run_command(["chmod", f"{file_mode:o}", str(target)], timeout=timeout)
+    run_command(
+        substituted_command(
+            cfg.chown_command,
+            {
+                "owner": f"{cfg.username}:{cfg.username}",
+                "path": str(target),
+            },
+        ),
+        timeout=timeout,
+    )
+    run_command(
+        substituted_command(
+            cfg.chmod_command,
+            {"file_mode": f"{file_mode:o}", "path": str(target)},
+        ),
+        timeout=timeout,
+    )
     _log(f"wrote {target}")
     return True
 
@@ -291,7 +311,12 @@ def _install_appimage(
     if target.is_file() and not force:
         return False, None
     run_command(
-        _as_user_command(cfg, ["mkdir", "-p", str(install_dir)]),
+        _as_user_command(
+            cfg,
+            substituted_command(
+                cfg.mkdir_command, {"path": str(install_dir)}
+            ),
+        ),
         extra_env=_home_env(cfg),
         timeout=timeout,
     )
@@ -314,9 +339,25 @@ def _install_appimage(
         shutil.copyfile(cache, target)
     except OSError as exc:
         return False, f"cannot install {target}: {exc}"
-    run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)
     run_command(
-        ["chmod", f"{cfg.executable_file_mode:o}", str(target)], timeout=timeout
+        substituted_command(
+            cfg.chown_command,
+            {
+                "owner": f"{cfg.username}:{cfg.username}",
+                "path": str(target),
+            },
+        ),
+        timeout=timeout,
+    )
+    run_command(
+        substituted_command(
+            cfg.chmod_command,
+            {
+                "file_mode": f"{cfg.executable_file_mode:o}",
+                "path": str(target),
+            },
+        ),
+        timeout=timeout,
     )
     trash_dir = Path(cfg.home_dir) / ".local" / "share" / "Trash" / "files"
     for stale in install_dir.glob("Vocalinux-*.AppImage"):

@@ -164,6 +164,10 @@ class KdeSettingsConfig:
     apply_look_and_feel_command: tuple[str, ...]
     apply_color_scheme_command: tuple[str, ...]
     apply_cursor_theme_command: tuple[str, ...]
+    mkdir_command: tuple[str, ...]
+    chown_command: tuple[str, ...]
+    chown_recursive_command: tuple[str, ...]
+    chmod_command: tuple[str, ...]
     places_hidden: tuple[str, ...] = ()
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

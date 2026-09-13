@@ -70,3 +70,4 @@ class KdeKeyboardSetupConfig:
     config_group_flag: tuple[str, ...]
     config_key_flag: tuple[str, ...]
     config_bool_type_flag: tuple[str, ...]
+    mkdir_command: tuple[str, ...]

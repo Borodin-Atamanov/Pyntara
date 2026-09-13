@@ -95,3 +95,6 @@ kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]
 config_group_flag = ["--group", "{group}"]
 config_key_flag = ["--key", "{key}"]
 config_bool_type_flag = ["--type", "bool"]
+# Command that creates the directories of the user configuration; {path} is
+# filled in at the call site.
+mkdir_command = ["mkdir", "-p", "{path}"]

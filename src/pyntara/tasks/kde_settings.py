@@ -732,7 +732,13 @@ def _apply_theme_cursor_overrides(
             if not target.is_dir():
                 shutil.copytree(source, target)
                 run_command(
-                    ["chown", "-R", f"{cfg.username}:{cfg.username}", str(target)],
+                    substituted_command(
+                        cfg.chown_recursive_command,
+                        {
+                            "owner": f"{cfg.username}:{cfg.username}",
+                            "path": str(target),
+                        },
+                    ),
                     timeout=timeout,
                 )
                 _log(
@@ -965,7 +971,12 @@ def _write_user_file(
         except OSError:
             pass
     run_command(
-        _as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),
+        _as_user_command(
+            cfg,
+            substituted_command(
+                cfg.mkdir_command, {"path": str(target.parent)}
+            ),
+        ),
         extra_env=_home_env(cfg),
         timeout=timeout,
     )
@@ -974,10 +985,22 @@ def _write_user_file(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     run_command(
-        ["chown", f"{cfg.username}:{cfg.username}", str(target)],
+        substituted_command(
+            cfg.chown_command,
+            {
+                "owner": f"{cfg.username}:{cfg.username}",
+                "path": str(target),
+            },
+        ),
         timeout=timeout,
     )
-    run_command(["chmod", f"{mode:04o}", str(target)], timeout=timeout)
+    run_command(
+        substituted_command(
+            cfg.chmod_command,
+            {"file_mode": f"{mode:04o}", "path": str(target)},
+        ),
+        timeout=timeout,
+    )
     _log(f"wrote {target}")
     return True
 
@@ -1700,7 +1723,11 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _as_user_command(
-                cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / cfg.user_config_dir)]
+                cfg,
+                substituted_command(
+                    cfg.mkdir_command,
+                    {"path": str(Path(cfg.home_dir) / cfg.user_config_dir)},
+                ),
             ),
             extra_env=_home_env(cfg),
             timeout=timeout,

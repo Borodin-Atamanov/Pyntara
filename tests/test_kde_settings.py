@@ -2064,3 +2064,73 @@ def test_kconfig_calls_come_from_the_config() -> None:
     assert task_module._kconfig_command(
         written, written.kwriteconfig_command, "kdeglobals", ("Group",), "Key"
     ) == ["my-writer", "--config", "kdeglobals", "--section", "Group", "--entry", "Key"]
+
+
+def test_file_operations_come_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The maker of the parent directory, the owner writer and the mode
+    # writer are config values: another program in the section is the argv
+    # the task runs around a user config file.
+    cfg = replace(
+        make_config().kde_settings,
+        home_dir=str(tmp_path),
+        mkdir_command=("mymkdir", "--parents", "{path}"),
+        chown_command=("mychown", "--owner", "{owner}", "{path}"),
+        chmod_command=("mychmod", "--mode", "{file_mode}", "{path}"),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    assert task_module._write_user_file(
+        cfg,
+        ".config/kxkbrc",
+        "body\n",
+        mode=0o600,
+        timeout=30.0,
+        force=True,
+    )
+    target = tmp_path / ".config" / "kxkbrc"
+    assert seen[0][4:] == ["mymkdir", "--parents", str(target.parent)]
+    assert seen[1] == [
+        "mychown",
+        "--owner",
+        f"{cfg.username}:{cfg.username}",
+        str(target),
+    ]
+    assert seen[2] == ["mychmod", "--mode", f"{0o600:04o}", str(target)]
+
+
+def test_recursive_owner_command_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner writer of a copied theme tree is a config value: another
+    # program in the section is the argv the task runs on the copy.
+    cfg = replace(
+        make_config().kde_settings,
+        home_dir=str(tmp_path),
+        system_look_and_feel_dir=tmp_path / "system",
+        chown_recursive_command=("mychown", "--recursive", "{owner}", "{path}"),
+    )
+    (cfg.system_look_and_feel_dir / cfg.look_and_feel).mkdir(parents=True)
+    target = Path(cfg.home_dir) / cfg.user_look_and_feel_dir / cfg.look_and_feel
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    task_module._apply_theme_cursor_overrides(
+        cfg, timeout=30.0, force=True, warnings=[]
+    )
+    assert [
+        "mychown",
+        "--recursive",
+        f"{cfg.username}:{cfg.username}",
+        str(target),
+    ] in seen
