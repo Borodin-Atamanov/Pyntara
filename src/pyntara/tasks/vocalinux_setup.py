@@ -488,9 +488,12 @@ def task(ctx: Context) -> TaskResult:
     membership and the ydotool user unit are all in place; the task then
     returns changed=False. Otherwise it installs the packages and the
     AppImage, adds the user to the input group, enables ydotool, writes the
-    user files and reports what it did. A failed package or AppImage
-    install is an error; a step a rerun can redo is a warning. The user
-    must log out and back in once for the input group and the Meta+S
+    user files and reports what it did. A step that cannot run is a warning
+    of a completed task and the missing mechanism skips that step alone: a
+    failed package install leaves the AppImage and the user files, a failed
+    AppImage install skips the autostart entry that would point at a
+    missing file, and a missing template skips the file it renders. The
+    user must log out and back in once for the input group and the Meta+S
     shortcut to take effect, which the message states.
     """
 
@@ -506,11 +509,9 @@ def task(ctx: Context) -> TaskResult:
     if installed_any:
         changed = True
     if not packages_ok:
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"failed to install required packages for {cfg.packages}",
-        )
+        # The AppImage is self-contained, so the deployment of the user
+        # files still runs and the missing packages are reported.
+        warnings.append(f"failed to install required packages for {cfg.packages}")
     if installed_any:
         messages.append("installed the required packages")
 
@@ -528,15 +529,13 @@ def task(ctx: Context) -> TaskResult:
         force=force,
     )
     if appimage_error:
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=appimage_error,
-        )
+        # Without the AppImage the autostart entry would point at a file
+        # that does not exist, so that entry alone is skipped.
+        warnings.append(appimage_error)
     if appimage_changed:
         changed = True
         messages.append(f"installed Vocalinux {cfg.version} to {appimage_path}")
-    else:
+    elif appimage_error is None:
         messages.append(f"Vocalinux {cfg.version} already installed")
 
     group_changed, group_error = _ensure_input_group(cfg, timeout=timeout)
@@ -558,66 +557,60 @@ def task(ctx: Context) -> TaskResult:
         template_dir, cfg.app_config_template_file_name, "app config template"
     )
     if app_config_error is not None:
-        return TaskResult(
-            success=False, changed=changed, error=app_config_error
-        )
+        warnings.append(app_config_error)
     autostart_template, autostart_error = _read_task_template(
         template_dir, cfg.autostart_template_file_name, "autostart template"
     )
     if autostart_error is not None:
-        return TaskResult(
-            success=False, changed=changed, error=autostart_error
-        )
+        warnings.append(autostart_error)
     echo_desktop_template, echo_desktop_error = _read_task_template(
         template_dir,
         cfg.echo_desktop_template_file_name,
         "empty-action desktop template",
     )
     if echo_desktop_error is not None:
-        return TaskResult(
-            success=False, changed=changed, error=echo_desktop_error
-        )
-    assert app_config_template is not None
-    assert autostart_template is not None
-    assert echo_desktop_template is not None
+        warnings.append(echo_desktop_error)
     app_config_path = Path(cfg.home_dir) / cfg.app_config_relative_path
     autostart_path = Path(cfg.home_dir) / cfg.autostart_relative_path
 
-    config_changed = _write_user_file(
-        cfg,
-        cfg.app_config_relative_path,
-        app_config_template,
-        file_mode=cfg.user_file_mode,
-        timeout=timeout,
-        force=force,
-    )
-    if config_changed:
-        changed = True
-        messages.append(f"wrote the app config to {app_config_path}")
+    if app_config_template is not None:
+        config_changed = _write_user_file(
+            cfg,
+            cfg.app_config_relative_path,
+            app_config_template,
+            file_mode=cfg.user_file_mode,
+            timeout=timeout,
+            force=force,
+        )
+        if config_changed:
+            changed = True
+            messages.append(f"wrote the app config to {app_config_path}")
 
-    autostart_changed = _write_user_file(
-        cfg,
-        cfg.autostart_relative_path,
-        _autostart_content(autostart_template, appimage_path),
-        file_mode=cfg.user_file_mode,
-        timeout=timeout,
-        force=force,
-    )
-    if autostart_changed:
-        changed = True
-        messages.append(f"wrote the autostart entry to {autostart_path}")
+    if autostart_template is not None and appimage_error is None:
+        autostart_changed = _write_user_file(
+            cfg,
+            cfg.autostart_relative_path,
+            _autostart_content(autostart_template, appimage_path),
+            file_mode=cfg.user_file_mode,
+            timeout=timeout,
+            force=force,
+        )
+        if autostart_changed:
+            changed = True
+            messages.append(f"wrote the autostart entry to {autostart_path}")
 
-    echo_changed = _write_user_file(
-        cfg,
-        cfg.echo_desktop_relative_path,
-        echo_desktop_template,
-        file_mode=cfg.user_file_mode,
-        timeout=timeout,
-        force=force,
-    )
-    if echo_changed:
-        changed = True
-        messages.append("wrote the empty Meta+S action desktop file")
+    if echo_desktop_template is not None:
+        echo_changed = _write_user_file(
+            cfg,
+            cfg.echo_desktop_relative_path,
+            echo_desktop_template,
+            file_mode=cfg.user_file_mode,
+            timeout=timeout,
+            force=force,
+        )
+        if echo_changed:
+            changed = True
+            messages.append("wrote the empty Meta+S action desktop file")
 
     shortcut_changed = _sync_echo_shortcut(cfg, timeout=timeout, force=force)
     if shortcut_changed:

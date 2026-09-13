@@ -299,10 +299,11 @@ def test_idempotent_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert fakes.kwrites == []
 
 
-def test_package_install_failure_is_error(
+def test_package_install_failure_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A package that cannot be installed is an error result."""
+    """A package that cannot be installed is reported and the user files
+    are still written, because the AppImage is self-contained."""
 
     _write_templates(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
@@ -310,14 +311,16 @@ def test_package_install_failure_is_error(
 
     result = task_module.task(ctx)
 
-    assert result.success is False
-    assert result.error is not None
+    assert result.success is True
+    assert result.warnings
+    cfg = ctx.config.vocalinux_setup
+    assert (Path(cfg.home_dir) / cfg.app_config_relative_path).is_file()
 
 
-def test_download_failure_is_error(
+def test_download_failure_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed AppImage download is an error result."""
+    """A failed AppImage download skips the autostart entry alone."""
 
     _write_templates(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path)
@@ -325,8 +328,11 @@ def test_download_failure_is_error(
 
     result = task_module.task(ctx)
 
-    assert result.success is False
-    assert "cannot download" in (result.error or "")
+    assert result.success is True
+    assert any("cannot download" in warning for warning in result.warnings)
+    cfg = ctx.config.vocalinux_setup
+    assert not (Path(cfg.home_dir) / cfg.autostart_relative_path).exists()
+    assert (Path(cfg.home_dir) / cfg.app_config_relative_path).is_file()
 
 
 def test_recoverable_steps_report_warnings(
@@ -383,10 +389,10 @@ def test_force_rewrites_matching_state(
     assert fakes.kwrites  # force re-registers the shortcut
 
 
-def test_missing_config_template_is_error(
+def test_missing_config_template_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A missing config template stops the task as an error."""
+    """A missing config template skips that file alone."""
 
     _write_templates(tmp_path, monkeypatch)
     (tmp_path / "task_data" / "vocalinux_setup" / "config.json").unlink()
@@ -396,8 +402,13 @@ def test_missing_config_template_is_error(
 
     result = task_module.task(ctx)
 
-    assert result.success is False
-    assert "config template" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "config template" in warning for warning in result.warnings
+    )
+    cfg = ctx.config.vocalinux_setup
+    assert not (Path(cfg.home_dir) / cfg.app_config_relative_path).exists()
+    assert (Path(cfg.home_dir) / cfg.autostart_relative_path).is_file()
 
 
 def test_release_download_url_comes_from_the_config() -> None:
