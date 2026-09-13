@@ -11,6 +11,7 @@ against live here as well: the run reads no rule of the config.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from pathlib import Path
 from typing import Any
@@ -4048,6 +4049,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.install_result_env_path",
         )
     )
+    random_username_bytes = _positive_int_field(
+        raw.get("random_username_bytes"),
+        "three_x_ui_xray_setup.random_username_bytes",
+    )
+    random_secret_bytes = _positive_int_field(
+        raw.get("random_secret_bytes"),
+        "three_x_ui_xray_setup.random_secret_bytes",
+    )
+    random_sub_id_bytes = _positive_int_field(
+        raw.get("random_sub_id_bytes"),
+        "three_x_ui_xray_setup.random_sub_id_bytes",
+    )
     panel_port = _int_field(
         raw.get("panel_port"),
         "three_x_ui_xray_setup.panel_port",
@@ -4256,6 +4269,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("local_proxy_listen_address"),
         "three_x_ui_xray_setup.local_proxy_listen_address",
     )
+    private_ipv4_networks = _string_list(
+        raw.get("private_ipv4_networks"),
+        "three_x_ui_xray_setup.private_ipv4_networks",
+    )
+    for network in private_ipv4_networks:
+        try:
+            ipaddress.ip_network(network, strict=True)
+        except ValueError as exc:
+            raise ConfigError(
+                "three_x_ui_xray_setup.private_ipv4_networks must hold CIDR "
+                f"networks, got {network!r}: {exc}"
+            ) from exc
     local_proxy_port = _port_field(
         raw.get("local_proxy_port"),
         "three_x_ui_xray_setup.local_proxy_port",
@@ -4614,6 +4639,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         install_result_env_path=install_result_env_path,
+        random_username_bytes=random_username_bytes,
+        random_secret_bytes=random_secret_bytes,
+        random_sub_id_bytes=random_sub_id_bytes,
         panel_port=panel_port,
         ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,
@@ -4644,6 +4672,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,
         inbound_port=inbound_port,
+        route_test_port=_port_field(
+            raw.get("route_test_port"),
+            "three_x_ui_xray_setup.route_test_port",
+        ),
         inbound_remark=inbound_remark,
         reality_dest=reality_dest,
         reality_server_names=reality_server_names,
@@ -4681,6 +4713,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         client_profile_entry_title=client_profile_entry_title,
         local_proxy_tag=local_proxy_tag,
         local_proxy_listen_address=local_proxy_listen_address,
+        private_ipv4_networks=private_ipv4_networks,
         local_proxy_port=local_proxy_port,
         local_proxy_udp=local_proxy_udp,
         local_proxy_sniffing_protocols=local_proxy_sniffing_protocols,

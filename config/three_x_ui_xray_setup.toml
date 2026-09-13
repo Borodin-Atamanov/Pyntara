@@ -86,6 +86,14 @@ start_check_retry_delay_seconds = 1
 # Path to the install-result.env file the panel writes on first start.
 # Stage 2 reads the generated credentials from this file.
 install_result_env_path = "/etc/x-ui/install-result.env"
+# Length in bytes of the random part of every generated panel credential,
+# which proquint encodes into the value: the username and the client email
+# take random_username_bytes, the password, the web base path and the
+# client id take random_secret_bytes, the subscription id takes
+# random_sub_id_bytes.
+random_username_bytes = 4
+random_secret_bytes = 8
+random_sub_id_bytes = 6
 # Fixed panel port passed to the installer via XUI_PANEL_PORT. The
 # installer applies it on first deployment; on an existing panel with
 # custom credentials it preserves the current port.
@@ -153,6 +161,10 @@ share_addr_strategy = "custom"
 # Stage 3: universal server inbound parameters.
 # Port for the VLESS+REALITY inbound. Required.
 inbound_port = 443
+# Port the routing check knocks on, for every destination class: a port
+# nothing listens on, so the answer is the outbound the policy chose and
+# never a real connection.
+route_test_port = 443
 # Remark for the inbound. Optional, default "universal".
 inbound_remark = "universal"
 # REALITY destination address:port for TLS handshake mimicry.
@@ -239,6 +251,12 @@ local_proxy_tag = "pyntara-local-proxy"
 # Address the local proxy listens on. 127.0.0.1 keeps the proxy out of
 # reach of the local network: the client is this machine alone.
 local_proxy_listen_address = "127.0.0.1"
+# The IPv4 networks that count as private, in CIDR notation: an own address
+# inside one of them means the machine sits behind NAT, so the Let's Encrypt
+# HTTP-01 challenge on acme_port only succeeds when the router forwards it.
+# The set is the RFC1918 private range and is a value like any other,
+# because a machine behind carrier-grade NAT may need 100.64.0.0/10 added.
+private_ipv4_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 # Port of the local proxy. The panel mixes SOCKS5 and HTTP on one port, so
 # a program points at the same number whether it speaks SOCKS5 or HTTP.
 local_proxy_port = 10800

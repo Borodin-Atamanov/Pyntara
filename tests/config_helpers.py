@@ -448,6 +448,9 @@ def base_config() -> str:
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"
         'install_result_env_path = "/etc/x-ui/install-result.env"\n'
+        "random_username_bytes = 4\n"
+        "random_secret_bytes = 8\n"
+        "random_sub_id_bytes = 6\n"
         "panel_port = 35353\n"
         "ssl_enabled = true\n"
         'panel_http_address = "127.0.0.1"\n'
@@ -478,6 +481,7 @@ def base_config() -> str:
         'connection_vault_entry_title = "xray_connection"\n'
         'share_addr_strategy = "custom"\n'
         'inbound_port = 443\n'
+        "route_test_port = 443\n"
         'inbound_remark = "universal"\n'
         'reality_dest = "www.google.com:443"\n'
         'reality_server_names = ["www.google.com"]\n'
@@ -509,6 +513,7 @@ def base_config() -> str:
         'client_profile_entry_title = "xray_client_profile"\n'
         'local_proxy_tag = "pyntara-local-proxy"\n'
         'local_proxy_listen_address = "127.0.0.1"\n'
+        'private_ipv4_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]\n'
         "local_proxy_port = 10800\n"
         "local_proxy_udp = true\n"
         'local_proxy_sniffing_protocols = ["http", "tls", "quic"]\n'

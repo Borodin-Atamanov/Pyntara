@@ -32,7 +32,11 @@ class ThreeXuiXraySetupConfig:
     REST API calls and the panel_ fields that follow it are the paths of
     that API, relative to the host, each with {placeholders} for the
     values of one call; vault_entry_title names the runtime vault entry
-    where the credentials are stored. server_ip_services lists the echo
+    where the credentials are stored. random_username_bytes,
+    random_secret_bytes and random_sub_id_bytes are the lengths of the
+    random part of every generated credential, which proquint encodes into
+    the username and the client email, the password, the web base path and
+    the client id, and the subscription id. server_ip_services lists the echo
     services queried for the public IPv4 address and
     server_ip_timeout_seconds bounds one such query.
 
@@ -53,6 +57,10 @@ class ThreeXuiXraySetupConfig:
     prove the whole path, proxy_check_blocked_url is the URL of a class
     the policy sends through the remote server, queried on a machine in
     Russia, and proxy_check_timeout_seconds bounds one such request.
+    route_test_port is the port the routing check knocks on for every
+    destination class, and private_ipv4_networks are the CIDR networks
+    that count as private when the task asks whether this machine sits
+    behind NAT.
 
     The vocabulary of the panel itself is configured next to the values
     it is asked for: panel_inbound_protocol is the protocol of the local
@@ -93,6 +101,9 @@ class ThreeXuiXraySetupConfig:
     start_check_attempts: int
     start_check_retry_delay_seconds: int
     install_result_env_path: Path
+    random_username_bytes: int
+    random_secret_bytes: int
+    random_sub_id_bytes: int
     panel_port: int
     ssl_enabled: bool
     panel_http_address: str
@@ -123,6 +134,7 @@ class ThreeXuiXraySetupConfig:
     connection_vault_entry_title: str
     share_addr_strategy: str
     inbound_port: int
+    route_test_port: int
     inbound_remark: str
     reality_dest: str
     reality_server_names: tuple[str, ...]
@@ -158,6 +170,7 @@ class ThreeXuiXraySetupConfig:
     client_profile_entry_title: str
     local_proxy_tag: str
     local_proxy_listen_address: str
+    private_ipv4_networks: tuple[str, ...]
     local_proxy_port: int
     local_proxy_udp: bool
     local_proxy_sniffing_protocols: tuple[str, ...]

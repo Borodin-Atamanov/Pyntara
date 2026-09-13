@@ -16,6 +16,7 @@ import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
 
@@ -687,6 +688,37 @@ class TestProquintCredentials:
         assert len(env["XUI_WEB_BASE_PATH"]) == 23
         assert env["XUI_WEB_BASE_PATH"].count("-") == 3
         assert set(env["XUI_WEB_BASE_PATH"].replace("-", "")) <= proquint_letters
+
+    def test_random_value_sizes_come_from_the_config(
+        self, tmp_path: Path
+    ) -> None:
+        # The length of the random part of every generated value is a config
+        # value: two bytes instead of four halve the proquint strings, and
+        # the subscription id follows its own key.
+        config = make_config(
+            task_data_root=tmp_path,
+            three_x_ui_random_username_bytes=2,
+            three_x_ui_random_secret_bytes=4,
+            three_x_ui_random_sub_id_bytes=3,
+        )
+        cfg = config.three_x_ui_xray_setup
+        env = xui._credential_env(cfg)
+        assert len(env["XUI_USERNAME"]) == 5
+        assert len(env["XUI_PASSWORD"]) == 10
+        assert len(env["XUI_WEB_BASE_PATH"]) == 11
+        email, client_id, sub_id = xui._client_identity(cfg, {})
+        assert len(email) == 5
+        assert len(client_id) == 11
+        assert len(sub_id) == 11
+
+    def test_client_identity_reuses_the_stored_values(
+        self, tmp_path: Path
+    ) -> None:
+        # A stored identity wins over a generated one, so a rerun reuses the
+        # client the panel already knows.
+        cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
+        stored = {"CLIENT_EMAIL": "a", "CLIENT_ID": "b", "SUB_ID": "c"}
+        assert xui._client_identity(cfg, stored) == ("a", "b", "c")
 
     def test_installer_receives_credential_env(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1414,12 +1446,21 @@ class TestSslReachability:
     """Tests for deciding whether the HTTP-01 challenge can be served."""
 
     def test_is_private_ipv4_ranges(self) -> None:
-        assert xui._is_private_ipv4("10.0.0.1") is True
-        assert xui._is_private_ipv4("172.16.0.1") is True
-        assert xui._is_private_ipv4("172.31.255.255") is True
-        assert xui._is_private_ipv4("172.32.0.1") is False
-        assert xui._is_private_ipv4("192.168.1.1") is True
-        assert xui._is_private_ipv4("203.0.113.5") is False
+        networks = make_config().three_x_ui_xray_setup.private_ipv4_networks
+        assert xui._is_private_ipv4("10.0.0.1", networks) is True
+        assert xui._is_private_ipv4("172.16.0.1", networks) is True
+        assert xui._is_private_ipv4("172.31.255.255", networks) is True
+        assert xui._is_private_ipv4("172.32.0.1", networks) is False
+        assert xui._is_private_ipv4("192.168.1.1", networks) is True
+        assert xui._is_private_ipv4("203.0.113.5", networks) is False
+
+    def test_private_networks_come_from_the_config(self) -> None:
+        # The networks that count as private are a config value: a machine
+        # behind carrier-grade NAT adds 100.64.0.0/10 and the same address
+        # changes its verdict, without a line of code changing.
+        carrier_grade = ("100.64.0.0/10",)
+        assert xui._is_private_ipv4("100.64.0.5", carrier_grade) is True
+        assert xui._is_private_ipv4("100.64.0.5", ("10.0.0.0/8",)) is False
 
     def _cfg(self) -> ThreeXuiXraySetupConfig:
         # A default three_x_ui config; the reachability helpers only read
@@ -3253,6 +3294,38 @@ class TestRoutingPolicyStage:
         rules = routing["rules"]
         assert isinstance(rules, list)
         return cast("list[dict[str, object]]", rules)
+
+    def test_route_test_port_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The port every routing check knocks on is a config value: another
+        # port in the table is the port the running core is asked about, for
+        # a domain check and for an address check alike.
+        ports: list[object] = []
+
+        def fake_route(
+            _cfg: object, _env: object, **kwargs: object
+        ) -> tuple[bool, str]:
+            ports.append(kwargs.get("port"))
+            return True, "direct"
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(
+            xui,
+            "_route_expectations",
+            lambda _cfg, _policy: (
+                ("example.com", "domain", "direct"),
+                ("10.10.0.0", "address", "direct"),
+            ),
+        )
+        cfg = make_config(three_x_ui_route_test_port=8443).three_x_ui_xray_setup
+        policy = cast(
+            "routing_policy.LocalProxyPolicy",
+            SimpleNamespace(inbound_tag="pyntara-local-proxy"),
+        )
+        failures = xui._verify_routes(cfg, {}, 30.0, policy)
+        assert failures == ()
+        assert ports == [8443, 8443]
 
     def test_applies_the_policy_of_a_machine_outside_russia(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

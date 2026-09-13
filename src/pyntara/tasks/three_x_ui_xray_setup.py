@@ -75,6 +75,7 @@ the stored template no longer matches. The machine that is the remote
 server itself skips both stages: it does not connect to itself.
 """
 
+import ipaddress
 import os
 import re
 import subprocess
@@ -209,8 +210,9 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
     """The XUI_ credential and port env vars for the installer.
 
     The panel port is fixed to cfg.panel_port; the username, password
-    and webBasePath are proquint encodings of fresh random bytes
-    (docs/spec/3x-ui.md, Credentials boundary). The installer applies
+    and webBasePath are proquint encodings of fresh random bytes, whose
+    length comes from the config (docs/spec/3x-ui.md, Credentials
+    boundary). The installer applies
     these values only when the panel is in the default state (first
     deployment); on an existing panel with custom credentials it
     preserves the current values, so a rerun never rotates them. The
@@ -218,9 +220,15 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
     """
 
     return {
-        "XUI_USERNAME": proquint_encode(os.urandom(4), ""),
-        "XUI_PASSWORD": proquint_encode(os.urandom(8), ""),
-        "XUI_WEB_BASE_PATH": proquint_encode(os.urandom(8), "-"),
+        "XUI_USERNAME": proquint_encode(
+            os.urandom(cfg.random_username_bytes), ""
+        ),
+        "XUI_PASSWORD": proquint_encode(
+            os.urandom(cfg.random_secret_bytes), ""
+        ),
+        "XUI_WEB_BASE_PATH": proquint_encode(
+            os.urandom(cfg.random_secret_bytes), "-"
+        ),
         "XUI_PANEL_PORT": str(cfg.panel_port),
     }
 
@@ -699,9 +707,7 @@ def _stage_connection(
         )
         if entry is not None:
             stored = _notes_map(entry.notes or "")
-    email = stored.get("CLIENT_EMAIL") or proquint_encode(os.urandom(4), "-")
-    client_id = stored.get("CLIENT_ID") or proquint_encode(os.urandom(8), "-")
-    sub_id = stored.get("SUB_ID") or proquint_encode(os.urandom(6), "")
+    email, client_id, sub_id = _client_identity(cfg, stored)
 
     inbound_id = inbound.get("id")
     if not isinstance(inbound_id, int):
@@ -1006,23 +1012,47 @@ def _server_share_address(
     return None
 
 
-def _is_private_ipv4(address: str) -> bool:
-    """True for an RFC1918 private IPv4 address (the machine is behind NAT).
+def _client_identity(
+    cfg: ThreeXuiXraySetupConfig, stored: dict[str, str]
+) -> tuple[str, str, str]:
+    """The email, client id and subscription id of the panel client.
 
-    The private ranges are 10.0.0.0/8, 172.16.0.0/12 and
-    192.168.0.0/16. A machine whose own interface carries only private
-    addresses cannot serve the Let's Encrypt HTTP-01 challenge on port 80
-    unless the router forwards it.
+    An identity already stored for this panel wins, so a rerun reuses the
+    client instead of adding another; a first run generates one, and the
+    length of the random part of each value comes from the config.
     """
 
-    parts = address.split(".")
-    if len(parts) != 4:
+    email = stored.get("CLIENT_EMAIL") or proquint_encode(
+        os.urandom(cfg.random_username_bytes), "-"
+    )
+    client_id = stored.get("CLIENT_ID") or proquint_encode(
+        os.urandom(cfg.random_secret_bytes), "-"
+    )
+    sub_id = stored.get("SUB_ID") or proquint_encode(
+        os.urandom(cfg.random_sub_id_bytes), ""
+    )
+    return email, client_id, sub_id
+
+
+def _is_private_ipv4(address: str, networks: tuple[str, ...]) -> bool:
+    """True when the address falls inside one of the configured networks.
+
+    The networks are the private IPv4 ranges of the section, the RFC1918
+    set by default. A machine whose own interface carries only an address
+    from such a range cannot serve the Let's Encrypt HTTP-01 challenge on
+    the ACME port unless the router forwards it. The standard library
+    decides the containment, so the notation of the config is the usual
+    CIDR notation and no prefix arithmetic lives here.
+    """
+
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
         return False
-    if parts[0] == "10":
-        return True
-    if parts[0] == "172" and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
-        return True
-    return parts[0] == "192" and parts[1] == "168"
+    return any(
+        parsed in ipaddress.ip_network(network, strict=True)
+        for network in networks
+    )
 
 
 def _probe_port_80_forward(
@@ -1104,7 +1134,7 @@ def _ssl_reachable(
     """
 
     local = facts.local_addresses
-    if not local or not _is_private_ipv4(local[0]):
+    if not local or not _is_private_ipv4(local[0], cfg.private_ipv4_networks):
         return True
     return _probe_port_80_forward(cfg, timeout, facts)
 
@@ -2054,7 +2084,7 @@ def _verify_routes(
                 env,
                 inbound_tag=policy.inbound_tag,
                 domain=destination,
-                port=443,
+                port=cfg.route_test_port,
                 timeout=timeout,
             )
         else:
@@ -2063,7 +2093,7 @@ def _verify_routes(
                 env,
                 inbound_tag=policy.inbound_tag,
                 address=destination,
-                port=443,
+                port=cfg.route_test_port,
                 timeout=timeout,
             )
         if matched and answer == expected:

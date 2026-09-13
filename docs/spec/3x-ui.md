@@ -30,10 +30,12 @@ When the version differs, the service is disabled or inactive, or the task is fo
 
 The task generates the panel credentials itself and passes them to the installer as env vars, so the task controls the credentials instead of accepting whatever the installer generates. The values are proquint encodings (draft-rayner-proquint, shared proquint_encode in utils) of fresh random bytes from os.urandom:
 
-- username: 4 random bytes, no separator, 10 letters.
-- password: 8 random bytes, no separator, 20 letters.
-- webBasePath: 8 random bytes, dash separator, 23 characters (20 letters and 3 dashes).
+- username: random_username_bytes random bytes, no separator.
+- password: random_secret_bytes random bytes, no separator.
+- webBasePath: random_secret_bytes random bytes, dash separator.
 - panel port: the fixed panel_port from the task config, default 35353.
+
+The lengths are [three_x_ui_xray_setup] keys, so a machine that wants longer credentials (or shorter ones, for a lab panel) changes them in the config and no code follows: the same keys decide the length of the client email, the client id and the subscription id of stage 6.
 
 The installer applies these env vars only when the panel is in the default state: a fresh panel starts with the default credentials and a short webBasePath, so the installer sets all four values and writes them into /etc/x-ui/install-result.env (mode 600, root) through write_install_result. On a rerun against a panel whose credentials are no longer the defaults, the installer preserves the current credentials, port and webBasePath, so a rerun never rotates them: the credentials are effectively applied only at the first deployment. This is the intended gate: the task does not re-check the panel state itself.
 
@@ -190,6 +192,9 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `upnp_protocol` (string, optional, default `"TCP"`): protocol of the forwarding mappings the task asks the router for; the client sends it as the protocol of the rule.  
 `panel_root_path`, `panel_login_path`, `panel_csrf_token_path`, `panel_inbounds_list_path`, `panel_inbounds_add_path`, `panel_inbounds_update_path`, `panel_inbounds_delete_path`, `panel_client_get_path`, `panel_client_add_path`, `panel_client_links_path`, `panel_x25519_cert_path`, `panel_setting_all_path`, `panel_setting_update_path`, `panel_xray_status_path`, `panel_xray_update_path`, `panel_xray_geodata_validate_path`, `panel_xray_route_test_path` (strings, required): paths of the panel REST API, relative to `panel_http_address`. The update, delete, client get and client links paths carry a `{placeholder}` for the value of one call, which the call site fills in. Every path is written as the panel serves it, so a panel version that renames an endpoint is answered in the config and not in the code, and a test that hands the client another path proves the client reads it.  
 `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.  
+`route_test_port` (integer, optional, default `443`): the port the routing check knocks on for every destination class. A port nothing listens on is the point: the answer then reports the outbound the policy chose instead of a real connection.  
+`random_username_bytes`, `random_secret_bytes`, `random_sub_id_bytes` (integers, optional, defaults `4`, `8` and `6`): the length of the random part of every generated credential, which proquint encodes into the value: the panel username and the client email, the panel password, the web base path and the client id, and the subscription id.  
+`private_ipv4_networks` (array of strings, optional, default the RFC1918 set `["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]`): the networks that count as private when the task decides whether this machine sits behind NAT and can only serve the HTTP-01 challenge with a router forward. A machine behind carrier-grade NAT adds `100.64.0.0/10` here.
 `inbound_remark` (string, optional, default `"universal"`): display label for the inbound in the panel.  
 `reality_dest` (string, optional, default `"www.google.com:443"`): destination address and port for REALITY TLS handshake mimicry.  
 `reality_server_names` (array of strings, optional, default `["www.google.com"]`): ServerNames the REALITY handshake presents.  
