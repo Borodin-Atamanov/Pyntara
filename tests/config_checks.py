@@ -1209,6 +1209,11 @@ def _engine_table(raw: object) -> EngineConfig:
         link_scope_name=_nonempty_string_field(
             raw.get("link_scope_name"), "engine.link_scope_name"
         ),
+        dpkg_architecture_command=_placeholder_command_field(
+            raw.get("dpkg_architecture_command"),
+            "engine.dpkg_architecture_command",
+            (),
+        ),
     )
 
 

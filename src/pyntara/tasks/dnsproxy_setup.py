@@ -803,7 +803,7 @@ def task(ctx: Context) -> TaskResult:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
         tag = release_tag(release)
         asset_name, asset_url = _asset_for_architecture(
-            cfg, release, dpkg_architecture(timeout)
+            cfg, release, dpkg_architecture(ctx.config.engine, timeout)
         )
         target_version = _version_from_tag(tag)
     except (RuntimeError, subprocess.SubprocessError) as exc:

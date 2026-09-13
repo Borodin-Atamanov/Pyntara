@@ -191,7 +191,9 @@ def _install_fakes(
     monkeypatch.setattr(task_module, "run_command", fake_run)
     monkeypatch.setattr(task_module, "package_is_installed", fake_installed)
     monkeypatch.setattr(task_module, "install_packages", fake_install)
-    monkeypatch.setattr(task_module, "dpkg_architecture", lambda timeout: "amd64")
+    monkeypatch.setattr(
+        task_module, "dpkg_architecture", lambda _engine, _timeout: "amd64"
+    )
     return fakes
 
 

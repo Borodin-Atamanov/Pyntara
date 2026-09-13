@@ -176,16 +176,16 @@ def os_family_is_debian(engine: EngineConfig, os_release: dict[str, str]) -> boo
     )
 
 
-def dpkg_architecture(timeout: float) -> str:
+def dpkg_architecture(engine: EngineConfig, timeout: float) -> str:
     """The dpkg architecture of the target machine, e.g. amd64.
 
-    dpkg --print-architecture is the single source of the Debian
+    The configured architecture query is the single source of the Debian
     architecture name used by package asset names. Raises
     CalledProcessError or TimeoutExpired when the query fails.
     """
 
     result = run_command(
-        ["dpkg", "--print-architecture"],
+        list(engine.dpkg_architecture_command),
         check=True,
         capture=True,
         timeout=timeout,

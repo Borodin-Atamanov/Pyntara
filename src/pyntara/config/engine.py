@@ -121,3 +121,4 @@ class EngineConfig:
     address_family_by_flag: dict[str, str] = field(default_factory=dict)
     iproute2_address_family_names: dict[str, str] = field(default_factory=dict)
     link_scope_name: str = ""
+    dpkg_architecture_command: tuple[str, ...] = ()

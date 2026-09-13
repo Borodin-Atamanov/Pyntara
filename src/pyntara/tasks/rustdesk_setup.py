@@ -451,7 +451,7 @@ def task(ctx: Context) -> TaskResult:
 
     if installed != tag:
         try:
-            arch = dpkg_architecture(timeout)
+            arch = dpkg_architecture(ctx.config.engine, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"cannot read dpkg architecture: {exc}")
         selected = _select_asset(

@@ -899,7 +899,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        arch = dpkg_architecture(timeout)
+        arch = dpkg_architecture(ctx.config.engine, timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         warnings.append(f"cannot determine dpkg architecture: {exc}")
         return done("yggdrasil not configured", False)

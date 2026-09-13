@@ -873,3 +873,23 @@ def test_version_without_tag_prefix_strips_one_leading_v() -> None:
     assert version_without_tag_prefix("") == ""
 
 
+def test_the_architecture_query_comes_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Another architecture query in the [engine] table is exactly the argv
+    # the helper runs, so the tool and its flags live in the config.
+    engine = replace(
+        make_config().engine,
+        dpkg_architecture_command=("my-dpkg", "--arch"),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(list(command))
+        return _FakeProc(0, "my-arch\n")
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.dpkg_architecture(engine, 30.0) == "my-arch"
+    assert calls == [["my-dpkg", "--arch"]]
+
+

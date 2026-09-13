@@ -299,7 +299,7 @@ def _install_appimage(
     moved into the user trash, never deleted.
     """
 
-    arch = dpkg_architecture(timeout)
+    arch = dpkg_architecture(engine, timeout)
     asset_arch = release_asset_architecture(
         engine.release_asset_architectures, arch
     )
@@ -511,7 +511,7 @@ def task(ctx: Context) -> TaskResult:
     if installed_any:
         messages.append("installed the required packages")
 
-    arch = dpkg_architecture(timeout)
+    arch = dpkg_architecture(engine, timeout)
     asset_arch = release_asset_architecture(
         engine.release_asset_architectures, arch
     )

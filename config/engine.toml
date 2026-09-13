@@ -233,3 +233,7 @@ interface_addresses_command = ["ip", "-j", "addr", "show"]
 address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }
 iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }
 link_scope_name = "link"
+# The debian package tools every task that installs a package uses: the
+# architecture query and the package status query. Their arguments are
+# the flags of the tools, so they live here once and no task spells them.
+dpkg_architecture_command = ["dpkg", "--print-architecture"]
