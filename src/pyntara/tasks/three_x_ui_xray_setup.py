@@ -2513,9 +2513,13 @@ def task(ctx: Context) -> TaskResult:
     running core. A machine that IS the remote server skips stages 6 and
     7. Every step is reported to stdout:
     measurements and decisions as single lines that include their result,
-    long-running commands as a line before and a line after. Any failure
-    is returned as an error TaskResult: the runner continues with the
-    remaining tasks and never stops here.
+    long-running commands as a line before and a line after. A step that
+    cannot run is a warning of a completed task: a release that cannot be
+    read, a busy panel or ACME port, a failed installer download, a failed
+    installer run and a panel that does not become active skip the install
+    alone, while the port convergence and every panel stage still run on
+    the panel that is there. The runner continues with the remaining tasks
+    and never stops here.
     """
 
     cfg = ctx.config.three_x_ui_xray_setup
@@ -2533,12 +2537,21 @@ def task(ctx: Context) -> TaskResult:
     )
 
     _log(f"querying the latest release of {cfg.github_repo}")
+    tag = ""
+    release: dict[str, object] = {}
+    install_warnings: list[str] = []
     try:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
         tag = release_tag(release)
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    _log(f"checking latest release: {tag}")
+        # Without the release tag the installed version cannot be compared,
+        # so the installer is skipped; the panel that is there is still
+        # converged and every stage below still runs.
+        install_warnings.append(str(exc))
+    if tag:
+        _log(f"checking latest release: {tag}")
+    else:
+        _log("latest release unknown, the installer step is skipped")
 
     _log("reading the installed panel version")
     installed_version = _installed_version(cfg, timeout)
@@ -2555,7 +2568,8 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
     rerun = (
-        not force
+        bool(tag)
+        and not force
         and installed_version == version_without_tag_prefix(tag)
         and enabled
         and active
@@ -2567,25 +2581,29 @@ def task(ctx: Context) -> TaskResult:
             success=True,
             changed=False,
             message="target state already reached",
-            warnings=(),
+            warnings=tuple(install_warnings),
         )
     else:
-        # The panel binds the fixed port, so the port must be free before
-        # the installer runs: stop x-ui when it owns the port, terminate
-        # an unknown process.
-        _log(f"checking panel port {cfg.panel_port} is free")
-        try:
-            freed = ensure_port_free(
-                ctx.config.engine,
-                cfg.panel_port,
-                cfg.service_unit_name,
-                timeout,
-                service_process_name=cfg.service_process_name,
-            )
-        except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
-        if freed:
-            _log(f"panel port {cfg.panel_port}: {freed}")
+        installer_ready = bool(tag)
+        if installer_ready:
+            # The panel binds the fixed port, so the port must be free
+            # before the installer runs: stop x-ui when it owns the port,
+            # terminate an unknown process.
+            _log(f"checking panel port {cfg.panel_port} is free")
+            try:
+                freed = ensure_port_free(
+                    ctx.config.engine,
+                    cfg.panel_port,
+                    cfg.service_unit_name,
+                    timeout,
+                    service_process_name=cfg.service_process_name,
+                )
+            except RuntimeError as exc:
+                install_warnings.append(str(exc))
+                installer_ready = False
+            else:
+                if freed:
+                    _log(f"panel port {cfg.panel_port}: {freed}")
 
         # Decide whether the Let's Encrypt HTTP-01 challenge can reach
         # this machine before passing XUI_SSL_MODE. A machine behind NAT
@@ -2593,13 +2611,13 @@ def task(ctx: Context) -> TaskResult:
         # challenge unless the router forwards port 80; when it cannot,
         # the installer skips the certificate and the panel gets a
         # self-signed one after the install (stage 4), never plain HTTP.
-        if cfg.ssl_enabled:
+        if cfg.ssl_enabled and installer_ready:
             ssl_attempt = _ssl_reachable(cfg, timeout, facts)
 
         # The installer's SSL step runs the ACME HTTP-01 challenge on
         # port 80 and fails in non-interactive mode when the port is
         # busy, so the port must be free before the installer runs.
-        if ssl_attempt:
+        if installer_ready and ssl_attempt:
             _log(f"checking ACME port {cfg.acme_port} is free")
             try:
                 freed = ensure_port_free(
@@ -2610,77 +2628,96 @@ def task(ctx: Context) -> TaskResult:
                     service_process_name=cfg.service_process_name,
                 )
             except RuntimeError as exc:
-                return TaskResult(success=False, error=str(exc))
-            if freed:
-                _log(f"ACME port {cfg.acme_port}: {freed}")
+                # Only the certificate step depends on this port: the
+                # installer still runs without an SSL attempt.
+                install_warnings.append(str(exc))
+                ssl_attempt = False
+            else:
+                if freed:
+                    _log(f"ACME port {cfg.acme_port}: {freed}")
 
-        _log(f"downloading installer {cfg.install_script_url}")
-        try:
-            script_path = _download_installer(
-                ctx.config.engine,
-                cfg,
-                timeout,
+        script_path: Path | None = None
+        if installer_ready:
+            _log(f"downloading installer {cfg.install_script_url}")
+            try:
+                script_path = _download_installer(
+                    ctx.config.engine,
+                    cfg,
+                    timeout,
+                )
+            except RuntimeError as exc:
+                install_warnings.append(str(exc))
+        if script_path is None:
+            result = TaskResult(
+                success=True,
+                changed=False,
+                message="; ".join(install_warnings) or "installer skipped",
+                warnings=tuple(install_warnings),
             )
-        except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
-        _log("installer downloaded")
+        else:
+            _log("installer downloaded")
+            if ssl_attempt:
+                _log(f"installer will attempt a certificate on port {cfg.acme_port}")
 
-        _log("running official 3x-ui installer with proquint credentials")
-        installer_env = _credential_env(cfg)
-        if cfg.ssl_enabled:
-            installer_env["XUI_SSL_MODE"] = "ip" if ssl_attempt else "none"
-        try:
-            _run_installer(cfg, script_path, timeout, installer_env)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(success=False, error=f"installer failed: {exc}")
-        _log("installer finished")
+            _log("running official 3x-ui installer with proquint credentials")
+            installer_env = _credential_env(cfg)
+            if cfg.ssl_enabled:
+                installer_env["XUI_SSL_MODE"] = "ip" if ssl_attempt else "none"
+            installed_now = True
+            try:
+                _run_installer(cfg, script_path, timeout, installer_env)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                install_warnings.append(f"installer failed: {exc}")
+                installed_now = False
+            if not installed_now:
+                result = TaskResult(
+                    success=True,
+                    changed=False,
+                    message="; ".join(install_warnings),
+                    warnings=tuple(install_warnings),
+                )
+            else:
+                _log("installer finished")
 
-        _log(
-            f"waiting for service to become active (up to "
-            f"{cfg.start_check_attempts} checks)"
-        )
-        if not _wait_active(
-            ctx.config.engine,
-            cfg.service_unit_name,
-            cfg.start_check_attempts,
-            cfg.start_check_retry_delay_seconds,
-            timeout,
-        ):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
-                    f"service {cfg.service_unit_name} did not become active "
-                    f"after the installer"
-                ),
-            )
-        _log(f"checking installed version: {_installed_version(cfg, timeout)}")
-        # Force takeover: the installer preserves credentials and
-        # webBasePath on an existing non-default panel, so force applies
-        # the fresh proquint values it generated for the installer
-        # directly. A fresh install already received them from the
-        # installer environment.
-        takeover_note = ""
-        if force and installed_version is not None:
-            takeover_ok, takeover_message = _takeover_credentials(
-                cfg, timeout, installer_env
-            )
-            if takeover_ok:
-                _log(takeover_message)
-                takeover_note = f"; {takeover_message}"
-            elif takeover_message:
-                return TaskResult(
+                _log(
+                    f"waiting for service to become active (up to "
+                    f"{cfg.start_check_attempts} checks)"
+                )
+                if not _wait_active(
+                    ctx.config.engine,
+                    cfg.service_unit_name,
+                    cfg.start_check_attempts,
+                    cfg.start_check_retry_delay_seconds,
+                    timeout,
+                ):
+                    install_warnings.append(
+                        f"service {cfg.service_unit_name} did not become active "
+                        f"after the installer"
+                    )
+                _log(f"checking installed version: {_installed_version(cfg, timeout)}")
+                # Force takeover: the installer preserves credentials and
+                # webBasePath on an existing non-default panel, so force applies
+                # the fresh proquint values it generated for the installer
+                # directly. A fresh install already received them from the
+                # installer environment.
+                takeover_note = ""
+                if force and installed_version is not None:
+                    takeover_ok, takeover_message = _takeover_credentials(
+                        cfg, timeout, installer_env
+                    )
+                    if takeover_ok:
+                        _log(takeover_message)
+                        takeover_note = f"; {takeover_message}"
+                    elif takeover_message:
+                        install_warnings.append(
+                            f"panel credential takeover failed: {takeover_message}"
+                        )
+                result = TaskResult(
                     success=True,
                     changed=True,
-                    warnings=(
-                        f"panel credential takeover failed: {takeover_message}",
-                    ),
+                    message=f"installed 3x-ui {tag}{takeover_note}",
+                    warnings=tuple(install_warnings),
                 )
-        result = TaskResult(
-            success=True,
-            changed=True,
-            message=f"installed 3x-ui {tag}{takeover_note}",
-        )
 
     # Bring the panel to the configured port and sync install-result.env
     # so its port and scheme match reality. Runs in both paths: a rerun
@@ -2691,11 +2728,14 @@ def task(ctx: Context) -> TaskResult:
             ctx.config.engine, cfg, timeout
         )
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    if converged:
-        _log(f"panel port: {converged_message}")
-        result.changed = True
-        result.message = (result.message or "") + f"; {converged_message}"
+        # The panel port could not be converged: every stage below talks to
+        # the panel through its REST API and reports its own result.
+        install_warnings.append(str(exc))
+    else:
+        if converged:
+            _log(f"panel port: {converged_message}")
+            result.changed = True
+            result.message = (result.message or "") + f"; {converged_message}"
     # A port migration restarts the panel; the HTTP listener can trail
     # the systemd active state by a moment, so stage 2 would otherwise
     # report a false login failure. Wait for the listener before it.
@@ -2805,7 +2845,9 @@ def task(ctx: Context) -> TaskResult:
             )
 
     all_warnings = (
-        ssl_warnings
+        tuple(install_warnings)
+        + (result.warnings or ())
+        + ssl_warnings
         + stage2_warnings
         + settings_warnings
         + stage3_warnings

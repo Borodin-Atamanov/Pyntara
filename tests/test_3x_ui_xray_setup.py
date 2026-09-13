@@ -478,12 +478,12 @@ def test_force_runs_installer_when_already_configured(
     assert any(call[0] == "bash" for call in calls)
 
 
-def test_installer_failure_reports_error(
+def test_installer_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The official installer exits nonzero: the task reports the failure
-    # as an error result, which the runner converts to a warning.
-    # Stage 2 is not reached because the installer failed.
+    # The official installer exits nonzero: the task reports the failure as
+    # a warning and the panel stages still run against the panel that is
+    # there.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(
@@ -495,16 +495,17 @@ def test_installer_failure_reports_error(
         installer_fails=True,
     )
     result = xui.task(ctx)
-    assert result.success is False
-    assert "installer failed" in (result.error or "")
+    assert result.success is True
+    assert any("installer failed" in warning for warning in result.warnings)
     assert any(call[0] == "bash" for call in calls)
 
 
-def test_service_never_active_reports_error(
+def test_service_never_active_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The installer ran but the service never becomes active within the
-    # readiness loop: the task reports an error. Stage 2 is not reached.
+    # readiness loop: the reason is a warning and the panel stages still
+    # report their own result.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, check_attempts=1)
     calls = _install_fake(
@@ -516,16 +517,18 @@ def test_service_never_active_reports_error(
         active_becomes=False,
     )
     result = xui.task(ctx)
-    assert result.success is False
-    assert "did not become active" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "did not become active" in warning for warning in result.warnings
+    )
     assert any(call[0] == "bash" for call in calls)
 
 
-def test_release_json_failure_reports_error(
+def test_release_json_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The GitHub releases API is unreachable: the task reports the
-    # failure without ever running the installer. Stage 2 is not reached.
+    # The GitHub releases API is unreachable: the task reports the reason
+    # and skips the installer, while the panel stages still run.
     # Run facts are stubbed like every other external resource: the real
     # helper queries the public address echo services through
     # subprocess.Popen, which the curl fake below does not intercept.
@@ -543,8 +546,8 @@ def test_release_json_failure_reports_error(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = xui.task(ctx)
-    assert result.success is False
-    assert "cannot fetch" in (result.error or "")
+    assert result.success is True
+    assert any("cannot fetch" in warning for warning in result.warnings)
 
 
 def test_stage2_login_failure_reports_warning(
@@ -997,11 +1000,12 @@ class TestProquintCredentials:
         assert result.success is True
         assert captured == [(35353, "x-ui.service", "x-ui")]
 
-    def test_port_free_failure_reports_error(
+    def test_port_free_failure_is_a_warning(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # The panel port stays occupied after the free attempt: the task
-        # reports an error and never runs the installer.
+        # reports the reason and skips the installer, while the panel
+        # stages still run.
         def fake_ensure_port_free(*_args: object, **_kwargs: object) -> None:
             raise RuntimeError("still occupied")
 
@@ -1015,8 +1019,8 @@ class TestProquintCredentials:
             active=False,
         )
         result = xui.task(ctx)
-        assert result.success is False
-        assert "still occupied" in (result.error or "")
+        assert result.success is True
+        assert any("still occupied" in warning for warning in result.warnings)
         assert not any(call[0] == "bash" for call in calls)
 
     def test_nat_skip_installs_self_signed(
