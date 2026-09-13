@@ -74,6 +74,20 @@ class ThreeXuiXraySetupConfig:
     panel_port_command: tuple[str, ...]
     panel_credentials_command: tuple[str, ...]
     panel_certificate_command: tuple[str, ...]
+    installer_run_command: tuple[str, ...]
+    acme_install_command: tuple[str, ...]
+    acme_dir_relative_path: str
+    acme_file_name: str
+    acme_port_listener_command: tuple[str, ...]
+    acme_set_default_ca_command: tuple[str, ...]
+    acme_issue_command: tuple[str, ...]
+    acme_installcert_command: tuple[str, ...]
+    acme_upgrade_command: tuple[str, ...]
+    acme_reload_command: str
+    openssl_check_command: tuple[str, ...]
+    openssl_generate_command: tuple[str, ...]
+    openssl_subject_template: str
+    service_restart_command: tuple[str, ...]
     service_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: int

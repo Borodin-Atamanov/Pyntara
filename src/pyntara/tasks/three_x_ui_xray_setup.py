@@ -254,7 +254,10 @@ def _installer_environment(extra_env: dict[str, str]) -> dict[str, str]:
 
 
 def _run_installer(
-    script_path: Path, timeout: float, extra_env: dict[str, str]
+    cfg: ThreeXuiXraySetupConfig,
+    script_path: Path,
+    timeout: float,
+    extra_env: dict[str, str],
 ) -> None:
     """Run the downloaded official installer in non-interactive mode.
 
@@ -269,7 +272,9 @@ def _run_installer(
 
     try:
         run_command(
-            ["bash", str(script_path)],
+            substituted_command(
+                cfg.installer_run_command, {"script_path": str(script_path)}
+            ),
             extra_env=_installer_environment(extra_env),
             timeout=timeout,
         )
@@ -1043,7 +1048,10 @@ def _probe_port_80_forward(
     )
     try:
         listener = subprocess.Popen(
-            ["python3", "-m", "http.server", str(cfg.acme_port), "--bind", "0.0.0.0"],
+            substituted_command(
+                cfg.acme_port_listener_command,
+                {"port": str(cfg.acme_port)},
+            ),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -1170,7 +1178,10 @@ def _converge_panel_port(
             timeout=timeout,
         )
         run_command(
-            ["systemctl", "restart", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_restart_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1367,7 +1378,10 @@ def _takeover_credentials(
     )
     try:
         run_command(
-            ["systemctl", "restart", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_restart_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1379,25 +1393,29 @@ def _takeover_credentials(
     )
 
 
-def _acme_path() -> Path:
-    """The acme.sh binary under the current user's home directory."""
+def _acme_path(cfg: ThreeXuiXraySetupConfig) -> Path:
+    """The acme.sh binary under the current user's home directory.
 
-    return Path.home() / ".acme.sh" / "acme.sh"
+    The directory and the file name of the tool are config values, so a
+    release that installs itself elsewhere is a config change.
+    """
+
+    return Path.home() / cfg.acme_dir_relative_path / cfg.acme_file_name
 
 
-def _ensure_acme(timeout: float) -> bool:
+def _ensure_acme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     """Install acme.sh via get.acme.sh when it is not present yet.
 
     True when the acme.sh binary exists after the call. A missing binary
     after an install attempt is a failure.
     """
 
-    acme = _acme_path()
+    acme = _acme_path(cfg)
     if acme.is_file():
         return True
     try:
         run_command(
-            ["bash", "-c", "curl -s https://get.acme.sh | sh"],
+            list(cfg.acme_install_command),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -1416,45 +1434,32 @@ def _issue_ip_certificate(
     it through `x-ui cert`. Returns (ok, message).
     """
 
-    if not _ensure_acme(timeout):
+    if not _ensure_acme(cfg, timeout):
         return False, "acme.sh install failed"
     # acme.sh installcert does not create the certificate directory
     # itself; the installer creates it with mkdir -p before the call.
     cfg.cert_dir.mkdir(parents=True, exist_ok=True)
-    acme = _acme_path()
-    reload_cmd = f"systemctl restart {cfg.service_unit_name} 2>/dev/null || true"
+    acme = str(_acme_path(cfg))
+    reload_cmd = cfg.acme_reload_command.format(
+        service_unit_name=cfg.service_unit_name
+    )
     steps = [
-        [str(acme), "--set-default-ca", "--server", "letsencrypt", "--force"],
-        [
-            str(acme),
-            "--issue",
-            "-d",
-            ip,
-            "--standalone",
-            "--server",
-            "letsencrypt",
-            "--certificate-profile",
-            "shortlived",
-            "--days",
-            "6",
-            "--httpport",
-            str(cfg.acme_port),
-            "--force",
-        ],
-        [
-            str(acme),
-            "--installcert",
-            "--force",
-            "-d",
-            ip,
-            "--key-file",
-            str(cfg.cert_privkey),
-            "--fullchain-file",
-            str(cfg.cert_fullchain),
-            "--reloadcmd",
-            reload_cmd,
-        ],
-        [str(acme), "--upgrade", "--auto-upgrade"],
+        substituted_command(cfg.acme_set_default_ca_command, {"acme": acme}),
+        substituted_command(
+            cfg.acme_issue_command,
+            {"acme": acme, "domain": ip, "http_port": str(cfg.acme_port)},
+        ),
+        substituted_command(
+            cfg.acme_installcert_command,
+            {
+                "acme": acme,
+                "domain": ip,
+                "key_file": str(cfg.cert_privkey),
+                "fullchain_file": str(cfg.cert_fullchain),
+                "reload_command": reload_cmd,
+            },
+        ),
+        substituted_command(cfg.acme_upgrade_command, {"acme": acme}),
     ]
     for command in steps:
         try:
@@ -1492,7 +1497,10 @@ def _issue_ip_certificate(
     # restart must happen again after x-ui cert.
     try:
         run_command(
-            ["systemctl", "restart", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_restart_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1624,22 +1632,16 @@ def _ensure_self_signed_cert(
         subject = _certificate_subject_name(cfg, timeout, facts)
         try:
             run_command(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-nodes",
-                    "-days",
-                    "825",
-                    "-subj",
-                    f"/CN={subject}",
-                    "-keyout",
-                    str(cfg.self_signed_cert_privkey),
-                    "-out",
-                    str(cfg.self_signed_cert_fullchain),
-                ],
+                substituted_command(
+                    cfg.openssl_generate_command,
+                    {
+                        "subject": cfg.openssl_subject_template.format(
+                            subject=subject
+                        ),
+                        "key_file": str(cfg.self_signed_cert_privkey),
+                        "fullchain_file": str(cfg.self_signed_cert_fullchain),
+                    },
+                ),
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1660,7 +1662,10 @@ def _ensure_self_signed_cert(
             timeout=timeout,
         )
         run_command(
-            ["systemctl", "restart", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_restart_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -2565,7 +2570,7 @@ def task(ctx: Context) -> TaskResult:
         if cfg.ssl_enabled:
             installer_env["XUI_SSL_MODE"] = "ip" if ssl_attempt else "none"
         try:
-            _run_installer(script_path, timeout, installer_env)
+            _run_installer(cfg, script_path, timeout, installer_env)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(success=False, error=f"installer failed: {exc}")
         _log("installer finished")

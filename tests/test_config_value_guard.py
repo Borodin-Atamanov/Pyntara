@@ -164,14 +164,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 # still spell their argv in code, module by module; the list is the work
 # that is left and must shrink with every migration block.
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
-    "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
-        {
-            '["bash", "-c", "curl -s https://get.acme.sh | sh"],',
-            '["bash", str(script_path)],',
-            '["python3", "-m", "http.server", str(cfg.acme_port), "--bind", "0.0.0.0"],',
-            '["systemctl", "restart", cfg.service_unit_name],',
-        }
-    ),
     "src/pyntara/utils.py": frozenset(
         {
             '["apt-get", "install", "-y", package],',

@@ -4363,6 +4363,74 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.panel_certificate_command",
             ("{binary}", "{fullchain}", "{privkey}"),
         ),
+        installer_run_command=_placeholder_command_field(
+            raw.get("installer_run_command"),
+            "three_x_ui_xray_setup.installer_run_command",
+            ("{script_path}",),
+        ),
+        acme_install_command=_placeholder_command_field(
+            raw.get("acme_install_command"),
+            "three_x_ui_xray_setup.acme_install_command",
+            (),
+        ),
+        acme_dir_relative_path=_nonempty_string_field(
+            raw.get("acme_dir_relative_path"),
+            "three_x_ui_xray_setup.acme_dir_relative_path",
+        ),
+        acme_file_name=_nonempty_string_field(
+            raw.get("acme_file_name"),
+            "three_x_ui_xray_setup.acme_file_name",
+        ),
+        acme_port_listener_command=_placeholder_command_field(
+            raw.get("acme_port_listener_command"),
+            "three_x_ui_xray_setup.acme_port_listener_command",
+            ("{port}",),
+        ),
+        acme_set_default_ca_command=_placeholder_command_field(
+            raw.get("acme_set_default_ca_command"),
+            "three_x_ui_xray_setup.acme_set_default_ca_command",
+            ("{acme}",),
+        ),
+        acme_issue_command=_placeholder_command_field(
+            raw.get("acme_issue_command"),
+            "three_x_ui_xray_setup.acme_issue_command",
+            ("{acme}", "{domain}", "{http_port}"),
+        ),
+        acme_installcert_command=_placeholder_command_field(
+            raw.get("acme_installcert_command"),
+            "three_x_ui_xray_setup.acme_installcert_command",
+            ("{acme}", "{domain}", "{key_file}", "{fullchain_file}", "{reload_command}"),
+        ),
+        acme_upgrade_command=_placeholder_command_field(
+            raw.get("acme_upgrade_command"),
+            "three_x_ui_xray_setup.acme_upgrade_command",
+            ("{acme}",),
+        ),
+        acme_reload_command=_placeholder_text_field(
+            raw.get("acme_reload_command"),
+            "three_x_ui_xray_setup.acme_reload_command",
+            ("{service_unit_name}",),
+        ),
+        openssl_check_command=_placeholder_command_field(
+            raw.get("openssl_check_command"),
+            "three_x_ui_xray_setup.openssl_check_command",
+            ("{fullchain}",),
+        ),
+        openssl_generate_command=_placeholder_command_field(
+            raw.get("openssl_generate_command"),
+            "three_x_ui_xray_setup.openssl_generate_command",
+            ("{subject}", "{key_file}", "{fullchain_file}"),
+        ),
+        openssl_subject_template=_placeholder_text_field(
+            raw.get("openssl_subject_template"),
+            "three_x_ui_xray_setup.openssl_subject_template",
+            ("{subject}",),
+        ),
+        service_restart_command=_placeholder_command_field(
+            raw.get("service_restart_command"),
+            "three_x_ui_xray_setup.service_restart_command",
+            ("{service_unit_name}",),
+        ),
         service_unit_name=service_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,

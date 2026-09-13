@@ -25,6 +25,26 @@ panel_settings_query_command = ["{binary}", "setting", "-show", "true"]
 panel_port_command = ["{binary}", "setting", "-port", "{port}"]
 panel_credentials_command = ["{binary}", "setting", "-username", "{username}", "-password", "{password}", "-webBasePath", "{web_base_path}"]
 panel_certificate_command = ["{binary}", "cert", "-webCert", "{fullchain}", "-webCertKey", "{privkey}"]
+# Commands of the tools the task drives next to the panel CLI: the
+# downloaded installer script, the acme.sh installer and its steps, the
+# temporary HTTP listener of the port probe, the service restart and the
+# two openssl calls that check and generate a certificate. A placeholder
+# carries a value the call site knows; the number of days a certificate
+# lives is part of the template, so it lives in this table as well.
+installer_run_command = ["bash", "{script_path}"]
+acme_install_command = ["bash", "-c", "curl -s https://get.acme.sh | sh"]
+acme_dir_relative_path = ".acme.sh"
+acme_file_name = "acme.sh"
+acme_port_listener_command = ["python3", "-m", "http.server", "{port}", "--bind", "0.0.0.0"]
+acme_set_default_ca_command = ["{acme}", "--set-default-ca", "--server", "letsencrypt", "--force"]
+acme_issue_command = ["{acme}", "--issue", "-d", "{domain}", "--standalone", "--server", "letsencrypt", "--certificate-profile", "shortlived", "--days", "6", "--httpport", "{http_port}", "--force"]
+acme_installcert_command = ["{acme}", "--installcert", "--force", "-d", "{domain}", "--key-file", "{key_file}", "--fullchain-file", "{fullchain_file}", "--reloadcmd", "{reload_command}"]
+acme_upgrade_command = ["{acme}", "--upgrade", "--auto-upgrade"]
+acme_reload_command = "systemctl restart {service_unit_name} 2>/dev/null || true"
+openssl_check_command = ["openssl", "x509", "-in", "{fullchain}", "-noout", "-checkend", "0"]
+openssl_generate_command = ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825", "-subj", "{subject}", "-keyout", "{key_file}", "-out", "{fullchain_file}"]
+openssl_subject_template = "/CN={subject}"
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
 # Name of the systemd service unit the official installer creates.
 service_unit_name = "x-ui.service"
 # Timeout in seconds of one readiness probe: the curl call that checks

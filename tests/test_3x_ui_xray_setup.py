@@ -1704,6 +1704,105 @@ class TestStageSsl:
         assert result.changed is False
         assert any("panel serves HTTP" in w for w in result.warnings or ())
 
+    def test_the_acme_commands_come_from_the_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The four acme.sh steps and the reload command they carry are
+        # config values: another template for each of them is the argv the
+        # sequence runs, and the path of the tool comes from the config.
+        calls: list[list[str]] = []
+        monkeypatch.setattr(xui, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(
+            xui, "_acme_path", lambda _cfg: Path("/my/acme.bin")
+        )
+        config = replace(
+            make_config(
+                task_data_root=tmp_path,
+                three_x_ui_cert_dir=tmp_path / "cert",
+            ).three_x_ui_xray_setup,
+            acme_set_default_ca_command=("{acme}", "--ca"),
+            acme_issue_command=(
+                "{acme}",
+                "--issue",
+                "-d",
+                "{domain}",
+                "--port",
+                "{http_port}",
+            ),
+            acme_installcert_command=(
+                "{acme}",
+                "--install",
+                "{key_file}",
+                "{fullchain_file}",
+                "{reload_command}",
+            ),
+            acme_upgrade_command=("{acme}", "--up"),
+            acme_reload_command=("my-restart {service_unit_name} || true"),
+        )
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            calls.append(list(command))
+            if "--install" in command:
+                config.cert_fullchain.write_text("fullchain", encoding="utf-8")
+                config.cert_privkey.write_text("privkey", encoding="utf-8")
+            return _FakeProc(0, "")
+
+        monkeypatch.setattr(xui, "run_command", fake_run)
+        ok, message = xui._issue_ip_certificate(config, "203.0.113.9", 30.0)
+        assert ok is True
+        assert message == "certificate issued"
+        assert calls[:4] == [
+            ["/my/acme.bin", "--ca"],
+            [
+                "/my/acme.bin",
+                "--issue",
+                "-d",
+                "203.0.113.9",
+                "--port",
+                str(config.acme_port),
+            ],
+            [
+                "/my/acme.bin",
+                "--install",
+                str(config.cert_privkey),
+                str(config.cert_fullchain),
+                f"my-restart {config.service_unit_name} || true",
+            ],
+            ["/my/acme.bin", "--up"],
+        ]
+
+    def test_the_service_restart_comes_from_the_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The restart the task runs after changing the panel port is a
+        # config value, and so is the path of the acme.sh tool it uses.
+        calls: list[list[str]] = []
+        cfg = replace(
+            _ctx(tmp_path).config.three_x_ui_xray_setup,
+            service_restart_command=(
+                "systemctl",
+                "restart",
+                "{service_unit_name}",
+                "--no-block",
+            ),
+        )
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            calls.append(list(command))
+            return _FakeProc(0, "")
+
+        monkeypatch.setattr(xui, "run_command", fake_run)
+        monkeypatch.setattr(xui, "_actual_panel_port", lambda _cfg, _t: "1111")
+        monkeypatch.setattr(xui, "ensure_port_free", lambda *_a, **_k: None)
+        monkeypatch.setattr(xui, "_wait_panel_http", lambda *_a, **_k: True)
+        xui._converge_panel_port(cfg, 30.0)
+        assert [
+            "systemctl",
+            "restart",
+            cfg.service_unit_name,
+            "--no-block",
+        ] in calls
+
     def test_issue_ip_certificate_runs_acme_steps(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1712,8 +1811,8 @@ class TestStageSsl:
         # at the files.
         calls: list[list[str]] = []
         cert_dir = tmp_path / "cert"
-        monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
-        monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+        monkeypatch.setattr(xui, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_acme_path", lambda _cfg: Path("/tmp/acme.sh"))
         config = make_config(
             task_data_root=tmp_path,
             three_x_ui_cert_dir=cert_dir,
@@ -1752,8 +1851,8 @@ class TestStageSsl:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # A failed acme.sh step reports a failure message.
-        monkeypatch.setattr(xui, "_ensure_acme", lambda _timeout: True)
-        monkeypatch.setattr(xui, "_acme_path", lambda: Path("/tmp/acme.sh"))
+        monkeypatch.setattr(xui, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(xui, "_acme_path", lambda _cfg: Path("/tmp/acme.sh"))
         config = make_config(
             task_data_root=tmp_path,
             three_x_ui_cert_dir=tmp_path / "cert",
