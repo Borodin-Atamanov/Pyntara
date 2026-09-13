@@ -826,7 +826,7 @@ def _collect_run_facts(
                 "a public address sits on this machine, "
                 "the router needs no port forwarding"
             )
-        elif _ensure_upnp_client(cfg, timeout):
+        elif _ensure_upnp_client(engine, cfg, timeout):
             _log("looking for a UPnP router")
             router_address = upnp.router_external_address(
                 engine, cfg.upnp_client_command, timeout
@@ -1508,7 +1508,9 @@ def _issue_ip_certificate(
     return True, "certificate issued"
 
 
-def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _ensure_upnp_client(
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> bool:
     """True when the UPnP client program is present, installing it if needed.
 
     The port forwarding uses the external upnpc tool, exactly like the
@@ -1519,7 +1521,7 @@ def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     progress line and never a warning.
     """
 
-    if package_is_installed(cfg.upnp_package, timeout):
+    if package_is_installed(engine, cfg.upnp_package, timeout):
         return True
     installed, error = install_package_once(cfg.upnp_package, timeout)
     if not installed:
@@ -1529,7 +1531,7 @@ def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     return True
 
 
-def _ensure_openssl(timeout: float) -> bool:
+def _ensure_openssl(engine: EngineConfig, timeout: float) -> bool:
     """True when the openssl binary is present, installing it if needed.
 
     The self-signed certificate is generated with the external openssl
@@ -1538,7 +1540,7 @@ def _ensure_openssl(timeout: float) -> bool:
     helper, so the setup never depends on a preinstalled package.
     """
 
-    if package_is_installed("openssl", timeout):
+    if package_is_installed(engine, "openssl", timeout):
         return True
     _log("openssl is missing, installing the package")
     ok, _ = install_package_once("openssl", timeout)
@@ -1594,7 +1596,10 @@ def _self_signed_not_expired(
 
 
 def _ensure_self_signed_cert(
-    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+    engine: EngineConfig,
+    cfg: ThreeXuiXraySetupConfig,
+    timeout: float,
+    facts: _RunFacts,
 ) -> tuple[bool, str]:
     """Ensure the panel serves HTTPS with a self-signed certificate.
 
@@ -1623,7 +1628,7 @@ def _ensure_self_signed_cert(
         return False, ""
     if needs_generation:
         _log("generating a self-signed certificate")
-        if not _ensure_openssl(timeout):
+        if not _ensure_openssl(engine, timeout):
             return (
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
@@ -1711,7 +1716,10 @@ def _issue_trusted_cert(
 
 
 def _stage_ssl(
-    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+    engine: EngineConfig,
+    cfg: ThreeXuiXraySetupConfig,
+    timeout: float,
+    facts: _RunFacts,
 ) -> TaskResult | None:
     """Ensure the panel serves HTTPS; returns a TaskResult when changed.
 
@@ -1747,7 +1755,7 @@ def _stage_ssl(
     ip = _detect_server_ip(facts)
     if ip is not None and _ssl_reachable(cfg, timeout, facts):
         return _issue_trusted_cert(cfg, ip, timeout)
-    ok, message = _ensure_self_signed_cert(cfg, timeout, facts)
+    ok, message = _ensure_self_signed_cert(engine, cfg, timeout, facts)
     if ok:
         return TaskResult(
             success=True,
@@ -2642,7 +2650,7 @@ def task(ctx: Context) -> TaskResult:
     # is reachable, a self-signed one otherwise) before stage 2, so the
     # stored scheme and url are correct on the first run. The stage may
     # restart the panel, so the listener is polled again after it.
-    ssl_result = _stage_ssl(cfg, timeout, facts)
+    ssl_result = _stage_ssl(engine, cfg, timeout, facts)
     ssl_warnings: tuple[str, ...] = ()
     ssl_changed = False
     if ssl_result is not None:

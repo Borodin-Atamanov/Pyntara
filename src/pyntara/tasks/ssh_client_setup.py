@@ -107,6 +107,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     augtool_error = ensure_augtool(
+        ctx.config.engine,
         cfg.augeas_tools_package_name,
         status_timeout=cfg.package_status_timeout_seconds,
         install_timeout=timeout,

@@ -177,7 +177,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
         {
             '["apt-get", "install", "-y", package],',
             '["apt-get", "update"],',
-            '["dpkg-query", "-W", "-f=${Status}", package],',
             '["ss", "-tlnp", f"sport = :{port}"],',
             '["systemctl", "is-active", name],',
             '["systemctl", "is-enabled", name],',

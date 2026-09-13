@@ -255,7 +255,9 @@ def _install_fake(
     )
     monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
+        monkeypatch.setattr(
+            xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _facts: None
+        )
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -330,7 +332,9 @@ def _panel_fake(
     )
     monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
+        monkeypatch.setattr(
+            xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _facts: None
+        )
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -1000,7 +1004,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _cfg, _timeout, _facts: TaskResult(
+            lambda _engine, _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=True,
                 message="panel serves HTTPS with a self-signed certificate",
@@ -1085,7 +1089,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _cfg, _timeout, _facts: TaskResult(
+            lambda _engine, _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=False,
                 warnings=(
@@ -1125,7 +1129,7 @@ class TestProquintCredentials:
         order: list[str] = []
 
         def fake_stage_ssl(
-            _cfg: object, _timeout: float, _facts: object
+            _engine: object, _cfg: object, _timeout: float, _facts: object
         ) -> None:
             order.append("stage_ssl")
 
@@ -1294,7 +1298,7 @@ class TestPanelPortConvergence:
     ) -> None:
         # A rerun finds the panel on an old port and migrates it to the
         # configured one, reporting a change.
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _f: None)
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _f: None)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         calls = _panel_fake(monkeypatch, show_port="35905")
@@ -1554,8 +1558,12 @@ class TestStageSsl:
 
     def test_stage_ssl_skipped_when_disabled(self, tmp_path: Path) -> None:
         # ssl_enabled=False disables the whole stage.
+        engine = make_config().engine
         assert (
-            xui._stage_ssl(self._cfg(tmp_path, ssl_enabled=False), 30, _facts()) is None
+            xui._stage_ssl(
+                engine, self._cfg(tmp_path, ssl_enabled=False), 30, _facts()
+            )
+            is None
         )
 
     def test_stage_ssl_does_nothing_when_cert_exists(
@@ -1567,7 +1575,9 @@ class TestStageSsl:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
-        assert xui._stage_ssl(self._cfg(tmp_path), 30, _facts()) is None
+        assert xui._stage_ssl(
+            make_config().engine, self._cfg(tmp_path), 30, _facts()
+        ) is None
 
     def test_stage_ssl_installs_self_signed_when_no_ip(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1578,12 +1588,12 @@ class TestStageSsl:
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout, _facts: (
+            lambda _engine, _cfg, _timeout, _facts: (
                 True,
                 "self-signed certificate configured",
             ),
         )
-        result = xui._stage_ssl(self._cfg(tmp_path), 30, _facts())
+        result = xui._stage_ssl(make_config().engine, self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1598,13 +1608,13 @@ class TestStageSsl:
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout, _facts: (
+            lambda _engine, _cfg, _timeout, _facts: (
                 True,
                 "self-signed certificate configured",
             ),
         )
         facts = _facts(public=("203.0.113.5",))
-        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
+        result = xui._stage_ssl(make_config().engine, self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1620,7 +1630,7 @@ class TestStageSsl:
             lambda _cfg, _timeout: str(cfg.self_signed_cert_fullchain),
         )
         monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _timeout, _facts: False)
-        assert xui._stage_ssl(cfg, 30, _facts()) is None
+        assert xui._stage_ssl(make_config().engine, cfg, 30, _facts()) is None
 
     def test_stage_ssl_upgrades_self_signed_when_reachable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1640,7 +1650,7 @@ class TestStageSsl:
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xui._stage_ssl(cfg, 30, facts)
+        result = xui._stage_ssl(make_config().engine, cfg, 30, facts)
         assert result is not None
         assert result.changed is True
         assert result.message == "SSL certificate configured"
@@ -1661,7 +1671,7 @@ class TestStageSsl:
         monkeypatch.setattr(xui, "_issue_ip_certificate", fake_issue)
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
+        result = xui._stage_ssl(make_config().engine, self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert seen["ip"] == "203.0.113.5"
@@ -1679,7 +1689,7 @@ class TestStageSsl:
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xui._stage_ssl(self._cfg(tmp_path), 30, facts)
+        result = xui._stage_ssl(make_config().engine, self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is False
         assert any("SSL certificate setup failed" in w for w in result.warnings or ())
@@ -1694,12 +1704,12 @@ class TestStageSsl:
         monkeypatch.setattr(
             xui,
             "_ensure_self_signed_cert",
-            lambda _cfg, _timeout, _facts: (
+            lambda _engine, _cfg, _timeout, _facts: (
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
             ),
         )
-        result = xui._stage_ssl(self._cfg(tmp_path), 30, _facts())
+        result = xui._stage_ssl(make_config().engine, self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is False
         assert any("panel serves HTTP" in w for w in result.warnings or ())
@@ -1907,11 +1917,13 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.package_is_installed",
-            lambda _p, _t: True,
+            lambda _e, _p, _t: True,
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
+        ok, message = xui._ensure_self_signed_cert(
+            make_config().engine, cfg, 30, _facts()
+        )
         assert ok is True
         assert message == "self-signed certificate configured"
         assert any(
@@ -1950,7 +1962,9 @@ class TestSelfSignedCert:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
+        ok, message = xui._ensure_self_signed_cert(
+            make_config().engine, cfg, 30, _facts()
+        )
         assert ok is False
         assert message == ""
         assert not any(command[:2] == ["openssl", "req"] for command in calls)
@@ -1979,7 +1993,9 @@ class TestSelfSignedCert:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: "/root/cert/ip/fullchain.pem",
         )
-        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
+        ok, message = xui._ensure_self_signed_cert(
+            make_config().engine, cfg, 30, _facts()
+        )
         assert ok is False
         assert message == ""
         assert calls == []
@@ -1991,7 +2007,7 @@ class TestSelfSignedCert:
         # the caller falls back to the HTTP warning.
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.package_is_installed",
-            lambda _p, _t: False,
+            lambda _e, _p, _t: False,
         )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.install_package_once",
@@ -1999,7 +2015,9 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xui._ensure_self_signed_cert(cfg, 30, _facts())
+        ok, message = xui._ensure_self_signed_cert(
+            make_config().engine, cfg, 30, _facts()
+        )
         assert ok is False
         assert "openssl unavailable" in message
 
@@ -2031,13 +2049,13 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.package_is_installed",
-            lambda _p, _t: True,
+            lambda _e, _p, _t: True,
         )
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, _ = xui._ensure_self_signed_cert(cfg, 30, _facts())
+        ok, _ = xui._ensure_self_signed_cert(make_config().engine, cfg, 30, _facts())
         assert ok is True
         assert any(
             command[0] == "openssl" and command[1] == "req" for command in calls
@@ -2746,10 +2764,10 @@ class TestUpnpClientPackage:
         def fail_install(_package: str, _timeout: float) -> tuple[bool, str]:
             raise AssertionError("apt must not run for an installed package")
 
-        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: True)
+        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: True)
         monkeypatch.setattr(xui, "install_package_once", fail_install)
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(cfg, 30.0) is True
+        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
 
     def test_installs_the_configured_package_through_the_shared_helper(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2760,21 +2778,21 @@ class TestUpnpClientPackage:
             installed.append(package)
             return (True, "")
 
-        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: False)
+        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: False)
         monkeypatch.setattr(xui, "install_package_once", fake_install)
         cfg = make_config(three_x_ui_upnp_package="miniupnpc").three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(cfg, 30.0) is True
+        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
         assert installed == ["miniupnpc"]
 
     def test_reports_failure_without_raising(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xui, "package_is_installed", lambda _p, _t: False)
+        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: False)
         monkeypatch.setattr(
             xui, "install_package_once", lambda _p, _t: (False, "no candidate")
         )
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(cfg, 30.0) is False
+        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is False
 
 
 class TestCollectRunFacts:
@@ -2792,7 +2810,7 @@ class TestCollectRunFacts:
             lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
         monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ("10.0.0.1",))
-        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: True)
+        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _e, _c, _t: True)
 
         def fake_router(engine: object, command: str, timeout: float) -> str:
             del engine, command
@@ -2816,7 +2834,9 @@ class TestCollectRunFacts:
     ) -> None:
         # The switch is in the config, so a machine that must not talk to
         # its router never installs the client or asks for a mapping.
-        def fail_install(_cfg: object, _timeout: float) -> bool:
+        def fail_install(
+            _engine: object, _cfg: object, _timeout: float
+        ) -> bool:
             raise AssertionError("the UPnP client must not be installed")
 
         def fail_router(*args: object, **kwargs: object) -> str:  # pragma: no cover
@@ -2837,7 +2857,7 @@ class TestCollectRunFacts:
     ) -> None:
         monkeypatch.setattr(xui, "_public_addresses", lambda _e, _c, _t: _addresses())
         monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ())
-        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: False)
+        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _e, _c, _t: False)
         facts = xui._collect_run_facts(
             make_config().engine,
             make_config().three_x_ui_xray_setup,
@@ -2851,7 +2871,9 @@ class TestCollectRunFacts:
         # The address an echo service reports also sits on an interface,
         # so the machine is reachable directly: the client package is not
         # installed and the router is never asked.
-        def fail_install(_cfg: object, _timeout: float) -> bool:
+        def fail_install(
+            _engine: object, _cfg: object, _timeout: float
+        ) -> bool:
             raise AssertionError("the UPnP client must not be installed")
 
         def fail_router(*args: object, **kwargs: object) -> str:

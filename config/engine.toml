@@ -236,4 +236,7 @@ link_scope_name = "link"
 # The debian package tools every task that installs a package uses: the
 # architecture query and the package status query. Their arguments are
 # the flags of the tools, so they live here once and no task spells them.
+# The status query carries the literal ${Status}: the braces are doubled
+# because the substitution helper formats the command as a template.
 dpkg_architecture_command = ["dpkg", "--print-architecture"]
+package_status_query_command = ["dpkg-query", "-W", "-f=${{Status}}", "{package}"]

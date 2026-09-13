@@ -279,7 +279,7 @@ def task(ctx: Context) -> TaskResult:
     )
     hostname_file_path = cfg.hidden_service_dir / cfg.hostname_file_name
 
-    installed = package_is_installed(cfg.package_name, timeout)
+    installed = package_is_installed(ctx.config.engine, cfg.package_name, timeout)
     _log(
         f"checking package {cfg.package_name}: "
         f"{'installed' if installed else 'missing'}"

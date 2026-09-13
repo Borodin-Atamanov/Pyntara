@@ -425,7 +425,7 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
 
     for package in cfg.packages:
-        if package_is_installed(package, timeout):
+        if package_is_installed(engine, package, timeout):
             continue
         _log(f"installing {package}")
         ok, error = install_package_once(package, timeout)

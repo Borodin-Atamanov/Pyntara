@@ -1690,14 +1690,15 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.kde_settings
-    timeout = ctx.config.engine.command_timeout_seconds
+    engine = ctx.config.engine
+    timeout = engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     packages_failed = False
 
     for package in cfg.packages:
-        if package_is_installed(package, timeout):
+        if package_is_installed(engine, package, timeout):
             continue
         _log(f"installing {package}")
         ok, error = install_package_once(package, timeout)

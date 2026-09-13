@@ -147,6 +147,59 @@ def test_curl_command_refuses_an_unknown_placeholder() -> None:
         )
 
 
+def test_package_status_query_comes_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The status query is a config value: the shipped template doubles the
+    # braces of the literal ${Status}, because the substitution helper
+    # formats the command as a template, so the run receives the single
+    # braces below. Another argv in the engine table is exactly what the
+    # helper runs, so a derivative that queries packages differently edits
+    # only the config.
+    engine = make_config().engine
+    assert engine.package_status_query_command == (
+        "dpkg-query",
+        "-W",
+        "-f=${{Status}}",
+        "{package}",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0, "install ok installed")
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.package_is_installed(engine, "mc", 5.0) is True
+    assert calls == [["dpkg-query", "-W", "-f=${Status}", "mc"]]
+
+    replaced = replace(
+        engine, package_status_query_command=("myquery", "{package}", "-s")
+    )
+    assert utils.package_is_installed(replaced, "nc", 5.0) is True
+    assert calls[-1] == ["myquery", "nc", "-s"]
+
+
+def test_package_is_installed_needs_the_installed_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A leftover configuration is not an installed package and a failing
+    # query is not either: the helper needs the installed status line.
+    engine = make_config().engine
+    monkeypatch.setattr(
+        utils,
+        "run_command",
+        lambda *_args, **_kwargs: _FakeProc(0, "deinstall ok config-files"),
+    )
+    assert utils.package_is_installed(engine, "mc", 5.0) is False
+    monkeypatch.setattr(
+        utils,
+        "run_command",
+        lambda *_args, **_kwargs: _FakeProc(1, "install ok installed"),
+    )
+    assert utils.package_is_installed(engine, "mc", 5.0) is False
+
+
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

@@ -266,6 +266,7 @@ def include_covers_dropin(config_path: Path, dropin_path: Path) -> bool:
 
 
 def ensure_augtool(
+    engine: EngineConfig,
     package_name: str,
     *,
     status_timeout: float,
@@ -284,7 +285,7 @@ def ensure_augtool(
     back to the caller.
     """
 
-    if package_is_installed(package_name, status_timeout):
+    if package_is_installed(engine, package_name, status_timeout):
         return None
     _, failures, _ = install_packages(
         [package_name],

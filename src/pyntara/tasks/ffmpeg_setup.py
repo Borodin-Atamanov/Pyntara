@@ -146,14 +146,16 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.ffmpeg_setup
-    install_timeout = ctx.config.engine.command_timeout_seconds
+    engine = ctx.config.engine
+    install_timeout = engine.command_timeout_seconds
+    status_timeout = cfg.package_status_timeout_seconds
 
     installed_packages: list[str] = []
     warnings: list[str] = []
     missing = [
         package
         for package in cfg.packages
-        if not package_is_installed(package, cfg.package_status_timeout_seconds)
+        if not package_is_installed(engine, package, status_timeout)
     ]
     if missing:
         _log(f"installing: {', '.join(missing)}")

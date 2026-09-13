@@ -154,6 +154,7 @@ def _ensure_repository(
 
 def _ensure_chrome_installed(
     cfg: ChromeSetupConfig,
+    engine: EngineConfig,
     *,
     force: bool,
     skip_apt_update: bool,
@@ -161,7 +162,7 @@ def _ensure_chrome_installed(
 ) -> tuple[bool, str | None]:
     """Install the configured Chrome package when missing or forced; (changed, error)."""
 
-    if not force and package_is_installed(cfg.package_name, timeout):
+    if not force and package_is_installed(engine, cfg.package_name, timeout):
         return False, None
     try:
         if not skip_apt_update:
@@ -837,6 +838,7 @@ def task(ctx: Context) -> TaskResult:
     _log("checking the Google Chrome installation")
     install_changed, error = _ensure_chrome_installed(
         cfg,
+        ctx.config.engine,
         force=force,
         skip_apt_update=ctx.skip_apt_update,
         timeout=timeout,

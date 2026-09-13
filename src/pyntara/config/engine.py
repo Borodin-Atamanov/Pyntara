@@ -122,3 +122,4 @@ class EngineConfig:
     iproute2_address_family_names: dict[str, str] = field(default_factory=dict)
     link_scope_name: str = ""
     dpkg_architecture_command: tuple[str, ...] = ()
+    package_status_query_command: tuple[str, ...] = ()

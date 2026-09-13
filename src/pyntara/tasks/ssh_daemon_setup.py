@@ -367,7 +367,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     installed = package_is_installed(
-        cfg.package_name, cfg.package_status_timeout_seconds
+        ctx.config.engine, cfg.package_name, cfg.package_status_timeout_seconds
     )
     _log(
         f"checking package {cfg.package_name}: "
@@ -401,6 +401,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     augtool_error = ensure_augtool(
+        ctx.config.engine,
         cfg.augeas_tools_package_name,
         status_timeout=cfg.package_status_timeout_seconds,
         install_timeout=timeout,

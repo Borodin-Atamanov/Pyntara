@@ -142,7 +142,7 @@ def _install_fakes(
             return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
-    def fake_installed(package: str, timeout: float) -> bool:
+    def fake_installed(_engine: object, package: str, timeout: float) -> bool:
         return installed
 
     def fake_install(package: str, timeout: float) -> tuple[bool, str]:

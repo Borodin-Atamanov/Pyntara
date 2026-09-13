@@ -82,6 +82,8 @@ def base_config() -> str:
         'iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }\n'
         'link_scope_name = "link"\n'
         'dpkg_architecture_command = ["dpkg", "--print-architecture"]\n'
+        'package_status_query_command = '
+        '["dpkg-query", "-W", "-f=${{Status}}", "{package}"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

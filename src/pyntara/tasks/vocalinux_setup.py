@@ -457,11 +457,13 @@ def _install_packages(ctx: Context) -> tuple[bool, bool]:
     """
 
     cfg = ctx.config.vocalinux_setup
-    timeout = ctx.config.engine.command_timeout_seconds
+    engine = ctx.config.engine
+    timeout = engine.command_timeout_seconds
+    status_timeout = cfg.package_status_timeout_seconds
     missing = [
         package
         for package in cfg.packages
-        if not package_is_installed(package, cfg.package_status_timeout_seconds)
+        if not package_is_installed(engine, package, status_timeout)
     ]
     if not missing:
         return True, False

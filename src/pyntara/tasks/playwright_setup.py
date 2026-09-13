@@ -96,7 +96,9 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.playwright_setup
-    timeout = ctx.config.engine.command_timeout_seconds
+    engine = ctx.config.engine
+    timeout = engine.command_timeout_seconds
+    status_timeout = cfg.package_status_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     changed = False
     messages: list[str] = []
@@ -105,7 +107,7 @@ def task(ctx: Context) -> TaskResult:
     missing = [
         package
         for package in cfg.packages
-        if not package_is_installed(package, cfg.package_status_timeout_seconds)
+        if not package_is_installed(engine, package, status_timeout)
     ]
     if missing:
         _log("installing the playwright runtime packages")

@@ -35,11 +35,13 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cli = ctx.config.cli_tools
-    percent_scale = ctx.config.engine.percent_scale
+    engine = ctx.config.engine
+    percent_scale = engine.percent_scale
+    status_timeout = cli.package_status_timeout_seconds
     missing = [
         package
         for package in cli.packages
-        if not package_is_installed(package, cli.package_status_timeout_seconds)
+        if not package_is_installed(engine, package, status_timeout)
     ]
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")

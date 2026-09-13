@@ -36,20 +36,21 @@ def task_data_dir(repo_root: Path, section: str) -> Path:
     return repo_root / "task_data" / section
 
 
-def package_is_installed(package: str, timeout: float) -> bool:
+def package_is_installed(
+    engine: EngineConfig, package: str, timeout: float
+) -> bool:
     """True when dpkg considers the package fully installed.
 
     The status query distinguishes "install ok installed" from leftovers
     like "deinstall ok config-files", so an uninstalled package is never
-    treated as installed. The timeout comes from config.toml.
+    treated as installed. The timeout comes from config.toml and the query
+    from the engine table, so no task spells the flags of dpkg-query.
     """
 
-    result = run_command(
-        ["dpkg-query", "-W", "-f=${Status}", package],
-        check=False,
-        capture=True,
-        timeout=timeout,
+    query = substituted_command(
+        engine.package_status_query_command, {"package": package}
     )
+    result = run_command(query, check=False, capture=True, timeout=timeout)
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 

@@ -1214,6 +1214,11 @@ def _engine_table(raw: object) -> EngineConfig:
             "engine.dpkg_architecture_command",
             (),
         ),
+        package_status_query_command=_placeholder_command_field(
+            raw.get("package_status_query_command"),
+            "engine.package_status_query_command",
+            ("{package}",),
+        ),
     )
 
 
