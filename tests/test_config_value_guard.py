@@ -92,7 +92,16 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'NO_ANSWER_REASON = "no echo service reported an address of this family"',
         }
     ),
-    "src/pyntara/pyntara.py": frozenset({'CONFIG_PATH = Path("config")'}),
+    "src/pyntara/pyntara.py": frozenset(
+        {
+            # The composition root names where the code itself lives: the
+            # directory of the shipped configuration and the root of the
+            # clone are the location of the running code, not a value of
+            # the machine, so they stay here as exceptions.
+            'CONFIG_PATH = Path("config")',
+            "REPO_ROOT = Path(__file__).resolve().parents[1]",
+        }
+    ),
     "src/pyntara/tasks/chrome_setup.py": frozenset(
         {'FLAG_PLACEHOLDER_PATTERN = re.compile(r"\\{([a-z_]+)\\}")'}
     ),
@@ -143,7 +152,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             "CONSONANT_INDEX = {char: index for index, char in enumerate(CONSONANTS)}",
             'CONSONANTS = "bdfghjklmnprstvz"',
             "PROQUINT_LETTERS = frozenset(CONSONANTS + VOWELS)",
-            "REPO_ROOT = Path(__file__).resolve().parents[2]",
             'TRAILING_MARKER = "-"',
             "VOWEL_INDEX = {char: index for index, char in enumerate(VOWELS)}",
             'VOWELS = "aiou"',

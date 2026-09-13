@@ -32,7 +32,6 @@ from pyntara.context import Context
 from pyntara.logger import log_event, log_result_line
 from pyntara.task_runner import run_tasks
 from pyntara.utils import (
-    REPO_ROOT,
     export_session_environment,
     session_environment,
 )
@@ -44,6 +43,12 @@ app = typer.Typer(invoke_without_command=True)
 # there. The directory is mandatory: a missing or invalid config stops the
 # run (architecture contract, Configuration).
 CONFIG_PATH = Path("config")
+
+# Root of the clone this code runs from: the package lives in src/pyntara/, so
+# the root is one directory above this file. The composition root is the only
+# place that computes it; it goes into the Context, and a task reads it from
+# there, because the clone a task must read is the one the run started from.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 @app.callback()

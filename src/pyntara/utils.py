@@ -24,13 +24,6 @@ from pyntara.config.engine import EngineConfig
 # The single definition lives here so tasks cannot diverge.
 APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
 
-# Root of the clone this code runs from: the package lives in src/pyntara/, so
-# the root is two directories above this file. It is computed once here and
-# read once by the entry point, which passes it into the Context; a task never
-# imports it, because the clone the task must read is the one the run started
-# from and is the job of the composition root to name.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 def task_data_dir(repo_root: Path, section: str) -> Path:
     """The task data directory of one task, from the clone root.

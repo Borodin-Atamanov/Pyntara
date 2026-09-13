@@ -27,7 +27,10 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.context import Context
-from pyntara.utils import REPO_ROOT
+
+# Root of the clone the tests run from: the tests directory sits one level
+# under it. The suite names it itself, exactly as the composition root does.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeProc:

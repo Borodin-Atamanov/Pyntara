@@ -21,11 +21,14 @@ from support import make_config, make_context
 from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import tor_setup
-from pyntara.utils import REPO_ROOT
 
 # The onion address written into the hidden service hostname file by
 # the subprocess fake after the first service start.
 ADDRESS = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion"
+
+# Root of the clone the tests run from: the test file sits one directory
+# under it. The suite names it itself, exactly as the composition root does.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _ctx(
