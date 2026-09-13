@@ -16,6 +16,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from support import make_config
@@ -371,6 +372,35 @@ def test_log_event_to_journal_false_skips_journal(
     logger.log_event("hidden event", to_journal=False)
     journal = _journal_with_marker(identifier, "event path finished")
     assert "hidden event" not in journal
+
+
+def test_a_service_entry_point_keeps_the_journal_off(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A service entry point configures the journal from the config it loads,
+    # and the shared test document names the real journal command, so without
+    # the fixture of conftest.py a test that calls main() would write into the
+    # system journal under a production identifier. The fixture turns that
+    # configuration into a no-op, and the untouched module state is the proof:
+    # the logger never received an engine table.
+    from pyntara import metrics
+
+    config = make_config(task_data_root=tmp_path)
+
+    def fake_sleep(seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(metrics, "load_config", lambda path: config)
+    monkeypatch.setattr(metrics.time, "sleep", fake_sleep)
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda cfg: None)
+    monkeypatch.setattr(
+        "pyntara.metrics_send.send_google_queue",
+        lambda cfg, single_random=False: (0, 0),
+    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(tmp_path / "config.toml")])
+    with pytest.raises(KeyboardInterrupt):
+        metrics.main()
+    assert logger._journal_engine is None
 
 
 def test_unconfigured_journal_forwards_nothing() -> None:

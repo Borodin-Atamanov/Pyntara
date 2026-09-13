@@ -36,11 +36,30 @@ import tempfile
 from pathlib import Path
 
 import pykeepass as _pykeepass
+import pytest
 from pykeepass.exceptions import CredentialsError
 
-from pyntara import logger
+from pyntara import logger, metrics, metrics_collect, metrics_ingest, port_forwarding
 
 logger.configure_journal(None)
+
+# The entry point of a deployed service configures the journal from the config
+# it loaded, and the shared test document names the real journal command, so a
+# test that calls such a main() would write its progress lines into the system
+# journal under a production identifier. He who configures the journal in a
+# test is a test that says so: the configuration call of every service module
+# is replaced with a no-op for the length of the test, and a test that
+# exercises the configuration itself patches the same module name with its own
+# recorder, which wins because it is applied later.
+_SERVICE_MODULES = (metrics, metrics_collect, metrics_ingest, port_forwarding)
+
+
+@pytest.fixture(autouse=True)
+def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test out of the real system journal."""
+
+    for module in _SERVICE_MODULES:
+        monkeypatch.setattr(module, "configure_journal", lambda engine: None)
 
 _original_create_database = _pykeepass.create_database
 
