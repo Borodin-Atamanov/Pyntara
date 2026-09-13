@@ -82,6 +82,33 @@ def test_the_comment_label_sign_comes_from_the_config(
     assert directives == {"#comment": "owned by the test", "Port": "30222"}
 
 
+def test_the_include_keyword_comes_from_the_config(tmp_path: Path) -> None:
+    # The keyword that pulls the drop-in in belongs to the syntax of the
+    # edited file and is a config value: another keyword in the table finds
+    # another directive, while the shipped one finds nothing of it.
+    config = tmp_path / "my_config"
+    config.write_text(
+        "# managed\nPullIn /etc/ssh/sshd_config.d/*.conf\n", encoding="utf-8"
+    )
+    dropin = Path("/etc/ssh/sshd_config.d/pyntara.conf")
+    assert (
+        augeas_module.include_covers_dropin(config, dropin, "#", "PullIn")
+        is True
+    )
+    assert (
+        augeas_module.include_covers_dropin(config, dropin, "#", "Include")
+        is False
+    )
+    commented = tmp_path / "other_config"
+    commented.write_text(
+        "# PullIn /etc/ssh/sshd_config.d/*.conf\n", encoding="utf-8"
+    )
+    assert (
+        augeas_module.include_covers_dropin(commented, dropin, "#", "PullIn")
+        is False
+    )
+
+
 def test_the_program_lines_come_from_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

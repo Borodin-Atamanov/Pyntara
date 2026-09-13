@@ -79,6 +79,7 @@ class SshDaemonSetupConfig:
     dropin_file_mode: int
     dropin_header: str
     dropin_comment_sign: str
+    include_directive: str
     augeas_lens: str
     port_directive: str
     effective_config_command: tuple[str, ...]
@@ -128,6 +129,7 @@ class SshClientSetupConfig:
     dropin_file_mode: int
     dropin_header: str
     dropin_comment_sign: str
+    include_directive: str
     augeas_lens: str
     augeas_container: str
     augeas_container_value: str

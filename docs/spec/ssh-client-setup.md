@@ -30,6 +30,7 @@ ssh_config_dropin_path - the drop-in the task owns and writes
 dropin_file_mode - the file mode of the drop-in, as an octal string
 dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
 dropin_comment_sign - the sign a comment node carries in the augtool listing, by which the task reads the ownership comment of the drop-in and skips a commented line of the main configuration
+include_directive - the keyword of the main configuration that pulls the drop-in in, matched without case
 augeas_lens - the augeas lens of the ssh_config syntax
 augeas_container - the container node the directives are placed under
 augeas_container_value - the pattern that container node carries, so the directives apply to every connection

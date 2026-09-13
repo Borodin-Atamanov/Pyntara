@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 
 import pyntara.metrics
-from pyntara.config import Config
+from pyntara.config import SEND_ORDER_NEWEST_FIRST, Config
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.utils import run_command, substituted_command
@@ -182,7 +182,7 @@ def _ordered_entries(channel: Path, send_order: str) -> list[Path]:
         (path for path in channel.iterdir() if path.is_file()),
         key=lambda path: (path.stat().st_mtime, path.name),
     )
-    if send_order == "newest_first":
+    if send_order == SEND_ORDER_NEWEST_FIRST:
         entries.reverse()
     return entries
 

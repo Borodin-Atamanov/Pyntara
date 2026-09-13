@@ -267,3 +267,12 @@ INGEST_CONFIG_KEYS = (
     "queue_link_attempts",
 )
 COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
+
+# The order in which the deployed sender drains a channel, as the send_order
+# field of the [system_metrics_setup] table spells it. The sender reads the
+# name it compares against from here, and the check of the config takes the
+# allowed values from the same tuple, so the vocabulary of that field cannot
+# drift apart from the code that acts on it.
+SEND_ORDER_OLDEST_FIRST = "oldest_first"
+SEND_ORDER_NEWEST_FIRST = "newest_first"
+SEND_ORDERS = (SEND_ORDER_OLDEST_FIRST, SEND_ORDER_NEWEST_FIRST)

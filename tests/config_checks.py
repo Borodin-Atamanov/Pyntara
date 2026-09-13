@@ -18,6 +18,7 @@ from typing import Any
 
 from pyntara.config import (
     MODES,
+    SEND_ORDERS,
     AddExtraReposConfig,
     ChromeSetupConfig,
     CliToolsConfig,
@@ -64,15 +65,14 @@ from pyntara.config.vault import GENERATED_PASSWORD_RE
 # The vocabulary constants the checks validate against, and the error they
 # raise. They live here, in the test suite, because the runtime reader never
 # checks a value and never raises: a rule of the config needs no name in the
-# shipped package. MODES is the exception, and comes from pyntara.config,
-# because production reads it to accept or reject an install mode.
+# shipped package. Two exceptions, which come from pyntara.config because
+# production reads them: MODES, to accept or reject an install mode, and
+# SEND_ORDERS, the order of the deployed sender.
 
 
 class ConfigError(RuntimeError):
     """Raised by a check when a config value is missing or invalid."""
 
-
-SEND_ORDERS: tuple[str, ...] = ("oldest_first", "newest_first")
 
 I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
 
@@ -3298,6 +3298,10 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
             raw.get("dropin_comment_sign"),
             "ssh_daemon_setup.dropin_comment_sign",
         ),
+        include_directive=_nonempty_string_field(
+            raw.get("include_directive"),
+            "ssh_daemon_setup.include_directive",
+        ),
         augeas_lens=augeas_lens,
         port_directive=port_directive,
         effective_config_command=_placeholder_command_field(
@@ -3432,6 +3436,10 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
         dropin_comment_sign=_nonempty_string_field(
             raw.get("dropin_comment_sign"),
             "ssh_client_setup.dropin_comment_sign",
+        ),
+        include_directive=_nonempty_string_field(
+            raw.get("include_directive"),
+            "ssh_client_setup.include_directive",
         ),
         augeas_lens=augeas_lens,
         augeas_container=augeas_container,

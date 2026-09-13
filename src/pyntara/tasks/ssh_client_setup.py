@@ -101,6 +101,7 @@ def task(ctx: Context) -> TaskResult:
         cfg.ssh_config_path,
         cfg.ssh_config_dropin_path,
         cfg.dropin_comment_sign,
+        cfg.include_directive,
     )
     _log(
         f"checking Include directive in {cfg.ssh_config_path}: "

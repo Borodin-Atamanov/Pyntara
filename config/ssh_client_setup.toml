@@ -21,6 +21,10 @@ dropin_header = "Managed by the Pyntara ssh_client_setup task."
 # carrying it untouched and reads the ownership comment of the drop-in by
 # it, so a file whose syntax marks comments in another way is answered here.
 dropin_comment_sign = "#"
+# Name of the directive that pulls the drop-in directory into the main
+# configuration. The task reads it to prove the drop-in is included, so the
+# keyword of the foreign file is a value and its comparison ignores case.
+include_directive = "Include"
 # Command that prints the effective SSH client configuration, used to
 # verify that every configured directive is in force after the drop-in is
 # written; the host is the one the probe asks about.

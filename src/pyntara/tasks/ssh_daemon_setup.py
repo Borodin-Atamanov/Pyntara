@@ -398,6 +398,7 @@ def task(ctx: Context) -> TaskResult:
         cfg.sshd_config_path,
         cfg.sshd_config_dropin_path,
         cfg.dropin_comment_sign,
+        cfg.include_directive,
     )
     _log(
         f"checking Include directive in {cfg.sshd_config_path}: "

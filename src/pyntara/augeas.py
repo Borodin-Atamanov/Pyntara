@@ -263,18 +263,22 @@ def _read_text(path: Path) -> str | None:
 
 
 def include_covers_dropin(
-    config_path: Path, dropin_path: Path, comments_sign: str
+    config_path: Path,
+    dropin_path: Path,
+    comments_sign: str,
+    include_directive: str,
 ) -> bool:
     """True when the main config pulls the drop-in directory in.
 
-    Every Include directive of the main config is matched against the
-    drop-in path with fnmatch, which understands the glob patterns
-    OpenSSH accepts; a relative pattern resolves against the directory
-    of the main config. A line that starts with the comment sign of the
-    file is not a directive. A missing file, an unreadable file or a
-    directive that does not cover the drop-in all mean the rendered
-    drop-in would be ignored, so a task must fail loudly instead of
-    pretending the configuration is in place.
+    Every directive line of the main config whose keyword is the configured
+    one is matched against the drop-in path with fnmatch, which understands
+    the glob patterns OpenSSH accepts; a relative pattern resolves against
+    the directory of the main config, and the comparison of the keyword
+    ignores case. A line that starts with the comment sign of the file is
+    not a directive. A missing file, an unreadable file or a directive that
+    does not cover the drop-in all mean the rendered drop-in would be
+    ignored, so a task must fail loudly instead of pretending the
+    configuration is in place.
     """
 
     content = _read_text(config_path)
@@ -286,7 +290,7 @@ def include_covers_dropin(
         if not stripped or stripped.startswith(comments_sign):
             continue
         keyword, sep, pattern = stripped.partition(" ")
-        if not sep or keyword.casefold() != "include":
+        if not sep or keyword.casefold() != include_directive.casefold():
             continue
         pattern = pattern.strip()
         if fnmatch.fnmatch(str(dropin_path), pattern):
