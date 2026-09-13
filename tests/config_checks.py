@@ -436,6 +436,14 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
             raw.get("sources_list_d"), "add_extra_repos.sources_list_d"
         )
     )
+    legacy_source_suffix = _nonempty_string_field(
+        raw.get("legacy_source_suffix"),
+        "add_extra_repos.legacy_source_suffix",
+    )
+    deb822_source_suffix = _nonempty_string_field(
+        raw.get("deb822_source_suffix"),
+        "add_extra_repos.deb822_source_suffix",
+    )
     keep_debs_file = Path(
         _nonempty_string_field(
             raw.get("keep_debs_file"), "add_extra_repos.keep_debs_file"
@@ -459,6 +467,8 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         keep_downloaded_debs=keep_downloaded_debs,
         legacy_sources_file=legacy_sources_file,
         sources_list_d=sources_list_d,
+        legacy_source_suffix=legacy_source_suffix,
+        deb822_source_suffix=deb822_source_suffix,
         keep_debs_file=keep_debs_file,
         keep_debs_dropin_content=keep_debs_dropin_content,
     )
@@ -1425,6 +1435,10 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("default_route_command"),
             "engine.default_route_command",
             (),
+        ),
+        default_route_source_key=_nonempty_string_field(
+            raw.get("default_route_source_key"),
+            "engine.default_route_source_key",
         ),
         augtool_command=_placeholder_command_field(
             raw.get("augtool_command"),
@@ -5801,6 +5815,10 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
             raw.get("service_active_command"),
             "vocalinux_setup.service_active_command",
             ("{username}", "{service_unit_name}"),
+        ),
+        service_active_state=_nonempty_string_field(
+            raw.get("service_active_state"),
+            "vocalinux_setup.service_active_state",
         ),
         service_enable_command=_placeholder_command_field(
             raw.get("service_enable_command"),

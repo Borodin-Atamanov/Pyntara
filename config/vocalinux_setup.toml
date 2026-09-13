@@ -85,4 +85,7 @@ chmod_command = ["chmod", "{file_mode}", "{path}"]
 group_members_command = ["id", "-nG", "{username}"]
 group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]
 service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]
+# State the user manager prints for a running unit. The task treats the unit
+# as already applied only when the answer is this word.
+service_active_state = "active"
 service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]

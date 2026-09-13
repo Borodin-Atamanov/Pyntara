@@ -48,9 +48,9 @@ ABSOLUTE_PATH_LITERAL = re.compile(r'"(/[a-z][^"]*)"')
 COMPILED_PATTERN = re.compile(r"re\.compile\(\s*r?([\"'])(.*?)\1", re.DOTALL)
 KERNEL_PATH_PREFIXES = ("/proc", "/sys", "/dev")
 
-# Module level constants of a value. The entries below are the exceptions
-# of docs/spec/config-content.md and the few values that still wait for
-# their migration block.
+# Module level constants of a value. Every entry below is an exception of
+# docs/spec/config-content.md: a value of a listed type that is not in the
+# config would fail this suite.
 #
 # Exceptions: a regular expression (the node pattern of the augeas calls,
 # the profile identifier of the dnsproxy, the release and address patterns
@@ -60,10 +60,6 @@ KERNEL_PATH_PREFIXES = ("/proc", "/sys", "/dev")
 # the kernel paths of the swapfile and the zram modules. The location of
 # the code itself, the config path and the repository root of the entry
 # point, is the layout of the installation and stays with it.
-#
-# Pending: the environment of the noninteractive apt, the key names the
-# three metrics modules read from the component config, and the version
-# pattern the setup tasks copy. Each leaves with the block of its task.
 VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/bump_version.py": frozenset(
         {

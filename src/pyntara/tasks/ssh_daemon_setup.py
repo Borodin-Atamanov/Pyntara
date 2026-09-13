@@ -573,7 +573,7 @@ def task(ctx: Context) -> TaskResult:
         (
             directive.value
             for directive in cfg.directives
-            if directive.name.casefold() == "port"
+            if directive.name.casefold() == cfg.port_directive.casefold()
         ),
         None,
     )

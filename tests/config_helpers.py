@@ -81,6 +81,7 @@ def base_config() -> str:
         'local_addresses_command = ["ip", "-o", "addr", "show", "scope", "global"]\n'
         'directly_connected_networks_command = ["ip", "-o", "{family}", "route", "show", "proto", "kernel"]\n'
         'default_route_command = ["ip", "-4", "route", "show", "default"]\n'
+        'default_route_source_key = "src"\n'
         'augtool_command = ["augtool", "--noautoload"]\n'
         'augeas_files_node_prefix = "/files"\n'
         'augeas_lens_line = "set /augeas/load/entry/lens {lens}"\n'
@@ -138,6 +139,8 @@ def base_config() -> str:
         'uris_field_name = "uris:"\ncomponents_field_name = "components:"\n'
         'legacy_sources_file = "/etc/apt/sources.list"\n'
         'sources_list_d = "/etc/apt/sources.list.d"\n'
+        'legacy_source_suffix = ".list"\n'
+        'deb822_source_suffix = ".sources"\n'
         'keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"\n'
         'keep_debs_dropin_content = "# Written by pyntara add_extra_repos\\n# Keep downloaded .deb files after install for offline reinstall.\\nAPT::Keep-Downloaded-Packages \\"true\\";\\nUnattended-Upgrade::Keep-Debs-After-Install \\"true\\";\\n"\n'
         '[hostname]\nhostname_file = "/etc/hostname"\n'
@@ -949,6 +952,7 @@ def base_config() -> str:
         'group_members_command = ["id", "-nG", "{username}"]\n'
         'group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]\n'
         'service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]\n'
+        'service_active_state = "active"\n'
         'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"

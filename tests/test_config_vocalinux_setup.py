@@ -51,6 +51,7 @@ SECTION = (
     'group_members_command = ["id", "-nG", "{username}"]\n'
     'group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]\n'
     'service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]\n'
+    'service_active_state = "active"\n'
     'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n'
 )
 
@@ -192,6 +193,11 @@ def test_valid_section_loads(tmp_path: Path) -> None:
         SECTION.replace(
             'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n',
             'service_enable_command = "systemctl enable"\n',
+        ),
+        # service_active_state is empty
+        SECTION.replace(
+            'service_active_state = "active"\n',
+            'service_active_state = ""\n',
         ),
     ],
 )

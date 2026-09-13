@@ -137,7 +137,10 @@ def default_route_address(
     for line in result.stdout.splitlines():
         fields = line.split()
         for index, field in enumerate(fields):
-            if field == "src" and index + 1 < len(fields):
+            if (
+                field == engine.default_route_source_key
+                and index + 1 < len(fields)
+            ):
                 return fields[index + 1]
     return None
 

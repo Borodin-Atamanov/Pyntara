@@ -22,10 +22,16 @@ keep_downloaded_debs = true
 uris_field_name = "uris:"
 components_field_name = "components:"
 # The apt sources the task manages: the legacy single file and the drop-in
-# directory. Only lowercase files ending in .list or .sources inside the
-# directory are apt sources; everything else is left alone.
+# directory. The directory holds apt sources only in the two formats below;
+# a file with any other extension, or with an upper case name, is left alone.
 legacy_sources_file = "/etc/apt/sources.list"
 sources_list_d = "/etc/apt/sources.list.d"
+# Suffix of a one-line sources file (one deb line per entry), the format of
+# the legacy sources file.
+legacy_source_suffix = ".list"
+# Suffix of a deb822 sources file, whose entries are fields. The task reads
+# such a file field by field instead of line by line.
+deb822_source_suffix = ".sources"
 # The apt drop-in that stops apt from deleting downloaded .deb files. The
 # task owns this file completely while keep_downloaded_debs is true: it
 # writes it, and removes it when the setting is false.

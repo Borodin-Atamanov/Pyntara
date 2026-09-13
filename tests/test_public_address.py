@@ -148,6 +148,30 @@ class TestDefaultRouteAddress:
         )
         assert default_route_address(make_config().engine, 30.0) == "192.168.1.5"
 
+    def test_the_source_keyword_comes_from_the_engine_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The word that marks the source address belongs to the output of
+        # the configured command, so another keyword in the table reads
+        # that token instead, while the shipped keyword finds nothing.
+        output = (
+            "default via 192.168.1.1 dev wlp1s0 source 192.168.1.7 "
+            "src 192.168.1.5\n"
+        )
+        monkeypatch.setattr(
+            public_address_module,
+            "run_command",
+            lambda *a, **k: _Completed(output),
+        )
+        engine = make_config().engine
+        assert default_route_address(engine, 30.0) == "192.168.1.5"
+        assert (
+            default_route_address(
+                replace(engine, default_route_source_key="source"), 30.0
+            )
+            == "192.168.1.7"
+        )
+
     def test_reports_nothing_without_a_route(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

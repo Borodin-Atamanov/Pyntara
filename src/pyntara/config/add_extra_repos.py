@@ -15,8 +15,11 @@ class AddExtraReposConfig:
     ubuntu_hosts are the official archive hosts whose source files the task
     may rewrite. A source file matching none of the hosts is third-party
     and left untouched. legacy_sources_file and sources_list_d are the apt
-    sources the task reads and rewrites; keep_debs_file is the apt drop-in
-    the task owns while keep_downloaded_debs is true, which keeps
+    sources the task reads and rewrites, and legacy_source_suffix and
+    deb822_source_suffix are the file extensions of the two formats apt
+    reads there, so a file with another extension is left alone;
+    keep_debs_file is the apt drop-in the task owns while
+    keep_downloaded_debs is true, which keeps
     downloaded .deb files after install, and keep_debs_dropin_content is
     the four-line body that drop-in carries. uris_field_name and
     components_field_name are the names of the two deb822 fields of a
@@ -31,5 +34,7 @@ class AddExtraReposConfig:
     keep_downloaded_debs: bool
     legacy_sources_file: Path
     sources_list_d: Path
+    legacy_source_suffix: str
+    deb822_source_suffix: str
     keep_debs_file: Path
     keep_debs_dropin_content: str

@@ -161,7 +161,7 @@ def main(argv: list[str]) -> int:
         return 2
     family = cfg.engine.address_family_by_flag[argv[2]]
     try:
-        ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup.directives)
+        ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

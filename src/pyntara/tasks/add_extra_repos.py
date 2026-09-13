@@ -186,26 +186,25 @@ def _process_legacy(
     return _FileRewrite("".join(lines), changed, has_ubuntu, satisfied, tuple(problems))
 
 
-def _collect_source_files(
-    legacy_sources_file: Path, sources_list_d: Path
-) -> list[Path]:
+def _collect_source_files(legacy_sources_file: Path, cfg: AddExtraReposConfig) -> list[Path]:
     """The apt source files apt itself reads, legacy file first.
 
     apt reads the configured legacy sources file and, in the configured
-    sources directory, only lowercase files ending in .list or .sources.
-    Backup files (.bak) and other extensions are ignored by apt and by this
-    task.
+    sources directory, only lowercase files carrying the configured suffix
+    of either format. Backup files (.bak) and other extensions are ignored
+    by apt and by this task.
     """
 
+    suffix = (cfg.legacy_source_suffix, cfg.deb822_source_suffix)
     files: list[Path] = []
     if legacy_sources_file.is_file():
         files.append(legacy_sources_file)
-    if sources_list_d.is_dir():
+    if cfg.sources_list_d.is_dir():
         files.extend(
             sorted(
                 path
-                for path in sources_list_d.iterdir()
-                if path.suffix in (".list", ".sources") and path.name.islower()
+                for path in cfg.sources_list_d.iterdir()
+                if path.suffix in suffix and path.name.islower()
             )
         )
     return files
@@ -219,7 +218,7 @@ def _process_file(
 ) -> _FileRewrite:
     """Analyze and rewrite one source file in memory, by its format."""
 
-    if path.suffix == ".sources":
+    if path.suffix == cfg.deb822_source_suffix:
         return _process_deb822(
             path.read_text(encoding="utf-8"),
             configured,
@@ -296,7 +295,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"updated {keep_debs_file}: keep downloaded .deb files")
     files = _collect_source_files(
         ctx.config.add_extra_repos.legacy_sources_file,
-        ctx.config.add_extra_repos.sources_list_d,
+        ctx.config.add_extra_repos,
     )
     if not files:
         warning = "no apt source files found"

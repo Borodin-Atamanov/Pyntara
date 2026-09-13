@@ -597,3 +597,28 @@ def test_user_service_commands_come_from_the_config(
             cfg.username,
         ],
     ]
+
+
+def test_the_running_state_word_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The word that means "the unit runs" belongs to the answer of the
+    # configured query: with another word in the section the same answer
+    # counts as not running and the task enables the unit again.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        if "is-active" in command:
+            return _FakeProc(0, "running")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    cfg = replace(make_config().vocalinux_setup, service_active_state="running")
+    assert task_module._enable_user_service(cfg, timeout=30.0) == (False, None)
+    assert len(calls) == 1
+
+    calls.clear()
+    shipped = make_config().vocalinux_setup
+    assert task_module._enable_user_service(shipped, timeout=30.0) == (True, None)
+    assert len(calls) == 2

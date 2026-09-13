@@ -42,7 +42,8 @@ class VocalinuxSetupConfig:
     it to that user; group_members_command and group_add_command read and
     extend the membership of input_group; service_active_command and
     service_enable_command query and enable service_unit_name through the
-    user manager of the desktop session.
+    user manager of the desktop session, and service_active_state is the
+    word that manager prints for a running unit.
     """
 
     username: str
@@ -81,4 +82,5 @@ class VocalinuxSetupConfig:
     group_members_command: tuple[str, ...]
     group_add_command: tuple[str, ...]
     service_active_command: tuple[str, ...]
+    service_active_state: str
     service_enable_command: tuple[str, ...]

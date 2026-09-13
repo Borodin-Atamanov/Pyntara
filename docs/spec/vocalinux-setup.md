@@ -82,4 +82,5 @@ chmod_command - the mode writer of a file, with {file_mode} and {path} filled in
 group_members_command - the reader of the group membership of the user, with {username} filled in at the call site
 group_add_command - the command that adds the user to input_group, with {input_group} and {username} filled in at the call site
 service_active_command - the state query of the user unit, with {username} and {service_unit_name} filled in at the call site
+service_active_state - the word that query prints for a running unit; only this answer counts as already applied
 service_enable_command - the enable and start of the user unit, with {username} and {service_unit_name} filled in at the call site

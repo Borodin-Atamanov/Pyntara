@@ -343,6 +343,56 @@ def test_the_deb822_field_names_come_from_the_config(
     assert "Parts: main universe restricted multiverse\n" in text
 
 
+def test_the_source_file_suffixes_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The two extensions apt reads in the sources directory are config
+    # values: with another deb822 suffix the task rewrites the file that
+    # carries it, while the shipped .sources name is not an apt source and
+    # is left alone.
+    _install_sources(monkeypatch, tmp_path, {"ubuntu.apt": UBUNTU_DEB822})
+    ctx = _ctx(tmp_path)
+    renamed = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            add_extra_repos=replace(
+                ctx.config.add_extra_repos,
+                deb822_source_suffix=".apt",
+                legacy_source_suffix=".sources",
+            ),
+        ),
+    )
+    result = add_extra_repos.task(renamed)
+    assert result.success is True
+    assert result.changed is True
+    text = (tmp_path / "sources.list.d" / "ubuntu.apt").read_text(
+        encoding="utf-8"
+    )
+    assert text.count("Components: main universe restricted multiverse") == 2
+
+    shipped_dir = tmp_path / "shipped"
+    shipped_dir.mkdir()
+    (shipped_dir / "ubuntu.apt").write_text(UBUNTU_DEB822, encoding="utf-8")
+    shipped = _ctx(shipped_dir)
+    shipped = replace(
+        shipped,
+        config=replace(
+            shipped.config,
+            add_extra_repos=replace(
+                shipped.config.add_extra_repos,
+                sources_list_d=shipped_dir,
+            ),
+        ),
+    )
+    untouched = add_extra_repos.task(shipped)
+    assert untouched.success is True
+    assert "no apt source files found" in untouched.warnings
+    assert (shipped_dir / "ubuntu.apt").read_text(
+        encoding="utf-8"
+    ) == UBUNTU_DEB822
+
+
 def _satisfied_ubuntu() -> str:
     """The Ubuntu sources with every configured component already listed."""
 

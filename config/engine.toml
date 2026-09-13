@@ -236,6 +236,10 @@ upnpc_mapping_arrow = "->"
 local_addresses_command = ["ip", "-o", "addr", "show", "scope", "global"]
 directly_connected_networks_command = ["ip", "-o", "{family}", "route", "show", "proto", "kernel"]
 default_route_command = ["ip", "-4", "route", "show", "default"]
+# Keyword that marks the source address of a route in the output of that
+# command (the src word of iproute2). The public address is read from the
+# token that follows it.
+default_route_source_key = "src"
 # The augeas driver the shared helper pyntara.augeas runs, and the node
 # prefix of the file it edits: every node of the augtool program is the
 # prefix followed by the absolute path of the edited file.

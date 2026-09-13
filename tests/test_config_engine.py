@@ -229,11 +229,51 @@ def test_load_config_parses_keep_downloaded_debs(tmp_path: Path) -> None:
     assert config.add_extra_repos.keep_downloaded_debs is True
 
 
+def test_load_config_source_file_suffixes(tmp_path: Path) -> None:
+    # The two extensions apt reads in the sources directory round-trip, so
+    # the files the task rewrites follow the configured names.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    assert config.add_extra_repos.legacy_source_suffix == ".list"
+    assert config.add_extra_repos.deb822_source_suffix == ".sources"
+
+
+def test_load_config_requires_the_source_file_suffixes(tmp_path: Path) -> None:
+    # A missing extension would make the task read no source file at all,
+    # so the checks refuse it instead of defaulting it.
+    without_legacy = base_config().replace(
+        'legacy_source_suffix = ".list"\n', ""
+    )
+    assert_config_error(
+        tmp_path, without_legacy, match="must be a non-empty string"
+    )
+    without_deb822 = base_config().replace(
+        'deb822_source_suffix = ".sources"\n', ""
+    )
+    assert_config_error(
+        tmp_path, without_deb822, match="must be a non-empty string"
+    )
+
+
 def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
     # The apt retention setting is explicit: a missing key is rejected, not
     # silently defaulted.
     content = base_config().replace("keep_downloaded_debs = true\n", "")
     assert_config_error(tmp_path, content, match="must be a boolean")
+
+
+def test_load_config_route_source_key(tmp_path: Path) -> None:
+    # The keyword that marks the source address in the output of the route
+    # query round-trips, so the reader of the public address follows the
+    # configured word.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    assert config.engine.default_route_source_key == "src"
+
+
+def test_load_config_requires_the_route_source_key(tmp_path: Path) -> None:
+    # Without the keyword the reader would compare against nothing, so a
+    # missing key is rejected instead of defaulted.
+    content = base_config().replace('default_route_source_key = "src"\n', "")
+    assert_config_error(tmp_path, content, match="must be a non-empty string")
 
 
 def test_load_config_parallel_query_values(tmp_path: Path) -> None:

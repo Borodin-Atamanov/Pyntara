@@ -682,7 +682,7 @@ def main() -> None:
             priority=pf.error_priority,
         )
         return
-    ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup.directives)
+    ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
     key_path = (
         cfg.ssh_daemon_setup.root_ssh_dir
         / cfg.ssh_daemon_setup.port_forwarding_private_key_file_name

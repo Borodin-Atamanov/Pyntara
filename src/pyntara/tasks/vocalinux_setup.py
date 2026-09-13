@@ -429,7 +429,10 @@ def _enable_user_service(
         capture=True,
         timeout=timeout,
     )
-    if active.returncode == 0 and trim_whitespace(active.stdout) == "active":
+    if (
+        active.returncode == 0
+        and trim_whitespace(active.stdout) == cfg.service_active_state
+    ):
         return False, None
     try:
         run_command(

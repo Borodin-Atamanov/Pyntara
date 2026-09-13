@@ -84,7 +84,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     if not address:
         return None, "I2P tunnel address is not available"
     try:
-        port = ssh_port_from_directives(cfg.ssh_daemon_setup.directives)
+        port = ssh_port_from_directives(cfg.ssh_daemon_setup)
     except RuntimeError as exc:
         return None, str(exc)
     engine = cfg.engine

@@ -247,7 +247,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
         encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup.directives
+        ctx.config.ssh_daemon_setup
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
@@ -809,7 +809,7 @@ def test_stale_address_file_is_rewritten_without_restart(
         encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup.directives
+        ctx.config.ssh_daemon_setup
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
@@ -859,7 +859,7 @@ def test_missing_keys_file_restarts_even_when_configs_match(
         encoding="utf-8",
     )
     ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup.directives
+        ctx.config.ssh_daemon_setup
     )
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(

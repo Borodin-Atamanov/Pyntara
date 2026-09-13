@@ -132,6 +132,7 @@ class EngineConfig:
     local_addresses_command: tuple[str, ...] = ()
     directly_connected_networks_command: tuple[str, ...] = ()
     default_route_command: tuple[str, ...] = ()
+    default_route_source_key: str = ""
     augtool_command: tuple[str, ...] = ()
     augeas_files_node_prefix: str = ""
     augeas_lens_line: str = ""

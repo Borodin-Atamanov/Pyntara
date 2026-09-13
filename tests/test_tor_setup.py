@@ -193,7 +193,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
 
     cfg = ctx.config.tor_setup
     ssh_port = tor_setup.ssh_port_from_directives(
-        ctx.config.ssh_daemon_setup.directives
+        ctx.config.ssh_daemon_setup
     )
     _write_torrc(ctx, include=True)
     cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
@@ -518,7 +518,7 @@ def test_render_config_uses_ssh_port_and_virtual_port(
     ctx = _ctx(tmp_path)
     cfg = ctx.config.tor_setup
     ssh_port = tor_setup.ssh_port_from_directives(
-        ctx.config.ssh_daemon_setup.directives
+        ctx.config.ssh_daemon_setup
     )
     rendered = tor_setup._render_config(cfg, ssh_port, _template_path(ctx))
     assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
