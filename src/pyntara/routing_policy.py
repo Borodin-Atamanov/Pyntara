@@ -291,6 +291,12 @@ def build_local_proxy_inbound(
     listen_address: str,
     port: int,
     udp_enabled: bool,
+    enabled: bool,
+    traffic_limit_bytes: int,
+    expiry_time: int,
+    sniffing_enabled: bool,
+    sniffing_metadata_only: bool,
+    sniffing_route_only: bool,
     sniffing_protocols: tuple[str, ...],
     fields: dict[str, str],
     values: dict[str, str],
@@ -300,12 +306,13 @@ def build_local_proxy_inbound(
     protocol is the configured inbound protocol of the panel, mixed by
     default: the panel has no plain "socks" inbound, and mixed serves
     SOCKS5 and HTTP on one port, which is exactly a local proxy. The
-    inbound is created without a traffic limit and without an expiry date,
-    because a local proxy that stops working after a quota is worse than
-    useless. Sniffing is what lets the rules decide by the requested name,
-    so the protocols the panel can sniff are enabled. The field names come
-    from the config, so a panel or core version that renames one is
-    answered there.
+    inbound is created with the configured traffic limit and expiry date,
+    both of which ship as zero, because a local proxy that stops working
+    after a quota is worse than useless. Sniffing is what lets the rules
+    decide by the requested name, so the protocols the panel can sniff are
+    enabled, and how the panel treats the sniffed result is configured as
+    well. The field names come from the config, so a panel or core version
+    that renames one is answered there.
     """
 
     return {
@@ -314,9 +321,9 @@ def build_local_proxy_inbound(
         fields["port"]: port,
         fields["protocol"]: protocol,
         fields["tag"]: tag,
-        fields["enable"]: True,
-        fields["expiry_time"]: 0,
-        fields["total"]: 0,
+        fields["enable"]: enabled,
+        fields["expiry_time"]: expiry_time,
+        fields["total"]: traffic_limit_bytes,
         fields["up"]: 0,
         fields["down"]: 0,
         fields["settings"]: {
@@ -325,10 +332,10 @@ def build_local_proxy_inbound(
             fields["ip"]: listen_address,
         },
         fields["sniffing"]: {
-            fields["enabled"]: True,
+            fields["enabled"]: sniffing_enabled,
             fields["dest_override"]: list(sniffing_protocols),
-            fields["metadata_only"]: False,
-            fields["route_only"]: False,
+            fields["metadata_only"]: sniffing_metadata_only,
+            fields["route_only"]: sniffing_route_only,
         },
     }
 

@@ -145,6 +145,9 @@ temp_dir = "temp"
 # Prefix of temporary files the commit command creates in the spool
 # before publishing; entries with this prefix are never ingested.
 spool_temp_prefix = ".commit-"
+# Number of random bytes in the temporary name the ingest gives a copy
+# before it publishes it, hex-encoded into the name.
+temp_name_random_bytes = 8
 # Publication attempts before the ingest gives up on a unique queue name.
 queue_link_attempts = 5
 # Name of the Google Drive channel queue directory inside system_metrics_dir.

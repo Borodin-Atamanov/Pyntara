@@ -210,6 +210,7 @@ class SystemMetricsSetupConfig:
     main_outbox_dir: str
     temp_dir: str
     spool_temp_prefix: str
+    temp_name_random_bytes: int
     queue_link_attempts: int
     google_script_dir: str
     main_sent_dir: str

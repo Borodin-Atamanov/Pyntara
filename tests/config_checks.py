@@ -4039,6 +4039,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("spool_temp_prefix"),
             "system_metrics_setup.spool_temp_prefix",
         ),
+        temp_name_random_bytes=_positive_int_field(
+            raw.get("temp_name_random_bytes"),
+            "system_metrics_setup.temp_name_random_bytes",
+        ),
         queue_link_attempts=queue_link_attempts,
         google_script_dir=google_script_dir,
         main_sent_dir=main_sent_dir,
@@ -4513,6 +4517,30 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("local_proxy_sniffing_protocols"),
         "three_x_ui_xray_setup.local_proxy_sniffing_protocols",
     )
+    local_proxy_sniffing_enabled = _bool_field(
+        raw.get("local_proxy_sniffing_enabled"),
+        "three_x_ui_xray_setup.local_proxy_sniffing_enabled",
+    )
+    local_proxy_enabled = _bool_field(
+        raw.get("local_proxy_enabled"),
+        "three_x_ui_xray_setup.local_proxy_enabled",
+    )
+    local_proxy_sniffing_metadata_only = _bool_field(
+        raw.get("local_proxy_sniffing_metadata_only"),
+        "three_x_ui_xray_setup.local_proxy_sniffing_metadata_only",
+    )
+    local_proxy_sniffing_route_only = _bool_field(
+        raw.get("local_proxy_sniffing_route_only"),
+        "three_x_ui_xray_setup.local_proxy_sniffing_route_only",
+    )
+    local_proxy_traffic_limit_bytes = _int_field(
+        raw.get("local_proxy_traffic_limit_bytes"),
+        "three_x_ui_xray_setup.local_proxy_traffic_limit_bytes",
+    )
+    local_proxy_expiry_time = _int_field(
+        raw.get("local_proxy_expiry_time"),
+        "three_x_ui_xray_setup.local_proxy_expiry_time",
+    )
     outbound_tags = {
         name: _tag_field(
             raw.get(name),
@@ -4970,6 +4998,12 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         local_proxy_port=local_proxy_port,
         local_proxy_udp=local_proxy_udp,
         local_proxy_sniffing_protocols=local_proxy_sniffing_protocols,
+        local_proxy_enabled=local_proxy_enabled,
+        local_proxy_sniffing_enabled=local_proxy_sniffing_enabled,
+        local_proxy_sniffing_metadata_only=local_proxy_sniffing_metadata_only,
+        local_proxy_sniffing_route_only=local_proxy_sniffing_route_only,
+        local_proxy_traffic_limit_bytes=local_proxy_traffic_limit_bytes,
+        local_proxy_expiry_time=local_proxy_expiry_time,
         remote_outbound_tag=outbound_tags["remote_outbound_tag"],
         tor_outbound_tag=outbound_tags["tor_outbound_tag"],
         i2p_outbound_tag=outbound_tags["i2p_outbound_tag"],

@@ -297,6 +297,22 @@ local_proxy_udp = true
 # lets the rules decide by name instead of by address, and a name that the
 # remote server can resolve is what makes the country rules work.
 local_proxy_sniffing_protocols = ["http", "tls", "quic"]
+# Whether the local proxy inbound is enabled in the panel. A local proxy
+# exists to be used, so it ships enabled.
+local_proxy_enabled = true
+# Whether the panel keeps the sniffed result and how it treats it: the
+# override list is applied to the connection, metadata only keeps the
+# result without touching the traffic, and route only uses it for the
+# routing decision alone. The shipped combination routes by the sniffed
+# name and changes nothing else in the stream.
+local_proxy_sniffing_enabled = true
+local_proxy_sniffing_metadata_only = false
+local_proxy_sniffing_route_only = false
+# Traffic limit in bytes and expiry time of the local proxy inbound, both
+# 0: a local proxy that stops working after a quota or a date is worse
+# than useless, so the panel is asked for neither limit.
+local_proxy_traffic_limit_bytes = 0
+local_proxy_expiry_time = 0
 # Stage 7: routing policy of that proxy. The tags name the objects the
 # policy owns: a rerun replaces its own outbounds and rules and leaves
 # every foreign one as it is.

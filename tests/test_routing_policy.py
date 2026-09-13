@@ -305,6 +305,12 @@ class TestLocalProxyInbound:
             listen_address="127.0.0.1",
             port=10800,
             udp_enabled=True,
+            enabled=True,
+            traffic_limit_bytes=0,
+            expiry_time=0,
+            sniffing_enabled=True,
+            sniffing_metadata_only=False,
+            sniffing_route_only=False,
             sniffing_protocols=("http", "tls", "quic"),
             fields=_FIELDS,
             values=_VALUES,
@@ -327,6 +333,44 @@ class TestLocalProxyInbound:
             "metadataOnly": False,
             "routeOnly": False,
         }
+
+
+def test_the_inbound_limits_come_from_the_call() -> None:
+    # The proof of the value: the traffic limit, the expiry time, the
+    # enabled flag and the two sniffing options are exactly what the
+    # caller passes, so the config decides whether the local proxy carries
+    # a quota, an expiry date or another sniffing behaviour.
+    payload = build_local_proxy_inbound(
+        tag="pyntara-local-proxy",
+        protocol="mixed",
+        remark="pyntara local proxy",
+        listen_address="127.0.0.1",
+        port=10800,
+        udp_enabled=False,
+        enabled=False,
+        traffic_limit_bytes=1073741824,
+        expiry_time=1893456000,
+        sniffing_enabled=False,
+        sniffing_metadata_only=True,
+        sniffing_route_only=True,
+        sniffing_protocols=("http",),
+        fields=_FIELDS,
+        values=_VALUES,
+    )
+    assert payload["enable"] is False
+    assert payload["total"] == 1073741824
+    assert payload["expiryTime"] == 1893456000
+    assert payload["settings"] == {
+        "auth": "noauth",
+        "udp": False,
+        "ip": "127.0.0.1",
+    }
+    assert payload["sniffing"] == {
+        "enabled": False,
+        "destOverride": ["http"],
+        "metadataOnly": True,
+        "routeOnly": True,
+    }
 
 
 class TestPolicyValues:
@@ -605,6 +649,12 @@ def test_the_panel_vocabulary_comes_from_the_config() -> None:
         listen_address="127.0.0.1",
         port=10800,
         udp_enabled=True,
+        enabled=True,
+        traffic_limit_bytes=0,
+        expiry_time=0,
+        sniffing_enabled=True,
+        sniffing_metadata_only=False,
+        sniffing_route_only=False,
         sniffing_protocols=("http", "tls"),
         fields=_FIELDS,
         values=_VALUES,

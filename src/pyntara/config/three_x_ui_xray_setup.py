@@ -195,6 +195,12 @@ class ThreeXuiXraySetupConfig:
     local_proxy_port: int
     local_proxy_udp: bool
     local_proxy_sniffing_protocols: tuple[str, ...]
+    local_proxy_enabled: bool
+    local_proxy_sniffing_enabled: bool
+    local_proxy_sniffing_metadata_only: bool
+    local_proxy_sniffing_route_only: bool
+    local_proxy_traffic_limit_bytes: int
+    local_proxy_expiry_time: int
     remote_outbound_tag: str
     tor_outbound_tag: str
     i2p_outbound_tag: str

@@ -9,6 +9,7 @@ value.
 from __future__ import annotations
 
 import os
+import shutil
 import string
 import time
 from dataclasses import replace
@@ -160,6 +161,27 @@ def test_commit_time_uses_the_configured_nanosecond_factor(
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     expected = int(commit_time * 1_000_000)
     assert abs(os.stat(committed).st_mtime_ns - expected) < 1_000_000
+
+
+def test_temp_name_length_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The proof of the value: the temporary name the ingest gives a copy
+    # carries the configured number of random bytes in hex, so a queue
+    # whose names must be shorter or longer says so in the config.
+    seen: list[str] = []
+    real_copy = shutil.copy2
+
+    def recording_copy(source: str | Path, target: str | Path) -> str:
+        seen.append(Path(str(target)).name)
+        return str(real_copy(source, target))
+
+    monkeypatch.setattr(metrics_commit.shutil, "copy2", recording_copy)
+    cfg = _spool_config(tmp_path, system_metrics_temp_name_random_bytes=4)
+    _spool_file(tmp_path, "entry.txt", "x")
+    ingest_spool(cfg)
+    assert seen
+    assert len(seen[0].removeprefix(".ingest-")) == 8
 
 
 def test_temp_prefix_entries_are_skipped(tmp_path: Path) -> None:

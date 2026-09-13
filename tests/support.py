@@ -501,6 +501,7 @@ def make_config(
     system_metrics_max_queue_file_size_bytes: int = 104857600,
     system_metrics_send_order: str = "oldest_first",
     system_metrics_spool_dir: Path = Path("/var/spool/system_metrics"),
+    system_metrics_temp_name_random_bytes: int = 8,
     system_metrics_unit_template_file_name: str = "system_metrics.service",
     system_metrics_collector_boot_delay_seconds: int = 30,
     system_metrics_collector_daily_send_times: tuple[str, ...] = (
@@ -819,6 +820,7 @@ def make_config(
             max_queue_file_size_bytes=system_metrics_max_queue_file_size_bytes,
             send_order=system_metrics_send_order,
             spool_dir=system_metrics_spool_dir,
+            temp_name_random_bytes=system_metrics_temp_name_random_bytes,
             unit_template_file_name=system_metrics_unit_template_file_name,
             collector=replace(
                 base.system_metrics_setup.collector,

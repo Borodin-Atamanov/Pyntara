@@ -106,6 +106,7 @@ def ingest_spool(cfg: Config) -> None:
             metrics.queue_file_mode,
             metrics.queue_file_suffix_length,
             metrics.queue_file_suffix_alphabet,
+            metrics.temp_name_random_bytes,
             metrics.queue_link_attempts,
             cfg.engine.nanoseconds_per_second,
             cfg.engine.error_priority,
@@ -142,16 +143,18 @@ def _publish_entry(
     file_mode: int,
     suffix_length: int,
     suffix_alphabet: str,
+    temp_name_random_bytes: int,
     link_attempts: int,
     nanoseconds_per_second: int,
     error_priority: int,
 ) -> None:
     """Publish one spool entry into the queue and remove it from the spool.
 
-    The entry is copied into the queue temp directory, given the queue
-    file mode and the modification time of the spool entry (the commit
-    time set by the commit command), published into main_outbox under
-    the original name plus a random suffix through a hard link and then
+    The entry is copied into the queue temp directory under a name whose
+    random part is drawn from the configured length, given the queue file
+    mode and the modification time of the spool entry (the commit time
+    set by the commit command), published into main_outbox under the
+    original name plus a random suffix through a hard link and then
     removed from the spool. A queue name collision tries another suffix.
     On any failure the spool entry is left in place so the next ingest
     run retries it; every successful ingest is journaled at the progress
@@ -159,7 +162,7 @@ def _publish_entry(
     """
 
     commit_time = entry.stat().st_mtime
-    temp_path = temp / f".ingest-{secrets.token_hex(8)}"
+    temp_path = temp / f".ingest-{secrets.token_hex(temp_name_random_bytes)}"
     try:
         shutil.copy2(entry, temp_path)
         os.chmod(temp_path, file_mode)

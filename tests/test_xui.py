@@ -380,6 +380,12 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "vless_link_query_keys": (
             make_config().three_x_ui_xray_setup.vless_link_query_keys
         ),
+        "local_proxy_enabled": True,
+        "local_proxy_sniffing_enabled": True,
+        "local_proxy_sniffing_metadata_only": False,
+        "local_proxy_sniffing_route_only": False,
+        "local_proxy_traffic_limit_bytes": 0,
+        "local_proxy_expiry_time": 0,
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]

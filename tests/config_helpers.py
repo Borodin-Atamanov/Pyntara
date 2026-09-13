@@ -546,6 +546,12 @@ def base_config() -> str:
         "local_proxy_port = 10800\n"
         "local_proxy_udp = true\n"
         'local_proxy_sniffing_protocols = ["http", "tls", "quic"]\n'
+        "local_proxy_enabled = true\n"
+        "local_proxy_sniffing_enabled = true\n"
+        "local_proxy_sniffing_metadata_only = false\n"
+        "local_proxy_sniffing_route_only = false\n"
+        "local_proxy_traffic_limit_bytes = 0\n"
+        "local_proxy_expiry_time = 0\n"
         'remote_outbound_tag = "pyntara-remote"\n'
         'tor_outbound_tag = "pyntara-tor"\n'
         'i2p_outbound_tag = "pyntara-i2p"\n'
@@ -971,7 +977,7 @@ def base_config() -> str:
         'service_journal_identifier = "system_metrics"\n'
         'commit_journal_identifier = "commit_system_metrics"\n'
         'main_outbox_dir = "main_outbox"\ntemp_dir = "temp"\n'
-        'spool_temp_prefix = ".commit-"\nqueue_link_attempts = 5\n'
+        'spool_temp_prefix = ".commit-"\ntemp_name_random_bytes = 8\nqueue_link_attempts = 5\n'
         'google_script_dir = "google_script"\nmain_sent_dir = "main_sent"\n'
         "google_script_timeout_seconds = 60\n"
         'google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]\n'
