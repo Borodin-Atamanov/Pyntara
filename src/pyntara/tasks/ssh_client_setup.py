@@ -81,7 +81,12 @@ def task(ctx: Context) -> TaskResult:
     The goal is reached when ssh_config pulls the drop-in directory in
     and the drop-in matches the configured directives through augeas;
     the task then returns changed=False. Otherwise it syncs the drop-in
-    and verifies the effective configuration with ssh -G.
+    and verifies the effective configuration with ssh -G. Every step that
+    could not be performed is reported in warnings and the task still
+    completes, so the remaining tasks of the run do their work
+    (architecture contract, Task contract). Only a missing augeas tool
+    stops the further steps of this task, because the drop-in cannot be
+    written without it.
     """
 
     cfg = ctx.config.ssh_client_setup
@@ -89,6 +94,8 @@ def task(ctx: Context) -> TaskResult:
     force = ctx.task_name in ctx.force_tasks
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
+    warnings: list[str] = []
+    changed = False
 
     include_ok = include_covers_dropin(
         cfg.ssh_config_path, cfg.ssh_config_dropin_path
@@ -98,12 +105,10 @@ def task(ctx: Context) -> TaskResult:
         f"{'found' if include_ok else 'missing'}"
     )
     if not include_ok:
-        return TaskResult(
-            success=False,
-            error=(
-                f"{cfg.ssh_config_path} has no Include directive covering "
-                f"{cfg.ssh_config_dropin_path.parent}"
-            ),
+        warnings.append(
+            f"{cfg.ssh_config_path} has no Include directive covering "
+            f"{cfg.ssh_config_dropin_path.parent}: the drop-in applies only "
+            "after the directive is added"
         )
 
     augtool_error = ensure_augtool(
@@ -115,7 +120,13 @@ def task(ctx: Context) -> TaskResult:
         skip_update=ctx.skip_apt_update,
     )
     if augtool_error is not None:
-        return TaskResult(success=False, error=augtool_error)
+        warnings.append(augtool_error)
+        return TaskResult(
+            success=True,
+            changed=False,
+            message="SSH client configuration not written",
+            warnings=tuple(warnings),
+        )
 
     directives = tuple(
         (directive.name, directive.value) for directive in cfg.directives
@@ -135,22 +146,36 @@ def task(ctx: Context) -> TaskResult:
             container=(cfg.augeas_container, cfg.augeas_container_value),
         )
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    if changed:
-        _log("drop-in synced through augeas")
+        warnings.append(f"drop-in not written: {exc}")
+    else:
+        if changed:
+            _log("drop-in synced through augeas")
 
     if (changed or force) and cfg.directives:
         verify = _verify_effective_config(cfg, cfg.directives, timeout)
         if verify is not None:
-            return TaskResult(success=False, changed=changed, error=verify)
-        _log("effective configuration verified through ssh -G")
+            warnings.append(verify)
+        else:
+            _log("effective configuration verified through ssh -G")
 
     if not changed and not force:
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        message = "already configured"
+        if warnings:
+            message = f"{message}; {'; '.join(warnings)}"
+        return TaskResult(
+            success=True,
+            changed=False,
+            message=message,
+            warnings=tuple(warnings),
+        )
 
+    message = "system-wide SSH client configuration synced"
+    if warnings:
+        message = f"{message}; {'; '.join(warnings)}"
     return TaskResult(
         success=True,
-        changed=True,
-        message="system-wide SSH client configuration synced",
+        changed=changed,
+        message=message,
+        warnings=tuple(warnings),
     )

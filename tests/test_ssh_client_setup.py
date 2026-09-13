@@ -296,18 +296,20 @@ def test_augtool_present_skips_install(
     assert not any(call[:2] == ["apt-get", "install"] for call in calls)
 
 
-def test_augtool_install_failure_is_an_error(
+def test_augtool_install_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The augeas package install fails after all retries: the task
-    # reports the failure instead of running augeas without the tool.
+    # The augeas package install fails after all retries: the task cannot
+    # write the drop-in without the tool, so it stops its own steps, still
+    # completes and names the failure in a warning.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
     _install_fake(monkeypatch, augeas_installed=False, install_fails=True)
     result = ssh_client_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install" in (result.error or "")
-    assert "augeas-tools" in (result.error or "")
+    assert result.success is True
+    assert result.changed is False
+    assert any("cannot install" in warning for warning in result.warnings)
+    assert any("augeas-tools" in warning for warning in result.warnings)
 
 
 def test_augtool_install_respects_apt_update_flag(
@@ -344,24 +346,28 @@ def test_empty_directives_removes_dropin(
     assert not cfg.ssh_config_dropin_path.exists()
 
 
-def test_missing_include_is_an_error(
+def test_missing_include_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # ssh_config without an Include covering the drop-in directory means
-    # the drop-in would be ignored: the task fails loudly.
+    # ssh_config without an Include covering the drop-in directory means the
+    # drop-in stays inert: the task says so in a warning, still writes the
+    # drop-in (the value is persistent, the live effect comes with the
+    # directive) and completes, so the remaining tasks are unaffected.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx, include=False)
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
-    assert result.success is False
-    assert "no Include directive" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "no Include directive" in warning for warning in result.warnings
+    )
 
 
 def test_verify_reports_drift(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # ssh -G misses a configured directive: the task reports the drift
-    # as an error instead of a silent success.
+    # ssh -G misses a configured directive: the task reports the drift as a
+    # warning of a completed task instead of a silent success.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
     ssh_g_output = "".join(
@@ -371,8 +377,11 @@ def test_verify_reports_drift(
     )
     _install_fake(monkeypatch, ssh_g_output=ssh_g_output)
     result = ssh_client_setup.task(ctx)
-    assert result.success is False
-    assert "ssh -G reports addressfamily as unset" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "ssh -G reports addressfamily as unset" in warning
+        for warning in result.warnings
+    )
 
 
 def test_probe_command_comes_from_the_config(
