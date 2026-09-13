@@ -219,6 +219,17 @@ daemon_reload_command = ["systemctl", "daemon-reload"]
 restart_resolved_command = ["systemctl", "restart", "systemd-resolved"]
 resolvectl_status_command = ["resolvectl", "status"]
 resolvectl_dns_command = ["resolvectl", "dns"]
+# Vocabulary of the resolvectl output the task parses: the marker that opens
+# the global block, the prefix of a per-link line, the labels of the DNS
+# server and routing domain lines, the line that proves the stub resolver
+# mode, and the routing domain that covers every name. A resolved release
+# that renames one of them is answered here.
+resolved_status_global_marker = "Global"
+resolved_status_link_prefix = "Link "
+resolved_status_dns_server_labels = ["Current DNS Server", "DNS Servers"]
+resolved_status_dns_domain_label = "DNS Domain"
+resolved_stub_mode_line = "resolv.conf mode: stub"
+resolved_wildcard_domain = "~."
 nmcli_dns_command = ["nmcli", "-t", "-f", "IP4.DNS,IP6.DNS", "device", "show"]
 verification_domain = "example.com"
 verification_command = ["resolvectl", "query", "--cache=no", "{domain}"]

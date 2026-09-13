@@ -862,6 +862,34 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     resolved_dropin_header = _nonempty_string_field(
         raw.get("resolved_dropin_header"), "dnsproxy_setup.resolved_dropin_header"
     )
+    resolved_status_global_marker = _nonempty_string_field(
+        raw.get("resolved_status_global_marker"),
+        "dnsproxy_setup.resolved_status_global_marker",
+    )
+    resolved_status_link_prefix = _nonempty_string_field(
+        raw.get("resolved_status_link_prefix"),
+        "dnsproxy_setup.resolved_status_link_prefix",
+    )
+    resolved_status_dns_server_labels = _string_list(
+        raw.get("resolved_status_dns_server_labels"),
+        "dnsproxy_setup.resolved_status_dns_server_labels",
+    )
+    if not resolved_status_dns_server_labels:
+        raise ConfigError(
+            "dnsproxy_setup.resolved_status_dns_server_labels must not be empty"
+        )
+    resolved_status_dns_domain_label = _nonempty_string_field(
+        raw.get("resolved_status_dns_domain_label"),
+        "dnsproxy_setup.resolved_status_dns_domain_label",
+    )
+    resolved_stub_mode_line = _nonempty_string_field(
+        raw.get("resolved_stub_mode_line"),
+        "dnsproxy_setup.resolved_stub_mode_line",
+    )
+    resolved_wildcard_domain = _nonempty_string_field(
+        raw.get("resolved_wildcard_domain"),
+        "dnsproxy_setup.resolved_wildcard_domain",
+    )
     resolved_section = _nonempty_string_field(
         raw.get("resolved_section"), "dnsproxy_setup.resolved_section"
     )
@@ -948,6 +976,12 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         resolved_dropin_file_mode=resolved_dropin_file_mode,
         staged_binary_file_mode=staged_binary_file_mode,
         resolved_dropin_header=resolved_dropin_header,
+        resolved_status_global_marker=resolved_status_global_marker,
+        resolved_status_link_prefix=resolved_status_link_prefix,
+        resolved_status_dns_server_labels=resolved_status_dns_server_labels,
+        resolved_status_dns_domain_label=resolved_status_dns_domain_label,
+        resolved_stub_mode_line=resolved_stub_mode_line,
+        resolved_wildcard_domain=resolved_wildcard_domain,
         resolved_section=resolved_section,
         resolved_dns_directives=resolved_dns_directives,
         resolved_domains_directive=resolved_domains_directive,

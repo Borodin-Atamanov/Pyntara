@@ -614,11 +614,48 @@ def test_per_link_dns_addresses_matches_whole_tokens_only() -> None:
         "2800:810:100::9\n"
         "Link 3 (wlx1):\n"
     )
-    addresses = task_module._per_link_dns_addresses(output)
+    addresses = task_module._per_link_dns_addresses(
+        output, make_config().dnsproxy_setup.resolved_status_link_prefix
+    )
     assert "2800:810:100:1:200:115:192:29" in addresses
     assert "2800:810:100::15" in addresses
     assert "2800:810:100::9" in addresses
     assert "810:100::15" not in addresses
+
+
+def test_the_resolvectl_vocabulary_comes_from_the_config() -> None:
+    # The marker of the global block, the prefix of a per-link line and the
+    # labels of the DNS server and routing domain lines belong to the output
+    # of the tool and are config values: another set of them parses another
+    # output, while the shipped one parses nothing of it.
+    setup = make_config().dnsproxy_setup
+    status_lines = [
+        "GLOBAL-BLOCK",
+        "  mode-marker",
+        "SERVERS: 127.0.0.1:53053",
+        "DOMAINS: ~.",
+        "PER-LINK 2 (eth0): 10.0.0.1",
+    ]
+    assert task_module._global_block_lines(
+        status_lines, "GLOBAL-BLOCK", "PER-LINK "
+    ) == ["  mode-marker", "SERVERS: 127.0.0.1:53053", "DOMAINS: ~."]
+    assert (
+        task_module._global_block_lines(
+            status_lines,
+            setup.resolved_status_global_marker,
+            setup.resolved_status_link_prefix,
+        )
+        == []
+    )
+    assert task_module._per_link_dns_addresses(
+        "\n".join(status_lines) + "\n", "PER-LINK "
+    ) == {"10.0.0.1"}
+    assert (
+        task_module._per_link_dns_addresses(
+            "\n".join(status_lines) + "\n", setup.resolved_status_link_prefix
+        )
+        == set()
+    )
 
 
 def test_task_fails_when_global_dns_missing_wildcard_routing_domain(

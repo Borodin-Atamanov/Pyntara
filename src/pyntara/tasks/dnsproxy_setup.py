@@ -550,12 +550,15 @@ def _restore_auto_dns(
             )
 
 
-def _global_block_lines(status_lines: list[str]) -> list[str]:
+def _global_block_lines(
+    status_lines: list[str], global_marker: str, link_prefix: str
+) -> list[str]:
     '''The lines of the Global block of resolvectl status output.
 
-    The block starts at the line Global and ends at the first empty line
-    or Link block, whichever comes first. A missing Global marker yields
-    an empty list.
+    The block starts at the line the config names as the global marker and
+    ends at the first empty line or per-link line, whichever comes first. A
+    missing marker yields an empty list. Both names belong to the output of
+    the tool and are config values.
     '''
 
     started = False
@@ -563,10 +566,10 @@ def _global_block_lines(status_lines: list[str]) -> list[str]:
     for line in status_lines:
         stripped = line.strip()
         if not started:
-            if stripped == "Global":
+            if stripped == global_marker:
                 started = True
             continue
-        if not stripped or stripped.startswith("Link "):
+        if not stripped or stripped.startswith(link_prefix):
             break
         block.append(line)
     return block
@@ -592,13 +595,19 @@ def _resolved_uses_dnsproxy(cfg: DnsproxySetupConfig, timeout: float) -> str | N
     )
     if result.returncode != 0:
         return f"cannot read resolvectl status: exited {result.returncode}"
-    global_text = "\n".join(_global_block_lines(result.stdout.splitlines()))
-    if "resolv.conf mode: stub" not in global_text:
+    global_text = "\n".join(
+        _global_block_lines(
+            result.stdout.splitlines(),
+            cfg.resolved_status_global_marker,
+            cfg.resolved_status_link_prefix,
+        )
+    )
+    if cfg.resolved_stub_mode_line not in global_text:
         return "systemd-resolved does not use the stub resolv.conf mode"
     dns_scope_lines = " ".join(
         line
         for line in global_text.splitlines()
-        if line.lstrip().startswith(("Current DNS Server", "DNS Servers"))
+        if line.lstrip().startswith(cfg.resolved_status_dns_server_labels)
     )
     loopback_v4 = f"127.0.0.1:{cfg.listen_port}"
     loopback_v6 = f"[::1]:{cfg.listen_port}"
@@ -610,25 +619,25 @@ def _resolved_uses_dnsproxy(cfg: DnsproxySetupConfig, timeout: float) -> str | N
     domain_lines = " ".join(
         line
         for line in global_text.splitlines()
-        if line.lstrip().startswith("DNS Domain")
+        if line.lstrip().startswith(cfg.resolved_status_dns_domain_label)
     )
-    if "~." not in domain_lines:
+    if cfg.resolved_wildcard_domain not in domain_lines:
         return "systemd-resolved global DNS has no ~. routing domain"
     return None
 
 
-def _per_link_dns_addresses(output: str) -> set[str]:
+def _per_link_dns_addresses(output: str, link_prefix: str) -> set[str]:
     '''Validated DNS addresses on the per-link scopes of resolvectl dns.
 
-    Only Link lines carry per-link servers; the Global and empty scopes
-    are skipped. Each token is validated as an IP address so a truncated
-    token such as 810:100::15 can never match as a substring of a longer
-    address such as 2800:810:100::15.
+    Only the lines the config marks as per-link carry servers; the Global
+    and empty scopes are skipped. Each token is validated as an IP address
+    so a truncated token such as 810:100::15 can never match as a substring
+    of a longer address such as 2800:810:100::15.
     '''
 
     addresses: set[str] = set()
     for line in output.splitlines():
-        if not line.lstrip().startswith("Link "):
+        if not line.lstrip().startswith(link_prefix):
             continue
         for token in line.split(":", 1)[-1].split():
             try:
@@ -694,7 +703,10 @@ def _verify_system(
             leftover = [
                 address
                 for address in (*discovered.ipv4, *discovered.ipv6)
-                if address in _per_link_dns_addresses(state.stdout)
+                if address
+                in _per_link_dns_addresses(
+                    state.stdout, cfg.resolved_status_link_prefix
+                )
             ]
             if leftover:
                 warnings.append(

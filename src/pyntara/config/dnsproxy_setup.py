@@ -25,6 +25,14 @@ class DnsproxySetupConfig:
     # are what the sweep writes to ignore and to restore it.
     # service_stop_command, service_enable_command, service_start_command
     # and service_restart_command carry {service_unit_name}.
+    # resolved_status_global_marker opens the global block of the resolvectl
+    # status output, resolved_status_link_prefix is the prefix of a per-link
+    # line that ends that block, resolved_status_dns_server_labels are the
+    # labels of the lines that carry the global DNS servers,
+    # resolved_status_dns_domain_label is the label of the routing domain
+    # lines, resolved_stub_mode_line is the line that proves the stub
+    # resolver mode and resolved_wildcard_domain is the routing domain that
+    # covers every name.
 
     github_repo: str
     asset_name_template: str
@@ -60,6 +68,12 @@ class DnsproxySetupConfig:
     resolved_dropin_file_mode: int
     staged_binary_file_mode: int
     resolved_dropin_header: str
+    resolved_status_global_marker: str
+    resolved_status_link_prefix: str
+    resolved_status_dns_server_labels: tuple[str, ...]
+    resolved_status_dns_domain_label: str
+    resolved_stub_mode_line: str
+    resolved_wildcard_domain: str
     resolved_section: str
     resolved_dns_directives: tuple[str, ...]
     resolved_domains_directive: str
