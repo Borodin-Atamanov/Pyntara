@@ -71,14 +71,14 @@ Stage 3 uses the Bearer token from `install-result.env` (`XUI_API_TOKEN`) for al
 
 ### Inbound payload
 
-The inbound is created with nested JSON objects for `settings`, `streamSettings` and `sniffing` (the preferred format). The payload structure:
+The payload document is the template named by `inbound_payload_template_file_name`, read from `task_data/three_x_ui_xray_setup/` of the clone: the document holds the field names and the protocol words of the panel API, so a panel version that renames a field or another protocol is answered in the template and not in the code. Every `$placeholder` of the template is replaced with a JSON value (the port stays a number, the server name list an array), the filled document is parsed once before it is sent, and a template that does not produce a JSON object fails there instead of reaching the panel. The shipped template holds:
 
 - `protocol`: `"vless"`
 - `port`: from `inbound_port` config
 - `remark`: from `inbound_remark` config
 - `settings`: `{"clients": [], "decryption": "none"}`
-- `streamSettings`: `{"network": "tcp", "security": "reality", "realitySettings": {"show": false, "xver": 0, "dest": "<reality_dest>", "serverNames": ["<reality_server_names>"], "privateKey": "<generated>", "shortIds": ["<reality_short_id>"]}}`
-- `sniffing`: `{"enabled": true, "destOverride": ["http", "tls"]}`
+- `streamSettings`: `{"network": "tcp", "security": "reality", "realitySettings": {"show": false, "xver": 0, "dest": "<reality_dest>", "serverNames": ["<reality_server_names>"], "privateKey": "<generated>", "shortIds": ["<reality_short_id>"], "settings": {"publicKey": "<generated>", "fingerprint": "<reality_fingerprint>"}}}`
+- `sniffing`: `{"enabled": true, "destOverride": ["<inbound_sniffing_protocols>"]}`
 - `enable`: `true`
 
 ### Idempotency
@@ -192,6 +192,7 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `upnp_protocol` (string, optional, default `"TCP"`): protocol of the forwarding mappings the task asks the router for; the client sends it as the protocol of the rule.  
 `panel_root_path`, `panel_login_path`, `panel_csrf_token_path`, `panel_inbounds_list_path`, `panel_inbounds_add_path`, `panel_inbounds_update_path`, `panel_inbounds_delete_path`, `panel_client_get_path`, `panel_client_add_path`, `panel_client_links_path`, `panel_x25519_cert_path`, `panel_setting_all_path`, `panel_setting_update_path`, `panel_xray_status_path`, `panel_xray_update_path`, `panel_xray_geodata_validate_path`, `panel_xray_route_test_path` (strings, required): paths of the panel REST API, relative to `panel_http_address`. The update, delete, client get and client links paths carry a `{placeholder}` for the value of one call, which the call site fills in. Every path is written as the panel serves it, so a panel version that renames an endpoint is answered in the config and not in the code, and a test that hands the client another path proves the client reads it.  
 `inbound_port` (integer, required): TCP port for the VLESS+REALITY inbound. Must be between 1 and 65535.  
+`inbound_payload_template_file_name` (string, optional, default `"vless_reality_inbound.json"`): name of the JSON template of the inbound payload under `task_data/three_x_ui_xray_setup/` of the clone. The template holds the field names and the protocol words of the panel API and carries `$placeholders` that the task fills with JSON values.  
 `route_test_port` (integer, optional, default `443`): the port the routing check knocks on for every destination class. A port nothing listens on is the point: the answer then reports the outbound the policy chose instead of a real connection.  
 `random_username_bytes`, `random_secret_bytes`, `random_sub_id_bytes` (integers, optional, defaults `4`, `8` and `6`): the length of the random part of every generated credential, which proquint encodes into the value: the panel username and the client email, the panel password, the web base path and the client id, and the subscription id.  
 `private_ipv4_networks` (array of strings, optional, default the RFC1918 set `["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]`): the networks that count as private when the task decides whether this machine sits behind NAT and can only serve the HTTP-01 challenge with a router forward. A machine behind carrier-grade NAT adds `100.64.0.0/10` here.

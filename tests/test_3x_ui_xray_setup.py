@@ -1201,7 +1201,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage3",
-            lambda _cfg, _timeout: TaskResult(
+            lambda _cfg, _template, _timeout: TaskResult(
                 success=True, changed=True, message="inbound share data updated"
             ),
         )

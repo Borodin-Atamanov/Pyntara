@@ -453,6 +453,7 @@ def base_config() -> str:
         "random_username_bytes = 4\n"
         "random_secret_bytes = 8\n"
         "random_sub_id_bytes = 6\n"
+        'inbound_payload_template_file_name = "vless_reality_inbound.json"\n'
         "panel_port = 35353\n"
         "ssl_enabled = true\n"
         'panel_http_address = "127.0.0.1"\n'

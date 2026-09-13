@@ -101,6 +101,7 @@ class ThreeXuiXraySetupConfig:
     start_check_attempts: int
     start_check_retry_delay_seconds: int
     install_result_env_path: Path
+    inbound_payload_template_file_name: str
     random_username_bytes: int
     random_secret_bytes: int
     random_sub_id_bytes: int

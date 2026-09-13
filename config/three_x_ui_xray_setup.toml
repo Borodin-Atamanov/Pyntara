@@ -86,6 +86,12 @@ start_check_retry_delay_seconds = 1
 # Path to the install-result.env file the panel writes on first start.
 # Stage 2 reads the generated credentials from this file.
 install_result_env_path = "/etc/x-ui/install-result.env"
+# Name of the JSON template of the VLESS+REALITY inbound payload, read from
+# task_data/three_x_ui_xray_setup/ of the clone. The template carries the
+# fields and the protocol words of the panel API, so a panel version that
+# renames a field is answered in the template; every $placeholder is filled
+# with a JSON value by the task.
+inbound_payload_template_file_name = "vless_reality_inbound.json"
 # Length in bytes of the random part of every generated panel credential,
 # which proquint encodes into the value: the username and the client email
 # take random_username_bytes, the password, the web base path and the

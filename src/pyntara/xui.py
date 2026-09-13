@@ -29,6 +29,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from string import Template
 
 from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.utils import run_command, substituted_command
@@ -490,6 +491,7 @@ def generate_reality_key(
 
 
 def build_vless_reality_payload(
+    payload_template: str,
     port: int,
     remark: str,
     dest: str,
@@ -502,45 +504,35 @@ def build_vless_reality_payload(
 ) -> dict[str, object]:
     """Build the JSON payload for creating a VLESS+REALITY inbound.
 
-    settings, streamSettings and sniffing are returned as nested JSON
-    objects (the preferred format for the panel API). The public key and
-    the fingerprint go into the nested realitySettings.settings block:
-    the panel writes pbk into share links only when it finds the public
-    key there, while the server itself needs only the private key. The
-    payload is ready to be serialised and sent to
-    /panel/api/inbounds/add.
+    The document itself is the configured template: it carries the field
+    names and the protocol words of the panel API, so a panel version that
+    renames a field or another protocol is answered there and not here.
+    Every $placeholder of the template is filled with a JSON value, the
+    filled document is parsed once and returned as the object the caller
+    serialises, so a template that does not produce valid JSON fails at
+    the parse instead of reaching the panel. The public key and the
+    fingerprint go into the nested realitySettings.settings block of the
+    template: the panel writes pbk into share links only when it finds the
+    public key there, while the server itself needs only the private key.
+    The payload is ready to be sent to /panel/api/inbounds/add.
     """
 
-    return {
-        "remark": remark,
-        "port": port,
-        "protocol": "vless",
-        "settings": {
-            "clients": [],
-            "decryption": "none",
-        },
-        "streamSettings": {
-            "network": "tcp",
-            "security": "reality",
-            "realitySettings": {
-                "show": False,
-                "xver": 0,
-                "dest": dest,
-                "serverNames": list(server_names),
-                "privateKey": private_key,
-                "shortIds": [short_id],
-                "settings": {
-                    "publicKey": public_key,
-                    "fingerprint": fingerprint,
-                },
-            },
-        },
-        "sniffing": {
-            "enabled": True,
-            "destOverride": list(sniffing_protocols),
-        },
-        "enable": True,
-    }
+    template = Template(payload_template)
+    rendered = template.substitute(
+        remark=json.dumps(remark),
+        port=json.dumps(port),
+        dest=json.dumps(dest),
+        server_names=json.dumps(list(server_names)),
+        private_key=json.dumps(private_key),
+        public_key=json.dumps(public_key),
+        short_ids=json.dumps([short_id]),
+        fingerprint=json.dumps(fingerprint),
+        sniffing_protocols=json.dumps(list(sniffing_protocols)),
+    )
+    payload = json.loads(rendered)
+    if not isinstance(payload, dict):
+        raise TypeError("the inbound payload template must hold a JSON object")
+    return payload
 
 
 def panel_settings(

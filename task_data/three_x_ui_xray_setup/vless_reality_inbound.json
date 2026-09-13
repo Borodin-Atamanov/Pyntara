@@ -1,0 +1,30 @@
+{
+  "remark": $remark,
+  "port": $port,
+  "protocol": "vless",
+  "settings": {
+    "clients": [],
+    "decryption": "none"
+  },
+  "streamSettings": {
+    "network": "tcp",
+    "security": "reality",
+    "realitySettings": {
+      "show": false,
+      "xver": 0,
+      "dest": $dest,
+      "serverNames": $server_names,
+      "privateKey": $private_key,
+      "shortIds": $short_ids,
+      "settings": {
+        "publicKey": $public_key,
+        "fingerprint": $fingerprint
+      }
+    }
+  },
+  "sniffing": {
+    "enabled": true,
+    "destOverride": $sniffing_protocols
+  },
+  "enable": true
+}

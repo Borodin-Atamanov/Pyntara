@@ -110,6 +110,7 @@ from pyntara.utils import (
     service_is_active,
     service_is_enabled,
     substituted_command,
+    task_data_dir,
     trim_whitespace,
     version_from_output,
     version_without_tag_prefix,
@@ -487,7 +488,9 @@ def _ensure_inbound_security(
     return True, ()
 
 
-def _stage3(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
+def _stage3(
+    cfg: ThreeXuiXraySetupConfig, payload_template: str, timeout: float
+) -> TaskResult | None:
     """Run stage 3: create the universal server inbound.
 
     Reads the panel credentials from install-result.env, searches for an
@@ -547,8 +550,11 @@ def _stage3(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
     private_key, public_key = keypair
     _log("stage 3: REALITY keypair generated")
 
-    # Build and send the inbound creation payload.
+    # Build and send the inbound creation payload from the configured
+    # template, so the fields and protocol words of the panel API live in
+    # task_data/ and not in this module.
     payload = xui_client.build_vless_reality_payload(
+        payload_template,
         port=cfg.inbound_port,
         remark=cfg.inbound_remark,
         dest=cfg.reality_dest,
@@ -1010,6 +1016,25 @@ def _server_share_address(
         _log("keeping the share address already stored in the panel")
         return trim_whitespace(stored)
     return None
+
+
+def _read_inbound_payload_template(
+    cfg: ThreeXuiXraySetupConfig, ctx: Context
+) -> str:
+    """The text of the configured inbound payload template.
+
+    The document lives in task_data/<task>/ of the clone the run started
+    from; it holds the field names and the protocol words of the panel
+    API, so a panel version that renames a field is answered in the
+    template. Reading it is the only step of the task that can fail before
+    the panel is touched, so the caller reports an unreadable template as
+    a warning of a completed task and never as a traceback.
+    """
+
+    return (
+        task_data_dir(ctx.repo_root, ctx.task_name)
+        / cfg.inbound_payload_template_file_name
+    ).read_text(encoding="utf-8")
 
 
 def _client_identity(
@@ -2721,17 +2746,24 @@ def task(ctx: Context) -> TaskResult:
                 part for part in (result.message, settings_result[1]) if part
             )
 
-    # Stage 3: create the universal server inbound.
-    stage3_result = _stage3(cfg, timeout)
+    # Stage 3: create the universal server inbound. The payload document
+    # comes from task_data/ of the clone, so an unreadable template is a
+    # warning and the remaining stages still run.
     stage3_warnings: tuple[str, ...] = ()
     stage3_changed = False
-    if stage3_result is not None:
-        stage3_warnings = stage3_result.warnings or ()
-        stage3_changed = stage3_result.changed
-        if stage3_result.message:
-            result.message = "; ".join(
-                part for part in (result.message, stage3_result.message) if part
-            )
+    try:
+        payload_template = _read_inbound_payload_template(cfg, ctx)
+    except OSError as exc:
+        stage3_warnings = (f"inbound payload template not read: {exc}",)
+    else:
+        stage3_result = _stage3(cfg, payload_template, timeout)
+        if stage3_result is not None:
+            stage3_warnings = stage3_result.warnings or ()
+            stage3_changed = stage3_result.changed
+            if stage3_result.message:
+                result.message = "; ".join(
+                    part for part in (result.message, stage3_result.message) if part
+                )
 
     # Stage 5: ensure the panel client and store the connection profile.
     connection_result = _stage_connection(cfg, ctx.config, timeout, facts)

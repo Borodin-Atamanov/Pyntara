@@ -4069,6 +4069,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("random_sub_id_bytes"),
         "three_x_ui_xray_setup.random_sub_id_bytes",
     )
+    inbound_payload_template_file_name = _nonempty_string_field(
+        raw.get("inbound_payload_template_file_name"),
+        "three_x_ui_xray_setup.inbound_payload_template_file_name",
+    )
     panel_port = _int_field(
         raw.get("panel_port"),
         "three_x_ui_xray_setup.panel_port",
@@ -4650,6 +4654,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         random_username_bytes=random_username_bytes,
         random_secret_bytes=random_secret_bytes,
         random_sub_id_bytes=random_sub_id_bytes,
+        inbound_payload_template_file_name=inbound_payload_template_file_name,
         panel_port=panel_port,
         ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,

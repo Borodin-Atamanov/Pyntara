@@ -18,6 +18,17 @@ from pyntara import xui as xui_client
 from pyntara.config import ThreeXuiXraySetupConfig
 
 
+def _payload_template() -> str:
+    """The shipped inbound payload template, read from this clone."""
+
+    return (
+        Path(__file__).resolve().parents[1]
+        / "task_data"
+        / "three_x_ui_xray_setup"
+        / "vless_reality_inbound.json"
+    ).read_text(encoding="utf-8")
+
+
 def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
     """A minimal ThreeXuiXraySetupConfig with overridable fields."""
 
@@ -136,6 +147,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "start_check_attempts": 10,
         "start_check_retry_delay_seconds": 1,
         "install_result_env_path": Path("/etc/x-ui/install-result.env"),
+        "inbound_payload_template_file_name": "vless_reality_inbound.json",
         "random_username_bytes": 4,
         "random_secret_bytes": 8,
         "random_sub_id_bytes": 6,
@@ -733,6 +745,7 @@ class TestBuildVlessRealityPayload:
         payload = cast(
             dict[str, Any],
             xui_client.build_vless_reality_payload(
+                _payload_template(),
                 port=443,
                 remark="universal",
                 dest="www.google.com:443",
@@ -766,6 +779,7 @@ class TestBuildVlessRealityPayload:
         payload = cast(
             dict[str, Any],
             xui_client.build_vless_reality_payload(
+                _payload_template(),
                 port=8443,
                 remark="custom",
                 dest="bing.com:443",
@@ -786,6 +800,48 @@ class TestBuildVlessRealityPayload:
         ]
         assert payload["streamSettings"]["realitySettings"]["privateKey"] == "customkey"
         assert payload["streamSettings"]["realitySettings"]["shortIds"] == ["abc12345"]
+
+    def test_the_document_comes_from_the_template(self) -> None:
+        # The payload document is a template like any other: another
+        # template with another protocol word and another field name is
+        # exactly what the caller receives, and every $placeholder is
+        # filled with a JSON value, so a number stays a number and a list
+        # stays a list.
+        payload = xui_client.build_vless_reality_payload(
+            '{"protocol": "vmess", "portNumber": $port, "names": $server_names}',
+            port=8443,
+            remark="unused",
+            dest="unused",
+            server_names=("a", "b"),
+            private_key="unused",
+            public_key="unused",
+            short_id="unused",
+            fingerprint="unused",
+            sniffing_protocols=("http",),
+        )
+        assert payload == {
+            "protocol": "vmess",
+            "portNumber": 8443,
+            "names": ["a", "b"],
+        }
+
+    def test_a_template_that_is_not_valid_json_raises(self) -> None:
+        # The filled document is parsed before it can reach the panel, so a
+        # broken template fails here and never as an API error on the
+        # target machine.
+        with pytest.raises(ValueError):
+            xui_client.build_vless_reality_payload(
+                '{"port": $port,}',
+                port=443,
+                remark="unused",
+                dest="unused",
+                server_names=(),
+                private_key="unused",
+                public_key="unused",
+                short_id="unused",
+                fingerprint="unused",
+                sniffing_protocols=(),
+            )
 
 
 class TestPanelSettings:
@@ -1656,6 +1712,7 @@ def test_the_panel_vocabulary_comes_from_the_config(
     payload = cast(
         dict[str, Any],
         xui_client.build_vless_reality_payload(
+            _payload_template(),
             port=443,
             remark="universal",
             dest="www.google.com:443",
