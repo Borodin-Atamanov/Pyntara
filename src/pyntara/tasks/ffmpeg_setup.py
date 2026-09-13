@@ -171,29 +171,18 @@ def task(ctx: Context) -> TaskResult:
         warnings.extend(install_warnings)
         if failures:
             failed_names = "; ".join(f"{name}: {reason}" for name, reason in failures)
-            detail = f"failed to install: {failed_names}"
-            if warnings:
-                detail = f"{detail}; {'; '.join(warnings)}"
-            return TaskResult(
-                success=False, changed=bool(installed_packages), error=detail
-            )
+            warnings.append(f"failed to install: {failed_names}")
     source_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     engine_changed, engine_error = _build_wayrecord(cfg, source_dir, install_timeout)
     if engine_error:
-        return TaskResult(
-            success=False,
-            changed=bool(installed_packages),
-            error=engine_error,
-        )
+        # The build needs the installed packages, so its failure is
+        # reported while the desktop entry is still deployed.
+        warnings.append(engine_error)
     desktop_changed, desktop_error = _deploy_desktop(
         ctx, source_dir / cfg.wayrecord_desktop_template_file_name
     )
     if desktop_error:
-        return TaskResult(
-            success=False,
-            changed=bool(installed_packages) or engine_changed,
-            error=desktop_error,
-        )
+        warnings.append(desktop_error)
     changed = bool(installed_packages) or engine_changed or desktop_changed
     messages: list[str] = []
     if installed_packages:
@@ -206,4 +195,9 @@ def task(ctx: Context) -> TaskResult:
         messages.append("already installed")
     if warnings:
         messages.append(f"warnings: {'; '.join(warnings)}")
-    return TaskResult(success=True, changed=changed, message="; ".join(messages))
+    return TaskResult(
+        success=True,
+        changed=changed,
+        message="; ".join(messages),
+        warnings=tuple(warnings),
+    )

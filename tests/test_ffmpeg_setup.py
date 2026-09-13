@@ -261,9 +261,11 @@ def test_skip_apt_update_skips_the_update(
     assert update_calls == []
 
 
-def test_install_failure_is_an_error(
+def test_install_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The package install fails: the reason is reported and the engine is
+    # still built from the sources of the repository.
     wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
         monkeypatch, tmp_path
     )
@@ -271,8 +273,8 @@ def test_install_failure_is_an_error(
     result = ffmpeg_setup.task(
         _ctx(wayrecord_bin_path, wayrecord_desktop_path)
     )
-    assert result.success is False
-    assert "failed to install" in (result.error or "")
+    assert result.success is True
+    assert any("failed to install" in warning for warning in result.warnings)
 
 
 def test_wayrecord_built_when_missing(
@@ -368,9 +370,11 @@ def test_wayrecord_rebuilt_when_different(
     assert wayrecord_bin_path.read_bytes() == WAYRECORD_BINARY
 
 
-def test_build_failure_is_an_error(
+def test_build_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The engine build fails: the reason is reported and the desktop entry
+    # is still deployed.
     wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
         monkeypatch, tmp_path
     )
@@ -380,8 +384,11 @@ def test_build_failure_is_an_error(
     result = ffmpeg_setup.task(
         _ctx(wayrecord_bin_path, wayrecord_desktop_path)
     )
-    assert result.success is False
-    assert "cannot build wayrecord" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "cannot build wayrecord" in warning for warning in result.warnings
+    )
+    assert wayrecord_desktop_path.is_file()
 
 
 def test_desktop_written_when_missing(
@@ -403,9 +410,11 @@ def test_desktop_written_when_missing(
     assert "desktop entry" in (result.message or "")
 
 
-def test_wayrecord_missing_template_is_error(
+def test_wayrecord_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The engine sources are missing: the build step is reported and the
+    # task completes, because the packages are the other half of its work.
     repo = tmp_path / "repo"
     template_dir = repo / "task_data" / "ffmpeg_setup"
     template_dir.mkdir(parents=True)
@@ -415,5 +424,7 @@ def test_wayrecord_missing_template_is_error(
     result = ffmpeg_setup.task(
         _ctx(wayrecord_bin_path, wayrecord_desktop_path, repo_root=repo)
     )
-    assert result.success is False
-    assert "missing wayrecord source" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "missing wayrecord source" in warning for warning in result.warnings
+    )
