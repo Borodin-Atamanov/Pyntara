@@ -121,54 +121,59 @@ def _write_user_file(
     file_mode: int,
     timeout: float,
     force: bool,
-) -> bool:
-    """Write one user-owned file as the target user; True when written.
+) -> tuple[bool, str | None]:
+    """Write one user-owned file as the target user; (changed, error).
 
     The parent directory is created as the target user, the content is
     written by the root process and then chowned and chmodded to the target
     user, so the file keeps the user ownership a desktop config file needs.
     A file that already holds the content is skipped. file_mode is the
-    configured mode, applied in its octal form.
+    configured mode, applied in its octal form. A step that fails is
+    reported with the path of the file and skips that file alone, so the
+    remaining files and the steps after them still run.
     """
 
     target = Path(cfg.home_dir) / rel_path
     if not force and target.is_file():
         try:
             if target.read_text(encoding="utf-8") == content:
-                return False
+                return False, None
         except OSError:
             pass
-    run_command(
-        _as_user_command(
-            cfg,
-            substituted_command(
-                cfg.mkdir_command, {"path": str(target.parent)}
+    try:
+        run_command(
+            _as_user_command(
+                cfg,
+                substituted_command(
+                    cfg.mkdir_command, {"path": str(target.parent)}
+                ),
             ),
-        ),
-        extra_env=_home_env(cfg),
-        timeout=timeout,
-    )
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    run_command(
-        substituted_command(
-            cfg.chown_command,
-            {
-                "owner": f"{cfg.username}:{cfg.username}",
-                "path": str(target),
-            },
-        ),
-        timeout=timeout,
-    )
-    run_command(
-        substituted_command(
-            cfg.chmod_command,
-            {"file_mode": f"{file_mode:o}", "path": str(target)},
-        ),
-        timeout=timeout,
-    )
+            extra_env=_home_env(cfg),
+            timeout=timeout,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        run_command(
+            substituted_command(
+                cfg.chown_command,
+                {
+                    "owner": f"{cfg.username}:{cfg.username}",
+                    "path": str(target),
+                },
+            ),
+            timeout=timeout,
+        )
+        run_command(
+            substituted_command(
+                cfg.chmod_command,
+                {"file_mode": f"{file_mode:o}", "path": str(target)},
+            ),
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"cannot write {target}: {exc}"
     _log(f"wrote {target}")
-    return True
+    return True, None
 
 
 def _kconfig_command(
@@ -243,32 +248,40 @@ def _sync_echo_shortcut(
     *,
     timeout: float,
     force: bool,
-) -> bool:
-    """Write the Meta+S consuming shortcut; True when written.
+) -> tuple[bool, str | None]:
+    """Write the Meta+S consuming shortcut; (changed, error).
 
     The empty .desktop action is registered under the KDE services
     component, so Plasma owns Meta+S and the S never reaches the focused
     field, while the Vocalinux app-level listener still sees the raw key
-    and toggles. The write applies at the next login.
+    and toggles. The write applies at the next login. A failure of either
+    the read or the write is reported with the component and the action
+    instead of stopping the task, because every other step is already
+    done.
     """
 
     group = (cfg.shortcut_group_name, cfg.shortcut_entry_name)
-    current = _kreadconfig(cfg, group, cfg.shortcut_action_name, timeout)
+    try:
+        current = _kreadconfig(cfg, group, cfg.shortcut_action_name, timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"cannot read the {cfg.shortcut_action_name} shortcut: {exc}"
     if not force and current == cfg.shortcut_key_sequence:
-        return False
-    _kwriteconfig(
-        cfg,
-        group,
-        cfg.shortcut_action_name,
-        cfg.shortcut_key_sequence,
-        timeout=timeout,
-    )
+        return False, None
+    try:
+        _kwriteconfig(
+            cfg,
+            group,
+            cfg.shortcut_action_name,
+            cfg.shortcut_key_sequence,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"cannot write the {cfg.shortcut_action_name} shortcut: {exc}"
     _log(
         f"set {cfg.shortcuts_file_name} {cfg.shortcut_action_name}: "
         f"{cfg.shortcut_key_sequence}"
     )
-    return True
-
+    return True, None
 
 def _autostart_content(template: str, appimage_path: Path) -> str:
     """The autostart desktop entry that launches the AppImage minimized.
@@ -596,7 +609,7 @@ def task(ctx: Context) -> TaskResult:
     autostart_path = Path(cfg.home_dir) / cfg.autostart_relative_path
 
     if app_config_template is not None:
-        config_changed = _write_user_file(
+        config_changed, config_error = _write_user_file(
             cfg,
             cfg.app_config_relative_path,
             app_config_template,
@@ -604,12 +617,14 @@ def task(ctx: Context) -> TaskResult:
             timeout=timeout,
             force=force,
         )
+        if config_error:
+            warnings.append(config_error)
         if config_changed:
             changed = True
             messages.append(f"wrote the app config to {app_config_path}")
 
     if autostart_template is not None and appimage_path.is_file():
-        autostart_changed = _write_user_file(
+        autostart_changed, autostart_error = _write_user_file(
             cfg,
             cfg.autostart_relative_path,
             _autostart_content(autostart_template, appimage_path),
@@ -617,12 +632,14 @@ def task(ctx: Context) -> TaskResult:
             timeout=timeout,
             force=force,
         )
+        if autostart_error:
+            warnings.append(autostart_error)
         if autostart_changed:
             changed = True
             messages.append(f"wrote the autostart entry to {autostart_path}")
 
     if echo_desktop_template is not None:
-        echo_changed = _write_user_file(
+        echo_changed, echo_error = _write_user_file(
             cfg,
             cfg.echo_desktop_relative_path,
             echo_desktop_template,
@@ -630,11 +647,17 @@ def task(ctx: Context) -> TaskResult:
             timeout=timeout,
             force=force,
         )
+        if echo_error:
+            warnings.append(echo_error)
         if echo_changed:
             changed = True
             messages.append("wrote the empty Meta+S action desktop file")
 
-    shortcut_changed = _sync_echo_shortcut(cfg, timeout=timeout, force=force)
+    shortcut_changed, shortcut_error = _sync_echo_shortcut(
+        cfg, timeout=timeout, force=force
+    )
+    if shortcut_error:
+        warnings.append(shortcut_error)
     if shortcut_changed:
         changed = True
         messages.append("registered the Meta+S consuming KDE shortcut")

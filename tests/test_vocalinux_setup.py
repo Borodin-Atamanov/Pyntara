@@ -362,6 +362,59 @@ def test_recoverable_steps_report_warnings(
     assert (tmp_path / ".config" / "vocalinux" / "config.json").is_file()
 
 
+def test_a_failed_user_file_write_is_a_warning_and_skips_that_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One file that cannot be written does not drop the rest."""
+
+    # The app config cannot be written because its ownership step fails: the
+    # task reports that file with its path and still writes the autostart
+    # entry, the empty-action file and the shortcut.
+    _write_templates(tmp_path, monkeypatch)
+    ctx = _ctx(tmp_path)
+    fakes = _install_fakes(monkeypatch)
+    working_run = task_module.run_command
+
+    def failing_run(command: list[str], **kwargs: Any) -> Any:
+        if command[0] == "chown" and command[-1].endswith("config.json"):
+            raise subprocess.CalledProcessError(1, command)
+        return working_run(command, **kwargs)
+
+    monkeypatch.setattr(task_module, "run_command", failing_run)
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert any("config.json" in warning for warning in result.warnings)
+    settings = _shipped()
+    assert _user_file(tmp_path, settings.autostart_relative_path).is_file()
+    assert _user_file(tmp_path, settings.echo_desktop_relative_path).is_file()
+    assert fakes.kwrites
+
+
+def test_a_failed_shortcut_write_is_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shortcut that cannot be registered is a warning of a done task."""
+
+    _write_templates(tmp_path, monkeypatch)
+    ctx = _ctx(tmp_path)
+    _install_fakes(monkeypatch)
+    working_run = task_module.run_command
+
+    def failing_run(command: list[str], **kwargs: Any) -> Any:
+        if "kwriteconfig6" in command:
+            raise subprocess.CalledProcessError(1, command)
+        return working_run(command, **kwargs)
+
+    monkeypatch.setattr(task_module, "run_command", failing_run)
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert any("_launch" in warning for warning in result.warnings)
+    settings = _shipped()
+    assert _user_file(tmp_path, settings.app_config_relative_path).is_file()
+
+
 def test_force_rewrites_matching_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

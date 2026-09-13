@@ -42,6 +42,10 @@ A rerun changes nothing when the pinned AppImage file is present, the packages a
 
 The install directory is the configured appimage_dir_relative_path under the desktop user home, next to the app data directory of the same version layout that the app itself uses, and the app config, the autostart entry and the empty action desktop file live under the same home at their configured relative paths. The fleet desktop machine has a single desktop user, configured as username and home_dir in the task config.
 
+## A step that cannot run
+
+Every step of the task is guarded on its own, so a step that cannot run is a warning of a completed task and the steps that do not depend on it still run. The task never raises and never returns a failed result: a missing template skips the file it renders, an AppImage that cannot be downloaded or replaced skips the autostart entry, a failed package install leaves the AppImage and the user files in place, a user file that cannot be written (its directory, its ownership or its mode) is reported with the path of that file and the other files and the shortcut are written anyway, and a shortcut that cannot be read or written is reported with the component and the action. The reasons travel in the warnings of the result, which the entry point counts and turns into a nonzero exit, so the operator sees an incomplete configuration instead of a silent one.
+
 ## Parameters
 
 All parameters live in the [vocalinux_setup] table of the config/ directory.
