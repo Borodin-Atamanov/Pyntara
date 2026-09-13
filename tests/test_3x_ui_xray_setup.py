@@ -825,11 +825,13 @@ class TestProquintCredentials:
     def test_the_panel_binary_name_comes_from_the_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The file name of the panel binary is a config value: another
-        # name in the section is the argv the version probe runs.
+        # The file name of the panel binary and the argv of the version
+        # probe are config values: another name and another flag in the
+        # section are the argv the task runs.
         configured = replace(
             _ctx(tmp_path).config.three_x_ui_xray_setup,
             binary_file_name="my-x-ui",
+            panel_version_command=("{binary}", "--version"),
         )
         probed: list[list[str]] = []
 
@@ -839,7 +841,35 @@ class TestProquintCredentials:
 
         monkeypatch.setattr(xui, "run_command", fake_run)
         assert xui._installed_version(configured, 30.0) == "3.7.0"
-        assert probed == [[str(configured.install_dir / "my-x-ui"), "-v"]]
+        assert probed == [
+            [str(configured.install_dir / "my-x-ui"), "--version"]
+        ]
+
+    def test_a_panel_command_template_is_filled_from_the_config(
+        self, tmp_path: Path
+    ) -> None:
+        # The flags of a panel call and the placeholders it carries are
+        # read from the config: every call fills the path of the binary
+        # as {binary} and its own values as their own placeholders.
+        configured = replace(
+            _ctx(tmp_path).config.three_x_ui_xray_setup,
+            panel_port_command=(
+                "{binary}",
+                "setting",
+                "--port",
+                "{port}",
+                "--quiet",
+            ),
+        )
+        assert xui._panel_command(
+            configured, configured.panel_port_command, port="1234"
+        ) == [
+            str(configured.install_dir / configured.binary_file_name),
+            "setting",
+            "--port",
+            "1234",
+            "--quiet",
+        ]
 
     def test_the_panel_process_name_comes_from_the_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -134,6 +134,22 @@ def _panel_binary(cfg: ThreeXuiXraySetupConfig) -> Path:
     return cfg.install_dir / cfg.binary_file_name
 
 
+def _panel_command(
+    cfg: ThreeXuiXraySetupConfig, template: tuple[str, ...], **values: str
+) -> list[str]:
+    """The argv of one panel CLI call, with its placeholders filled in.
+
+    The path of the binary enters every call as {binary} and the values
+    the call site knows travel as their own placeholders, so the verbs
+    and the flags of the tool live in the config table next to the binary
+    itself.
+    """
+
+    return substituted_command(
+        template, {**values, "binary": str(_panel_binary(cfg))}
+    )
+
+
 def _installed_version(
     cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> str | None:
@@ -147,10 +163,9 @@ def _installed_version(
     format may change.
     """
 
-    binary = _panel_binary(cfg)
     try:
         result = run_command(
-            [str(binary), "-v"],
+            _panel_command(cfg, cfg.panel_version_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -1100,7 +1115,7 @@ def _actual_panel_port(
 
     try:
         result = run_command(
-            [str(_panel_binary(cfg)), "setting", "-show", "true"],
+            _panel_command(cfg, cfg.panel_settings_query_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -1147,7 +1162,11 @@ def _converge_panel_port(
         ) from None
     try:
         run_command(
-            [str(_panel_binary(cfg)), "setting", "-port", str(cfg.panel_port)],
+            _panel_command(
+                cfg,
+                cfg.panel_port_command,
+                port=str(cfg.panel_port),
+            ),
             timeout=timeout,
         )
         run_command(
@@ -1327,16 +1346,13 @@ def _takeover_credentials(
     web_base_path = creds.get("XUI_WEB_BASE_PATH", "")
     try:
         run_command(
-            [
-                str(_panel_binary(cfg)),
-                "setting",
-                "-username",
-                username,
-                "-password",
-                password,
-                "-webBasePath",
-                web_base_path,
-            ],
+            _panel_command(
+                cfg,
+                cfg.panel_credentials_command,
+                username=username,
+                password=password,
+                web_base_path=web_base_path,
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1461,14 +1477,12 @@ def _issue_ip_certificate(
         return False, f"cannot secure certificate permissions: {exc}"
     try:
         run_command(
-            [
-                str(_panel_binary(cfg)),
-                "cert",
-                "-webCert",
-                str(cfg.cert_fullchain),
-                "-webCertKey",
-                str(cfg.cert_privkey),
-            ],
+            _panel_command(
+                cfg,
+                cfg.panel_certificate_command,
+                fullchain=str(cfg.cert_fullchain),
+                privkey=str(cfg.cert_privkey),
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1637,14 +1651,12 @@ def _ensure_self_signed_cert(
             return False, f"cannot secure certificate permissions: {exc}"
     try:
         run_command(
-            [
-                str(_panel_binary(cfg)),
-                "cert",
-                "-webCert",
-                str(cfg.self_signed_cert_fullchain),
-                "-webCertKey",
-                str(cfg.self_signed_cert_privkey),
-            ],
+            _panel_command(
+                cfg,
+                cfg.panel_certificate_command,
+                fullchain=str(cfg.self_signed_cert_fullchain),
+                privkey=str(cfg.self_signed_cert_privkey),
+            ),
             timeout=timeout,
         )
         run_command(

@@ -16,6 +16,15 @@ install_dir = "/usr/local/x-ui"
 # they have to free a port.
 binary_file_name = "x-ui"
 service_process_name = "x-ui"
+# Commands of the panel CLI. Every one carries the path of the binary as
+# {binary}; a value the call site knows (the port, the credentials, the
+# certificate paths) travels as its own placeholder, so the verbs and the
+# flags of the tool are config values like the binary itself.
+panel_version_command = ["{binary}", "-v"]
+panel_settings_query_command = ["{binary}", "setting", "-show", "true"]
+panel_port_command = ["{binary}", "setting", "-port", "{port}"]
+panel_credentials_command = ["{binary}", "setting", "-username", "{username}", "-password", "{password}", "-webBasePath", "{web_base_path}"]
+panel_certificate_command = ["{binary}", "cert", "-webCert", "{fullchain}", "-webCertKey", "{privkey}"]
 # Name of the systemd service unit the official installer creates.
 service_unit_name = "x-ui.service"
 # Timeout in seconds of one readiness probe: the curl call that checks

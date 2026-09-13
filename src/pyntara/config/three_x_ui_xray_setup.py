@@ -69,6 +69,11 @@ class ThreeXuiXraySetupConfig:
     install_dir: Path
     binary_file_name: str
     service_process_name: str
+    panel_version_command: tuple[str, ...]
+    panel_settings_query_command: tuple[str, ...]
+    panel_port_command: tuple[str, ...]
+    panel_credentials_command: tuple[str, ...]
+    panel_certificate_command: tuple[str, ...]
     service_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: int

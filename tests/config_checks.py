@@ -4338,6 +4338,31 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             raw.get("service_process_name"),
             "three_x_ui_xray_setup.service_process_name",
         ),
+        panel_version_command=_placeholder_command_field(
+            raw.get("panel_version_command"),
+            "three_x_ui_xray_setup.panel_version_command",
+            ("{binary}",),
+        ),
+        panel_settings_query_command=_placeholder_command_field(
+            raw.get("panel_settings_query_command"),
+            "three_x_ui_xray_setup.panel_settings_query_command",
+            ("{binary}",),
+        ),
+        panel_port_command=_placeholder_command_field(
+            raw.get("panel_port_command"),
+            "three_x_ui_xray_setup.panel_port_command",
+            ("{binary}", "{port}"),
+        ),
+        panel_credentials_command=_placeholder_command_field(
+            raw.get("panel_credentials_command"),
+            "three_x_ui_xray_setup.panel_credentials_command",
+            ("{binary}", "{username}", "{password}", "{web_base_path}"),
+        ),
+        panel_certificate_command=_placeholder_command_field(
+            raw.get("panel_certificate_command"),
+            "three_x_ui_xray_setup.panel_certificate_command",
+            ("{binary}", "{fullchain}", "{privkey}"),
+        ),
         service_unit_name=service_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,

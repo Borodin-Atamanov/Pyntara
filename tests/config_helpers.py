@@ -395,6 +395,11 @@ def base_config() -> str:
         'install_dir = "/usr/local/x-ui"\n'
         'binary_file_name = "x-ui"\n'
         'service_process_name = "x-ui"\n'
+        'panel_version_command = ["{binary}", "-v"]\n'
+        'panel_settings_query_command = ["{binary}", "setting", "-show", "true"]\n'
+        'panel_port_command = ["{binary}", "setting", "-port", "{port}"]\n'
+        'panel_credentials_command = ["{binary}", "setting", "-username", "{username}", "-password", "{password}", "-webBasePath", "{web_base_path}"]\n'
+        'panel_certificate_command = ["{binary}", "cert", "-webCert", "{fullchain}", "-webCertKey", "{privkey}"]\n'
         'service_unit_name = "x-ui.service"\n'
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"
