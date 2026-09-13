@@ -54,6 +54,10 @@ class ChromeSetupConfig:
     appletsrc_file_name: str
     appletsrc_relative_path: str
     appletsrc_launchers_key: str
+    kreadconfig_command: tuple[str, ...]
+    kwriteconfig_command: tuple[str, ...]
+    config_group_flag: tuple[str, ...]
+    config_key_flag: tuple[str, ...]
     taskbar_plugin_names: tuple[str, ...]
     panel_launcher_id: str
     panel_restart_command: tuple[str, ...]

@@ -335,6 +335,26 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             raw.get("appletsrc_launchers_key"),
             "chrome_setup.appletsrc_launchers_key",
         ),
+        kreadconfig_command=_placeholder_command_field(
+            raw.get("kreadconfig_command"),
+            "chrome_setup.kreadconfig_command",
+            ("{file_name}",),
+        ),
+        kwriteconfig_command=_placeholder_command_field(
+            raw.get("kwriteconfig_command"),
+            "chrome_setup.kwriteconfig_command",
+            ("{file_name}",),
+        ),
+        config_group_flag=_placeholder_command_field(
+            raw.get("config_group_flag"),
+            "chrome_setup.config_group_flag",
+            ("{group}",),
+        ),
+        config_key_flag=_placeholder_command_field(
+            raw.get("config_key_flag"),
+            "chrome_setup.config_key_flag",
+            ("{key}",),
+        ),
         taskbar_plugin_names=_string_list(
             raw.get("taskbar_plugin_names"),
             "chrome_setup.taskbar_plugin_names",

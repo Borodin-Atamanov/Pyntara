@@ -642,6 +642,31 @@ def _home_env(cfg: ChromeSetupConfig) -> dict[str, str]:
     return {"HOME": cfg.home_dir}
 
 
+def _kconfig_command(
+    cfg: ChromeSetupConfig,
+    base_command: tuple[str, ...],
+    group_segments: tuple[str, ...],
+    key: str,
+) -> list[str]:
+    """One KConfig call: the configured base, the groups and the key.
+
+    The base call carries the file name and every selector is a config
+    value, so another KConfig version or another tool is a config change
+    (docs/spec/config-content.md, Exceptions). The reader and the writer
+    share this builder, so the two calls can never drift apart.
+    """
+
+    command = substituted_command(
+        base_command, {"file_name": cfg.appletsrc_file_name}
+    )
+    for segment in group_segments:
+        command.extend(
+            substituted_command(cfg.config_group_flag, {"group": segment})
+        )
+    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    return command
+
+
 def _kreadconfig(
     cfg: ChromeSetupConfig,
     group_segments: tuple[str, ...],
@@ -651,10 +676,7 @@ def _kreadconfig(
 ) -> str:
     """Current value of one appletsrc key of the desktop user."""
 
-    command = ["kreadconfig6", "--file", cfg.appletsrc_file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key])
+    command = _kconfig_command(cfg, cfg.kreadconfig_command, group_segments, key)
     result = run_command(
         _as_user_command(cfg, command),
         extra_env=_home_env(cfg),
@@ -673,12 +695,10 @@ def _kwriteconfig(
     *,
     timeout: float,
 ) -> None:
-    """Write one appletsrc key with kwriteconfig6 as the desktop user."""
+    """Write one appletsrc key with the configured writer as the desktop user."""
 
-    command = ["kwriteconfig6", "--file", cfg.appletsrc_file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key, value])
+    command = _kconfig_command(cfg, cfg.kwriteconfig_command, group_segments, key)
+    command.append(value)
     run_command(
         _as_user_command(cfg, command),
         extra_env=_home_env(cfg),

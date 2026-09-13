@@ -189,12 +189,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["ip", "-o", family, "route", "show", "proto", "kernel"],',
         }
     ),
-    "src/pyntara/tasks/chrome_setup.py": frozenset(
-        {
-            'command = ["kreadconfig6", "--file", cfg.appletsrc_file_name]',
-            'command = ["kwriteconfig6", "--file", cfg.appletsrc_file_name]',
-        }
-    ),
     "src/pyntara/tasks/kde_keyboard_setup.py": frozenset(
         {
             '_as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),',

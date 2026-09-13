@@ -47,6 +47,14 @@ taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"
 # The appletsrc key that carries the pinned launchers of a task manager
 # applet.
 appletsrc_launchers_key = "launchers"
+# Vocabulary of the KConfig tools the task reads and writes the appletsrc
+# with: the two calls carry the file as {file_name}, a group is selected
+# with group_flag, a key with key_flag, and the value of a write is a
+# positional argument the code appends.
+kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]
+kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]
+config_group_flag = ["--group", "{group}"]
+config_key_flag = ["--key", "{key}"]
 # Launcher id pinned to the panel; it resolves to the CDP desktop
 # override in the XDG applications directories.
 panel_launcher_id = "applications:google-chrome.desktop"

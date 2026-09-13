@@ -865,3 +865,28 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     assert chrome_setup._as_user_command(
         cfg, ["kwriteconfig6", "--file", "plasmashellrc"]
     ) == ["sudo", "-u", cfg.username, "kwriteconfig6", "--file", "plasmashellrc"]
+
+
+def test_kconfig_calls_come_from_the_config() -> None:
+    # The reader, the file selector, the group selector and the key
+    # selector of the KConfig access are config values: another set of
+    # commands is what the task builds.
+    cfg = replace(
+        make_config().chrome_setup,
+        kreadconfig_command=("my-reader", "--config", "{file_name}"),
+        config_group_flag=("--section", "{group}"),
+        config_key_flag=("--entry", "{key}"),
+    )
+    assert chrome_setup._kconfig_command(
+        cfg, cfg.kreadconfig_command, ("Containments", "1"), "launchers"
+    ) == [
+        "my-reader",
+        "--config",
+        cfg.appletsrc_file_name,
+        "--section",
+        "Containments",
+        "--section",
+        "1",
+        "--entry",
+        "launchers",
+    ]

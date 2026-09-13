@@ -723,6 +723,10 @@ def base_config() -> str:
         "cdp_port = 19222\n"
         'cdp_address = "127.0.0.1"\nfile_mode = "0644"\n'
         'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
+        'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
+        'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
+        'config_group_flag = ["--group", "{group}"]\n'
+        'config_key_flag = ["--key", "{key}"]\n'
         "[playwright_setup]\n"
         'username = "i"\n'
         'home_dir = "/home/i"\n'
