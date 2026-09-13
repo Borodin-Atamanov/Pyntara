@@ -49,6 +49,10 @@ class SystemMetricsCollectorConfig:
     system_modules are the console commands whose full output forms the
     report, the readiness percentage counting only the network modules
     (docs/spec/system-metrics.md, section Report collector).
+    report_keys are the field names of the report document by the meaning
+    of each field and report_status_words are the words the status of a
+    module result carries, so the shape of the document lives here and
+    the collector only fills it.
     """
 
     boot_delay_seconds: int
@@ -65,6 +69,8 @@ class SystemMetricsCollectorConfig:
     lock_file_path: Path
     report_file_name: str
     report_file_mode: int
+    report_keys: dict[str, str]
+    report_status_words: dict[str, str]
     network_modules: tuple[CollectorModuleConfig, ...]
     system_modules: tuple[CollectorModuleConfig, ...]
 
@@ -79,6 +85,8 @@ class SystemMetricsCollectorConfig:
 COLLECTOR_TABLE_KEYS = (
     "lock_file_path",
     "report_file_name",
+    "report_keys",
+    "report_status_words",
     "command_timeout_seconds",
     "network_modules",
     "system_modules",

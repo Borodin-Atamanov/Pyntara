@@ -278,6 +278,22 @@ VLESS_LINK_QUERY_KEY_MEANINGS = (
     "network",
 )
 
+REPORT_KEY_MEANINGS = (
+    "generated_at",
+    "ready_percent",
+    "network",
+    "system",
+    "name",
+    "status",
+    "output",
+)
+
+REPORT_STATUS_WORD_MEANINGS = (
+    "ok",
+    "empty",
+    "error",
+)
+
 
 def _xray_field_keys(raw: object) -> dict[str, str]:
     """Validate the field name map of the Xray document."""
@@ -1132,6 +1148,9 @@ def _engine_table(raw: object) -> EngineConfig:
         raw.get("curl_parallel_source_marker"),
         "engine.curl_parallel_source_marker",
     )
+    datetime_format = _nonempty_string_field(
+        raw.get("datetime_format"), "engine.datetime_format"
+    )
     os_release_family_keys = _string_list(
         raw.get("os_release_family_keys"), "engine.os_release_family_keys"
     )
@@ -1230,6 +1249,7 @@ def _engine_table(raw: object) -> EngineConfig:
             curl_parallel_write_out, curl_parallel_source_marker
         ),
         report_json_indent=report_json_indent,
+        datetime_format=datetime_format,
         ssh_report_command_format=ssh_report_command_format,
         ssh_report_proxy_option_format=ssh_report_proxy_option_format,
         ssh_report_socks_command_format=ssh_report_socks_command_format,
@@ -3692,6 +3712,16 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
         report_file_mode=_octal_mode_field(
             raw.get("report_file_mode"),
             "system_metrics_setup.collector.report_file_mode",
+        ),
+        report_keys=_complete_string_map(
+            raw.get("report_keys"),
+            "system_metrics_setup.collector.report_keys",
+            REPORT_KEY_MEANINGS,
+        ),
+        report_status_words=_complete_string_map(
+            raw.get("report_status_words"),
+            "system_metrics_setup.collector.report_status_words",
+            REPORT_STATUS_WORD_MEANINGS,
         ),
         network_modules=_collector_modules_field(
             raw.get("network_modules"),

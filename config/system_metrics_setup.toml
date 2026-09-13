@@ -241,6 +241,15 @@ report_file_name = "network-{hostname}.json"
 # File mode of the report file the collector writes into the system temp
 # directory, octal string.
 report_file_mode = "0600"
+# Field names of the report document, by the meaning of each field: the
+# moment of the collection, the readiness share, the two module sections
+# and, inside a module result, its name, its status and the output of its
+# command. The reader of the report sees the shape here.
+report_keys = { generated_at = "generated_at", ready_percent = "ready_percent", network = "network", system = "system", name = "name", status = "status", output = "output" }
+# Words the status of a module result carries: the module answered, it
+# answered with nothing, or its command failed. The readiness counts the
+# first word.
+report_status_words = { ok = "ok", empty = "empty", error = "error" }
 
 # Network modules: console commands whose full output forms the network
 # section of the report. ready_percent counts only these modules, so the

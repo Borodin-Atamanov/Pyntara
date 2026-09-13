@@ -196,6 +196,7 @@ def make_config(
     ),
     engine_release_asset_architectures: dict[str, str] | None = None,
     journal_identifier: str = "pyntara-engine",
+    engine_datetime_format: str = "%Y-%m-%d-%H-%M-%S",
     root_owner_uid: int = 0,
     root_owner_gid: int = 0,
     percent_scale: int = 100,
@@ -536,6 +537,8 @@ def make_config(
         "/run/pyntara/system_metrics_collector.lock"
     ),
     system_metrics_collector_report_file_name: str = "network-{hostname}.json",
+    system_metrics_collector_report_keys: dict[str, str] | None = None,
+    system_metrics_collector_report_status_words: dict[str, str] | None = None,
     system_metrics_collector_network_modules: tuple[CollectorModuleConfig, ...] = (),
     system_metrics_collector_system_modules: tuple[CollectorModuleConfig, ...] = (),
     local_vault_source_production: Path = Path("secrets/production.vault"),
@@ -595,6 +598,7 @@ def make_config(
             session_environment_keys=engine_session_environment_keys,
             session_bus_key=engine_session_bus_key,
             session_display_keys=engine_session_display_keys,
+            datetime_format=engine_datetime_format,
         ),
         cli_tools=replace(
             base.cli_tools,
@@ -844,6 +848,16 @@ def make_config(
                 journal_identifier=system_metrics_collector_journal_identifier,
                 lock_file_path=system_metrics_collector_lock_file_path,
                 report_file_name=system_metrics_collector_report_file_name,
+                report_keys=(
+                    system_metrics_collector_report_keys
+                    if system_metrics_collector_report_keys is not None
+                    else base.system_metrics_setup.collector.report_keys
+                ),
+                report_status_words=(
+                    system_metrics_collector_report_status_words
+                    if system_metrics_collector_report_status_words is not None
+                    else base.system_metrics_setup.collector.report_status_words
+                ),
                 network_modules=system_metrics_collector_network_modules,
                 system_modules=system_metrics_collector_system_modules,
             ),

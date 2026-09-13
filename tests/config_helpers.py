@@ -41,6 +41,7 @@ def base_config() -> str:
         'curl_parallel_write_out = "\\n@@pyntara-source@@ %{url_effective}\\n"\n'
         'curl_parallel_source_marker = "@@pyntara-source@@"\n'
         "report_json_indent = 2\n"
+        'datetime_format = "%Y-%m-%d-%H-%M-%S"\n'
         'ssh_report_command_format = "ssh -v -p {port}{proxy_option} {address}"\n'
         'ssh_report_proxy_option_format = \' -o ProxyCommand="{proxy_command}"\'\n'
         'ssh_report_socks_command_format = "nc -X 5 -x {proxy} %h %p"\n'
@@ -1003,6 +1004,10 @@ def base_config() -> str:
         'lock_file_path = "/run/pyntara/system_metrics_collector.lock"\n'
         'report_file_name = "network.json"\n'
         'report_file_mode = "0600"\n'
+        'report_keys = { generated_at = "generated_at", ready_percent = '
+        '"ready_percent", network = "network", system = "system", name = "name", '
+        'status = "status", output = "output" }\n'
+        'report_status_words = { ok = "ok", empty = "empty", error = "error" }\n'
         '[[system_metrics_setup.collector.network_modules]]\n'
         'name = "ipv4"\n'
         'command = ["ip", "-4", "addr", "show", "scope", "global"]\n'

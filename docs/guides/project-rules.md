@@ -24,7 +24,7 @@ After the task finishes the engine prints a completion line with a brief, inform
 
 Every task reports its progress to stdout so the user sees what is being done.
 
-Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the project datetime format YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has passed since the previous progress line. Prefix and timestamp are plain text without brackets: `2026-08-05-02-42-37 swapfile_service_install: message`.  
+Each progress line starts with a task name prefix taken from `__name__`, where the name equals the task name from the catalog (task-model contract) and never diverges from it. A timestamp in the format the `datetime_format` key of the `[engine]` table names is prepended only when more than one second has passed since the previous progress line, so a burst of lines stays compact; a logger nobody configured writes no timestamp. Prefix and timestamp are plain text without brackets.
 Each action is printed as one line in the form "what is being done: result". If an action is expected to take more than one second, a line announcing it is printed before the action starts. If an action has a non-obvious result, a second line with the result is printed after the action. The command output itself is also shown to the user.  
 A calculation is printed as one line: the input values with the parameters substituted, then the result after the equals sign.  
 A state check is printed as one line with the check result.  

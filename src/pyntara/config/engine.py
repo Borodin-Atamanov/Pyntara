@@ -28,7 +28,10 @@ class EngineConfig:
     {timeout_seconds} and {write_out} filled by the shared helper, and
     curl_parallel_source_marker is the token curl_parallel_write_out prints
     before the effective URL of each transfer, by which the merged output
-    is split back into one answer per service. report_json_indent is the
+    is split back into one answer per service. datetime_format is the
+    format of the moment the run writes down, shared by the prefix of a
+    progress line and by the generated_at field of a collected report.
+    report_json_indent is the
     indentation of every JSON document an address command prints;
     ssh_report_command_format is the ssh command a report record carries,
     with {port}, {address} and {proxy_option} filled by the shared
@@ -85,6 +88,7 @@ class EngineConfig:
     curl_parallel_write_out: str
     curl_parallel_source_marker: str
     report_json_indent: int
+    datetime_format: str
     ssh_report_command_format: str
     ssh_report_proxy_option_format: str
     ssh_report_socks_command_format: str

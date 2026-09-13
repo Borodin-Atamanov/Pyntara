@@ -52,6 +52,17 @@ def configure_journal(engine: EngineConfig | None) -> None:
     _journal_engine = engine
 
 
+def _timestamp_format() -> str:
+    """The datetime format of the [engine] table, or an empty string.
+
+    The logger writes before the config is loaded too, so a logger nobody
+    configured has no format to write a moment with; the progress line then
+    carries no timestamp, which is the shape a test run wants.
+    """
+
+    return "" if _journal_engine is None else _journal_engine.datetime_format
+
+
 def _close_shared_journal() -> None:
     """Close the reused journal process, if one is running."""
 
@@ -235,12 +246,13 @@ def log_progress(message: str, *, priority: int | None = None) -> None:
 
     The task name in the prefix comes from the calling module: one task
     module per catalog task (task-model contract), so the name can never
-    diverge from the catalog. A timestamp in the project datetime format
-    YYYY-MM-DD-HH-MM-SS is prepended only when more than one second has
-    passed since the previous progress line, so bursts of lines stay
-    compact. The journal receives the message without the timestamp at
-    the given syslog priority, informational by default; tasks pass the
-    configured engine progress and error priorities instead.
+    diverge from the catalog. A timestamp in the configured datetime
+    format of the [engine] table is prepended only when more than one
+    second has passed since the previous progress line, so bursts of lines
+    stay compact; a logger nobody configured writes no timestamp. The
+    journal receives the message without the timestamp at the given syslog
+    priority, informational by default; tasks pass the configured engine
+    progress and error priorities instead.
     """
 
     frame = inspect.currentframe()
@@ -250,8 +262,9 @@ def log_progress(message: str, *, priority: int | None = None) -> None:
     task_name = str(caller.f_globals["__name__"]).rsplit(".", 1)[-1]
     global _last_log_time
     now = time.monotonic()
-    if now - _last_log_time >= 1.0:
-        timestamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S")
+    timestamp_format = _timestamp_format()
+    if timestamp_format and now - _last_log_time >= 1.0:
+        timestamp = datetime.now().astimezone().strftime(timestamp_format)
         prefix = f"{timestamp} {task_name}:"
         _last_log_time = now
     else:

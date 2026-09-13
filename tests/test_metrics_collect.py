@@ -35,6 +35,10 @@ IPV6_LINK = CollectorModuleConfig(
     name="ipv6_link", command=("ip", "-6", "addr", "show", "scope", "link")
 )
 HOSTNAME = CollectorModuleConfig(name="hostname", command=("hostname",))
+# The vocabulary of the report document, as the fixture config carries it:
+# the tests never spell a field name themselves.
+REPORT_KEYS = make_config().system_metrics_setup.collector.report_keys
+REPORT_WORDS = make_config().system_metrics_setup.collector.report_status_words
 
 
 def _config(tmp_path: Path, **kwargs: Any):
@@ -133,7 +137,7 @@ def test_run_module_keeps_a_json_document_structured(
     ]
     _fake_run(monkeypatch, {("addresses",): _FakeProc(0, json.dumps(records))})
     module = CollectorModuleConfig(name="addresses", command=("addresses",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "ok",
         "output": records,
     }
@@ -146,7 +150,7 @@ def test_run_module_keeps_a_bare_scalar_as_text(
     # JSON number would lose that it is an identifier.
     _fake_run(monkeypatch, {("id",): _FakeProc(0, "123456789")})
     module = CollectorModuleConfig(name="id", command=("id",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "ok",
         "output": "123456789",
     }
@@ -166,7 +170,10 @@ def test_ready_percent_counts_sources_not_records() -> None:
         {"status": "empty", "output": ""},
     ]
     assert metrics_collect.percent_ready(
-        entries, make_config().engine.percent_scale
+        entries,
+        make_config().engine.percent_scale,
+        REPORT_KEYS["status"],
+        REPORT_WORDS["ok"],
     ) == 50
 
 
@@ -184,17 +191,17 @@ def test_run_module_classifies_ok_empty_error(
         },
     )
     ok_module = CollectorModuleConfig(name="ok", command=("ok",))
-    assert metrics_collect._run_module(ok_module, 15) == {
+    assert metrics_collect._run_module(ok_module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "ok",
         "output": "address 10.0.0.1",
     }
     empty_module = CollectorModuleConfig(name="empty", command=("empty",))
-    assert metrics_collect._run_module(empty_module, 15) == {
+    assert metrics_collect._run_module(empty_module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "empty",
         "output": "",
     }
     bad_module = CollectorModuleConfig(name="bad", command=("bad",))
-    assert metrics_collect._run_module(bad_module, 15) == {
+    assert metrics_collect._run_module(bad_module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "error",
         "output": "stdout\nstderr",
     }
@@ -211,7 +218,7 @@ def test_run_module_reports_missing_command(
         raise_file_not_found=("nope",),
     )
     module = CollectorModuleConfig(name="nope", command=("nope",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "error",
         "output": "command not found: nope",
     }
@@ -225,7 +232,7 @@ def test_run_module_reports_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         raise_timeout=("slow",),
     )
     module = CollectorModuleConfig(name="slow", command=("slow",))
-    result = metrics_collect._run_module(module, 15)
+    result = metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS)
     assert result["status"] == "error"
     output = result["output"]
     assert isinstance(output, str) and "timed out" in output
@@ -241,7 +248,7 @@ def test_run_module_trims_whitespace_only_output_to_empty(
         {("blank",): _FakeProc(0, "  \n\t\n  ")},
     )
     module = CollectorModuleConfig(name="blank", command=("blank",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "empty",
         "output": "",
     }
@@ -261,7 +268,7 @@ def test_run_module_preserves_internal_newlines(
         },
     )
     module = CollectorModuleConfig(name="lines", command=("lines",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "ok",
         "output": "first line\nsecond line",
     }
@@ -277,7 +284,7 @@ def test_run_module_trims_joined_error_output(
         {("bad",): _FakeProc(1, "line one\n\n", "\nline two\n")},
     )
     module = CollectorModuleConfig(name="bad", command=("bad",))
-    assert metrics_collect._run_module(module, 15) == {
+    assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
         "status": "error",
         "output": "line one\n\nline two",
     }
@@ -293,9 +300,20 @@ def test_percent_ready_counts_only_ok() -> None:
         {"status": "error"},
     ]
     assert metrics_collect.percent_ready(
-        entries, make_config().engine.percent_scale
+        entries,
+        make_config().engine.percent_scale,
+        REPORT_KEYS["status"],
+        REPORT_WORDS["ok"],
     ) == 50
-    assert metrics_collect.percent_ready([], make_config().engine.percent_scale) == 100
+    assert (
+        metrics_collect.percent_ready(
+            [],
+            make_config().engine.percent_scale,
+            REPORT_KEYS["status"],
+            REPORT_WORDS["ok"],
+        )
+        == 100
+    )
 
 
 def test_percent_ready_follows_the_configured_scale() -> None:
@@ -307,7 +325,12 @@ def test_percent_ready_follows_the_configured_scale() -> None:
         {"status": "empty"},
         {"status": "error"},
     ]
-    assert metrics_collect.percent_ready(entries, 10) == 5
+    assert metrics_collect.percent_ready(
+        entries,
+        10,
+        REPORT_KEYS["status"],
+        REPORT_WORDS["ok"],
+    ) == 5
 
 
 def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -347,6 +370,50 @@ def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
     assert isinstance(report["generated_at"], str)
     assert len(report["generated_at"]) == 19
+
+
+def test_the_report_vocabulary_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The field names of the report and the word that counts as an answer
+    # are config values: another map and another word are the document the
+    # collector writes and the module the readiness counts.
+    keys = {
+        "generated_at": "moment",
+        "ready_percent": "share",
+        "network": "sources",
+        "system": "machine",
+        "name": "module",
+        "status": "state",
+        "output": "text",
+    }
+    words = {"ok": "answered", "empty": "silent", "error": "failed"}
+    _fake_run(
+        monkeypatch,
+        {
+            ("ip", "-4", "addr", "show", "scope", "global"): _FakeProc(
+                0, "inet 10.0.0.1\n"
+            ),
+            ("ip", "-6", "addr", "show", "scope", "global"): _FakeProc(0, ""),
+        },
+    )
+    cfg = _config(
+        Path("/tmp"),
+        engine_datetime_format="%H:%M",
+        system_metrics_collector_report_keys=keys,
+        system_metrics_collector_report_status_words=words,
+        system_metrics_collector_network_modules=(IPV4, IPV6),
+    )
+    report = metrics_collect.collect(cfg)
+    assert report["share"] == 50
+    assert report["sources"] == [
+        {"module": "ipv4", "state": "answered", "text": "inet 10.0.0.1"},
+        {"module": "ipv6", "state": "silent", "text": ""},
+    ]
+    assert report["machine"] == []
+    generated_at = report["moment"]
+    assert isinstance(generated_at, str)
+    assert len(generated_at) == 5
 
 
 def test_collect_until_ready_commits_immediately_at_threshold(
@@ -510,9 +577,9 @@ def test_main_reports_a_config_without_the_collector_values(
     assert captured.err == (
         "error: the collector cannot run: [system_metrics_setup] has no "
         "command_path, error_priority; [system_metrics_setup.collector] has no "
-        "lock_file_path, report_file_name, command_timeout_seconds, "
-        "threshold_percent, retry_base_seconds, retry_multiplier, "
-        "retry_max_seconds\n"
+        "lock_file_path, report_file_name, report_keys, report_status_words, "
+        "command_timeout_seconds, threshold_percent, retry_base_seconds, "
+        "retry_multiplier, retry_max_seconds\n"
     )
     assert "Traceback" not in captured.err
 

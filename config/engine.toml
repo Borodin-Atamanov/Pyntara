@@ -80,6 +80,11 @@ curl_parallel_write_out = "\n@@pyntara-source@@ %{url_effective}\n"
 # The marker that separates the answers of a parallel query; it must be
 # the marker inside curl_parallel_write_out.
 curl_parallel_source_marker = "@@pyntara-source@@"
+# Format of the moment the run writes down, used where a timestamp of the
+# run appears: the prefix of a progress line and the moment a collected
+# report states. One value, so the console and the report name the same
+# moment the same way.
+datetime_format = "%Y-%m-%d-%H-%M-%S"
 # Indentation of every JSON document the address commands of the report
 # print, so the collector reads one shape and a person reads it by eye.
 report_json_indent = 2

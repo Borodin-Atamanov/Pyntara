@@ -74,7 +74,10 @@ def _structured_document(output: str) -> object | None:
 
 
 def _run_module(
-    module: CollectorModuleConfig, timeout_seconds: int
+    module: CollectorModuleConfig,
+    timeout_seconds: int,
+    keys: dict[str, str],
+    words: dict[str, str],
 ) -> dict[str, object]:
     """Run one configured command; return status and output.
 
@@ -86,9 +89,13 @@ def _run_module(
     command never reaches the telemetry; a whitespace-only output is
     empty, because it carries no information. A module that printed a
     JSON document contributes it as structured data, so the report keeps
-    the records and their fields instead of a string.
+    the records and their fields instead of a string. The field names of
+    the result and the words of its status are config values, so the
+    reader of the report finds the shape in the config.
     """
 
+    status_key = keys["status"]
+    output_key = keys["output"]
     try:
         result = subprocess.run(
             list(module.command),
@@ -99,29 +106,34 @@ def _run_module(
         )
     except FileNotFoundError:
         return {
-            "status": "error",
-            "output": f"command not found: {module.command[0]}",
+            status_key: words["error"],
+            output_key: f"command not found: {module.command[0]}",
         }
     except subprocess.TimeoutExpired:
         return {
-            "status": "error",
-            "output": f"timed out after {timeout_seconds} seconds",
+            status_key: words["error"],
+            output_key: f"timed out after {timeout_seconds} seconds",
         }
     output = trim_whitespace(result.stdout)
     if result.returncode != 0:
         if result.stderr:
             output = f"{output}\n{result.stderr}" if output else result.stderr
         output = trim_whitespace(output)
-        return {"status": "error", "output": output}
+        return {status_key: words["error"], output_key: output}
     if not output:
-        return {"status": "empty", "output": ""}
+        return {status_key: words["empty"], output_key: ""}
     document = _structured_document(output)
     if document is not None:
-        return {"status": "ok", "output": document}
-    return {"status": "ok", "output": output}
+        return {status_key: words["ok"], output_key: document}
+    return {status_key: words["ok"], output_key: output}
 
 
-def percent_ready(entries: list[dict[str, object]], percent_scale: int) -> int:
+def percent_ready(
+    entries: list[dict[str, object]],
+    percent_scale: int,
+    status_key: str,
+    ok_word: str,
+) -> int:
     """Share of ok modules among the entries, in percent.
 
     An empty module list is trivially ready: there is nothing to wait
@@ -130,12 +142,13 @@ def percent_ready(entries: list[dict[str, object]], percent_scale: int) -> int:
     records inside them: a module that reports thirty addresses is one
     answered source, exactly like a module that reports one, so the
     readiness of a machine never depends on how many addresses it
-    carries.
+    carries. The name of the status field and the word that counts as an
+    answer are config values.
     """
 
     if not entries:
         return percent_scale
-    ready = sum(1 for entry in entries if entry["status"] == "ok")
+    ready = sum(1 for entry in entries if entry[status_key] == ok_word)
     return int(ready * percent_scale / len(entries))
 
 
@@ -145,30 +158,41 @@ def collect(cfg: Config) -> dict[str, object]:
     The network modules form the network section and drive
     ready_percent; the system modules form the system section and never
     affect the readiness. The full output of every module is kept as is;
-    the report generation time uses the project datetime format
-    YYYY-MM-DD-HH-MM-SS.
+    the report generation time carries the moment in the configured
+    datetime format, and every name of the document and every word of a
+    status comes from the config.
     """
 
     collector = cfg.system_metrics_setup.collector
+    keys = collector.report_keys
+    words = collector.report_status_words
+    timeout_seconds = collector.command_timeout_seconds
     network = [
         {
-            "name": module.name,
-            **_run_module(module, collector.command_timeout_seconds),
+            keys["name"]: module.name,
+            **_run_module(module, timeout_seconds, keys, words),
         }
         for module in collector.network_modules
     ]
     system = [
         {
-            "name": module.name,
-            **_run_module(module, collector.command_timeout_seconds),
+            keys["name"]: module.name,
+            **_run_module(module, timeout_seconds, keys, words),
         }
         for module in collector.system_modules
     ]
     return {
-        "generated_at": datetime.now().astimezone().strftime("%Y-%m-%d-%H-%M-%S"),
-        "ready_percent": percent_ready(network, cfg.engine.percent_scale),
-        "network": network,
-        "system": system,
+        keys["generated_at"]: datetime.now()
+        .astimezone()
+        .strftime(cfg.engine.datetime_format),
+        keys["ready_percent"]: percent_ready(
+            network,
+            cfg.engine.percent_scale,
+            keys["status"],
+            words["ok"],
+        ),
+        keys["network"]: network,
+        keys["system"]: system,
     }
 
 
@@ -191,7 +215,7 @@ def collect_until_ready(cfg: Config) -> dict[str, object]:
     while True:
         attempts += 1
         report = collect(cfg)
-        ready_percent = report["ready_percent"]
+        ready_percent = report[collector.report_keys["ready_percent"]]
         remaining = deadline - time.monotonic()
         # ready_percent is always an int from collect; the isinstance check
         # keeps mypy strict happy without changing the behavior.

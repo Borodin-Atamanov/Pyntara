@@ -326,6 +326,30 @@ def test_log_result_line_to_journal_false_skips_journal(
     assert "hidden" not in journal
 
 
+def test_the_progress_timestamp_format_comes_from_the_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The format of the moment a progress line carries is a config value:
+    # another format in the [engine] table is another prefix, and a logger
+    # nobody configured writes no timestamp at all. Both tables name no
+    # journal command, so the test touches the system journal not at all.
+    engine = replace(
+        make_config(engine_datetime_format="%H:%M").engine,
+        journal_command=(),
+        journal_priority_command=(),
+    )
+    logger.configure_journal(engine)
+    logger._last_log_time = 0.0
+    logger.log_progress("with the configured format")
+    prefix = capsys.readouterr().out.split(" ", 1)[0]
+    assert len(prefix) == 5
+    assert prefix[2] == ":"
+    logger.configure_journal(None)
+    logger._last_log_time = 0.0
+    logger.log_progress("without a configuration")
+    assert capsys.readouterr().out.startswith("test_logger: ")
+
+
 def test_log_result_line_prints_warnings(
     journal_available: bool,
     capsys: pytest.CaptureFixture[str],
