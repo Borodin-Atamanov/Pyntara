@@ -29,6 +29,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "service_process_name": "x-ui",
         "panel_version_command": ("{binary}", "-v"),
         "panel_settings_query_command": ("{binary}", "setting", "-show", "true"),
+        "panel_cert_query_command": ("{binary}", "setting", "-getCert", "true"),
         "panel_port_command": ("{binary}", "setting", "-port", "{port}"),
         "panel_credentials_command": (
             "{binary}",
@@ -397,6 +398,24 @@ class TestPanelScheme:
         cfg = _cfg()
         assert xui_client.panel_cert_value(cfg, 30) is None
         assert xui_client.panel_scheme(cfg, 30) == "http"
+
+    def test_the_cert_query_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The argv of the query is a config value: another template is
+        # exactly what runs, with the binary path filling its {binary} slot.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+            calls.append(list(command))
+            return _FakeProc(0, "cert: /root/cert/ip/fullchain.pem\n")
+
+        monkeypatch.setattr("pyntara.xui.run_command", fake_run)
+        cfg = _cfg(panel_cert_query_command=("mybinary", "ask", "{binary}"))
+        assert xui_client.panel_cert_value(cfg, 30) == "/root/cert/ip/fullchain.pem"
+        assert calls == [
+            ["mybinary", "ask", str(cfg.install_dir / cfg.binary_file_name)]
+        ]
 
 
 class TestLoginAndVerify:

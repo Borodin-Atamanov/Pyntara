@@ -84,6 +84,7 @@ class DnsproxySetupConfig:
     nmcli_ignore_auto_dns_value: str
     nmcli_restore_auto_dns_value: str
     service_stop_command: tuple[str, ...]
+    installed_version_command: tuple[str, ...]
     service_enable_command: tuple[str, ...]
     service_start_command: tuple[str, ...]
     service_restart_command: tuple[str, ...]

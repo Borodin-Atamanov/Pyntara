@@ -229,7 +229,10 @@ loopback_connection_name = "lo"
 nmcli_auto_dns_ignored_value = "yes"
 nmcli_ignore_auto_dns_value = "true"
 nmcli_restore_auto_dns_value = "false"
-# Commands that stop, enable, start and restart the service unit;
+# Command that reads the version of an installed dnsproxy binary, with the
+# path of the binary as its placeholder.
+installed_version_command = ["{binary}", "--version"]
+# The four commands that stop, enable, start and restart the service unit;
 # {service_unit_name} is the unit of this section.
 service_stop_command = ["systemctl", "stop", "{service_unit_name}"]
 service_enable_command = ["systemctl", "enable", "{service_unit_name}"]

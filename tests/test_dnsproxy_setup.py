@@ -99,6 +99,30 @@ def test_verify_system_error_excerpt_length_comes_from_the_config(
     assert error == "system DNS verification failed: " + "x" * 7
 
 
+def test_installed_version_command_comes_from_the_config(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    # The version query is a config value: another argv is exactly what the
+    # helper runs, with the path of the binary filling its {binary} slot.
+    calls: list[list[str]] = []
+    binary = tmp_path / "dnsproxy"
+
+    def fake_run(command: list[str], **_kwargs: Any) -> FakeProc:
+        calls.append(list(command))
+        return FakeProc(0, "dnsproxy v0.84.1")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    cfg = make_config().dnsproxy_setup
+    replaced = replace(
+        cfg, installed_version_command=("myproxy", "-version", "{binary}")
+    )
+    assert task_module._installed_version(replaced, binary, 3.0) == "0.84.1"
+    assert calls == [["myproxy", "-version", str(binary)]]
+
+    assert task_module._installed_version(cfg, binary, 3.0) == "0.84.1"
+    assert calls[-1] == [str(binary), "--version"]
+
+
 def test_service_log_excerpt_length_comes_from_the_config(
     monkeypatch: Any,
 ) -> None:

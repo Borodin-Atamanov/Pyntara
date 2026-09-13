@@ -123,10 +123,17 @@ def _asset_for_architecture(
     raise RuntimeError(f"release {tag} has no asset {expected}")
 
 
-def _installed_version(path: Path, timeout: float) -> str | None:
+def _installed_version(
+    cfg: DnsproxySetupConfig, path: Path, timeout: float
+) -> str | None:
     try:
         result = run_command(
-            [str(path), "--version"], check=False, capture=True, timeout=timeout
+            substituted_command(
+                cfg.installed_version_command, {"binary": str(path)}
+            ),
+            check=False,
+            capture=True,
+            timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -809,7 +816,7 @@ def task(ctx: Context) -> TaskResult:
         target_version = _version_from_tag(tag)
     except (RuntimeError, subprocess.SubprocessError) as exc:
         return TaskResult(success=False, error=str(exc))
-    installed = _installed_version(cfg.binary_path, timeout)
+    installed = _installed_version(cfg, cfg.binary_path, timeout)
     changed = False
     dropin_changed = False
     auto_dns_changed: list[tuple[str, str]] = []

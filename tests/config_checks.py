@@ -810,6 +810,11 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
             raw.get("service_stop_command"),
             "dnsproxy_setup.service_stop_command",
         ),
+        installed_version_command=_placeholder_command_field(
+            raw.get("installed_version_command"),
+            "dnsproxy_setup.installed_version_command",
+            ("{binary}",),
+        ),
         service_enable_command=_string_list(
             raw.get("service_enable_command"),
             "dnsproxy_setup.service_enable_command",
@@ -4422,6 +4427,11 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_settings_query_command=_placeholder_command_field(
             raw.get("panel_settings_query_command"),
             "three_x_ui_xray_setup.panel_settings_query_command",
+            ("{binary}",),
+        ),
+        panel_cert_query_command=_placeholder_command_field(
+            raw.get("panel_cert_query_command"),
+            "three_x_ui_xray_setup.panel_cert_query_command",
             ("{binary}",),
         ),
         panel_port_command=_placeholder_command_field(

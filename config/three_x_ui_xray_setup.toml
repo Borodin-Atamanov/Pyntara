@@ -22,6 +22,7 @@ service_process_name = "x-ui"
 # flags of the tool are config values like the binary itself.
 panel_version_command = ["{binary}", "-v"]
 panel_settings_query_command = ["{binary}", "setting", "-show", "true"]
+panel_cert_query_command = ["{binary}", "setting", "-getCert", "true"]
 panel_port_command = ["{binary}", "setting", "-port", "{port}"]
 panel_credentials_command = ["{binary}", "setting", "-username", "{username}", "-password", "{password}", "-webBasePath", "{web_base_path}"]
 panel_certificate_command = ["{binary}", "cert", "-webCert", "{fullchain}", "-webCertKey", "{privkey}"]

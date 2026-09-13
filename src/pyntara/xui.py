@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyntara.config import ThreeXuiXraySetupConfig
-from pyntara.utils import run_command
+from pyntara.utils import run_command, substituted_command
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -77,7 +77,10 @@ def panel_cert_value(
     """
 
     result = run_command(
-        [str(cfg.install_dir / "x-ui"), "setting", "-getCert", "true"],
+        substituted_command(
+            cfg.panel_cert_query_command,
+            {"binary": str(cfg.install_dir / cfg.binary_file_name)},
+        ),
         check=False,
         capture=True,
         timeout=timeout,

@@ -71,6 +71,7 @@ class ThreeXuiXraySetupConfig:
     service_process_name: str
     panel_version_command: tuple[str, ...]
     panel_settings_query_command: tuple[str, ...]
+    panel_cert_query_command: tuple[str, ...]
     panel_port_command: tuple[str, ...]
     panel_credentials_command: tuple[str, ...]
     panel_certificate_command: tuple[str, ...]
