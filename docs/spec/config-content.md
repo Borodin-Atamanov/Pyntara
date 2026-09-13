@@ -161,7 +161,12 @@ a value of the type Text of at most five lines that becomes part of a file the
 run writes.  
 Numbers that encode a protocol or an encoding instead of describing the machine,
 the tool or the run: the HTTP response code 200, the size and the flag masks of
-a DNS header, the bit shifts of the proquint encoding.
+a DNS header, the bit shifts of the proquint encoding.  
+The layout of this repository as the version tool sees it: the paths of the
+files the tool rewrites and the prefix of the README title it searches for. The
+tool runs from a git hook on a developer machine and never on a target machine,
+and the files it names are the repository itself, so these values are not values
+of the machine the config describes (decision of the user, 2026-09-13).
 
 ## A doubtful value goes into the config
 

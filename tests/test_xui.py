@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 from support import FakeProc as _FakeProc
+from support import make_config
 
 from pyntara import xui as xui_client
 from pyntara.config import ThreeXuiXraySetupConfig
@@ -313,6 +314,67 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_geodata_domain_kind": "domain",
         "panel_geodata_ip_kind": "ip",
         "inbound_sniffing_protocols": ("http", "tls"),
+        "panel_http_headers": {
+            "content_type": "Content-Type",
+            "csrf_token": "X-CSRF-Token",
+            "requested_with": "X-Requested-With",
+            "referer": "Referer",
+            "authorization": "Authorization",
+        },
+        "panel_http_header_values": {
+            "json": "application/json",
+            "form": "application/x-www-form-urlencoded",
+            "xml_http_request": "XMLHttpRequest",
+            "bearer_prefix": "Bearer ",
+        },
+        "panel_http_methods": {"post": "POST"},
+        "panel_url_schemes": {"http": "http", "https": "https"},
+        "panel_environment_keys": {
+            "username": "XUI_USERNAME",
+            "password": "XUI_PASSWORD",
+            "panel_port": "XUI_PANEL_PORT",
+            "web_base_path": "XUI_WEB_BASE_PATH",
+            "scheme": "XUI_SCHEME",
+            "api_token": "XUI_API_TOKEN",
+            "db_type": "XUI_DB_TYPE",
+            "noninteractive": "XUI_NONINTERACTIVE",
+        },
+        "panel_answer_keys": {
+            "success": "success",
+            "payload": "obj",
+            "message": "msg",
+            "token": "token",
+            "reason": "reason",
+        },
+        "panel_field_keys": {
+            "username": "username",
+            "password": "password",
+            "id": "id",
+            "email": "email",
+            "enable": "enable",
+            "sub_id": "subId",
+            "inbound_ids": "inboundIds",
+            "client": "client",
+            "tag": "tag",
+            "port": "port",
+            "protocol": "protocol",
+            "network": "network",
+            "inbound_tag": "inboundTag",
+            "outbound_tag": "outboundTag",
+            "matched": "matched",
+            "domain": "domain",
+            "ip": "ip",
+            "kind": "kind",
+            "tokens": "tokens",
+            "token": "token",
+            "private_key": "privateKey",
+            "public_key": "publicKey",
+            "sub_path": "subPath",
+            "sub_json_path": "subJsonPath",
+            "sub_clash_path": "subClashPath",
+            "xray_setting": "xraySetting",
+            "outbound_test_url": "outboundTestUrl",
+        },
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]
@@ -320,6 +382,13 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
 
 class TestParseInstallResultEnv:
     """Tests for parse_install_result_env."""
+
+    def _required_keys(self) -> tuple[str, ...]:
+        """The keys the client cannot work without, from the config."""
+
+        return xui_client.panel_required_environment_keys(
+            make_config().three_x_ui_xray_setup
+        )
 
     def test_parses_full_file(self, tmp_path: Path) -> None:
         path = tmp_path / "install-result.env"
@@ -333,7 +402,7 @@ class TestParseInstallResultEnv:
             "XUI_ACCESS_URL=http://example.com:3579/panel\n",
             encoding="utf-8",
         )
-        result = xui_client.parse_install_result_env(path)
+        result = xui_client.parse_install_result_env(path, self._required_keys())
         assert result["XUI_USERNAME"] == "admin"
         assert result["XUI_PASSWORD"] == "secret123"
         assert result["XUI_PANEL_PORT"] == "3579"
@@ -344,13 +413,13 @@ class TestParseInstallResultEnv:
     def test_raises_on_missing_file(self, tmp_path: Path) -> None:
         path = tmp_path / "nonexistent.env"
         with pytest.raises(FileNotFoundError):
-            xui_client.parse_install_result_env(path)
+            xui_client.parse_install_result_env(path, self._required_keys())
 
     def test_raises_on_missing_required_key(self, tmp_path: Path) -> None:
         path = tmp_path / "partial.env"
         path.write_text("XUI_USERNAME=admin\n", encoding="utf-8")
         with pytest.raises(RuntimeError, match="missing required key"):
-            xui_client.parse_install_result_env(path)
+            xui_client.parse_install_result_env(path, self._required_keys())
 
     def test_ignores_blank_lines(self, tmp_path: Path) -> None:
         path = tmp_path / "blank.env"
@@ -358,7 +427,7 @@ class TestParseInstallResultEnv:
             "\n\nXUI_USERNAME=admin\n\nXUI_PASSWORD=pass\nXUI_PANEL_PORT=3579\n\n",
             encoding="utf-8",
         )
-        result = xui_client.parse_install_result_env(path)
+        result = xui_client.parse_install_result_env(path, self._required_keys())
         assert result["XUI_USERNAME"] == "admin"
         assert result["XUI_PASSWORD"] == "pass"
         assert result["XUI_PANEL_PORT"] == "3579"
@@ -368,24 +437,24 @@ class TestBuildPanelUrl:
     """Tests for build_panel_url."""
 
     def test_with_base_path(self) -> None:
-        url = xui_client.build_panel_url("127.0.0.1", "3579", "/panel/")
+        url = xui_client.build_panel_url("127.0.0.1", "3579", "/panel/", "http")
         assert url == "http://127.0.0.1:3579/panel"
 
     def test_without_base_path(self) -> None:
-        url = xui_client.build_panel_url("127.0.0.1", "3579", None)
+        url = xui_client.build_panel_url("127.0.0.1", "3579", None, "http")
         assert url == "http://127.0.0.1:3579"
 
     def test_empty_base_path(self) -> None:
-        url = xui_client.build_panel_url("127.0.0.1", "3579", "")
+        url = xui_client.build_panel_url("127.0.0.1", "3579", "", "http")
         assert url == "http://127.0.0.1:3579"
 
     def test_custom_address(self) -> None:
-        url = xui_client.build_panel_url("0.0.0.0", "8080", "/xui")
+        url = xui_client.build_panel_url("0.0.0.0", "8080", "/xui", "http")
         assert url == "http://0.0.0.0:8080/xui"
 
     def test_https_scheme(self) -> None:
         url = xui_client.build_panel_url(
-            "127.0.0.1", "35353", "/xui", scheme="https"
+            "127.0.0.1", "35353", "/xui", "https"
         )
         assert url == "https://127.0.0.1:35353/xui"
 
@@ -1738,4 +1807,52 @@ def test_the_panel_vocabulary_comes_from_the_config(
     assert recorded[0].form()["kind"] == "my-domain"
     with pytest.raises(ValueError, match="unknown geodata kind"):
         xui_client.validate_geodata_tokens(cfg, _ENV, "domain", ["x"], 5)
+
+
+def test_the_http_vocabulary_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The proof of the value: another header name, another header value,
+    # another success field and another payload field of the panel table
+    # are the request the client sends and the answer it reads, so a panel
+    # version that renames a field is answered in the config.
+    cfg = _cfg(
+        panel_http_headers={
+            "content_type": "X-Content",
+            "csrf_token": "X-CSRF",
+            "requested_with": "X-Wanted",
+            "referer": "X-Referer",
+            "authorization": "X-Auth",
+        },
+        panel_http_header_values={
+            "json": "my/json",
+            "form": "my/form",
+            "xml_http_request": "my-wanted",
+            "bearer_prefix": "Token ",
+        },
+        panel_http_methods={"post": "PUT"},
+        panel_answer_keys={
+            "success": "ok",
+            "payload": "data",
+            "message": "note",
+            "token": "token",
+            "reason": "reason",
+        },
+        panel_field_keys={
+            **(_cfg().panel_field_keys),
+            "port": "listenPort",
+        },
+    )
+    recorded = _record_requests(
+        monkeypatch, (200, json.dumps({"ok": True, "data": [{"listenPort": 443}]}))
+    )
+    inbounds = xui_client.list_inbounds(cfg, _ENV, 5)
+    assert inbounds == [{"listenPort": 443}]
+    assert recorded[0].header("X-Wanted") == "my-wanted"
+    found = xui_client.find_inbound_by_port(cfg, _ENV, 443, 5)
+    assert found == {"listenPort": 443}
+    assert (
+        xui_client._message_result(cfg, 200, json.dumps({"ok": True, "note": "fine"}), "x")
+        == (True, "fine")
+    )
 

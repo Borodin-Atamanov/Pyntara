@@ -69,13 +69,12 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
         {
             # A regular expression, an exception of the spec.
             '_VERSION_PATTERN = re.compile(r\'__version__ = "([^"]+)"\')',
-            # Candidate for the Exceptions section of the spec: the paths
-            # of the files the version tool rewrites and the prefix of the
-            # README title describe the layout of this repository, not a
-            # value of the target machine, and the tool is not part of the
-            # installer run. They stay until the user decides whether the
-            # spec gains such a type or the tool reads them from the
-            # config.
+            # An exception of the spec: the paths of the files the version
+            # tool rewrites and the prefix of the README title describe the
+            # layout of this repository, and the tool runs from a git hook
+            # on a developer machine and never on a target machine, so they
+            # are not values of the machine the config describes (decision
+            # of the user, 2026-09-13).
             '_PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")',
             '_INSTALLER_VERSION_FILE = Path("inst.sh")',
             '_README_VERSION_FILE = Path("README.md")',

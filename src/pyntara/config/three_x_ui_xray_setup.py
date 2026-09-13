@@ -70,7 +70,15 @@ class ThreeXuiXraySetupConfig:
     policy removes, panel_geodata_domain_kind and panel_geodata_ip_kind
     are the kinds the panel accepts in its geodata validation request, and
     inbound_sniffing_protocols are the protocols the panel is asked to
-    detect on the universal inbound.
+    detect on the universal inbound. The HTTP interface of the panel is
+    configured the same way: panel_http_headers and
+    panel_http_header_values are the names and the values of the headers
+    the client sends, panel_http_methods the methods of its calls,
+    panel_url_schemes the two schemes of the panel URL,
+    panel_environment_keys the names of the install-result.env file the
+    panel writes, panel_answer_keys the fields of its JSON answers and
+    panel_field_keys the field names of the request bodies the client
+    sends and reads back.
     """
 
     github_repo: str
@@ -132,6 +140,13 @@ class ThreeXuiXraySetupConfig:
     panel_geodata_domain_kind: str
     panel_geodata_ip_kind: str
     inbound_sniffing_protocols: tuple[str, ...]
+    panel_http_headers: dict[str, str]
+    panel_http_header_values: dict[str, str]
+    panel_http_methods: dict[str, str]
+    panel_url_schemes: dict[str, str]
+    panel_environment_keys: dict[str, str]
+    panel_answer_keys: dict[str, str]
+    panel_field_keys: dict[str, str]
     vault_entry_title: str
     connection_vault_entry_title: str
     share_addr_strategy: str

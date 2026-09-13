@@ -94,26 +94,32 @@ def panel_cert_value(
 
 
 def panel_scheme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str:
-    """The panel URL scheme: https when a certificate is configured.
+    """The panel URL scheme: the TLS scheme when a certificate is set.
 
     The panel serves TLS only when a certificate path is set. Any
-    failure to read the state is treated as http, so the client stays
-    reachable over plain HTTP.
+    failure to read the state is treated as the plain scheme, so the
+    client stays reachable over plain HTTP. Both names are config values,
+    because they are part of the vocabulary of the panel.
     """
 
-    return "https" if panel_cert_value(cfg, timeout) else "http"
+    schemes = cfg.panel_url_schemes
+    if panel_cert_value(cfg, timeout):
+        return schemes["https"]
+    return schemes["http"]
 
 
-def parse_install_result_env(path: Path) -> dict[str, str]:
+def parse_install_result_env(
+    path: Path, required_keys: tuple[str, ...]
+) -> dict[str, str]:
     """Read the install-result.env file and return its key-value pairs.
 
     The file is written by the 3x-ui panel on first start (mode 600,
     root). Each line is KEY=VALUE; blank lines and lines without an
-    equals sign are ignored. The returned dict has the XUI_ keys from
-    the file: XUI_USERNAME, XUI_PASSWORD, XUI_PANEL_PORT,
-    XUI_WEB_BASE_PATH, XUI_API_TOKEN, XUI_DB_TYPE, XUI_ACCESS_URL.
-    Raises FileNotFoundError when the file is absent and RuntimeError
-    when a required key is missing.
+    equals sign are ignored. required_keys are the names that must be
+    present, and they come from the panel environment keys of the config,
+    because the panel names them and a version that renames one is
+    answered there. Raises FileNotFoundError when the file is absent and
+    RuntimeError when a required key is missing.
     """
 
     text = path.read_text(encoding="utf-8")
@@ -124,8 +130,7 @@ def parse_install_result_env(path: Path) -> dict[str, str]:
             continue
         key, _, value = line.partition("=")
         result[key.strip()] = value.strip()
-    required = ("XUI_USERNAME", "XUI_PASSWORD", "XUI_PANEL_PORT")
-    missing = [k for k in required if k not in result]
+    missing = [key for key in required_keys if key not in result]
     if missing:
         raise RuntimeError(
             f"install-result.env missing required key(s): {', '.join(missing)}"
@@ -133,19 +138,28 @@ def parse_install_result_env(path: Path) -> dict[str, str]:
     return result
 
 
+def panel_required_environment_keys(
+    cfg: ThreeXuiXraySetupConfig,
+) -> tuple[str, ...]:
+    """The install-result.env keys the client cannot work without."""
+
+    keys = cfg.panel_environment_keys
+    return (keys["username"], keys["password"], keys["panel_port"])
+
+
 def build_panel_url(
     address: str,
     port: str,
     web_base_path: str | None,
-    scheme: str = "http",
+    scheme: str,
 ) -> str:
     """The panel base URL from its scheme, address, port and webBasePath.
 
     The address is the configured panel_http_address (127.0.0.1 on the
-    local machine). The scheme is http by default and https when the
-    panel serves TLS. The port comes from XUI_PANEL_PORT. The
-    webBasePath comes from XUI_WEB_BASE_PATH and is stripped of leading
-    and trailing slashes; an empty or absent base path is omitted.
+    local machine). The scheme is a value of panel_url_schemes, the port
+    comes from the panel port key of panel_environment_keys and the
+    webBasePath from its web base path key, stripped of leading and
+    trailing slashes; an empty or absent base path is omitted.
     """
 
     base = f"{scheme}://{address}:{port}"
@@ -187,14 +201,14 @@ def _request(
         return (0, "")
 
 
-def _json_success(body: str) -> bool:
-    """True when the body is valid JSON with success=true."""
+def _json_success(body: str, success_key: str) -> bool:
+    """True when the body is valid JSON with the success field set."""
 
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
         return False
-    return bool(isinstance(data, dict) and data.get("success"))
+    return bool(isinstance(data, dict) and data.get(success_key))
 
 
 def login_and_verify(
@@ -213,11 +227,15 @@ def login_and_verify(
     create an inbound.
     """
 
+    keys = cfg.panel_environment_keys
+    headers = cfg.panel_http_headers
+    header_values = cfg.panel_http_header_values
+    answers = cfg.panel_answer_keys
     base_url = build_panel_url(
         cfg.panel_http_address,
-        env.get("XUI_PANEL_PORT", ""),
-        env.get("XUI_WEB_BASE_PATH"),
-        scheme=env.get("XUI_SCHEME", "http"),
+        env.get(keys["panel_port"], ""),
+        env.get(keys["web_base_path"]),
+        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
     )
 
     # Create an opener with a cookie jar so the session cookie persists.
@@ -228,46 +246,50 @@ def login_and_verify(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_csrf_token_path}",
-        headers={"X-Requested-With": "XMLHttpRequest"},
+        headers={headers["requested_with"]: header_values["xml_http_request"]},
         timeout=timeout,
     )
-    if status != 200 or not _json_success(body):
+    if status != 200 or not _json_success(body, answers["success"]):
         return False
     try:
-        token = json.loads(body).get("obj", "")
+        token = json.loads(body).get(answers["payload"], "")
     except (json.JSONDecodeError, AttributeError):
         return False
     if not isinstance(token, str) or not token:
         return False
 
     # Step 2: login with username and password.
+    fields = cfg.panel_field_keys
     login_data = urllib.parse.urlencode(
-        {"username": env.get("XUI_USERNAME", ""), "password": env.get("XUI_PASSWORD", "")}
+        {
+            fields["username"]: env.get(keys["username"], ""),
+            fields["password"]: env.get(keys["password"], ""),
+        }
     ).encode("utf-8")
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_login_path}",
         data=login_data,
         headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-CSRF-Token": token,
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{base_url}{cfg.panel_root_path}",
+            headers["content_type"]: header_values["form"],
+            headers["csrf_token"]: token,
+            headers["requested_with"]: header_values["xml_http_request"],
+            headers["referer"]: f"{base_url}{cfg.panel_root_path}",
         },
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    if status != 200 or not _json_success(body):
+    if status != 200 or not _json_success(body, answers["success"]):
         return False
 
     # Step 3: verify the session by calling a protected API.
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
-        headers={"X-Requested-With": "XMLHttpRequest"},
+        headers={headers["requested_with"]: header_values["xml_http_request"]},
         timeout=timeout,
     )
-    return status == 200 and _json_success(body)
+    return status == 200 and _json_success(body, answers["success"])
 
 
 def verify_bearer(
@@ -282,11 +304,15 @@ def verify_bearer(
     the token is valid.
     """
 
+    keys = cfg.panel_environment_keys
+    headers = cfg.panel_http_headers
+    header_values = cfg.panel_http_header_values
+    answers = cfg.panel_answer_keys
     base_url = build_panel_url(
         cfg.panel_http_address,
-        env.get("XUI_PANEL_PORT", ""),
-        env.get("XUI_WEB_BASE_PATH"),
-        scheme=env.get("XUI_SCHEME", "http"),
+        env.get(keys["panel_port"], ""),
+        env.get(keys["web_base_path"]),
+        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
     )
     jar = http.cookiejar.CookieJar()
     opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -294,12 +320,14 @@ def verify_bearer(
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
         headers={
-            "Authorization": f"Bearer {env.get('XUI_API_TOKEN', '')}",
-            "X-Requested-With": "XMLHttpRequest",
+            headers["authorization"]: (
+                f"{header_values['bearer_prefix']}{env.get(keys['api_token'], '')}"
+            ),
+            headers["requested_with"]: header_values["xml_http_request"],
         },
         timeout=timeout,
     )
-    return status == 200 and _json_success(body)
+    return status == 200 and _json_success(body, answers["success"])
 
 
 def _bearer_opener(
@@ -313,22 +341,28 @@ def _bearer_opener(
     cookies.
     """
 
+    keys = cfg.panel_environment_keys
     base_url = build_panel_url(
         cfg.panel_http_address,
-        env.get("XUI_PANEL_PORT", ""),
-        env.get("XUI_WEB_BASE_PATH"),
-        scheme=env.get("XUI_SCHEME", "http"),
+        env.get(keys["panel_port"], ""),
+        env.get(keys["web_base_path"]),
+        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
     )
     opener = _https_opener()
     return base_url, opener
 
 
-def _bearer_headers(env: dict[str, str]) -> dict[str, str]:
+def _bearer_headers(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> dict[str, str]:
     """Common headers for Bearer-authenticated API calls."""
 
+    keys = cfg.panel_environment_keys
+    headers = cfg.panel_http_headers
+    header_values = cfg.panel_http_header_values
     return {
-        "Authorization": f"Bearer {env.get('XUI_API_TOKEN', '')}",
-        "X-Requested-With": "XMLHttpRequest",
+        headers["authorization"]: (
+            f"{header_values['bearer_prefix']}{env.get(keys['api_token'], '')}"
+        ),
+        headers["requested_with"]: header_values["xml_http_request"],
     }
 
 
@@ -347,7 +381,7 @@ def list_inbounds(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
-        headers=_bearer_headers(env),
+        headers=_bearer_headers(cfg, env),
         timeout=timeout,
     )
     if status != 200:
@@ -356,9 +390,10 @@ def list_inbounds(
         data = json.loads(body)
     except json.JSONDecodeError:
         return []
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return []
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, list):
         return []
     return obj
@@ -377,8 +412,9 @@ def find_inbound_by_port(
     """
 
     inbounds = list_inbounds(cfg, env, timeout)
+    port_key = cfg.panel_field_keys["port"]
     for inbound in inbounds:
-        if isinstance(inbound, dict) and inbound.get("port") == port:
+        if isinstance(inbound, dict) and inbound.get(port_key) == port:
             return inbound
     return None
 
@@ -398,19 +434,23 @@ def find_inbound_by_tag(
     """
 
     inbounds = list_inbounds(cfg, env, timeout)
+    tag_key = cfg.panel_field_keys["tag"]
     for inbound in inbounds:
-        if isinstance(inbound, dict) and inbound.get("tag") == tag:
+        if isinstance(inbound, dict) and inbound.get(tag_key) == tag:
             return inbound
     return None
 
 
-def _message_result(status: int, body: str, ok_default: str) -> tuple[bool, str]:
+def _message_result(
+    cfg: ThreeXuiXraySetupConfig, status: int, body: str, ok_default: str
+) -> tuple[bool, str]:
     """Parse a panel write response into (success, message).
 
     Status 0 means the panel was unreachable and an unparsable body is an
-    unexpected response; otherwise the panel's own msg field is reported
-    and success decides the flag. Shared by every write helper, so the
-    error wording stays identical across them.
+    unexpected response; otherwise the panel's own message field is
+    reported and its success field decides the flag. Shared by every
+    write helper, so the error wording stays identical across them. Both
+    field names come from the panel answer keys of the config.
     """
 
     if status == 0:
@@ -421,8 +461,9 @@ def _message_result(status: int, body: str, ok_default: str) -> tuple[bool, str]
         return False, f"unexpected response (HTTP {status})"
     if not isinstance(resp, dict):
         return False, f"unexpected response (HTTP {status})"
-    msg = resp.get("msg", "")
-    if resp.get("success"):
+    answers = cfg.panel_answer_keys
+    msg = resp.get(answers["message"], "")
+    if resp.get(answers["success"]):
         return True, msg or ok_default
     return False, msg or "unknown error"
 
@@ -442,17 +483,19 @@ def create_inbound(
 
     base_url, opener = _bearer_opener(cfg, env)
     data = json.dumps(payload).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/json"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_inbounds_add_path}",
         data=data,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "inbound created")
+    return _message_result(cfg, status, body, "inbound created")
 
 
 def generate_reality_key(
@@ -469,7 +512,7 @@ def generate_reality_key(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_x25519_cert_path}",
-        headers=_bearer_headers(env),
+        headers=_bearer_headers(cfg, env),
         timeout=timeout,
     )
     if status != 200:
@@ -478,13 +521,15 @@ def generate_reality_key(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return None
-    private_key = obj.get("privateKey", "")
-    public_key = obj.get("publicKey", "")
+    fields = cfg.panel_field_keys
+    private_key = obj.get(fields["private_key"], "")
+    public_key = obj.get(fields["public_key"], "")
     if not private_key or not public_key:
         return None
     return (private_key, public_key)
@@ -548,14 +593,16 @@ def panel_settings(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/json"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_setting_all_path}",
         data=b"{}",
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -564,9 +611,10 @@ def panel_settings(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return None
     return obj
@@ -589,17 +637,19 @@ def update_panel_settings(
 
     base_url, opener = _bearer_opener(cfg, env)
     data = json.dumps(settings).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/json"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_setting_update_path}",
         data=data,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "settings updated")
+    return _message_result(cfg, status, body, "settings updated")
 
 
 def ensure_subscription_paths(
@@ -618,10 +668,11 @@ def ensure_subscription_paths(
     settings = panel_settings(cfg, env, timeout)
     if settings is None:
         return False, "cannot read panel settings"
+    fields = cfg.panel_field_keys
     wanted = {
-        "subPath": cfg.subscription_path,
-        "subJsonPath": cfg.subscription_json_path,
-        "subClashPath": cfg.subscription_clash_path,
+        fields["sub_path"]: cfg.subscription_path,
+        fields["sub_json_path"]: cfg.subscription_json_path,
+        fields["sub_clash_path"]: cfg.subscription_clash_path,
     }
     if all(settings.get(key) == value for key, value in wanted.items()):
         return False, ""
@@ -651,17 +702,21 @@ def update_inbound(
 
     base_url, opener = _bearer_opener(cfg, env)
     data = json.dumps(inbound).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/json"
+    fields = cfg.panel_field_keys
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
+    inbound_id = inbound.get(fields["id"])
     status, body = _request(
         opener,
-        f"{base_url}{cfg.panel_inbounds_update_path.format(inbound_id=inbound.get('id'))}",
+        f"{base_url}{cfg.panel_inbounds_update_path.format(inbound_id=inbound_id)}",
         data=data,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "inbound updated")
+    return _message_result(cfg, status, body, "inbound updated")
 
 
 def upsert_inbound(
@@ -679,14 +734,15 @@ def upsert_inbound(
     for the log.
     """
 
-    tag = payload.get("tag")
+    fields = cfg.panel_field_keys
+    tag = payload.get(fields["tag"])
     if not isinstance(tag, str) or not tag:
         return False, "inbound payload has no tag to identify it by"
     existing = find_inbound_by_tag(cfg, env, tag, timeout)
     if existing is None:
         return create_inbound(cfg, env, payload, timeout)
     replacement = dict(payload)
-    replacement["id"] = existing.get("id")
+    replacement[fields["id"]] = existing.get(fields["id"])
     ok, message = update_inbound(cfg, env, replacement, timeout)
     return ok, message if not ok else f"inbound {tag} updated: {message}"
 
@@ -703,11 +759,11 @@ def delete_inbound(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_inbounds_delete_path.format(inbound_id=inbound_id)}",
-        headers=_bearer_headers(env),
-        method="POST",
+        headers=_bearer_headers(cfg, env),
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "inbound deleted")
+    return _message_result(cfg, status, body, "inbound deleted")
 
 
 def find_client(
@@ -728,7 +784,7 @@ def find_client(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_client_get_path.format(email=urllib.parse.quote(email))}",
-        headers=_bearer_headers(env),
+        headers=_bearer_headers(cfg, env),
         timeout=timeout,
     )
     if status != 200:
@@ -737,12 +793,13 @@ def find_client(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return None
-    client = obj.get("client")
+    client = obj.get(cfg.panel_field_keys["client"])
     return client if isinstance(client, dict) else None
 
 
@@ -763,27 +820,30 @@ def create_client(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
+    fields = cfg.panel_field_keys
     payload = {
-        "client": {
-            "id": client_id,
-            "email": email,
-            "enable": True,
-            "subId": sub_id,
+        fields["client"]: {
+            fields["id"]: client_id,
+            fields["email"]: email,
+            fields["enable"]: True,
+            fields["sub_id"]: sub_id,
         },
-        "inboundIds": [inbound_id],
+        fields["inbound_ids"]: [inbound_id],
     }
     data = json.dumps(payload).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/json"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_client_add_path}",
         data=data,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "client created")
+    return _message_result(cfg, status, body, "client created")
 
 
 def client_links(
@@ -803,7 +863,7 @@ def client_links(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_client_links_path.format(email=urllib.parse.quote(email))}",
-        headers=_bearer_headers(env),
+        headers=_bearer_headers(cfg, env),
         timeout=timeout,
     )
     if status != 200:
@@ -812,9 +872,10 @@ def client_links(
         data = json.loads(body)
     except json.JSONDecodeError:
         return []
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return []
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, list):
         return []
     return [item for item in obj if isinstance(item, str) and item]
@@ -853,8 +914,8 @@ def read_xray_template(
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_xray_status_path}",
-        headers=_bearer_headers(env),
-        method="POST",
+        headers=_bearer_headers(cfg, env),
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -863,16 +924,18 @@ def read_xray_template(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
-    blob = _decoded_json_object(data.get("obj"))
+    fields = cfg.panel_field_keys
+    blob = _decoded_json_object(data.get(answers["payload"]))
     if blob is None:
         return None
-    settings_text = blob.get("xraySetting")
+    settings_text = blob.get(fields["xray_setting"])
     settings = _decoded_json_object(settings_text)
     if settings is None:
         return None
-    test_url = blob.get("outboundTestUrl")
+    test_url = blob.get(fields["outbound_test_url"])
     return XrayTemplate(
         settings=settings,
         outbound_test_url=test_url if isinstance(test_url, str) else "",
@@ -909,23 +972,26 @@ def write_xray_template(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
+    fields = cfg.panel_field_keys
     form = urllib.parse.urlencode(
         {
-            "xraySetting": json.dumps(template.settings),
-            "outboundTestUrl": template.outbound_test_url,
+            fields["xray_setting"]: json.dumps(template.settings),
+            fields["outbound_test_url"]: template.outbound_test_url,
         }
     ).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "form"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_xray_update_path}",
         data=form,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
-    return _message_result(status, body, "xray template applied")
+    return _message_result(cfg, status, body, "xray template applied")
 
 
 def validate_geodata_tokens(
@@ -955,17 +1021,20 @@ def validate_geodata_tokens(
     if not tokens:
         return {}
     base_url, opener = _bearer_opener(cfg, env)
+    fields = cfg.panel_field_keys
     form = urllib.parse.urlencode(
-        {"kind": kind, "tokens": ",".join(tokens)}
+        {fields["kind"]: kind, fields["tokens"]: ",".join(tokens)}
     ).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "form"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_xray_geodata_validate_path}",
         data=form,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -974,19 +1043,20 @@ def validate_geodata_tokens(
         data = json.loads(body)
     except json.JSONDecodeError:
         return {token: f"unexpected response (HTTP {status})" for token in tokens}
-    if not isinstance(data, dict) or not data.get("success"):
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
         return {token: "the panel rejected the check" for token in tokens}
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, list):
         return {token: "the panel answered no result" for token in tokens}
     rejected: dict[str, str] = {}
     for item in obj:
         if not isinstance(item, dict):
             continue
-        token = item.get("token")
+        token = item.get(fields["token"])
         if not isinstance(token, str) or not token:
             continue
-        reason = item.get("reason")
+        reason = item.get(answers["reason"])
         rejected[token] = reason if isinstance(reason, str) and reason else "rejected"
     return rejected
 
@@ -1015,27 +1085,30 @@ def route_test(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    fields: dict[str, str] = {
-        "port": str(port),
-        "network": network,
-        "protocol": protocol,
-        "inboundTag": inbound_tag,
+    fields = cfg.panel_field_keys
+    request: dict[str, str] = {
+        fields["port"]: str(port),
+        fields["network"]: network,
+        fields["protocol"]: protocol,
+        fields["inbound_tag"]: inbound_tag,
     }
     if domain:
-        fields["domain"] = domain
+        request[fields["domain"]] = domain
     elif address:
-        fields["ip"] = address
+        request[fields["ip"]] = address
     else:
         raise ValueError("route_test needs a domain or an address")
-    form = urllib.parse.urlencode(fields).encode("utf-8")
-    headers = _bearer_headers(env)
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    form = urllib.parse.urlencode(request).encode("utf-8")
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "form"
+    ]
     status, body = _request(
         opener,
         f"{base_url}{cfg.panel_xray_route_test_path}",
         data=form,
         headers=headers,
-        method="POST",
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
     if status == 0:
@@ -1046,13 +1119,18 @@ def route_test(
         return False, f"unexpected response (HTTP {status})"
     if not isinstance(data, dict):
         return False, f"unexpected response (HTTP {status})"
-    if not data.get("success"):
-        message = data.get("msg")
+    answers = cfg.panel_answer_keys
+    if not data.get(answers["success"]):
+        message = data.get(answers["message"])
         return False, message if isinstance(message, str) and message else "route test failed"
-    obj = data.get("obj")
+    obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return False, "the panel answered no routing decision"
-    outbound_tag = obj.get("outboundTag")
-    if not obj.get("matched") or not isinstance(outbound_tag, str) or not outbound_tag:
+    outbound_tag = obj.get(fields["outbound_tag"])
+    if (
+        not obj.get(fields["matched"])
+        or not isinstance(outbound_tag, str)
+        or not outbound_tag
+    ):
         return False, "no routing rule matched the destination"
     return True, outbound_tag

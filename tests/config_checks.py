@@ -4767,6 +4767,34 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_geodata_domain_kind=panel_geodata_domain_kind,
         panel_geodata_ip_kind=panel_geodata_ip_kind,
         inbound_sniffing_protocols=inbound_sniffing_protocols,
+        panel_http_headers=_string_map(
+            raw.get("panel_http_headers"),
+            "three_x_ui_xray_setup.panel_http_headers",
+        ),
+        panel_http_header_values=_string_map(
+            raw.get("panel_http_header_values"),
+            "three_x_ui_xray_setup.panel_http_header_values",
+        ),
+        panel_http_methods=_string_map(
+            raw.get("panel_http_methods"),
+            "three_x_ui_xray_setup.panel_http_methods",
+        ),
+        panel_url_schemes=_string_map(
+            raw.get("panel_url_schemes"),
+            "three_x_ui_xray_setup.panel_url_schemes",
+        ),
+        panel_environment_keys=_string_map(
+            raw.get("panel_environment_keys"),
+            "three_x_ui_xray_setup.panel_environment_keys",
+        ),
+        panel_answer_keys=_string_map(
+            raw.get("panel_answer_keys"),
+            "three_x_ui_xray_setup.panel_answer_keys",
+        ),
+        panel_field_keys=_string_map(
+            raw.get("panel_field_keys"),
+            "three_x_ui_xray_setup.panel_field_keys",
+        ),
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,

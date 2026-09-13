@@ -220,21 +220,24 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
     applied values land in /etc/x-ui/install-result.env for stage 2.
     """
 
+    keys = cfg.panel_environment_keys
     return {
-        "XUI_USERNAME": proquint_encode(
+        keys["username"]: proquint_encode(
             os.urandom(cfg.random_username_bytes), ""
         ),
-        "XUI_PASSWORD": proquint_encode(
+        keys["password"]: proquint_encode(
             os.urandom(cfg.random_secret_bytes), ""
         ),
-        "XUI_WEB_BASE_PATH": proquint_encode(
+        keys["web_base_path"]: proquint_encode(
             os.urandom(cfg.random_secret_bytes), "-"
         ),
-        "XUI_PANEL_PORT": str(cfg.panel_port),
+        keys["panel_port"]: str(cfg.panel_port),
     }
 
 
-def _installer_environment(extra_env: dict[str, str]) -> dict[str, str]:
+def _installer_environment(
+    cfg: ThreeXuiXraySetupConfig, extra_env: dict[str, str]
+) -> dict[str, str]:
     """The environment the official installer runs in.
 
     The installer is a third-party shell script that resolves python3 from
@@ -254,7 +257,7 @@ def _installer_environment(extra_env: dict[str, str]) -> dict[str, str]:
         and not (entry == venv_root or entry.startswith(f"{venv_root}{os.sep}"))
     )
     environment["VIRTUAL_ENV"] = ""
-    environment["XUI_NONINTERACTIVE"] = "1"
+    environment[cfg.panel_environment_keys["noninteractive"]] = "1"
     environment.update(extra_env)
     return environment
 
@@ -281,7 +284,7 @@ def _run_installer(
             substituted_command(
                 cfg.installer_run_command, {"script_path": str(script_path)}
             ),
-            extra_env=_installer_environment(extra_env),
+            extra_env=_installer_environment(cfg, extra_env),
             timeout=timeout,
         )
     finally:
@@ -311,17 +314,24 @@ def _wait_active(
     return False
 
 
-def _build_notes(env: dict[str, str]) -> str:
+def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
     """Build the notes field for the vault entry from the env dict.
 
     The notes carry the additional values that do not fit into the
-    standard KeePass fields: XUI_PANEL_PORT, XUI_WEB_BASE_PATH,
-    XUI_API_TOKEN, XUI_DB_TYPE. Each is written as key=value on its
+    standard KeePass fields: the panel port, the web base path, the API
+    token and the database type, under the names the panel environment
+    keys of the config give them. Each is written as key=value on its
     own line.
     """
 
     lines: list[str] = []
-    for key in ("XUI_PANEL_PORT", "XUI_WEB_BASE_PATH", "XUI_API_TOKEN", "XUI_DB_TYPE"):
+    keys = cfg.panel_environment_keys
+    for key in (
+        keys["panel_port"],
+        keys["web_base_path"],
+        keys["api_token"],
+        keys["db_type"],
+    ):
         value = env.get(key)
         if value:
             lines.append(f"{key}={value}")
@@ -339,8 +349,13 @@ def _panel_env(
     certificate.
     """
 
-    env = xui_client.parse_install_result_env(cfg.install_result_env_path)
-    env["XUI_SCHEME"] = xui_client.panel_scheme(cfg, timeout)
+    env = xui_client.parse_install_result_env(
+        cfg.install_result_env_path,
+        xui_client.panel_required_environment_keys(cfg),
+    )
+    env[cfg.panel_environment_keys["scheme"]] = xui_client.panel_scheme(
+        cfg, timeout
+    )
     return env
 
 
@@ -395,15 +410,16 @@ def _stage2(
     _log("stage 2: runtime vault opened")
 
     # Build the entry values.
+    keys = cfg.panel_environment_keys
     base_url = xui_client.build_panel_url(
         cfg.panel_http_address,
-        env.get("XUI_PANEL_PORT", ""),
-        env.get("XUI_WEB_BASE_PATH"),
-        scheme=env.get("XUI_SCHEME", "http"),
+        env.get(keys["panel_port"], ""),
+        env.get(keys["web_base_path"]),
+        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
     )
-    username = env.get("XUI_USERNAME", "")
-    password = env.get("XUI_PASSWORD", "")
-    notes = _build_notes(env)
+    username = env.get(keys["username"], "")
+    password = env.get(keys["password"], "")
+    notes = _build_notes(cfg, env)
 
     # Find or create the entry.
     entry = kp.find_entries(
@@ -1270,8 +1286,11 @@ def _wait_panel_http(
     )
     web_path = ""
     try:
-        env = xui_client.parse_install_result_env(Path(cfg.install_result_env_path))
-        web_path = env.get("XUI_WEB_BASE_PATH", "")
+        env = xui_client.parse_install_result_env(
+            Path(cfg.install_result_env_path),
+            xui_client.panel_required_environment_keys(cfg),
+        )
+        web_path = env.get(cfg.panel_environment_keys["web_base_path"], "")
     except (FileNotFoundError, RuntimeError, OSError):
         pass
     try:
