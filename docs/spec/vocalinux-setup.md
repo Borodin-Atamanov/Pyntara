@@ -36,7 +36,7 @@ Vocalinux observes keys at the app level and cannot swallow them, so super+s alo
 
 ## Idempotency
 
-A rerun changes nothing when the pinned AppImage file is present, the packages are installed, the user is in the input group, the ydotool user unit is active, the config and the autostart and the empty-action files already hold the target content and the Meta+S key already matches. The AppImage is never downloaded twice: the cached file under its asset name serves the copy into the user home. Force mode rewrites the user files, re-registers the shortcut and reinstalls the AppImage from the cache.
+A rerun changes nothing when the pinned AppImage file is present, the packages are installed, the user is in the input group, the ydotool user unit is active, the config and the autostart and the empty-action files already hold the target content and the Meta+S key already matches. The AppImage is never downloaded twice: the cached file under its asset name serves the copy into the user home. An installed image whose bytes already equal the cached release is left in place even in force mode, because rewriting the same bytes changes nothing while a running Vocalinux refuses the write with a busy error; the task says so in its log line and still applies the ownership and the mode. When the bytes differ and the running app holds the file, the copy fails and the task reports that in words that name the reason and the remedy (close the app and rerun), as a warning of a completed task; the autostart entry is written whenever the installed file is there, because the entry points at that path and not at the outcome of the copy. Force mode rewrites the user files, re-registers the shortcut and reinstalls the AppImage from the cache.
 
 ## Install location
 

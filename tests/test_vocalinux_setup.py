@@ -7,6 +7,7 @@ run_command inspects the command shape and answers per command.
 
 from __future__ import annotations
 
+import errno
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -387,6 +388,73 @@ def test_force_rewrites_matching_state(
     assert result.changed is True
     assert fakes.curls == []
     assert fakes.kwrites  # force re-registers the shortcut
+
+
+def test_a_forced_rerun_does_not_rewrite_the_installed_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Force leaves an installed image that already matches the release."""
+
+    # A forced run rewrites the files and re-registers the shortcut, but the
+    # AppImage bytes are the wanted ones, and a running app refuses a rewrite
+    # of the same file with a busy error: the copy is not attempted at all.
+    _write_templates(tmp_path, monkeypatch)
+    _seed_installed(tmp_path)
+    cache = tmp_path / "cache" / ASSET
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("appimage-bytes", encoding="utf-8")
+    _seed_user_files(tmp_path)
+    ctx = _ctx(tmp_path, force=True)
+    _install_fakes(
+        monkeypatch,
+        current_shortcut="Meta+S",
+        installed=True,
+        group_present=True,
+        service_active=True,
+    )
+
+    def refuse_copy(source: object, destination: object) -> None:
+        raise AssertionError("the installed image must not be rewritten")
+
+    monkeypatch.setattr(task_module.shutil, "copyfile", refuse_copy)
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert result.warnings == ()
+    assert (tmp_path / "cache" / ASSET).is_file()
+
+
+def test_a_busy_installed_image_is_reported_with_the_remedy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An image a running app holds is a warning that names the remedy."""
+
+    # The installed file differs from the release and the app runs: the copy
+    # fails with the busy error, which the task reports in words that say what
+    # to do, and the autostart entry is written anyway because the file is
+    # there.
+    _write_templates(tmp_path, monkeypatch)
+    _seed_installed(tmp_path)
+    target = _appimage_target(tmp_path)
+    target.write_text("older-bytes", encoding="utf-8")
+    cache = tmp_path / "cache" / ASSET
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("appimage-bytes", encoding="utf-8")
+    ctx = _ctx(tmp_path, force=True)
+    _install_fakes(monkeypatch, installed=True, group_present=True, service_active=True)
+
+    def busy(source: object, destination: object) -> None:
+        raise OSError(errno.ETXTBSY, "Text file busy")
+
+    monkeypatch.setattr(task_module.shutil, "copyfile", busy)
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert any("while Vocalinux runs" in warning for warning in result.warnings)
+    assert any("close the app and rerun" in warning for warning in result.warnings)
+    assert target.read_text(encoding="utf-8") == "older-bytes"
+    cfg = ctx.config.vocalinux_setup
+    assert (Path(cfg.home_dir) / cfg.autostart_relative_path).is_file()
 
 
 def test_missing_config_template_is_a_warning(

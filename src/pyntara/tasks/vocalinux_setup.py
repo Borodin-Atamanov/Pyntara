@@ -22,6 +22,8 @@ AppImage or package install is an error TaskResult.
 
 from __future__ import annotations
 
+import errno
+import filecmp
 import shutil
 import subprocess
 from pathlib import Path
@@ -295,7 +297,11 @@ def _install_appimage(
     source is the official GitHub release of the pinned version. The file
     is downloaded into the root download_dir cache once and copied into
     the user home, so a rerun with a present install file changes nothing
-    and never downloads again. A superseded install of another version is
+    and never downloads again. An installed file whose bytes already equal
+    the cached release is left where it is, even in force mode, because a
+    rewrite of the same bytes changes nothing while a running app refuses
+    it with a busy error; the ownership and the mode are applied either
+    way. A superseded install of another version is
     moved into the user trash, never deleted.
     """
 
@@ -335,9 +341,20 @@ def _install_appimage(
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             partial.unlink(missing_ok=True)
             return False, f"cannot download {url}: {exc}"
+    rewritten = not (
+        target.is_file() and filecmp.cmp(cache, target, shallow=False)
+    )
+    if not rewritten:
+        _log(f"the installed image already matches {cache.name}")
     try:
-        shutil.copyfile(cache, target)
+        if rewritten:
+            shutil.copyfile(cache, target)
     except OSError as exc:
+        if exc.errno == errno.ETXTBSY:
+            return False, (
+                f"cannot replace {target} while Vocalinux runs: the installed "
+                "image is left as it is, close the app and rerun the task"
+            )
         return False, f"cannot install {target}: {exc}"
     run_command(
         substituted_command(
@@ -369,7 +386,9 @@ def _install_appimage(
             _log(f"moved superseded {stale.name} into the trash")
         except OSError as exc:
             _log(f"cannot move superseded {stale.name} into the trash: {exc}")
-    return True, None
+        else:
+            rewritten = True
+    return rewritten, None
 
 
 def _ensure_input_group(
@@ -589,7 +608,7 @@ def task(ctx: Context) -> TaskResult:
             changed = True
             messages.append(f"wrote the app config to {app_config_path}")
 
-    if autostart_template is not None and appimage_error is None:
+    if autostart_template is not None and appimage_path.is_file():
         autostart_changed = _write_user_file(
             cfg,
             cfg.autostart_relative_path,
