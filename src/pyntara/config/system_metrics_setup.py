@@ -182,6 +182,9 @@ class SystemMetricsSetupConfig:
     systemctl_enable_command: tuple[str, ...]
     systemctl_restart_command: tuple[str, ...]
     systemctl_start_command: tuple[str, ...]
+    send_service_command: tuple[str, ...]
+    ingest_service_command: tuple[str, ...]
+    collector_service_command: tuple[str, ...]
     service_journal_identifier: str
     commit_journal_identifier: str
     main_outbox_dir: str

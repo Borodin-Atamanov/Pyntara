@@ -1285,6 +1285,43 @@ def test_free_script_hotkeys_clears_and_releases_live(
     assert "/usr/bin/python3" in releases[0]
 
 
+def test_hotkey_release_prefix_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The prefix of the release call is a config value: another
+    # interpreter command is exactly what runs, with the system
+    # interpreter of the engine filling its {python} slot. The first
+    # element stays the system interpreter, which is what the fake of this
+    # test recognises as the release call.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    _writes, releases = _script_fakes(monkeypatch, session=True)
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    task_module._free_script_hotkeys(
+        replace(
+            ctx.config.kde_settings,
+            python_script_command=(
+                "/usr/bin/python3",
+                "--run",
+                "{python}",
+            ),
+        ),
+        env=env,
+        timeout=5,
+        system_python=ctx.config.engine.system_python,
+    )
+    assert releases
+    assert releases[0][:4] == ["runuser", "-u", "i", "--"]
+    assert releases[0][5] == "--run"
+    assert ctx.config.engine.system_python in releases[0]
+
+
 def test_free_script_hotkeys_without_session_skips_live(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

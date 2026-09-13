@@ -60,6 +60,10 @@ virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 # Command that makes kwin re-read its configuration, so a changed Wayland
 # input method applies without a session restart.
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# Prefix of the calls that run an embedded python client with the system
+# interpreter of the [engine] table and the client source as the next
+# argument of the command line.
+python_script_command = ["{python}", "-c"]
 # Commands that read and change the number of virtual desktops through the
 # kwin DBus interface: the live count, the creation of one desktop at a
 # position and the removal of one desktop by id. The source of truth stays

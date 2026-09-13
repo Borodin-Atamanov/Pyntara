@@ -46,6 +46,7 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__
+from pyntara.config import SystemMetricsSetupConfig
 from pyntara.config.loader import render_config_source
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -199,6 +200,7 @@ def _write_system_config(system_config_path: Path, config_source_dir: Path) -> N
 
 
 def _render_service_unit(
+    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -213,7 +215,10 @@ def _render_service_unit(
     """
 
     command = " ".join(
-        [str(venv_python), "-m", "pyntara.metrics", str(system_config_path)]
+        substituted_command(
+            cfg.send_service_command,
+            {"python": str(venv_python), "config_path": str(system_config_path)},
+        )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
@@ -222,6 +227,7 @@ def _render_service_unit(
 
 
 def _render_ingest_service_unit(
+    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -234,7 +240,10 @@ def _render_ingest_service_unit(
     """
 
     command = " ".join(
-        [str(venv_python), "-m", "pyntara.metrics_ingest", str(system_config_path)]
+        substituted_command(
+            cfg.ingest_service_command,
+            {"python": str(venv_python), "config_path": str(system_config_path)},
+        )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
@@ -250,6 +259,7 @@ def _render_ingest_path_unit(template_path: Path, spool_dir: Path) -> str:
 
 
 def _render_collector_service_unit(
+    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -264,7 +274,10 @@ def _render_collector_service_unit(
     """
 
     command = " ".join(
-        [str(venv_python), "-m", "pyntara.metrics_collect", str(system_config_path)]
+        substituted_command(
+            cfg.collector_service_command,
+            {"python": str(venv_python), "config_path": str(system_config_path)},
+        )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
@@ -439,12 +452,14 @@ def task(ctx: Context) -> TaskResult:
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
 
     service_unit = _render_service_unit(
+        metrics,
         template_dir / "system_metrics.service",
         venv_python,
         system_config_path,
         journal_identifier,
     )
     ingest_service_unit = _render_ingest_service_unit(
+        metrics,
         template_dir / "system_metrics-ingest.service",
         venv_python,
         system_config_path,
@@ -454,6 +469,7 @@ def task(ctx: Context) -> TaskResult:
         template_dir / "system_metrics-ingest.path", spool_dir
     )
     collector_service_unit = _render_collector_service_unit(
+        metrics,
         template_dir / "system_metrics_collector.service",
         venv_python,
         system_config_path,

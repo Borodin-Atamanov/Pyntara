@@ -867,6 +867,30 @@ def test_permission_masks_come_from_the_config(tmp_path: Path) -> None:
     assert not system_metrics_setup._spool_dir_ok(spool, 0o1733, 0o777)
 
 
+def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
+    # The line a deployed unit starts with is a config value: another
+    # command in the table is exactly what the unit runs, with the venv
+    # interpreter and the system config path filling their placeholders.
+    cfg = make_config().system_metrics_setup
+    template = tmp_path / "system_metrics.service"
+    template.write_text(
+        "[Service]\n$exec_lines\nSyslogIdentifier=$journal_identifier\n",
+        encoding="utf-8",
+    )
+    unit = system_metrics_setup._render_service_unit(
+        replace(
+            cfg,
+            send_service_command=("myrun", "-m", "mymod", "{config_path}"),
+        ),
+        template,
+        Path("/venv/bin/python"),
+        Path("/etc/pyntara/config.toml"),
+        "pyntara-metrics",
+    )
+    assert "ExecStart=myrun -m mymod /etc/pyntara/config.toml" in unit
+    assert "SyslogIdentifier=pyntara-metrics" in unit
+
+
 def test_only_path_unit_disabled_enables_and_starts_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

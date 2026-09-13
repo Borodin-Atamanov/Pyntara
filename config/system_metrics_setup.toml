@@ -105,6 +105,14 @@ systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
 systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]
 systemctl_restart_command = ["systemctl", "restart", "{unit_name}"]
 systemctl_start_command = ["systemctl", "start", "{unit_name}"]
+# Commands the deployed units run: the send loop service, the ingest oneshot
+# service and the report collector service, each with the interpreter of the
+# venv and the system config path as its placeholders. They are values like
+# every other command, so a deployment that starts its modules differently
+# edits the config and not the task.
+send_service_command = ["{python}", "-m", "pyntara.metrics", "{config_path}"]
+ingest_service_command = ["{python}", "-m", "pyntara.metrics_ingest", "{config_path}"]
+collector_service_command = ["{python}", "-m", "pyntara.metrics_collect", "{config_path}"]
 # Journal identifier of the System Metrics services.
 service_journal_identifier = "system_metrics"
 # Journal identifier of the commit command.

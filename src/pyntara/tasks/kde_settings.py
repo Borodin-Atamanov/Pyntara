@@ -1134,7 +1134,10 @@ def _release_hotkeys_live(
         "    action = sys.argv[index + 1]\n"
         "    iface.setForeignShortcutKeys([group, action, group, action], empty)\n"
     )
-    command = [system_python, "-c", code]
+    command = [
+        *substituted_command(cfg.python_script_command, {"python": system_python}),
+        code,
+    ]
     for group, action in targets:
         command.extend([group, action])
     run_command(
@@ -1604,7 +1607,15 @@ def _apply_desktop_count_live(
         except OSError as exc:
             return f"cannot read the desktop list client {script_path}: {exc}"
         ids_result = run_command(
-            _as_user_command(cfg, [system_python, "-c", ids_client]),
+            _as_user_command(
+                cfg,
+                [
+                    *substituted_command(
+                        cfg.python_script_command, {"python": system_python}
+                    ),
+                    ids_client,
+                ],
+            ),
             extra_env=env,
             timeout=timeout,
             capture=True,

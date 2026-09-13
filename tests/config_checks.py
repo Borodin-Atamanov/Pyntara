@@ -2116,6 +2116,11 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kwin_reload_command=_string_list(
             raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
         ),
+        python_script_command=_placeholder_command_field(
+            raw.get("python_script_command"),
+            "kde_settings.python_script_command",
+            ("{python}",),
+        ),
         kwin_desktop_count_command=_placeholder_command_field(
             raw.get("kwin_desktop_count_command"),
             "kde_settings.kwin_desktop_count_command",
@@ -3714,6 +3719,21 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("systemctl_start_command"),
             "system_metrics_setup.systemctl_start_command",
             ("{unit_name}",),
+        ),
+        send_service_command=_placeholder_command_field(
+            raw.get("send_service_command"),
+            "system_metrics_setup.send_service_command",
+            ("{python}", "{config_path}"),
+        ),
+        ingest_service_command=_placeholder_command_field(
+            raw.get("ingest_service_command"),
+            "system_metrics_setup.ingest_service_command",
+            ("{python}", "{config_path}"),
+        ),
+        collector_service_command=_placeholder_command_field(
+            raw.get("collector_service_command"),
+            "system_metrics_setup.collector_service_command",
+            ("{python}", "{config_path}"),
         ),
         service_journal_identifier=_nonempty_string_field(
             raw.get("service_journal_identifier"),
