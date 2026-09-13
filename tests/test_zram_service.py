@@ -532,11 +532,12 @@ def test_reset_retries_on_transient_busy(
     assert attempts["count"] == 2
 
 
-def test_reset_failure_after_retries_reports_error(
+def test_reset_failure_after_retries_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The reset of zram0 stays busy across every attempt: the task reports
-    # the error after the configured number of retries.
+    # the reason after the configured number of retries and configures
+    # the device anyway.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     device_count, per_device_bytes = _target(tmp_path)
     for index in range(device_count):
@@ -559,9 +560,9 @@ def test_reset_failure_after_retries_reports_error(
     result = zram_service.task(
         _ctx(tmp_path, force=True, busy_attempts=3, busy_retry_delay_seconds=0)
     )
-    assert result.success is False
-    assert result.changed is False
-    assert "cannot reset zram0" in (result.error or "")
+    assert result.success is True
+    assert result.changed is True
+    assert any("cannot reset zram0" in warning for warning in result.warnings)
     assert attempts["count"] == 3
 
 
@@ -586,11 +587,11 @@ def test_force_mode_reconfigures(
     assert ["systemctl", "enable", "zram.service"] in calls
 
 
-def test_mkswap_failure_reports_error(
+def test_mkswap_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # mkswap fails on the first device: nothing else may run for it and the
-    # task reports the error.
+    # mkswap fails on every device: each of them is reported, no
+    # activation happens and the task completes.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     calls, _, _ = _install_fake(
         monkeypatch,
@@ -600,16 +601,19 @@ def test_mkswap_failure_reports_error(
         fail=lambda command: command[0] == "mkswap",
     )
     result = zram_service.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.changed is False
-    assert "zram0 setup failed" in (result.error or "")
-    assert not any(call == ["mkswap", "/dev/zram1"] for call in calls)
+    assert result.success is True
+    assert any("zram0 setup failed" in warning for warning in result.warnings)
+    assert any("zram1 setup failed" in warning for warning in result.warnings)
+    assert not any(
+        call[0] == "swapon" and "--priority" in call for call in calls
+    )
 
 
-def test_modprobe_failure_reports_error(
+def test_modprobe_failure_reports_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The module cannot load: no device can exist, so the task fails.
+    # The module cannot load: the task reports the reason and keeps the
+    # run going, so the failure of one step never hides the others.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     calls, _, _ = _install_fake(
         monkeypatch,
@@ -619,34 +623,36 @@ def test_modprobe_failure_reports_error(
         fail=lambda command: command[0] == "modprobe",
     )
     result = zram_service.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.changed is False
-    assert "cannot load zram module" in (result.error or "")
-    assert not any(call[0] == "mkswap" for call in calls)
+    assert result.success is True
+    assert any(
+        "cannot load zram module" in warning for warning in result.warnings
+    )
+    assert any(call[0] == "mkswap" for call in calls)
 
 
-def test_missing_template_reports_error(
+def test_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The unit template is missing: the devices are configured but the
-    # service cannot be written, so the task reports the error.
+    # The unit template is missing: the devices are configured, the
+    # service file is skipped alone and the task completes.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     fixtures["template"].unlink()
     calls, _, _ = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )
     result = zram_service.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is True
-    assert "template" in (result.error or "")
+    assert any("template" in warning for warning in result.warnings)
     assert ["mkswap", "/dev/zram0"] in calls
+    assert not any(call[:2] == ["systemctl", "enable"] for call in calls)
 
 
-def test_systemctl_enable_failure_reports_error(
+def test_systemctl_enable_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # systemctl enable fails after the devices were configured: the task
-    # reports the error and marks the run as changed.
+    # reports the reason, keeps the change and completes.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     calls, _, _ = _install_fake(
         monkeypatch,
@@ -656,9 +662,9 @@ def test_systemctl_enable_failure_reports_error(
         fail=lambda command: command[:2] == ["systemctl", "enable"],
     )
     result = zram_service.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is True
-    assert "systemd setup failed" in (result.error or "")
+    assert any("systemd setup failed" in warning for warning in result.warnings)
     assert ["mkswap", "/dev/zram0"] in calls
 
 

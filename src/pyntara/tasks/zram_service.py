@@ -362,6 +362,16 @@ def _write_unit_file(unit_dir: Path, service_name: str, content: str) -> None:
     (unit_dir / service_name).write_text(content, encoding="utf-8")
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Configure the ZRAM devices and the boot service; skip when done.
 
@@ -372,9 +382,11 @@ def task(ctx: Context) -> TaskResult:
     creates the missing ones, configures every device, writes the unit
     file and enables the service. Every step is reported to stdout:
     measurements and decisions as single lines that include their result,
-    long-running commands as a line before and a line after. Any failure
-    is returned as an error TaskResult: the runner continues with the
-    remaining tasks and never stops here.
+    long-running commands as a line before and a line after. A step that
+    cannot run is reported as a warning of a completed task: the missing
+    mechanism skips that step alone and every independent step still
+    runs, except the RAM measurement, without which no device size can be
+    computed at all, so the task ends with the reason in the warnings.
     """
 
     cfg = ctx.config.zram_service
@@ -384,11 +396,16 @@ def task(ctx: Context) -> TaskResult:
     percent_scale = ctx.config.engine.percent_scale
     bytes_per_kib = ctx.config.engine.bytes_per_kib
     bytes_per_mib = ctx.config.engine.bytes_per_mib
+    warnings: list[str] = []
 
     try:
         ram_kib = _read_ram_kib()
     except OSError as exc:
-        return TaskResult(success=False, error=f"cannot determine RAM size: {exc}")
+        return _result(
+            changed=False,
+            message="zram not configured",
+            warnings=[f"cannot determine RAM size: {exc}"],
+        )
     cpu_count, cpu_fallback = _read_cpu_count(cfg.fallback_cpu_count)
     device_count, per_device_bytes = _calculate_devices(
         ram_kib, cpu_count, cfg, bytes_per_kib, percent_scale
@@ -422,7 +439,7 @@ def task(ctx: Context) -> TaskResult:
         device_count, per_device_bytes, active_paths, enabled, cfg
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     # Deactivate, reset and remove the existing devices so sizes and
     # algorithms can be rewritten; devices beyond the target count are
@@ -439,10 +456,9 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                return TaskResult(
-                    success=False, error=f"cannot deactivate {device_path}: {exc}"
-                )
-            _log("swap deactivated")
+                warnings.append(f"cannot deactivate {device_path}: {exc}")
+            else:
+                _log("swap deactivated")
         if index < device_count:
             _log(f"resetting device zram{index}: echo 1 > reset")
             try:
@@ -453,10 +469,9 @@ def task(ctx: Context) -> TaskResult:
                     delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
-                return TaskResult(
-                    success=False, error=f"cannot reset zram{index}: {exc}"
-                )
-            _log("device reset")
+                warnings.append(f"cannot reset zram{index}: {exc}")
+            else:
+                _log("device reset")
         else:
             _log(f"removing extra device zram{index}: echo {index} > hot_remove")
             try:
@@ -467,10 +482,9 @@ def task(ctx: Context) -> TaskResult:
                     delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
-                return TaskResult(
-                    success=False, error=f"cannot remove zram{index}: {exc}"
-                )
-            _log("device removed")
+                warnings.append(f"cannot remove zram{index}: {exc}")
+            else:
+                _log("device removed")
 
     # Load the module, then create the devices that are still missing. The
     # module creates zram0 itself; the rest come from hot_add.
@@ -483,23 +497,30 @@ def task(ctx: Context) -> TaskResult:
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(success=False, error=f"cannot load zram module: {exc}")
-    _log("module loaded")
+        warnings.append(f"cannot load zram module: {exc}")
+    else:
+        _log("module loaded")
+    read_interface = False
     try:
         read_interface = _hot_add_read_interface(cfg.hot_add_readable_mode_bit)
     except OSError as exc:
-        return TaskResult(success=False, error=f"cannot query hot_add: {exc}")
+        # The write spelling of the interface is the fallback, and the
+        # creation step reports its own failure if the module is absent.
+        warnings.append(f"cannot query hot_add: {exc}")
     _log(f"hot_add interface: {'read' if read_interface else 'write'}")
     missing = device_count - _existing_device_count()
     if missing > 0:
         _log(f"creating missing devices: hot_add {missing} times")
         add_error = _add_devices(missing, read_interface)
         if add_error is not None:
-            return TaskResult(success=False, error=add_error)
-        _log("devices created")
+            warnings.append(add_error)
+        else:
+            _log("devices created")
 
     # Configure every device in order: algorithm, size, swap signature,
     # activation with the configured priority.
+    changed = False
+    device_changed = False
     for index in range(device_count):
         device_path = f"/dev/zram{index}"
         _log(f"configuring zram{index}: algorithm {cfg.compressor}")
@@ -513,7 +534,8 @@ def task(ctx: Context) -> TaskResult:
                 str(per_device_bytes),
             )
         except OSError as exc:
-            return TaskResult(success=False, error=f"cannot configure zram{index}: {exc}")
+            warnings.append(f"cannot configure zram{index}: {exc}")
+            continue
         _log(f"zram{index} configured: {per_device_bytes} bytes")
         _log(f"formatting zram{index}: mkswap {device_path}")
         try:
@@ -535,9 +557,11 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(success=False, error=f"zram{index} setup failed: {exc}")
+            warnings.append(f"zram{index} setup failed: {exc}")
+            continue
         _log(f"zram{index} active")
-    changed = True
+        device_changed = True
+    changed = changed or device_changed
 
     # Verify the configured state by reading the system files back.
     _log("verifying zram configuration")
@@ -553,54 +577,59 @@ def task(ctx: Context) -> TaskResult:
     if _existing_device_count() != device_count:
         problems.append("extra zram devices present")
     if problems:
-        return TaskResult(success=False, changed=True, error="; ".join(problems))
-    _log("verification passed")
+        warnings.append("; ".join(problems))
+    else:
+        _log("verification passed")
 
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name) / cfg.unit_template_file_name
     )
     _log(f"rendering unit template from {template_path}")
+    content: str | None = None
     try:
         content = _render_unit(
             template_path, device_count, per_device_bytes, read_interface, cfg
         )
     except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot read unit template: {exc}"
-        )
-    unit_dir = ctx.config.engine.systemd_unit_dir
-    _log(f"writing unit file {unit_dir / service_name}")
-    try:
-        _write_unit_file(unit_dir, service_name, content)
-    except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot write unit file: {exc}"
-        )
-    _log("unit file written")
-    try:
-        _log("reloading systemd: systemctl daemon-reload")
-        run_command(
-            list(cfg.systemctl_daemon_reload_command), timeout=timeout
-        )
-        _log("systemd reloaded")
-        _log(f"enabling service: systemctl enable {service_name}")
-        run_command(
-            substituted_command(
-                cfg.systemctl_enable_command,
-                {"service_unit_name": service_name},
-            ),
-            timeout=timeout,
-        )
-        _log("service enabled")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, changed=True, error=f"systemd setup failed: {exc}"
-        )
-    return TaskResult(
-        success=True,
-        changed=True,
+        warnings.append(f"cannot read unit template: {exc}")
+    if content is not None:
+        unit_dir = ctx.config.engine.systemd_unit_dir
+        _log(f"writing unit file {unit_dir / service_name}")
+        unit_written = False
+        try:
+            _write_unit_file(unit_dir, service_name, content)
+        except OSError as exc:
+            warnings.append(f"cannot write unit file: {exc}")
+        else:
+            _log("unit file written")
+            unit_written = True
+        if unit_written:
+            try:
+                _log("reloading systemd: systemctl daemon-reload")
+                run_command(
+                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                )
+                _log("systemd reloaded")
+                _log(f"enabling service: systemctl enable {service_name}")
+                run_command(
+                    substituted_command(
+                        cfg.systemctl_enable_command,
+                        {"service_unit_name": service_name},
+                    ),
+                    timeout=timeout,
+                )
+                _log("service enabled")
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                warnings.append(f"systemd setup failed: {exc}")
+
+    return _result(
+        changed=changed,
         message=(
             f"zram configured: {device_count} devices, "
             f"{per_device_bytes} bytes each, total {total_mb} MiB"
         ),
+        warnings=warnings,
     )
