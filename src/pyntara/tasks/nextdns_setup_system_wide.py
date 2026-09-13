@@ -90,11 +90,12 @@ def task(ctx: Context) -> TaskResult:
     The vault is opened from the source vaults of the fresh clone with the
     run password, the way local_vault_setup opens them; the runtime vault
     is only the fallback. The profile group is read from the vault and the
-    profile is derived from the hostname. A missing profile group or an
-    empty profile pool is a failure reported in the result: the profile
-    ID file is never touched then. The task is idempotent: when the
-    profile ID file already carries the selected profile it reports done
-    with no changes; force mode rewrites the file.
+    profile is derived from the hostname. A vault that cannot be opened, a
+    missing profile group or an empty profile pool is a warning of a
+    completed task: writing the profile ID is the only step of the task, so
+    there is nothing else to do and the file is left untouched. The task is
+    idempotent: when the profile ID file already carries the selected
+    profile it reports done with no changes; force mode rewrites the file.
     """
 
     cfg = ctx.config.nextdns_setup_system_wide
@@ -102,20 +103,24 @@ def task(ctx: Context) -> TaskResult:
     owner_gid = ctx.config.engine.root_owner_gid
     kp = _open_profile_vault(ctx)
     if kp is None:
+        warning = "cannot open a vault with the NextDNS profiles"
         return TaskResult(
-            success=False,
+            success=True,
             changed=False,
-            error="cannot open a vault with the NextDNS profiles",
+            message=warning,
+            warnings=(warning,),
         )
     profile_id = select_profile_from_vault(kp, cfg.vault_group_title)
     if profile_id is None:
+        warning = (
+            f"cannot derive a NextDNS profile from vault group "
+            f"{cfg.vault_group_title!r} and hostname"
+        )
         return TaskResult(
-            success=False,
+            success=True,
             changed=False,
-            error=(
-                f"cannot derive a NextDNS profile from vault group "
-                f"{cfg.vault_group_title!r} and hostname"
-            ),
+            message=warning,
+            warnings=(warning,),
         )
 
     try:
@@ -130,7 +135,13 @@ def task(ctx: Context) -> TaskResult:
         )
 
     if not _write_profile_id_file(cfg, profile_id, owner_uid, owner_gid):
-        return TaskResult(success=False, error="cannot record the NextDNS profile ID")
+        warning = "cannot record the NextDNS profile ID"
+        return TaskResult(
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
+        )
     return TaskResult(
         success=True,
         changed=True,

@@ -156,20 +156,23 @@ def test_force_rewrites_file(
     assert result.changed is True
 
 
-def test_missing_group_fails_without_writing(
+def test_missing_group_warns_without_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The vault holds no group for the profiles: the reason is a warning
+    # of a completed task, because writing the profile ID is the only step
+    # of the task and it cannot run.
     vault = tmp_path / "secrets" / "production.vault"
     vault.parent.mkdir(parents=True)
     create_database(str(vault), password=VAULT_PASSWORD)
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "group" in (result.error or "")
+    assert result.success is True
+    assert any("group" in warning for warning in result.warnings)
     assert not ctx.config.nextdns_setup_system_wide.profile_id_file_path.exists()
 
 
-def test_empty_group_fails_without_writing(
+def test_empty_group_warns_without_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = tmp_path / "secrets" / "production.vault"
@@ -180,5 +183,6 @@ def test_empty_group_fails_without_writing(
     kp.save()
     ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
-    assert result.success is False
+    assert result.success is True
+    assert result.warnings
     assert not ctx.config.nextdns_setup_system_wide.profile_id_file_path.exists()
