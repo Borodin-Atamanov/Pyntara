@@ -487,12 +487,17 @@ def _apply_numlock(
     )
 
 
-def _touchpad_groups(text: str) -> list[tuple[str, ...]]:
-    """The [Libinput][...][name] groups whose device name ends with Touchpad.
+def _touchpad_groups(
+    text: str, group_root: str, device_word: str
+) -> list[tuple[str, ...]]:
+    """The touchpad device groups of kcminputrc.
 
-    The numeric libinput ids in a group are machine-specific, so the task
-    matches devices by name; a name that ends with Touchpad identifies a
-    touchpad on any target hardware.
+    A group names one libinput device as [root][...][device name]. The
+    numeric libinput ids in a group are machine-specific, so the task
+    matches devices by name; a device name that ends with the configured
+    word identifies a touchpad on any target hardware. The root group and
+    the word are config values, so another KDE release is answered in the
+    config and not in the code.
     """
 
     groups: list[tuple[str, ...]] = []
@@ -503,8 +508,8 @@ def _touchpad_groups(text: str) -> list[tuple[str, ...]]:
             current = tuple(part for part in line[1:-1].split("][") if part)
             if (
                 len(current) >= 4
-                and current[0] == "Libinput"
-                and current[-1].endswith("Touchpad")
+                and current[0] == group_root
+                and current[-1].endswith(device_word)
             ):
                 groups.append(current)
     return groups
@@ -530,7 +535,11 @@ def _apply_touchpad(
         Path(cfg.home_dir) / cfg.user_config_dir / cfg.kcminputrc_file_name
     )
     try:
-        groups = _touchpad_groups(kcminputrc.read_text(encoding="utf-8"))
+        groups = _touchpad_groups(
+            kcminputrc.read_text(encoding="utf-8"),
+            cfg.touchpad_group_root,
+            cfg.touchpad_device_word,
+        )
     except OSError:
         _log(f"no {cfg.kcminputrc_file_name} found, touchpad settings left as is")
         return False

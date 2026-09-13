@@ -51,6 +51,7 @@ CHROME_BLOCK = (
     'google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"\n'
     'desktop_source_path = "/usr/share/applications/google-chrome.desktop"\n'
     'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n'
+    'desktop_entry_exec_key = "Exec="\n'
     'profile_mirror_path = "/home/i/.config/google-chrome-cdp"\n'
     'mount_service_unit_name = "mount_chrome_user_dir.service"\n'
     "cdp_port = 19222\n"

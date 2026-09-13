@@ -86,6 +86,7 @@ keyring_temp_dir_prefix - the prefix of the temporary directory the key is downl
 keyring_armored_file_name - the name of the armored key file inside that temporary directory
 apt_source_template_file_name - the apt source template under task_data/chrome_setup/, rendered with $keyring_path
 launch_flags - the flags appended to every Exec line, in order, each with its placeholders; a flag whose value is empty is left out
+desktop_entry_exec_key - the key of the desktop entry line that starts the program, which receives the flags; every line carrying it is appended to, so the main entry and the window actions start the same browser
 keyring_dearmor_command - the command that dearmors the key, with {armored} and {output}
 settings_clone_command - the clone command, with {url}, {ref} and {dir}
 settings_fetch_command - the fetch command, with {dir} and {ref}

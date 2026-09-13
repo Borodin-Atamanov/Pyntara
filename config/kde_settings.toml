@@ -136,6 +136,11 @@ wayland_group = ["Wayland"]
 virtual_keyboard_group = ["General"]
 plugins_group = ["Plugins"]
 desktops_group = ["Desktops"]
+# The vocabulary of a touchpad group in kcminputrc, which names one device:
+# the root group of a libinput device and the word a device name ends with,
+# by which the task finds every touchpad of the machine.
+touchpad_group_root = "Libinput"
+touchpad_device_word = "Touchpad"
 # The keys the task reads and writes in those files.
 look_and_feel_package_key = "LookAndFeelPackage"
 color_scheme_key = "ColorScheme"

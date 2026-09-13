@@ -457,6 +457,10 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
         username=_nonempty_string_field(
             raw.get("username"), "chrome_setup.username"
         ),
+        desktop_entry_exec_key=_nonempty_string_field(
+            raw.get("desktop_entry_exec_key"),
+            "chrome_setup.desktop_entry_exec_key",
+        ),
         home_dir=_nonempty_string_field(
             raw.get("home_dir"), "chrome_setup.home_dir"
         ),
@@ -2076,6 +2080,13 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         raise ConfigError("[kde_settings] section is missing or not a table")
     return KdeSettingsConfig(
         packages=_string_list(raw.get("packages"), "kde_settings.packages"),
+        touchpad_group_root=_nonempty_string_field(
+            raw.get("touchpad_group_root"), "kde_settings.touchpad_group_root"
+        ),
+        touchpad_device_word=_nonempty_string_field(
+            raw.get("touchpad_device_word"),
+            "kde_settings.touchpad_device_word",
+        ),
         username=_nonempty_string_field(
             raw.get("username"), "kde_settings.username"
         ),

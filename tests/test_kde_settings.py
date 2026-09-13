@@ -483,10 +483,28 @@ cursorSize=72
 
 def test_touchpad_groups_finds_touchpad_sections() -> None:
     # Only the libinput groups whose device name ends with Touchpad match.
-    assert task_module._touchpad_groups(TOUCHPAD_RC) == [
-        ("Libinput", "2362", "597", "SYNA3602:00 093A:0255 Touchpad")
+    cfg = make_config().kde_settings
+    assert task_module._touchpad_groups(
+        TOUCHPAD_RC, cfg.touchpad_group_root, cfg.touchpad_device_word
+    ) == [("Libinput", "2362", "597", "SYNA3602:00 093A:0255 Touchpad")]
+    assert (
+        task_module._touchpad_groups(
+            "[Mouse]\ncursorSize=72\n",
+            cfg.touchpad_group_root,
+            cfg.touchpad_device_word,
+        )
+        == []
+    )
+
+
+def test_the_touchpad_group_words_come_from_the_config() -> None:
+    # The root group and the word a device name ends with are config
+    # values: another pair of them is the group the task collects.
+    text = "[MyRoot][1][2][name MyPad]\nClickMethod=2\n"
+    assert task_module._touchpad_groups(text, "MyRoot", "MyPad") == [
+        ("MyRoot", "1", "2", "name MyPad")
     ]
-    assert task_module._touchpad_groups("[Mouse]\ncursorSize=72\n") == []
+    assert task_module._touchpad_groups(text, "Libinput", "Touchpad") == []
 
 
 def test_numlock_writes_off_value(

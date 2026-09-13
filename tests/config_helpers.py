@@ -211,6 +211,8 @@ def base_config() -> str:
         'virtual_keyboard_group = ["General"]\n'
         'plugins_group = ["Plugins"]\n'
         'desktops_group = ["Desktops"]\n'
+        'touchpad_group_root = "Libinput"\n'
+        'touchpad_device_word = "Touchpad"\n'
         'look_and_feel_package_key = "LookAndFeelPackage"\n'
         'color_scheme_key = "ColorScheme"\n'
         'automatic_look_and_feel_key = "AutomaticLookAndFeel"\n'
@@ -878,6 +880,7 @@ def base_config() -> str:
         'google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"\n'
         'desktop_source_path = "/usr/share/applications/google-chrome.desktop"\n'
         'desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"\n'
+        'desktop_entry_exec_key = "Exec="\n'
         'profile_mirror_path = "/home/i/.config/google-chrome-cdp"\n'
         'mount_service_unit_name = "mount_chrome_user_dir.service"\n'
         "cdp_port = 19222\n"

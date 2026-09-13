@@ -419,6 +419,31 @@ def test_desktop_content_follows_the_configured_launch_flags() -> None:
             assert "--user-data-dir" not in line
 
 
+def test_the_desktop_entry_key_comes_from_the_config() -> None:
+    # The key of the desktop entry line that starts the program is a
+    # config value: another key in the table is the line the task appends
+    # the launch flags to, and the shipped key matches nothing.
+    cfg = replace(
+        make_config().chrome_setup, desktop_entry_exec_key="Starts="
+    )
+    renamed = DESKTOP_SOURCE.replace("Exec=", "Starts=")
+    content = chrome_setup._desktop_content(
+        cfg,
+        renamed,
+        proxy_server="",
+        user_data_dir="",
+    )
+    starts_lines = [
+        line for line in content.splitlines() if line.startswith("Starts=")
+    ]
+    assert len(starts_lines) == 2
+    for line in starts_lines:
+        assert line.endswith(CDP_FLAGS)
+    assert not any(
+        line.startswith("Exec=") for line in content.splitlines()
+    )
+
+
 def test_local_proxy_server_reads_the_three_x_ui_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

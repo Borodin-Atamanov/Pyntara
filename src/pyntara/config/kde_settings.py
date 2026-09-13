@@ -129,6 +129,8 @@ class KdeSettingsConfig:
     virtual_keyboard_group: tuple[str, ...]
     plugins_group: tuple[str, ...]
     desktops_group: tuple[str, ...]
+    touchpad_group_root: str
+    touchpad_device_word: str
     look_and_feel_package_key: str
     color_scheme_key: str
     automatic_look_and_feel_key: str

@@ -557,7 +557,7 @@ def _desktop_content(
         flags += " " + flag.format(**values)
     lines: list[str] = []
     for line in source_text.splitlines(keepends=True):
-        if line.startswith("Exec="):
+        if line.startswith(cfg.desktop_entry_exec_key):
             lines.append(line.rstrip("\n") + flags + "\n")
         else:
             lines.append(line)

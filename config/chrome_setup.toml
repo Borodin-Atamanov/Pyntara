@@ -31,6 +31,10 @@ keyring_path = "/usr/share/keyrings/google-chrome.gpg"
 google_key_url = "https://dl.google.com/linux/linux_signing_key.pub"
 desktop_source_path = "/usr/share/applications/google-chrome.desktop"
 desktop_override_path = "/usr/local/share/applications/google-chrome.desktop"
+# Key of a desktop entry line that starts the program. The task appends the
+# launch flags to every line carrying it, so the key of the foreign file is
+# a value like the flag list itself.
+desktop_entry_exec_key = "Exec="
 # Name of the apt package of the browser.
 package_name = "google-chrome-stable"
 # Name of the main browser process as pgrep sees it (comm is the binary

@@ -54,6 +54,7 @@ class ChromeSetupConfig:
     appletsrc_file_name: str
     appletsrc_relative_path: str
     appletsrc_launchers_key: str
+    desktop_entry_exec_key: str
     kreadconfig_command: tuple[str, ...]
     kwriteconfig_command: tuple[str, ...]
     config_group_flag: tuple[str, ...]
