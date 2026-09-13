@@ -542,7 +542,8 @@ def _is_panel_restriction(rule: object, policy: LocalProxyPolicy) -> bool:
     return (
         isinstance(ip_entries, list)
         and policy.panel_private_block_category in ip_entries
-        and rule.get("outboundTag") == policy.blocked_outbound_tag
+        and rule.get(policy.field_keys["outbound_tag"])
+        == policy.blocked_outbound_tag
     )
 
 

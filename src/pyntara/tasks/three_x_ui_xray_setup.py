@@ -477,26 +477,27 @@ def _ensure_inbound_security(
     so the rest of the task continues.
     """
 
-    stream = inbound.get("streamSettings")
+    fields = cfg.xray_field_keys
+    stream = inbound.get(fields["stream_settings"])
     if not isinstance(stream, dict):
         return False, ("inbound has no stream settings",)
-    reality = stream.get("realitySettings")
+    reality = stream.get(fields["reality_settings"])
     if not isinstance(reality, dict):
         return False, ("inbound has no REALITY settings",)
-    stored = reality.get("settings")
-    if isinstance(stored, dict) and stored.get("publicKey"):
+    stored = reality.get(fields["settings"])
+    if isinstance(stored, dict) and stored.get(fields["public_key"]):
         return False, ()
     keypair = xui_client.generate_reality_key(cfg, env, timeout)
     if keypair is None:
         return False, ("cannot read the REALITY key pair from the panel",)
     private_key, public_key = keypair
-    reality["privateKey"] = private_key
-    reality["settings"] = {
-        "publicKey": public_key,
-        "fingerprint": cfg.reality_fingerprint,
+    reality[fields["private_key"]] = private_key
+    reality[fields["settings"]] = {
+        fields["public_key"]: public_key,
+        fields["fingerprint"]: cfg.reality_fingerprint,
     }
-    stream["realitySettings"] = reality
-    inbound["streamSettings"] = stream
+    stream[fields["reality_settings"]] = reality
+    inbound[fields["stream_settings"]] = stream
     ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
     if not ok:
         return False, (f"inbound update failed: {message}",)
@@ -759,14 +760,19 @@ def _stage_connection(
     if kp is None or not link:
         return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
 
-    stream = inbound.get("streamSettings")
-    reality_map = stream.get("realitySettings") if isinstance(stream, dict) else None
+    fields = cfg.xray_field_keys
+    stream = inbound.get(fields["stream_settings"])
+    reality_map = (
+        stream.get(fields["reality_settings"])
+        if isinstance(stream, dict)
+        else None
+    )
     reality = reality_map if isinstance(reality_map, dict) else {}
-    settings_block = reality.get("settings")
+    settings_block = reality.get(fields["settings"])
     public_key = ""
     if isinstance(settings_block, dict):
-        public_key = str(settings_block.get("publicKey") or "")
-    private_key = str(reality.get("privateKey") or "")
+        public_key = str(settings_block.get(fields["public_key"]) or "")
+    private_key = str(reality.get(fields["private_key"]) or "")
 
     notes = _connection_notes(
         cfg,

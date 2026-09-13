@@ -188,6 +188,123 @@ def _string_map(raw: object, name: str) -> dict[str, str]:
     return result
 
 
+def _complete_string_map(
+    raw: object, name: str, required_keys: tuple[str, ...]
+) -> dict[str, str]:
+    """Validate a map and demand the meanings the code reads from it.
+
+    A map the code indexes by a fixed meaning has to carry that meaning:
+    a missing one would raise on the target machine, where nobody can add
+    it, so the check refuses the config here instead.
+    """
+
+    result = _string_map(raw, name)
+    missing = [key for key in required_keys if key not in result]
+    if missing:
+        raise ConfigError(f"{name} is missing the keys {', '.join(missing)}")
+    return result
+
+
+XRAY_FIELD_KEY_MEANINGS = (
+    "tag",
+    "protocol",
+    "settings",
+    "stream_settings",
+    "network",
+    "security",
+    "reality_settings",
+    "server_name",
+    "fingerprint",
+    "public_key",
+    "private_key",
+    "short_id",
+    "spider_x",
+    "vnext",
+    "address",
+    "port",
+    "users",
+    "id",
+    "encryption",
+    "flow",
+    "servers",
+    "remark",
+    "listen",
+    "enable",
+    "expiry_time",
+    "total",
+    "up",
+    "down",
+    "auth",
+    "udp",
+    "ip",
+    "sniffing",
+    "enabled",
+    "dest_override",
+    "metadata_only",
+    "route_only",
+    "type",
+    "inbound_tag",
+    "outbound_tag",
+    "domain",
+    "outbounds",
+    "routing",
+    "rules",
+    "domain_strategy",
+    "final_rules",
+)
+
+XRAY_VALUE_MEANINGS = (
+    "vless",
+    "reality",
+    "none",
+    "tcp",
+    "socks",
+    "http",
+    "noauth",
+    "field",
+    "api_tag",
+    "onion_domain",
+    "i2p_domain",
+)
+
+VLESS_LINK_QUERY_KEY_MEANINGS = (
+    "security",
+    "public_key",
+    "fingerprint",
+    "short_id",
+    "server_name",
+    "spider_x",
+    "flow",
+    "network",
+)
+
+
+def _xray_field_keys(raw: object) -> dict[str, str]:
+    """Validate the field name map of the Xray document."""
+
+    return _complete_string_map(
+        raw, "three_x_ui_xray_setup.xray_field_keys", XRAY_FIELD_KEY_MEANINGS
+    )
+
+
+def _xray_values(raw: object) -> dict[str, str]:
+    """Validate the protocol word map of the Xray document."""
+
+    return _complete_string_map(
+        raw, "three_x_ui_xray_setup.xray_values", XRAY_VALUE_MEANINGS
+    )
+
+
+def _vless_link_query_keys(raw: object) -> dict[str, str]:
+    """Validate the query parameter map of a vless share link."""
+
+    return _complete_string_map(
+        raw,
+        "three_x_ui_xray_setup.vless_link_query_keys",
+        VLESS_LINK_QUERY_KEY_MEANINGS,
+    )
+
+
 def _enum_field(raw: object, name: str, allowed: tuple[str, ...]) -> str:
     """Validate a config value restricted to an allowed vocabulary."""
 
@@ -4795,17 +4912,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             raw.get("panel_field_keys"),
             "three_x_ui_xray_setup.panel_field_keys",
         ),
-        xray_field_keys=_string_map(
-            raw.get("xray_field_keys"),
-            "three_x_ui_xray_setup.xray_field_keys",
-        ),
-        xray_values=_string_map(
-            raw.get("xray_values"),
-            "three_x_ui_xray_setup.xray_values",
-        ),
-        vless_link_query_keys=_string_map(
-            raw.get("vless_link_query_keys"),
-            "three_x_ui_xray_setup.vless_link_query_keys",
+        xray_field_keys=_xray_field_keys(raw.get("xray_field_keys")),
+        xray_values=_xray_values(raw.get("xray_values")),
+        vless_link_query_keys=_vless_link_query_keys(
+            raw.get("vless_link_query_keys")
         ),
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
