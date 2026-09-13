@@ -3579,6 +3579,26 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("ingest_path_unit_name"),
             "system_metrics_setup.ingest_path_unit_name",
         ),
+        systemctl_daemon_reload_command=_placeholder_command_field(
+            raw.get("systemctl_daemon_reload_command"),
+            "system_metrics_setup.systemctl_daemon_reload_command",
+            (),
+        ),
+        systemctl_enable_command=_placeholder_command_field(
+            raw.get("systemctl_enable_command"),
+            "system_metrics_setup.systemctl_enable_command",
+            ("{unit_name}",),
+        ),
+        systemctl_restart_command=_placeholder_command_field(
+            raw.get("systemctl_restart_command"),
+            "system_metrics_setup.systemctl_restart_command",
+            ("{unit_name}",),
+        ),
+        systemctl_start_command=_placeholder_command_field(
+            raw.get("systemctl_start_command"),
+            "system_metrics_setup.systemctl_start_command",
+            ("{unit_name}",),
+        ),
         service_journal_identifier=_nonempty_string_field(
             raw.get("service_journal_identifier"),
             "system_metrics_setup.service_journal_identifier",

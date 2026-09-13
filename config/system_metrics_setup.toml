@@ -96,6 +96,15 @@ service_unit_name = "system_metrics.service"
 ingest_service_unit_name = "system_metrics-ingest.service"
 # Name of the ingest path unit that watches the spool directory.
 ingest_path_unit_name = "system_metrics-ingest.path"
+# Commands the task runs against the units above: the reload of systemd
+# and the enable, restart and start of a unit, whose name is the
+# {unit_name} placeholder of the template. One shape serves the service,
+# the path unit and the collector timer, because the task runs the same
+# call on each of them.
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]
+systemctl_restart_command = ["systemctl", "restart", "{unit_name}"]
+systemctl_start_command = ["systemctl", "start", "{unit_name}"]
 # Journal identifier of the System Metrics services.
 service_journal_identifier = "system_metrics"
 # Journal identifier of the commit command.

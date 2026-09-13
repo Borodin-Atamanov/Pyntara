@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from string import Template
 from typing import TypedDict
@@ -945,3 +946,64 @@ def test_force_recreates_command_file(
         fixtures
     )
     assert fixtures["command_path"].stat().st_ino != inode_before
+
+
+def test_systemctl_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The reload of systemd and the enable, restart and start of a unit are
+    # config values: another command line in the section is exactly the argv
+    # the task runs.
+    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
+    configured = replace(
+        fixtures["config"].system_metrics_setup,
+        systemctl_daemon_reload_command=(
+            "systemctl",
+            "daemon-reload",
+            "--quiet",
+        ),
+        systemctl_enable_command=(
+            "systemctl",
+            "enable",
+            "{unit_name}",
+            "--quiet",
+        ),
+        systemctl_restart_command=(
+            "systemctl",
+            "restart",
+            "{unit_name}",
+            "--no-block",
+        ),
+        systemctl_start_command=(
+            "systemctl",
+            "start",
+            "{unit_name}",
+            "--no-block",
+        ),
+    )
+    config = replace(fixtures["config"], system_metrics_setup=configured)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=config))
+    assert result.success is True
+    assert ["systemctl", "daemon-reload", "--quiet"] in calls
+    assert [
+        "systemctl",
+        "start",
+        configured.service_unit_name,
+        "--no-block",
+    ] in calls
+    result = system_metrics_setup.task(
+        _ctx(tmp_path, force=True, config=config)
+    )
+    assert result.success is True
+    assert [
+        "systemctl",
+        "enable",
+        configured.service_unit_name,
+        "--quiet",
+    ] in calls
+    assert [
+        "systemctl",
+        "restart",
+        configured.service_unit_name,
+        "--no-block",
+    ] in calls

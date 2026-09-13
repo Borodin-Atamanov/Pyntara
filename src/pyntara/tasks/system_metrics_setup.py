@@ -55,6 +55,7 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
     task_data_dir,
     trim_whitespace,
 )
@@ -606,31 +607,64 @@ def task(ctx: Context) -> TaskResult:
     ):
         try:
             _log("reloading systemd: systemctl daemon-reload")
-            run_command(["systemctl", "daemon-reload"], timeout=timeout)
+            run_command(
+                list(metrics.systemctl_daemon_reload_command),
+                timeout=timeout,
+            )
             _log("systemd reloaded")
             for name in (service_name, ingest_path_name, collector_timer_name):
                 if force or not service_is_enabled(name, timeout):
                     _log(f"enabling unit: systemctl enable {name}")
-                    run_command(["systemctl", "enable", name], timeout=timeout)
+                    run_command(
+                        substituted_command(
+                            metrics.systemctl_enable_command,
+                            {"unit_name": name},
+                        ),
+                        timeout=timeout,
+                    )
                     _log(f"unit {name} enabled")
             active = service_is_active(service_name, timeout)
             if force or (changed and active):
                 _log(f"restarting service: systemctl restart {service_name}")
-                run_command(["systemctl", "restart", service_name], timeout=timeout)
+                run_command(
+                    substituted_command(
+                        metrics.systemctl_restart_command,
+                        {"unit_name": service_name},
+                    ),
+                    timeout=timeout,
+                )
                 _log("service restarted")
             else:
                 _log(f"starting service: systemctl start {service_name}")
-                run_command(["systemctl", "start", service_name], timeout=timeout)
+                run_command(
+                    substituted_command(
+                        metrics.systemctl_start_command,
+                        {"unit_name": service_name},
+                    ),
+                    timeout=timeout,
+                )
                 _log("service started")
             path_active = service_is_active(ingest_path_name, timeout)
             if force or not ingest_path_unit_ok or not path_active:
                 if path_active:
                     _log(f"restarting path unit: systemctl restart {ingest_path_name}")
-                    run_command(["systemctl", "restart", ingest_path_name], timeout=timeout)
+                    run_command(
+                        substituted_command(
+                            metrics.systemctl_restart_command,
+                            {"unit_name": ingest_path_name},
+                        ),
+                        timeout=timeout,
+                    )
                     _log("path unit restarted")
                 else:
                     _log(f"starting path unit: systemctl start {ingest_path_name}")
-                    run_command(["systemctl", "start", ingest_path_name], timeout=timeout)
+                    run_command(
+                        substituted_command(
+                            metrics.systemctl_start_command,
+                            {"unit_name": ingest_path_name},
+                        ),
+                        timeout=timeout,
+                    )
                     _log("path unit started")
             timer_active = service_is_active(collector_timer_name, timeout)
             if force or not collector_timer_unit_ok or not timer_active:
@@ -640,7 +674,11 @@ def task(ctx: Context) -> TaskResult:
                         f"{collector_timer_name}"
                     )
                     run_command(
-                        ["systemctl", "restart", collector_timer_name], timeout=timeout
+                        substituted_command(
+                            metrics.systemctl_restart_command,
+                            {"unit_name": collector_timer_name},
+                        ),
+                        timeout=timeout,
                     )
                     _log("collector timer restarted")
                 else:
@@ -649,7 +687,11 @@ def task(ctx: Context) -> TaskResult:
                         f"{collector_timer_name}"
                     )
                     run_command(
-                        ["systemctl", "start", collector_timer_name], timeout=timeout
+                        substituted_command(
+                            metrics.systemctl_start_command,
+                            {"unit_name": collector_timer_name},
+                        ),
+                        timeout=timeout,
                     )
                     _log("collector timer started")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

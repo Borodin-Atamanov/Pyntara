@@ -189,18 +189,7 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["ip", "-o", family, "route", "show", "proto", "kernel"],',
         }
     ),
-    "src/pyntara/tasks/system_metrics_setup.py": frozenset(
-        {
-            '["systemctl", "restart", collector_timer_name], timeout=timeout',
-            '["systemctl", "start", collector_timer_name], timeout=timeout',
-            'run_command(["systemctl", "daemon-reload"], timeout=timeout)',
-            'run_command(["systemctl", "enable", name], timeout=timeout)',
-            'run_command(["systemctl", "restart", ingest_path_name], timeout=timeout)',
-            'run_command(["systemctl", "restart", service_name], timeout=timeout)',
-            'run_command(["systemctl", "start", ingest_path_name], timeout=timeout)',
-            'run_command(["systemctl", "start", service_name], timeout=timeout)',
-        }
-    ),
+
     "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
         {
             '["bash", "-c", "curl -s https://get.acme.sh | sh"],',

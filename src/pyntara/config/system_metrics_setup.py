@@ -109,7 +109,11 @@ class SystemMetricsSetupConfig:
     special bits and the command one keeping the permission bits only.
     service_unit_name, ingest_service_unit_name and
     ingest_path_unit_name are the unit file names of the service, the
-    ingest oneshot and the path watcher; service_journal_identifier and
+    ingest oneshot and the path watcher; systemctl_daemon_reload_command,
+    systemctl_enable_command, systemctl_restart_command and
+    systemctl_start_command carry the calls the task makes on those
+    units, the unit name being their {unit_name} placeholder;
+    service_journal_identifier and
     commit_journal_identifier are the journal identifiers of the
     services and of the commit command; main_outbox_dir and temp_dir
     are the queue directory names; spool_temp_prefix is the prefix of
@@ -154,6 +158,10 @@ class SystemMetricsSetupConfig:
     service_unit_name: str
     ingest_service_unit_name: str
     ingest_path_unit_name: str
+    systemctl_daemon_reload_command: tuple[str, ...]
+    systemctl_enable_command: tuple[str, ...]
+    systemctl_restart_command: tuple[str, ...]
+    systemctl_start_command: tuple[str, ...]
     service_journal_identifier: str
     commit_journal_identifier: str
     main_outbox_dir: str
