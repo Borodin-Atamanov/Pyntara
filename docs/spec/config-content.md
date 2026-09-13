@@ -6,9 +6,11 @@ config value, a value of a type in the Exceptions section stays in code, and a
 value that fits no type is a config value by the first rule below
 (architecture contract, Configuration).
 
-The types describe the shipped config/ directory as it is today and, in the
-same words, the values the code still carries outside it. The counts are of the
-shipped config at the time of writing and are examples, not limits.
+The types describe the shipped config/ directory as it is today. The audit that
+moved the values the code carried outside it is closed: every value of a listed
+type is a key, and the rest of what stands in the code is an exception below.
+The counts are of the shipped config at the time of writing and are examples,
+not limits.
 
 ## Rules
 
@@ -135,10 +137,13 @@ reads the modules of the package and refuses a value of a listed type written in
 code. It recognises a module level constant of a value, a command argv written as
 a list literal, an absolute path literal outside the kernel and device prefixes of
 the Exceptions section, and a regular expression that two or more modules share.
-Each shape carries the allowlist of the values that are still in code, documented
-either as an exception or as the work of the migration, and the comparison is
-symmetric: a new value fails the suite, and an allowlist entry whose value has
-moved into the config fails it as well, so the lists can only shrink.
+Each shape carries the allowlist of what stands in code today, and the comparison
+is symmetric: a new value fails the suite, and an allowlist entry whose value has
+moved into the config fails it as well, so the lists can only shrink. The
+allowlists of the command argv, of the absolute path and of the shared pattern are
+empty: no module spells a command, names a path outside the kernel prefixes or
+copies a pattern another module also writes. The list of the value constants holds
+the exceptions below and nothing else.
 
 ## Exceptions
 
@@ -183,10 +188,23 @@ reports what it could not do (architecture contract, Configuration). Every rule
 of the config lives in tests/config_checks.py, applied to the shipped config by
 tests/test_config_coverage.py.
 
-## What is left to move
+A list of the key names a deployed component reads is not a value: it belongs to
+the table it describes, so it lives in the config layer next to the fields it
+names and the component imports it (SERVICE_CONFIG_KEYS, INGEST_CONFIG_KEYS,
+COLLECTOR_SECTION_KEYS and COLLECTOR_TABLE_KEYS of
+src/pyntara/config/system_metrics_setup.py). The list is what lets a deployed
+service name an incomplete config instead of failing on a missing attribute, and
+tests/test_config_coverage.py demands that each component read the list of the
+config layer rather than a copy.
 
-The migration of the values the code still carries is tracked in
-[docs/TODO.md](../TODO.md): the constants of the task modules, the commands
-assembled inside functions, the paths of the foreign programs, the file names
-and the site addresses. The file modes, the permission masks, the numbers that
-describe the run, REPO_ROOT and the os-release path are done.
+## The audit is closed
+
+Nothing is left to move: every value of a listed type is a key of the section
+that owns it, and what stands in code is an exception above, with its entry in
+the allowlist of the guard. The history of the audit, block by block, is in
+[docs/TODO.md](../TODO.md).
+
+A value added to the code after this point is a defect of the same kind as a
+value that was never moved: the key is written, the code reads it, and the code
+keeps no copy. The guard refuses the literal, and a section that names the keys
+it reads keeps them next to its fields rather than in its readers.
