@@ -113,6 +113,16 @@ def _write_unit_file(unit_dir: Path, service_name: str, content: str) -> None:
     (unit_dir / service_name).write_text(content, encoding="utf-8")
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Configure the swapfile and the activation service; skip when done.
 
@@ -122,9 +132,10 @@ def task(ctx: Context) -> TaskResult:
     new one at the computed size, activates it, writes the unit file and
     enables the service. Every step is reported to stdout: measurements and
     decisions as single lines that include their result, long-running
-    commands as a line before and a line after. Any failure is returned as
-    an error TaskResult: the runner continues with the remaining tasks and
-    never stops here.
+    commands as a line before and a line after. A step that cannot run is
+    reported as a warning of a completed task: the missing mechanism skips
+    that step alone and every independent step still runs, so the runner
+    continues with the remaining tasks and never stops here.
     """
 
     cfg = ctx.config.swapfile_service_install
@@ -133,16 +144,22 @@ def task(ctx: Context) -> TaskResult:
     service_name = cfg.service_unit_name
     bytes_per_kib = ctx.config.engine.bytes_per_kib
     bytes_per_mib = ctx.config.engine.bytes_per_mib
+    warnings: list[str] = []
 
+    measured = True
     try:
         ram_kib = _read_ram_kib()
         free_disk_kib = (
             shutil.disk_usage(cfg.swapfile_path.parent).free // bytes_per_kib
         )
     except OSError as exc:
-        return TaskResult(
-            success=False, error=f"cannot determine RAM or free disk space: {exc}"
-        )
+        # Without the measurements the size cannot be computed, so the
+        # swapfile steps are skipped while the boot service is still
+        # installed, because the unit creates the file at boot on its own.
+        warnings.append(f"cannot determine RAM or free disk space: {exc}")
+        measured = False
+        ram_kib = 0
+        free_disk_kib = 0
 
     ram_mb = ram_kib // bytes_per_kib
     free_disk_mb = free_disk_kib // bytes_per_kib
@@ -176,18 +193,20 @@ def task(ctx: Context) -> TaskResult:
     )
 
     if (
-        not force
+        measured
+        and not force
         and current_mb is not None
         and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
         and active
         and enabled
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     if (
-        not force
+        measured
+        and not force
         and current_mb is not None
         and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
     ):
@@ -205,10 +224,11 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                return TaskResult(success=False, error=f"swapon failed: {exc}")
-            _log("swap active")
-            changed = True
-    else:
+                warnings.append(f"swapon failed: {exc}")
+            else:
+                _log("swap active")
+                changed = True
+    elif measured or not current_mb:
         # Recreate the swapfile at the computed size. An active swap must be
         # deactivated first, or the resize would fail on a busy file.
         if force:
@@ -219,6 +239,7 @@ def task(ctx: Context) -> TaskResult:
                 f"swapfile size {current_text} differs from target "
                 f"{target_mb} MiB, recreating"
             )
+        deactivated = True
         if active:
             _log(f"deactivating swap: swapoff {cfg.swapfile_path}")
             try:
@@ -230,104 +251,129 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                return TaskResult(
-                    success=False, error=f"cannot deactivate old swapfile: {exc}"
+                # A swap that could not be deactivated is still in use, so
+                # the file is left alone instead of being removed under it.
+                warnings.append(f"cannot deactivate old swapfile: {exc}")
+                deactivated = False
+            else:
+                _log("swap deactivated")
+        removed = True
+        if deactivated:
+            _log(f"removing old swapfile {cfg.swapfile_path}")
+            try:
+                cfg.swapfile_path.unlink(missing_ok=True)
+            except OSError as exc:
+                warnings.append(f"cannot remove old swapfile: {exc}")
+                removed = False
+            else:
+                _log("old swapfile removed")
+        if not removed:
+            _log("skipping swapfile creation: the old file could not be removed")
+        else:
+            try:
+                _log(
+                    f"creating swapfile: fallocate -l {target_mb}M "
+                    f"{cfg.swapfile_path}"
                 )
-            _log("swap deactivated")
-        _log(f"removing old swapfile {cfg.swapfile_path}")
-        try:
-            cfg.swapfile_path.unlink(missing_ok=True)
-        except OSError as exc:
-            return TaskResult(success=False, error=f"cannot remove old swapfile: {exc}")
-        _log("old swapfile removed")
-        try:
-            _log(f"creating swapfile: fallocate -l {target_mb}M {cfg.swapfile_path}")
-            run_command(
-                substituted_command(
-                    cfg.create_command,
-                    {
-                        "size_mb": str(target_mb),
-                        "swapfile_path": str(cfg.swapfile_path),
-                    },
-                ),
-                timeout=timeout,
-            )
-            _log(f"swapfile created: {target_mb} MiB")
-            _log(f"setting permissions: chmod {cfg.swapfile_mode:o} {cfg.swapfile_path}")
-            run_command(
-                substituted_command(
-                    cfg.chmod_command,
-                    {
-                        "file_mode": f"{cfg.swapfile_mode:o}",
-                        "swapfile_path": str(cfg.swapfile_path),
-                    },
-                ),
-                timeout=timeout,
-            )
-            _log("permissions set")
-            _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
-            run_command(
-                substituted_command(
-                    cfg.format_command,
-                    {"swapfile_path": str(cfg.swapfile_path)},
-                ),
-                timeout=timeout,
-            )
-            _log("swapfile formatted")
-            _log(f"activating swap: swapon {cfg.swapfile_path}")
-            run_command(
-                substituted_command(
-                    cfg.swap_on_command,
-                    {"swapfile_path": str(cfg.swapfile_path)},
-                ),
-                timeout=timeout,
-            )
-            _log("swap active")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(success=False, error=f"swapfile setup failed: {exc}")
-        changed = True
+                run_command(
+                    substituted_command(
+                        cfg.create_command,
+                        {
+                            "size_mb": str(target_mb),
+                            "swapfile_path": str(cfg.swapfile_path),
+                        },
+                    ),
+                    timeout=timeout,
+                )
+                _log(f"swapfile created: {target_mb} MiB")
+                _log(
+                    f"setting permissions: chmod {cfg.swapfile_mode:o} "
+                    f"{cfg.swapfile_path}"
+                )
+                run_command(
+                    substituted_command(
+                        cfg.chmod_command,
+                        {
+                            "file_mode": f"{cfg.swapfile_mode:o}",
+                            "swapfile_path": str(cfg.swapfile_path),
+                        },
+                    ),
+                    timeout=timeout,
+                )
+                _log("permissions set")
+                _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
+                run_command(
+                    substituted_command(
+                        cfg.format_command,
+                        {"swapfile_path": str(cfg.swapfile_path)},
+                    ),
+                    timeout=timeout,
+                )
+                _log("swapfile formatted")
+                _log(f"activating swap: swapon {cfg.swapfile_path}")
+                run_command(
+                    substituted_command(
+                        cfg.swap_on_command,
+                        {"swapfile_path": str(cfg.swapfile_path)},
+                    ),
+                    timeout=timeout,
+                )
+                _log("swap active")
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                warnings.append(f"swapfile setup failed: {exc}")
+            else:
+                changed = True
 
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
         / cfg.unit_template_file_name
     )
     _log(f"rendering unit template from {template_path}")
+    content: str | None = None
     try:
         content = _render_unit(template_path, cfg.swapfile_path)
     except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot read unit template: {exc}"
+        warnings.append(f"cannot read unit template: {exc}")
+    if content is not None:
+        unit_dir = ctx.config.engine.systemd_unit_dir
+        _log(f"writing unit file {unit_dir / service_name}")
+        unit_written = False
+        try:
+            _write_unit_file(unit_dir, service_name, content)
+        except OSError as exc:
+            warnings.append(f"cannot write unit file: {exc}")
+        else:
+            _log("unit file written")
+            unit_written = True
+            changed = True
+        if unit_written:
+            try:
+                _log("reloading systemd: systemctl daemon-reload")
+                run_command(
+                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                )
+                _log("systemd reloaded")
+                _log(f"enabling service: systemctl enable {service_name}")
+                run_command(
+                    substituted_command(
+                        cfg.systemctl_enable_command,
+                        {"service_unit_name": service_name},
+                    ),
+                    timeout=timeout,
+                )
+                _log("service enabled")
+                changed = True
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                warnings.append(f"systemd setup failed: {exc}")
+
+    if measured:
+        message = f"swapfile {target_mb}M configured at {cfg.swapfile_path}"
+    else:
+        message = (
+            f"swapfile service {service_name} configured for "
+            f"{cfg.swapfile_path}, size not measured"
         )
-    unit_dir = ctx.config.engine.systemd_unit_dir
-    _log(f"writing unit file {unit_dir / service_name}")
-    try:
-        _write_unit_file(unit_dir, service_name, content)
-    except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot write unit file: {exc}"
-        )
-    _log("unit file written")
-    try:
-        _log("reloading systemd: systemctl daemon-reload")
-        run_command(
-            list(cfg.systemctl_daemon_reload_command), timeout=timeout
-        )
-        _log("systemd reloaded")
-        _log(f"enabling service: systemctl enable {service_name}")
-        run_command(
-            substituted_command(
-                cfg.systemctl_enable_command,
-                {"service_unit_name": service_name},
-            ),
-            timeout=timeout,
-        )
-        _log("service enabled")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, changed=True, error=f"systemd setup failed: {exc}"
-        )
-    return TaskResult(
-        success=True,
-        changed=True,
-        message=f"swapfile {target_mb}M configured at {cfg.swapfile_path}",
-    )
+    return _result(changed=changed, message=message, warnings=warnings)

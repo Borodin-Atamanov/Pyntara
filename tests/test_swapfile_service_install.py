@@ -252,10 +252,11 @@ def test_disk_fraction_limits_size(
     assert "4096M" in (result.message or "")
 
 
-def test_fallocate_failure_reports_error(
+def test_fallocate_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # fallocate fails: nothing else may run and the task reports the error.
+    # fallocate fails: the step is reported and the boot service is still
+    # installed, because the unit creates the file on its own.
     _install_fixtures(monkeypatch, tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -269,15 +270,17 @@ def test_fallocate_failure_reports_error(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = swapfile_service_install.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.changed is False
-    assert "swapfile setup failed" in (result.error or "")
+    assert result.success is True
+    assert any("swapfile setup failed" in warning for warning in result.warnings)
+    assert result.changed is True
+    assert (tmp_path / "systemd" / "swapfile.service").is_file()
 
 
-def test_mkswap_failure_reports_error(
+def test_mkswap_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # mkswap fails after the file was created: the task reports the error.
+    # mkswap fails after the file was created: the task reports the reason
+    # and continues with the boot service.
     _install_fixtures(monkeypatch, tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -291,21 +294,21 @@ def test_mkswap_failure_reports_error(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = swapfile_service_install.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "swapfile setup failed" in (result.error or "")
+    assert result.success is True
+    assert any("swapfile setup failed" in w for w in result.warnings)
 
 
-def test_missing_template_reports_error(
+def test_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The unit template is missing: the swapfile is configured but the
-    # service cannot be written, so the task reports the error.
+    # The unit template is missing: the swapfile is configured, the unit
+    # step is skipped alone and the task completes.
     swapfile = _install_fixtures(monkeypatch, tmp_path)
     (tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service").unlink()
     calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
     result = swapfile_service_install.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "template" in (result.error or "")
+    assert result.success is True
+    assert any("template" in warning for warning in result.warnings)
     assert ["fallocate", "-l", f"{TARGET_MB}M", str(swapfile)] in calls
 
 
