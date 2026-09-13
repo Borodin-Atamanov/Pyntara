@@ -260,7 +260,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
     )
     cfg.tunnel_keys_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnel_keys_path.write_bytes(i2pd_keys_file_bytes())
-    address = b32_address(cfg.tunnel_keys_path)
+    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
     if address:
         cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
         cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")

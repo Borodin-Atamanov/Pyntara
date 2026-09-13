@@ -345,12 +345,12 @@ def _wait_tunnel_address(cfg: I2pdServiceSetupConfig) -> str | None:
     way, and None means the identity is still not there.
     """
 
-    address = b32_address(cfg.tunnel_keys_path)
+    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
     for _ in range(cfg.address_check_attempts):
         if address:
             return address
         time.sleep(cfg.address_check_retry_delay_seconds)
-        address = b32_address(cfg.tunnel_keys_path)
+        address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
     return address
 
 
@@ -523,7 +523,7 @@ def task(ctx: Context) -> TaskResult:
         force or current_tunnels != target_tunnels
     )
     keys_exist = cfg.tunnel_keys_path.is_file()
-    address = b32_address(cfg.tunnel_keys_path)
+    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
     _log(
         f"checking tunnel identity file {cfg.tunnel_keys_path}: "
         f"{'present' if keys_exist else 'missing'}"
@@ -693,7 +693,7 @@ def task(ctx: Context) -> TaskResult:
                 f"service_{action}_command is not configured"
             )
 
-    address = b32_address(cfg.tunnel_keys_path)
+    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
     if address is None:
         _log(
             f"waiting for the tunnel identity file {cfg.tunnel_keys_path} "

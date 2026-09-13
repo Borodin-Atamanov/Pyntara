@@ -83,6 +83,7 @@ settings_system_tree_relative_path - the tree inside the repository deployed und
 preferences_relative_path - the settings file inside the repository and inside the profile
 profile_dir_relative_path - the live Chrome profile directory under home_dir
 keyring_temp_dir_prefix - the prefix of the temporary directory the key is downloaded into
+keyring_armored_file_name - the name of the armored key file inside that temporary directory
 apt_source_template_file_name - the apt source template under task_data/chrome_setup/, rendered with $keyring_path
 launch_flags - the flags appended to every Exec line, in order, each with its placeholders; a flag whose value is empty is left out
 keyring_dearmor_command - the command that dearmors the key, with {armored} and {output}

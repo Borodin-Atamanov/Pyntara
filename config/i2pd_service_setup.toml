@@ -105,3 +105,6 @@ address_check_retry_delay_seconds = 2
 # Name the record of this channel carries in the network report, so a
 # reader sees which network the reported ssh command goes through.
 report_channel_name = "i2p"
+# Suffix of the address the task computes from the identity key: the
+# base32 form followed by the domain of the network.
+address_suffix = ".b32.i2p"

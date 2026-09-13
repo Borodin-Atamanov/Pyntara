@@ -38,15 +38,18 @@ from pyntara.ssh_access import socks_proxy_address, ssh_command
 FALLBACK_NOTE = "address read from the saved file, the keys file is missing or broken"
 
 
-def resolve_address(keys_path: Path, saved_path: Path) -> tuple[str, str]:
+def resolve_address(
+    keys_path: Path, saved_path: Path, address_suffix: str
+) -> tuple[str, str]:
     """The (address, note) of the tunnel.
 
     The live keys file is the primary source; the saved address file is
     the fallback. An empty address means no source yielded one, and the
-    caller reports the failure.
+    caller reports the failure. address_suffix is the domain the address
+    carries, a config value like every other part of the name.
     """
 
-    address = b32_address(keys_path)
+    address = b32_address(keys_path, address_suffix)
     if address:
         return address, ""
     try:
@@ -75,7 +78,9 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
             "the i2pd_service_setup section of the config has no "
             + ", ".join(missing)
         )
-    address, note = resolve_address(setup.tunnel_keys_path, setup.address_file_path)
+    address, note = resolve_address(
+        setup.tunnel_keys_path, setup.address_file_path, setup.address_suffix
+    )
     if not address:
         return None, "I2P tunnel address is not available"
     try:

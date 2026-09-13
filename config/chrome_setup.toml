@@ -73,6 +73,9 @@ profile_dir_relative_path = ".config/google-chrome"
 # Prefix of the temporary directory the Google keyring is downloaded and
 # dearmored in.
 keyring_temp_dir_prefix = "pyntara-chrome-"
+# Name of the armored key file inside that temporary directory, before it
+# is dearmored into the keyring path.
+keyring_armored_file_name = "google-chrome-key.pub"
 # Name of the deb822 apt source template under task_data/chrome_setup/ of
 # the clone, rendered with $keyring_path.
 apt_source_template_file_name = "google-chrome.sources"

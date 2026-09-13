@@ -402,6 +402,7 @@ def make_config(
     telegram_home_dir: str = "/home/i",
     telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
     chrome_home_dir: str = "/home/i",
+    chrome_keyring_armored_file_name: str = "google-chrome-key.pub",
     chrome_settings_dir: Path = Path("/var/cache/pyntara/chromium-settings"),
     chrome_system_root: Path = Path("/"),
     chrome_apt_source_path: Path = Path(
@@ -878,6 +879,7 @@ def make_config(
         chrome_setup=replace(
             base.chrome_setup,
             home_dir=chrome_home_dir,
+            keyring_armored_file_name=chrome_keyring_armored_file_name,
             settings_dir=chrome_settings_dir,
             system_root=chrome_system_root,
             apt_source_path=chrome_apt_source_path,

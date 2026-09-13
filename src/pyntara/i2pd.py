@@ -23,14 +23,15 @@ I2PD_IDENTITY_SIZE = 387
 I2PD_CERTIFICATE_TYPE_KEY = 5
 
 
-def b32_address(keys_path: Path) -> str | None:
+def b32_address(keys_path: Path, address_suffix: str) -> str | None:
     """The .b32.i2p address of the tunnel keys file, or None.
 
     The keys file is the binary PrivateKeys record i2pd writes: its
     first bytes are the IdentityEx, and the I2P address is the lowercase
-    unpadded base32 of the SHA-256 hash of that IdentityEx. The extended
-    block length comes from the certificate, so the hash covers exactly
-    the identity bytes. A missing file, a file too short or a record
+    unpadded base32 of the SHA-256 hash of that IdentityEx, followed by
+    the address suffix of the config. The extended block length comes
+    from the certificate, so the hash covers exactly the identity bytes.
+    A missing file, a file too short or a record
     without the KEY certificate yields None, so the caller reports that
     the address is not available yet instead of failing.
     """
@@ -52,4 +53,4 @@ def b32_address(keys_path: Path) -> str | None:
         return None
     digest = hashlib.sha256(data[:identity_len]).digest()
     encoded = base64.b32encode(digest).decode("ascii").lower().rstrip("=")
-    return f"{encoded}.b32.i2p"
+    return f"{encoded}{address_suffix}"

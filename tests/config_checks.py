@@ -511,6 +511,10 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             raw.get("keyring_temp_dir_prefix"),
             "chrome_setup.keyring_temp_dir_prefix",
         ),
+        keyring_armored_file_name=_nonempty_string_field(
+            raw.get("keyring_armored_file_name"),
+            "chrome_setup.keyring_armored_file_name",
+        ),
         apt_source_template_file_name=_nonempty_string_field(
             raw.get("apt_source_template_file_name"),
             "chrome_setup.apt_source_template_file_name",
@@ -1811,6 +1815,10 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         report_channel_name=_nonempty_string_field(
             raw.get("report_channel_name"),
             "i2pd_service_setup.report_channel_name",
+        ),
+        address_suffix=_nonempty_string_field(
+            raw.get("address_suffix"),
+            "i2pd_service_setup.address_suffix",
         ),
     )
 

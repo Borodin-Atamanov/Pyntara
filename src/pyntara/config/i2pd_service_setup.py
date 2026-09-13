@@ -95,3 +95,4 @@ class I2pdServiceSetupConfig:
     address_check_attempts: int
     address_check_retry_delay_seconds: float
     report_channel_name: str
+    address_suffix: str

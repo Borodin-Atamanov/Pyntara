@@ -119,7 +119,7 @@ def _ensure_repository(
             with tempfile.TemporaryDirectory(
                 prefix=cfg.keyring_temp_dir_prefix
             ) as tmp:
-                armored = Path(tmp) / "google-chrome-key.pub"
+                armored = Path(tmp) / cfg.keyring_armored_file_name
                 run_command(
                     download_command(engine, armored, cfg.google_key_url),
                     timeout=timeout,

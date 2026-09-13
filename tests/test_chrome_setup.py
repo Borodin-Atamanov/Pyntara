@@ -539,6 +539,35 @@ def test_cdp_listener_warning_when_chrome_runs_without_the_listener(
     )
 
 
+def test_keyring_armored_file_name_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The proof of the value: another armored file name in the config is
+    # the name the download writes.
+    ctx = _ctx(tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            chrome_setup=replace(
+                ctx.config.chrome_setup,
+                keyring_armored_file_name="other-key.pub",
+            ),
+        ),
+    )
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    calls = _fake_run_factory(monkeypatch, chrome_installed=False)
+
+    assert chrome_setup.task(ctx).success
+
+    download = next(call for call in calls if call[0] == "curl")
+    assert download[download.index("--output") + 1].endswith("other-key.pub")
+    dearmor = next(call for call in calls if call[0] == "gpg")
+    assert dearmor[-1].endswith("other-key.pub")
+
+
 def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _ctx(tmp_path)
     cfg = ctx.config.chrome_setup

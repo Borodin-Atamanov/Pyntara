@@ -68,6 +68,7 @@ class ChromeSetupConfig:
     preferences_relative_path: str
     profile_dir_relative_path: str
     keyring_temp_dir_prefix: str
+    keyring_armored_file_name: str
     apt_source_template_file_name: str
     launch_flags: tuple[str, ...]
     keyring_dearmor_command: tuple[str, ...]

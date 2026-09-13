@@ -370,7 +370,7 @@ def base_config() -> str:
         'config_false_value = "false"\n'
         "address_check_attempts = 10\n"
         "address_check_retry_delay_seconds = 2\n"
-        'report_channel_name = "i2p"\n'
+        'report_channel_name = "i2p"\naddress_suffix = ".b32.i2p"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'
@@ -850,6 +850,7 @@ def base_config() -> str:
         'preferences_relative_path = "Default/Preferences"\n'
         'profile_dir_relative_path = ".config/google-chrome"\n'
         'keyring_temp_dir_prefix = "pyntara-chrome-"\n'
+        'keyring_armored_file_name = "google-chrome-key.pub"\n'
         'apt_source_template_file_name = "google-chrome.sources"\n'
         'launch_flags = ["--proxy-server={proxy_server}", "--user-data-dir={user_data_dir}", "--remote-debugging-port={cdp_port}", "--remote-debugging-address={cdp_address}"]\n'
         'keyring_dearmor_command = ["gpg", "--dearmor", "--output", "{output}", "{armored}"]\n'
