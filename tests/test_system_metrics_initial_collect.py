@@ -158,21 +158,24 @@ def test_skips_when_unit_missing(
     assert calls == []
 
 
-def test_reports_start_failure(
+def test_reports_start_failure_as_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A failed systemctl start is an error TaskResult: the install log must
-    # show it, no silent failures.
+    # A failed systemctl start is a warning of a completed task: the
+    # install log shows it, no silent failures, and the collector retries
+    # through its own restart policy.
     _install_fixtures(monkeypatch, tmp_path, unit_deployed=True)
     _install_fake(
         monkeypatch,
         fail=lambda command: command[0] == "systemctl",
     )
     result = system_metrics_initial_collect.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.changed is True
-    assert result.error is not None
-    assert "cannot start collector service" in result.error
+    assert result.success is True
+    assert result.changed is False
+    assert any(
+        "cannot start collector service" in warning
+        for warning in result.warnings
+    )
 
 
 def test_catalog_orders_initial_collect_after_address_tasks_and_before_final_commit_in_every_mode() -> None:

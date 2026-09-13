@@ -34,7 +34,8 @@ def task(ctx: Context) -> TaskResult:
     substituted. When the unit file is absent, the deployment did not
     happen and the task skips with changed=False. Otherwise the service is
     started through the shared run_command with the engine timeout; a
-    failed start returns an error TaskResult so the runner reports it.
+    failed start is a warning of a completed task, so the run continues
+    and the collector retries through its own restart policy.
     """
 
     collector = ctx.config.system_metrics_setup.collector
@@ -57,10 +58,12 @@ def task(ctx: Context) -> TaskResult:
             timeout=ctx.config.engine.command_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        warning = f"cannot start collector service {service_name}: {exc}"
         return TaskResult(
-            success=False,
-            changed=True,
-            error=f"cannot start collector service {service_name}: {exc}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     _log(f"collector service {service_name} started")
     return TaskResult(
