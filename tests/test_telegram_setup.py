@@ -288,22 +288,29 @@ def test_force_reinstalls_when_the_latest_archive_is_cached(
     assert any(call[0] == "tar" for call in calls)
 
 
-def test_resolve_failure_is_an_error(
+def test_resolve_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The redirect cannot be resolved: the reason is a warning and the
+    # launcher entry is still written, because it does not depend on the
+    # release URL.
     _fake_run_factory(monkeypatch, tmp_path, head_rc=22)
     result = telegram_setup.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "cannot resolve" in (result.error or "")
+    assert result.success is True
+    assert any("cannot resolve" in warning for warning in result.warnings)
+    assert _deployed_paths(tmp_path)[2].is_file()
 
 
-def test_download_failure_is_an_error(
+def test_download_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The archive cannot be downloaded: the reason is a warning, nothing is
+    # installed and the launcher entry is still written.
     _fake_run_factory(monkeypatch, tmp_path, download_rc=22)
     result = telegram_setup.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "cannot download" in (result.error or "")
+    assert result.success is True
+    assert any("cannot download" in warning for warning in result.warnings)
+    assert not _deployed_paths(tmp_path)[0].exists()
 
 
 def test_configured_names_decide_what_is_installed(

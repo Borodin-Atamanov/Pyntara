@@ -305,8 +305,10 @@ def task(ctx: Context) -> TaskResult:
     Telegram and Updater files under the user home, removes stale cached
     archives, writes the launcher entry and downloads the icon. Force mode
     reinstalls the current release instead of trusting the cached archive.
-    A failure is an error TaskResult, so the runner continues with the
-    remaining tasks and never stops here.
+    A step that cannot run is reported as a warning of a completed task:
+    the download and the install are skipped when a release cannot be
+    resolved, and the launcher entry and the icon are still handled, so
+    the runner continues with the remaining tasks and never stops here.
     """
 
     cfg = ctx.config.telegram_setup
@@ -321,42 +323,52 @@ def task(ctx: Context) -> TaskResult:
     )
     paths = _install_paths(cfg)
 
+    url: str | None = None
     try:
         url = _resolve_latest_url(engine, cfg)
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    name = _cache_name(url)
-    _log(f"checking the latest Telegram Desktop release: {name}")
+        warnings.append(str(exc))
+    name = _cache_name(url) if url is not None else ""
+    if url is not None:
+        _log(f"checking the latest Telegram Desktop release: {name}")
 
-    archive = cfg.download_dir / name
+    archive = cfg.download_dir / name if name else None
     already_latest = (
         not force
+        and archive is not None
         and archive.is_file()
         and paths.binary.is_file()
         and paths.launcher.is_file()
     )
 
-    if already_latest:
+    if url is None:
+        _log("skipping the Telegram Desktop download: no release resolved")
+    elif already_latest:
         _log(f"latest Telegram Desktop release {name} is already installed")
     else:
-        if not archive.is_file():
+        installed = archive is not None and archive.is_file()
+        if not installed:
             _log(f"downloading Telegram Desktop release {name}")
             try:
                 _download_archive(engine, cfg, url, name)
             except RuntimeError as exc:
-                return TaskResult(success=False, changed=changed, error=str(exc))
-        _log(f"installing Telegram Desktop release {name}")
-        try:
-            _install_archive(cfg, archive, engine.command_timeout_seconds)
-        except RuntimeError as exc:
-            return TaskResult(success=False, changed=changed, error=str(exc))
-        _cleanup_old_archives(cfg.download_dir, name)
-        messages.append(f"installed Telegram Desktop {name}")
-        changed = True
+                warnings.append(str(exc))
+            else:
+                installed = True
+        if installed and archive is not None:
+            _log(f"installing Telegram Desktop release {name}")
+            try:
+                _install_archive(cfg, archive, engine.command_timeout_seconds)
+            except RuntimeError as exc:
+                warnings.append(str(exc))
+            else:
+                _cleanup_old_archives(cfg.download_dir, name)
+                messages.append(f"installed Telegram Desktop {name}")
+                changed = True
 
     launcher_changed, launcher_error = _ensure_launcher(cfg, template_path)
     if launcher_error:
-        return TaskResult(success=False, changed=changed, error=launcher_error)
+        warnings.append(launcher_error)
     if launcher_changed:
         messages.append(
             f"wrote the Telegram launcher entry to {paths.launcher}"

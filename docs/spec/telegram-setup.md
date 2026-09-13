@@ -18,6 +18,8 @@ The archive of the last installed release stays in the root download_dir under t
 
 A self-update applied by the client between two provisioning runs is safe: the client fetches the same redirect the task uses, so the next run sees the archive it no longer caches, downloads it once and reinstalls the same release over itself, which the byte comparison turns into a no-op.
 
+The task follows the recoverable failure policy of the task contract: a step that cannot run is a warning of a completed task and the missing mechanism skips that step alone. A redirect that cannot be resolved and an archive that cannot be downloaded skip the installation while the launcher entry and the icon are still handled, and a failed install keeps the launcher entry, which is what makes Telegram reachable.
+
 ## Launcher entry and icon
 
 The launcher entry is written to the configured launcher_relative_path under home_dir, rendered from the configured template with the Exec path pointing at the installed Telegram binary and the Icon path pointing at the downloaded icon, so Telegram appears in the KDE application menu. The entry content is stable and idempotent: a matching file is left alone. The icon is the official Telegram icon downloaded from the tdesktop repository into the configured icon_relative_path; a failed icon download is a warning, never a fatal error, because the launcher still starts Telegram and the icon is retried on the next run.
