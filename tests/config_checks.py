@@ -294,6 +294,31 @@ REPORT_STATUS_WORD_MEANINGS = (
     "error",
 )
 
+# The meanings the code of every address command indexes in the map of
+# report record keys of the [engine] table. A map that misses one of them
+# fails here instead of raising on the target machine, where nobody can add
+# it.
+REPORT_RECORD_KEY_MEANINGS = (
+    "channel",
+    "address",
+    "port",
+    "proxy",
+    "ssh",
+    "note",
+    "server",
+    "local_port",
+    "remote_port",
+    "family",
+    "interface",
+    "scope",
+    "word",
+    "in_country",
+    "values",
+    "answers",
+    "source",
+    "raw",
+)
+
 
 def _xray_field_keys(raw: object) -> dict[str, str]:
     """Validate the field name map of the Xray document."""
@@ -1213,23 +1238,11 @@ def _engine_table(raw: object) -> EngineConfig:
     ssh_report_proxy_host = _nonempty_string_field(
         raw.get("ssh_report_proxy_host"), "engine.ssh_report_proxy_host"
     )
-    report_record_keys = _string_map(
-        raw.get("report_record_keys"), "engine.report_record_keys"
+    report_record_keys = _complete_string_map(
+        raw.get("report_record_keys"),
+        "engine.report_record_keys",
+        REPORT_RECORD_KEY_MEANINGS,
     )
-    for field in (
-        "channel",
-        "address",
-        "port",
-        "ssh",
-        "note",
-        "server",
-        "local_port",
-        "remote_port",
-    ):
-        if not report_record_keys.get(field):
-            raise ConfigError(
-                f"engine.report_record_keys must name the {field} field"
-            )
     bytes_per_kib = _positive_int_field(
         raw.get("bytes_per_kib"), "engine.bytes_per_kib"
     )

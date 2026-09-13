@@ -31,18 +31,25 @@ from pyntara.config import absent_config_keys, load_config
 from pyntara.location import CountryReport, detect_country
 
 
-def country_document(report: CountryReport, word: str) -> dict[str, object]:
-    """The report record of the detection, answers included."""
+def country_document(
+    report: CountryReport, word: str, keys: dict[str, str]
+) -> dict[str, object]:
+    """The report record of the detection, answers included.
+
+    The field names come from the engine map of report record keys, which
+    the address commands of the collector share, so the shape of a record
+    lives in one place.
+    """
 
     return {
-        "word": word,
-        "in_country": report.in_country,
-        "values": list(report.values),
-        "answers": [
+        keys["word"]: word,
+        keys["in_country"]: report.in_country,
+        keys["values"]: list(report.values),
+        keys["answers"]: [
             {
-                "source": answer.source,
-                "values": list(answer.values),
-                "raw": answer.raw,
+                keys["source"]: answer.source,
+                keys["values"]: list(answer.values),
+                keys["raw"]: answer.raw,
             }
             for answer in report.answers
         ],
@@ -99,7 +106,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         json.dumps(
-            country_document(report, setup.country_word),
+            country_document(
+                report, setup.country_word, cfg.engine.report_record_keys
+            ),
             ensure_ascii=False,
             indent=cfg.engine.report_json_indent,
         )

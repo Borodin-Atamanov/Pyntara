@@ -13,9 +13,14 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
+from support import make_config
 
 from pyntara import country_report
 from pyntara.location import CountryReport, ServiceAnswer
+
+# The field names of a record, as the engine map carries them: the tests
+# never spell one themselves.
+RECORD_KEYS = make_config().engine.report_record_keys
 
 
 def _config(tmp_path: Path) -> Path:
@@ -49,7 +54,7 @@ def test_document_carries_the_decision_and_the_answers() -> None:
             fields=(),
         )
     )
-    document = country_report.country_document(report, "russia")
+    document = country_report.country_document(report, "russia", RECORD_KEYS)
     assert document == {
         "word": "russia",
         "in_country": False,
@@ -64,6 +69,34 @@ def test_document_carries_the_decision_and_the_answers() -> None:
     }
 
 
+def test_the_record_keys_come_from_the_engine_table() -> None:
+    # The field names of the record are engine values: another map is the
+    # document the command prints, so the shape lives in the config.
+    report = _report(
+        ServiceAnswer(
+            source="https://ip2c.org/self",
+            raw="1;AR;ARG;Argentina",
+            values=("AR",),
+            fields=(),
+        )
+    )
+    keys = dict(RECORD_KEYS)
+    keys["word"] = "target"
+    keys["in_country"] = "hit"
+    keys["values"] = "seen"
+    keys["answers"] = "replies"
+    keys["source"] = "service"
+    keys["raw"] = "body"
+    assert country_report.country_document(report, "russia", keys) == {
+        "target": "russia",
+        "hit": False,
+        "seen": ["AR"],
+        "replies": [
+            {"service": "https://ip2c.org/self", "seen": ["AR"], "body": "1;AR;ARG;Argentina"}
+        ],
+    }
+
+
 def test_document_marks_a_named_country() -> None:
     report = _report(
         ServiceAnswer(
@@ -74,7 +107,12 @@ def test_document_marks_a_named_country() -> None:
         ),
         word="russia",
     )
-    assert country_report.country_document(report, "russia")["in_country"] is True
+    assert (
+        country_report.country_document(report, "russia", RECORD_KEYS)[
+            "in_country"
+        ]
+        is True
+    )
 
 
 def test_main_prints_the_document(

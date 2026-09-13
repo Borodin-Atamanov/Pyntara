@@ -106,7 +106,7 @@ ssh_report_proxy_host = "127.0.0.1"
 # Field names of one report record, by the meaning of the field. Every
 # address command builds its records through them, so the collector and
 # the commands agree on the shape in one place.
-report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }
+report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", raw = "raw" }
 # Query URL of the latest release of a GitHub repository; every release
 # query of every task uses this one value, with {repo} replaced by the
 # configured owner/name pair, so a mirror or a proxy is configured in one

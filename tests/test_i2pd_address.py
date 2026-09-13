@@ -80,8 +80,8 @@ def test_record_follows_the_configured_report_vocabulary(
     keys.write_bytes(i2pd_keys_file_bytes())
     content = base_config().replace('report_channel_name = "i2p"', 'report_channel_name = "anon"')
     content = content.replace(
-        'report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }',
-        'report_record_keys = { channel = "kind", address = "target", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope" }',
+        'report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", raw = "raw" }',
+        'report_record_keys = { channel = "kind", address = "target", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", raw = "raw" }',
     )
     content = (
         content.replace(

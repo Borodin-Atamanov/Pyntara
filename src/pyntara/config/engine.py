@@ -40,7 +40,9 @@ class EngineConfig:
     command that routes a connection through the local SOCKS proxy and
     ssh_report_proxy_host is the host of that proxy; report_record_keys
     are the field names of a record, by the meaning of each field, so the
-    commands and the collector agree on the shape in one place. os_release_family_keys are the
+    commands and the collector agree on the shape in one place: the fields
+    of an anonymity channel record, of a local address record and of a
+    country record, answers included. os_release_family_keys are the
     fields of the distribution identity file that name the distribution and
     os_release_debian_family_names are the values of those fields that mean
     a Debian-based system, which the shared os_family_is_debian helper
