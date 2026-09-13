@@ -188,6 +188,13 @@ config_key_flag = ["--key", "{key}"]
 config_bool_type_flag = ["--type", "bool"]
 config_notify_flag = ["--notify"]
 config_delete_flag = ["--delete"]
+# Commands of the plasma-apply tools the task runs live when a desktop
+# session exists, each carrying the value it applies; the value is written
+# into the config file first, so a session is an improvement and never a
+# requirement.
+apply_look_and_feel_command = ["plasma-apply-lookandfeel", "-a", "{look_and_feel}"]
+apply_color_scheme_command = ["plasma-apply-colorscheme", "{color_scheme}"]
+apply_cursor_theme_command = ["plasma-apply-cursortheme", "{cursor_theme}"]
 
 [kde_settings.user_dirs]
 XDG_DOCUMENTS_DIR = "$HOME/Downloads"

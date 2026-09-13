@@ -207,6 +207,9 @@ def base_config() -> str:
         'config_bool_type_flag = ["--type", "bool"]\n'
         'config_notify_flag = ["--notify"]\n'
         'config_delete_flag = ["--delete"]\n'
+        'apply_look_and_feel_command = ["plasma-apply-lookandfeel", "-a", "{look_and_feel}"]\n'
+        'apply_color_scheme_command = ["plasma-apply-colorscheme", "{color_scheme}"]\n'
+        'apply_cursor_theme_command = ["plasma-apply-cursortheme", "{cursor_theme}"]\n'
         'look_and_feel_light = "org.kubuntulight.desktop"\n'
         "automatic_look_and_feel = true\n"
         'cursor_theme = "Oxygen_Yellow"\n'

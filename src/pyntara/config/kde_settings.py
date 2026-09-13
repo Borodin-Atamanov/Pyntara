@@ -161,6 +161,9 @@ class KdeSettingsConfig:
     config_bool_type_flag: tuple[str, ...]
     config_notify_flag: tuple[str, ...]
     config_delete_flag: tuple[str, ...]
+    apply_look_and_feel_command: tuple[str, ...]
+    apply_color_scheme_command: tuple[str, ...]
+    apply_cursor_theme_command: tuple[str, ...]
     places_hidden: tuple[str, ...] = ()
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

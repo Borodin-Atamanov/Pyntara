@@ -1927,6 +1927,21 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("config_delete_flag"),
             "kde_settings.config_delete_flag",
         ),
+        apply_look_and_feel_command=_placeholder_command_field(
+            raw.get("apply_look_and_feel_command"),
+            "kde_settings.apply_look_and_feel_command",
+            ("{look_and_feel}",),
+        ),
+        apply_color_scheme_command=_placeholder_command_field(
+            raw.get("apply_color_scheme_command"),
+            "kde_settings.apply_color_scheme_command",
+            ("{color_scheme}",),
+        ),
+        apply_cursor_theme_command=_placeholder_command_field(
+            raw.get("apply_cursor_theme_command"),
+            "kde_settings.apply_cursor_theme_command",
+            ("{cursor_theme}",),
+        ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
         ),

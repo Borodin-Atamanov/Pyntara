@@ -2010,8 +2010,29 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     ) == ["sudo", "-u", cfg.username, "--", "kwriteconfig6", "--file", "kwinrc"]
 
 
+def test_plasma_apply_calls_come_from_the_config() -> None:
+    # The three appearance tools and their flags are config values: another
+    # call in the section is the argv the task runs, with the value it
+    # applies substituted.
+    cfg = make_config().kde_settings
+    assert task_module._appearance_command(
+        replace(cfg, apply_look_and_feel_command=("my-theme", "-a", "{look_and_feel}")),
+        "look_and_feel",
+    ) == ["my-theme", "-a", cfg.look_and_feel]
+    assert task_module._appearance_command(
+        replace(
+            cfg,
+            apply_color_scheme_command=("my-scheme", "--set", "{color_scheme}"),
+        ),
+        "color_scheme",
+    ) == ["my-scheme", "--set", cfg.color_scheme]
+    assert task_module._appearance_command(cfg, "cursor_theme") == [
+        "plasma-apply-cursortheme",
+        cfg.cursor_theme,
+    ]
+
+
 def test_kconfig_calls_come_from_the_config() -> None:
-    # The reader, the group selector and the key selector of the KConfig
     # access are config values: another set of commands and selectors is
     # what the task builds, for the user session and for the system files.
     cfg = replace(

@@ -262,6 +262,23 @@ def _apply_env(
     return env
 
 
+def _appearance_command(cfg: KdeSettingsConfig, value_name: str) -> list[str]:
+    """The configured plasma-apply call with the value it applies.
+
+    The three appearance tools, the flags they take and the value they
+    apply all come from the config, so another tool or another flag is a
+    config change. value_name selects which of the three calls is rendered
+    and names the placeholder the value is substituted for.
+    """
+
+    base, value = {
+        "look_and_feel": (cfg.apply_look_and_feel_command, cfg.look_and_feel),
+        "color_scheme": (cfg.apply_color_scheme_command, cfg.color_scheme),
+        "cursor_theme": (cfg.apply_cursor_theme_command, cfg.cursor_theme),
+    }[value_name]
+    return substituted_command(base, {value_name: value})
+
+
 def _run_appearance_tool_best_effort(
     cfg: KdeSettingsConfig,
     *,
@@ -351,7 +368,7 @@ def _apply_look_and_feel(
     )
     _run_appearance_tool_best_effort(
         cfg,
-        command=["plasma-apply-lookandfeel", "-a", cfg.look_and_feel],
+        command=_appearance_command(cfg, "look_and_feel"),
         applied_message=f"applied global theme: {cfg.look_and_feel}",
         timeout=timeout,
         env=env,
@@ -392,7 +409,7 @@ def _apply_color_scheme(
     )
     _run_appearance_tool_best_effort(
         cfg,
-        command=["plasma-apply-colorscheme", cfg.color_scheme],
+        command=_appearance_command(cfg, "color_scheme"),
         applied_message=f"applied color scheme: {cfg.color_scheme}",
         timeout=timeout,
         env=env,
@@ -673,7 +690,7 @@ def _apply_cursor_theme(
     )
     _run_appearance_tool_best_effort(
         cfg,
-        command=["plasma-apply-cursortheme", cfg.cursor_theme],
+        command=_appearance_command(cfg, "cursor_theme"),
         applied_message=f"applied cursor theme: {cfg.cursor_theme}",
         timeout=timeout,
         env=env,

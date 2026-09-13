@@ -200,9 +200,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["chown", f"{cfg.username}:{cfg.username}", str(target)],',
             '_as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),',
             'cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / cfg.user_config_dir)]',
-            'command=["plasma-apply-colorscheme", cfg.color_scheme],',
-            'command=["plasma-apply-cursortheme", cfg.cursor_theme],',
-            'command=["plasma-apply-lookandfeel", "-a", cfg.look_and_feel],',
             'run_command(["chmod", f"{mode:04o}", str(target)], timeout=timeout)',
         }
     ),
