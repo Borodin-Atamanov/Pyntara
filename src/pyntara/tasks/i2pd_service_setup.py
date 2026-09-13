@@ -371,6 +371,16 @@ def _saved_address_matches(address_file_path: Path, address: str | None) -> bool
     return saved == address
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Install the newest i2pd release and run it as a service; skip when done.
 
@@ -388,15 +398,18 @@ def task(ctx: Context) -> TaskResult:
     is not available yet instead of hanging.
     Every step is reported to stdout:
     measurements and decisions as single lines that include their
-    result, long-running commands as a line before and a line after. Any
-    failure is returned as an error TaskResult: the runner continues
-    with the remaining tasks and never stops here.
+    result, long-running commands as a line before and a line after. A
+    step that cannot run is reported as a warning of a completed task:
+    the missing mechanism skips that step alone and every independent
+    step still runs, so the runner continues with the remaining tasks
+    and never stops here.
     """
 
     cfg = ctx.config.i2pd_service_setup
     timeout = ctx.config.engine.command_timeout_seconds
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
+    warnings: list[str] = []
     missing_commands = [
         name
         for name, command in (
@@ -408,97 +421,107 @@ def task(ctx: Context) -> TaskResult:
         if not command
     ]
     if missing_commands:
-        return TaskResult(
-            success=False,
-            error=(
-                "the i2pd_service_setup commands are not configured: "
-                + ", ".join(missing_commands)
-            ),
+        warnings.append(
+            "the i2pd_service_setup commands are not configured: "
+            + ", ".join(missing_commands)
         )
     task_data_path = task_data_dir(ctx.repo_root, ctx.task_name)
-    template_path = task_data_path / cfg.config_template_file_name
+    config_template_path = task_data_path / cfg.config_template_file_name
     tunnels_template_path = task_data_path / cfg.tunnels_template_file_name
-    for missing_template in (template_path, tunnels_template_path):
+    for missing_template in (config_template_path, tunnels_template_path):
         if not missing_template.is_file():
-            return TaskResult(
-                success=False,
-                error=f"missing task data template: {missing_template}",
-            )
+            warnings.append(f"missing task data template: {missing_template}")
     force = ctx.task_name in ctx.force_tasks
 
+    os_release: dict[str, str] = {}
     try:
         os_release = read_os_release(cfg.os_release_file_path)
     except OSError as exc:
-        return TaskResult(
-            success=False, error=f"cannot read {cfg.os_release_file_path}: {exc}"
-        )
-    if not os_family_is_debian(ctx.config.engine, os_release):
-        return TaskResult(
-            success=False,
-            error=(
-                "i2pd deb packages require a Debian-based distribution; "
-                + " ".join(
-                    f"os-release {key}={os_release.get(key, '')}"
-                    for key in ctx.config.engine.os_release_family_keys
-                )
-            ),
+        warnings.append(f"cannot read {cfg.os_release_file_path}: {exc}")
+    debian_family = os_family_is_debian(ctx.config.engine, os_release)
+    if os_release and not debian_family:
+        warnings.append(
+            "i2pd deb packages require a Debian-based distribution; "
+            + " ".join(
+                f"os-release {key}={os_release.get(key, '')}"
+                for key in ctx.config.engine.os_release_family_keys
+            )
         )
     _log(
         f"reading {cfg.os_release_file_path}: ID={os_release.get('ID', '')}, "
         f"{cfg.os_release_codename_key}="
         f"{os_release.get(cfg.os_release_codename_key, '')}"
     )
+    arch = ""
     try:
         arch = dpkg_architecture(ctx.config.engine, timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, error=f"cannot determine dpkg architecture: {exc}"
-        )
-    _log(f"reading dpkg architecture: {arch}")
+        warnings.append(f"cannot determine dpkg architecture: {exc}")
+    _log(f"reading dpkg architecture: {arch or 'unknown'}")
 
-    try:
-        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
-        tag = release_tag(release)
-    except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    _log(f"checking latest release: {tag}")
+    tag = ""
+    release: dict[str, object] = {}
+    if debian_family and arch:
+        try:
+            release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+            tag = release_tag(release)
+        except RuntimeError as exc:
+            warnings.append(str(exc))
+    _log(f"checking latest release: {tag or 'unknown'}")
 
     codename = os_release.get(cfg.os_release_codename_key)
-    selected = _select_asset(cfg, release, tag, codename, arch)
-    if selected is None:
-        return TaskResult(
-            success=False,
-            error=(
+    selected = None
+    if debian_family and arch and tag:
+        selected = _select_asset(cfg, release, tag, codename, arch)
+        if selected is None:
+            warnings.append(
                 f"release {tag} has no .deb asset for arch {arch}, "
                 f"codename {codename or 'generic'}"
-            ),
-        )
-    asset_name, asset_url = selected
-    _log(f"selected asset: {asset_name}")
+            )
+    asset_name = ""
+    asset_url = ""
+    if selected is not None:
+        asset_name, asset_url = selected
+        _log(f"selected asset: {asset_name}")
 
-    installed_version = _installed_version(cfg, timeout)
+    installed_version = (
+        _installed_version(cfg, timeout) if cfg.version_command else None
+    )
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    target_config = _render_config(cfg, template_path)
+    target_config = (
+        _render_config(cfg, config_template_path)
+        if config_template_path.is_file()
+        else None
+    )
     current_config = _read_config(cfg.config_path)
     # An install rewrites the package conffile, so the configuration is
     # rewritten after an install even when it matched before.
-    config_changed = force or installed_version != tag or (
-        current_config != target_config
+    config_changed = target_config is not None and (
+        force or installed_version != tag or current_config != target_config
     )
+    ssh_port: int | None = None
     try:
         ssh_port = _ssh_port_from_ssh_config(
             ctx.config.ssh_daemon_setup.directives
         )
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    _log(
-        f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
-    )
+        warnings.append(str(exc))
+    if ssh_port is not None:
+        _log(
+            "reading SSH listen port from ssh_daemon_setup directives: "
+            f"{ssh_port}"
+        )
 
-    target_tunnels = _render_tunnels_config(cfg, ssh_port, tunnels_template_path)
+    target_tunnels = (
+        _render_tunnels_config(cfg, ssh_port, tunnels_template_path)
+        if tunnels_template_path.is_file() and ssh_port is not None
+        else None
+    )
     current_tunnels = _read_tunnels_config(cfg.tunnels_config_path)
-    tunnels_changed = force or current_tunnels != target_tunnels
+    tunnels_changed = target_tunnels is not None and (
+        force or current_tunnels != target_tunnels
+    )
     keys_exist = cfg.tunnel_keys_path.is_file()
     address = b32_address(cfg.tunnel_keys_path)
     _log(
@@ -518,7 +541,7 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
-    needs_install = installed_version != tag
+    needs_install = bool(asset_name) and installed_version != tag
     if (
         not force
         and not needs_install
@@ -530,11 +553,12 @@ def task(ctx: Context) -> TaskResult:
         and _saved_address_matches(cfg.address_file_path, address)
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     if needs_install:
         _log(f"downloading {asset_name} into {cfg.download_dir}")
+        downloaded = True
         try:
             _download_asset(
                 ctx.config.engine,
@@ -544,75 +568,76 @@ def task(ctx: Context) -> TaskResult:
                 timeout,
             )
         except RuntimeError as exc:
-            return TaskResult(success=False, error=str(exc))
-        _log("package downloaded")
-        _log(f"installing package: apt-get install -y {asset_name}")
-        ok, error = _install_deb(
-            ctx.config.engine,
-            cfg.download_dir,
-            asset_name,
-            install_timeout=timeout,
-            update_timeout=timeout,
-            retries=cfg.install_retries,
-            skip_update=ctx.skip_apt_update,
-        )
-        if not ok:
-            return TaskResult(success=False, error=f"cannot install i2pd: {error}")
-        _log("package installed")
-        try:
-            _cleanup_downloads(cfg.download_dir, asset_name)
-        except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=f"cannot remove downloaded files: {exc}",
+            warnings.append(str(exc))
+            downloaded = False
+        if downloaded:
+            _log("package downloaded")
+            _log(f"installing package: apt-get install -y {asset_name}")
+            ok, error = _install_deb(
+                ctx.config.engine,
+                cfg.download_dir,
+                asset_name,
+                install_timeout=timeout,
+                update_timeout=timeout,
+                retries=cfg.install_retries,
+                skip_update=ctx.skip_apt_update,
             )
-        changed = True
+            if ok:
+                _log("package installed")
+                changed = True
+                try:
+                    _cleanup_downloads(cfg.download_dir, asset_name)
+                except OSError as exc:
+                    warnings.append(f"cannot remove downloaded files: {exc}")
+            else:
+                warnings.append(f"cannot install i2pd: {error}")
 
     if config_changed:
         _log(f"writing configuration {cfg.config_path}")
         try:
-            _write_config(cfg, template_path, owner_uid, owner_gid)
-        except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write configuration: {exc}",
+            _write_config(
+                cfg, config_template_path, owner_uid, owner_gid
             )
-        _log("configuration written")
-        changed = True
+        except OSError as exc:
+            warnings.append(f"cannot write configuration: {exc}")
+        else:
+            _log("configuration written")
+            changed = True
 
-    if tunnels_changed:
+    if tunnels_changed and ssh_port is not None:
         _log(f"writing tunnels configuration {cfg.tunnels_config_path}")
         try:
             _write_tunnels_config(
                 cfg, ssh_port, tunnels_template_path, owner_uid, owner_gid
             )
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write tunnels configuration: {exc}",
-            )
-        _log("tunnels configuration written")
-        changed = True
+            warnings.append(f"cannot write tunnels configuration: {exc}")
+        else:
+            _log("tunnels configuration written")
+            changed = True
 
     if not enabled:
-        enable_argv = substituted_command(
-            cfg.service_enable_command,
-            {"service_unit_name": cfg.service_unit_name},
-        )
-        _log(f"enabling service: {' '.join(enable_argv)}")
-        try:
-            run_command(enable_argv, timeout=timeout)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"{enable_argv[0]} enable failed: {exc}",
+        if cfg.service_enable_command:
+            enable_argv = substituted_command(
+                cfg.service_enable_command,
+                {"service_unit_name": cfg.service_unit_name},
             )
-        _log("service enabled")
-        changed = True
+            _log(f"enabling service: {' '.join(enable_argv)}")
+            try:
+                run_command(enable_argv, timeout=timeout)
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                warnings.append(f"{enable_argv[0]} enable failed: {exc}")
+            else:
+                _log("service enabled")
+                changed = True
+        else:
+            warnings.append(
+                f"cannot enable {cfg.service_unit_name}: "
+                "service_enable_command is not configured"
+            )
 
     if (
         not active
@@ -628,40 +653,45 @@ def task(ctx: Context) -> TaskResult:
             if active
             else cfg.service_start_command
         )
-        service_argv = substituted_command(
-            service_command, {"service_unit_name": cfg.service_unit_name}
-        )
-        _log(f"{action}ing service: {' '.join(service_argv)}")
-        try:
-            run_command(service_argv, timeout=timeout)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"{service_argv[0]} {action} failed: {exc}",
+        if service_command:
+            service_argv = substituted_command(
+                service_command, {"service_unit_name": cfg.service_unit_name}
             )
-        _log(f"service {action}ed")
-        _log(
-            f"waiting for service to become active (up to "
-            f"{cfg.start_check_attempts} checks)"
-        )
-        if not _wait_active(
-            ctx.config.engine,
-            cfg.service_unit_name,
-            cfg.start_check_attempts,
-            cfg.start_check_retry_delay_seconds,
-            timeout,
-        ):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
-                    f"{cfg.service_unit_name} did not become active after "
-                    f"{cfg.start_check_attempts} checks"
-                ),
+            _log(f"{action}ing service: {' '.join(service_argv)}")
+            started = True
+            try:
+                run_command(service_argv, timeout=timeout)
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                warnings.append(f"{service_argv[0]} {action} failed: {exc}")
+                started = False
+            if started:
+                _log(f"service {action}ed")
+                _log(
+                    f"waiting for service to become active (up to "
+                    f"{cfg.start_check_attempts} checks)"
+                )
+                if _wait_active(
+                    ctx.config.engine,
+                    cfg.service_unit_name,
+                    cfg.start_check_attempts,
+                    cfg.start_check_retry_delay_seconds,
+                    timeout,
+                ):
+                    _log("service active")
+                    changed = True
+                else:
+                    warnings.append(
+                        f"{cfg.service_unit_name} did not become active after "
+                        f"{cfg.start_check_attempts} checks"
+                    )
+        else:
+            warnings.append(
+                f"cannot {action} {cfg.service_unit_name}: "
+                f"service_{action}_command is not configured"
             )
-        _log("service active")
-        changed = True
 
     address = b32_address(cfg.tunnel_keys_path)
     if address is None:
@@ -678,24 +708,23 @@ def task(ctx: Context) -> TaskResult:
             cfg.address_file_path.chmod(cfg.address_file_mode)
             apply_owner(cfg.address_file_path, owner_uid, owner_gid)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write tunnel address file: {exc}",
-            )
-        _log(f"writing tunnel address file {cfg.address_file_path}: {address}")
-        changed = True
+            warnings.append(f"cannot write tunnel address file: {exc}")
+        else:
+            _log(f"writing tunnel address file {cfg.address_file_path}: {address}")
+            changed = True
 
     if address:
         _log(f"SSH tunnel address: {address}")
         message = (
-            f"i2pd {tag} installed, service {cfg.service_unit_name} active, "
+            f"i2pd {tag or 'unknown version'} installed, "
+            f"service {cfg.service_unit_name} active, "
             f"SSH tunnel address {address}"
         )
     else:
         message = (
-            f"i2pd {tag} installed, service {cfg.service_unit_name} active, "
+            f"i2pd {tag or 'unknown version'} installed, "
+            f"service {cfg.service_unit_name} active, "
             "SSH tunnel address appears after the first start"
         )
 
-    return TaskResult(success=True, changed=changed, message=message)
+    return _result(changed=changed, message=message, warnings=warnings)

@@ -6,7 +6,7 @@ The task installs the i2pd anonymous network router from the GitHub releases of 
 
 ## Version resolution
 
-The newest release tag comes from the GitHub releases API of the configured repository: the endpoint https://api.github.com/repos/{github_repo}/releases/latest returns the latest non-prerelease release, and tag_name is the version. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is reported as a task error.
+The newest release tag comes from the GitHub releases API of the configured repository: the endpoint https://api.github.com/repos/{github_repo}/releases/latest returns the latest non-prerelease release, and tag_name is the version. The release is fetched with curl and parsed as JSON; a failed request, unparsable payload or a missing tag_name is a warning of a completed task, the version stays unknown and the remaining steps run.
 
 The installed version comes from i2pd --version: the first dotted version triple in the combined stdout and stderr output. A missing binary, a nonzero exit or a hung query reports the version as not installed, so the task reinstalls. When the installed version differs from the newest release tag, the task downloads and installs the new release; the rerun after a new upstream release therefore updates i2pd and restarts the service, which is the intended consequence of always running the newest version.
 
@@ -14,17 +14,17 @@ The installed version comes from i2pd --version: the first dotted version triple
 
 The distribution is read from /etc/os-release through the shared helpers in pyntara.utils: read_os_release parses the shell-style variables, os_family_is_debian checks the fields of engine.os_release_family_keys for a value of engine.os_release_debian_family_names, and dpkg_architecture runs dpkg --print-architecture. The vocabulary of the file is a config value and not a constant, because a distribution that renames its family field or reports a new family name must not need a code change; the helpers stay shared with every future task that needs the same facts.
 
-Only Debian-based distributions are supported: the release assets are deb packages, and a distribution outside the Debian family is reported as a task error before any download. The deb asset is chosen by the dpkg architecture and the VERSION_CODENAME of the os-release file:
+Only Debian-based distributions are supported: the release assets are deb packages, and a distribution outside the Debian family is a warning of a completed task. Such a machine never gets the package, so the task skips the release query and the install alone and still deploys the configuration files and the service state. The deb asset is chosen by the dpkg architecture and the VERSION_CODENAME of the os-release file:
 
 the codename-specific asset i2pd_{tag}-1{codename}1_{arch}.deb wins, because it is built against this distribution  
 the generic asset i2pd_{tag}-1_{arch}.deb is the fallback, so a release without a build for this codename still installs  
-a release without either asset for the architecture is reported as a task error
+a release without either asset for the architecture is a warning of a completed task, which skips the install alone
 
 The asset list comes from the release payload, so new codenames never need code changes: the exact name is looked up among the returned assets. The two candidate names are configured templates of the task: codename_asset_name_template carries {release_tag}, {codename} and {arch}, generic_asset_name_template carries {release_tag} and {arch}, and os_release_codename_key names the os-release field the codename is read from, so a rename of the upstream asset or of the distribution field is a config change and never a code change.
 
 ## Download trust
 
-The package is downloaded from the official GitHub release assets of the configured repository. No checksum verification is performed: the source is trusted, and an extra check would add a failure point without protecting the install, because the checksum file travels over the same channel as the package. The download uses curl --fail and a nonzero exit is reported as a task error, so a failed transfer is never mistaken for a successful one.
+The package is downloaded from the official GitHub release assets of the configured repository. No checksum verification is performed: the source is trusted, and an extra check would add a failure point without protecting the install, because the checksum file travels over the same channel as the package. The download uses curl --fail and a nonzero exit is a warning of a completed task, so a failed transfer is never mistaken for a successful one and the remaining steps still run.
 
 ## Configuration ownership
 
@@ -72,7 +72,7 @@ The task saves the computed address into the configured address_file_path with t
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the package or the configuration changed. The enable, start and restart commands are config values of the task, each carrying the unit name as its {service_unit_name} placeholder, and the installed version comes from the configured version_command. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a task error. The two configuration templates are named by config_template_file_name and tunnels_template_file_name under task_data/i2pd_service_setup/ of the clone, and a missing template is reported as a task error before anything is downloaded or written. The rendered configuration spells its booleans with config_true_value and config_false_value, so the rendered file, the idempotency comparison and the written file share one representation.
+The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the package or the configuration changed. The enable, start and restart commands are config values of the task, each carrying the unit name as its {service_unit_name} placeholder, and the installed version comes from the configured version_command. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a warning of a completed task: the missing address is reported and the run continues. The two configuration templates are named by config_template_file_name and tunnels_template_file_name under task_data/i2pd_service_setup/ of the clone, and a missing template is a warning of a completed task that skips the step it serves alone while every other step still runs. The rendered configuration spells its booleans with config_true_value and config_false_value, so the rendered file, the idempotency comparison and the written file share one representation.
 
 The package installs the unit with a dedicated system user and a data directory; the first start generates the router keys under the data directory. The package also installs an AppArmor profile that confines the router to its data and config directories, so the task never touches those locations.
 

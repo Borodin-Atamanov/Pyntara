@@ -412,17 +412,22 @@ def test_install_gives_up_after_retries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # apt always fails: the task tries one initial attempt plus the
-    # configured retries, then reports the failure.
+    # configured retries, reports the failure as a warning and still
+    # writes the configuration and starts the service.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, retries=3)
     calls = _install_fake(monkeypatch, installed_version=None, fail_install=99)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install i2pd" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "cannot install i2pd" in warning for warning in result.warnings
+    )
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert len(install_calls) == 4
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
+    assert ["systemctl", "restart", "i2pd.service"] in calls
 
 
 def test_install_retries_transient_failure(
@@ -490,58 +495,66 @@ def test_force_rewrites_config_and_restarts(
     )
 
 
-def test_service_never_active_reports_error(
+def test_service_never_active_reports_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The service is installed but never reports active after start: the
-    # readiness loop runs out and the task reports the failure.
+    # readiness loop runs out and the task completes with the reason in
+    # the warnings.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, check_attempts=3)
     calls = _install_fake(
         monkeypatch, installed_version=None, active=False, active_becomes=False
     )
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "did not become active" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "did not become active" in warning for warning in result.warnings
+    )
     starts = [
         call for call in calls if call[0] == "systemctl" and call[1] == "start"
     ]
     assert len(starts) == 1
 
 
-def test_non_debian_os_reports_error(
+def test_non_debian_os_warns_and_skips_the_install(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The os-release names a non-Debian family: the task refuses to install
-    # a deb package and never queries the release.
+    # The os-release names a non-Debian family: the task reports the
+    # family, never queries the release and skips the install alone, so
+    # the configuration is still written.
     _install_fixtures(monkeypatch, tmp_path, codename="rolling")
     os_release = tmp_path / "os-release"
     os_release.write_text('ID=arch\nID_LIKE=archlinux\n', encoding="utf-8")
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "Debian-based" in (result.error or "")
-    assert "os-release ID=arch" in (result.error or "")
-    assert "os-release ID_LIKE=archlinux" in (result.error or "")
+    assert result.success is True
+    assert any("Debian-based" in warning for warning in result.warnings)
+    assert any("os-release ID=arch" in warning for warning in result.warnings)
+    assert any(
+        "os-release ID_LIKE=archlinux" in warning for warning in result.warnings
+    )
     assert not any(call[0] == "curl" for call in calls)
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
 
 
-def test_no_matching_asset_reports_error(
+def test_no_matching_asset_warns_and_skips_the_install(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The release has no asset for this machine: the task reports the
-    # missing asset and stops.
+    # missing asset, installs nothing and continues with the settings.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     release = _release_json(codename_asset=False, generic_asset=False)
     calls = _install_fake(monkeypatch, installed_version=None, release_json=release)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "no .deb asset" in (result.error or "")
+    assert result.success is True
+    assert any("no .deb asset" in warning for warning in result.warnings)
     assert not any(
         call[0] == "apt-get" and call[1] == "install" for call in calls
     )
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
 
 
 def test_generic_asset_fallback(
@@ -568,10 +581,11 @@ def test_generic_asset_fallback(
     )
 
 
-def test_release_json_failure_reports_error(
+def test_release_json_failure_reports_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The releases API fails: the task reports the fetch error.
+    # The releases API fails: the task reports the fetch error as a
+    # warning and continues with the settings, the version stays unknown.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
 
@@ -579,12 +593,16 @@ def test_release_json_failure_reports_error(
         del kwargs
         if command[0] == "curl":
             return _FakeProc(22, "")
+        if command[0] == "dpkg":
+            return _FakeProc(0, "amd64")
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "cannot fetch" in (result.error or "")
+    assert result.success is True
+    assert any("cannot fetch" in warning for warning in result.warnings)
+    assert "unknown version" in (result.message or "")
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
 
 
 def test_select_asset_prioritizes_codename() -> None:
@@ -709,8 +727,9 @@ def test_wait_tunnel_address_returns_none_when_the_identity_stays_absent(
 def test_missing_commands_are_reported(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # An empty command list is a broken config: the task reports which
-    # command is not configured and never starts the work.
+    # An empty command list is a broken config: the task names the
+    # missing command in the warnings, installs without a version
+    # comparison and completes.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch)
@@ -724,24 +743,30 @@ def test_missing_commands_are_reported(
         ),
     )
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "version_command" in (result.error or "")
-    assert calls == []
+    assert result.success is True
+    assert any("version_command" in warning for warning in result.warnings)
+    assert any(
+        call[0] == "apt-get" and call[1] == "install" for call in calls
+    )
 
 
 def test_missing_template_is_reported(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A missing task data file is reported with its path before anything
-    # is downloaded or written.
+    # A missing task data file is reported with its path; the step that
+    # needs it is skipped alone and the settings of the other template
+    # are still written.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
+    cfg = ctx.config.i2pd_service_setup
     (ctx.repo_root / "task_data" / "i2pd_service_setup" / "tunnels.conf").unlink()
-    calls = _install_fake(monkeypatch)
+    calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "tunnels.conf" in (result.error or "")
-    assert calls == []
+    assert result.success is True
+    assert any("tunnels.conf" in warning for warning in result.warnings)
+    assert cfg.config_path.is_file()
+    assert not cfg.tunnels_config_path.exists()
+    assert ["systemctl", "restart", "i2pd.service"] in calls
 
 
 def test_address_reported_when_keys_exist(
@@ -878,36 +903,35 @@ def test_ssh_port_change_rewrites_tunnels_and_restarts(
     )
 
 
-def test_missing_ssh_port_reports_error(
+def test_missing_ssh_port_warns_and_skips_the_tunnels(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The ssh_daemon_setup config has no Port directive: the tunnel
-    # cannot target a known port, so the task reports the error and
-    # touches nothing.
+    # cannot target a known port, so the task reports the reason, never
+    # writes the tunnels file and still deploys the main configuration.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, ssh_port=None)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "no Port directive" in (result.error or "")
-    assert not any(
-        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
-        for call in calls
-    )
+    assert result.success is True
+    assert any("no Port directive" in warning for warning in result.warnings)
+    assert not ctx.config.i2pd_service_setup.tunnels_config_path.exists()
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
+    assert ["systemctl", "restart", "i2pd.service"] in calls
 
 
-def test_non_numeric_ssh_port_reports_error(
+def test_non_numeric_ssh_port_warns_and_skips_the_tunnels(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The sshd Port directive is not a number: the task reports the error
-    # instead of rendering a broken tunnel.
+    # The sshd Port directive is not a number: the task reports the
+    # reason instead of rendering a broken tunnel and keeps the main
+    # configuration.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, ssh_port="abc")
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
-    assert result.success is False
-    assert "not a number" in (result.error or "")
-    assert not any(
-        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
-        for call in calls
-    )
+    assert result.success is True
+    assert any("not a number" in warning for warning in result.warnings)
+    assert not ctx.config.i2pd_service_setup.tunnels_config_path.exists()
+    assert ctx.config.i2pd_service_setup.config_path.is_file()
+    assert ["systemctl", "restart", "i2pd.service"] in calls
