@@ -6,6 +6,10 @@
 # in the target state, or the task is forced.
 # GitHub repository of 3x-ui, owner/name form used by the releases API.
 github_repo = "MHSanaei/3x-ui"
+# Whether the client the task creates in the panel is enabled. A client
+# exists to be used, so it ships enabled; a client created as a draft is
+# a legitimate staging step, which is why the flag is a value.
+client_enabled = true
 # URL of the official installer script the task downloads and runs.
 install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"
 # Directory holding the x-ui binary, where the installed version is read.

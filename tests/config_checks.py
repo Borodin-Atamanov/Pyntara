@@ -4513,6 +4513,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("local_proxy_udp"),
         "three_x_ui_xray_setup.local_proxy_udp",
     )
+    client_enabled = _bool_field(
+        raw.get("client_enabled"),
+        "three_x_ui_xray_setup.client_enabled",
+    )
     local_proxy_sniffing_protocols = _string_list(
         raw.get("local_proxy_sniffing_protocols"),
         "three_x_ui_xray_setup.local_proxy_sniffing_protocols",
@@ -4997,6 +5001,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         private_ipv4_networks=private_ipv4_networks,
         local_proxy_port=local_proxy_port,
         local_proxy_udp=local_proxy_udp,
+        client_enabled=client_enabled,
         local_proxy_sniffing_protocols=local_proxy_sniffing_protocols,
         local_proxy_enabled=local_proxy_enabled,
         local_proxy_sniffing_enabled=local_proxy_sniffing_enabled,

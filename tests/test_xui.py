@@ -381,6 +381,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             make_config().three_x_ui_xray_setup.vless_link_query_keys
         ),
         "local_proxy_enabled": True,
+        "client_enabled": True,
         "local_proxy_sniffing_enabled": True,
         "local_proxy_sniffing_metadata_only": False,
         "local_proxy_sniffing_route_only": False,
@@ -1244,6 +1245,36 @@ class TestCreateClient:
         )
         assert ok is False
         assert message == "panel unreachable"
+
+    def test_the_enabled_flag_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The proof of the value: a client created as a draft carries the
+        # configured flag, so staging a client without enabling it is a
+        # config change and not a code change.
+        captured: list[dict[str, object]] = []
+
+        def fake_request(
+            opener: object, url: str, **kwargs: object
+        ) -> tuple[int, str]:
+            del opener, url
+            data = kwargs.get("data")
+            if isinstance(data, bytes):
+                captured.append(cast(dict[str, object], json.loads(data.decode())))
+            return (200, json.dumps({"success": True, "msg": "added"}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+        xui_client.create_client(
+            _cfg(client_enabled=False),
+            {"XUI_PANEL_PORT": "3579"},
+            3,
+            "id",
+            "mail",
+            "sub",
+            5,
+        )
+        client = cast(dict[str, object], captured[0]["client"])
+        assert client["enable"] is False
 
 
 class TestClientLinks:

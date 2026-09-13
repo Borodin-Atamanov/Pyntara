@@ -546,6 +546,7 @@ def base_config() -> str:
         "local_proxy_port = 10800\n"
         "local_proxy_udp = true\n"
         'local_proxy_sniffing_protocols = ["http", "tls", "quic"]\n'
+        "client_enabled = true\n"
         "local_proxy_enabled = true\n"
         "local_proxy_sniffing_enabled = true\n"
         "local_proxy_sniffing_metadata_only = false\n"

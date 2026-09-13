@@ -815,8 +815,10 @@ def create_client(
     """Create one VLESS client attached to an inbound.
 
     The credential lives in the client.id field (stored as the client
-    uuid); email is only the human label and must be unique. Returns
-    (success, message) from the panel response.
+    uuid); email is only the human label and must be unique. Whether the
+    client is enabled is a config value, because a client created as a
+    draft is a legitimate way to stage one. Returns (success, message)
+    from the panel response.
     """
 
     base_url, opener = _bearer_opener(cfg, env)
@@ -825,7 +827,7 @@ def create_client(
         fields["client"]: {
             fields["id"]: client_id,
             fields["email"]: email,
-            fields["enable"]: True,
+            fields["enable"]: cfg.client_enabled,
             fields["sub_id"]: sub_id,
         },
         fields["inbound_ids"]: [inbound_id],

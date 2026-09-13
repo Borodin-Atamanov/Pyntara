@@ -195,6 +195,7 @@ class ThreeXuiXraySetupConfig:
     local_proxy_port: int
     local_proxy_udp: bool
     local_proxy_sniffing_protocols: tuple[str, ...]
+    client_enabled: bool
     local_proxy_enabled: bool
     local_proxy_sniffing_enabled: bool
     local_proxy_sniffing_metadata_only: bool
