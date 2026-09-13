@@ -12,14 +12,14 @@ The key pair lives in the repository under task_data/ssh_daemon_setup/: the priv
 
 The task never rewrites sshd_config itself. The main configuration is patched through the drop-in at the configured sshd_config_dropin_path:
 
-The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include means the drop-in would be silently ignored, so the task fails with an explicit error instead of pretending the configuration is in place.  
+The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include is a warning of a completed task and the drop-in is written anyway: the configured directives are the part of the machine the task owns, and they start to work the moment the directive appears, so the work is not thrown away by a line missing from a file the task does not own.  
 The directives are written through augeas (augtool from the augeas-tools package, which the task installs itself when augtool is missing, so it never waits for another task to provide the tool). augeas parses the real syntax and updates only what differs: a directive that is already present with the same value is left untouched, a directive with a different value is updated, a directive that is no longer configured is removed, and the ownership comment is guaranteed. The drop-in is owned by the task: a manual edit is reverted on the next run.  
 An empty directives list removes the drop-in, so the task can revoke its own settings.  
-After a change the effective configuration is verified with sshd -T, which prints the result of the whole Include chain. A directive that a later file overrides, or a keyword the daemon does not know, is reported as an error instead of being silently accepted: the verification is independent of the OpenSSH version and of other files in the drop-in directory.
+After a change the effective configuration is verified with sshd -T, which prints the result of the whole Include chain. A directive that a later file overrides, or a keyword the daemon does not know, is a warning of a completed task instead of being silently accepted: the verification is independent of the OpenSSH version and of other files in the drop-in directory.
 
 ## Listen port and the systemd socket
 
-Ubuntu activates the SSH daemon through the systemd socket unit socket_unit_name, and the socket then owns the listen port: sshd_config Port is ignored while the socket is enabled. The task disables the socket with systemctl disable --now, so the daemon listens on the port from the configuration. After a start or restart the task verifies with ss -tlnp that something listens on the configured Port, so a port that never came up is a task error, not a silent success.
+Ubuntu activates the SSH daemon through the systemd socket unit socket_unit_name, and the socket then owns the listen port: sshd_config Port is ignored while the socket is enabled. The task disables the socket with systemctl disable --now, so the daemon listens on the port from the configuration. After a start or restart the task verifies with ss -tlnp that something listens on the configured Port, so a port that never came up is a warning of a completed task, never a silent success.
 
 ## Key deployment
 
@@ -33,7 +33,9 @@ The task owns the key files: a file whose content differs from the repository co
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled and starts it when it is inactive, waiting up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the checks for the unit to report active. On an already active service, a change that affects the port (a Port change or a socket disable) is applied with a restart, because reload does not rebind the listen socket; any other change is applied with a reload, which never drops existing connections. A unit that stays inactive after the readiness loop or a failed reload or restart is a task error.
+The service unit comes from the package; the task never renders or writes it. The task enables the unit when it is not enabled and starts it when it is inactive, waiting up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the checks for the unit to report active. On an already active service, a change that affects the port (a Port change or a socket disable) is applied with a restart, because reload does not rebind the listen socket; any other change is applied with a reload, which never drops existing connections. A unit that stays inactive after the readiness loop or a failed reload or restart is a warning of a completed task: the reason is named and every other step of the run keeps its result.
+
+The task follows the recoverable failure policy of the task contract: a step that cannot run is a warning of a completed task and the missing mechanism skips that step alone. A missing key file skips the key deployment, a missing augeas tool skips the drop-in, a failed package install skips both while the keys and the service state are still handled, and a failed socket disable, enable, start, reload, restart or readiness wait leaves every earlier step in place.
 
 ## Idempotency
 

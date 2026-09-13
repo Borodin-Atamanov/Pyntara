@@ -388,16 +388,19 @@ def test_install_retries_after_failures(
 def test_install_fails_after_all_retries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Every install attempt fails: the task returns an error result.
+    # Every install attempt fails: the task reports the failure as a
+    # warning of a completed task and still writes the drop-in, because
+    # the directives are the part of the machine it owns.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False, fail_install=99)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install" in (result.error or "")
+    assert result.success is True
+    assert any("cannot install" in warning for warning in result.warnings)
     assert len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
+    assert ctx.config.ssh_daemon_setup.sshd_config_dropin_path.is_file()
 
 
 def test_apt_update_runs_unless_skipped(
@@ -508,26 +511,29 @@ def test_missing_user_is_skipped(
     assert (cfg.root_ssh_dir / "authorized_keys").is_file()
 
 
-def test_missing_include_is_an_error(
+def test_missing_include_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # sshd_config without an Include covering the drop-in directory means
-    # the drop-in would be ignored: the task fails loudly.
+    # sshd_config without an Include covering the drop-in directory is
+    # reported as a warning and the drop-in is written anyway: the
+    # directives start to work the moment the directive appears.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx, include=False)
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "no Include directive" in (result.error or "")
+    assert result.success is True
+    assert any("no Include directive" in warning for warning in result.warnings)
+    assert ctx.config.ssh_daemon_setup.sshd_config_dropin_path.is_file()
 
 
-def test_missing_key_files_are_an_error(
+def test_missing_key_files_are_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A key file missing from the repository data directory stops the
-    # task with an explicit error instead of deploying half a key pair.
+    # A key file missing from the repository data directory is reported
+    # as a warning; no key pair is deployed, while the drop-in and the
+    # service state are still handled.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
@@ -536,15 +542,18 @@ def test_missing_key_files_are_an_error(
     cfg = ctx.config.ssh_daemon_setup
     (Path(ctx.repo_root) / "task_data" / "ssh_daemon_setup" / cfg.public_key_file_name).unlink()
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "missing in" in (result.error or "")
+    assert result.success is True
+    assert any("missing in" in warning for warning in result.warnings)
+    assert not cfg.root_ssh_dir.exists()
+    assert cfg.sshd_config_dropin_path.is_file()
 
 
-def test_missing_port_forwarding_key_files_are_an_error(
+def test_missing_port_forwarding_key_files_are_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A port-forwarding key file missing from the repository data
-    # directory stops the task, so no machine deploys a half mesh.
+    # directory is reported as a warning, so no machine deploys a half
+    # mesh, while the rest of the task completes.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
@@ -558,8 +567,12 @@ def test_missing_port_forwarding_key_files_are_an_error(
         / cfg.port_forwarding_private_key_file_name
     ).unlink()
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "port-forwarding key files" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "port-forwarding key files" in warning for warning in result.warnings
+    )
+    assert not cfg.root_ssh_dir.exists()
+    assert cfg.sshd_config_dropin_path.is_file()
 
 
 def test_dropin_header_comes_from_the_config(
@@ -846,48 +859,49 @@ def test_socket_untouched_when_disabled(
     )
 
 
-def test_sshd_t_verification_failure_is_an_error(
+def test_sshd_t_verification_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The effective configuration reported by sshd -T does not match a
     # configured directive (for example overridden by another file):
-    # the task fails loudly instead of pretending the state is reached.
+    # the task reports it as a warning instead of pretending the state
+    # is reached.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, sshd_t_output="port 22\n")
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "sshd -T reports" in (result.error or "")
+    assert result.success is True
+    assert any("sshd -T reports" in warning for warning in result.warnings)
 
 
-def test_listener_missing_is_an_error(
+def test_listener_missing_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # After a start nothing listens on the configured port: the task
-    # reports the failure instead of claiming success.
+    # reports the reason in the warnings.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, active=False, ss_port_ok=False)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "no listener on port" in (result.error or "")
+    assert result.success is True
+    assert any("no listener on port" in warning for warning in result.warnings)
 
 
-def test_reload_failure_is_an_error(
+def test_reload_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A failed reload is an explicit error result, not a silent skip.
+    # A failed reload is reported as a warning of a completed task.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     cfg = ctx.config.ssh_daemon_setup
     # Only a non-port directive differs, so the task takes the reload
-    # path and the failed reload surfaces as an error.
+    # path and the failed reload surfaces as a warning.
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
     cfg.sshd_config_dropin_path.write_text(
         _expected_dropin_content(overrides={"PasswordAuthentication": "yes"}),
@@ -895,22 +909,22 @@ def test_reload_failure_is_an_error(
     )
     _install_fake(monkeypatch, active=True, reload_fails=True)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "reload failed" in (result.error or "")
+    assert result.success is True
+    assert any("reload failed" in warning for warning in result.warnings)
 
 
-def test_service_never_becomes_active_is_an_error(
+def test_service_never_becomes_active_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The readiness loop runs out: the task reports the failure.
+    # The readiness loop runs out: the task reports the reason.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, active=False, active_becomes=False)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "did not become active" in (result.error or "")
+    assert result.success is True
+    assert any("did not become active" in warning for warning in result.warnings)
 
 
 def test_force_rewrites_dropin_and_restarts(
@@ -996,23 +1010,25 @@ def test_installs_augtool_when_missing(
     assert (cfg.root_ssh_dir / cfg.port_forwarding_private_key_file_name).is_file()
 
 
-def test_augtool_install_failure_is_an_error(
+def test_augtool_install_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # augtool is missing and the package install fails after all retries:
-    # the task reports the failure instead of continuing without the tool.
+    # the task reports it as a warning, skips the drop-in alone and still
+    # deploys the keys.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _write_sshd_config(ctx)
+    cfg = ctx.config.ssh_daemon_setup
     calls = _install_fake(monkeypatch, augeas_installed=False, fail_install=99)
     result = ssh_daemon_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install" in (result.error or "")
-    assert AUGTOOL_PACKAGE in (result.error or "")
-    assert (
-        len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
-    )
+    assert result.success is True
+    assert any("cannot install" in warning for warning in result.warnings)
+    assert any(AUGTOOL_PACKAGE in warning for warning in result.warnings)
+    assert len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
+    assert not cfg.sshd_config_dropin_path.exists()
+    assert (cfg.root_ssh_dir / cfg.port_forwarding_private_key_file_name).is_file()
 
 
 def test_augtool_install_respects_apt_update_flag(

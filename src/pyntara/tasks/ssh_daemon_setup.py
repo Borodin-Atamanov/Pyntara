@@ -311,6 +311,16 @@ def _wait_active(
     return False
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Install the SSH server, patch its config and deploy the keys.
 
@@ -322,9 +332,10 @@ def task(ctx: Context) -> TaskResult:
     the package, syncs the drop-in through augeas, verifies the
     effective configuration with sshd -T, disables the socket, deploys
     the keys, enables the service and starts, reloads or restarts it.
-    Every step is reported to stdout as single lines; any failure is
-    returned as an error TaskResult, and the runner continues with the
-    remaining tasks.
+    Every step is reported to stdout as single lines; a step that cannot
+    run is reported as a warning of a completed task, the missing
+    mechanism skips that step alone and every independent step still
+    runs, so the runner continues with the remaining tasks.
     """
 
     cfg = ctx.config.ssh_daemon_setup
@@ -333,34 +344,31 @@ def task(ctx: Context) -> TaskResult:
     owner_gid = ctx.config.engine.root_owner_gid
     force = ctx.task_name in ctx.force_tasks
     ssh_data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
+    warnings: list[str] = []
 
     private_source = ssh_data_dir / cfg.private_key_file_name
     public_source = ssh_data_dir / cfg.public_key_file_name
     pf_private_source = ssh_data_dir / cfg.port_forwarding_private_key_file_name
     pf_public_source = ssh_data_dir / cfg.port_forwarding_public_key_file_name
-    if not private_source.is_file() or not public_source.is_file():
-        return TaskResult(
-            success=False,
-            error=(
-                f"key files {cfg.private_key_file_name} and "
-                f"{cfg.public_key_file_name} missing in {ssh_data_dir}"
-            ),
+    keys_ready = private_source.is_file() and public_source.is_file()
+    if not keys_ready:
+        warnings.append(
+            f"key files {cfg.private_key_file_name} and "
+            f"{cfg.public_key_file_name} missing in {ssh_data_dir}"
         )
-    if not pf_private_source.is_file() or not pf_public_source.is_file():
-        return TaskResult(
-            success=False,
-            error=(
-                f"port-forwarding key files "
-                f"{cfg.port_forwarding_private_key_file_name} and "
-                f"{cfg.port_forwarding_public_key_file_name} "
-                f"missing in {ssh_data_dir}"
-            ),
+    pf_keys_ready = pf_private_source.is_file() and pf_public_source.is_file()
+    if not pf_keys_ready:
+        warnings.append(
+            f"port-forwarding key files "
+            f"{cfg.port_forwarding_private_key_file_name} and "
+            f"{cfg.port_forwarding_public_key_file_name} "
+            f"missing in {ssh_data_dir}"
         )
-    private_bytes = private_source.read_bytes()
-    public_bytes = public_source.read_bytes()
+    private_bytes = private_source.read_bytes() if keys_ready else b""
+    public_bytes = public_source.read_bytes() if keys_ready else b""
     public_line = public_bytes.decode("utf-8").strip()
-    pf_private_bytes = pf_private_source.read_bytes()
-    pf_public_bytes = pf_public_source.read_bytes()
+    pf_private_bytes = pf_private_source.read_bytes() if pf_keys_ready else b""
+    pf_public_bytes = pf_public_source.read_bytes() if pf_keys_ready else b""
     pf_public_line = (
         f"{cfg.port_forwarding_authorized_keys_options} "
         f"{pf_public_bytes.decode('utf-8').strip()}"
@@ -380,13 +388,11 @@ def task(ctx: Context) -> TaskResult:
         ok, error = _ensure_package(
             ctx.config.engine, cfg, timeout, ctx.skip_apt_update
         )
-        if not ok:
-            return TaskResult(
-                success=False,
-                error=f"cannot install {cfg.package_name}: {error}",
-            )
-        _log("package installed")
-        changed = True
+        if ok:
+            _log("package installed")
+            changed = True
+        else:
+            warnings.append(f"cannot install {cfg.package_name}: {error}")
 
     include_ok = include_covers_dropin(
         cfg.sshd_config_path, cfg.sshd_config_dropin_path
@@ -396,12 +402,12 @@ def task(ctx: Context) -> TaskResult:
         f"{'found' if include_ok else 'missing'}"
     )
     if not include_ok:
-        return TaskResult(
-            success=False,
-            error=(
-                f"{cfg.sshd_config_path} has no Include directive covering "
-                f"{cfg.sshd_config_dropin_path.parent}"
-            ),
+        # The drop-in is written anyway: the configured directives start
+        # to work the moment the directive appears, so the work is not
+        # thrown away by a line missing from a file we do not own.
+        warnings.append(
+            f"{cfg.sshd_config_path} has no Include directive covering "
+            f"{cfg.sshd_config_dropin_path.parent}"
         )
 
     augtool_error = ensure_augtool(
@@ -413,37 +419,43 @@ def task(ctx: Context) -> TaskResult:
         skip_update=ctx.skip_apt_update,
     )
     if augtool_error is not None:
-        return TaskResult(success=False, changed=changed, error=augtool_error)
+        # Without augeas the drop-in cannot be written at all, so this
+        # step alone is skipped and the rest of the task still runs.
+        warnings.append(augtool_error)
 
-    try:
-        directives = tuple(
-            (directive.name, directive.value)
-            for directive in cfg.directives
-        )
-        dropin_changed, port_changed = sync_dropin(
-            ctx.config.engine,
-            cfg.sshd_config_dropin_path,
-            directives,
-            cfg.dropin_file_mode,
-            force,
-            cfg.augeas_lens,
-            cfg.dropin_header,
-            timeout,
-            owner_uid=owner_uid,
-            owner_gid=owner_gid,
-            port_directive=cfg.port_directive,
-        )
-    except RuntimeError as exc:
-        return TaskResult(success=False, changed=changed, error=str(exc))
-    if dropin_changed:
-        _log("drop-in synced through augeas")
-        changed = True
+    directives = tuple(
+        (directive.name, directive.value) for directive in cfg.directives
+    )
+    dropin_changed = False
+    port_changed = False
+    if augtool_error is None:
+        try:
+            dropin_changed, port_changed = sync_dropin(
+                ctx.config.engine,
+                cfg.sshd_config_dropin_path,
+                directives,
+                cfg.dropin_file_mode,
+                force,
+                cfg.augeas_lens,
+                cfg.dropin_header,
+                timeout,
+                owner_uid=owner_uid,
+                owner_gid=owner_gid,
+                port_directive=cfg.port_directive,
+            )
+        except RuntimeError as exc:
+            warnings.append(str(exc))
+        else:
+            if dropin_changed:
+                _log("drop-in synced through augeas")
+                changed = True
 
     if (dropin_changed or force) and cfg.directives:
         verify = _verify_effective_config(cfg, cfg.directives, timeout)
-        if verify is not None:
-            return TaskResult(success=False, changed=changed, error=verify)
-        _log("effective configuration verified through sshd -T")
+        if verify is None:
+            _log("effective configuration verified through sshd -T")
+        else:
+            warnings.append(verify)
 
     socket_enabled = service_is_enabled(
         ctx.config.engine, cfg.socket_unit_name, timeout
@@ -467,31 +479,11 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
-    _log(f"deploying keys into {cfg.root_ssh_dir}")
-    if _deploy_keys(
-        cfg.root_ssh_dir,
-        private_bytes,
-        public_bytes,
-        public_line,
-        pf_private_bytes,
-        pf_public_bytes,
-        pf_public_line,
-        cfg,
-        0,
-        0,
-    ):
-        changed = True
-    _log("root keys deployed")
-    for user in cfg.users:
-        try:
-            record = pwd.getpwnam(user)
-        except KeyError:
-            _log(f"user {user} does not exist, skipping key deployment")
-            continue
-        ssh_dir = Path(record.pw_dir) / ".ssh"
-        _log(f"deploying keys into {ssh_dir}")
+    keys_ready = keys_ready and pf_keys_ready
+    if keys_ready:
+        _log(f"deploying keys into {cfg.root_ssh_dir}")
         if _deploy_keys(
-            ssh_dir,
+            cfg.root_ssh_dir,
             private_bytes,
             public_bytes,
             public_line,
@@ -499,11 +491,35 @@ def task(ctx: Context) -> TaskResult:
             pf_public_bytes,
             pf_public_line,
             cfg,
-            record.pw_uid,
-            record.pw_gid,
+            0,
+            0,
         ):
             changed = True
-        _log("user keys deployed")
+        _log("root keys deployed")
+        for user in cfg.users:
+            try:
+                record = pwd.getpwnam(user)
+            except KeyError:
+                _log(f"user {user} does not exist, skipping key deployment")
+                continue
+            ssh_dir = Path(record.pw_dir) / ".ssh"
+            _log(f"deploying keys into {ssh_dir}")
+            if _deploy_keys(
+                ssh_dir,
+                private_bytes,
+                public_bytes,
+                public_line,
+                pf_private_bytes,
+                pf_public_bytes,
+                pf_public_line,
+                cfg,
+                record.pw_uid,
+                record.pw_gid,
+            ):
+                changed = True
+            _log("user keys deployed")
+    else:
+        _log("skipping key deployment: a configured key file is missing")
 
     if (
         not force
@@ -513,7 +529,7 @@ def task(ctx: Context) -> TaskResult:
         and active
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     socket_changed = False
     if socket_needs_disable:
@@ -527,14 +543,11 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl disable socket failed: {exc}",
-            )
-        _log("socket disabled")
-        changed = True
-        socket_changed = True
+            warnings.append(f"systemctl disable socket failed: {exc}")
+        else:
+            _log("socket disabled")
+            changed = True
+            socket_changed = True
 
     if not enabled:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
@@ -547,13 +560,10 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl enable failed: {exc}",
-            )
-        _log("service enabled")
-        changed = True
+            warnings.append(f"systemctl enable failed: {exc}")
+        else:
+            _log("service enabled")
+            changed = True
 
     port_value = next(
         (
@@ -575,34 +585,29 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl start failed: {exc}",
-            )
-        _log("service started")
-        if not _wait_active(
-            ctx.config.engine,
-            cfg.service_unit_name,
-            cfg.start_check_attempts,
-            cfg.start_check_retry_delay_seconds,
-            timeout,
-        ):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
+            warnings.append(f"systemctl start failed: {exc}")
+        else:
+            _log("service started")
+            if not _wait_active(
+                ctx.config.engine,
+                cfg.service_unit_name,
+                cfg.start_check_attempts,
+                cfg.start_check_retry_delay_seconds,
+                timeout,
+            ):
+                warnings.append(
                     f"{cfg.service_unit_name} did not become active after "
                     f"{cfg.start_check_attempts} checks"
-                ),
-            )
-        _log("service active")
-        changed = True
-        if port_value is not None:
-            verify = _verify_listening_port(cfg, port_value, timeout)
-            if verify is not None:
-                return TaskResult(success=False, changed=changed, error=verify)
-            _log(f"listener on port {port_value} verified")
+                )
+            else:
+                _log("service active")
+                changed = True
+                if port_value is not None:
+                    verify = _verify_listening_port(cfg, port_value, timeout)
+                    if verify is None:
+                        _log(f"listener on port {port_value} verified")
+                    else:
+                        warnings.append(verify)
     elif force or socket_changed or port_changed:
         _log(f"restarting service: systemctl restart {cfg.service_unit_name}")
         try:
@@ -614,18 +619,16 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl restart failed: {exc}",
-            )
-        _log("service restarted")
-        changed = True
-        if port_value is not None:
-            verify = _verify_listening_port(cfg, port_value, timeout)
-            if verify is not None:
-                return TaskResult(success=False, changed=changed, error=verify)
-            _log(f"listener on port {port_value} verified")
+            warnings.append(f"systemctl restart failed: {exc}")
+        else:
+            _log("service restarted")
+            changed = True
+            if port_value is not None:
+                verify = _verify_listening_port(cfg, port_value, timeout)
+                if verify is None:
+                    _log(f"listener on port {port_value} verified")
+                else:
+                    warnings.append(verify)
     elif dropin_changed:
         _log(f"reloading service: systemctl reload {cfg.service_unit_name}")
         try:
@@ -637,19 +640,16 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"systemctl reload failed: {exc}",
-            )
-        _log("service reloaded")
-        changed = True
+            warnings.append(f"systemctl reload failed: {exc}")
+        else:
+            _log("service reloaded")
+            changed = True
 
-    return TaskResult(
-        success=True,
+    return _result(
         changed=changed,
         message=(
             f"SSH server {cfg.package_name} configured, service "
             f"{cfg.service_unit_name} active"
         ),
+        warnings=warnings,
     )
