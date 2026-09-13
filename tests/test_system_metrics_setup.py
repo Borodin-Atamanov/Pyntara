@@ -665,29 +665,32 @@ def test_stale_venv_is_updated_and_service_restarted(
     assert ["systemctl", "restart", "system_metrics.service"] in calls
 
 
-def test_uv_missing_fails(
+def test_uv_missing_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Without uv on PATH there is no way to create the venv: the task
-    # fails loudly instead of leaving a half-deployed service.
-    _deploy_fixture(monkeypatch, tmp_path, uv_available=False)
-    result = system_metrics_setup.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "uv" in (result.error or "")
+    # Without uv on PATH no virtual environment can be built: the step is
+    # reported and the configuration, the units, the command and the
+    # spool directory are still deployed.
+    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, uv_available=False)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success is True
+    assert any("uv" in warning for warning in result.warnings)
+    assert fixtures["system_config"].is_file()
 
 
-def test_uv_sync_failure_fails(
+def test_uv_sync_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A failed package install is an error: the task reports it and the
-    # runner continues with the remaining tasks.
+    # A failed package install is reported as a warning: the task
+    # completes and every later step still runs.
     def fail_uv_sync(command: list[str]) -> bool:
         return command[0] == "uv" and command[1] == "sync"
 
-    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_sync)
+    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_sync)
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
-    assert result.success is False
-    assert "cannot install" in (result.error or "")
+    assert result.success is True
+    assert any("cannot install" in w for w in result.warnings)
+    assert any(call[:2] == ["systemctl", "enable"] for call in calls)
 
 
 def test_only_service_disabled_starts_it(
@@ -815,12 +818,12 @@ def test_command_stale_content_rewritten(
     assert os.stat(fixtures["command_path"]).st_mode & 0o777 == 0o755
 
 
-def test_command_directory_fails(
+def test_command_directory_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A directory on the command path cannot be replaced (no recursive
-    # removal): the task fails with a clear error and leaves the
-    # directory alone.
+    # removal): the task reports the reason and leaves the directory
+    # alone.
     fixtures, _ = _deploy_fixture(
         monkeypatch,
         tmp_path,
@@ -836,8 +839,8 @@ def test_command_directory_fails(
     )
     fixtures["command_path"].mkdir(parents=True)
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
-    assert result.success is False
-    assert "directory" in (result.error or "")
+    assert result.success is True
+    assert any("directory" in warning for warning in result.warnings)
     assert fixtures["command_path"].is_dir()
 
 

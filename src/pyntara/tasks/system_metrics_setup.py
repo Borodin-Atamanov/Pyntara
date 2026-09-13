@@ -405,6 +405,16 @@ def _ensure_spool_dir(spool_dir: Path, mode: int, owner_uid: int, owner_gid: int
     apply_owner(spool_dir, owner_uid, owner_gid)
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
@@ -416,18 +426,20 @@ def task(ctx: Context) -> TaskResult:
     it creates the venv, installs the package, copies the config, writes
     the units, reloads systemd, enables and starts the service and the
     path unit, generates the commit command and creates the spool
-    directory, so a broken deployment fails the task and shows in the
-    install log. The systemd work runs only when the units themselves
-    need it: a task that only has to write the missing command file
-    leaves the running units untouched. A missing uv executable and a
-    failed command are errors: the task returns success=False and the
-    runner continues.
+    directory, so a broken step is visible in the install log. The systemd
+    work runs only when the units themselves need it: a task that only has
+    to write the missing command file leaves the running units untouched.
+    A step that cannot run is a warning of a completed task: a missing uv
+    executable skips the venv alone, an unwritable config, unit or command
+    file and a failed systemd setup keep every earlier step, and the run
+    never stops here.
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
+    warnings: list[str] = []
     metrics = ctx.config.system_metrics_setup
     venv_dir = metrics.venv_dir
     venv_python = venv_dir / metrics.venv_python_relative_path
@@ -547,24 +559,30 @@ def task(ctx: Context) -> TaskResult:
         and spool_ok
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     uv = _uv_path()
     if uv is None:
-        return TaskResult(success=False, error="uv executable not found on PATH")
-    venv_changed, error = _ensure_venv(
-        metrics,
-        ctx.repo_root,
-        uv,
-        force,
-        timeout,
-        venv_dir,
-        metrics.python_version,
-        venv_ok,
-    )
-    if error is not None:
-        return TaskResult(success=False, error=error)
+        # Without uv no virtual environment can be built, so that step is
+        # skipped alone while the configuration, the units, the command
+        # and the spool directory are still deployed.
+        warnings.append("uv executable not found on PATH")
+        venv_changed = False
+    else:
+        venv_changed, error = _ensure_venv(
+            metrics,
+            ctx.repo_root,
+            uv,
+            force,
+            timeout,
+            venv_dir,
+            metrics.python_version,
+            venv_ok,
+        )
+        if error is not None:
+            warnings.append(error)
+            venv_changed = False
     changed = changed or venv_changed
 
     if not config_ok or force:
@@ -572,11 +590,10 @@ def task(ctx: Context) -> TaskResult:
         try:
             _write_system_config(system_config_path, ctx.repo_root / "config")
         except OSError as exc:
-            return TaskResult(
-                success=False, changed=changed, error=f"cannot write system config: {exc}"
-            )
-        _log("system config written")
-        changed = True
+            warnings.append(f"cannot write system config: {exc}")
+        else:
+            _log("system config written")
+            changed = True
 
     units = (
         (service_name, service_unit),
@@ -600,11 +617,8 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _write_unit(unit_dir, name, content)
             except OSError as exc:
-                return TaskResult(
-                    success=False,
-                    changed=changed,
-                    error=f"cannot write unit file {name}: {exc}",
-                )
+                warnings.append(f"cannot write unit file {name}: {exc}")
+                continue
             _log(f"unit {name} written")
             changed = True
 
@@ -705,9 +719,11 @@ def task(ctx: Context) -> TaskResult:
                     )
                     _log("collector timer started")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False, changed=True, error=f"systemd setup failed: {exc}"
-            )
+            warnings.append(f"systemd setup failed: {exc}")
+        else:
+            # The block converged the enablement or the running state of
+            # the units, which is a change of the machine.
+            changed = True
 
     if not command_ok or force:
         _log(f"writing command {command_path}")
@@ -715,28 +731,24 @@ def task(ctx: Context) -> TaskResult:
             _write_command_file(command_path, command_content, metrics.command_file_mode)
             apply_owner(command_path, owner_uid, owner_gid)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write command {command_path}: {exc}",
-            )
-        _log("command written")
-        changed = True
+            warnings.append(f"cannot write command {command_path}: {exc}")
+        else:
+            _log("command written")
+            changed = True
 
     if not spool_ok or force:
         _log(f"creating spool {spool_dir} with mode {metrics.spool_dir_mode:04o}")
         try:
             _ensure_spool_dir(spool_dir, metrics.spool_dir_mode, owner_uid, owner_gid)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot create spool directory {spool_dir}: {exc}",
+            warnings.append(
+                f"cannot create spool directory {spool_dir}: {exc}"
             )
-        _log("spool ready")
-        changed = True
+        else:
+            _log("spool ready")
+            changed = True
 
     message = (
         f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
     )
-    return TaskResult(success=True, changed=True, message=message)
+    return _result(changed=changed, message=message, warnings=warnings)
