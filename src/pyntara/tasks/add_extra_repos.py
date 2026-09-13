@@ -254,8 +254,10 @@ def task(ctx: Context) -> TaskResult:
     The task skips when the goal is already reached. Otherwise it rewrites
     the Components lines, refreshes the apt index once (unless
     ctx.skip_apt_update), verifies the result by re-reading the files and
-    reports the outcome. Every failure is returned as an error TaskResult:
-    the runner continues with the remaining tasks and never stops here.
+    reports the outcome. Every step that cannot run is reported as a
+    warning of a completed task: a file that cannot be read or written is
+    named, the other files are still handled, and the runner continues with
+    the remaining tasks and never stops here.
     """
 
     configured = ctx.config.add_extra_repos.components
@@ -263,12 +265,13 @@ def task(ctx: Context) -> TaskResult:
     keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
     keep_debs_file = ctx.config.add_extra_repos.keep_debs_file
     keep_debs_content = ctx.config.add_extra_repos.keep_debs_dropin_content
+    warnings: list[str] = []
     _log(f"configured components: {' '.join(configured)}")
     keep_changed, keep_error = _ensure_keep_debs_dropin(
         keep_debs, keep_debs_file, keep_debs_content
     )
     if keep_error:
-        return TaskResult(success=False, error=keep_error)
+        warnings.append(keep_error)
     if keep_changed:
         _log(f"updated {keep_debs_file}: keep downloaded .deb files")
     files = _collect_source_files(
@@ -276,16 +279,22 @@ def task(ctx: Context) -> TaskResult:
         ctx.config.add_extra_repos.sources_list_d,
     )
     if not files:
-        return TaskResult(success=False, error="no apt source files found")
+        warning = "no apt source files found"
+        warnings.append(warning)
+        return TaskResult(
+            success=True,
+            changed=keep_changed,
+            message="; ".join(warnings),
+            warnings=tuple(warnings),
+        )
     _log(f"apt source files found: {len(files)}")
     states: list[tuple[Path, _FileRewrite]] = []
-    problems: list[str] = []
     has_ubuntu = False
     for path in files:
         try:
             state = _process_file(path, configured, hosts)
         except OSError as exc:
-            problems.append(f"cannot read {path}: {exc}")
+            warnings.append(f"cannot read {path}: {exc}")
             continue
         states.append((path, state))
         has_ubuntu = has_ubuntu or state.has_ubuntu
@@ -294,25 +303,35 @@ def task(ctx: Context) -> TaskResult:
             _log(f"reading {path}: ubuntu section found, {status}")
         else:
             _log(f"reading {path}: no ubuntu section")
-    all_problems = problems + [
+    warnings.extend(
         problem for _, state in states for problem in state.problems
-    ]
-    if all_problems:
-        return TaskResult(success=False, error="; ".join(all_problems))
+    )
     if not has_ubuntu:
+        warnings.append(
+            "no Ubuntu archive section found in the apt sources; "
+            "add_extra_repos only manages Ubuntu archive components"
+        )
+        if warnings:
+            _log("; ".join(warnings))
         return TaskResult(
-            success=False,
-            error=(
-                "no Ubuntu archive section found in the apt sources; "
-                "add_extra_repos only manages Ubuntu archive components"
-            ),
+            success=True,
+            changed=keep_changed,
+            message="; ".join(warnings),
+            warnings=tuple(warnings),
         )
     if all(state.satisfied for _, state in states):
         _log("target state already reached, skipping")
         message = "already satisfied"
         if keep_changed:
             message = f"{message}; {_keep_debs_state_note(keep_debs)}"
-        return TaskResult(success=True, changed=keep_changed, message=message)
+        if warnings:
+            message = f"{message}; warnings: {'; '.join(warnings)}"
+        return TaskResult(
+            success=True,
+            changed=keep_changed,
+            message=message,
+            warnings=tuple(warnings),
+        )
     changed_paths: list[Path] = []
     for path, state in states:
         if not state.changed:
@@ -321,14 +340,9 @@ def task(ctx: Context) -> TaskResult:
         try:
             path.write_text(state.text, encoding="utf-8")
         except OSError as exc:
-            problems.append(f"cannot write {path}: {exc}")
+            warnings.append(f"cannot write {path}: {exc}")
             continue
         changed_paths.append(path)
-    if problems:
-        return TaskResult(
-            success=False, changed=bool(changed_paths), error="; ".join(problems)
-        )
-    warnings: list[str] = []
     if changed_paths:
         if ctx.skip_apt_update:
             _log("apt index refresh skipped")
@@ -348,19 +362,14 @@ def task(ctx: Context) -> TaskResult:
         try:
             verified.append((path, _process_file(path, configured, hosts)))
         except OSError as exc:
-            problems.append(f"cannot read {path} for verification: {exc}")
-    if problems:
-        return TaskResult(
-            success=False, changed=bool(changed_paths), error="; ".join(problems)
-        )
+            warnings.append(f"cannot read {path} for verification: {exc}")
     unsatisfied = [str(path) for path, state in verified if not state.satisfied]
     if unsatisfied:
-        return TaskResult(
-            success=False,
-            changed=bool(changed_paths),
-            error=f"components still missing after rewrite: {', '.join(unsatisfied)}",
+        warnings.append(
+            f"components still missing after rewrite: {', '.join(unsatisfied)}"
         )
-    _log(f"verification passed: {len(verified)} files satisfied")
+    else:
+        _log(f"verification passed: {len(verified)} files satisfied")
     message = (
         f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     )
@@ -372,4 +381,5 @@ def task(ctx: Context) -> TaskResult:
         success=True,
         changed=bool(changed_paths) or keep_changed,
         message=message,
+        warnings=tuple(warnings),
     )

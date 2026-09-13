@@ -228,14 +228,19 @@ def test_legacy_sources_list_is_rewritten(
     )
 
 
-def test_no_ubuntu_section_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_no_ubuntu_section_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Only a third-party source exists: there is no Ubuntu archive section
-    # to manage, so the task reports an error and changes nothing.
+    # to manage, so the task reports the reason and changes nothing.
     _install_sources(monkeypatch, tmp_path, {"google-chrome.sources": THIRD_PARTY_DEB822})
     result = add_extra_repos.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is False
-    assert "no Ubuntu archive section found" in (result.error or "")
+    assert any(
+        "no Ubuntu archive section found" in warning
+        for warning in result.warnings
+    )
 
 
 def test_apt_update_failure_is_a_warning(
@@ -256,7 +261,7 @@ def test_apt_update_failure_is_a_warning(
     assert "apt index refresh" in (result.message or "")
 
 
-def test_ubuntu_section_without_components_line_fails(
+def test_ubuntu_section_without_components_line_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # An Ubuntu section without a Components line cannot be repaired by
@@ -264,12 +269,14 @@ def test_ubuntu_section_without_components_line_fails(
     broken = UBUNTU_DEB822.replace("Components: main\n", "")
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": broken})
     result = add_extra_repos.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is False
-    assert "without a Components line" in (result.error or "")
+    assert any(
+        "without a Components line" in warning for warning in result.warnings
+    )
 
 
-def test_unreadable_source_file_fails(
+def test_unreadable_source_file_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A directory masquerading as a source file cannot be read: the task
@@ -277,9 +284,9 @@ def test_unreadable_source_file_fails(
     sources_dir = _install_sources(monkeypatch, tmp_path, {})
     (sources_dir / "broken.sources").mkdir()
     result = add_extra_repos.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is False
-    assert "cannot read" in (result.error or "")
+    assert any("cannot read" in warning for warning in result.warnings)
 
 
 def test_legacy_and_deb822_are_both_updated(
@@ -389,15 +396,16 @@ def test_keep_debs_dropin_removed_when_disabled(
     assert "disabled" in (result.message or "")
 
 
-def test_keep_debs_dropin_write_error_fails(
+def test_keep_debs_dropin_write_error_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The drop-in path is a directory, so the write fails: the task reports
-    # an error and never touches the sources.
+    # the reason and still handles the apt sources.
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": UBUNTU_DEB822})
     bad = tmp_path / "apt.conf.d" / "99keep-debs.conf"
     bad.unlink()
     bad.mkdir()
     result = add_extra_repos.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "cannot update" in (result.error or "")
+    assert result.success is True
+    assert any("cannot update" in warning for warning in result.warnings)
+    assert result.changed is True
