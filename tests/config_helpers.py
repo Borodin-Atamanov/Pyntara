@@ -393,6 +393,8 @@ def base_config() -> str:
         'github_repo = "MHSanaei/3x-ui"\n'
         'install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"\n'
         'install_dir = "/usr/local/x-ui"\n'
+        'binary_file_name = "x-ui"\n'
+        'service_process_name = "x-ui"\n'
         'service_unit_name = "x-ui.service"\n'
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"

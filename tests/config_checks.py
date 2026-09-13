@@ -4330,6 +4330,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         github_repo=github_repo,
         install_script_url=install_script_url,
         install_dir=install_dir,
+        binary_file_name=_nonempty_string_field(
+            raw.get("binary_file_name"),
+            "three_x_ui_xray_setup.binary_file_name",
+        ),
+        service_process_name=_nonempty_string_field(
+            raw.get("service_process_name"),
+            "three_x_ui_xray_setup.service_process_name",
+        ),
         service_unit_name=service_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,

@@ -67,6 +67,8 @@ class ThreeXuiXraySetupConfig:
     github_repo: str
     install_script_url: str
     install_dir: Path
+    binary_file_name: str
+    service_process_name: str
     service_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: int

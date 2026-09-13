@@ -10,6 +10,12 @@ github_repo = "MHSanaei/3x-ui"
 install_script_url = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh"
 # Directory holding the x-ui binary, where the installed version is read.
 install_dir = "/usr/local/x-ui"
+# Identity of the installed panel: the file name of its binary inside
+# install_dir, which the task runs for every version, setting and
+# certificate call, and the process name the port helpers look for when
+# they have to free a port.
+binary_file_name = "x-ui"
+service_process_name = "x-ui"
 # Name of the systemd service unit the official installer creates.
 service_unit_name = "x-ui.service"
 # Timeout in seconds of one readiness probe: the curl call that checks

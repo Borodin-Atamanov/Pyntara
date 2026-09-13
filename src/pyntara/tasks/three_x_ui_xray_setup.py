@@ -123,6 +123,17 @@ VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 IPV4_PATTERN = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
 
 
+def _panel_binary(cfg: ThreeXuiXraySetupConfig) -> Path:
+    """The installed panel binary, from its configured file name.
+
+    Every call the task makes to the panel binary is built from this one
+    path, so the file name of the binary is a single config value and a
+    future release that renames it needs no code change.
+    """
+
+    return cfg.install_dir / cfg.binary_file_name
+
+
 def _installed_version(
     cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> str | None:
@@ -136,7 +147,7 @@ def _installed_version(
     format may change.
     """
 
-    binary = cfg.install_dir / "x-ui"
+    binary = _panel_binary(cfg)
     try:
         result = run_command(
             [str(binary), "-v"],
@@ -1089,7 +1100,7 @@ def _actual_panel_port(
 
     try:
         result = run_command(
-            [str(cfg.install_dir / "x-ui"), "setting", "-show", "true"],
+            [str(_panel_binary(cfg)), "setting", "-show", "true"],
             check=False,
             capture=True,
             timeout=timeout,
@@ -1128,7 +1139,7 @@ def _converge_panel_port(
             cfg.panel_port,
             cfg.service_unit_name,
             timeout,
-            service_process_name="x-ui",
+            service_process_name=cfg.service_process_name,
         )
     except RuntimeError as exc:
         raise RuntimeError(
@@ -1136,7 +1147,7 @@ def _converge_panel_port(
         ) from None
     try:
         run_command(
-            [str(cfg.install_dir / "x-ui"), "setting", "-port", str(cfg.panel_port)],
+            [str(_panel_binary(cfg)), "setting", "-port", str(cfg.panel_port)],
             timeout=timeout,
         )
         run_command(
@@ -1317,7 +1328,7 @@ def _takeover_credentials(
     try:
         run_command(
             [
-                str(cfg.install_dir / "x-ui"),
+                str(_panel_binary(cfg)),
                 "setting",
                 "-username",
                 username,
@@ -1451,7 +1462,7 @@ def _issue_ip_certificate(
     try:
         run_command(
             [
-                str(cfg.install_dir / "x-ui"),
+                str(_panel_binary(cfg)),
                 "cert",
                 "-webCert",
                 str(cfg.cert_fullchain),
@@ -1627,7 +1638,7 @@ def _ensure_self_signed_cert(
     try:
         run_command(
             [
-                str(cfg.install_dir / "x-ui"),
+                str(_panel_binary(cfg)),
                 "cert",
                 "-webCert",
                 str(cfg.self_signed_cert_fullchain),
@@ -1663,7 +1674,7 @@ def _issue_trusted_cert(
             cfg.acme_port,
             cfg.service_unit_name,
             timeout,
-            service_process_name="x-ui",
+            service_process_name=cfg.service_process_name,
         )
     except RuntimeError as exc:
         return TaskResult(success=True, changed=False, warnings=(str(exc),))
@@ -2493,7 +2504,7 @@ def task(ctx: Context) -> TaskResult:
                 cfg.panel_port,
                 cfg.service_unit_name,
                 timeout,
-                service_process_name="x-ui",
+                service_process_name=cfg.service_process_name,
             )
         except RuntimeError as exc:
             return TaskResult(success=False, error=str(exc))
@@ -2519,7 +2530,7 @@ def task(ctx: Context) -> TaskResult:
                     cfg.acme_port,
                     cfg.service_unit_name,
                     timeout,
-                    service_process_name="x-ui",
+                    service_process_name=cfg.service_process_name,
                 )
             except RuntimeError as exc:
                 return TaskResult(success=False, error=str(exc))

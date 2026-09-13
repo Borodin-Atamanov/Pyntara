@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock
@@ -820,6 +821,63 @@ class TestProquintCredentials:
             (35353, "x-ui.service", "x-ui"),
             (80, "x-ui.service", "x-ui"),
         ]
+
+    def test_the_panel_binary_name_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The file name of the panel binary is a config value: another
+        # name in the section is the argv the version probe runs.
+        configured = replace(
+            _ctx(tmp_path).config.three_x_ui_xray_setup,
+            binary_file_name="my-x-ui",
+        )
+        probed: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            probed.append(list(command))
+            return _FakeProc(0, "3.7.0\n")
+
+        monkeypatch.setattr(xui, "run_command", fake_run)
+        assert xui._installed_version(configured, 30.0) == "3.7.0"
+        assert probed == [[str(configured.install_dir / "my-x-ui"), "-v"]]
+
+    def test_the_panel_process_name_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The process name the port helpers look for is a config value:
+        # another name in the section is what the task hands to them.
+        captured: list[str | None] = []
+
+        def fake_ensure_port_free(
+            port: int,
+            service_name: str,
+            _timeout: float,
+            **kwargs: object,
+        ) -> None:
+            captured.append(cast(str | None, kwargs.get("service_process_name")))
+
+        monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        _stage2_fake(monkeypatch, tmp_path)
+        ctx = _ctx(tmp_path)
+        configured = replace(
+            ctx.config.three_x_ui_xray_setup,
+            service_process_name="my-panel-process",
+        )
+        ctx = replace(
+            ctx,
+            config=replace(ctx.config, three_x_ui_xray_setup=configured),
+        )
+        _install_fake(
+            monkeypatch,
+            install_dir=configured.install_dir,
+            installed_version=None,
+            enabled=False,
+            active=False,
+            active_becomes=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert captured == ["my-panel-process", "my-panel-process"]
 
     def test_ssl_disabled_frees_only_panel_port(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

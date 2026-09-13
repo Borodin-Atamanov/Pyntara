@@ -25,6 +25,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "github_repo": "MHSanaei/3x-ui",
         "install_script_url": "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh",
         "install_dir": Path("/usr/local/x-ui"),
+        "binary_file_name": "x-ui",
+        "service_process_name": "x-ui",
         "service_unit_name": "x-ui.service",
         "start_check_attempts": 10,
         "start_check_retry_delay_seconds": 1,
