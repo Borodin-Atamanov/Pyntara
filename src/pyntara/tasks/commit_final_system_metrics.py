@@ -38,8 +38,10 @@ def task(ctx: Context) -> TaskResult:
     vault_backup_file_name with {hostname} replaced by the machine
     hostname and with the configured vault_backup_file_mode, and it is
     committed through the configured commit command; the temporary copy is
-    removed in all cases. A missing or empty vault and a failed commit
-    return an error TaskResult.
+    removed in all cases. The task commits one document, so its findings
+    are warnings of a completed task: a missing, empty or unreadable vault,
+    an empty commit command, a failed copy and a failed commit are
+    reported and the run ends without a backup.
     """
 
     metrics = ctx.config.system_metrics_setup
@@ -51,29 +53,41 @@ def task(ctx: Context) -> TaskResult:
 
     if not vault_path.is_file():
         _log(f"runtime vault {vault_path} missing, cannot back it up")
+        warning = f"runtime vault missing: {vault_path}"
         return TaskResult(
-            success=False,
-            error=f"runtime vault missing: {vault_path}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     try:
         if vault_path.stat().st_size == 0:
             _log(f"runtime vault {vault_path} empty, cannot back it up")
+            warning = f"runtime vault empty: {vault_path}"
             return TaskResult(
-                success=False,
-                error=f"runtime vault empty: {vault_path}",
+                success=True,
+                changed=False,
+                message=warning,
+                warnings=(warning,),
             )
     except OSError as exc:
         _log(f"runtime vault {vault_path} cannot be stat: {exc}")
+        warning = f"runtime vault cannot be stat: {vault_path}: {exc}"
         return TaskResult(
-            success=False,
-            error=f"runtime vault cannot be stat: {vault_path}: {exc}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
 
     if not metrics.commit_command:
         _log("system_metrics_setup names no commit_command, cannot commit")
+        warning = "system_metrics_setup.commit_command is empty"
         return TaskResult(
-            success=False,
-            error="system_metrics_setup.commit_command is empty",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
 
     temp_path = Path(tempfile.gettempdir()) / backup_name
@@ -83,9 +97,12 @@ def task(ctx: Context) -> TaskResult:
         os.chmod(temp_path, metrics.vault_backup_file_mode)
     except OSError as exc:
         temp_path.unlink(missing_ok=True)
+        warning = f"cannot copy runtime vault to {temp_path}: {exc}"
         return TaskResult(
-            success=False,
-            error=f"cannot copy runtime vault to {temp_path}: {exc}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     try:
         result = run_command(
@@ -99,16 +116,22 @@ def task(ctx: Context) -> TaskResult:
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         temp_path.unlink(missing_ok=True)
+        warning = f"commit failed: {exc}"
         return TaskResult(
-            success=False,
-            error=f"commit failed: {exc}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     temp_path.unlink(missing_ok=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
+        warning = f"commit failed: {detail or 'nonzero exit'}"
         return TaskResult(
-            success=False,
-            error=f"commit failed: {detail or 'nonzero exit'}",
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     size = vault_path.stat().st_size
     _log(f"runtime vault committed as {backup_name} ({size} bytes)")

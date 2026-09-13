@@ -157,66 +157,62 @@ def test_empty_commit_command_reports_error(
         ),
     )
     result = commit_final_system_metrics.task(ctx)
-    assert result.success is False
-    assert "commit_command" in (result.error or "")
+    assert result.success is True
+    assert any("commit_command" in warning for warning in result.warnings)
     assert calls == []
     assert not temp_path.exists()
     assert vault.read_bytes() == b"vault-bytes"
 
 
-def test_missing_vault_reports_error(
+def test_missing_vault_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # No runtime vault means nothing to back up: an error is reported and
-    # the commit command never runs (no silent failures).
+    # No runtime vault means nothing to back up: the reason is a warning
+    # and the commit command never runs.
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.error is not None
-    assert "missing" in result.error
+    assert result.success is True
+    assert any("missing" in warning for warning in result.warnings)
     assert calls == []
 
 
-def test_empty_vault_reports_error(
+def test_empty_vault_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # An empty runtime vault carries no data: an error is reported and the
-    # commit command never runs.
+    # An empty runtime vault carries no data: the reason is a warning and
+    # the commit command never runs.
     _write_vault(tmp_path, b"")
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.error is not None
-    assert "empty" in result.error
+    assert result.success is True
+    assert any("empty" in warning for warning in result.warnings)
     assert calls == []
 
 
-def test_commit_failure_reports_error(
+def test_commit_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A nonzero commit exit is an error carrying the command detail; the
+    # A nonzero commit exit is a warning carrying the command detail; the
     # temp copy is removed.
     _write_vault(tmp_path)
     calls, temp_path, _ = _install_fakes(monkeypatch, tmp_path, fail=True)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.error is not None
-    assert "commit failed" in result.error
-    assert "boom" in result.error
+    assert result.success is True
+    assert any("commit failed" in warning for warning in result.warnings)
+    assert any("boom" in warning for warning in result.warnings)
     assert len(calls) == 1
     assert not temp_path.exists()
 
 
-def test_commit_timeout_reports_error(
+def test_commit_timeout_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A timed-out commit is an error; the temp copy is removed.
+    # A timed-out commit is a warning; the temp copy is removed.
     _write_vault(tmp_path)
     calls, temp_path, _ = _install_fakes(monkeypatch, tmp_path, timeout=True)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
-    assert result.success is False
-    assert result.error is not None
-    assert "commit failed" in result.error
+    assert result.success is True
+    assert any("commit failed" in warning for warning in result.warnings)
     assert len(calls) == 1
     assert not temp_path.exists()
 
