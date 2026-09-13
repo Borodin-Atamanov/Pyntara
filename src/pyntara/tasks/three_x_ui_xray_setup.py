@@ -529,6 +529,7 @@ def _stage3(cfg: ThreeXuiXraySetupConfig, timeout: float) -> TaskResult | None:
         public_key=public_key,
         short_id=cfg.reality_short_id,
         fingerprint=cfg.reality_fingerprint,
+        sniffing_protocols=cfg.inbound_sniffing_protocols,
     )
     ok, msg = xui_client.create_inbound(cfg, env, payload, timeout)
     if not ok:
@@ -1930,14 +1931,14 @@ def _checked_categories(
         **xui_client.validate_geodata_tokens(
             cfg,
             env,
-            xui_client.GEODATA_DOMAIN_KIND,
+            cfg.panel_geodata_domain_kind,
             [token for tokens in domain_lists.values() for token in tokens],
             timeout,
         ),
         **xui_client.validate_geodata_tokens(
             cfg,
             env,
-            xui_client.GEODATA_IP_KIND,
+            cfg.panel_geodata_ip_kind,
             [token for tokens in ip_lists.values() for token in tokens],
             timeout,
         ),

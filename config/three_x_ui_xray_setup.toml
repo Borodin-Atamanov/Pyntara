@@ -93,6 +93,15 @@ panel_xray_route_test_path = "/panel/api/xray/routeTest"
 panel_inbound_protocol = "mixed"
 panel_blocked_rule_protocols = ["bittorrent"]
 panel_private_block_category = "geoip:private"
+# Vocabulary of the panel geodata check the task sends before a routing
+# policy is applied: the kind of a domain token and the kind of an address
+# token, exactly as the panel expects them in the request form. The
+# sniffing protocols are what the panel is asked to detect on the
+# universal inbound, so the routing rules can decide by the requested
+# name.
+panel_geodata_domain_kind = "domain"
+panel_geodata_ip_kind = "ip"
+inbound_sniffing_protocols = ["http", "tls"]
 # Title of the runtime vault entry that stores the panel credentials.
 # The entry must exist in the [vault_structure] table.
 vault_entry_title = "three_x_ui_credentials"

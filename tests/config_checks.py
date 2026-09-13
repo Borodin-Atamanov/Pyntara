@@ -4314,6 +4314,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("panel_private_block_category"),
         "three_x_ui_xray_setup.panel_private_block_category",
     )
+    panel_geodata_domain_kind = _nonempty_string_field(
+        raw.get("panel_geodata_domain_kind"),
+        "three_x_ui_xray_setup.panel_geodata_domain_kind",
+    )
+    panel_geodata_ip_kind = _nonempty_string_field(
+        raw.get("panel_geodata_ip_kind"),
+        "three_x_ui_xray_setup.panel_geodata_ip_kind",
+    )
+    inbound_sniffing_protocols = _string_list(
+        raw.get("inbound_sniffing_protocols"),
+        "three_x_ui_xray_setup.inbound_sniffing_protocols",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -4345,6 +4357,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_inbound_protocol=panel_inbound_protocol,
         panel_blocked_rule_protocols=panel_blocked_rule_protocols,
         panel_private_block_category=panel_private_block_category,
+        panel_geodata_domain_kind=panel_geodata_domain_kind,
+        panel_geodata_ip_kind=panel_geodata_ip_kind,
+        inbound_sniffing_protocols=inbound_sniffing_protocols,
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,

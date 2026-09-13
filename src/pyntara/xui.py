@@ -33,12 +33,6 @@ from pathlib import Path
 from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.utils import run_command
 
-# The two token families the geodata check knows: domain tokens are looked
-# up in the geosite files, address tokens in the geoip files.
-GEODATA_DOMAIN_KIND = "domain"
-GEODATA_IP_KIND = "ip"
-GEODATA_KINDS = (GEODATA_DOMAIN_KIND, GEODATA_IP_KIND)
-
 
 def _ssl_context() -> ssl.SSLContext:
     """An unverified TLS context for local panel HTTPS connections.
@@ -501,6 +495,7 @@ def build_vless_reality_payload(
     public_key: str,
     short_id: str,
     fingerprint: str,
+    sniffing_protocols: tuple[str, ...],
 ) -> dict[str, object]:
     """Build the JSON payload for creating a VLESS+REALITY inbound.
 
@@ -539,7 +534,7 @@ def build_vless_reality_payload(
         },
         "sniffing": {
             "enabled": True,
-            "destOverride": ["http", "tls"],
+            "destOverride": list(sniffing_protocols),
         },
         "enable": True,
     }
@@ -947,16 +942,21 @@ def validate_geodata_tokens(
 ) -> dict[str, str]:
     """Check routing tokens against the geodata files the panel installed.
 
-    kind is the value from GeodataKind: domain tokens are resolved against
-    the geosite files, address tokens against the geoip files. Returns a
-    mapping of the tokens the panel rejects to the reason it gives; an
-    empty mapping means every token resolved. An unreachable panel returns
-    every token mapped to "panel unreachable", which is what the caller
-    needs to hear: it cannot treat an unverified token as a working one.
+    kind is one of the two configured kinds, panel_geodata_domain_kind or
+    panel_geodata_ip_kind: domain tokens are resolved against the geosite
+    files, address tokens against the geoip files, and the panel receives
+    the kind as its own word. Returns a mapping of the tokens the panel
+    rejects to the reason it gives; an empty mapping means every token
+    resolved. An unreachable panel returns every token mapped to "panel
+    unreachable", which is what the caller needs to hear: it cannot treat
+    an unverified token as a working one.
     """
 
-    if kind not in GEODATA_KINDS:
-        raise ValueError(f"unknown geodata kind {kind!r}, expected one of {GEODATA_KINDS}")
+    known_kinds = (cfg.panel_geodata_domain_kind, cfg.panel_geodata_ip_kind)
+    if kind not in known_kinds:
+        raise ValueError(
+            f"unknown geodata kind {kind!r}, expected one of {known_kinds}"
+        )
     if not tokens:
         return {}
     base_url, opener = _bearer_opener(cfg, env)

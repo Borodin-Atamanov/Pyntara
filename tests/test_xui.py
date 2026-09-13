@@ -181,6 +181,9 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_inbound_protocol": "mixed",
         "panel_blocked_rule_protocols": ("bittorrent",),
         "panel_private_block_category": "geoip:private",
+        "panel_geodata_domain_kind": "domain",
+        "panel_geodata_ip_kind": "ip",
+        "inbound_sniffing_protocols": ("http", "tls"),
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]
@@ -604,6 +607,7 @@ class TestBuildVlessRealityPayload:
                 public_key="pub123",
                 short_id="6ba85179e30d4fc2",
                 fingerprint="chrome",
+                sniffing_protocols=("http", "tls"),
             ),
         )
         assert payload["port"] == 443
@@ -636,6 +640,7 @@ class TestBuildVlessRealityPayload:
                 public_key="custompub",
                 short_id="abc12345",
                 fingerprint="firefox",
+                sniffing_protocols=("http", "tls"),
             ),
         )
         assert payload["port"] == 8443
@@ -1346,7 +1351,7 @@ class TestValidateGeodataTokens:
         rejected = xui_client.validate_geodata_tokens(
             _cfg(),
             _ENV,
-            xui_client.GEODATA_DOMAIN_KIND,
+            _cfg().panel_geodata_domain_kind,
             ["geosite:openai", "geosite:nosuchcat"],
             5,
         )
@@ -1363,7 +1368,11 @@ class TestValidateGeodataTokens:
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
         rejected = xui_client.validate_geodata_tokens(
-            _cfg(), _ENV, xui_client.GEODATA_IP_KIND, ["geoip:private", "200::/7"], 5
+            _cfg(),
+            _ENV,
+            _cfg().panel_geodata_ip_kind,
+            ["geoip:private", "200::/7"],
+            5,
         )
         assert set(rejected) == {"geoip:private", "200::/7"}
         assert rejected["geoip:private"] == "panel unreachable"
@@ -1374,7 +1383,7 @@ class TestValidateGeodataTokens:
         recorded = _record_requests(monkeypatch, (200, "{}"))
         assert (
             xui_client.validate_geodata_tokens(
-                _cfg(), _ENV, xui_client.GEODATA_IP_KIND, [], 5
+                _cfg(), _ENV, _cfg().panel_geodata_ip_kind, [], 5
             )
             == {}
         )
@@ -1497,4 +1506,44 @@ class TestRouteTest:
             xui_client.route_test(
                 _cfg(), _ENV, inbound_tag="pyntara-local-proxy", timeout=5
             )
+
+
+def test_the_panel_vocabulary_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The sniffing protocols of the universal inbound and the two kinds of
+    # the geodata check are config values: another set of them is the
+    # payload the panel receives and the kind it is asked about.
+    cfg = _cfg(
+        inbound_sniffing_protocols=("my-http", "my-tls"),
+        panel_geodata_domain_kind="my-domain",
+        panel_geodata_ip_kind="my-ip",
+    )
+    payload = cast(
+        dict[str, Any],
+        xui_client.build_vless_reality_payload(
+            port=443,
+            remark="universal",
+            dest="www.google.com:443",
+            server_names=("www.google.com",),
+            private_key="priv123",
+            public_key="pub123",
+            short_id="6ba85179e30d4fc2",
+            fingerprint="chrome",
+            sniffing_protocols=cfg.inbound_sniffing_protocols,
+        ),
+    )
+    assert payload["sniffing"]["destOverride"] == ["my-http", "my-tls"]
+    recorded = _record_requests(
+        monkeypatch, (200, json.dumps({"success": True, "obj": []}))
+    )
+    assert (
+        xui_client.validate_geodata_tokens(
+            cfg, _ENV, cfg.panel_geodata_domain_kind, ["geosite:openai"], 5
+        )
+        == {}
+    )
+    assert recorded[0].form()["kind"] == "my-domain"
+    with pytest.raises(ValueError, match="unknown geodata kind"):
+        xui_client.validate_geodata_tokens(cfg, _ENV, "domain", ["x"], 5)
 

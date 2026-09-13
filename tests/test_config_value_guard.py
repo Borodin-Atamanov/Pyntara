@@ -151,13 +151,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'VOWELS = "aiou"',
         }
     ),
-    "src/pyntara/xui.py": frozenset(
-        {
-            'GEODATA_DOMAIN_KIND = "domain"',
-            'GEODATA_IP_KIND = "ip"',
-            "GEODATA_KINDS = (GEODATA_DOMAIN_KIND, GEODATA_IP_KIND)",
-        }
-    ),
 }
 
 # Command argv literals: every command of an external tool the run invokes
@@ -186,7 +179,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             'run_command(["systemctl", "stop", service_unit_name], timeout=timeout)',
         }
     ),
-    "src/pyntara/xui.py": frozenset({'"destOverride": ["http", "tls"],'}),
 }
 
 # Absolute path literals outside /proc, /sys and /dev: the augeas node

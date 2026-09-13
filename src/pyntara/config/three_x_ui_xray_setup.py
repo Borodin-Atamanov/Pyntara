@@ -53,6 +53,15 @@ class ThreeXuiXraySetupConfig:
     prove the whole path, proxy_check_blocked_url is the URL of a class
     the policy sends through the remote server, queried on a machine in
     Russia, and proxy_check_timeout_seconds bounds one such request.
+
+    The vocabulary of the panel itself is configured next to the values
+    it is asked for: panel_inbound_protocol is the protocol of the local
+    proxy inbound, panel_blocked_rule_protocols and
+    panel_private_block_category are the words of the shipped rules the
+    policy removes, panel_geodata_domain_kind and panel_geodata_ip_kind
+    are the kinds the panel accepts in its geodata validation request, and
+    inbound_sniffing_protocols are the protocols the panel is asked to
+    detect on the universal inbound.
     """
 
     github_repo: str
@@ -85,6 +94,9 @@ class ThreeXuiXraySetupConfig:
     panel_inbound_protocol: str
     panel_blocked_rule_protocols: tuple[str, ...]
     panel_private_block_category: str
+    panel_geodata_domain_kind: str
+    panel_geodata_ip_kind: str
+    inbound_sniffing_protocols: tuple[str, ...]
     vault_entry_title: str
     connection_vault_entry_title: str
     share_addr_strategy: str
