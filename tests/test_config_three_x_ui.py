@@ -79,6 +79,14 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             "server_ip_timeout_seconds = 60", "server_ip_timeout_seconds = -1"
         ),
+        # route_test_network is an empty string
+        base_config().replace(
+            'route_test_network = "tcp"', 'route_test_network = ""'
+        ),
+        # route_test_protocol is an empty string
+        base_config().replace(
+            'route_test_protocol = "tls"', 'route_test_protocol = ""'
+        ),
     ],
 )
 def test_three_x_ui_invalid_values_raise(

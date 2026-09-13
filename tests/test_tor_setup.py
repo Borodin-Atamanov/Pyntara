@@ -276,6 +276,35 @@ def test_include_line_is_not_duplicated(
     ).count("%include") == 1
 
 
+def test_the_comment_sign_protects_the_line_it_marks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The sign that marks a comment in the main configuration is a config
+    # value: another sign protects the line carrying it, so a directive
+    # the operator commented out stays commented.
+    ctx = _ctx(tmp_path)
+    tor_setup_config = ctx.config.tor_setup
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            tor_setup=replace(tor_setup_config, torrc_comment_sign=";"),
+        ),
+    )
+    torrc = ctx.config.tor_setup.torrc_path
+    torrc.parent.mkdir(parents=True, exist_ok=True)
+    torrc.write_text(
+        f"Log notice syslog\n; %include {tor_setup_config.torrc_include_path}\n",
+        encoding="utf-8",
+    )
+    _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
+    result = tor_setup.task(ctx)
+    assert result.success is True
+    content = torrc.read_text(encoding="utf-8")
+    assert f"; %include {tor_setup_config.torrc_include_path}" in content
+    assert content.count(tor_setup_config.torrc_include_path) == 2
+
+
 def test_dropin_rewritten_when_missing_and_restarts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

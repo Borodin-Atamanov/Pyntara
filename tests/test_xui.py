@@ -177,6 +177,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "share_addr_strategy": "custom",
         "inbound_port": 443,
         "route_test_port": 443,
+        "route_test_network": "tcp",
+        "route_test_protocol": "tls",
         "remote_link_default_port": 443,
         "inbound_remark": "universal",
         "reality_dest": "www.google.com:443",
@@ -1736,6 +1738,7 @@ class TestRouteTest:
     def test_asks_with_an_address_when_given_one(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        cfg = _cfg()
         recorded = _record_requests(
             monkeypatch,
             (
@@ -1746,9 +1749,11 @@ class TestRouteTest:
             ),
         )
         matched, answer = xui_client.route_test(
-            _cfg(),
+            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
+            network=cfg.route_test_network,
+            protocol=cfg.route_test_protocol,
             address="10.10.0.1",
             port=443,
             timeout=5,
@@ -1760,14 +1765,17 @@ class TestRouteTest:
     def test_reports_a_destination_no_rule_matched(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        cfg = _cfg()
         _record_requests(
             monkeypatch,
             (200, json.dumps({"success": True, "obj": {"matched": False, "outboundTag": ""}})),
         )
         matched, answer = xui_client.route_test(
-            _cfg(),
+            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
+            network=cfg.route_test_network,
+            protocol=cfg.route_test_protocol,
             domain="example.com",
             timeout=5,
         )
@@ -1775,14 +1783,17 @@ class TestRouteTest:
         assert "no routing rule" in answer
 
     def test_reports_the_panel_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = _cfg()
         _record_requests(
             monkeypatch,
             (200, json.dumps({"success": False, "msg": "invalid inbound tag"})),
         )
         matched, answer = xui_client.route_test(
-            _cfg(),
+            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
+            network=cfg.route_test_network,
+            protocol=cfg.route_test_protocol,
             domain="example.com",
             timeout=5,
         )
@@ -1792,11 +1803,14 @@ class TestRouteTest:
     def test_reports_an_unreachable_panel(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        cfg = _cfg()
         _record_requests(monkeypatch, (0, ""))
         matched, answer = xui_client.route_test(
-            _cfg(),
+            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
+            network=cfg.route_test_network,
+            protocol=cfg.route_test_protocol,
             domain="example.com",
             timeout=5,
         )
@@ -1804,9 +1818,15 @@ class TestRouteTest:
         assert answer == "panel unreachable"
 
     def test_refuses_a_request_without_a_destination(self) -> None:
+        cfg = _cfg()
         with pytest.raises(ValueError, match="domain or an address"):
             xui_client.route_test(
-                _cfg(), _ENV, inbound_tag="pyntara-local-proxy", timeout=5
+                cfg,
+                _ENV,
+                inbound_tag="pyntara-local-proxy",
+                network=cfg.route_test_network,
+                protocol=cfg.route_test_protocol,
+                timeout=5,
             )
 
 

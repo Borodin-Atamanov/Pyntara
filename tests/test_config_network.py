@@ -409,6 +409,10 @@ from config_helpers import (
         base_config().replace(
             'include_directive = "%include"', 'include_directive = ""'
         ),
+        # tor_setup torrc_comment_sign is an empty string
+        base_config().replace(
+            'torrc_comment_sign = "#"', 'torrc_comment_sign = ""'
+        ),
         # tor_setup hostname_file_name is an empty string
         base_config().replace(
             'hostname_file_name = "hostname"', 'hostname_file_name = ""'

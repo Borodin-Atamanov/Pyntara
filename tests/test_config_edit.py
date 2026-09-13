@@ -88,7 +88,7 @@ def test_empty_text_appends_slide() -> None:
 def test_add_line_to_file_appends_missing_line(tmp_path: Path) -> None:
     path = tmp_path / "config.conf"
     path.write_text("a = 1\nc = 3\n", encoding="utf-8")
-    assert add_line_to_file(path, "b = 2") is True
+    assert add_line_to_file(path, "b = 2", "#") is True
     assert path.read_text(encoding="utf-8") == "a = 1\nc = 3\nb = 2\n"
 
 
@@ -96,14 +96,14 @@ def test_add_line_to_file_existing_line_is_noop(tmp_path: Path) -> None:
     path = tmp_path / "config.conf"
     path.write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
     before = path.read_bytes()
-    assert add_line_to_file(path, "b = 2") is False
+    assert add_line_to_file(path, "b = 2", "#") is False
     assert path.read_bytes() == before
 
 
 def test_add_line_to_file_normalizes_fuzzy_line(tmp_path: Path) -> None:
     path = tmp_path / "config.conf"
     path.write_text("b = 2 extra\n", encoding="utf-8")
-    assert add_line_to_file(path, "b = 2") is True
+    assert add_line_to_file(path, "b = 2", "#") is True
     assert path.read_text(encoding="utf-8") == "b = 2\n"
 
 
@@ -112,13 +112,27 @@ def test_add_line_to_file_keeps_commented_line(tmp_path: Path) -> None:
     # the exact line is appended.
     path = tmp_path / "config.conf"
     path.write_text("# b = 2\n", encoding="utf-8")
-    assert add_line_to_file(path, "b = 2") is True
+    assert add_line_to_file(path, "b = 2", "#") is True
     assert path.read_text(encoding="utf-8") == "# b = 2\nb = 2\n"
+
+
+def test_the_comment_sign_comes_from_the_caller(tmp_path: Path) -> None:
+    # The sign that protects a commented line is the sign of the edited
+    # file, so another sign protects another line and the line carrying
+    # the first sign is not protected at all.
+    path = tmp_path / "config.conf"
+    path.write_text("; b = 2\n", encoding="utf-8")
+    assert add_line_to_file(path, "b = 2", ";") is True
+    assert path.read_text(encoding="utf-8") == "; b = 2\nb = 2\n"
+    other = tmp_path / "other.conf"
+    other.write_text("# b = 2\n", encoding="utf-8")
+    assert add_line_to_file(other, "b = 2", ";") is True
+    assert other.read_text(encoding="utf-8") == "b = 2\n"
 
 
 def test_add_line_to_file_missing_file_is_not_created(tmp_path: Path) -> None:
     path = tmp_path / "config.conf"
-    assert add_line_to_file(path, "b = 2") is False
+    assert add_line_to_file(path, "b = 2", "#") is False
     assert not path.exists()
 
 

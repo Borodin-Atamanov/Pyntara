@@ -64,6 +64,7 @@ num_introduction_points - how many introduction points the service maintains
 log_level - the Tor verbosity written to syslog
 dropin_template_file_name - the drop-in template under task_data/tor_setup/ of the clone, with $socks_port, $log_level, $hidden_service_dir, $num_introduction_points, $onion_ssh_port and $ssh_port as its placeholders
 include_directive - the directive that pulls the drop-in into the main configuration
+torrc_comment_sign - the sign that marks a comment in the main configuration, so a directive the operator commented out stays commented when the include line is appended
 hostname_file_name - the file Tor writes the onion hostname into inside hidden_service_dir
 verify_config_command - the command that checks the whole configuration, with {tor_user} as its placeholder
 service_enable_command - the command that enables the unit, with {service_unit_name} as its placeholder

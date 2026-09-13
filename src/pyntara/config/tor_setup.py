@@ -44,7 +44,9 @@ class TorSetupConfig:
     inside hidden_service_dir. The drop-in is rendered from the template
     dropin_template_file_name under task_data/tor_setup/ of the clone,
     and include_directive is the directive that pulls it into the main
-    configuration. verify_config_command, service_enable_command,
+    configuration, whose comment sign is torrc_comment_sign, so a
+    directive the operator commented out is left commented.
+    verify_config_command, service_enable_command,
     service_start_command and service_restart_command are the commands
     the task runs, with {tor_user} and {service_unit_name} substituted.
     """
@@ -64,6 +66,7 @@ class TorSetupConfig:
     log_level: str
     dropin_template_file_name: str
     include_directive: str
+    torrc_comment_sign: str
     hostname_file_name: str
     verify_config_command: tuple[str, ...]
     service_enable_command: tuple[str, ...]

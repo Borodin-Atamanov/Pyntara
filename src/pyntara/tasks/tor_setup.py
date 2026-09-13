@@ -117,16 +117,19 @@ def _ensure_torrc_include(cfg: TorSetupConfig) -> tuple[bool, str | None]:
 
     The shared add_line_to_file helper appends the line when it is
     absent and leaves every other line untouched, so the main file is
-    never rewritten as a whole. A missing main file is an error: the
-    drop-in would then be silently ignored, and the helper would not
-    create the file. Returns (changed, error).
+    never rewritten as a whole; the comment sign that protects a line the
+    operator commented out is the configured one. A missing main file is
+    an error: the drop-in would then be silently ignored, and the helper
+    would not create the file. Returns (changed, error).
     """
 
     if not cfg.torrc_path.is_file():
         return False, f"{cfg.torrc_path} is missing"
     include_line = f"{cfg.include_directive} {cfg.torrc_include_path}"
     try:
-        changed = add_line_to_file(cfg.torrc_path, include_line)
+        changed = add_line_to_file(
+            cfg.torrc_path, include_line, cfg.torrc_comment_sign
+        )
     except OSError as exc:
         return False, f"cannot update {cfg.torrc_path}: {exc}"
     return changed, None

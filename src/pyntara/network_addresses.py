@@ -26,6 +26,7 @@ is one of the flags the engine table maps to a family
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import subprocess
 import sys
@@ -52,14 +53,25 @@ class InterfaceAddress:
 
         An IPv6 link scope address without its zone index is ambiguous
         (every interface carries one), so the interface name is appended
-        after a percent sign, which is the form ssh resolves. The scope
-        value counts as a link scope only when it equals the configured
-        link_scope_name, so the vocabulary stays in the config.
+        after a percent sign, which is the form ssh resolves. The address
+        itself decides this, because the version of the address is a fact
+        and the names the engine table gives the families are a
+        vocabulary; the scope value counts as a link scope only when it
+        equals the configured link_scope_name.
         """
 
-        if self.family == "ipv6" and self.scope == link_scope_name:
+        if self.scope == link_scope_name and _is_ipv6(self.address):
             return f"{self.address}%{self.interface}"
         return self.address
+
+
+def _is_ipv6(address: str) -> bool:
+    """Whether the address text is an IPv6 address, judged by its own form."""
+
+    try:
+        return ipaddress.ip_address(address).version == 6
+    except ValueError:
+        return False
 
 
 def parse_interface_addresses(

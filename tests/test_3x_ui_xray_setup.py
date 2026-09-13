@@ -3331,6 +3331,41 @@ class TestRoutingPolicyStage:
         assert failures == ()
         assert ports == [8443, 8443]
 
+    def test_route_test_words_come_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The network and the protocol the check declares for the
+        # destination are config values: another pair of them is what the
+        # running core is asked about, for a domain check and for an
+        # address check alike.
+        words: list[tuple[object, object]] = []
+
+        def fake_route(
+            _cfg: object, _env: object, **kwargs: object
+        ) -> tuple[bool, str]:
+            words.append((kwargs.get("network"), kwargs.get("protocol")))
+            return True, "direct"
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(
+            xui,
+            "_route_expectations",
+            lambda _cfg, _policy: (
+                ("example.com", "domain", "direct"),
+                ("10.10.0.0", "address", "direct"),
+            ),
+        )
+        cfg = make_config(
+            three_x_ui_route_test_network="my-tcp",
+            three_x_ui_route_test_protocol="my-tls",
+        ).three_x_ui_xray_setup
+        policy = cast(
+            "routing_policy.LocalProxyPolicy",
+            SimpleNamespace(inbound_tag="pyntara-local-proxy"),
+        )
+        assert xui._verify_routes(cfg, {}, 30.0, policy) == ()
+        assert words == [("my-tcp", "my-tls"), ("my-tcp", "my-tls")]
+
     def test_applies_the_policy_of_a_machine_outside_russia(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

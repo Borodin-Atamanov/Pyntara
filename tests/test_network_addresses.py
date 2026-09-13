@@ -101,6 +101,25 @@ def test_link_scope_address_carries_its_zone_in_the_command() -> None:
     )
 
 
+def test_the_zone_follows_the_address_and_not_its_family_name() -> None:
+    # The zone index exists because an IPv6 link address is ambiguous, and
+    # the address itself says whether it is one: a family renamed in the
+    # engine table still gets the zone, and an IPv4 link address never
+    # needs one.
+    renamed = network_addresses.InterfaceAddress(
+        address="fe80::1", family="six", interface="enp87s0", scope="link"
+    )
+    assert renamed.ssh_target("link") == "fe80::1%enp87s0"
+    ipv4_link = network_addresses.InterfaceAddress(
+        address="169.254.10.10", family="ipv4", interface="enp87s0", scope="link"
+    )
+    assert ipv4_link.ssh_target("link") == "169.254.10.10"
+    unparseable = network_addresses.InterfaceAddress(
+        address="not-an-address", family="ipv6", interface="enp87s0", scope="link"
+    )
+    assert unparseable.ssh_target("link") == "not-an-address"
+
+
 def test_unexpected_document_contributes_nothing() -> None:
     # A document of an unexpected shape is not a crash: it carries no
     # address, and the caller reports the family as empty.

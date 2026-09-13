@@ -4965,6 +4965,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             raw.get("route_test_port"),
             "three_x_ui_xray_setup.route_test_port",
         ),
+        route_test_network=_nonempty_string_field(
+            raw.get("route_test_network"),
+            "three_x_ui_xray_setup.route_test_network",
+        ),
+        route_test_protocol=_nonempty_string_field(
+            raw.get("route_test_protocol"),
+            "three_x_ui_xray_setup.route_test_protocol",
+        ),
         remote_link_default_port=_port_field(
             raw.get("remote_link_default_port"),
             "three_x_ui_xray_setup.remote_link_default_port",
@@ -5189,6 +5197,9 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
     include_directive = _nonempty_string_field(
         raw.get("include_directive"), "tor_setup.include_directive"
     )
+    torrc_comment_sign = _nonempty_string_field(
+        raw.get("torrc_comment_sign"), "tor_setup.torrc_comment_sign"
+    )
     hostname_file_name = _nonempty_string_field(
         raw.get("hostname_file_name"), "tor_setup.hostname_file_name"
     )
@@ -5252,6 +5263,7 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         log_level=log_level,
         dropin_template_file_name=dropin_template_file_name,
         include_directive=include_directive,
+        torrc_comment_sign=torrc_comment_sign,
         hostname_file_name=hostname_file_name,
         verify_config_command=verify_config_command,
         service_enable_command=service_enable_command,

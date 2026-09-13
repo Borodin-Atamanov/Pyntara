@@ -1068,21 +1068,23 @@ def route_test(
     env: dict[str, str],
     *,
     inbound_tag: str,
+    network: str,
+    protocol: str,
     domain: str = "",
     address: str = "",
     port: int = 0,
-    network: str = "tcp",
-    protocol: str = "tls",
     timeout: float,
 ) -> tuple[bool, str]:
     """Ask the running core which outbound it picks for a destination.
 
-    Exactly one of domain and address is given. The answer comes from the
-    core's own routing engine, so it is the only honest check that a
-    written policy reached the traffic; a stored template can disagree
-    with the core. Returns (matched, answer): on success matched is True
-    and answer is the tag of the chosen outbound, otherwise matched is
-    False and answer says why (the panel was unreachable, the panel
+    Exactly one of domain and address is given. The network and the
+    protocol of the question are arguments and not defaults, because they
+    are the vocabulary of the core and a value of the config. The answer
+    comes from the core's own routing engine, so it is the only honest
+    check that a written policy reached the traffic; a stored template can
+    disagree with the core. Returns (matched, answer): on success matched
+    is True and answer is the tag of the chosen outbound, otherwise matched
+    is False and answer says why (the panel was unreachable, the panel
     reported an error, or no rule matched the destination).
     """
 

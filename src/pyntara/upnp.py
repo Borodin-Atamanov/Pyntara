@@ -32,8 +32,9 @@ def parse_external_address(
     The field the address is printed under is a config value, so another
     client version that names it differently needs a config change. The
     value is accepted only when it is a valid IP address, so a line that
-    reports something else (a zero address, an error text) is not
-    mistaken for an address.
+    reports something else (an error text) is not mistaken for an address,
+    and an unspecified address (IPv4 0.0.0.0 or IPv6 ::) is refused by the
+    standard library, because a router without a connection reports it.
     """
 
     for line in text.splitlines():
@@ -41,10 +42,10 @@ def parse_external_address(
             continue
         candidate = trim_whitespace(line.split("=", 1)[1])
         try:
-            ipaddress.ip_address(candidate)
+            address = ipaddress.ip_address(candidate)
         except ValueError:
             continue
-        if candidate != "0.0.0.0":
+        if not address.is_unspecified:
             return candidate
     return None
 

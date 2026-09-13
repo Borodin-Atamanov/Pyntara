@@ -160,6 +160,12 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tor_address.py": frozenset({"FALLBACK_NOTE = ("}),
     "src/pyntara/utils.py": frozenset(
         {
+            # The proquint encoding of draft-rayner-proquint: its alphabet,
+            # its index maps and its trailing marker are the definition of
+            # the encoding, which the spec keeps as an exception, and the
+            # separator default of proquint_encode is the canonical
+            # separator of the same definition. A caller may pass another
+            # one, which tests/test_utils.py proves.
             "CONSONANT_INDEX = {char: index for index, char in enumerate(CONSONANTS)}",
             'CONSONANTS = "bdfghjklmnprstvz"',
             "PROQUINT_LETTERS = frozenset(CONSONANTS + VOWELS)",

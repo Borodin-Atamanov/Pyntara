@@ -81,6 +81,10 @@ dropin_template_file_name = "torrc.conf"
 # The directive that pulls the drop-in into the main configuration. The
 # task appends it with the drop-in path, so the include form is a value.
 include_directive = "%include"
+# Sign that marks a comment in the main configuration file. The task leaves
+# a line carrying it untouched when it appends the include directive, so a
+# directive the operator commented out stays commented.
+torrc_comment_sign = "#"
 # Name of the file Tor writes its onion hostname into inside the hidden
 # service directory; the task reads it to report and save the address.
 hostname_file_name = "hostname"

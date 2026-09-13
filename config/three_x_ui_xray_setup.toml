@@ -197,6 +197,11 @@ inbound_port = 443
 # nothing listens on, so the answer is the outbound the policy chose and
 # never a real connection.
 route_test_port = 443
+# Transport and security the routing check declares for the destination it
+# asks about. The core answers for that network and that protocol, so a
+# check of a TLS destination asks with tls.
+route_test_network = "tcp"
+route_test_protocol = "tls"
 # Port of a remote share link that carries none. Optional, default 443.
 remote_link_default_port = 443
 # Remark for the inbound. Optional, default "universal".

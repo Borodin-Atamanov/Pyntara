@@ -48,11 +48,19 @@ class TestParseExternalAddress:
         )
 
     def test_ignores_an_empty_address(self) -> None:
-        # A router without a connection reports a zero address; it is not
-        # an address a client could use.
+        # A router without a connection reports an unspecified address; it
+        # is not an address a client could use, and the standard library
+        # decides both forms of it, so no literal of it lives in the code.
         assert (
             parse_external_address(
                 "ExternalIPAddress = 0.0.0.0\n",
+                ENGINE.upnpc_external_address_key,
+            )
+            is None
+        )
+        assert (
+            parse_external_address(
+                "ExternalIPAddress = ::\n",
                 ENGINE.upnpc_external_address_key,
             )
             is None

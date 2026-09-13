@@ -510,6 +510,8 @@ def base_config() -> str:
         'share_addr_strategy = "custom"\n'
         'inbound_port = 443\n'
         "route_test_port = 443\n"
+        'route_test_network = "tcp"\n'
+        'route_test_protocol = "tls"\n'
         "remote_link_default_port = 443\n"
         'inbound_remark = "universal"\n'
         'reality_dest = "www.google.com:443"\n'
@@ -606,6 +608,7 @@ def base_config() -> str:
         'address_file_mode = "0644"\n'
         'dropin_template_file_name = "torrc.conf"\n'
         'include_directive = "%include"\n'
+        'torrc_comment_sign = "#"\n'
         'hostname_file_name = "hostname"\n'
         'verify_config_command = ["runuser", "-u", "{tor_user}", "--", "tor", "--verify-config"]\n'
         'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'

@@ -53,13 +53,16 @@ def replace_line_by_string(
     return result, changed
 
 
-def add_line_to_file(path: Path, line: str, comments_sign: str = "#") -> bool:
+def add_line_to_file(path: Path, line: str, comments_sign: str) -> bool:
     """Ensure line is present in the file; return whether the file changed.
 
     An existing line equal to line is kept, a fuzzy line containing it is
     normalized to the exact line, a line containing comments_sign is left
-    untouched and a missing line is appended. A missing file is not
-    created. Read and write errors raise OSError at the call site.
+    untouched and a missing line is appended. The sign is an argument and
+    not a default, because the sign that marks a comment belongs to the
+    syntax of the edited file and is a value of the config. A missing
+    file is not created. Read and write errors raise OSError at the call
+    site.
     """
 
     if not path.is_file():
