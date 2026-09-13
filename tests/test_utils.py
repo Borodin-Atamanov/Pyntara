@@ -1099,6 +1099,17 @@ def test_apply_owner_skips_outside_root(
     assert chowned == []
 
 
+def test_version_from_output_reads_the_first_three_part_version() -> None:
+    # The version command of an installed tool prints the version next to
+    # its own words, so the shared reader searches the whole text and
+    # reports no version at all instead of a wrong one.
+    assert utils.version_from_output("3.7.0") == "3.7.0"
+    assert utils.version_from_output("x-ui v3.7.0 built with go1.22") == "3.7.0"
+    assert utils.version_from_output("Build version: 0.5.14") == "0.5.14"
+    assert utils.version_from_output("0.5") is None
+    assert utils.version_from_output("") is None
+
+
 def test_version_without_tag_prefix_strips_one_leading_v() -> None:
     # Both spellings of a release tag compare equal to the version an
     # installed tool prints: the one with the leading v and the one

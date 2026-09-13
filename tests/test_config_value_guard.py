@@ -108,11 +108,7 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tasks/dnsproxy_setup.py": frozenset(
         {
             'PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\\Z")',
-            'VERSION_PATTERN = re.compile(r"v?(\\d+\\.\\d+\\.\\d+)")',
         }
-    ),
-    "src/pyntara/tasks/i2pd_service_setup.py": frozenset(
-        {'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+\\.\\d+)")'}
     ),
     "src/pyntara/tasks/rustdesk_setup.py": frozenset(
         {
@@ -125,14 +121,12 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
         {
             'IPV4_PATTERN = re.compile(r"\\d{1,3}(?:\\.\\d{1,3}){3}")',
-            'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+\\.\\d+)")',
         }
     ),
     "src/pyntara/tasks/yggdrasil_service_setup.py": frozenset(
         {
             "CONNECTED_PATTERN = re.compile(",
             "PEER_URI_PATTERN = re.compile(",
-            'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+\\.\\d+)")',
         }
     ),
     "src/pyntara/tasks/zram_service.py": frozenset(
@@ -152,6 +146,7 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'CONSONANTS = "bdfghjklmnprstvz"',
             "PROQUINT_LETTERS = frozenset(CONSONANTS + VOWELS)",
             'TRAILING_MARKER = "-"',
+            'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+\\.\\d+)")',
             "VOWEL_INDEX = {char: index for index, char in enumerate(VOWELS)}",
             'VOWELS = "aiou"',
         }
@@ -169,14 +164,13 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {}
 # and therefore a value.
 PATH_LITERALS_ALLOWED: dict[str, frozenset[str]] = {}
 
-# A regular expression shared by two or more modules: the pattern of a
-# three part version, copied in the modules that read a release version.
-# A pattern is an exception, so the copies are allowed to exist; the count
-# here states how many modules write it, and a fifth copy fails the suite
-# and asks for the shared vocabulary of the engine table instead.
-DUPLICATED_PATTERNS_ALLOWED: dict[str, int] = {
-    "(\\d+\\.\\d+\\.\\d+)": 3,
-}
+# A regular expression shared by two or more modules. A pattern is an
+# exception, so copies are allowed to exist; the count states how many
+# modules write one. The list is empty: the three part version has a single
+# definition in pyntara.utils, because the tasks read it through
+# version_from_output, and a copy of any pattern in a second module would
+# have to be recorded here with a reason.
+DUPLICATED_PATTERNS_ALLOWED: dict[str, int] = {}
 
 
 def _module_paths() -> list[Path]:

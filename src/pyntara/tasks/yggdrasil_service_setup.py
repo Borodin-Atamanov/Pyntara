@@ -83,13 +83,13 @@ from pyntara.utils import (
     service_is_active,
     service_is_enabled,
     substituted_command,
+    version_from_output,
 )
 from pyntara.yggdrasil import self_address_from_output
 
 # The yggdrasil version string from yggdrasil -version, e.g. Build
 # version: 0.5.14; the release tag carries a configured prefix, the asset
 # and the version output do not.
-VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 # One peer URI inside a backtick line of the public-peers markdown files.
 PEER_URI_PATTERN = re.compile(
@@ -146,8 +146,7 @@ def _installed_version(cfg: YggdrasilServiceSetupConfig, timeout: float) -> str 
         return None
     if result.returncode != 0:
         return None
-    match = VERSION_PATTERN.search(result.stdout + "\n" + result.stderr)
-    return match.group(1) if match else None
+    return version_from_output(result.stdout + "\n" + result.stderr)
 
 
 def _download_asset(

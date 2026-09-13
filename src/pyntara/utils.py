@@ -223,6 +223,26 @@ def version_without_tag_prefix(value: str) -> str:
     return value.removeprefix("v")
 
 
+# The three part version a version command prints, for example 3.7.0 in the
+# output of `x-ui -v`. The regular expression is an exception of the config
+# spec and lives here once, because every task that reads the version of an
+# installed tool parses the same shape.
+VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
+
+
+def version_from_output(text: str) -> str | None:
+    """The first three part version in the text, or None.
+
+    A version command prints the version next to its own words, so the
+    version is searched in the whole text. None means the text carries no
+    version at all, which the callers report as an unknown version instead
+    of a wrong one.
+    """
+
+    match = VERSION_PATTERN.search(text)
+    return match.group(1) if match else None
+
+
 def trim_whitespace(text: str) -> str:
     """Remove the leading and trailing whitespace of a text.
 

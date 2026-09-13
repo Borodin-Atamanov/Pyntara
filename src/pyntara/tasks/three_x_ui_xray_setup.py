@@ -110,11 +110,9 @@ from pyntara.utils import (
     service_is_enabled,
     substituted_command,
     trim_whitespace,
+    version_from_output,
     version_without_tag_prefix,
 )
-
-# The x-ui binary prints its version as a bare dotted triple, e.g. 3.7.0.
-VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 # The IPv4 pattern used to validate an address reported by an echo
 # service; a full match only, so garbage is never accepted. The ACME
@@ -174,8 +172,7 @@ def _installed_version(
         return None
     if result.returncode != 0:
         return None
-    match = VERSION_PATTERN.search(result.stdout + "\n" + result.stderr)
-    return match.group(1) if match else None
+    return version_from_output(result.stdout + "\n" + result.stderr)
 
 
 def _download_installer(

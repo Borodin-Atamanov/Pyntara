@@ -49,7 +49,6 @@ service but never reinstalls a matching version.
 
 from __future__ import annotations
 
-import re
 import subprocess
 import time
 from pathlib import Path
@@ -75,6 +74,7 @@ from pyntara.utils import (
     service_is_enabled,
     substituted_command,
     task_data_dir,
+    version_from_output,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
@@ -134,9 +134,6 @@ def _render_tunnels_config(
 
 
 # i2pd prints its version as a dotted triple in the --version output.
-VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
-
-
 def _select_asset(
     cfg: I2pdServiceSetupConfig,
     release: dict[str, object],
@@ -193,8 +190,7 @@ def _installed_version(
         return None
     if result.returncode != 0:
         return None
-    match = VERSION_PATTERN.search(result.stdout + "\n" + result.stderr)
-    return match.group(1) if match else None
+    return version_from_output(result.stdout + "\n" + result.stderr)
 
 
 def _download_asset(

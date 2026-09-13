@@ -29,9 +29,9 @@ from pyntara.utils import (
     service_is_active,
     service_is_enabled,
     substituted_command,
+    version_from_output,
 )
 
-VERSION_PATTERN = re.compile(r"v?(\d+\.\d+\.\d+)")
 PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\Z")
 
 
@@ -132,15 +132,14 @@ def _installed_version(path: Path, timeout: float) -> str | None:
         return None
     if result.returncode != 0:
         return None
-    match = VERSION_PATTERN.search(result.stdout + result.stderr)
-    return match.group(1) if match else None
+    return version_from_output(result.stdout + result.stderr)
 
 
 def _version_from_tag(tag: str) -> str:
-    match = VERSION_PATTERN.search(tag)
-    if not match:
+    version = version_from_output(tag)
+    if version is None:
         raise RuntimeError(f"cannot parse dnsproxy release version: {tag}")
-    return match.group(1)
+    return version
 
 
 def _download_binary(
