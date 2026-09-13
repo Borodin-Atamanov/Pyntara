@@ -174,7 +174,9 @@ def test_apt_failure_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     assert any("htop" in warning for warning in result.warnings)
 
 
-def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apt_hang_reports_the_timeout_as_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # A hung apt-get must not block the other packages; the timed-out
     # package is reported and the rest still installs.
     calls: list[list[str]] = []
@@ -192,8 +194,8 @@ def test_apt_hang_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
-    assert "failed: htop" in (result.message or "")
-    assert "htop" in (result.error or "")
+    assert result.error is None
+    assert any("htop" in warning for warning in result.warnings)
 
 
 def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,7 +250,7 @@ def test_missing_package_does_not_block_others(
 ) -> None:
     # hollywood cannot be installed: mc, htop and wget still install, which
     # is 75 percent of the set, above the 70 percent threshold, so the task
-    # succeeds and hollywood is reported as failed.
+    # succeeds and hollywood is reported as a warning.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -268,7 +270,8 @@ def test_missing_package_does_not_block_others(
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
-    assert "failed: hollywood" in (result.message or "")
+    assert result.error is None
+    assert any("hollywood" in warning for warning in result.warnings)
 
 
 def test_all_packages_missing_is_a_warning(
@@ -315,7 +318,7 @@ def test_update_failure_still_installs_from_cache(
     assert result.success is True
     assert result.changed is True
     assert "installed" in (result.message or "")
-    assert "apt index refresh" in (result.message or "")
+    assert any("apt index refresh" in warning for warning in result.warnings)
 
 
 def test_retries_transient_install_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -370,7 +373,7 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(_ctx())
     assert result.success is True
-    assert "hollywood" in (result.error or "")
+    assert any("hollywood" in warning for warning in result.warnings)
     hollywood_installs = [
         call
         for call in calls
@@ -482,7 +485,8 @@ def test_single_failure_within_threshold_is_not_fatal(
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
-    assert "failed: hollywood" in (result.message or "")
+    assert result.error is None
+    assert any("hollywood" in warning for warning in result.warnings)
 
 
 def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -566,4 +570,4 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     result = cli_tools.task(ctx)
     assert result.success is True
     assert "0/1" in (result.message or "")
-    assert "failed: mc" in (result.message or "")
+    assert any("mc" in warning for warning in result.warnings)

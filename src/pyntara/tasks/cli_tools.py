@@ -9,7 +9,10 @@ resolve from a fresh index; the refresh is skipped when ctx.skip_apt_update
 is True (test or offline runs). The task succeeds when at least the
 configured share of the package set is installed after the run
 (cli_tools.package_success_threshold_percent): a single failing package is
-not fatal by itself, and no package has to be marked as important. The
+not fatal by itself, and no package has to be marked as important. Every
+package that could not be installed is reported as a warning of the
+completed task, with its own reason, so the closing line of the run names
+the task and the exit code stays nonzero until the set is complete. The
 report lists every package that is in the installed state after the run,
 with the total count and the installed share.
 """
@@ -27,8 +30,10 @@ def task(ctx: Context) -> TaskResult:
     The installed share is the number of configured packages that are in
     the installed state after the run, divided by the total package set. A
     share below cli_tools.package_success_threshold_percent is a warning of
-    a completed task carrying the shortfall and the reasons; every failing
-    package is reported either way. The report names the installed packages:
+    a completed task carrying the shortfall, and a package that could not
+    be installed is a warning of its own with its reason, so every failing
+    package is reported either way and the run stays detectable as
+    incomplete. The report names the installed packages:
     the set already in the installed state before the run plus the ones
     installed by this run. Timeouts and the retry count come from
     config.toml through Context; the apt index refresh can be skipped
@@ -64,34 +69,31 @@ def task(ctx: Context) -> TaskResult:
         f"installed {installed_total}/{len(cli.packages)} "
         f"({installed_percent}%): {', '.join(installed_names) or 'none'}"
     )
-    failed_detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
+    # A package that could not be installed is a step of a completed task that
+    # could not be performed, so its reason travels in warnings: the entry
+    # point counts warnings, names the task in its closing line and exits
+    # nonzero, which is how an incomplete configuration stays detectable. The
+    # failed names appear there once and not in the message as well.
+    failure_warnings = tuple(f"{name}: {reason}" for name, reason in failures)
     if installed_percent < cli.package_success_threshold_percent:
-        # Below the threshold every package that could be installed was
-        # installed; the shortfall is reported as a warning of a completed
-        # task so the run continues and the reason stays visible.
-        detail = installed_summary
-        if failed_detail:
-            detail = f"{detail}; failed: {failed_detail}"
-        all_warnings = list(warnings)
-        all_warnings.append(detail)
+        # Below the threshold the shortfall is the finding; the per-package
+        # reasons follow it, and the task still completes.
+        shortfall = (
+            f"installed share {installed_percent}% is below the configured "
+            f"{cli.package_success_threshold_percent}%"
+        )
         return TaskResult(
             success=True,
             changed=bool(installed),
-            message=detail,
-            warnings=tuple(all_warnings),
+            message=installed_summary,
+            warnings=(shortfall, *warnings, *failure_warnings),
         )
-    message = (
-        f"{installed_summary}; threshold "
-        f"{cli.package_success_threshold_percent}%"
-    )
-    if failures:
-        failed_names = ", ".join(name for name, _ in failures)
-        message = f"{message}; failed: {failed_names}"
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(
         success=True,
         changed=bool(installed),
-        message=message,
-        error=failed_detail if failures else None,
+        message=(
+            f"{installed_summary}; threshold "
+            f"{cli.package_success_threshold_percent}%"
+        ),
+        warnings=(*warnings, *failure_warnings),
     )
