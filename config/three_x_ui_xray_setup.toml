@@ -166,6 +166,14 @@ panel_url_schemes = { http = "http", https = "https" }
 panel_environment_keys = { username = "XUI_USERNAME", password = "XUI_PASSWORD", panel_port = "XUI_PANEL_PORT", web_base_path = "XUI_WEB_BASE_PATH", scheme = "XUI_SCHEME", api_token = "XUI_API_TOKEN", db_type = "XUI_DB_TYPE", noninteractive = "XUI_NONINTERACTIVE" }
 panel_answer_keys = { success = "success", payload = "obj", message = "msg", token = "token", reason = "reason" }
 panel_field_keys = { username = "username", password = "password", id = "id", email = "email", enable = "enable", sub_id = "subId", inbound_ids = "inboundIds", client = "client", tag = "tag", port = "port", protocol = "protocol", network = "network", inbound_tag = "inboundTag", outbound_tag = "outboundTag", matched = "matched", domain = "domain", ip = "ip", kind = "kind", tokens = "tokens", token = "token", private_key = "privateKey", public_key = "publicKey", sub_path = "subPath", sub_json_path = "subJsonPath", sub_clash_path = "subClashPath", xray_setting = "xraySetting", outbound_test_url = "outboundTestUrl" }
+# Vocabulary of the Xray document the panel stores: the field names and the
+# values the policy writes into it. A core version that renames a field or
+# a protocol word is answered here and not in the code.
+xray_field_keys = { tag = "tag", protocol = "protocol", settings = "settings", stream_settings = "streamSettings", network = "network", security = "security", reality_settings = "realitySettings", server_name = "serverName", fingerprint = "fingerprint", public_key = "publicKey", short_id = "shortId", spider_x = "spiderX", vnext = "vnext", address = "address", port = "port", users = "users", id = "id", encryption = "encryption", flow = "flow", servers = "servers", remark = "remark", listen = "listen", enable = "enable", expiry_time = "expiryTime", total = "total", up = "up", down = "down", auth = "auth", udp = "udp", ip = "ip", sniffing = "sniffing", enabled = "enabled", dest_override = "destOverride", metadata_only = "metadataOnly", route_only = "routeOnly", type = "type", inbound_tag = "inboundTag", outbound_tag = "outboundTag", domain = "domain", outbounds = "outbounds", routing = "routing", rules = "rules", domain_strategy = "domainStrategy", final_rules = "finalRules" }
+xray_values = { vless = "vless", reality = "reality", none = "none", tcp = "tcp", socks = "socks", http = "http", noauth = "noauth", field = "field", api_tag = "api", onion_domain = "domain:.onion", i2p_domain = "domain:.i2p" }
+# Names of the query parameters of a vless share link, as the panel writes
+# them into the link it hands out.
+vless_link_query_keys = { security = "security", public_key = "pbk", fingerprint = "fp", short_id = "sid", server_name = "sni", spider_x = "spx", flow = "flow", network = "type" }
 # Title of the runtime vault entry that stores the panel credentials.
 # The entry must exist in the [vault_structure] table.
 vault_entry_title = "three_x_ui_credentials"

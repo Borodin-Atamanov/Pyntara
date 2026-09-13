@@ -147,6 +147,9 @@ class ThreeXuiXraySetupConfig:
     panel_environment_keys: dict[str, str]
     panel_answer_keys: dict[str, str]
     panel_field_keys: dict[str, str]
+    xray_field_keys: dict[str, str]
+    xray_values: dict[str, str]
+    vless_link_query_keys: dict[str, str]
     vault_entry_title: str
     connection_vault_entry_title: str
     share_addr_strategy: str

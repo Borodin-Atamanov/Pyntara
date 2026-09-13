@@ -375,6 +375,11 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             "xray_setting": "xraySetting",
             "outbound_test_url": "outboundTestUrl",
         },
+        "xray_field_keys": make_config().three_x_ui_xray_setup.xray_field_keys,
+        "xray_values": make_config().three_x_ui_xray_setup.xray_values,
+        "vless_link_query_keys": (
+            make_config().three_x_ui_xray_setup.vless_link_query_keys
+        ),
     }
     defaults.update(overrides)
     return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]

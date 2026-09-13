@@ -3574,11 +3574,15 @@ class TestRoutingPolicyStage:
         # The stored template already carries the policy: nothing is
         # written and the checks pass, so the stage reports no change.
         base = _template_settings()
+        policy_cfg = self._cfg(tmp_path)
         seeded, _ = routing_policy.apply_routing_policy(
             base,
-            self._policy(self._cfg(tmp_path)),
+            self._policy(policy_cfg),
             remote_outbound=routing_policy.build_remote_outbound(
-                "pyntara-remote", self._profile()
+                "pyntara-remote",
+                self._profile(),
+                policy_cfg.xray_field_keys,
+                policy_cfg.xray_values,
             ),
             remove_panel_restrictions=True,
         )
@@ -3606,9 +3610,13 @@ class TestRoutingPolicyStage:
         assert writes == []
 
     def _profile(self) -> routing_policy.VlessProfile:
+        settings = make_config().three_x_ui_xray_setup
         profile = routing_policy.parse_vless_link(
             PROFILE_LINK,
-            make_config().three_x_ui_xray_setup.remote_link_default_port,
+            settings.remote_link_default_port,
+            settings.xray_values["vless"],
+            settings.vless_link_query_keys,
+            settings.xray_values,
         )
         assert profile is not None
         return profile
@@ -3768,6 +3776,8 @@ class TestRoutingPolicyStage:
             panel_inbound_protocol=cfg.panel_inbound_protocol,
             panel_blocked_rule_protocols=cfg.panel_blocked_rule_protocols,
             panel_private_block_category=cfg.panel_private_block_category,
+            field_keys=cfg.xray_field_keys,
+            values=cfg.xray_values,
         )
 
     def test_skips_the_machine_that_is_the_remote_server(

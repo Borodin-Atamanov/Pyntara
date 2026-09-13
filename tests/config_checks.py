@@ -4795,6 +4795,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             raw.get("panel_field_keys"),
             "three_x_ui_xray_setup.panel_field_keys",
         ),
+        xray_field_keys=_string_map(
+            raw.get("xray_field_keys"),
+            "three_x_ui_xray_setup.xray_field_keys",
+        ),
+        xray_values=_string_map(
+            raw.get("xray_values"),
+            "three_x_ui_xray_setup.xray_values",
+        ),
+        vless_link_query_keys=_string_map(
+            raw.get("vless_link_query_keys"),
+            "three_x_ui_xray_setup.vless_link_query_keys",
+        ),
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,

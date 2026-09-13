@@ -9,6 +9,7 @@ import json
 from typing import Any, cast
 
 import pytest
+from support import make_config
 
 from pyntara.routing_policy import (
     LocalProxyPolicy,
@@ -34,9 +35,22 @@ LINK = (
 def make_profile() -> VlessProfile:
     """The profile of the test link, which the parser always accepts."""
 
-    profile = parse_vless_link(LINK, DEFAULT_PORT)
+    profile = parse_link(LINK)
     assert profile is not None
     return profile
+
+
+def parse_link(link: str, default_port: int = DEFAULT_PORT):
+    """Read a share link with the vocabulary of the test config."""
+
+    settings = make_config().three_x_ui_xray_setup
+    return parse_vless_link(
+        link,
+        default_port,
+        settings.xray_values["vless"],
+        settings.vless_link_query_keys,
+        settings.xray_values,
+    )
 
 
 def outbounds_of(template: dict[str, object]) -> list[dict[str, object]]:
@@ -63,6 +77,28 @@ def routing_strategy(template: dict[str, object]) -> object:
     routing = template["routing"]
     assert isinstance(routing, dict)
     return routing["domainStrategy"]
+
+
+def remote_outbound(
+    tag: str = "pyntara-remote", profile: VlessProfile | None = None
+) -> dict[str, object]:
+    """The remote outbound of a profile, built with the config maps.
+
+    The profile defaults to the REALITY one of the test link; a test that
+    builds another kind of link passes its own.
+    """
+
+    settings = make_config().three_x_ui_xray_setup
+    return build_remote_outbound(
+        tag,
+        profile if profile is not None else make_profile(),
+        settings.xray_field_keys,
+        settings.xray_values,
+    )
+
+
+_FIELDS = make_config().three_x_ui_xray_setup.xray_field_keys
+_VALUES = make_config().three_x_ui_xray_setup.xray_values
 
 
 def make_policy(**overrides: Any) -> LocalProxyPolicy:
@@ -95,6 +131,8 @@ def make_policy(**overrides: Any) -> LocalProxyPolicy:
         "panel_inbound_protocol": "mixed",
         "panel_blocked_rule_protocols": ("bittorrent",),
         "panel_private_block_category": "geoip:private",
+        "field_keys": make_config().three_x_ui_xray_setup.xray_field_keys,
+        "values": make_config().three_x_ui_xray_setup.xray_values,
     }
     values.update(overrides)
     return LocalProxyPolicy(**values)
@@ -141,7 +179,7 @@ class TestParseVlessLink:
     """Tests for reading a share link."""
 
     def test_reads_every_field_of_a_full_link(self) -> None:
-        profile = parse_vless_link(LINK, DEFAULT_PORT)
+        profile = parse_link(LINK)
         assert profile == VlessProfile(
             address="203.0.113.9",
             port=443,
@@ -157,26 +195,23 @@ class TestParseVlessLink:
         )
 
     def test_a_link_without_the_spider_path_still_works(self) -> None:
-        profile = parse_vless_link(
-            "vless://id@host.example:8443?security=reality&pbk=KEY",
-            DEFAULT_PORT,
+        profile = parse_link(
+            "vless://id@host.example:8443?security=reality&pbk=KEY"
         )
         assert profile is not None
         assert profile.spider_x == ""
         assert profile.port == 8443
 
     def test_an_ipv6_host_in_brackets_is_read(self) -> None:
-        profile = parse_vless_link(
-            "vless://id@[2001:db8::1]:443?security=reality&pbk=KEY",
-            DEFAULT_PORT,
+        profile = parse_link(
+            "vless://id@[2001:db8::1]:443?security=reality&pbk=KEY"
         )
         assert profile is not None
         assert profile.address == "2001:db8::1"
 
     def test_a_flow_is_kept(self) -> None:
-        profile = parse_vless_link(
-            "vless://id@host:443?security=reality&pbk=KEY&flow=xtls-rprx-vision",
-            DEFAULT_PORT,
+        profile = parse_link(
+            "vless://id@host:443?security=reality&pbk=KEY&flow=xtls-rprx-vision"
         )
         assert profile is not None
         assert profile.flow == "xtls-rprx-vision"
@@ -199,15 +234,15 @@ class TestParseVlessLink:
         # A REALITY link without a public key would produce a client that
         # cannot connect, so it is rejected instead of written.
         if link.startswith("vless://id@host:443?security=none"):
-            assert parse_vless_link(link, DEFAULT_PORT) is not None
+            assert parse_link(link) is not None
             return
-        assert parse_vless_link(link, DEFAULT_PORT) is None
+        assert parse_link(link) is None
 
     def test_a_link_without_a_port_takes_the_configured_default(self) -> None:
         # The proof of the value: a link that carries no port reaches the
         # port the config names, so the operator decides what such a link
         # means without a code change.
-        profile = parse_vless_link(
+        profile = parse_link(
             "vless://id@host.example?security=reality&pbk=KEY", 8443
         )
         assert profile is not None
@@ -218,9 +253,9 @@ class TestOutboundBuilders:
     """Tests for the outbounds the policy owns."""
 
     def test_the_remote_outbound_carries_the_reality_data(self) -> None:
-        profile = parse_vless_link(LINK, DEFAULT_PORT)
+        profile = parse_link(LINK)
         assert profile is not None
-        outbound = build_remote_outbound("pyntara-remote", profile)
+        outbound = remote_outbound()
         assert outbound["tag"] == "pyntara-remote"
         assert outbound["protocol"] == "vless"
         settings = outbound["settings"]
@@ -235,30 +270,28 @@ class TestOutboundBuilders:
         assert stream["realitySettings"]["spiderX"] == "/spider"
 
     def test_a_plain_tls_link_carries_no_reality_block(self) -> None:
-        profile = parse_vless_link(
-            "vless://id@host:443?security=tls&sni=host", DEFAULT_PORT
-        )
+        profile = parse_link("vless://id@host:443?security=tls&sni=host")
         assert profile is not None
-        outbound = build_remote_outbound("remote", profile)
+        outbound = remote_outbound("remote", profile)
         stream = outbound["streamSettings"]
         assert isinstance(stream, dict)
         assert "realitySettings" not in stream
 
     def test_the_tor_outbound_is_a_socks_client(self) -> None:
-        outbound = build_tor_outbound("pyntara-tor", "127.0.0.1:9050")
+        outbound = build_tor_outbound("pyntara-tor", "127.0.0.1:9050", _FIELDS, _VALUES)
         assert outbound["protocol"] == "socks"
         settings = outbound["settings"]
         assert isinstance(settings, dict)
         assert settings["servers"] == [{"address": "127.0.0.1", "port": 9050}]
 
     def test_the_i2p_outbound_is_an_http_client(self) -> None:
-        outbound = build_i2p_outbound("pyntara-i2p", "127.0.0.1:4444")
+        outbound = build_i2p_outbound("pyntara-i2p", "127.0.0.1:4444", _FIELDS, _VALUES)
         assert outbound["protocol"] == "http"
 
     @pytest.mark.parametrize("address", ["127.0.0.1", "127.0.0.1:abc", ":9050"])
     def test_a_malformed_proxy_address_is_reported(self, address: str) -> None:
         with pytest.raises(ValueError, match="address:port"):
-            build_tor_outbound("tor", address)
+            build_tor_outbound("tor", address, _FIELDS, _VALUES)
 
 
 class TestLocalProxyInbound:
@@ -273,6 +306,8 @@ class TestLocalProxyInbound:
             port=10800,
             udp_enabled=True,
             sniffing_protocols=("http", "tls", "quic"),
+            fields=_FIELDS,
+            values=_VALUES,
         )
         assert payload["protocol"] == "mixed"
         assert payload["tag"] == "pyntara-local-proxy"
@@ -429,7 +464,7 @@ class TestApplyRoutingPolicy:
         updated, changed = apply_routing_policy(
             make_template(),
             make_policy(),
-            remote_outbound=build_remote_outbound("pyntara-remote", make_profile()),
+            remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
         )
         assert changed is True
@@ -496,13 +531,13 @@ class TestApplyRoutingPolicy:
         first, changed_first = apply_routing_policy(
             make_template(),
             make_policy(in_russia=True),
-            remote_outbound=build_remote_outbound("pyntara-remote", make_profile()),
+            remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
         )
         second, changed_second = apply_routing_policy(
             first,
             make_policy(in_russia=True),
-            remote_outbound=build_remote_outbound("pyntara-remote", make_profile()),
+            remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
         )
         assert changed_first is True
@@ -513,13 +548,13 @@ class TestApplyRoutingPolicy:
         russia, _ = apply_routing_policy(
             make_template(),
             make_policy(in_russia=True),
-            remote_outbound=build_remote_outbound("pyntara-remote", make_profile()),
+            remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
         )
         outside, changed = apply_routing_policy(
             russia,
             make_policy(in_russia=False),
-            remote_outbound=build_remote_outbound("pyntara-remote", make_profile()),
+            remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
         )
         assert changed is True
@@ -571,6 +606,8 @@ def test_the_panel_vocabulary_comes_from_the_config() -> None:
         port=10800,
         udp_enabled=True,
         sniffing_protocols=("http", "tls"),
+        fields=_FIELDS,
+        values=_VALUES,
     )
     assert payload["protocol"] == "my-mixed"
     template = make_template()
@@ -597,3 +634,35 @@ def test_the_panel_vocabulary_comes_from_the_config() -> None:
     rules = rules_of(updated)
     assert not any(rule.get("protocol") == ["my-bittorrent"] for rule in rules)
     assert not any(rule.get("ip") == ["my-geoip:private"] for rule in rules)
+
+
+def test_the_xray_vocabulary_comes_from_the_config() -> None:
+    # The proof of the value: other field names and other protocol words
+    # of the table are the document the policy builds, so a core version
+    # that renames a field is answered in the config and not in the code.
+    fields = {
+        **_FIELDS,
+        "tag": "myTag",
+        "protocol": "myProtocol",
+        "inbound_tag": "myInbound",
+        "outbound_tag": "myOutbound",
+        "domain": "myDomain",
+        "type": "myType",
+    }
+    values = {
+        **_VALUES,
+        "vless": "my-vless",
+        "field": "my-field",
+        "onion_domain": "my-onion",
+    }
+    profile = parse_link(LINK)
+    assert profile is not None
+    outbound = build_remote_outbound("remote-tag", profile, fields, values)
+    assert outbound["myTag"] == "remote-tag"
+    assert outbound["myProtocol"] == "my-vless"
+    policy = make_policy(field_keys=fields, values=values)
+    rules = build_routing_rules(policy, remote_outbound_available=True)
+    assert rules[0]["myType"] == "my-field"
+    assert rules[0]["myInbound"] == [policy.inbound_tag]
+    assert rules[0]["myOutbound"] == policy.blocked_outbound_tag
+    assert rules[1]["myDomain"] == ["my-onion"]

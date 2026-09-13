@@ -1878,7 +1878,11 @@ def _remote_profile(
             "the local proxy is not configured"
         )
     profile = routing_policy.parse_vless_link(
-        link, cfg.remote_link_default_port
+        link,
+        cfg.remote_link_default_port,
+        cfg.xray_values["vless"],
+        cfg.vless_link_query_keys,
+        cfg.xray_values,
     )
     if profile is None:
         return None, (
@@ -1974,6 +1978,8 @@ def _stage_local_proxy(
         port=cfg.local_proxy_port,
         udp_enabled=cfg.local_proxy_udp,
         sniffing_protocols=cfg.local_proxy_sniffing_protocols,
+        fields=cfg.xray_field_keys,
+        values=cfg.xray_values,
     )
     existing = xui_client.find_inbound_by_tag(cfg, env, cfg.local_proxy_tag, timeout)
     if existing is not None and _inbound_matches(existing, payload):
@@ -2434,12 +2440,17 @@ def _stage_routing_policy(
         panel_inbound_protocol=cfg.panel_inbound_protocol,
         panel_blocked_rule_protocols=cfg.panel_blocked_rule_protocols,
         panel_private_block_category=cfg.panel_private_block_category,
+        field_keys=cfg.xray_field_keys,
+        values=cfg.xray_values,
     )
     updated, differs = routing_policy.apply_routing_policy(
         template.settings,
         policy,
         remote_outbound=routing_policy.build_remote_outbound(
-            cfg.remote_outbound_tag, profile
+            cfg.remote_outbound_tag,
+            profile,
+            cfg.xray_field_keys,
+            cfg.xray_values,
         ),
         remove_panel_restrictions=True,
     )
