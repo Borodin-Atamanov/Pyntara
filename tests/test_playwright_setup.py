@@ -206,10 +206,42 @@ def test_force_reinstalls_even_when_installed(
     assert any("install" in command and "--prefix" in command for command in calls)
 
 
-def test_npm_install_failure_is_an_error(
+def test_npm_install_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # A failed npm install is a recoverable failure: the task completes, so
+    # the remaining tasks of the run still do their work, and the reason
+    # reaches the installer as a warning of this task.
     _fake_run_factory(monkeypatch, npm_rc=2)
     result = playwright_setup.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "playwright-cli install failed" in (result.error or "")
+    assert result.success is True
+    assert result.warnings
+    assert any(
+        "playwright-cli install failed" in warning for warning in result.warnings
+    )
+
+
+def test_missing_runtime_packages_stop_the_task_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # nodejs and npm are the mechanism of this task: without them npm can
+    # install nothing, so the task stops its own remaining steps, still
+    # reports a completed task, and names the packages it could not install
+    # in a warning instead of failing the run.
+    def failing_install(*args: object, **kwargs: object) -> tuple[
+        list[str], list[tuple[str, str]], list[str]
+    ]:
+        del args, kwargs
+        return [], [("nodejs", "no candidate")], []
+
+    monkeypatch.setattr(
+        "pyntara.tasks.playwright_setup.package_is_installed",
+        lambda engine, package, timeout: False,
+    )
+    monkeypatch.setattr(
+        "pyntara.tasks.playwright_setup.install_packages", failing_install
+    )
+    result = playwright_setup.task(_ctx(tmp_path))
+    assert result.success is True
+    assert result.changed is False
+    assert result.warnings == ("cannot install nodejs and npm: nodejs: no candidate",)

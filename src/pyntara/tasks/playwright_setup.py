@@ -91,8 +91,11 @@ def task(ctx: Context) -> TaskResult:
     installed and the playwright-cli binary answers --version as the
     desktop user; the task then returns changed=False. Force mode re-runs
     the npm install even when the binary already answers. A failed apt
-    install or a failed npm install is an error TaskResult: the runner
-    continues with the remaining tasks and never stops here.
+    install or a failed npm install never stops the run: the failure is
+    reported in warnings and the task completes, because the remaining
+    tasks of the run do not depend on this tool (architecture contract,
+    Task contract). Only the missing runtime packages stop the further
+    steps of this task, since without them npm cannot install anything.
     """
 
     cfg = ctx.config.playwright_setup
@@ -122,10 +125,12 @@ def task(ctx: Context) -> TaskResult:
         warnings.extend(apt_warnings)
         if failures:
             detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
+            warnings.append(f"cannot install nodejs and npm: {detail}")
             return TaskResult(
-                success=False,
+                success=True,
                 changed=changed,
-                error=f"cannot install nodejs and npm: {detail}",
+                message=f"playwright-cli not installed: {detail}",
+                warnings=tuple(warnings),
             )
         changed = True
         messages.append(f"installed {' and '.join(installed)}")
@@ -154,20 +159,29 @@ def task(ctx: Context) -> TaskResult:
             timeout=cfg.npm_install_timeout_seconds,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warnings.append(f"playwright-cli install failed: {exc}")
         return TaskResult(
-            success=False,
+            success=True,
             changed=changed,
-            error=f"playwright-cli install failed: {exc}",
+            message=f"playwright-cli not installed for {cfg.username}",
+            warnings=tuple(warnings),
         )
     changed = True
     messages.append(f"installed playwright-cli for {cfg.username}")
 
     after_version = _cli_version(cfg, timeout=timeout)
     if not after_version:
+        warnings.append(
+            "playwright-cli did not become available after the install"
+        )
+        message = f"playwright-cli not available at {_cli_bin_path(cfg)}"
+        if messages:
+            message = f"{'; '.join(messages)}; {message}"
         return TaskResult(
-            success=False,
+            success=True,
             changed=changed,
-            error="playwright-cli did not become available after the install",
+            message=message,
+            warnings=tuple(warnings),
         )
     binary = _cli_bin_path(cfg)
     message = f"playwright-cli {after_version} ready at {binary}"
