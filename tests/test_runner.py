@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from support import make_config, make_context
@@ -124,3 +125,22 @@ def test_run_tasks_reports_task_duration(
     task_runner.run_tasks(_ctx(), ["cli_tools"])
     captured = capsys.readouterr().out
     assert re.search(r"\[done\] cli_tools in \d+\.\d{3}s: ok", captured)
+
+
+def test_task_modules_report_findings_in_warnings() -> None:
+    """No task module builds an error result.
+
+    The runner converts an error result into a completed one carrying the
+    reason in warnings, so a run never stops there; the rule of the task
+    contract (architecture contract, Task contract) is that a task
+    reports a step it could not perform in warnings and completes, and
+    this check keeps every module in that shape.
+    """
+
+    tasks_dir = Path(__file__).resolve().parents[1] / "src" / "pyntara" / "tasks"
+    offenders = [
+        path.name
+        for path in sorted(tasks_dir.glob("*.py"))
+        if "success=False" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
