@@ -170,30 +170,36 @@ def test_force_regenerates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert calls == [["hostnamectl", "set-hostname", FIXED_NAME]]
 
 
-def test_write_failure_reports_error(
+def test_write_failure_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A hostname file that cannot be written fails the task with an error.
-    # A regular file in place of the parent directory makes the mkdir
-    # fail, so the write cannot proceed.
+    # A hostname file that cannot be written is reported as a warning and
+    # the kernel name is still applied, because the two steps are
+    # independent. A regular file in place of the parent directory makes
+    # the mkdir fail, so the write cannot proceed.
     etc = tmp_path / "etc"
     etc.write_text("not a directory", encoding="utf-8")
     ctx = _ctx(tmp_path)
-    _install_fakes(monkeypatch, kernel_name="old-host")
+    calls = _install_fakes(monkeypatch, kernel_name="old-host")
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "cannot write" in (result.error or "")
+    assert result.success is True
+    assert any("cannot write" in warning for warning in result.warnings)
+    assert len(calls) == 1
+    assert calls[0][:2] == ["hostnamectl", "set-hostname"]
+    assert calls[0][2]
 
 
-def test_apply_failure_reports_error(
+def test_apply_failure_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A failing apply command fails the task with an error.
+    # A failing apply command is reported as a warning and the written
+    # file keeps the generated name, so the next run applies it.
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text("", encoding="utf-8")
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch, kernel_name="old-host", apply_ok=False)
     result = task_module.task(ctx)
-    assert result.success is False
-    assert "cannot apply" in (result.error or "")
+    assert result.success is True
+    assert any("cannot apply" in warning for warning in result.warnings)
+    assert hostname_file.read_text(encoding="utf-8").strip() != ""

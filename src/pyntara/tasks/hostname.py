@@ -99,15 +99,17 @@ def task(ctx: Context) -> TaskResult:
     knows it; the task then returns changed=False. Otherwise it generates
     a fresh name, writes the file and applies the name to the kernel.
     Force mode always generates a fresh name. Every step is reported to
-    stdout as single lines that include their result. Any failure is
-    returned as an error TaskResult: the runner continues with the
-    remaining tasks and never stops here.
+    stdout as single lines that include their result. A step that cannot
+    run is reported as a warning of a completed task: a write or an apply
+    that failed is named and the remaining step still runs, so the runner
+    continues with the remaining tasks and never stops here.
     """
 
     cfg = ctx.config.hostname
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     hostname_file = Path(cfg.hostname_file)
+    warnings: list[str] = []
 
     current_file = _read_hostname_file(hostname_file)
     current_kernel = socket.gethostname()
@@ -138,21 +140,34 @@ def task(ctx: Context) -> TaskResult:
 
     if not needs_write and not needs_apply:
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return TaskResult(
+            success=True,
+            changed=False,
+            message="already configured",
+            warnings=tuple(warnings),
+        )
 
     if needs_write:
         try:
             _write_hostname_file(hostname_file, name)
         except OSError as exc:
-            return TaskResult(
-                success=False, error=f"cannot write {hostname_file}: {exc}"
-            )
-        _log(f"wrote {hostname_file}: {name}")
+            warnings.append(f"cannot write {hostname_file}: {exc}")
+        else:
+            _log(f"wrote {hostname_file}: {name}")
 
     if needs_apply:
         error = _apply_hostname(cfg.set_hostname_command, name, timeout)
-        if error is not None:
-            return TaskResult(success=False, error=error)
-        _log(f"applied kernel hostname: {name}")
+        if error is None:
+            _log(f"applied kernel hostname: {name}")
+        else:
+            warnings.append(error)
 
-    return TaskResult(success=True, changed=True, message=f"hostname set to {name}")
+    message = f"hostname set to {name}"
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True,
+        changed=needs_write or needs_apply,
+        message=message,
+        warnings=tuple(warnings),
+    )
