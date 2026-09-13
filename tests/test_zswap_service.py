@@ -349,11 +349,12 @@ def test_parameter_names_and_directory_come_from_the_config(
     )
 
 
-def test_write_failure_reports_error(
+def test_write_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The kernel rejects the compressor value: the task reports the error
-    # and stops before touching the remaining parameters.
+    # The kernel rejects the compressor value: the task names the failure in
+    # a warning, writes the remaining parameters anyway, because they are
+    # independent records, and completes.
     fixtures = _install_fixtures(tmp_path)
     calls, writes = _install_fake(
         monkeypatch,
@@ -362,48 +363,59 @@ def test_write_failure_reports_error(
         fail_write=frozenset({"compressor"}),
     )
     result = zswap_service.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "cannot write compressor" in (result.error or "")
-    # enabled matches the target and is not written; compressor is the
-    # first mismatch and the only write attempt.
-    assert writes == [("compressor", "zstd")]
-    assert ["systemctl", "enable", "zswap.service"] not in calls
+    assert result.success is True
+    assert any("cannot write compressor" in warning for warning in result.warnings)
+    # enabled matches the target and is not written; the rejected compressor
+    # and the two other mismatching parameters are all attempted, because a
+    # rejected value must not stop the independent ones.
+    assert writes == [
+        ("compressor", "zstd"),
+        ("max_pool_percent", "50"),
+        ("accept_threshold_percent", "100"),
+    ]
+    # The service is still deployed and enabled, because the unit does not
+    # depend on the rejected parameter.
+    assert ["systemctl", "enable", "zswap.service"] in calls
 
 
-def test_missing_parameter_file_reports_error(
+def test_missing_parameter_file_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A parameter attribute is absent (no zswap support or a removed
     # attribute): the read reports None, the write attempt fails and the
-    # task reports the error.
+    # task reports it in a warning while the remaining work continues.
     fixtures = _install_fixtures(tmp_path)
     (fixtures["params_dir"] / "max_pool_percent").unlink()
     _ = _install_fake(monkeypatch, fixtures, enabled=False)
     result = zswap_service.task(_ctx(tmp_path))
-    assert result.success is False
-    assert "cannot write max_pool_percent" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "cannot write max_pool_percent" in warning for warning in result.warnings
+    )
 
 
-def test_missing_template_reports_error(
+def test_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The unit template is missing: the parameters are configured but the
-    # service cannot be written, so the task reports the error.
+    # The unit template is missing: the parameters are configured, the
+    # service cannot be written, and the reason is a warning of a completed
+    # task.
     fixtures = _install_fixtures(tmp_path)
     fixtures["template"].unlink()
     calls, _ = _install_fake(monkeypatch, fixtures, enabled=False)
     result = zswap_service.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is True
-    assert "template" in (result.error or "")
+    assert any("template" in warning for warning in result.warnings)
     assert ["systemctl", "enable", "zswap.service"] not in calls
 
 
-def test_systemctl_enable_failure_reports_error(
+def test_systemctl_enable_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # systemctl enable fails after the parameters were configured: the task
-    # reports the error and marks the run as changed.
+    # names the failure in a warning, keeps the change it made and
+    # completes.
     fixtures = _install_fixtures(tmp_path)
     _calls, writes = _install_fake(
         monkeypatch,
@@ -412,7 +424,9 @@ def test_systemctl_enable_failure_reports_error(
         fail=lambda command: command[:2] == ["systemctl", "enable"],
     )
     result = zswap_service.task(_ctx(tmp_path))
-    assert result.success is False
+    assert result.success is True
     assert result.changed is True
-    assert "systemd setup failed" in (result.error or "")
+    assert any(
+        "systemd setup failed" in warning for warning in result.warnings
+    )
     assert ("compressor", "zstd") in writes

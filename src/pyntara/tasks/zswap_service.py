@@ -130,9 +130,10 @@ def task(ctx: Context) -> TaskResult:
     parameters (all of them in force mode), verifies them by reading back,
     writes the unit file and enables the service. Every step is reported to
     stdout: measurements and decisions as single lines that include their
-    result, long-running commands as a line before and a line after. Any
-    failure is returned as an error TaskResult: the runner continues with
-    the remaining tasks and never stops here.
+    result, long-running commands as a line before and a line after. A step
+    that could not be performed never stops the others: the failure is
+    reported in warnings and the task completes (architecture contract, Task
+    contract).
     """
 
     cfg = ctx.config.zswap_service
@@ -141,6 +142,7 @@ def task(ctx: Context) -> TaskResult:
     service_name = cfg.service_unit_name
     target = _target_values(cfg)
     paths = _parameter_paths(cfg)
+    warnings: list[str] = []
 
     current: dict[str, str | None] = {}
     for name in cfg.parameter_names:
@@ -172,8 +174,9 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _write_sysfs(paths[name], target[name])
             except OSError as exc:
-                return TaskResult(success=False, error=f"cannot write {name}: {exc}")
-            changed = True
+                warnings.append(f"cannot write {name}: {exc}")
+            else:
+                changed = True
 
     if changed:
         _log("verifying zswap parameters")
@@ -183,8 +186,9 @@ def task(ctx: Context) -> TaskResult:
             if value is None or _normalize(target[name], value) != target[name]:
                 problems.append(f"{name} mismatch")
         if problems:
-            return TaskResult(success=False, changed=True, error="; ".join(problems))
-        _log("verification passed")
+            warnings.append(f"parameters not applied: {'; '.join(problems)}")
+        else:
+            _log("verification passed")
 
     if not enabled:
         changed = True
@@ -197,44 +201,48 @@ def task(ctx: Context) -> TaskResult:
     try:
         content = _render_unit(template_path, target, paths)
     except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot read unit template: {exc}"
-        )
-    unit_dir = ctx.config.engine.systemd_unit_dir
-    _log(f"writing unit file {unit_dir / service_name}")
-    try:
-        _write_unit_file(unit_dir, service_name, content)
-    except OSError as exc:
-        return TaskResult(
-            success=False, changed=changed, error=f"cannot write unit file: {exc}"
-        )
-    _log("unit file written")
-    try:
-        _log("reloading systemd: systemctl daemon-reload")
-        run_command(
-            list(cfg.systemctl_daemon_reload_command), timeout=timeout
-        )
-        _log("systemd reloaded")
-        _log(f"enabling service: systemctl enable {service_name}")
-        run_command(
-            substituted_command(
-                cfg.systemctl_enable_command,
-                {"service_unit_name": service_name},
-            ),
-            timeout=timeout,
-        )
-        _log("service enabled")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False, changed=True, error=f"systemd setup failed: {exc}"
-        )
+        warnings.append(f"cannot read unit template: {exc}")
+    else:
+        unit_dir = ctx.config.engine.systemd_unit_dir
+        _log(f"writing unit file {unit_dir / service_name}")
+        try:
+            _write_unit_file(unit_dir, service_name, content)
+        except OSError as exc:
+            warnings.append(f"cannot write unit file: {exc}")
+        else:
+            _log("unit file written")
+            try:
+                _log("reloading systemd: systemctl daemon-reload")
+                run_command(
+                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                )
+                _log("systemd reloaded")
+                _log(f"enabling service: systemctl enable {service_name}")
+                run_command(
+                    substituted_command(
+                        cfg.systemctl_enable_command,
+                        {"service_unit_name": service_name},
+                    ),
+                    timeout=timeout,
+                )
+                _log("service enabled")
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                warnings.append(f"systemd setup failed: {exc}")
+
+    message = (
+        f"zswap configured: compressor {cfg.compressor}, "
+        f"max pool {cfg.max_pool_percent}%, accept threshold "
+        f"{cfg.accept_threshold_percent}%, shrinker "
+        f"{'on' if cfg.shrinker_enabled else 'off'}"
+    )
+    if warnings:
+        message = f"{message}; {'; '.join(warnings)}"
     return TaskResult(
         success=True,
-        changed=True,
-        message=(
-            f"zswap configured: compressor {cfg.compressor}, "
-            f"max pool {cfg.max_pool_percent}%, accept threshold "
-            f"{cfg.accept_threshold_percent}%, shrinker "
-            f"{'on' if cfg.shrinker_enabled else 'off'}"
-        ),
+        changed=changed,
+        message=message,
+        warnings=tuple(warnings),
     )
