@@ -79,3 +79,10 @@ config_key_flag = ["--key", "{key}"]
 mkdir_command = ["mkdir", "-p", "{path}"]
 chown_command = ["chown", "{owner}", "{path}"]
 chmod_command = ["chmod", "{file_mode}", "{path}"]
+# Commands of the input group membership and of the user manager of the
+# desktop session; {username}, {input_group} and {service_unit_name} are
+# filled in at the call site.
+group_members_command = ["id", "-nG", "{username}"]
+group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]
+service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]
+service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]

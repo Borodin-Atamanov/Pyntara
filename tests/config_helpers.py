@@ -793,6 +793,10 @@ def base_config() -> str:
         'mkdir_command = ["mkdir", "-p", "{path}"]\n'
         'chown_command = ["chown", "{owner}", "{path}"]\n'
         'chmod_command = ["chmod", "{file_mode}", "{path}"]\n'
+        'group_members_command = ["id", "-nG", "{username}"]\n'
+        'group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]\n'
+        'service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]\n'
+        'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

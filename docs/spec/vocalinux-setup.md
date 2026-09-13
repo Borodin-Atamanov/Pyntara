@@ -62,7 +62,8 @@ echo_desktop_relative_path - the empty action desktop file that consumes the sho
 app_config_template_file_name - the app config template under task_data/vocalinux_setup/ of the clone
 autostart_template_file_name - the autostart entry template under the same directory, rendered with $appimage
 echo_desktop_template_file_name - the empty action desktop file template under the same directory
-shortcuts_file_name - the KConfig file of the empty shortcut shortcut_group_name - the group inside that file
+shortcuts_file_name - the KConfig file of the empty shortcut
+shortcut_group_name - the group inside that file
 shortcut_entry_name - the entry inside the group, the desktop file name of the action
 shortcut_action_name - the action key the shortcut is stored under
 shortcut_key_sequence - the key sequence the action holds, so Plasma consumes it
@@ -70,3 +71,15 @@ user_file_mode - the mode of the written app config and autostart entry
 executable_file_mode - the mode of the installed AppImage
 package_status_timeout_seconds - seconds a single package status query may run
 package_install_retries - install attempts after the first one for each package
+runuser_command - the prefix that runs a command as the desktop user, with {username} filled in at the call site
+kreadconfig_command - the reader of a KConfig entry, with {file_name} filled in at the call site
+kwriteconfig_command - the writer of a KConfig entry, with {file_name} filled in at the call site
+config_group_flag - the group selector of a KConfig call, with {group} filled in at the call site
+config_key_flag - the key selector of a KConfig call, with {key} filled in at the call site
+mkdir_command - the maker of a directory, with {path} filled in at the call site
+chown_command - the owner writer of a file, with {owner} and {path} filled in at the call site
+chmod_command - the mode writer of a file, with {file_mode} and {path} filled in at the call site
+group_members_command - the reader of the group membership of the user, with {username} filled in at the call site
+group_add_command - the command that adds the user to input_group, with {input_group} and {username} filled in at the call site
+service_active_command - the state query of the user unit, with {username} and {service_unit_name} filled in at the call site
+service_enable_command - the enable and start of the user unit, with {username} and {service_unit_name} filled in at the call site

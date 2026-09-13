@@ -383,7 +383,9 @@ def _ensure_input_group(
     """
 
     result = run_command(
-        ["id", "-nG", cfg.username],
+        substituted_command(
+            cfg.group_members_command, {"username": cfg.username}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -391,7 +393,13 @@ def _ensure_input_group(
     if cfg.input_group in result.stdout.split():
         return False, None
     try:
-        run_command(["usermod", "-aG", cfg.input_group, cfg.username], timeout=timeout)
+        run_command(
+            substituted_command(
+                cfg.group_add_command,
+                {"input_group": cfg.input_group, "username": cfg.username},
+            ),
+            timeout=timeout,
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot add {cfg.username} to {cfg.input_group}: {exc}"
     return True, None
@@ -409,9 +417,14 @@ def _enable_user_service(
     at the next login.
     """
 
-    prefix = ["systemctl", "--user", "--machine", f"{cfg.username}@.host"]
     active = run_command(
-        [*prefix, "is-active", cfg.service_unit_name],
+        substituted_command(
+            cfg.service_active_command,
+            {
+                "username": cfg.username,
+                "service_unit_name": cfg.service_unit_name,
+            },
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -420,7 +433,13 @@ def _enable_user_service(
         return False, None
     try:
         run_command(
-            [*prefix, "enable", "--now", cfg.service_unit_name],
+            substituted_command(
+                cfg.service_enable_command,
+                {
+                    "username": cfg.username,
+                    "service_unit_name": cfg.service_unit_name,
+                },
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

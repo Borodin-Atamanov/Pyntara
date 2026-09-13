@@ -34,7 +34,15 @@ class VocalinuxSetupConfig:
     consuming shortcut is the KConfig record shortcuts_file_name,
     shortcut_group_name, shortcut_entry_name, shortcut_action_name and
     shortcut_key_sequence, exactly as the KDE System Settings stores a
-    .desktop launch shortcut (docs/spec/vocalinux-setup.md).
+    .desktop launch shortcut (docs/spec/vocalinux-setup.md). The command
+    vocabulary of the task is configured too: runuser_command runs a
+    command as the desktop user; kreadconfig_command, kwriteconfig_command,
+    config_group_flag and config_key_flag spell the KConfig tools;
+    mkdir_command, chown_command and chmod_command create a file and give
+    it to that user; group_members_command and group_add_command read and
+    extend the membership of input_group; service_active_command and
+    service_enable_command query and enable service_unit_name through the
+    user manager of the desktop session.
     """
 
     username: str
@@ -70,3 +78,7 @@ class VocalinuxSetupConfig:
     mkdir_command: tuple[str, ...]
     chown_command: tuple[str, ...]
     chmod_command: tuple[str, ...]
+    group_members_command: tuple[str, ...]
+    group_add_command: tuple[str, ...]
+    service_active_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]

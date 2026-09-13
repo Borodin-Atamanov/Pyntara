@@ -494,3 +494,92 @@ def test_file_operations_come_from_the_config(
         str(target),
     ]
     assert seen[2] == ["mychmod", "--mode", f"{0o644:o}", str(target)]
+
+
+def test_group_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reader of the membership and the group writer are config values:
+    # another program in the section is the argv the task runs when the
+    # user is not yet in the group.
+    cfg = replace(
+        make_config().vocalinux_setup,
+        group_members_command=("myid", "--groups", "{username}"),
+        group_add_command=(
+            "myusermod",
+            "--append",
+            "{input_group}",
+            "{username}",
+        ),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        if command[0] == "myid":
+            return _FakeProc(0, f"{cfg.username}\n")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    assert task_module._ensure_input_group(cfg, timeout=30.0) == (True, None)
+    assert seen == [
+        ["myid", "--groups", cfg.username],
+        ["myusermod", "--append", cfg.input_group, cfg.username],
+    ]
+
+
+def test_user_service_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The state query and the enable of the user unit are config values:
+    # another program in the section is the argv the task runs through the
+    # user manager of the desktop session.
+    cfg = replace(
+        make_config().vocalinux_setup,
+        service_active_command=(
+            "mysystemctl",
+            "--user",
+            "is-active",
+            "{service_unit_name}",
+            "--machine",
+            "{username}",
+        ),
+        service_enable_command=(
+            "mysystemctl",
+            "--user",
+            "enable",
+            "--now",
+            "{service_unit_name}",
+            "--machine",
+            "{username}",
+        ),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        if "is-active" in command:
+            return _FakeProc(1, "inactive")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    assert task_module._enable_user_service(cfg, timeout=30.0) == (True, None)
+    assert seen == [
+        [
+            "mysystemctl",
+            "--user",
+            "is-active",
+            cfg.service_unit_name,
+            "--machine",
+            cfg.username,
+        ],
+        [
+            "mysystemctl",
+            "--user",
+            "enable",
+            "--now",
+            cfg.service_unit_name,
+            "--machine",
+            cfg.username,
+        ],
+    ]

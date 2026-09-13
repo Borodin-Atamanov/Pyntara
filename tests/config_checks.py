@@ -4921,6 +4921,26 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
             "vocalinux_setup.chmod_command",
             ("{file_mode}", "{path}"),
         ),
+        group_members_command=_placeholder_command_field(
+            raw.get("group_members_command"),
+            "vocalinux_setup.group_members_command",
+            ("{username}",),
+        ),
+        group_add_command=_placeholder_command_field(
+            raw.get("group_add_command"),
+            "vocalinux_setup.group_add_command",
+            ("{input_group}", "{username}"),
+        ),
+        service_active_command=_placeholder_command_field(
+            raw.get("service_active_command"),
+            "vocalinux_setup.service_active_command",
+            ("{username}", "{service_unit_name}"),
+        ),
+        service_enable_command=_placeholder_command_field(
+            raw.get("service_enable_command"),
+            "vocalinux_setup.service_enable_command",
+            ("{username}", "{service_unit_name}"),
+        ),
     )
 
 

@@ -220,13 +220,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["systemctl", "restart", cfg.service_unit_name],',
         }
     ),
-    "src/pyntara/tasks/vocalinux_setup.py": frozenset(
-        {
-            '["id", "-nG", cfg.username],',
-            'prefix = ["systemctl", "--user", "--machine", f"{cfg.username}@.host"]',
-            'run_command(["usermod", "-aG", cfg.input_group, cfg.username], timeout=timeout)',
-        }
-    ),
     "src/pyntara/utils.py": frozenset(
         {
             '["apt-get", "install", "-y", package],',

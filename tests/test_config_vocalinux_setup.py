@@ -40,6 +40,18 @@ SECTION = (
     "package_install_retries = 3\n"
     'user_file_mode = "0644"\n'
     'executable_file_mode = "0755"\n'
+    'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
+    'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
+    'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
+    'config_group_flag = ["--group", "{group}"]\n'
+    'config_key_flag = ["--key", "{key}"]\n'
+    'mkdir_command = ["mkdir", "-p", "{path}"]\n'
+    'chown_command = ["chown", "{owner}", "{path}"]\n'
+    'chmod_command = ["chmod", "{file_mode}", "{path}"]\n'
+    'group_members_command = ["id", "-nG", "{username}"]\n'
+    'group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]\n'
+    'service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]\n'
+    'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n'
 )
 
 
@@ -160,6 +172,26 @@ def test_valid_section_loads(tmp_path: Path) -> None:
         SECTION.replace(
             'shortcuts_file_name = "kglobalshortcutsrc"\n',
             'shortcuts_file_name = ""\n',
+        ),
+        # group_members_command is a string, not an array
+        SECTION.replace(
+            'group_members_command = ["id", "-nG", "{username}"]\n',
+            'group_members_command = "id"\n',
+        ),
+        # group_add_command carries no placeholders
+        SECTION.replace(
+            'group_add_command = ["usermod", "-aG", "{input_group}", "{username}"]\n',
+            'group_add_command = ["usermod", "-aG"]\n',
+        ),
+        # service_active_command is an empty array
+        SECTION.replace(
+            'service_active_command = ["systemctl", "--user", "--machine", "{username}@.host", "is-active", "{service_unit_name}"]\n',
+            "service_active_command = []\n",
+        ),
+        # service_enable_command is a string, not an array
+        SECTION.replace(
+            'service_enable_command = ["systemctl", "--user", "--machine", "{username}@.host", "enable", "--now", "{service_unit_name}"]\n',
+            'service_enable_command = "systemctl enable"\n',
         ),
     ],
 )
