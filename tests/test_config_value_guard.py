@@ -99,7 +99,7 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             # clone are the location of the running code, not a value of
             # the machine, so they stay here as exceptions.
             'CONFIG_PATH = Path("config")',
-            "REPO_ROOT = Path(__file__).resolve().parents[1]",
+            "REPO_ROOT = Path(__file__).resolve().parents[2]",
         }
     ),
     "src/pyntara/tasks/chrome_setup.py": frozenset(

@@ -977,6 +977,20 @@ def test_the_stop_call_comes_from_the_engine(
     ]
 
 
+def test_clone_root_points_at_the_repository_root() -> None:
+    # The tasks read their templates under task_data/ of the clone root, so
+    # the value must be the repository root and not the src directory that
+    # holds the package: the guard above only sees where the value is
+    # computed, never whether the depth is right, and a wrong depth makes
+    # every task that renders a template fail on the target machine while
+    # the whole suite stays green.
+    from pyntara.pyntara import REPO_ROOT
+
+    assert (REPO_ROOT / "config").is_dir()
+    assert (REPO_ROOT / "task_data").is_dir()
+    assert (REPO_ROOT / "src" / "pyntara" / "pyntara.py").is_file()
+
+
 def test_repository_root_is_computed_once() -> None:
     # The root of the clone is computed by the composition root, which puts
     # it into the Context; a task reads it from there. A module that computes
