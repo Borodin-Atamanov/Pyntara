@@ -31,7 +31,13 @@ from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
-from .kde_settings import KConfigRecord, KdeSettingsConfig
+from .kde_settings import (
+    KCONFIG_BOOL_TYPE,
+    KCONFIG_STRING_TYPE,
+    KCONFIG_TYPES,
+    KConfigRecord,
+    KdeSettingsConfig,
+)
 from .loader import (
     Config,
     absent_config_keys,
@@ -79,6 +85,9 @@ __all__ = [
     "COLLECTOR_SECTION_KEYS",
     "COLLECTOR_TABLE_KEYS",
     "INGEST_CONFIG_KEYS",
+    "KCONFIG_BOOL_TYPE",
+    "KCONFIG_STRING_TYPE",
+    "KCONFIG_TYPES",
     "MODES",
     "SEND_ORDERS",
     "SEND_ORDER_NEWEST_FIRST",

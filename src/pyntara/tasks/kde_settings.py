@@ -31,7 +31,11 @@ from collections.abc import Callable
 from pathlib import Path
 from xml.etree import ElementTree
 
-from pyntara.config import EngineConfig, KdeSettingsConfig
+from pyntara.config import (
+    KCONFIG_BOOL_TYPE,
+    EngineConfig,
+    KdeSettingsConfig,
+)
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -822,7 +826,7 @@ def _apply_kconfig_records(
                 record.value,
                 timeout=timeout,
                 force=force,
-                bool_value=record.type == "bool",
+                bool_value=record.type == KCONFIG_BOOL_TYPE,
                 env=env,
             )
         except (

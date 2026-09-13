@@ -17,7 +17,11 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara.config import KConfigRecord
-from pyntara.config.kde_settings import KdeSettingsConfig
+from pyntara.config.kde_settings import (
+    KCONFIG_BOOL_TYPE,
+    KCONFIG_TYPES,
+    KdeSettingsConfig,
+)
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import task_data_dir
 
@@ -1814,6 +1818,27 @@ def test_kconfig_records_write_differing_values(
     assert single_writes
     assert "--type" in single_writes[0] and "bool" in single_writes[0]
     assert delete_writes
+
+
+def test_the_bool_type_word_comes_from_the_config_vocabulary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The word that marks a boolean record is the name the config layer
+    # gives that type: with another name in the vocabulary the task still
+    # follows it, so the task and the checks that validate a record
+    # against KCONFIG_TYPES cannot drift apart.
+    records = (
+        KConfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents={})
+    monkeypatch.setattr(task_module, "KCONFIG_BOOL_TYPE", "flag")
+    result = task_module.task(ctx)
+    assert result.success is True
+    single_writes = [command for command in writes if "SingleClick" in command]
+    assert single_writes
+    assert "--type" not in single_writes[0]
+    assert KCONFIG_BOOL_TYPE in KCONFIG_TYPES
 
 
 def test_kconfig_records_skip_when_matching(

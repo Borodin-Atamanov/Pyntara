@@ -16,7 +16,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-KCONFIG_TYPES: tuple[str, ...] = ("string", "bool")
+# The two types a KConfig record can carry, as the table spells them. A
+# record of the boolean type is stored as a boolean and every other type as
+# a string; the vocabulary lives here so the task and the checks name the
+# same words (tests/config_checks.py validates type against KCONFIG_TYPES).
+KCONFIG_STRING_TYPE = "string"
+KCONFIG_BOOL_TYPE = "bool"
+KCONFIG_TYPES: tuple[str, ...] = (KCONFIG_STRING_TYPE, KCONFIG_BOOL_TYPE)
 
 
 @dataclass(frozen=True)
