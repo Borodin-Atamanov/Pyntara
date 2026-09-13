@@ -1010,6 +1010,7 @@ def base_config() -> str:
         'google_script_upload_command = ["curl", "--location", "--max-time", "{timeout_seconds}", "--silent", "--show-error", "--data-urlencode", "filename={file_name}", "--data-urlencode", "pass={key}", "--data-urlencode", "data@-"]\n'
         'google_script_key_entry_title = "google_script_key"\n'
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
+        'google_script_answer_ok_prefix = "OK "\n'
         '[system_metrics_setup.collector]\n'
         "boot_delay_seconds = 30\n"
         'daily_send_times = ["12:00:00", "00:00:00"]\n'

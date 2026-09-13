@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -230,6 +231,31 @@ def test_send_curl_failure_keeps_entry(
     send_google_queue(cfg)
     assert len(calls) == 1
     assert entry.exists()
+
+
+def test_the_answer_prefix_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The answer prefix that means the file was stored belongs to the
+    # deployed web app, so another prefix in the table makes another
+    # answer a success while the shipped one refuses it.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    metrics = replace(
+        cfg.system_metrics_setup, google_script_answer_ok_prefix="DONE"
+    )
+    renamed = replace(cfg, system_metrics_setup=metrics)
+    channel = tmp_path / "metrics" / "google_script"
+    entry = _make_entry(channel, "report.txt", "x", time.time())
+    _fake_curl(monkeypatch, stdout="DONE 42")
+    send_google_queue(renamed)
+    assert not entry.exists()
+    assert len(list((tmp_path / "metrics" / "main_sent").iterdir())) == 1
+
+    other = _make_entry(channel, "other.txt", "y", time.time())
+    _fake_curl(monkeypatch, stdout="DONE 42")
+    send_google_queue(cfg)
+    assert other.exists()
 
 
 def test_send_without_vault_skips_without_upload(

@@ -3089,6 +3089,43 @@ class TestLocalProxyStage:
     def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return _ctx(tmp_path).config.three_x_ui_xray_setup
 
+    def test_the_traffic_counter_keys_come_from_the_config(
+        self, tmp_path: Path
+    ) -> None:
+        # The panel counts traffic into the two counter fields of the
+        # configured field map, so a renamed pair there is what the
+        # comparison leaves out; a field the map does not mark as a
+        # counter is compared like any other.
+        cfg = self._cfg(tmp_path)
+        renamed = replace(
+            cfg,
+            xray_field_keys={
+                **cfg.xray_field_keys,
+                "up": "upload",
+                "down": "download",
+            },
+        )
+        assert (
+            xui._inbound_matches(
+                renamed,
+                {"tag": "t", "upload": 0, "download": 0},
+                {"tag": "t", "upload": 10, "download": 20},
+            )
+            is True
+        )
+        assert (
+            xui._inbound_matches(
+                renamed, {"tag": "t", "up": 0}, {"tag": "t", "up": 10}
+            )
+            is False
+        )
+        assert (
+            xui._inbound_matches(
+                cfg, {"tag": "t", "up": 0}, {"tag": "t", "up": 10}
+            )
+            is True
+        )
+
     def test_creates_the_inbound_when_the_tag_is_free(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

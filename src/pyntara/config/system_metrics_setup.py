@@ -164,7 +164,8 @@ class SystemMetricsSetupConfig:
     the vault entry that carries the web app credentials;
     google_script_deployment_url_regex is the Python regular expression
     of the web app deployment URL, whose single capture group yields the
-    deployment ID. The encrypted PDF generation and the Telegram
+    deployment ID, and google_script_answer_ok_prefix is the answer
+    prefix that means the file was stored. The encrypted PDF generation and the Telegram
     channel replace the current Google-only sending in a later stage
     (docs/spec/system-metrics.md).
     """
@@ -226,6 +227,7 @@ class SystemMetricsSetupConfig:
     google_script_upload_command: tuple[str, ...]
     google_script_key_entry_title: str
     google_script_deployment_url_regex: str
+    google_script_answer_ok_prefix: str
     collector: SystemMetricsCollectorConfig
 
 
@@ -253,6 +255,7 @@ SERVICE_CONFIG_KEYS = (
     "queue_file_suffix_length",
     "google_script_key_entry_title",
     "google_script_timeout_seconds",
+    "google_script_answer_ok_prefix",
 )
 INGEST_CONFIG_KEYS = (
     "spool_dir",

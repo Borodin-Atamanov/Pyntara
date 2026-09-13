@@ -177,6 +177,11 @@ google_script_key_entry_title = "google_script_key"
 # capture group is a config error. Written as a TOML literal string
 # (single quotes) so the backslashes stay literal.
 google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$'
+# Answer prefix of the deployed web app that means the file was stored. The
+# sender treats an answer starting with it as a success and leaves the entry
+# in the queue otherwise, so a script that answers differently is answered
+# here.
+google_script_answer_ok_prefix = "OK "
 
 [system_metrics_setup.collector]
 # Report collector parameters (docs/spec/system-metrics.md, section

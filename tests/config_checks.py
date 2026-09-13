@@ -4000,6 +4000,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raw.get("google_script_key_entry_title"),
         "system_metrics_setup.google_script_key_entry_title",
     )
+    google_script_answer_ok_prefix = _nonempty_string_field(
+        raw.get("google_script_answer_ok_prefix"),
+        "system_metrics_setup.google_script_answer_ok_prefix",
+    )
     google_script_deployment_url_regex = raw.get(
         "google_script_deployment_url_regex"
     )
@@ -4188,6 +4192,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_upload_command=google_script_upload_command,
         google_script_key_entry_title=google_script_key_entry_title,
         google_script_deployment_url_regex=google_script_deployment_url_regex,
+        google_script_answer_ok_prefix=google_script_answer_ok_prefix,
         collector=_system_metrics_collector_table(raw.get("collector")),
     )
 

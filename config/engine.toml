@@ -264,9 +264,11 @@ augeas_container_directive_line = "set {node}/{container}[last()]/{name}[last()]
 augeas_remove_line = "rm {node}/{name}"
 augeas_container_remove_line = "rm {node}/{container}/{name}"
 # Address vocabulary of the collector modules that report the local
-# addresses of a machine (pyntara.network_addresses): the iproute2 query
-# in JSON form, the mapping of the command line family flag to the family
-# the report uses, the mapping of that family to the family name iproute2
+# addresses of a machine (pyntara.network_addresses, and the local address
+# and directly connected network readers of pyntara.public_address): the
+# iproute2 query in JSON form, the mapping of the command line family flag
+# to the family the report uses, the mapping of that family to the family
+# name iproute2 prints, which is also the word the plain address query
 # prints, and the scope value iproute2 reports for a link scope address.
 interface_addresses_command = ["ip", "-j", "addr", "show"]
 address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }

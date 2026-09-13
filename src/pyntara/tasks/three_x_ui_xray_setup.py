@@ -1915,19 +1915,26 @@ def _is_remote_server(profile: routing_policy.VlessProfile, facts: _RunFacts) ->
 
 
 def _inbound_matches(
-    existing: dict[str, object], payload: dict[str, object]
+    cfg: ThreeXuiXraySetupConfig,
+    existing: dict[str, object],
+    payload: dict[str, object],
 ) -> bool:
     """True when the stored inbound already carries the wanted definition.
 
     Only the keys of the payload are compared, and the traffic counters
-    are left out: the panel counts traffic into up and down, so comparing
-    them would report a change on every run. The nested blocks are
-    compared key by key for the same reason, so a panel that adds a value
-    of its own does not make the inbound different.
+    are left out: the panel counts traffic into the two counter fields of
+    the configured field map, so comparing them would report a change on
+    every run. The nested blocks are compared key by key for the same
+    reason, so a panel that adds a value of its own does not make the
+    inbound different.
     """
 
+    counters = {
+        cfg.xray_field_keys["up"],
+        cfg.xray_field_keys["down"],
+    }
     for key, wanted in payload.items():
-        if key in ("up", "down"):
+        if key in counters:
             continue
         stored = existing.get(key)
         if isinstance(wanted, dict):
@@ -1994,7 +2001,7 @@ def _stage_local_proxy(
         values=cfg.xray_values,
     )
     existing = xui_client.find_inbound_by_tag(cfg, env, cfg.local_proxy_tag, timeout)
-    if existing is not None and _inbound_matches(existing, payload):
+    if existing is not None and _inbound_matches(cfg, existing, payload):
         _log(f"local proxy {cfg.local_proxy_tag} is already configured")
         return None
     ok, message = xui_client.upsert_inbound(cfg, env, payload, timeout)

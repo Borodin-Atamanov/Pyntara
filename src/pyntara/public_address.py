@@ -53,7 +53,9 @@ def local_addresses(engine: EngineConfig, timeout: float) -> tuple[str, ...]:
     Parsed from the configured address query; loopback and link-local
     addresses fall outside that scope. The addresses tell whether an
     address reported by an echo service really belongs to this machine (a
-    white address) or the machine sits behind NAT.
+    white address) or the machine sits behind NAT. The family names the
+    query prints are the ones the engine maps its families to, so a
+    release that renames them is answered in that mapping.
     """
 
     try:
@@ -65,11 +67,12 @@ def local_addresses(engine: EngineConfig, timeout: float) -> tuple[str, ...]:
         )
     except (subprocess.TimeoutExpired, OSError):
         return ()
+    family_names = set(engine.iproute2_address_family_names.values())
     addresses: list[str] = []
     for line in result.stdout.splitlines():
         fields = line.split()
         for index, field in enumerate(fields):
-            if field not in ("inet", "inet6") or index + 1 >= len(fields):
+            if field not in family_names or index + 1 >= len(fields):
                 continue
             candidate = fields[index + 1].split("/", 1)[0]
             if candidate and candidate not in addresses:
@@ -84,7 +87,8 @@ def directly_connected_networks(
 
     Parsed from the kernel routes of both address families through the
     configured route query, whose {family} placeholder takes the family
-    flag. These are the machine's own networks: a local network, a bridge
+    flag, built from the family named by the engine mapping of the command
+    line flag. These are the machine's own networks: a local network, a bridge
     and the yggdrasil overlay all appear here, so a routing policy can
     send them to the direct outbound whatever range they use. The subnets
     are read from the kernel instead of being configured, so a machine
@@ -92,12 +96,12 @@ def directly_connected_networks(
     """
 
     networks: list[str] = []
-    for family in ("-4", "-6"):
+    for flag in engine.address_family_by_flag:
         try:
             result = run_command(
                 substituted_command(
                     engine.directly_connected_networks_command,
-                    {"family": family},
+                    {"family": f"-{flag}"},
                 ),
                 check=False,
                 capture=True,

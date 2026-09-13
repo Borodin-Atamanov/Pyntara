@@ -298,7 +298,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         )
         return False
     output = (result.stdout or "").strip()
-    if not output.startswith("OK "):
+    if not output.startswith(metrics.google_script_answer_ok_prefix):
         _log(
             f"google script channel: sending {entry.name} failed: the web app "
             f"answered: {output}",

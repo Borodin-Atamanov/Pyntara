@@ -90,6 +90,29 @@ class TestLocalAddresses:
         monkeypatch.setattr(public_address_module, "run_command", fail)
         assert local_addresses(make_config().engine, 30.0) == ()
 
+    def test_the_family_names_come_from_the_engine_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The words the address query prints are the ones the engine maps
+        # its families to: another mapping makes an output with other
+        # words readable, while the shipped mapping finds nothing in it.
+        output = (
+            "2: enp1s0    inet4 10.10.0.1/24 scope global enp1s0\n"
+            "3: wlp1s0    inet6 2001:db8::5/64 scope global\n"
+        )
+        monkeypatch.setattr(
+            public_address_module,
+            "run_command",
+            lambda *a, **k: _Completed(output),
+        )
+        engine = make_config().engine
+        assert local_addresses(engine, 30.0) == ("2001:db8::5",)
+        renamed = replace(
+            engine,
+            iproute2_address_family_names={"ipv4": "inet4", "ipv6": "inet6"},
+        )
+        assert local_addresses(renamed, 30.0) == ("10.10.0.1", "2001:db8::5")
+
 
 class TestDirectlyConnectedNetworks:
     """Tests for reading the machine's own subnets."""
@@ -129,6 +152,25 @@ class TestDirectlyConnectedNetworks:
 
         monkeypatch.setattr(public_address_module, "run_command", fail)
         assert directly_connected_networks(make_config().engine, 30.0) == ()
+
+    def test_the_family_flags_come_from_the_engine_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The families the kernel is asked about are the keys of the
+        # engine mapping of the command line flag: with one family named
+        # in the table the task asks about that one alone.
+        seen: list[str] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _Completed:
+            seen.append(command[2])
+            return _Completed("10.10.0.0/24 dev enp1s0 proto kernel\n")
+
+        monkeypatch.setattr(public_address_module, "run_command", fake_run)
+        engine = replace(
+            make_config().engine, address_family_by_flag={"4": "ipv4"}
+        )
+        assert directly_connected_networks(engine, 30.0) == ("10.10.0.0/24",)
+        assert seen == ["-4"]
 
 
 class TestDefaultRouteAddress:
