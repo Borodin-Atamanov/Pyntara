@@ -3730,6 +3730,30 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("ingest_path_unit_name"),
             "system_metrics_setup.ingest_path_unit_name",
         ),
+        unit_template_file_name=_nonempty_string_field(
+            raw.get("unit_template_file_name"),
+            "system_metrics_setup.unit_template_file_name",
+        ),
+        ingest_unit_template_file_name=_nonempty_string_field(
+            raw.get("ingest_unit_template_file_name"),
+            "system_metrics_setup.ingest_unit_template_file_name",
+        ),
+        ingest_path_template_file_name=_nonempty_string_field(
+            raw.get("ingest_path_template_file_name"),
+            "system_metrics_setup.ingest_path_template_file_name",
+        ),
+        collector_unit_template_file_name=_nonempty_string_field(
+            raw.get("collector_unit_template_file_name"),
+            "system_metrics_setup.collector_unit_template_file_name",
+        ),
+        collector_timer_template_file_name=_nonempty_string_field(
+            raw.get("collector_timer_template_file_name"),
+            "system_metrics_setup.collector_timer_template_file_name",
+        ),
+        commit_command_template_file_name=_nonempty_string_field(
+            raw.get("commit_command_template_file_name"),
+            "system_metrics_setup.commit_command_template_file_name",
+        ),
         systemctl_daemon_reload_command=_placeholder_command_field(
             raw.get("systemctl_daemon_reload_command"),
             "system_metrics_setup.systemctl_daemon_reload_command",

@@ -422,6 +422,29 @@ def _deploy_fixture(
     return fixtures, calls
 
 
+def test_unit_template_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The name of the template the task reads is a config value: another
+    # name in the table is the file the task reads while the shipped name is
+    # absent, so a name spelled in the code would fail here, and the target
+    # machine would fail with it.
+    fixtures, _calls = _deploy_fixture(monkeypatch, tmp_path)
+    task_data = fixtures["repo"] / "task_data" / "system_metrics_setup"
+    (task_data / "system_metrics.service").rename(task_data / "renamed.service")
+    settings = fixtures["config"].system_metrics_setup
+    config = replace(
+        fixtures["config"],
+        system_metrics_setup=replace(
+            settings, unit_template_file_name="renamed.service"
+        ),
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path, config=config))
+    assert result.success is True
+    deployed = fixtures["systemd_dir"] / "system_metrics.service"
+    assert deployed.read_text(encoding="utf-8") == _expected_service_unit(fixtures)
+
+
 def test_deploys_service_ingest_and_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

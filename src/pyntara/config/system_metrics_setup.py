@@ -129,7 +129,12 @@ class SystemMetricsSetupConfig:
     special bits and the command one keeping the permission bits only.
     service_unit_name, ingest_service_unit_name and
     ingest_path_unit_name are the unit file names of the service, the
-    ingest oneshot and the path watcher; systemctl_daemon_reload_command,
+    ingest oneshot and the path watcher, and unit_template_file_name,
+    ingest_unit_template_file_name, ingest_path_template_file_name,
+    collector_unit_template_file_name, collector_timer_template_file_name
+    and commit_command_template_file_name are the templates the task reads
+    from task_data/system_metrics_setup/ of the clone and renders;
+    systemctl_daemon_reload_command,
     systemctl_enable_command, systemctl_restart_command and
     systemctl_start_command carry the calls the task makes on those
     units, the unit name being their {unit_name} placeholder;
@@ -178,6 +183,12 @@ class SystemMetricsSetupConfig:
     service_unit_name: str
     ingest_service_unit_name: str
     ingest_path_unit_name: str
+    unit_template_file_name: str
+    ingest_unit_template_file_name: str
+    ingest_path_template_file_name: str
+    collector_unit_template_file_name: str
+    collector_timer_template_file_name: str
+    commit_command_template_file_name: str
     systemctl_daemon_reload_command: tuple[str, ...]
     systemctl_enable_command: tuple[str, ...]
     systemctl_restart_command: tuple[str, ...]

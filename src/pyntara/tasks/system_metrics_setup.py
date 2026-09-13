@@ -443,33 +443,33 @@ def task(ctx: Context) -> TaskResult:
 
     service_unit = _render_service_unit(
         metrics,
-        template_dir / "system_metrics.service",
+        template_dir / metrics.unit_template_file_name,
         venv_python,
         system_config_path,
     )
     ingest_service_unit = _render_ingest_service_unit(
         metrics,
-        template_dir / "system_metrics-ingest.service",
+        template_dir / metrics.ingest_unit_template_file_name,
         venv_python,
         system_config_path,
     )
     ingest_path_unit = _render_ingest_path_unit(
-        template_dir / "system_metrics-ingest.path", spool_dir
+        template_dir / metrics.ingest_path_template_file_name, spool_dir
     )
     collector_service_unit = _render_collector_service_unit(
         metrics,
-        template_dir / "system_metrics_collector.service",
+        template_dir / metrics.collector_unit_template_file_name,
         venv_python,
         system_config_path,
     )
     collector_timer_unit = _render_collector_timer_unit(
-        template_dir / "system_metrics_collector.timer",
+        template_dir / metrics.collector_timer_template_file_name,
         metrics.collector.boot_delay_seconds,
         metrics.collector.daily_send_time,
         collector_service_name,
     )
     command_content = _render_commit_command(
-        template_dir / "commit_system_metrics.sh",
+        template_dir / metrics.commit_command_template_file_name,
         spool_dir,
         metrics.commit_journal_identifier,
         metrics.spool_temp_prefix,

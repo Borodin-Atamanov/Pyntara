@@ -96,6 +96,16 @@ service_unit_name = "system_metrics.service"
 ingest_service_unit_name = "system_metrics-ingest.service"
 # Name of the ingest path unit that watches the spool directory.
 ingest_path_unit_name = "system_metrics-ingest.path"
+# Names of the unit and command templates the task reads from
+# task_data/system_metrics_setup/ of the clone and renders on the target
+# machine: the long-running service, the ingest oneshot, the ingest path
+# watcher, the report collector, its timer and the generated commit command.
+unit_template_file_name = "system_metrics.service"
+ingest_unit_template_file_name = "system_metrics-ingest.service"
+ingest_path_template_file_name = "system_metrics-ingest.path"
+collector_unit_template_file_name = "system_metrics_collector.service"
+collector_timer_template_file_name = "system_metrics_collector.timer"
+commit_command_template_file_name = "commit_system_metrics.sh"
 # Commands the task runs against the units above: the reload of systemd
 # and the enable, restart and start of a unit, whose name is the
 # {unit_name} placeholder of the template. One shape serves the service,
