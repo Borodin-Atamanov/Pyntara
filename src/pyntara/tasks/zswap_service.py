@@ -96,18 +96,23 @@ def _write_sysfs(path: Path, value: str) -> None:
 
 
 def _render_unit(
-    template_path: Path, target: dict[str, str], paths: dict[str, Path]
+    cfg: ZswapServiceConfig,
+    template_path: Path,
+    target: dict[str, str],
+    paths: dict[str, Path],
 ) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
     One ExecStart line per parameter writes the exact configured value, so
-    the boot service reproduces the install-time configuration. The block
-    is fully expanded here, so the template carries no shell variables of
-    its own and substitute cannot trip on stray dollar signs.
+    the boot service reproduces the install-time configuration. The line
+    template comes from the config, with the value and the attribute path
+    as its placeholders. The block is fully expanded here, so the template
+    carries no shell variables of its own and substitute cannot trip on
+    stray dollar signs.
     """
 
     lines = [
-        f"ExecStart=/bin/sh -c 'echo {value} > {paths[name]}'"
+        cfg.unit_exec_line_template.format(value=value, path=paths[name])
         for name, value in target.items()
     ]
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -199,7 +204,7 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(f"rendering unit template from {template_path}")
     try:
-        content = _render_unit(template_path, target, paths)
+        content = _render_unit(cfg, template_path, target, paths)
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     else:

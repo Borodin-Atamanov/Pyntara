@@ -141,13 +141,14 @@ class LocalProxyPolicy:
         return self.russia_domain_strategy if self.in_russia else self.outside_russia_domain_strategy
 
 
-def parse_vless_link(link: str) -> VlessProfile | None:
+def parse_vless_link(link: str, default_port: int) -> VlessProfile | None:
     """The profile carried by a vless share link, or None.
 
     None means the value cannot produce a working outbound: an empty
     value, another scheme, a missing address or client id, or a REALITY
     link without a public key. A caller reports that as a warning and
     configures no remote outbound instead of writing a broken one.
+    default_port is the configured port of a link that carries none.
     """
 
     candidate = link.strip()
@@ -167,7 +168,7 @@ def parse_vless_link(link: str) -> VlessProfile | None:
         return None
     return VlessProfile(
         address=address,
-        port=parsed.port or 443,
+        port=parsed.port or default_port,
         client_id=client_id,
         security=security,
         fingerprint=(query.get("fp") or [""])[0],

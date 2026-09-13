@@ -187,8 +187,9 @@ def _expected_unit(
     if settings is None:
         settings = make_config().zswap_service
     lines = [
-        f"ExecStart=/bin/sh -c 'echo {target[name]} > "
-        f"{params_dir / name}'"
+        settings.unit_exec_line_template.format(
+            value=target[name], path=params_dir / name
+        )
         for name in settings.parameter_names
     ]
     return UNIT_TEMPLATE.replace("$exec_lines", "\n".join(lines))
@@ -347,6 +348,29 @@ def test_parameter_names_and_directory_come_from_the_config(
         fixtures["params_dir"],
         settings,
     )
+
+
+def test_unit_exec_line_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The proof of the value: another line template in the config is the
+    # ExecStart line of the installed unit, so a machine that repeats the
+    # writes in another way says so in the config.
+    settings = replace(
+        make_config().zswap_service,
+        parameters_dir_path=tmp_path / "fixture" / "parameters",
+        unit_exec_line_template="ExecStart=/bin/sh -c 'echo {value} | tee {path}'",
+    )
+    fixtures = _install_fixtures(
+        tmp_path, current={"enabled": "N"}, settings=settings
+    )
+    _install_fake(monkeypatch, fixtures, enabled=False)
+    ctx = _ctx(tmp_path)
+    ctx = replace(ctx, config=replace(ctx.config, zswap_service=settings))
+    result = zswap_service.task(ctx)
+    assert result.success is True
+    unit = tmp_path / "systemd" / settings.service_unit_name
+    assert "| tee " in unit.read_text(encoding="utf-8")
 
 
 def test_write_failure_is_a_warning(

@@ -551,7 +551,7 @@ def test_main_journals_under_the_configured_collector_identifier(
     configured: list[EngineConfig] = []
     monkeypatch.setattr(metrics_collect, "load_config", lambda path: cfg)
     monkeypatch.setattr(metrics_collect, "configure_journal", configured.append)
-    monkeypatch.setattr(metrics_collect, "_acquire_lock", lambda path: object())
+    monkeypatch.setattr(metrics_collect, "_acquire_lock", lambda path, error_priority: object())
     monkeypatch.setattr(metrics_collect, "collect_until_ready", lambda cfg: {})
     monkeypatch.setattr(metrics_collect, "_commit_report", lambda cfg, report: True)
     monkeypatch.setattr(

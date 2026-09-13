@@ -19,8 +19,10 @@ class ZswapServiceConfig:
     max_pool_percent and accept_threshold_percent are the pool ceiling and
     the re-accept threshold as percentages of RAM and of the pool limit.
     unit_template_file_name is the oneshot unit template under
-    task_data/zswap_service/ of the clone and service_unit_name the name of
-    the systemd oneshot service that repeats the writes at boot.
+    task_data/zswap_service/ of the clone, unit_exec_line_template the
+    unit line that repeats one parameter write at boot with the value and
+    the attribute path as its placeholders, and service_unit_name the name
+    of the systemd oneshot service that repeats the writes at boot.
     """
 
     enabled: bool
@@ -31,6 +33,7 @@ class ZswapServiceConfig:
     parameters_dir_path: Path
     parameter_names: tuple[str, ...]
     unit_template_file_name: str
+    unit_exec_line_template: str
     service_unit_name: str
     systemctl_daemon_reload_command: tuple[str, ...]
     systemctl_enable_command: tuple[str, ...]

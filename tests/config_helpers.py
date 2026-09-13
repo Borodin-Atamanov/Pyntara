@@ -59,6 +59,7 @@ def base_config() -> str:
         '"{identifier}", "--priority", "{priority}"]\n'
         "root_owner_uid = 0\nroot_owner_gid = 0\n"
         "percent_scale = 100\nbytes_per_kib = 1024\nbytes_per_mib = 1048576\n"
+        "nanoseconds_per_second = 1000000000\n"
         "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
@@ -297,6 +298,8 @@ def base_config() -> str:
         'parameters_dir_path = "/sys/module/zswap/parameters"\n'
         'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]\n'
         'unit_template_file_name = "zswap.service"\n'
+        "unit_exec_line_template = \"ExecStart=/bin/sh -c 'echo {value} > "
+        "{path}'\"\n"
         'service_unit_name = "zswap.service"\n'
         'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
         'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
@@ -486,6 +489,7 @@ def base_config() -> str:
         'share_addr_strategy = "custom"\n'
         'inbound_port = 443\n'
         "route_test_port = 443\n"
+        "remote_link_default_port = 443\n"
         'inbound_remark = "universal"\n'
         'reality_dest = "www.google.com:443"\n'
         'reality_server_names = ["www.google.com"]\n'

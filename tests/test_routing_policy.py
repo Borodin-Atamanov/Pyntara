@@ -22,6 +22,8 @@ from pyntara.routing_policy import (
     parse_vless_link,
 )
 
+DEFAULT_PORT = 443
+
 LINK = (
     "vless://client-id@203.0.113.9:443?fp=chrome&pbk=PUBLICKEY&security=reality"
     "&sid=6ba85179e30d4fc2&sni=www.google.com&spx=%2Fspider&type=tcp"
@@ -32,7 +34,7 @@ LINK = (
 def make_profile() -> VlessProfile:
     """The profile of the test link, which the parser always accepts."""
 
-    profile = parse_vless_link(LINK)
+    profile = parse_vless_link(LINK, DEFAULT_PORT)
     assert profile is not None
     return profile
 
@@ -139,7 +141,7 @@ class TestParseVlessLink:
     """Tests for reading a share link."""
 
     def test_reads_every_field_of_a_full_link(self) -> None:
-        profile = parse_vless_link(LINK)
+        profile = parse_vless_link(LINK, DEFAULT_PORT)
         assert profile == VlessProfile(
             address="203.0.113.9",
             port=443,
@@ -156,7 +158,8 @@ class TestParseVlessLink:
 
     def test_a_link_without_the_spider_path_still_works(self) -> None:
         profile = parse_vless_link(
-            "vless://id@host.example:8443?security=reality&pbk=KEY"
+            "vless://id@host.example:8443?security=reality&pbk=KEY",
+            DEFAULT_PORT,
         )
         assert profile is not None
         assert profile.spider_x == ""
@@ -164,14 +167,16 @@ class TestParseVlessLink:
 
     def test_an_ipv6_host_in_brackets_is_read(self) -> None:
         profile = parse_vless_link(
-            "vless://id@[2001:db8::1]:443?security=reality&pbk=KEY"
+            "vless://id@[2001:db8::1]:443?security=reality&pbk=KEY",
+            DEFAULT_PORT,
         )
         assert profile is not None
         assert profile.address == "2001:db8::1"
 
     def test_a_flow_is_kept(self) -> None:
         profile = parse_vless_link(
-            "vless://id@host:443?security=reality&pbk=KEY&flow=xtls-rprx-vision"
+            "vless://id@host:443?security=reality&pbk=KEY&flow=xtls-rprx-vision",
+            DEFAULT_PORT,
         )
         assert profile is not None
         assert profile.flow == "xtls-rprx-vision"
@@ -194,16 +199,26 @@ class TestParseVlessLink:
         # A REALITY link without a public key would produce a client that
         # cannot connect, so it is rejected instead of written.
         if link.startswith("vless://id@host:443?security=none"):
-            assert parse_vless_link(link) is not None
+            assert parse_vless_link(link, DEFAULT_PORT) is not None
             return
-        assert parse_vless_link(link) is None
+        assert parse_vless_link(link, DEFAULT_PORT) is None
+
+    def test_a_link_without_a_port_takes_the_configured_default(self) -> None:
+        # The proof of the value: a link that carries no port reaches the
+        # port the config names, so the operator decides what such a link
+        # means without a code change.
+        profile = parse_vless_link(
+            "vless://id@host.example?security=reality&pbk=KEY", 8443
+        )
+        assert profile is not None
+        assert profile.port == 8443
 
 
 class TestOutboundBuilders:
     """Tests for the outbounds the policy owns."""
 
     def test_the_remote_outbound_carries_the_reality_data(self) -> None:
-        profile = parse_vless_link(LINK)
+        profile = parse_vless_link(LINK, DEFAULT_PORT)
         assert profile is not None
         outbound = build_remote_outbound("pyntara-remote", profile)
         assert outbound["tag"] == "pyntara-remote"
@@ -220,7 +235,9 @@ class TestOutboundBuilders:
         assert stream["realitySettings"]["spiderX"] == "/spider"
 
     def test_a_plain_tls_link_carries_no_reality_block(self) -> None:
-        profile = parse_vless_link("vless://id@host:443?security=tls&sni=host")
+        profile = parse_vless_link(
+            "vless://id@host:443?security=tls&sni=host", DEFAULT_PORT
+        )
         assert profile is not None
         outbound = build_remote_outbound("remote", profile)
         stream = outbound["streamSettings"]

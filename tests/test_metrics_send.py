@@ -19,6 +19,7 @@ import pytest
 from pykeepass import PyKeePass, create_database
 from support import FakeProc, make_config
 
+from pyntara import metrics_send
 from pyntara.config import Config
 from pyntara.metrics_send import dispatch_entries, send_google_queue
 
@@ -262,6 +263,24 @@ def test_send_skips_empty_and_oversized_entries(
     assert empty.exists()
     assert big.exists()
     assert not good.exists()
+
+
+def test_skipped_entry_is_journaled_at_the_configured_level(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The proof of the value: another error level in the [engine] table is
+    # the level of the line that reports a skipped queue entry.
+    levels: list[int | None] = []
+    monkeypatch.setattr(
+        metrics_send,
+        "_log",
+        lambda message, **kwargs: levels.append(kwargs.get("priority")),
+    )
+    cfg = _send_config(tmp_path, error_priority=5)
+    channel = tmp_path / "metrics" / "google_script"
+    _make_entry(channel, "empty.txt", "", time.time())
+    send_google_queue(cfg)
+    assert levels == [5]
 
 
 def test_send_oldest_first_uploads_in_commit_order(

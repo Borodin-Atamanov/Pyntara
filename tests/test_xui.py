@@ -176,6 +176,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "share_addr_strategy": "custom",
         "inbound_port": 443,
         "route_test_port": 443,
+        "remote_link_default_port": 443,
         "inbound_remark": "universal",
         "reality_dest": "www.google.com:443",
         "reality_server_names": ("www.google.com",),

@@ -1143,6 +1143,10 @@ def _engine_table(raw: object) -> EngineConfig:
         ),
         bytes_per_kib=bytes_per_kib,
         bytes_per_mib=bytes_per_mib,
+        nanoseconds_per_second=_positive_int_field(
+            raw.get("nanoseconds_per_second"),
+            "engine.nanoseconds_per_second",
+        ),
         error_priority=error_priority,
         progress_priority=progress_priority,
         process_check_timeout_seconds=_int_field(
@@ -4693,6 +4697,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             raw.get("route_test_port"),
             "three_x_ui_xray_setup.route_test_port",
         ),
+        remote_link_default_port=_port_field(
+            raw.get("remote_link_default_port"),
+            "three_x_ui_xray_setup.remote_link_default_port",
+        ),
         inbound_remark=inbound_remark,
         reality_dest=reality_dest,
         reality_server_names=reality_server_names,
@@ -6086,6 +6094,11 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
         unit_template_file_name=_nonempty_string_field(
             raw.get("unit_template_file_name"),
             "zswap_service.unit_template_file_name",
+        ),
+        unit_exec_line_template=_placeholder_text_field(
+            raw.get("unit_exec_line_template"),
+            "zswap_service.unit_exec_line_template",
+            ("{value}", "{path}"),
         ),
         systemctl_daemon_reload_command=_string_list(
             raw.get("systemctl_daemon_reload_command"),

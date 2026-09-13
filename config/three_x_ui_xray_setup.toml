@@ -171,6 +171,8 @@ inbound_port = 443
 # nothing listens on, so the answer is the outbound the policy chose and
 # never a real connection.
 route_test_port = 443
+# Port of a remote share link that carries none. Optional, default 443.
+remote_link_default_port = 443
 # Remark for the inbound. Optional, default "universal".
 inbound_remark = "universal"
 # REALITY destination address:port for TLS handshake mimicry.

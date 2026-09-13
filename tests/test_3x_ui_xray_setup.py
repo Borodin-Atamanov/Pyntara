@@ -3606,7 +3606,10 @@ class TestRoutingPolicyStage:
         assert writes == []
 
     def _profile(self) -> routing_policy.VlessProfile:
-        profile = routing_policy.parse_vless_link(PROFILE_LINK)
+        profile = routing_policy.parse_vless_link(
+            PROFILE_LINK,
+            make_config().three_x_ui_xray_setup.remote_link_default_port,
+        )
         assert profile is not None
         return profile
 

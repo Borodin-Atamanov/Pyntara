@@ -41,11 +41,31 @@ def configure_journal(engine: EngineConfig | None) -> None:
     the config itself: the composition root calls this once after the load,
     and so does the entry point of every deployed service. Passing None
     keeps the console path and forwards nothing to the journal, which is
-    what a test run asks for.
+    what a test run asks for. A table that replaces another also closes the
+    process the previous one started, because the journal tool fixes the
+    identifier and the priority at process start, so a reused process would
+    route the next messages under the old vocabulary.
     """
 
     global _journal_engine
+    _close_shared_journal()
     _journal_engine = engine
+
+
+def _close_shared_journal() -> None:
+    """Close the reused journal process, if one is running."""
+
+    global _journal_proc
+    proc = _journal_proc
+    _journal_proc = None
+    if proc is None:
+        return
+    stdin = proc.stdin
+    if stdin is not None:
+        try:
+            stdin.close()
+        except OSError:
+            pass
 
 
 def _rendered_command(
@@ -70,23 +90,22 @@ def _rendered_command(
 _last_log_time = 0.0
 
 
-def _write_to_shared_journal(text: str, engine: EngineConfig) -> None:
+def _write_to_shared_journal(text: str, command: list[str]) -> None:
     """Write one line through the reused journal process, best effort.
 
-    The shared process writes informational entries (syslog level 6),
-    used when a message carries the explicit informational priority. The
-    command comes from the engine table, so a machine with another journal
-    tool names it there. A missing executable or a failed write never stops
-    the run: without a journal the console and the install log keep working
-    as before.
+    The shared process writes the progress entries, the level the calls
+    of the run carry by default, and it is started with the priority the
+    [engine] table names for them, because a journal tool fixes the
+    priority at process start. A machine whose command carries no
+    priority placeholder writes with the tool default; a missing
+    executable or a failed write never stops the run: without a journal
+    the console and the install log keep working as before.
     """
 
     global _journal_proc
     if _journal_proc is None or _journal_proc.poll() is not None:
-        command = _rendered_command(
-            engine.journal_command,
-            {"identifier": engine.journal_identifier},
-        )
+        if not command:
+            return
         executable = shutil.which(command[0])
         if executable is None:
             return
@@ -156,34 +175,62 @@ def _write_to_priority_journal(
         return
 
 
-def _send_to_journal(message: str, priority: int = 6) -> None:
+def _shared_journal_command(engine: EngineConfig) -> list[str]:
+    """The command that writes the progress entries of the run.
+
+    The progress level is a config value, so the shared process is
+    started with the priority command of the table and the configured
+    level; a table whose priority command is empty falls back to the
+    plain journal command, which writes with the default level of the
+    tool, so an incomplete config still reaches the journal.
+    """
+
+    values = {
+        "identifier": engine.journal_identifier,
+        "priority": str(engine.progress_priority),
+    }
+    if engine.journal_priority_command:
+        return _rendered_command(engine.journal_priority_command, values)
+    if engine.journal_command:
+        return _rendered_command(engine.journal_command, values)
+    return []
+
+
+def _send_to_journal(message: str, priority: int | None = None) -> None:
     """Duplicate one message into the system journal, best effort.
 
-    The journal vocabulary (the identifier and the command) comes from the
-    [engine] table, which the composition root and the entry point of every
-    deployed service hand over once through configure_journal after the
-    config is loaded. A logger nobody configured, and one whose engine names
-    no journal command, forwards nothing: the console and the install log
-    keep working, and a component started outside the engine never guesses a
-    name for itself. The priority is the
-    syslog level as a number, 6 (informational) by default, and is passed
-    to the journal tool as a number, never embedded in the message text.
-    Informational messages flow through a reused process; a different
-    priority spawns a short-lived process, because the priority is fixed
-    at process start.
+    The journal vocabulary (the identifier and the commands) comes from
+    the [engine] table, which the composition root and the entry point of
+    every deployed service hand over once through configure_journal after
+    the config is loaded. A logger nobody configured, and one whose engine
+    names no journal command, forwards nothing: the console and the
+    install log keep working, and a component started outside the engine
+    never guesses a name for itself. The priority is the syslog level as a
+    number and is passed to the journal tool as a number, never embedded
+    in the message text; a call that names none carries the progress level
+    of the config, which is what the majority of the messages of a run
+    are. Messages of the progress level flow through a reused process, a
+    message of another level spawns a short-lived one, because the
+    priority is fixed at process start.
     """
 
     engine = _journal_engine
-    if engine is None or not engine.journal_command:
+    if engine is None:
         return
-    text = _ANSI_RE.sub("", message) + "\n"
-    if priority == 6:
-        _write_to_shared_journal(text, engine)
+    level = engine.progress_priority if priority is None else priority
+    if level == engine.progress_priority:
+        _write_to_shared_journal(
+            _ANSI_RE.sub("", message) + "\n", _shared_journal_command(engine)
+        )
         return
-    _write_to_priority_journal(text, priority, engine)
+    if not engine.journal_priority_command:
+        return
+    _write_to_priority_journal(
+        _ANSI_RE.sub("", message) + "\n", level, engine
+    )
 
 
-def log_progress(message: str, *, priority: int = 6) -> None:
+def log_progress(message: str, *, priority: int | None = None) -> None:
     """Print one progress line of the calling task, flushed to stdout.
 
     The task name in the prefix comes from the calling module: one task
@@ -213,11 +260,12 @@ def log_progress(message: str, *, priority: int = 6) -> None:
     _send_to_journal(f"{task_name}: {message}", priority=priority)
 
 
-def log_task_start(name: str, *, priority: int = 6) -> None:
+def log_task_start(name: str, *, priority: int | None = None) -> None:
     """Announce a task: empty line, colored banner, journal line.
 
     The console banner keeps its colors; the journal gets plain text at
-    the given syslog priority, informational by default.
+    the given syslog priority, the progress level of the config by
+    default.
     """
 
     print()
@@ -231,7 +279,7 @@ def log_result_line(
     *,
     duration_seconds: float | None = None,
     to_journal: bool = True,
-    priority: int = 6,
+    priority: int | None = None,
 ) -> None:
     """Print one task outcome line immediately after the task finishes.
 
@@ -276,7 +324,7 @@ def log_event(
     *,
     to_stderr: bool = False,
     to_journal: bool = True,
-    priority: int = 6,
+    priority: int | None = None,
 ) -> None:
     """Print one status line to the console and mirror it to the journal.
 
@@ -292,7 +340,7 @@ def log_event(
         _send_to_journal(message, priority=priority)
 
 
-def log_run_start(command: str, *, priority: int = 6) -> None:
+def log_run_start(command: str, *, priority: int | None = None) -> None:
     """Print the uniform command start line and mirror it to the journal.
 
     The line `  run : <command>` opens every command that runs through
@@ -311,7 +359,7 @@ def log_run_end(
     exit_code: int | None,
     duration_seconds: float,
     *,
-    priority: int = 6,
+    priority: int | None = None,
 ) -> None:
     """Print the uniform command end line and mirror it to the journal.
 

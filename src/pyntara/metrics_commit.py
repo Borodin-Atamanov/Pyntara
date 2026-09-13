@@ -93,14 +93,14 @@ def ingest_spool(cfg: Config) -> None:
         if reason is not None:
             _log(
                 f"ingesting spool entry {entry}: {reason}, removing",
-                priority=3,
+                priority=cfg.engine.error_priority,
             )
             try:
                 entry.unlink(missing_ok=True)
             except OSError as exc:
                 _log(
                     f"ingesting spool entry {entry}: cannot remove it: {exc}",
-                    priority=3,
+                    priority=cfg.engine.error_priority,
                 )
             continue
         _publish_entry(
@@ -110,6 +110,8 @@ def ingest_spool(cfg: Config) -> None:
             metrics.queue_file_mode,
             metrics.queue_file_suffix_length,
             metrics.queue_link_attempts,
+            cfg.engine.nanoseconds_per_second,
+            cfg.engine.error_priority,
         )
 
 
@@ -143,6 +145,8 @@ def _publish_entry(
     file_mode: int,
     suffix_length: int,
     link_attempts: int,
+    nanoseconds_per_second: int,
+    error_priority: int,
 ) -> None:
     """Publish one spool entry into the queue and remove it from the spool.
 
@@ -152,7 +156,8 @@ def _publish_entry(
     the original name plus a random suffix through a hard link and then
     removed from the spool. A queue name collision tries another suffix.
     On any failure the spool entry is left in place so the next ingest
-    run retries it; every successful ingest is journaled.
+    run retries it; every successful ingest is journaled at the progress
+    level and every failure at the error level of the config.
     """
 
     commit_time = entry.stat().st_mtime
@@ -160,7 +165,7 @@ def _publish_entry(
     try:
         shutil.copy2(entry, temp_path)
         os.chmod(temp_path, file_mode)
-        commit_time_ns = int(commit_time * 1_000_000_000)
+        commit_time_ns = int(commit_time * nanoseconds_per_second)
         os.utime(temp_path, ns=(commit_time_ns, commit_time_ns))
         for _ in range(link_attempts):
             queue_name = build_queue_name(entry.name, _random_suffix(suffix_length))
@@ -178,12 +183,12 @@ def _publish_entry(
         _log(
             f"ingesting spool entry {entry}: cannot allocate a unique queue "
             f"name after {link_attempts} attempts, leaving it",
-            priority=3,
+            priority=error_priority,
         )
     except OSError as exc:
         _log(
             f"ingesting spool entry {entry}: failed: {exc}, leaving it",
-            priority=3,
+            priority=error_priority,
         )
     finally:
         temp_path.unlink(missing_ok=True)

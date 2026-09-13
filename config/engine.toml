@@ -161,6 +161,7 @@ root_owner_gid = 0
 percent_scale = 100
 bytes_per_kib = 1024
 bytes_per_mib = 1048576
+nanoseconds_per_second = 1000000000
 # Syslog priority of a serious failure, 0 to 7.
 error_priority = 3
 # Syslog priority of task progress actions, 0 to 7. Debug level keeps the

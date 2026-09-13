@@ -25,16 +25,26 @@ from pyntara import logger
 from pyntara.models import TaskResult
 
 
-def _use_identifier(identifier: str) -> None:
+def _use_identifier(
+    identifier: str, *, progress_priority: int | None = None
+) -> None:
     """Write the journal with one identifier for the current test.
 
     The logger receives the whole engine table, exactly as the composition
     root and the deployed services hand it over: the journal command of the
     table stays the configured one and only the identifier is replaced, so
-    the test exercises the real rendering path.
+    the test exercises the real rendering path. progress_priority replaces
+    the configured progress level, so a test can prove that the value of
+    the config is the level of a line that names none.
     """
 
-    logger.configure_journal(make_config(journal_identifier=identifier).engine)
+    if progress_priority is None:
+        engine = make_config(journal_identifier=identifier).engine
+    else:
+        engine = make_config(
+            journal_identifier=identifier, progress_priority=progress_priority
+        ).engine
+    logger.configure_journal(engine)
 
 
 def _close_journal_proc() -> None:
@@ -248,19 +258,39 @@ def test_log_event_mirrors_status_line(journal_available: bool) -> None:
     assert _wait_for(identifier, marker)
 
 
-def test_log_event_default_priority_is_informational(
+def test_log_event_default_priority_comes_from_the_config(
     journal_available: bool,
 ) -> None:
-    # Without an explicit priority the journal entry must be informational
-    # (syslog level 6), the default for messages inside tasks.
+    # A call that names no priority is journaled at the progress level of
+    # the [engine] table, so an operator can silence or detail the masses
+    # of progress lines without touching the code.
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("info-priority")
     marker = f"info-{uuid.uuid4().hex[:8]}"
-    _use_identifier(identifier)
+    engine = make_config().engine
+    _use_identifier(identifier, progress_priority=engine.progress_priority)
     logger.log_event(marker)
     assert _wait_for(identifier, marker)
-    assert _read_journal_priority(identifier, marker) == "6"
+    assert (
+        _read_journal_priority(identifier, marker)
+        == str(engine.progress_priority)
+    )
+
+
+def test_another_progress_priority_changes_the_default_level(
+    journal_available: bool,
+) -> None:
+    # The proof of the value: another progress level in the config is the
+    # level of a message whose call names none.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    identifier = _new_identifier("progress-priority")
+    marker = f"progress-{uuid.uuid4().hex[:8]}"
+    _use_identifier(identifier, progress_priority=5)
+    logger.log_event(marker)
+    assert _wait_for(identifier, marker)
+    assert _read_journal_priority(identifier, marker) == "5"
 
 
 def test_log_event_explicit_priority_reaches_the_journal(
@@ -419,9 +449,30 @@ def test_empty_journal_command_forwards_nothing() -> None:
     # the console and the install log keep working as before. The missing
     # process is the deterministic proof that nothing was sent.
     engine = make_config().engine
-    logger.configure_journal(replace(engine, journal_command=()))
+    logger.configure_journal(
+        replace(engine, journal_command=(), journal_priority_command=())
+    )
     logger.log_event("must not reach the journal")
     assert logger._journal_proc is None
+
+
+def test_priority_command_covers_the_progress_lines_alone(
+    journal_available: bool,
+) -> None:
+    # A table whose plain journal command is empty still reaches the
+    # journal, because the progress level is written by the command that
+    # carries the priority, and that command is the one the level needs.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    identifier = _new_identifier("only-priority")
+    marker = f"only-priority-{uuid.uuid4().hex[:8]}"
+    engine = replace(make_config(journal_identifier=identifier).engine, journal_command=())
+    logger.configure_journal(engine)
+    logger.log_event(marker)
+    assert _wait_for(identifier, marker)
+    assert _read_journal_priority(identifier, marker) == str(
+        engine.progress_priority
+    )
 
 
 def test_missing_systemd_cat_is_silent(

@@ -272,13 +272,14 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
     return True
 
 
-def _acquire_lock(path: Path) -> TextIO | None:
+def _acquire_lock(path: Path, error_priority: int) -> TextIO | None:
     """Take the non-blocking exclusive lock, or None when it is held.
 
     A missing parent directory is created. An unopenable lock file is an
-    error: the collector cannot guarantee single-instance semantics and
-    exits loudly. A held lock is not an error: the running instance will
-    commit its own report, so the second instance exits quietly.
+    error at the configured error priority: the collector cannot
+    guarantee single-instance semantics and exits loudly. A held lock is
+    not an error: the running instance will commit its own report, so the
+    second instance exits quietly.
     """
 
     try:
@@ -287,7 +288,10 @@ def _acquire_lock(path: Path) -> TextIO | None:
         # scoped to a with block; the caller closes it.
         handle = open(path, "a+", encoding="utf-8")  # noqa: SIM115
     except OSError as exc:
-        _log(f"collecting report: cannot open lock {path}: {exc}", priority=3)
+        _log(
+            f"collecting report: cannot open lock {path}: {exc}",
+            priority=error_priority,
+        )
         raise SystemExit(1)
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -332,7 +336,9 @@ def main() -> None:
         print(f"error: the collector cannot run: {absent}", file=sys.stderr)
         return
     try:
-        lock = _acquire_lock(collector.lock_file_path)
+        lock = _acquire_lock(
+            collector.lock_file_path, cfg.engine.error_priority
+        )
         if lock is None:
             _log("another collector instance is running, exiting")
             return

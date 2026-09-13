@@ -1858,7 +1858,9 @@ def _remote_profile(
             f"no vless link in {cfg.client_profile_entry_title} of {path.name}: "
             "the local proxy is not configured"
         )
-    profile = routing_policy.parse_vless_link(link)
+    profile = routing_policy.parse_vless_link(
+        link, cfg.remote_link_default_port
+    )
     if profile is None:
         return None, (
             f"the url of {cfg.client_profile_entry_title} is not a usable "

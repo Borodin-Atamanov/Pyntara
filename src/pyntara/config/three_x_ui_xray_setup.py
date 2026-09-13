@@ -58,9 +58,10 @@ class ThreeXuiXraySetupConfig:
     the policy sends through the remote server, queried on a machine in
     Russia, and proxy_check_timeout_seconds bounds one such request.
     route_test_port is the port the routing check knocks on for every
-    destination class, and private_ipv4_networks are the CIDR networks
-    that count as private when the task asks whether this machine sits
-    behind NAT.
+    destination class, remote_link_default_port is the port of a remote
+    share link that carries none, and private_ipv4_networks are the CIDR
+    networks that count as private when the task asks whether this machine
+    sits behind NAT.
 
     The vocabulary of the panel itself is configured next to the values
     it is asked for: panel_inbound_protocol is the protocol of the local
@@ -136,6 +137,7 @@ class ThreeXuiXraySetupConfig:
     share_addr_strategy: str
     inbound_port: int
     route_test_port: int
+    remote_link_default_port: int
     inbound_remark: str
     reality_dest: str
     reality_server_names: tuple[str, ...]

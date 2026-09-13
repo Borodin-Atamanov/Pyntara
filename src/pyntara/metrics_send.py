@@ -67,7 +67,7 @@ def dispatch_entries(cfg: Config) -> None:
                 _log(
                     f"dispatching {entry.name} into {channel}: failed: {exc}, "
                     "keeping it",
-                    priority=3,
+                    priority=cfg.engine.error_priority,
                 )
                 for created in linked:
                     created.unlink(missing_ok=True)
@@ -109,7 +109,9 @@ def send_google_queue(
     entries = [
         entry
         for entry in _ordered_entries(channel, metrics.send_order)
-        if _entry_uploadable(entry, metrics.max_queue_file_size_bytes)
+        if _entry_uploadable(
+            entry, metrics.max_queue_file_size_bytes, cfg.engine.error_priority
+        )
     ]
     if not entries:
         return 0, 0
@@ -153,7 +155,7 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
         _log(
             f"google script channel: entry {title!r} not found "
             "in the runtime vault",
-            priority=3,
+            priority=cfg.engine.error_priority,
         )
         return None
     url = (entry.url or "").strip()
@@ -162,7 +164,7 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
         _log(
             f"google script channel: entry {title!r} has an "
             "empty url or password",
-            priority=3,
+            priority=cfg.engine.error_priority,
         )
         return None
     return url, key
@@ -185,34 +187,41 @@ def _ordered_entries(channel: Path, send_order: str) -> list[Path]:
     return entries
 
 
-def _entry_uploadable(entry: Path, limit: int) -> bool:
+def _entry_uploadable(entry: Path, limit: int, error_priority: int) -> bool:
     """True when the entry is a regular non-empty file within the limit.
 
     The sender duplicates the ingest checks as a second line of defense
     (docs/spec/system-metrics.md, section Queue rules): a rejected entry
-    is journaled and skipped, never uploaded.
+    is journaled at the configured error priority and skipped, never
+    uploaded.
     """
 
     try:
         entry_stat = entry.stat()
     except OSError as exc:
-        _log(f"google script channel: cannot stat {entry}: {exc}", priority=3)
+        _log(
+            f"google script channel: cannot stat {entry}: {exc}",
+            priority=error_priority,
+        )
         return False
     if not stat.S_ISREG(entry_stat.st_mode):
         _log(
             f"google script channel: {entry.name} is not a regular file, "
             "skipping",
-            priority=3,
+            priority=error_priority,
         )
         return False
     if entry_stat.st_size == 0:
-        _log(f"google script channel: {entry.name} is empty, skipping", priority=3)
+        _log(
+            f"google script channel: {entry.name} is empty, skipping",
+            priority=error_priority,
+        )
         return False
     if entry_stat.st_size > limit:
         _log(
             f"google script channel: {entry.name} is {entry_stat.st_size} "
             f"bytes, larger than the limit of {limit} bytes, skipping",
-            priority=3,
+            priority=error_priority,
         )
         return False
     return True
@@ -246,10 +255,14 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     """
 
     metrics = cfg.system_metrics_setup
+    error_priority = cfg.engine.error_priority
     try:
         content = entry.read_bytes()
     except OSError as exc:
-        _log(f"google script channel: cannot read {entry}: {exc}", priority=3)
+        _log(
+            f"google script channel: cannot read {entry}: {exc}",
+            priority=error_priority,
+        )
         return False
     data = base64.b64encode(content).decode("ascii")
     name = restore_original_name(entry.name, metrics.queue_file_suffix_length)
@@ -272,13 +285,16 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
             log_command=False,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        _log(f"google script channel: sending {entry.name} failed: {exc}", priority=3)
+        _log(
+            f"google script channel: sending {entry.name} failed: {exc}",
+            priority=error_priority,
+        )
         return False
     if result.returncode != 0:
         _log(
             f"google script channel: sending {entry.name} failed: curl exited "
             f"{result.returncode}: {(result.stderr or '').strip()}",
-            priority=3,
+            priority=error_priority,
         )
         return False
     output = (result.stdout or "").strip()
@@ -286,7 +302,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         _log(
             f"google script channel: sending {entry.name} failed: the web app "
             f"answered: {output}",
-            priority=3,
+            priority=error_priority,
         )
         return False
     sent_path = sent / entry.name
@@ -296,7 +312,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         _log(
             f"google script channel: sent {entry.name} but cannot move it to "
             f"{sent_path}: {exc}",
-            priority=3,
+            priority=error_priority,
         )
         return False
     _log(f"google script channel: sent {entry.name}")

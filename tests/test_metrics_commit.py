@@ -14,8 +14,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from support import make_config
 
+from pyntara import metrics_commit
 from pyntara.config import Config
 from pyntara.metrics_commit import (
     build_queue_name,
@@ -127,6 +129,22 @@ def test_entry_mtime_is_commit_time(tmp_path: Path) -> None:
     assert abs(entry_mtime - old) < 2
 
 
+def test_commit_time_uses_the_configured_nanosecond_factor(
+    tmp_path: Path,
+) -> None:
+    # The proof of the value: the factor that turns the commit time into
+    # the unit the kernel takes is a config value, so another factor is
+    # the modification time the entry receives.
+    cfg = _spool_config(tmp_path, nanoseconds_per_second=1_000_000)
+    entry = _spool_file(tmp_path, "factor.txt", "x")
+    commit_time = 1_700_000_000.25
+    os.utime(entry, (commit_time, commit_time))
+    ingest_spool(cfg)
+    committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
+    expected = int(commit_time * 1_000_000)
+    assert abs(os.stat(committed).st_mtime_ns - expected) < 1_000_000
+
+
 def test_temp_prefix_entries_are_skipped(tmp_path: Path) -> None:
     # The commit command temporaries carry the spool_temp_prefix and are
     # never ingested; a real entry is moved alongside them.
@@ -149,6 +167,23 @@ def test_empty_file_is_rejected_and_removed(tmp_path: Path) -> None:
     outbox = tmp_path / "metrics" / OUTBOX
     assert not outbox.exists() or not any(outbox.iterdir())
     assert not entry.exists()
+
+
+def test_rejected_entry_is_journaled_at_the_configured_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The proof of the value: another error level in the [engine] table is
+    # the level of the line that reports a rejected spool entry.
+    levels: list[int | None] = []
+    monkeypatch.setattr(
+        metrics_commit,
+        "_log",
+        lambda message, **kwargs: levels.append(kwargs.get("priority")),
+    )
+    cfg = _spool_config(tmp_path, error_priority=5)
+    _spool_file(tmp_path, "empty.txt", "")
+    ingest_spool(cfg)
+    assert levels == [5]
 
 
 def test_oversized_file_is_rejected_and_removed(tmp_path: Path) -> None:

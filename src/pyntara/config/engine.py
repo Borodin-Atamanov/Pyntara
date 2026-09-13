@@ -54,8 +54,10 @@ class EngineConfig:
     process_check_timeout_seconds bounds that query. root_owner_uid and
     root_owner_gid are the owner the shared apply_owner helper gives
     a file the run creates as root. percent_scale is the scale that turns
-    a fraction into a percent, and bytes_per_kib with bytes_per_mib are
-    the byte counts of a kibibyte and of a mebibyte. desktop_username is
+    a fraction into a percent, bytes_per_kib with bytes_per_mib are
+    the byte counts of a kibibyte and of a mebibyte, and
+    nanoseconds_per_second is the count of nanoseconds in a second, the
+    factor that turns a file timestamp into the unit the kernel takes. desktop_username is
     the account
     of the desktop user whose live session the run reaches;
     session_environment_command prints that session's environment, one
@@ -103,6 +105,7 @@ class EngineConfig:
     percent_scale: int
     bytes_per_kib: int
     bytes_per_mib: int
+    nanoseconds_per_second: int
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int
