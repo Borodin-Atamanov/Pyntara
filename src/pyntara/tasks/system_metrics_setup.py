@@ -495,17 +495,17 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_unit_ok = _unit_matches(
         unit_dir, collector_timer_name, collector_timer_unit
     )
-    service_enabled = service_is_enabled(service_name, timeout)
+    service_enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if service_enabled else 'disabled'}"
     )
-    path_enabled = service_is_enabled(ingest_path_name, timeout)
+    path_enabled = service_is_enabled(ctx.config.engine, ingest_path_name, timeout)
     _log(
         f"checking spool watcher {ingest_path_name}: "
         f"{'enabled' if path_enabled else 'disabled'}"
     )
-    timer_enabled = service_is_enabled(collector_timer_name, timeout)
+    timer_enabled = service_is_enabled(ctx.config.engine, collector_timer_name, timeout)
     _log(
         f"checking collector timer {collector_timer_name}: "
         f"{'enabled' if timer_enabled else 'disabled'}"
@@ -613,7 +613,7 @@ def task(ctx: Context) -> TaskResult:
             )
             _log("systemd reloaded")
             for name in (service_name, ingest_path_name, collector_timer_name):
-                if force or not service_is_enabled(name, timeout):
+                if force or not service_is_enabled(ctx.config.engine, name, timeout):
                     _log(f"enabling unit: systemctl enable {name}")
                     run_command(
                         substituted_command(
@@ -623,7 +623,7 @@ def task(ctx: Context) -> TaskResult:
                         timeout=timeout,
                     )
                     _log(f"unit {name} enabled")
-            active = service_is_active(service_name, timeout)
+            active = service_is_active(ctx.config.engine, service_name, timeout)
             if force or (changed and active):
                 _log(f"restarting service: systemctl restart {service_name}")
                 run_command(
@@ -644,7 +644,7 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
                 _log("service started")
-            path_active = service_is_active(ingest_path_name, timeout)
+            path_active = service_is_active(ctx.config.engine, ingest_path_name, timeout)
             if force or not ingest_path_unit_ok or not path_active:
                 if path_active:
                     _log(f"restarting path unit: systemctl restart {ingest_path_name}")
@@ -666,7 +666,7 @@ def task(ctx: Context) -> TaskResult:
                         timeout=timeout,
                     )
                     _log("path unit started")
-            timer_active = service_is_active(collector_timer_name, timeout)
+            timer_active = service_is_active(ctx.config.engine, collector_timer_name, timeout)
             if force or not collector_timer_unit_ok or not timer_active:
                 if timer_active:
                     _log(

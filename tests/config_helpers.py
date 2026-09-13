@@ -87,6 +87,10 @@ def base_config() -> str:
         'apt_update_command = ["apt-get", "update"]\n'
         'apt_install_command = ["apt-get", "install", "-y", "{package}"]\n'
         'apt_noninteractive_environment = { DEBIAN_FRONTEND = "noninteractive" }\n'
+        'systemctl_is_enabled_command = ["systemctl", "is-enabled", "{unit}"]\n'
+        'systemctl_is_active_command = ["systemctl", "is-active", "{unit}"]\n'
+        'systemd_enabled_states = ["enabled", "enabled-runtime"]\n'
+        'systemd_active_state = "active"\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

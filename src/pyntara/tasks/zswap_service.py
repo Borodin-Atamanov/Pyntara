@@ -155,7 +155,7 @@ def task(ctx: Context) -> TaskResult:
         if value is None or _normalize(target[name], value) != target[name]:
             mismatches.append(name)
 
-    enabled = service_is_enabled(service_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if enabled else 'disabled'}"

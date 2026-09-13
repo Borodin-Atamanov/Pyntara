@@ -1233,6 +1233,23 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("apt_noninteractive_environment"),
             "engine.apt_noninteractive_environment",
         ),
+        systemctl_is_enabled_command=_placeholder_command_field(
+            raw.get("systemctl_is_enabled_command"),
+            "engine.systemctl_is_enabled_command",
+            ("{unit}",),
+        ),
+        systemctl_is_active_command=_placeholder_command_field(
+            raw.get("systemctl_is_active_command"),
+            "engine.systemctl_is_active_command",
+            ("{unit}",),
+        ),
+        systemd_enabled_states=_string_list(
+            raw.get("systemd_enabled_states"),
+            "engine.systemd_enabled_states",
+        ),
+        systemd_active_state=_nonempty_string_field(
+            raw.get("systemd_active_state"), "engine.systemd_active_state"
+        ),
     )
 
 

@@ -1170,7 +1170,7 @@ def test_cleanup_leftover_interface_deletes_profile_and_iface(
         nm_profile_exists=True,
     )
     yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.engine, ctx.config.yggdrasil_service_setup, 10
     )
     assert ["nmcli", "connection", "delete", "ygg"] in calls
     assert ["ip", "link", "del", "ygg"] in calls
@@ -1189,7 +1189,7 @@ def test_cleanup_leftover_interface_keeps_running_service(
         nm_profile_exists=True,
     )
     yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.engine, ctx.config.yggdrasil_service_setup, 10
     )
     assert not any(call[0] == "nmcli" for call in calls)
     assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
@@ -1207,7 +1207,7 @@ def test_cleanup_leftover_interface_skipped_without_iface(
         interface_exists=False,
     )
     yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.engine, ctx.config.yggdrasil_service_setup, 10
     )
     assert not any(call[0] == "nmcli" for call in calls)
     assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
@@ -1237,7 +1237,7 @@ def test_cleanup_leftover_interface_without_nmcli(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_subprocess_run)
     yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
+        ctx.config.engine, ctx.config.yggdrasil_service_setup, 10
     )
     assert ["ip", "link", "del", "ygg"] in calls
 
@@ -1317,7 +1317,7 @@ def test_cleanup_leftover_interface_moves_netplan_profile_aside(
         interface_exists=True,
         nm_profile_exists=True,
     )
-    yggdrasil_service_setup._cleanup_leftover_interface(cfg, 10)
+    yggdrasil_service_setup._cleanup_leftover_interface(ctx.config.engine, cfg, 10)
     assert not polluting.exists()
     assert (cfg.netplan_dir_path / (polluting.name + ".bak")).exists()
     assert other.exists()

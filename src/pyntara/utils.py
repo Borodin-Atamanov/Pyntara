@@ -555,43 +555,51 @@ def fetch_urls_by_source(
     )
 
 
-def service_is_enabled(name: str, timeout: float) -> bool:
+def service_is_enabled(engine: EngineConfig, name: str, timeout: float) -> bool:
     """True when the systemd service is enabled for boot.
 
-    systemctl is-enabled reports the boot state; "enabled" is the
-    ordinary persistent state and "enabled-runtime" the state of a unit
-    enabled only for the current boot (for example by a systemd
-    generator), both mean the service starts at boot, every other output
-    (disabled, masked, not-found) is False.
+    systemctl is-enabled reports the boot state; the states that count as
+    enabled come from the engine table, so a unit enabled only for the
+    current boot (for example by a systemd generator) is honoured like a
+    persistent one, and every other output (disabled, masked, not-found)
+    is False. The query itself is a config value as well.
     """
 
     result = run_command(
-        ["systemctl", "is-enabled", name],
+        substituted_command(
+            engine.systemctl_is_enabled_command, {"unit": name}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
     )
-    return result.returncode == 0 and result.stdout.strip() in (
-        "enabled",
-        "enabled-runtime",
+    return (
+        result.returncode == 0
+        and result.stdout.strip() in engine.systemd_enabled_states
     )
 
 
-def service_is_active(name: str, timeout: float) -> bool:
+def service_is_active(engine: EngineConfig, name: str, timeout: float) -> bool:
     """True when the systemd service is currently running.
 
-    systemctl is-active reports the runtime state; "active" is the only
-    state that means the service is running, every other output (inactive,
-    failed, activating) is False.
+    systemctl is-active reports the runtime state; the state that means
+    the service runs comes from the engine table, every other output
+    (inactive, failed, activating) is False. The query itself is a config
+    value as well.
     """
 
     result = run_command(
-        ["systemctl", "is-active", name],
+        substituted_command(
+            engine.systemctl_is_active_command, {"unit": name}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
     )
-    return result.returncode == 0 and result.stdout.strip() == "active"
+    return (
+        result.returncode == 0
+        and result.stdout.strip() == engine.systemd_active_state
+    )
 
 
 def port_listener_pid(port: int, timeout: float) -> int | None:

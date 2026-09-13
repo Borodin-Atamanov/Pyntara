@@ -512,8 +512,8 @@ def task(ctx: Context) -> TaskResult:
         _reset_identity(cfg)
         changed = True
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
+    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
     if not enabled:
         _log(f"enabling service {cfg.service_unit_name}")
         run_command(

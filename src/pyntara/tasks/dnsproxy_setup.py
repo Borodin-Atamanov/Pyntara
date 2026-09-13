@@ -774,10 +774,12 @@ def _write_resolver_dropin(
     return changed
 
 
-def _wait_active(cfg: DnsproxySetupConfig, timeout: float) -> bool:
+def _wait_active(
+    engine: EngineConfig, cfg: DnsproxySetupConfig, timeout: float
+) -> bool:
     for _ in range(cfg.start_check_attempts):
         time.sleep(cfg.start_check_retry_delay_seconds)
-        if service_is_active(cfg.service_unit_name, timeout):
+        if service_is_active(engine, cfg.service_unit_name, timeout):
             return True
     return False
 
@@ -847,12 +849,12 @@ def task(ctx: Context) -> TaskResult:
             apply_owner(service_path, owner_uid, owner_gid)
             run_command(list(cfg.daemon_reload_command), timeout=timeout)
             changed = True
-        active = service_is_active(cfg.service_unit_name, timeout)
+        active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
         if not active:
             error = _free_listen_port(cfg, timeout, progress_priority)
             if error is not None:
                 return TaskResult(success=False, changed=changed, error=error)
-        if not service_is_enabled(cfg.service_unit_name, timeout):
+        if not service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout):
             run_command(
                 substituted_command(
                     cfg.service_enable_command,
@@ -872,7 +874,7 @@ def task(ctx: Context) -> TaskResult:
                 ),
                 timeout=timeout,
             )
-            if not _wait_active(cfg, timeout):
+            if not _wait_active(ctx.config.engine, cfg, timeout):
                 excerpt = _service_log(cfg, timeout)
                 detail = f"; service log: {excerpt}" if excerpt else ""
                 run_command(

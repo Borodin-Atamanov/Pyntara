@@ -320,6 +320,7 @@ def _write_tunnels_config(
 
 
 def _wait_active(
+    engine: EngineConfig,
     service_name: str,
     attempts: int,
     retry_delay_seconds: float,
@@ -333,7 +334,7 @@ def _wait_active(
 
     for _ in range(attempts):
         time.sleep(retry_delay_seconds)
-        if service_is_active(service_name, timeout):
+        if service_is_active(engine, service_name, timeout):
             return True
     return False
 
@@ -513,8 +514,8 @@ def task(ctx: Context) -> TaskResult:
         f"{'matches' if _saved_address_matches(cfg.address_file_path, address) else 'missing or stale'}"
     )
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
+    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -649,6 +650,7 @@ def task(ctx: Context) -> TaskResult:
             f"{cfg.start_check_attempts} checks)"
         )
         if not _wait_active(
+            ctx.config.engine,
             cfg.service_unit_name,
             cfg.start_check_attempts,
             cfg.start_check_retry_delay_seconds,

@@ -169,7 +169,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
     active = _swap_active(cfg, timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
-    enabled = service_is_enabled(service_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if enabled else 'disabled'}"

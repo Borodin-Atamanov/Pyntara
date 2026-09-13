@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import PortForwardingSetupConfig
+from pyntara.config import EngineConfig, PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -110,6 +110,7 @@ def _service_is_failed(
 
 
 def _started_ok(
+    engine: EngineConfig,
     cfg: PortForwardingSetupConfig,
     service_name: str,
     timeout: float,
@@ -124,7 +125,7 @@ def _started_ok(
     """
 
     for _ in range(cfg.start_check_attempts):
-        if service_is_active(service_name, timeout):
+        if service_is_active(engine, service_name, timeout):
             return True
         if _service_is_failed(
             cfg.systemctl_is_failed_command, service_name, timeout
@@ -174,7 +175,7 @@ def task(ctx: Context) -> TaskResult:
     unit_dir = ctx.config.engine.systemd_unit_dir
     unit_ok = _unit_matches(unit_dir, service_name, unit)
     _log(f"checking unit {service_name}: {'ok' if unit_ok else 'missing or stale'}")
-    enabled = service_is_enabled(service_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
 
     if not force and unit_ok and enabled:
@@ -247,7 +248,7 @@ def task(ctx: Context) -> TaskResult:
             error=f"cannot start {service_name}: {exc}",
         )
     _log(f"service {service_name} started")
-    if not _started_ok(pf, service_name, timeout):
+    if not _started_ok(ctx.config.engine, pf, service_name, timeout):
         return TaskResult(
             success=False,
             changed=changed,

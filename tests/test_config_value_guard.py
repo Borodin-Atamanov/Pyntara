@@ -175,8 +175,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/utils.py": frozenset(
         {
             '["ss", "-tlnp", f"sport = :{port}"],',
-            '["systemctl", "is-active", name],',
-            '["systemctl", "is-enabled", name],',
             '["systemctl", "show", "-p", "MainPID", "--value", service_name],',
             'run_command(["systemctl", "stop", service_unit_name], timeout=timeout)',
         }

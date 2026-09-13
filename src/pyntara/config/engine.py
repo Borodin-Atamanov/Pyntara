@@ -126,3 +126,7 @@ class EngineConfig:
     apt_update_command: tuple[str, ...] = ()
     apt_install_command: tuple[str, ...] = ()
     apt_noninteractive_environment: dict[str, str] = field(default_factory=dict)
+    systemctl_is_enabled_command: tuple[str, ...] = ()
+    systemctl_is_active_command: tuple[str, ...] = ()
+    systemd_enabled_states: tuple[str, ...] = ()
+    systemd_active_state: str = ""

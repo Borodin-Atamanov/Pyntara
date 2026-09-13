@@ -246,3 +246,10 @@ package_status_query_command = ["dpkg-query", "-W", "-f=${{Status}}", "{package}
 apt_update_command = ["apt-get", "update"]
 apt_install_command = ["apt-get", "install", "-y", "{package}"]
 apt_noninteractive_environment = { DEBIAN_FRONTEND = "noninteractive" }
+# The service state queries of the shared helpers: the two systemctl calls
+# and the outputs that count as enabled or running. A derivative that
+# spells a state differently reports it here instead of in the code.
+systemctl_is_enabled_command = ["systemctl", "is-enabled", "{unit}"]
+systemctl_is_active_command = ["systemctl", "is-active", "{unit}"]
+systemd_enabled_states = ["enabled", "enabled-runtime"]
+systemd_active_state = "active"

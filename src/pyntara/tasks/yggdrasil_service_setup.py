@@ -625,7 +625,7 @@ def _ensure_interface_unmanaged(
 
 
 def _cleanup_leftover_interface(
-    cfg: YggdrasilServiceSetupConfig, timeout: float
+    engine: EngineConfig, cfg: YggdrasilServiceSetupConfig, timeout: float
 ) -> None:
     """Remove a stale yggdrasil interface before the service starts.
 
@@ -661,7 +661,7 @@ def _cleanup_leftover_interface(
         exists = False
     if not exists:
         return
-    if service_is_active(cfg.service_unit_name, timeout):
+    if service_is_active(engine, cfg.service_unit_name, timeout):
         return
     _log(
         f"leftover interface {cfg.if_name} without a running service, "
@@ -729,14 +729,16 @@ def _cleanup_leftover_interface(
         pass
 
 
-def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
+def _restart_service(
+    engine: EngineConfig, cfg: YggdrasilServiceSetupConfig, timeout: float
+) -> None:
     """Restart the service, or start it cleanly when it is not running.
 
     The start path cleans a stale leftover interface up first, so a
     crashed previous run never blocks the start with its stale address.
     """
 
-    if service_is_active(cfg.service_unit_name, timeout):
+    if service_is_active(engine, cfg.service_unit_name, timeout):
         run_command(
             substituted_command(
                 cfg.service_restart_command,
@@ -745,7 +747,7 @@ def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
             timeout=timeout,
         )
         return
-    _cleanup_leftover_interface(cfg, timeout)
+    _cleanup_leftover_interface(engine, cfg, timeout)
     run_command(
         substituted_command(
             cfg.service_start_command,
@@ -927,8 +929,8 @@ def task(ctx: Context) -> TaskResult:
     installed_version = _installed_version(cfg, timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
+    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -1052,7 +1054,7 @@ def task(ctx: Context) -> TaskResult:
                 f"starting service {cfg.service_unit_name} with the "
                 "existing configuration"
             )
-            _cleanup_leftover_interface(cfg, timeout)
+            _cleanup_leftover_interface(ctx.config.engine, cfg, timeout)
             try:
                 run_command(
                     substituted_command(
@@ -1069,7 +1071,7 @@ def task(ctx: Context) -> TaskResult:
             f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
         )
         time.sleep(cfg.peer_probe_timeout_seconds)
-        if not service_is_active(cfg.service_unit_name, timeout):
+        if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
             warnings.append(
                 f"service {cfg.service_unit_name} did not become active "
                 "after start"
@@ -1126,11 +1128,11 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
-            _restart_service(cfg, timeout)
+            _restart_service(ctx.config.engine, cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl restart failed: {exc}")
             return done("yggdrasil not configured", True)
-        if not service_is_active(cfg.service_unit_name, timeout):
+        if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
             warnings.append(
                 f"service {cfg.service_unit_name} did not become active "
                 "after restart"
@@ -1184,7 +1186,7 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
-            _restart_service(cfg, timeout)
+            _restart_service(ctx.config.engine, cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl restart failed: {exc}")
             return done("yggdrasil not configured", True)
@@ -1225,7 +1227,7 @@ def task(ctx: Context) -> TaskResult:
         "no batch reached the target; keeping the last tried batch "
         f"({len(last_batch)} peers) in the configuration"
     )
-    if not service_is_active(cfg.service_unit_name, timeout):
+    if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
         warnings.append(
             f"service {cfg.service_unit_name} did not become active "
             "after restart"

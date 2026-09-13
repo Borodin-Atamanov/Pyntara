@@ -409,7 +409,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     active_paths = _active_swap_devices(cfg, timeout)
-    enabled = service_is_enabled(service_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     existing_count = _existing_device_count()
     _log(f"checking existing zram devices: {existing_count}")
     _log(f"checking active swap devices: {len(active_paths)}")

@@ -292,6 +292,7 @@ def _ensure_package(
 
 
 def _wait_active(
+    engine: EngineConfig,
     service_name: str,
     attempts: int,
     retry_delay_seconds: float,
@@ -305,7 +306,7 @@ def _wait_active(
 
     for _ in range(attempts):
         time.sleep(retry_delay_seconds)
-        if service_is_active(service_name, timeout):
+        if service_is_active(engine, service_name, timeout):
             return True
     return False
 
@@ -444,8 +445,12 @@ def task(ctx: Context) -> TaskResult:
             return TaskResult(success=False, changed=changed, error=verify)
         _log("effective configuration verified through sshd -T")
 
-    socket_enabled = service_is_enabled(cfg.socket_unit_name, timeout)
-    socket_active = service_is_active(cfg.socket_unit_name, timeout)
+    socket_enabled = service_is_enabled(
+        ctx.config.engine, cfg.socket_unit_name, timeout
+    )
+    socket_active = service_is_active(
+        ctx.config.engine, cfg.socket_unit_name, timeout
+    )
     socket_needs_disable = socket_enabled or socket_active
     if socket_enabled:
         _log(f"checking socket {cfg.socket_unit_name}: enabled")
@@ -454,8 +459,8 @@ def task(ctx: Context) -> TaskResult:
     else:
         _log(f"checking socket {cfg.socket_unit_name}: disabled")
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
+    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -577,6 +582,7 @@ def task(ctx: Context) -> TaskResult:
             )
         _log("service started")
         if not _wait_active(
+            ctx.config.engine,
             cfg.service_unit_name,
             cfg.start_check_attempts,
             cfg.start_check_retry_delay_seconds,

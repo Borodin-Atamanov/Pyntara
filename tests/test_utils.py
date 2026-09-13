@@ -582,7 +582,10 @@ def test_service_is_enabled_matches_only_enabled(
         return _FakeProc(0 if output in ("enabled\n", "enabled-runtime\n") else 1, output)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert service_is_enabled("svc.service", timeout=5) is expected
+    assert (
+        service_is_enabled(make_config().engine, "svc.service", timeout=5)
+        is expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -603,7 +606,40 @@ def test_service_is_active_matches_only_active(
         return _FakeProc(0 if output == "active\n" else 1, output)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert service_is_active("svc.service", timeout=5) is expected
+    assert (
+        service_is_active(make_config().engine, "svc.service", timeout=5)
+        is expected
+    )
+
+
+def test_service_state_queries_come_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The two queries and the states that count as enabled or running are
+    # config values: another argv and another state word are honoured, so a
+    # derivative that spells them differently edits only the config.
+    engine = replace(
+        make_config().engine,
+        systemctl_is_enabled_command=("myctl", "boot-state", "{unit}"),
+        systemctl_is_active_command=("myctl", "run-state", "{unit}"),
+        systemd_enabled_states=("booted",),
+        systemd_active_state="running",
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        seen.append(list(command))
+        state = "booted\n" if command[1] == "boot-state" else "running\n"
+        return _FakeProc(0, state)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    assert service_is_enabled(engine, "svc.service", timeout=5) is True
+    assert service_is_active(engine, "svc.service", timeout=5) is True
+    assert seen == [
+        ["myctl", "boot-state", "svc.service"],
+        ["myctl", "run-state", "svc.service"],
+    ]
 
 
 @pytest.mark.parametrize(
