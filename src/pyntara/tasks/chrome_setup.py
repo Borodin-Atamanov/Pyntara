@@ -719,11 +719,16 @@ def _taskbar_launcher_groups(cfg: ChromeSetupConfig, text: str) -> list[tuple[st
 
     groups: list[tuple[str, ...]] = []
     current: tuple[str, ...] = ()
+    # The key of the line that names the applet plugin in an appletsrc
+    # section; removeprefix keeps the reader free of an index.
+    plugin_key = "plugin="
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("[") and line.endswith("]"):
             current = tuple(part for part in line[1:-1].split("][") if part)
-        elif line.startswith("plugin=") and line[7:] in cfg.taskbar_plugin_names:
+        elif line.startswith(plugin_key) and line.removeprefix(
+            plugin_key
+        ) in cfg.taskbar_plugin_names:
             groups.append(current + ("Configuration", "General"))
     return groups
 

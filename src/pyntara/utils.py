@@ -696,7 +696,6 @@ def ensure_port_free(
     timeout: float,
     *,
     service_process_name: str | None = None,
-    kill_grace_seconds: int = 5,
 ) -> str | None:
     """Free the TCP port for a new listener; returns the action taken.
 
@@ -704,7 +703,9 @@ def ensure_port_free(
     given systemd service (MainPID match) or carries the configured
     process name, the service is stopped with systemctl. Any other
     listener is an unknown process and is terminated with SIGTERM, then
-    SIGKILL after kill_grace_seconds if it still holds the port. Returns
+    SIGKILL after the configured port_kill_grace_seconds if it still
+    holds the port, the port being looked up again every
+    port_kill_poll_seconds. Returns
     None when the port is already free, a short message otherwise.
     Raises RuntimeError when the port is still occupied after the action.
     """
@@ -732,11 +733,11 @@ def ensure_port_free(
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         return None
-    deadline = time.monotonic() + kill_grace_seconds
+    deadline = time.monotonic() + engine.port_kill_grace_seconds
     while time.monotonic() < deadline:
         if port_listener_pid(engine, port, timeout) is None:
             return f"terminated unknown process {pid} on port {port}"
-        time.sleep(0.2)
+        time.sleep(engine.port_kill_poll_seconds)
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:

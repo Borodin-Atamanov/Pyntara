@@ -99,6 +99,8 @@ def base_config() -> str:
         'systemctl_main_pid_command = '
         '["systemctl", "show", "-p", "MainPID", "--value", "{unit}"]\n'
         'systemctl_stop_command = ["systemctl", "stop", "{unit}"]\n'
+        "port_kill_grace_seconds = 5\n"
+        "port_kill_poll_seconds = 0.2\n"
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

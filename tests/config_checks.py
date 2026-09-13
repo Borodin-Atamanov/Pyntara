@@ -1290,6 +1290,14 @@ def _engine_table(raw: object) -> EngineConfig:
             "engine.systemctl_stop_command",
             ("{unit}",),
         ),
+        port_kill_grace_seconds=_positive_int_field(
+            raw.get("port_kill_grace_seconds"),
+            "engine.port_kill_grace_seconds",
+        ),
+        port_kill_poll_seconds=_float_field(
+            raw.get("port_kill_poll_seconds"),
+            "engine.port_kill_poll_seconds",
+        ),
     )
 
 

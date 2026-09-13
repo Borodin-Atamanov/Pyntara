@@ -141,6 +141,8 @@ class EngineConfig:
     socket_listener_command: tuple[str, ...] = ()
     systemctl_main_pid_command: tuple[str, ...] = ()
     systemctl_stop_command: tuple[str, ...] = ()
+    port_kill_grace_seconds: int = 0
+    port_kill_poll_seconds: float = 0.0
 
     def with_journal_identifier(self, identifier: str) -> EngineConfig:
         """The same table under the journal identifier of a deployed service.

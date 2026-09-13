@@ -839,6 +839,54 @@ class TestPortFreeing:
         assert "terminated unknown process 999" in result
         assert killed == [(999, 15)]  # SIGTERM only
 
+    def test_port_kill_grace_and_poll_come_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The grace period and the pause between two lookups are config
+        # values: a grace of two seconds with a clock that jumps to three
+        # kills the process after a single pause, and that pause is the
+        # configured one.
+        killed: list[tuple[int, int]] = []
+        naps: list[float] = []
+        ss_calls = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            nonlocal ss_calls
+            if command[0] == "ss":
+                ss_calls += 1
+                if ss_calls <= 2:
+                    return _FakeProc(
+                        0,
+                        'LISTEN 0 4096 *:35353 *:* '
+                        'users:(("other",pid=999,fd=9))\n',
+                    )
+                return _FakeProc(0, "")
+            if command[0] == "systemctl" and command[1] == "show":
+                return _FakeProc(0, "0\n")
+            return _FakeProc(0)
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+        monkeypatch.setattr(
+            "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
+        )
+        monkeypatch.setattr(
+            "pyntara.utils.time.sleep", lambda seconds: naps.append(seconds)
+        )
+        monotonic = iter([0.0, 0.0, 3.0])
+        monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
+        engine = make_config(
+            port_kill_grace_seconds=2,
+            port_kill_poll_seconds=0.5,
+        ).engine
+        result = ensure_port_free(
+            engine, 35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+        )
+        assert result is not None
+        assert "killed unknown process 999" in result
+        assert killed == [(999, 15), (999, 9)]
+        assert naps == [0.5]
+
     def test_ensure_port_free_sigkills_when_grace_expires(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

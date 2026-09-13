@@ -269,3 +269,8 @@ systemd_active_state = "active"
 socket_listener_command = ["ss", "-tlnp", "sport = :{port}"]
 systemctl_main_pid_command = ["systemctl", "show", "-p", "MainPID", "--value", "{unit}"]
 systemctl_stop_command = ["systemctl", "stop", "{unit}"]
+# Seconds the run waits for an unknown process to release a port after the
+# termination signal before it is killed outright, and the pause between two
+# lookups while it waits.
+port_kill_grace_seconds = 5
+port_kill_poll_seconds = 0.2

@@ -204,6 +204,8 @@ def make_config(
     error_priority: int = 3,
     progress_priority: int = 7,
     process_check_timeout_seconds: int = 5,
+    port_kill_grace_seconds: int = 5,
+    port_kill_poll_seconds: float = 0.2,
     task_start_delay_seconds: float = 0.5,
     engine_desktop_detect_processes: tuple[str, ...] = (
         "kwin_wayland",
@@ -573,6 +575,8 @@ def make_config(
             error_priority=error_priority,
             progress_priority=progress_priority,
             process_check_timeout_seconds=process_check_timeout_seconds,
+            port_kill_grace_seconds=port_kill_grace_seconds,
+            port_kill_poll_seconds=port_kill_poll_seconds,
             task_start_delay_seconds=task_start_delay_seconds,
             desktop_detect_processes=engine_desktop_detect_processes,
             desktop_username=engine_desktop_username,
