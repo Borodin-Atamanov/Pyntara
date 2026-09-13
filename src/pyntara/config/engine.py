@@ -65,6 +65,9 @@ class EngineConfig:
     factor that turns a file timestamp into the unit the kernel takes. desktop_username is
     the account
     of the desktop user whose live session the run reaches;
+    force_all_keyword is the word a run force list may use instead of task
+    names to force every task of the resolved run set, compared without
+    case like the task names;
     session_environment_command prints that session's environment, one
     KEY=VALUE per line, with {username} replaced by desktop_username;
     session_environment_keys are the session variables the run exports to
@@ -76,6 +79,7 @@ class EngineConfig:
     task_data_root: Path
     systemd_unit_dir: Path
     notice_timeout: int
+    force_all_keyword: str
     command_timeout_seconds: int
     curl_timeout_seconds: int
     curl_download_timeout_seconds: int

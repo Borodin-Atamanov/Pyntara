@@ -1305,6 +1305,9 @@ def _engine_table(raw: object) -> EngineConfig:
         task_data_root=Path(task_data_root),
         systemd_unit_dir=Path(systemd_unit_dir),
         notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
+        force_all_keyword=_nonempty_string_field(
+            raw.get("force_all_keyword"), "engine.force_all_keyword"
+        ),
         command_timeout_seconds=_int_field(
             raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
         ),

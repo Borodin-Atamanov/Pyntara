@@ -16,6 +16,12 @@ task_data_root = "/var/lib/pyntara/task-data"
 systemd_unit_dir = "/etc/systemd/system"
 # Seconds the resilience notice stays visible.
 notice_timeout = 7
+# The word a run force list may use instead of task names to force every task
+# of the resolved run set (PYNTARA_FORCE_TASKS). It is compared without case,
+# like the task names beside it, and it is a value because the interface of a
+# machine is described by the config like the rest of the run: a deployment
+# whose operators say every instead of all changes this key.
+force_all_keyword = "all"
 # Seconds a provisioning command may run before it is killed. The bound
 # stays above the longest single download, so curl reports its own give-up
 # instead of being killed from outside.

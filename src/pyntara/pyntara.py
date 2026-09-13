@@ -304,15 +304,19 @@ def _resolve_task_names(
 
 
 def _resolve_force_tasks(
-    names: list[str], notice_timeout: int | None, tasks: tuple[TaskConfig, ...]
+    engine: EngineConfig,
+    names: list[str],
+    notice_timeout: int | None,
+    tasks: tuple[TaskConfig, ...],
 ) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
-    The keyword all (case-insensitive) forces every task in the run set.
-    Every other entry must be a known task that is part of the run set,
-    matched case-insensitively; the canonical catalog names are returned.
-    Invalid entries are not fatal: an error notice is shown, the run pauses
-    so the user can interrupt, then the run continues with the valid entries.
+    The keyword engine.force_all_keyword (case-insensitive) forces every task
+    in the run set. Every other entry must be a known task that is part of the
+    run set, matched case-insensitively; the canonical catalog names are
+    returned. Invalid entries are not fatal: an error notice is shown, the run
+    pauses so the user can interrupt, then the run continues with the valid
+    entries.
     """
 
     selection = _env("PYNTARA_FORCE_TASKS")
@@ -321,10 +325,11 @@ def _resolve_force_tasks(
     force_names = selection.split()
     known = {task.name.casefold() for task in tasks}
     names_folded = {name.casefold() for name in names}
+    all_keyword = engine.force_all_keyword.casefold()
     invalid = [
         name
         for name in force_names
-        if name.casefold() != "all"
+        if name.casefold() != all_keyword
         and (name.casefold() not in known or name.casefold() not in names_folded)
     ]
     if invalid:
@@ -334,7 +339,7 @@ def _resolve_force_tasks(
             + "; continuing without them",
             notice_timeout,
         )
-    if any(name.casefold() == "all" for name in force_names):
+    if any(name.casefold() == all_keyword for name in force_names):
         return frozenset(names)
     force_folded = {name.casefold() for name in force_names}
     return frozenset(name for name in names if name.casefold() in force_folded)
@@ -357,7 +362,7 @@ def run() -> None:
         raise typer.Exit(1)
     mode = _resolve_mode(cfg.engine)
     names = _resolve_task_names(mode, cfg.engine.notice_timeout, cfg.tasks)
-    force_tasks = _resolve_force_tasks(names, cfg.engine.notice_timeout, cfg.tasks)
+    force_tasks = _resolve_force_tasks(cfg.engine, names, cfg.engine.notice_timeout, cfg.tasks)
     ctx = Context(
         install_mode=mode,
         vault_password=_env("PYNTARA_VAULT_PASSWORD"),

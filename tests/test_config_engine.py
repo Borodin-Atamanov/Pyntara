@@ -223,6 +223,14 @@ def test_load_config_deduplicates_components(tmp_path: Path) -> None:
     assert config.add_extra_repos.components == ("universe", "multiverse")
 
 
+def test_load_config_requires_the_force_all_keyword(tmp_path: Path) -> None:
+    # Without the word a force list could only name tasks, so an operator
+    # could not force the whole run set; the checks refuse a config that
+    # lost the key instead of defaulting it.
+    content = base_config().replace('force_all_keyword = "all"\n', "")
+    assert_config_error(tmp_path, content, match="must be a non-empty string")
+
+
 def test_load_config_parses_keep_downloaded_debs(tmp_path: Path) -> None:
     # The configured apt retention flag reaches the parsed config.
     config = load_checked_config(write_config(tmp_path, base_config()))

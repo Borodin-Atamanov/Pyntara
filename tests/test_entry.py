@@ -522,6 +522,37 @@ def test_run_force_all_is_case_insensitive(
     assert f"Force: {expected}" in result.output
 
 
+def test_the_force_all_keyword_comes_from_the_engine_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The word that forces the whole run set is an engine value: with
+    # another word in the table that word forces everything, while the
+    # shipped one becomes a name the catalog does not know.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "every")
+    base = _test_config(notice_timeout=0)
+    renamed = replace(
+        base, engine=replace(base.engine, force_all_keyword="every")
+    )
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: renamed)
+
+    def ok_task(ctx: object) -> TaskResult:
+        return TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    expected = " ".join(sorted(_default_run_set("minimal")))
+    assert f"Force: {expected}" in result.output
+
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: base)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "invalid task names in PYNTARA_FORCE_TASKS: every" in result.output
+    assert "Force:" not in result.output
+
+
 def test_run_force_all_still_reports_invalid_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
