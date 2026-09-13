@@ -71,7 +71,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'FALLBACK_NOTE = "address read from the saved file, the keys file is missing or broken"',
         }
     ),
-    "src/pyntara/location.py": frozenset({'DEFAULT_COUNTRY_WORD = "russia"'}),
     "src/pyntara/metrics.py": frozenset({"SERVICE_CONFIG_KEYS = ("}),
     "src/pyntara/metrics_collect.py": frozenset(
         {

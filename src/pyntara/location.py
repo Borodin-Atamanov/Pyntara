@@ -34,12 +34,6 @@ from dataclasses import dataclass
 from pyntara.config import EngineConfig
 from pyntara.utils import fetch_urls_by_source
 
-# The word that names the country. The search is case-insensitive, so the
-# single word covers "russia", "Russia" and "RUSSIA"; the value lives in
-# the config, so the operator can point the same check at another country
-# without touching the code.
-DEFAULT_COUNTRY_WORD = "russia"
-
 
 @dataclass(frozen=True)
 class ServiceAnswer:

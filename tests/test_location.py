@@ -11,7 +11,6 @@ from support import make_config
 
 from pyntara import location as location_module
 from pyntara.location import (
-    DEFAULT_COUNTRY_WORD,
     ServiceAnswer,
     describe_answers,
     detect_country,
@@ -22,6 +21,11 @@ from pyntara.location import (
 )
 
 SERVICES = ("https://ip2c.org/self", "https://ifconfig.co/json")
+
+# The word the tests search for. The module has no word of its own: the
+# configured country_word of the [three_x_ui_xray_setup] table is the one
+# the task passes, so a test names the word it searches for.
+COUNTRY_WORD = "russia"
 
 
 class TestNormalizeText:
@@ -60,7 +64,7 @@ class TestFindCountryWord:
         ],
     )
     def test_values_that_name_the_country_match(self, values: tuple[str, ...]) -> None:
-        assert find_country_word(values, DEFAULT_COUNTRY_WORD) == "russia"
+        assert find_country_word(values, COUNTRY_WORD) == "russia"
 
     @pytest.mark.parametrize(
         "values",
@@ -84,12 +88,12 @@ class TestFindCountryWord:
         # short-code search (the Cloudflare colo code GRU, the country
         # names Peru and Belarus, the bare code RU) carry none of its
         # letters in a row.
-        assert find_country_word(values, DEFAULT_COUNTRY_WORD) is None
+        assert find_country_word(values, COUNTRY_WORD) is None
 
     def test_the_word_inside_a_longer_word_matches(self) -> None:
         # A plain occurrence search catches a word that merely contains
         # the letters, which is the accepted price of the simple rule.
-        assert find_country_word(("Prussia",), DEFAULT_COUNTRY_WORD) == "russia"
+        assert find_country_word(("Prussia",), COUNTRY_WORD) == "russia"
 
     def test_an_empty_word_never_matches(self) -> None:
         assert find_country_word(("Russia",), "") is None
@@ -189,7 +193,7 @@ class TestDetectCountry:
 
         monkeypatch.setattr(location_module, "fetch_urls_by_source", fake_fetch)
         report = detect_country(
-            make_config().engine, SERVICES, DEFAULT_COUNTRY_WORD, 60, 1800.0
+            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
         )
         assert report.in_country is True
         assert report.matched_word == "russia"
@@ -205,7 +209,7 @@ class TestDetectCountry:
             lambda *a, **k: (("https://ip2c.org/self", "1;AR;ARG;Argentina"),),
         )
         report = detect_country(
-            make_config().engine, SERVICES, DEFAULT_COUNTRY_WORD, 60, 1800.0
+            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
         )
         assert report.in_country is False
         assert report.matched_word is None
@@ -214,7 +218,7 @@ class TestDetectCountry:
         # An empty service list must not start a query and must not turn
         # into a country.
         report = detect_country(
-            make_config().engine, (), DEFAULT_COUNTRY_WORD, 60, 1800.0
+            make_config().engine, (), COUNTRY_WORD, 60, 1800.0
         )
         assert report.in_country is False
         assert report.answers == ()
@@ -236,7 +240,7 @@ class TestDescribeAnswers:
             ),
         )
         report = detect_country(
-            make_config().engine, SERVICES, DEFAULT_COUNTRY_WORD, 60, 1800.0
+            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
         )
         assert describe_answers(report) == (
             "https://ip2c.org/self: 1, RU, RUS, Russia",
