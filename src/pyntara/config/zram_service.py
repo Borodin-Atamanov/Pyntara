@@ -29,6 +29,8 @@ class ZramServiceConfig:
     swap_priority: int
     memory_fraction_percent: int
     fallback_cpu_count: int
+    meminfo_total_key: str
+    cpuinfo_processor_key: str
     alignment_bytes: int
     service_unit_name: str
     reset_busy_attempts: int

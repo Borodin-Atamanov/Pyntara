@@ -23,6 +23,10 @@ unit_template_file_name = "swapfile.service"
 # Command that lists the active swap devices; the swapfile path found in
 # its output is the active swap.
 swap_show_command = ["swapon", "--show", "--noheadings"]
+# Name of the line in /proc/meminfo that carries the installed RAM, with
+# the separator the file uses. The task reads the total size from it, so a
+# kernel that renames the line is answered here.
+meminfo_total_key = "MemTotal:"
 # Commands that activate and deactivate the swapfile; {swapfile_path} is
 # the configured swap file.
 swap_on_command = ["swapon", "{swapfile_path}"]

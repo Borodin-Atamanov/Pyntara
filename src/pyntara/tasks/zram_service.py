@@ -48,33 +48,38 @@ ZRAM_HOT_ADD_PATH = ZRAM_CONTROL_DIR / "hot_add"
 ZRAM_HOT_REMOVE_PATH = ZRAM_CONTROL_DIR / "hot_remove"
 
 
-def _read_ram_kib() -> int:
+def _read_ram_kib(meminfo_total_key: str) -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
 
-    Raises OSError when the file cannot be read or MemTotal is missing.
+    Raises OSError when the file cannot be read or the configured total
+    line is missing.
     """
 
     for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith("MemTotal:"):
+        if line.startswith(meminfo_total_key):
             parts = line.split()
             if len(parts) >= 2:
                 return int(parts[1])
-    raise OSError(f"{MEMINFO_PATH} has no MemTotal line")
+    raise OSError(f"{MEMINFO_PATH} has no {meminfo_total_key} line")
 
 
-def _read_cpu_count(fallback_cpu_count: int) -> tuple[int, bool]:
+def _read_cpu_count(
+    fallback_cpu_count: int, cpuinfo_processor_key: str
+) -> tuple[int, bool]:
     """CPU core count and whether the fallback was used.
 
-    The count comes from the processor lines in /proc/cpuinfo. When the
-    file cannot be read or reports no processors, the configured fallback
-    is used and the flag is True.
+    The count comes from the processor lines in /proc/cpuinfo, whose name
+    is a config value. When the file cannot be read or reports no
+    processors, the configured fallback is used and the flag is True.
     """
 
     try:
         text = CPUINFO_PATH.read_text(encoding="utf-8")
     except OSError:
         return fallback_cpu_count, True
-    count = sum(1 for line in text.splitlines() if line.startswith("processor"))
+    count = sum(
+        1 for line in text.splitlines() if line.startswith(cpuinfo_processor_key)
+    )
     if count == 0:
         return fallback_cpu_count, True
     return count, False
@@ -399,14 +404,16 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
 
     try:
-        ram_kib = _read_ram_kib()
+        ram_kib = _read_ram_kib(cfg.meminfo_total_key)
     except OSError as exc:
         return _result(
             changed=False,
             message="zram not configured",
             warnings=[f"cannot determine RAM size: {exc}"],
         )
-    cpu_count, cpu_fallback = _read_cpu_count(cfg.fallback_cpu_count)
+    cpu_count, cpu_fallback = _read_cpu_count(
+        cfg.fallback_cpu_count, cfg.cpuinfo_processor_key
+    )
     device_count, per_device_bytes = _calculate_devices(
         ram_kib, cpu_count, cfg, bytes_per_kib, percent_scale
     )

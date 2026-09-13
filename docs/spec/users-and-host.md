@@ -23,7 +23,7 @@ ZRAM should be aggressive, with strong compression, using almost all memory.
 Each device uses the configured compressor algorithm.  
 ZRAM swap is activated with the configured swap_priority, so it is used before the disk swapfile.
 
-All parameter values live in the [zram_service] table of the config/ directory: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts and reset_busy_retry_delay_seconds.
+All parameter values live in the [zram_service] table of the config/ directory: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts, reset_busy_retry_delay_seconds, meminfo_total_key and cpuinfo_processor_key. The last two name the kernel file lines the task reads: the installed RAM in /proc/meminfo, with the separator that file uses, and the per-core line of /proc/cpuinfo, so a kernel that renames a field is answered in the config.
 reset_busy_attempts and reset_busy_retry_delay_seconds bound the retries of a reset or hot_remove that the kernel rejects with EBUSY while a transient opener, for example a udev probe, holds the device.
 
 The zram_service task configures the devices immediately and installs a systemd oneshot service that repeats the setup at every boot.
@@ -40,5 +40,8 @@ The values are aggressive, matching the ZRAM philosophy. All parameters live in 
 
 Size is calculated using formulas in configuration.
 RAM and free disk space are both considered.
+The installed RAM is read from the line of /proc/meminfo whose name
+meminfo_total_key carries, with the separator that file uses, and free
+disk space comes from the filesystem that holds the configured swap file.
 
 These tasks create system services executed at system startup.

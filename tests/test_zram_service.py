@@ -395,7 +395,30 @@ def test_read_cpu_count_returns_processor_count(
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("processor : 0\nprocessor : 1\n", encoding="utf-8")
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", cpuinfo)
-    assert zram_service._read_cpu_count(8) == (2, False)
+    key = make_config().zram_service.cpuinfo_processor_key
+    assert zram_service._read_cpu_count(8, key) == (2, False)
+
+
+def test_the_kernel_line_names_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The names of the two kernel file lines the task reads are config
+    # values: another name in the table is the line the task counts.
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("Total-RAM:       8192 kB\n", encoding="utf-8")
+    monkeypatch.setattr(zram_service, "MEMINFO_PATH", meminfo)
+    cpuinfo = tmp_path / "cpuinfo"
+    cpuinfo.write_text("core : 0\ncore : 1\ncore : 2\n", encoding="utf-8")
+    monkeypatch.setattr(zram_service, "CPUINFO_PATH", cpuinfo)
+    section = make_config(
+        zram_meminfo_total_key="Total-RAM:",
+        zram_cpuinfo_processor_key="core",
+    ).zram_service
+    assert zram_service._read_ram_kib(section.meminfo_total_key) == 8192
+    assert zram_service._read_cpu_count(8, section.cpuinfo_processor_key) == (
+        3,
+        False,
+    )
 
 
 def test_read_cpu_count_falls_back_to_8(
@@ -403,7 +426,8 @@ def test_read_cpu_count_falls_back_to_8(
 ) -> None:
     # A missing cpuinfo file means the spec fallback of 8, flagged.
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", tmp_path / "cpuinfo")
-    assert zram_service._read_cpu_count(8) == (8, True)
+    key = make_config().zram_service.cpuinfo_processor_key
+    assert zram_service._read_cpu_count(8, key) == (8, True)
 
 
 def test_already_configured_skips(

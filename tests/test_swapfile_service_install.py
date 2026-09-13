@@ -92,6 +92,20 @@ def _ctx(
     )
 
 
+def test_the_meminfo_line_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The name of the /proc/meminfo line that carries the installed RAM is
+    # a config value: another name in the table is the line the task reads.
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("Total-RAM:       8192 kB\n", encoding="utf-8")
+    monkeypatch.setattr(swapfile_service_install, "MEMINFO_PATH", meminfo)
+    key = make_config(
+        swapfile_meminfo_total_key="Total-RAM:"
+    ).swapfile_service_install.meminfo_total_key
+    assert swapfile_service_install._read_ram_kib(key) == 8192
+
+
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

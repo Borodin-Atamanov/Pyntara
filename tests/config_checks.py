@@ -420,9 +420,17 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         raw.get("keep_debs_dropin_content"),
         "add_extra_repos.keep_debs_dropin_content",
     )
+    uris_field_name = _nonempty_string_field(
+        raw.get("uris_field_name"), "add_extra_repos.uris_field_name"
+    )
+    components_field_name = _nonempty_string_field(
+        raw.get("components_field_name"), "add_extra_repos.components_field_name"
+    )
     return AddExtraReposConfig(
         components=tuple(unique),
         ubuntu_hosts=tuple(ubuntu_hosts),
+        uris_field_name=uris_field_name,
+        components_field_name=components_field_name,
         keep_downloaded_debs=keep_downloaded_debs,
         legacy_sources_file=legacy_sources_file,
         sources_list_d=sources_list_d,
@@ -3458,6 +3466,10 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
         )
     return SwapfileServiceInstallConfig(
         swapfile_path=Path(swapfile_path),
+        meminfo_total_key=_nonempty_string_field(
+            raw.get("meminfo_total_key"),
+            "swapfile_service_install.meminfo_total_key",
+        ),
         ram_multiplier=ram_multiplier,
         ram_extra_mb=ram_extra_mb,
         disk_fraction=disk_fraction,
@@ -6260,6 +6272,13 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         swap_priority=swap_priority,
         memory_fraction_percent=memory_fraction_percent,
         fallback_cpu_count=fallback_cpu_count,
+        meminfo_total_key=_nonempty_string_field(
+            raw.get("meminfo_total_key"), "zram_service.meminfo_total_key"
+        ),
+        cpuinfo_processor_key=_nonempty_string_field(
+            raw.get("cpuinfo_processor_key"),
+            "zram_service.cpuinfo_processor_key",
+        ),
         alignment_bytes=alignment_bytes,
         service_unit_name=_nonempty_string_field(
             raw.get("service_unit_name"), "zram_service.service_unit_name"

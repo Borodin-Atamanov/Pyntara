@@ -37,18 +37,19 @@ from pyntara.utils import (
 MEMINFO_PATH = Path("/proc/meminfo")
 
 
-def _read_ram_kib() -> int:
+def _read_ram_kib(meminfo_total_key: str) -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
 
-    Raises OSError when the file cannot be read or MemTotal is missing.
+    Raises OSError when the file cannot be read or the configured total
+    line is missing.
     """
 
     for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith("MemTotal:"):
+        if line.startswith(meminfo_total_key):
             parts = line.split()
             if len(parts) >= 2:
                 return int(parts[1])
-    raise OSError(f"{MEMINFO_PATH} has no MemTotal line")
+    raise OSError(f"{MEMINFO_PATH} has no {meminfo_total_key} line")
 
 
 def _calculate_swap_size_mb(
@@ -148,7 +149,7 @@ def task(ctx: Context) -> TaskResult:
 
     measured = True
     try:
-        ram_kib = _read_ram_kib()
+        ram_kib = _read_ram_kib(cfg.meminfo_total_key)
         free_disk_kib = (
             shutil.disk_usage(cfg.swapfile_path.parent).free // bytes_per_kib
         )

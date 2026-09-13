@@ -31,10 +31,12 @@ class SwapfileServiceInstallConfig:
     swap signature, and systemctl_daemon_reload_command and
     systemctl_enable_command are the two systemctl calls of the run
     (the second with {service_unit_name}). One shared helper fills the
-    placeholders.
+    placeholders. meminfo_total_key is the name of the /proc/meminfo line
+    that carries the installed RAM, with the separator the file uses.
     """
 
     swapfile_path: Path
+    meminfo_total_key: str
     ram_multiplier: float
     ram_extra_mb: int
     disk_fraction: float

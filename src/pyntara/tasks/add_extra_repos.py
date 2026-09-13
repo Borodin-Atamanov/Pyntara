@@ -24,6 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from pyntara.config import AddExtraReposConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -48,7 +49,11 @@ def _uri_is_ubuntu(uri: str, hosts: tuple[str, ...]) -> bool:
 
 
 def _process_deb822(
-    text: str, configured: tuple[str, ...], hosts: tuple[str, ...]
+    text: str,
+    configured: tuple[str, ...],
+    hosts: tuple[str, ...],
+    uris_field_name: str,
+    components_field_name: str,
 ) -> _FileRewrite:
     """Rewrite Components lines of Ubuntu sections in a deb822 source file.
 
@@ -57,8 +62,12 @@ def _process_deb822(
     scan of the whole section text catches URI values that span multiple
     continuation lines. Only the Components line of such a section is
     rewritten: missing configured components are appended in configured
-    order, everything else in the file stays byte-identical.
+    order, everything else in the file stays byte-identical. The names of
+    the two fields come from the config and are compared without case.
     """
+
+    uris_key = uris_field_name.lower()
+    components_key = components_field_name.lower()
 
     lines = text.splitlines(keepends=True)
     has_ubuntu = False
@@ -80,11 +89,11 @@ def _process_deb822(
         for line_index in section:
             stripped = lines[line_index].strip()
             lower = stripped.lower()
-            if lower.startswith("uris:"):
-                uris = stripped.split(":", 1)[1].split()
+            if lower.startswith(uris_key):
+                uris = stripped[len(uris_key) :].split()
                 if any(_uri_is_ubuntu(uri, hosts) for uri in uris):
                     is_ubuntu = True
-            elif lower.startswith("components:"):
+            elif lower.startswith(components_key):
                 components_line = line_index
         if not is_ubuntu:
             section_text = "".join(lines[i] for i in section)
@@ -100,16 +109,17 @@ def _process_deb822(
             )
             satisfied = False
             continue
-        existing = lines[components_line].strip().split(":", 1)[1].split()
+        line = lines[components_line]
+        key_start = line.lower().find(components_key)
+        key_text = line[: key_start + len(components_key)]
+        existing = line[key_start + len(components_key) :].split()
         missing = [
             component for component in configured if component not in existing
         ]
         if missing:
             satisfied = False
-            key = lines[components_line][: lines[components_line].find(":")]
-            new_line = f"{key}: {' '.join(existing + missing)}"
-            if lines[components_line].endswith("\n"):
-                new_line = f"{new_line}\n"
+            newline = "\n" if line.endswith("\n") else ""
+            new_line = f"{key_text} {' '.join(existing + missing)}{newline}"
             lines[components_line] = new_line
             changed = True
     return _FileRewrite("".join(lines), changed, has_ubuntu, satisfied, tuple(problems))
@@ -202,12 +212,21 @@ def _collect_source_files(
 
 
 def _process_file(
-    path: Path, configured: tuple[str, ...], hosts: tuple[str, ...]
+    path: Path,
+    configured: tuple[str, ...],
+    hosts: tuple[str, ...],
+    cfg: AddExtraReposConfig,
 ) -> _FileRewrite:
     """Analyze and rewrite one source file in memory, by its format."""
 
     if path.suffix == ".sources":
-        return _process_deb822(path.read_text(encoding="utf-8"), configured, hosts)
+        return _process_deb822(
+            path.read_text(encoding="utf-8"),
+            configured,
+            hosts,
+            cfg.uris_field_name,
+            cfg.components_field_name,
+        )
     return _process_legacy(path.read_text(encoding="utf-8"), configured, hosts)
 
 
@@ -265,6 +284,7 @@ def task(ctx: Context) -> TaskResult:
     keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
     keep_debs_file = ctx.config.add_extra_repos.keep_debs_file
     keep_debs_content = ctx.config.add_extra_repos.keep_debs_dropin_content
+    section = ctx.config.add_extra_repos
     warnings: list[str] = []
     _log(f"configured components: {' '.join(configured)}")
     keep_changed, keep_error = _ensure_keep_debs_dropin(
@@ -292,7 +312,7 @@ def task(ctx: Context) -> TaskResult:
     has_ubuntu = False
     for path in files:
         try:
-            state = _process_file(path, configured, hosts)
+            state = _process_file(path, configured, hosts, section)
         except OSError as exc:
             warnings.append(f"cannot read {path}: {exc}")
             continue
@@ -360,7 +380,7 @@ def task(ctx: Context) -> TaskResult:
     verified: list[tuple[Path, _FileRewrite]] = []
     for path in files:
         try:
-            verified.append((path, _process_file(path, configured, hosts)))
+            verified.append((path, _process_file(path, configured, hosts, section)))
         except OSError as exc:
             warnings.append(f"cannot read {path} for verification: {exc}")
     unsatisfied = [str(path) for path, state in verified if not state.satisfied]

@@ -15,6 +15,12 @@ ubuntu_hosts = [
 # task writes an apt.conf.d drop-in that stops apt and unattended-upgrades
 # from deleting downloaded packages after a successful install.
 keep_downloaded_debs = true
+# Names of the two deb822 fields the task reads in a .sources file: the
+# field that carries the archive URIs and the field that lists the enabled
+# components. The comparison is without case, so a distribution that
+# renames a field is answered here.
+uris_field_name = "uris:"
+components_field_name = "components:"
 # The apt sources the task manages: the legacy single file and the drop-in
 # directory. Only lowercase files ending in .list or .sources inside the
 # directory are apt sources; everything else is left alone.

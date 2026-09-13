@@ -135,6 +135,7 @@ def base_config() -> str:
 
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\nkeep_downloaded_debs = true\n'
+        'uris_field_name = "uris:"\ncomponents_field_name = "components:"\n'
         'legacy_sources_file = "/etc/apt/sources.list"\n'
         'sources_list_d = "/etc/apt/sources.list.d"\n'
         'keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"\n'
@@ -292,6 +293,7 @@ def base_config() -> str:
         'kglobalaccel_release_script_file_name = "kglobalaccel_release.py"\n'
         'sddm_theme_font = "Noto Sans,20"\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
+        'meminfo_total_key = "MemTotal:"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
         'swapfile_mode = "0600"\nsize_tolerance_mb = 1\n'
         'service_unit_name = "swapfile.service"\n'
@@ -317,6 +319,8 @@ def base_config() -> str:
         'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         '[zram_service]\ncompressor = "zstd"\nswap_priority = 1111\n'
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
+        'meminfo_total_key = "MemTotal:"\n'
+        'cpuinfo_processor_key = "processor"\n'
         'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
         "reset_busy_retry_delay_seconds = 0.5\n"
         'hot_add_readable_mode_bit = "0400"\n'

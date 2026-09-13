@@ -13,6 +13,11 @@ swap_priority = 1111
 memory_fraction_percent = 96
 # CPU core count used when the real count cannot be determined.
 fallback_cpu_count = 8
+# Names of the two kernel file lines the task reads: the installed RAM in
+# /proc/meminfo, with the separator that file uses, and the per-core line
+# of /proc/cpuinfo. A kernel that renames a field is answered here.
+meminfo_total_key = "MemTotal:"
+cpuinfo_processor_key = "processor"
 # Byte boundary the zram driver requires for disksize values.
 alignment_bytes = 4096
 # Retries of a reset or hot_remove rejected with EBUSY while a transient

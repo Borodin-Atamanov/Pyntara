@@ -309,6 +309,40 @@ def test_legacy_and_deb822_are_both_updated(
     assert "Components: main universe restricted multiverse" in ubuntu_text
 
 
+def test_the_deb822_field_names_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The two deb822 field names the task reads are config values: a file
+    # that spells them differently is still recognized and rewritten, and
+    # the field the task reads stays the configured one.
+    renamed = (
+        "Types: deb\n"
+        "Archive-URIs: http://archive.ubuntu.com/ubuntu/\n"
+        "Suites: resolute\n"
+        "Parts: main\n"
+    )
+    _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": renamed})
+    ctx = _ctx(tmp_path)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            add_extra_repos=replace(
+                ctx.config.add_extra_repos,
+                uris_field_name="archive-uris:",
+                components_field_name="parts:",
+            ),
+        ),
+    )
+    result = add_extra_repos.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    text = (tmp_path / "sources.list.d" / "ubuntu.sources").read_text(
+        encoding="utf-8"
+    )
+    assert "Parts: main universe restricted multiverse\n" in text
+
+
 def _satisfied_ubuntu() -> str:
     """The Ubuntu sources with every configured component already listed."""
 
