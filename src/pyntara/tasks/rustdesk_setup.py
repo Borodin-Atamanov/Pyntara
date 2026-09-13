@@ -58,21 +58,11 @@ from pyntara.utils import (
     service_is_active,
     service_is_enabled,
     substituted_command,
+    version_without_tag_prefix,
 )
 
 # The rustdesk --version output is a bare dotted triple, e.g. 1.4.9.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+(?:\.\d+)?)")
-
-# The release tag carries no leading v for rustdesk releases; the
-# normalization strips one anyway, so a future v-prefixed tag still
-# compares equal to the version output.
-TAG_VERSION_PATTERN = re.compile(r"^v?")
-
-
-def _normalized_version(value: str) -> str:
-    """The version with an optional leading v stripped."""
-
-    return TAG_VERSION_PATTERN.sub("", value)
 
 
 def _select_asset(
@@ -451,7 +441,7 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
-        tag = _normalized_version(release_tag(release))
+        tag = version_without_tag_prefix(release_tag(release))
     except (RuntimeError, TypeError) as exc:
         return TaskResult(success=False, error=str(exc))
     _log(f"checking latest rustdesk release: {tag}")

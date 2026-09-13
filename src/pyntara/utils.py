@@ -214,6 +214,19 @@ def release_asset_architecture(
     return architectures.get(dpkg_arch, dpkg_arch)
 
 
+def version_without_tag_prefix(value: str) -> str:
+    """The version of a release tag with a leading v stripped.
+
+    A release tag carries the letter v in front of the version or not,
+    depending on the project: rustdesk tags carry none, the yggdrasil and
+    the 3x-ui tags do, and a task that compares a tag with the version an
+    installed tool prints must not depend on which. The compare therefore
+    strips a single leading v and leaves every other character alone.
+    """
+
+    return value.removeprefix("v")
+
+
 def trim_whitespace(text: str) -> str:
     """Remove the leading and trailing whitespace of a text.
 

@@ -110,26 +110,17 @@ from pyntara.utils import (
     service_is_enabled,
     substituted_command,
     trim_whitespace,
+    version_without_tag_prefix,
 )
 
 # The x-ui binary prints its version as a bare dotted triple, e.g. 3.7.0.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
-
-# The release tag carries a leading v, the version output does not; the
-# comparison normalizes the prefix away on the tag side.
-TAG_VERSION_PATTERN = re.compile(r"^v?")
 
 # The IPv4 pattern used to validate an address reported by an echo
 # service; a full match only, so garbage is never accepted. The ACME
 # port, the certificate locations and the echo services live in the
 # [three_x_ui_xray_setup] config table, never as module constants.
 IPV4_PATTERN = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
-
-
-def _normalized_version(value: str) -> str:
-    """The version with an optional leading v stripped."""
-
-    return TAG_VERSION_PATTERN.sub("", value)
 
 
 def _installed_version(
@@ -2479,7 +2470,7 @@ def task(ctx: Context) -> TaskResult:
 
     rerun = (
         not force
-        and installed_version == _normalized_version(tag)
+        and installed_version == version_without_tag_prefix(tag)
         and enabled
         and active
     )

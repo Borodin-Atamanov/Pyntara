@@ -107,7 +107,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     ),
     "src/pyntara/tasks/rustdesk_setup.py": frozenset(
         {
-            'TAG_VERSION_PATTERN = re.compile(r"^v?")',
             'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+(?:\\.\\d+)?)")',
         }
     ),
@@ -117,7 +116,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
         {
             'IPV4_PATTERN = re.compile(r"\\d{1,3}(?:\\.\\d{1,3}){3}")',
-            'TAG_VERSION_PATTERN = re.compile(r"^v?")',
             'VERSION_PATTERN = re.compile(r"(\\d+\\.\\d+\\.\\d+)")',
         }
     ),
@@ -191,7 +189,6 @@ PATH_LITERALS_ALLOWED: dict[str, frozenset[str]] = {}
 # today and copied in the modules that read a release version.
 DUPLICATED_PATTERNS_ALLOWED: dict[str, int] = {
     "(\\d+\\.\\d+\\.\\d+)": 3,
-    "^v?": 2,
 }
 
 

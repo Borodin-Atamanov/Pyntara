@@ -25,6 +25,7 @@ from pyntara.utils import (
     service_is_enabled,
     service_main_pid,
     trim_whitespace,
+    version_without_tag_prefix,
 )
 
 # Two URLs for the parallel query tests: the shape of the addresses does
@@ -852,5 +853,16 @@ def test_apply_owner_skips_outside_root(
     )
     utils.apply_owner(target, 7, 11)
     assert chowned == []
+
+
+def test_version_without_tag_prefix_strips_one_leading_v() -> None:
+    # Both spellings of a release tag compare equal to the version an
+    # installed tool prints: the one with the leading v and the one
+    # without it. Everything else stays untouched, so a version that
+    # merely starts with a v can never lose a character.
+    assert version_without_tag_prefix("v3.7.0") == "3.7.0"
+    assert version_without_tag_prefix("3.7.0") == "3.7.0"
+    assert version_without_tag_prefix("vv1.0") == "v1.0"
+    assert version_without_tag_prefix("") == ""
 
 
