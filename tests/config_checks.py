@@ -2111,6 +2111,21 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kwin_reload_command=_string_list(
             raw.get("kwin_reload_command"), "kde_settings.kwin_reload_command"
         ),
+        kwin_desktop_count_command=_placeholder_command_field(
+            raw.get("kwin_desktop_count_command"),
+            "kde_settings.kwin_desktop_count_command",
+            (),
+        ),
+        kwin_desktop_create_command=_placeholder_command_field(
+            raw.get("kwin_desktop_create_command"),
+            "kde_settings.kwin_desktop_create_command",
+            ("{position}", "{desktop_name}"),
+        ),
+        kwin_desktop_remove_command=_placeholder_command_field(
+            raw.get("kwin_desktop_remove_command"),
+            "kde_settings.kwin_desktop_remove_command",
+            ("{desktop_id}",),
+        ),
         sddm_conf_file=Path(
             _nonempty_string_field(
                 raw.get("sddm_conf_file"), "kde_settings.sddm_conf_file"
@@ -3858,6 +3873,11 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
         launcher_template_file_name=_nonempty_string_field(
             raw.get("launcher_template_file_name"),
             "telegram_setup.launcher_template_file_name",
+        ),
+        tar_extract_command=_placeholder_command_field(
+            raw.get("tar_extract_command"),
+            "telegram_setup.tar_extract_command",
+            ("{archive}", "{extract_dir}"),
         ),
         launcher_file_mode=_octal_mode_field(
             raw.get("launcher_file_mode"), "telegram_setup.launcher_file_mode"

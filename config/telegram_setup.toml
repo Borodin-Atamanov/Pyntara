@@ -52,6 +52,9 @@ extract_dir_prefix = "pyntara-telegram-"
 # Launcher entry template under task_data/telegram_setup/ of the clone,
 # with $binary and $icon as its placeholders.
 launcher_template_file_name = "telegramdesktop.desktop"
+# Command that extracts the downloaded archive into the temporary
+# directory, with the archive path and the directory as its placeholders.
+tar_extract_command = ["tar", "--extract", "--file", "{archive}", "--directory", "{extract_dir}"]
 # Modes of the three deployed files: the launcher entry and the icon are read
 # by the desktop, the two binaries are executed by the user.
 launcher_file_mode = "0644"

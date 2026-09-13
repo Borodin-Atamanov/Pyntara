@@ -60,6 +60,15 @@ virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]
 # Command that makes kwin re-read its configuration, so a changed Wayland
 # input method applies without a session restart.
 kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]
+# Commands that read and change the number of virtual desktops through the
+# kwin DBus interface: the live count, the creation of one desktop at a
+# position and the removal of one desktop by id. The source of truth stays
+# kwinrc; these calls only make the running session match it. The name the
+# create call carries is left empty by the task, because kwin names a new
+# desktop after its position.
+kwin_desktop_count_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.count"]
+kwin_desktop_create_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.createDesktop", "{position}", "{desktop_name}"]
+kwin_desktop_remove_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.removeDesktop", "{desktop_id}"]
 # The SDDM login screen: autologin into the configured user session and
 # the login theme. These live in the system files /etc/sddm.conf and
 # /etc/sddm.conf.d/20-kubuntu.conf and are written by the task as root.

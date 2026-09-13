@@ -91,6 +91,9 @@ class KdeSettingsConfig:
     virtual_keyboard_input_method: str
     virtual_keyboard_locales: tuple[str, ...]
     kwin_reload_command: tuple[str, ...]
+    kwin_desktop_count_command: tuple[str, ...]
+    kwin_desktop_create_command: tuple[str, ...]
+    kwin_desktop_remove_command: tuple[str, ...]
     sddm_conf_file: Path
     sddm_theme_conf_file: Path
     user_config_dir: str

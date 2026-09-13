@@ -62,6 +62,7 @@ numlock_on_boot, the NumLock state on Plasma startup.
 touchpad_click_method and touchpad_disable_on_external_mouse, the touchpad preferences.  
 virtual_keyboard_enabled, virtual_keyboard_input_method and virtual_keyboard_locales, the Wayland virtual keyboard.  
 kwin_reload_command, the command that makes kwin re-read its configuration.  
+kwin_desktop_count_command, kwin_desktop_create_command and kwin_desktop_remove_command, the DBus calls that read the live virtual desktop count, create a desktop at a position and remove a desktop by id, so the running session matches kwinrc.  
 sddm_autologin_user, sddm_autologin_session, sddm_theme, sddm_theme_cursor_size, sddm_theme_cursor_theme and sddm_theme_font, the SDDM login screen values; sddm_conf_file and sddm_theme_conf_file are the system files that carry them.  
 user_config_dir, user_kwin_scripts_dir, user_look_and_feel_dir, user_places_file, user_dirs_file and konsole_profile_path, the paths the task reads and writes under home_dir; a relative path starts at that home.  
 system_look_and_feel_dir and theme_defaults_dir, the system copy of the global themes and the directory inside a theme that carries its defaults, from which the task copies a theme whose defaults hold the configured cursor theme.  

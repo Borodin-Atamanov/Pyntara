@@ -42,6 +42,7 @@ class TelegramSetupConfig:
     archive_directory_name: str
     extract_dir_prefix: str
     launcher_template_file_name: str
+    tar_extract_command: tuple[str, ...]
     launcher_file_mode: int
     icon_file_mode: int
     executable_file_mode: int

@@ -1570,12 +1570,7 @@ def _apply_desktop_count_live(
         result = run_command(
             _as_user_command(
                 cfg,
-                [
-                    "qdbus6",
-                    "org.kde.KWin",
-                    "/VirtualDesktopManager",
-                    "org.kde.KWin.VirtualDesktopManager.count",
-                ],
+                substituted_command(cfg.kwin_desktop_count_command, {}),
             ),
             extra_env=env,
             timeout=timeout,
@@ -1592,14 +1587,10 @@ def _apply_desktop_count_live(
                 run_command(
                     _as_user_command(
                         cfg,
-                        [
-                            "qdbus6",
-                            "org.kde.KWin",
-                            "/VirtualDesktopManager",
-                            "org.kde.KWin.VirtualDesktopManager.createDesktop",
-                            str(position),
-                            "",
-                        ],
+                        substituted_command(
+                            cfg.kwin_desktop_create_command,
+                            {"position": str(position), "desktop_name": ""},
+                        ),
                     ),
                     extra_env=env,
                     timeout=timeout,
@@ -1624,13 +1615,10 @@ def _apply_desktop_count_live(
                 run_command(
                     _as_user_command(
                         cfg,
-                        [
-                            "qdbus6",
-                            "org.kde.KWin",
-                            "/VirtualDesktopManager",
-                            "org.kde.KWin.VirtualDesktopManager.removeDesktop",
-                            desktop_id,
-                        ],
+                        substituted_command(
+                            cfg.kwin_desktop_remove_command,
+                            {"desktop_id": desktop_id},
+                        ),
                     ),
                     extra_env=env,
                     timeout=timeout,

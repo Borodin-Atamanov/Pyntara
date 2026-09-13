@@ -1576,15 +1576,10 @@ def _self_signed_not_expired(
 
     try:
         result = run_command(
-            [
-                "openssl",
-                "x509",
-                "-in",
-                str(cfg.self_signed_cert_fullchain),
-                "-noout",
-                "-checkend",
-                "0",
-            ],
+            substituted_command(
+                cfg.openssl_check_command,
+                {"fullchain": str(cfg.self_signed_cert_fullchain)},
+            ),
             check=False,
             capture=True,
             timeout=timeout,

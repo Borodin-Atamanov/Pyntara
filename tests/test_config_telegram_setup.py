@@ -129,6 +129,8 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'archive_directory_name = "Telegram"\n'
         'extract_dir_prefix = "pyntara-telegram-"\n'
         'launcher_template_file_name = "telegramdesktop.desktop"\n'
+        'tar_extract_command = ["tar", "--extract", "--file", "{archive}", '
+        '"--directory", "{extract_dir}"]\n'
         'launcher_file_mode = "0644"\n'
         'icon_file_mode = "0644"\n'
         'executable_file_mode = "0755"\n'

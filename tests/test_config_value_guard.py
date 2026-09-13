@@ -41,7 +41,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "pyntara"
 CONFIG_LAYER = PACKAGE_ROOT / "config"
 
 VALUE_CONSTANT_DEFINITION = re.compile(r"^([A-Z][A-Z0-9_]*)\s+=\s+\S")
-COMMAND_ARGV_LITERAL = re.compile(r'\[\s*"[a-z0-9][a-z0-9._+-]*"\s*,')
+COMMAND_ARGV_LITERAL = re.compile(r'\[\s*"([a-z0-9][a-z0-9._+-]*)"\s*,', re.DOTALL)
 ABSOLUTE_PATH_LITERAL = re.compile(r'"(/[a-z][^"]*)"')
 COMPILED_PATTERN = re.compile(r"re\.compile\(\s*r?([\"'])(.*?)\1", re.DOTALL)
 KERNEL_PATH_PREFIXES = ("/proc", "/sys", "/dev")
@@ -156,7 +156,8 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 # Command argv literals: every command of an external tool the run invokes
 # is a config value with its placeholders. The list is empty: every module
 # of the package reads its commands from the config, and a new literal in
-# code fails the suite here.
+# code fails the suite here, whether it is written on one line or over
+# several.
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {}
 
 # Absolute path literals outside /proc, /sys and /dev: the augeas node
@@ -198,6 +199,25 @@ def _offenders(pattern: re.Pattern[str]) -> dict[str, frozenset[str]]:
         for line in path.read_text(encoding="utf-8").splitlines():
             if pattern.search(line):
                 found.setdefault(_relative(path), set()).add(line.strip())
+    return {module: frozenset(lines) for module, lines in found.items()}
+
+
+def _argv_offenders() -> dict[str, frozenset[str]]:
+    """The command argv literals of every module, line breaks and all.
+
+    The search reads the whole module instead of its lines, because a
+    command list written over several lines is a command list all the same:
+    a line by line search sees a list only when it starts and ends on one
+    line, which is exactly the shape a formatter removes. The recorded
+    entry names the program of the list, so the message stays readable.
+    """
+
+    found: dict[str, set[str]] = {}
+    for path in _module_paths():
+        text = path.read_text(encoding="utf-8")
+        for match in COMMAND_ARGV_LITERAL.finditer(text):
+            entry = f'["{match.group(1)}", ...'
+            found.setdefault(_relative(path), set()).add(entry)
     return {module: frozenset(lines) for module, lines in found.items()}
 
 
@@ -276,9 +296,11 @@ def test_no_module_defines_a_value_constant() -> None:
 def test_no_module_spells_a_command_argv() -> None:
     # Every command the run invokes is a config value with its placeholders,
     # so a mirror host, a renamed unit or another tool needs no code change.
+    # The rule reads the whole module: a command list written over several
+    # lines is an unconfigured call like any other.
     _assert_matches_allowlist(
         "command argv",
-        _offenders(COMMAND_ARGV_LITERAL),
+        _argv_offenders(),
         COMMAND_ARGV_ALLOWED,
     )
 
@@ -343,7 +365,14 @@ def test_every_rule_finds_its_shape_in_a_module(
         "PROFILE_ID_PATTERN = re.compile(r'[0-9a-f]{6}')\n"
         'run_command(["nmcli", "general", "reload"], timeout=60)\n'
         'STATE_FILE_PATH = Path("/var/lib/pyntara/state")\n'
-        "MEMORY_FILE_PATH = Path('/proc/meminfo')\n",
+        "MEMORY_FILE_PATH = Path('/proc/meminfo')\n"
+        "run_command(\n"
+        "    [\n"
+        '        "tar",\n'
+        '        "--extract",\n'
+        "    ],\n"
+        "    timeout=60,\n"
+        ")\n",
         encoding="utf-8",
     )
     second.write_text(
@@ -364,8 +393,8 @@ def test_every_rule_finds_its_shape_in_a_module(
             "MEMORY_FILE_PATH = Path('/proc/meminfo')",
         }
     )
-    assert _offenders(COMMAND_ARGV_LITERAL)["src/pyntara/first.py"] == frozenset(
-        {'run_command(["nmcli", "general", "reload"], timeout=60)'}
+    assert _argv_offenders()["src/pyntara/first.py"] == frozenset(
+        {'["nmcli", ...', '["tar", ...'}
     )
     assert _path_offenders()["src/pyntara/first.py"] == frozenset(
         {'STATE_FILE_PATH = Path("/var/lib/pyntara/state")'}

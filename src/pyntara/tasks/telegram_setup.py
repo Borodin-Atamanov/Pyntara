@@ -44,6 +44,7 @@ from pyntara.utils import (
     curl_command,
     download_command,
     run_command,
+    substituted_command,
     task_data_dir,
 )
 
@@ -185,14 +186,10 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
     extract_dir = Path(tempfile.mkdtemp(prefix=cfg.extract_dir_prefix))
     try:
         run_command(
-            [
-                "tar",
-                "--extract",
-                "--file",
-                str(archive),
-                "--directory",
-                str(extract_dir),
-            ],
+            substituted_command(
+                cfg.tar_extract_command,
+                {"archive": str(archive), "extract_dir": str(extract_dir)},
+            ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

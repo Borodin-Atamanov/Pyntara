@@ -52,6 +52,7 @@ updater_file_name - the updater binary name, the second file the archive carries
 archive_directory_name - the directory inside the extracted archive that holds the two binaries
 extract_dir_prefix - the prefix of the temporary directory the archive is unpacked into
 launcher_template_file_name - the launcher entry template under task_data/telegram_setup/ of the clone, with $binary and $icon as its placeholders
+tar_extract_command - the command that extracts the downloaded archive into the temporary directory, with {archive} and {extract_dir} as its placeholders
 launcher_file_mode - the mode of the written launcher entry
 icon_file_mode - the mode of the downloaded icon
 executable_file_mode - the mode of the installed binaries
