@@ -1139,7 +1139,7 @@ def _actual_panel_port(
 
 
 def _converge_panel_port(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> tuple[bool, str | None]:
     """Bring the panel to the configured port; returns (changed, message).
 
@@ -1160,6 +1160,7 @@ def _converge_panel_port(
     _log(f"moving the panel from port {actual} to {cfg.panel_port}")
     try:
         ensure_port_free(
+            engine,
             cfg.panel_port,
             cfg.service_unit_name,
             timeout,
@@ -1681,7 +1682,7 @@ def _ensure_self_signed_cert(
 
 
 def _issue_trusted_cert(
-    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
 ) -> TaskResult | None:
     """Issue a trusted Let's Encrypt certificate and report the result.
 
@@ -1694,6 +1695,7 @@ def _issue_trusted_cert(
     _log(f"issuing Let's Encrypt IP certificate for {ip}")
     try:
         freed = ensure_port_free(
+            engine,
             cfg.acme_port,
             cfg.service_unit_name,
             timeout,
@@ -1751,11 +1753,11 @@ def _stage_ssl(
             return None
         ip = _detect_server_ip(facts)
         if ip is not None:
-            return _issue_trusted_cert(cfg, ip, timeout)
+            return _issue_trusted_cert(engine, cfg, ip, timeout)
         return None
     ip = _detect_server_ip(facts)
     if ip is not None and _ssl_reachable(cfg, timeout, facts):
-        return _issue_trusted_cert(cfg, ip, timeout)
+        return _issue_trusted_cert(engine, cfg, ip, timeout)
     ok, message = _ensure_self_signed_cert(engine, cfg, timeout, facts)
     if ok:
         return TaskResult(
@@ -2527,6 +2529,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking panel port {cfg.panel_port} is free")
         try:
             freed = ensure_port_free(
+                ctx.config.engine,
                 cfg.panel_port,
                 cfg.service_unit_name,
                 timeout,
@@ -2553,6 +2556,7 @@ def task(ctx: Context) -> TaskResult:
             _log(f"checking ACME port {cfg.acme_port} is free")
             try:
                 freed = ensure_port_free(
+                    ctx.config.engine,
                     cfg.acme_port,
                     cfg.service_unit_name,
                     timeout,
@@ -2636,7 +2640,9 @@ def task(ctx: Context) -> TaskResult:
     # can find a panel on a port left by an earlier install, and the
     # installer preserves an existing port on a reinstall.
     try:
-        converged, converged_message = _converge_panel_port(cfg, timeout)
+        converged, converged_message = _converge_panel_port(
+            ctx.config.engine, cfg, timeout
+        )
     except RuntimeError as exc:
         return TaskResult(success=False, error=str(exc))
     if converged:

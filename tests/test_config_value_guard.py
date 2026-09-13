@@ -167,19 +167,10 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 }
 
 # Command argv literals: every command of an external tool the run invokes
-# is a config value with its placeholders. These are the call sites that
-# still spell their argv in code, module by module; the list is the work
-# that is left and must shrink with every migration block. The package
-# group of the shared helpers is the last module on the list.
-COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
-    "src/pyntara/utils.py": frozenset(
-        {
-            '["ss", "-tlnp", f"sport = :{port}"],',
-            '["systemctl", "show", "-p", "MainPID", "--value", service_name],',
-            'run_command(["systemctl", "stop", service_unit_name], timeout=timeout)',
-        }
-    ),
-}
+# is a config value with its placeholders. The list is empty: every module
+# of the package reads its commands from the config, and a new literal in
+# code fails the suite here.
+COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {}
 
 # Absolute path literals outside /proc, /sys and /dev: the augeas node
 # prefix of the two ssh tasks, which is the interface of an external tool

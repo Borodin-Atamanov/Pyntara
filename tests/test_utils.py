@@ -674,7 +674,7 @@ class TestPortFreeing:
             )
 
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-        assert port_listener_pid(35353, timeout=30) == 34311
+        assert port_listener_pid(make_config().engine, 35353, timeout=30) == 34311
 
     def test_port_listener_pid_none_when_free(
         self, monkeypatch: pytest.MonkeyPatch
@@ -684,7 +684,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, ""),
         )
-        assert port_listener_pid(35353, timeout=30) is None
+        assert port_listener_pid(make_config().engine, 35353, timeout=30) is None
 
     def test_port_listener_pid_none_on_ss_failure(
         self, monkeypatch: pytest.MonkeyPatch
@@ -695,7 +695,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(7, ""),
         )
-        assert port_listener_pid(35353, timeout=30) is None
+        assert port_listener_pid(make_config().engine, 35353, timeout=30) is None
 
     def test_service_main_pid_parses(
         self, monkeypatch: pytest.MonkeyPatch
@@ -705,7 +705,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, "34311\n"),
         )
-        assert service_main_pid("x-ui.service", timeout=30) == 34311
+        assert service_main_pid(make_config().engine, "x-ui.service", timeout=30) == 34311
 
     def test_service_main_pid_none_when_stopped(
         self, monkeypatch: pytest.MonkeyPatch
@@ -715,7 +715,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, "0\n"),
         )
-        assert service_main_pid("x-ui.service", timeout=30) is None
+        assert service_main_pid(make_config().engine, "x-ui.service", timeout=30) is None
 
     def test_ensure_port_free_free_port_does_nothing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -730,6 +730,7 @@ class TestPortFreeing:
             "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
         )
         result = ensure_port_free(
+            make_config().engine,
             35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is None
@@ -762,6 +763,7 @@ class TestPortFreeing:
 
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         result = ensure_port_free(
+            make_config().engine,
             35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is not None
@@ -796,6 +798,7 @@ class TestPortFreeing:
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr("pyntara.utils.process_comm", lambda pid: "x-ui")
         result = ensure_port_free(
+            make_config().engine,
             35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is not None
@@ -829,6 +832,7 @@ class TestPortFreeing:
             "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
         )
         result = ensure_port_free(
+            make_config().engine,
             35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is not None
@@ -873,6 +877,7 @@ class TestPortFreeing:
         monotonic = iter([0.0, 0.0, 6.0])
         monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
         result = ensure_port_free(
+            make_config().engine,
             35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is not None
@@ -900,8 +905,76 @@ class TestPortFreeing:
         monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
         with pytest.raises(RuntimeError, match="still listens"):
             ensure_port_free(
+                make_config().engine,
                 35353, "x-ui.service", timeout=30, service_process_name="x-ui"
             )
+
+
+def test_port_and_main_pid_queries_come_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The listener query and the MainPID query are config values: another
+    # argv in the engine table is exactly what runs, the port and the unit
+    # fill the placeholders, so a derivative that queries them differently
+    # edits only the config.
+    engine = replace(
+        make_config().engine,
+        socket_listener_command=("myss", "--listen", "{port}"),
+        systemctl_main_pid_command=("myctl", "main-pid", "{unit}"),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        calls.append(list(command))
+        if command[0] == "myss":
+            return _FakeProc(
+                0, 'LISTEN 0 4096 *:35353 *:* users:(("x-ui",pid=7,fd=11))\n'
+            )
+        return _FakeProc(0, "7\n")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    assert port_listener_pid(engine, 35353, timeout=30) == 7
+    assert service_main_pid(engine, "x-ui.service", timeout=30) == 7
+    assert calls == [
+        ["myss", "--listen", "35353"],
+        ["myctl", "main-pid", "x-ui.service"],
+    ]
+
+
+def test_the_stop_call_comes_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The stop of the managed service is a config value as well: with the
+    # shipped table the sequence is the ss query, the MainPID query, the
+    # stop and the confirming query of the port.
+    engine = replace(
+        make_config().engine,
+        systemctl_stop_command=("myctl", "halt", "{unit}"),
+    )
+    calls: list[list[str]] = []
+    listener_outputs = [
+        'LISTEN 0 4096 *:35353 *:* users:(("x-ui",pid=34311,fd=11))\n',
+        "",
+    ]
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        calls.append(list(command))
+        if command[0] == "ss":
+            return _FakeProc(0, listener_outputs.pop(0))
+        return _FakeProc(0, "34311\n")
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    assert ensure_port_free(engine, 35353, "x-ui.service", 30) == (
+        "stopped x-ui.service listening on port 35353"
+    )
+    assert calls == [
+        ["ss", "-tlnp", "sport = :35353"],
+        ["systemctl", "show", "-p", "MainPID", "--value", "x-ui.service"],
+        ["myctl", "halt", "x-ui.service"],
+        ["ss", "-tlnp", "sport = :35353"],
+    ]
 
 
 def test_repository_root_is_computed_once() -> None:

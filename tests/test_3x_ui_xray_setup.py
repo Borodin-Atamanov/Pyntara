@@ -799,6 +799,7 @@ class TestProquintCredentials:
         captured: list[tuple[int, str, str | None]] = []
 
         def fake_ensure_port_free(
+            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
@@ -883,6 +884,7 @@ class TestProquintCredentials:
         captured: list[str | None] = []
 
         def fake_ensure_port_free(
+            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
@@ -921,6 +923,7 @@ class TestProquintCredentials:
         captured: list[tuple[int, str, str | None]] = []
 
         def fake_ensure_port_free(
+            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
@@ -995,7 +998,7 @@ class TestProquintCredentials:
         captured: list[int] = []
 
         def fake_ensure_port_free(
-            port: int, *_args: object, **_kwargs: object
+            _engine: object, port: int, *_args: object, **_kwargs: object
         ) -> None:
             captured.append(port)
 
@@ -1011,7 +1014,7 @@ class TestProquintCredentials:
             ),
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1046,7 +1049,7 @@ class TestProquintCredentials:
         captured: list[int] = []
 
         def fake_ensure_port_free(
-            port: int, *_args: object, **_kwargs: object
+            _engine: object, port: int, *_args: object, **_kwargs: object
         ) -> None:
             captured.append(port)
 
@@ -1057,7 +1060,7 @@ class TestProquintCredentials:
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1101,7 +1104,7 @@ class TestProquintCredentials:
             ),
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1140,7 +1143,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(xui, "_stage_ssl", fake_stage_ssl)
         monkeypatch.setattr(xui, "_sync_install_result_env", fake_sync)
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
         )
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
@@ -1226,7 +1229,7 @@ class TestPanelPortConvergence:
         )
         monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
         cfg = self._cfg(tmp_path)
-        changed, message = xui._converge_panel_port(cfg, 30)
+        changed, message = xui._converge_panel_port(make_config().engine, cfg, 30)
         assert changed is True
         assert message == "panel port moved to 35353"
         assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
@@ -1249,7 +1252,7 @@ class TestPanelPortConvergence:
             "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
         )
         cfg = self._cfg(tmp_path)
-        changed, message = xui._converge_panel_port(cfg, 30)
+        changed, message = xui._converge_panel_port(make_config().engine, cfg, 30)
         assert changed is False
         assert message is None
         assert not any(c[1:3] == ["setting", "-port"] for c in calls)
@@ -1274,7 +1277,7 @@ class TestPanelPortConvergence:
         )
         cfg = self._cfg(tmp_path)
         with pytest.raises(RuntimeError):
-            xui._converge_panel_port(cfg, 30)
+            xui._converge_panel_port(make_config().engine, cfg, 30)
 
     def test_converges_panel_port_after_install(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1805,7 +1808,7 @@ class TestStageSsl:
         monkeypatch.setattr(xui, "_actual_panel_port", lambda _cfg, _t: "1111")
         monkeypatch.setattr(xui, "ensure_port_free", lambda *_a, **_k: None)
         monkeypatch.setattr(xui, "_wait_panel_http", lambda *_a, **_k: True)
-        xui._converge_panel_port(cfg, 30.0)
+        xui._converge_panel_port(make_config().engine, cfg, 30.0)
         assert [
             "systemctl",
             "restart",

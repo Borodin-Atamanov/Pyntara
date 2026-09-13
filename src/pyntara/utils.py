@@ -602,17 +602,18 @@ def service_is_active(engine: EngineConfig, name: str, timeout: float) -> bool:
     )
 
 
-def port_listener_pid(port: int, timeout: float) -> int | None:
+def port_listener_pid(engine: EngineConfig, port: int, timeout: float) -> int | None:
     """The PID of the process listening on the TCP port, or None.
 
-    The query runs `ss -tlnp "sport = :PORT"` and parses the first
-    pid=N token in the process column. None when the port is free, when
-    ss is unavailable, or when the query fails: an unknown listener is
-    reported as absent so the caller can proceed safely.
+    The query is a config value, so the argv of ss lives in the engine
+    table; the first pid=N token of the process column is parsed. None
+    when the port is free, when ss is unavailable, or when the query
+    fails: an unknown listener is reported as absent so the caller can
+    proceed safely.
     """
 
     result = run_command(
-        ["ss", "-tlnp", f"sport = :{port}"],
+        substituted_command(engine.socket_listener_command, {"port": str(port)}),
         check=False,
         capture=True,
         timeout=timeout,
@@ -626,16 +627,20 @@ def port_listener_pid(port: int, timeout: float) -> int | None:
     return None
 
 
-def service_main_pid(service_name: str, timeout: float) -> int | None:
+def service_main_pid(
+    engine: EngineConfig, service_name: str, timeout: float
+) -> int | None:
     """The systemd MainPID of the service, or None when not running.
 
-    systemctl show -p MainPID --value prints 0 when the unit has no
-    running main process; that is normalized to None, so a stopped
-    service never matches a live listener.
+    The query is a config value. The command prints 0 when the unit has no
+    running main process; that is normalized to None, so a stopped service
+    never matches a live listener.
     """
 
     result = run_command(
-        ["systemctl", "show", "-p", "MainPID", "--value", service_name],
+        substituted_command(
+            engine.systemctl_main_pid_command, {"unit": service_name}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -665,6 +670,7 @@ def process_comm(pid: int) -> str | None:
 
 
 def ensure_port_free(
+    engine: EngineConfig,
     port: int,
     service_unit_name: str,
     timeout: float,
@@ -683,15 +689,20 @@ def ensure_port_free(
     Raises RuntimeError when the port is still occupied after the action.
     """
 
-    pid = port_listener_pid(port, timeout)
+    pid = port_listener_pid(engine, port, timeout)
     if pid is None:
         return None
-    is_ours = pid == service_main_pid(service_unit_name, timeout)
+    is_ours = pid == service_main_pid(engine, service_unit_name, timeout)
     if not is_ours and service_process_name:
         is_ours = process_comm(pid) == service_process_name
     if is_ours:
-        run_command(["systemctl", "stop", service_unit_name], timeout=timeout)
-        if port_listener_pid(port, timeout) is None:
+        run_command(
+            substituted_command(
+                engine.systemctl_stop_command, {"unit": service_unit_name}
+            ),
+            timeout=timeout,
+        )
+        if port_listener_pid(engine, port, timeout) is None:
             return f"stopped {service_unit_name} listening on port {port}"
         # systemctl did not free the port: the listener is not the managed
         # service (for example a manually started binary), fall through to
@@ -703,14 +714,14 @@ def ensure_port_free(
         return None
     deadline = time.monotonic() + kill_grace_seconds
     while time.monotonic() < deadline:
-        if port_listener_pid(port, timeout) is None:
+        if port_listener_pid(engine, port, timeout) is None:
             return f"terminated unknown process {pid} on port {port}"
         time.sleep(0.2)
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         return None
-    if port_listener_pid(port, timeout) is not None:
+    if port_listener_pid(engine, port, timeout) is not None:
         raise RuntimeError(
             f"process {pid} still listens on port {port} after SIGKILL"
         )

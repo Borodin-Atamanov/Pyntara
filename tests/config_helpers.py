@@ -91,6 +91,10 @@ def base_config() -> str:
         'systemctl_is_active_command = ["systemctl", "is-active", "{unit}"]\n'
         'systemd_enabled_states = ["enabled", "enabled-runtime"]\n'
         'systemd_active_state = "active"\n'
+        'socket_listener_command = ["ss", "-tlnp", "sport = :{port}"]\n'
+        'systemctl_main_pid_command = '
+        '["systemctl", "show", "-p", "MainPID", "--value", "{unit}"]\n'
+        'systemctl_stop_command = ["systemctl", "stop", "{unit}"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

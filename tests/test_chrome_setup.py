@@ -429,7 +429,7 @@ def test_local_proxy_server_reads_the_three_x_ui_section(
     )
 
     proxy_server, note = chrome_setup._local_proxy_server(
-        client_config, timeout=60
+        make_config().engine, client_config, timeout=60
     )
 
     assert proxy_server == "socks5://127.0.0.1:10888"
@@ -443,7 +443,7 @@ def test_local_proxy_server_without_a_listener_returns_a_note(
     _fake_run_factory(monkeypatch, local_proxy_listening=False)
 
     proxy_server, note = chrome_setup._local_proxy_server(
-        ctx.config.three_x_ui_xray_setup, timeout=60
+        make_config().engine, ctx.config.three_x_ui_xray_setup, timeout=60
     )
 
     assert proxy_server == ""
@@ -461,7 +461,7 @@ def test_local_proxy_server_without_configured_address_returns_a_note(
     )
 
     proxy_server, note = chrome_setup._local_proxy_server(
-        client_config, timeout=60
+        make_config().engine, client_config, timeout=60
     )
 
     assert proxy_server == ""

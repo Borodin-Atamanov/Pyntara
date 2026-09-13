@@ -498,7 +498,7 @@ def _ensure_profile_mirror(
 
 
 def _local_proxy_server(
-    cfg: ThreeXuiXraySetupConfig, *, timeout: float
+    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, *, timeout: float
 ) -> tuple[str, str | None]:
     """The SOCKS5 address of the local proxy; (proxy text, note).
 
@@ -519,7 +519,7 @@ def _local_proxy_server(
             "the three_x_ui_xray_setup section carries no local proxy address; "
             "Chrome starts without the proxy"
         )
-    if port_listener_pid(port, timeout) is None:
+    if port_listener_pid(engine, port, timeout) is None:
         return "", (
             f"no local proxy listens on {address}:{port}; Chrome starts without it"
         )
@@ -879,7 +879,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log("checking the local proxy of the Xray client")
     proxy_server, proxy_note = _local_proxy_server(
-        ctx.config.three_x_ui_xray_setup, timeout=timeout
+        ctx.config.engine, ctx.config.three_x_ui_xray_setup, timeout=timeout
     )
     if proxy_note:
         warnings.append(proxy_note)
@@ -942,7 +942,7 @@ def task(ctx: Context) -> TaskResult:
         ) as exc:
             warnings.append(f"cannot restart the Plasma panel: {exc}")
 
-    if port_listener_pid(cfg.cdp_port, timeout) is None:
+    if port_listener_pid(ctx.config.engine, cfg.cdp_port, timeout) is None:
         if _chrome_is_running(cfg, timeout):
             warnings.append(
                 "Chrome is running but the DevTools listener does not answer on "

@@ -130,3 +130,6 @@ class EngineConfig:
     systemctl_is_active_command: tuple[str, ...] = ()
     systemd_enabled_states: tuple[str, ...] = ()
     systemd_active_state: str = ""
+    socket_listener_command: tuple[str, ...] = ()
+    systemctl_main_pid_command: tuple[str, ...] = ()
+    systemctl_stop_command: tuple[str, ...] = ()

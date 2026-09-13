@@ -1250,6 +1250,21 @@ def _engine_table(raw: object) -> EngineConfig:
         systemd_active_state=_nonempty_string_field(
             raw.get("systemd_active_state"), "engine.systemd_active_state"
         ),
+        socket_listener_command=_placeholder_command_field(
+            raw.get("socket_listener_command"),
+            "engine.socket_listener_command",
+            ("{port}",),
+        ),
+        systemctl_main_pid_command=_placeholder_command_field(
+            raw.get("systemctl_main_pid_command"),
+            "engine.systemctl_main_pid_command",
+            ("{unit}",),
+        ),
+        systemctl_stop_command=_placeholder_command_field(
+            raw.get("systemctl_stop_command"),
+            "engine.systemctl_stop_command",
+            ("{unit}",),
+        ),
     )
 
 

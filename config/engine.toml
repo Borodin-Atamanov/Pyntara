@@ -253,3 +253,8 @@ systemctl_is_enabled_command = ["systemctl", "is-enabled", "{unit}"]
 systemctl_is_active_command = ["systemctl", "is-active", "{unit}"]
 systemd_enabled_states = ["enabled", "enabled-runtime"]
 systemd_active_state = "active"
+# The port and process queries of the shared helpers and the stop call
+# they use when the listener turns out to be the managed service.
+socket_listener_command = ["ss", "-tlnp", "sport = :{port}"]
+systemctl_main_pid_command = ["systemctl", "show", "-p", "MainPID", "--value", "{unit}"]
+systemctl_stop_command = ["systemctl", "stop", "{unit}"]
