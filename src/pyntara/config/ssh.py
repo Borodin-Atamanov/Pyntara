@@ -57,6 +57,10 @@ class SshDaemonSetupConfig:
     comment written at the top of the drop-in, without the leading hash,
     augeas_lens is the lens of the sshd_config syntax and port_directive
     is the directive whose change needs a restart instead of a reload.
+    effective_config_command and listening_sockets_command query the
+    daemon and the listener table, and the remaining commands carry the
+    systemctl calls on the two units, naming the unit through
+    {socket_unit_name} or {service_unit_name}.
     """
 
     package_name: str
@@ -73,6 +77,13 @@ class SshDaemonSetupConfig:
     dropin_header: str
     augeas_lens: str
     port_directive: str
+    effective_config_command: tuple[str, ...]
+    listening_sockets_command: tuple[str, ...]
+    socket_disable_command: tuple[str, ...]
+    service_enable_command: tuple[str, ...]
+    service_start_command: tuple[str, ...]
+    service_restart_command: tuple[str, ...]
+    service_reload_command: tuple[str, ...]
     private_key_file_name: str
     public_key_file_name: str
     private_key_file_mode: int

@@ -69,12 +69,15 @@ from pyntara.utils import (
     run_command,
     service_is_active,
     service_is_enabled,
+    substituted_command,
     task_data_dir,
 )
 
 
 def _verify_effective_config(
-    directives: tuple[SshDirective, ...], timeout: float
+    cfg: SshDaemonSetupConfig,
+    directives: tuple[SshDirective, ...],
+    timeout: float,
 ) -> str | None:
     """Error text when a configured directive is not effective; None when OK.
 
@@ -87,7 +90,10 @@ def _verify_effective_config(
 
     try:
         result = run_command(
-            ["sshd", "-T"], check=False, capture=True, timeout=timeout
+            list(cfg.effective_config_command),
+            check=False,
+            capture=True,
+            timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return f"cannot run sshd -T: {exc}"
@@ -109,7 +115,9 @@ def _verify_effective_config(
     return None
 
 
-def _verify_listening_port(port: str, timeout: float) -> str | None:
+def _verify_listening_port(
+    cfg: SshDaemonSetupConfig, port: str, timeout: float
+) -> str | None:
     """Error text when nothing listens on the port; None when OK.
 
     The check runs after a start or restart, because the daemon binds
@@ -119,7 +127,10 @@ def _verify_listening_port(port: str, timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["ss", "-tlnp"], check=False, capture=True, timeout=timeout
+            list(cfg.listening_sockets_command),
+            check=False,
+            capture=True,
+            timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return f"cannot run ss: {exc}"
@@ -423,7 +434,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     if (dropin_changed or force) and cfg.directives:
-        verify = _verify_effective_config(cfg.directives, timeout)
+        verify = _verify_effective_config(cfg, cfg.directives, timeout)
         if verify is not None:
             return TaskResult(success=False, changed=changed, error=verify)
         _log("effective configuration verified through sshd -T")
@@ -499,7 +510,10 @@ def task(ctx: Context) -> TaskResult:
         _log(f"disabling socket: systemctl disable --now {cfg.socket_unit_name}")
         try:
             run_command(
-                ["systemctl", "disable", "--now", cfg.socket_unit_name],
+                substituted_command(
+                    cfg.socket_disable_command,
+                    {"socket_unit_name": cfg.socket_unit_name},
+                ),
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -516,7 +530,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
         try:
             run_command(
-                ["systemctl", "enable", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_enable_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
@@ -540,7 +558,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"starting service: systemctl start {cfg.service_unit_name}")
         try:
             run_command(
-                ["systemctl", "start", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_start_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
@@ -566,7 +588,7 @@ def task(ctx: Context) -> TaskResult:
         _log("service active")
         changed = True
         if port_value is not None:
-            verify = _verify_listening_port(port_value, timeout)
+            verify = _verify_listening_port(cfg, port_value, timeout)
             if verify is not None:
                 return TaskResult(success=False, changed=changed, error=verify)
             _log(f"listener on port {port_value} verified")
@@ -574,7 +596,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"restarting service: systemctl restart {cfg.service_unit_name}")
         try:
             run_command(
-                ["systemctl", "restart", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_restart_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(
@@ -585,7 +611,7 @@ def task(ctx: Context) -> TaskResult:
         _log("service restarted")
         changed = True
         if port_value is not None:
-            verify = _verify_listening_port(port_value, timeout)
+            verify = _verify_listening_port(cfg, port_value, timeout)
             if verify is not None:
                 return TaskResult(success=False, changed=changed, error=verify)
             _log(f"listener on port {port_value} verified")
@@ -593,7 +619,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"reloading service: systemctl reload {cfg.service_unit_name}")
         try:
             run_command(
-                ["systemctl", "reload", cfg.service_unit_name], timeout=timeout
+                substituted_command(
+                    cfg.service_reload_command,
+                    {"service_unit_name": cfg.service_unit_name},
+                ),
+                timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return TaskResult(

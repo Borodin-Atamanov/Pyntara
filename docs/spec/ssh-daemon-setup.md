@@ -57,6 +57,13 @@ dropin_file_mode - the file mode of the drop-in, as an octal string
 dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
 augeas_lens - the augeas lens of the sshd_config syntax
 port_directive - the directive whose change needs a restart instead of a reload
+effective_config_command - the daemon query that prints the effective configuration (sshd -T)
+listening_sockets_command - the listener query the task reads the port from (ss -tlnp)
+socket_disable_command - the disable and stop of the socket unit, with {socket_unit_name}
+service_enable_command - the enable of the service unit, with {service_unit_name}
+service_start_command - the start of the service unit, with {service_unit_name}
+service_restart_command - the restart of the service unit, with {service_unit_name}
+service_reload_command - the reload of the service unit, with {service_unit_name}
 private_key_file_name - the repository name of the server private key
 public_key_file_name - the repository name of the server public key
 private_key_file_mode - the file mode of the deployed private key, as an octal string

@@ -629,6 +629,135 @@ def test_enable_start_and_wait(
     assert ["systemctl", "restart", "ssh.service"] not in calls
 
 
+def test_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The daemon query, the listener query and the three systemctl calls of
+    # a first run are config values: another command line in the section is
+    # exactly the argv the task runs.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    configured = replace(
+        ctx.config.ssh_daemon_setup,
+        effective_config_command=("sshd", "-T", "-C", "user=root"),
+        listening_sockets_command=("ss", "-tlnp", "-4"),
+        socket_disable_command=(
+            "systemctl",
+            "disable",
+            "--now",
+            "{socket_unit_name}",
+            "--quiet",
+        ),
+        service_enable_command=(
+            "systemctl",
+            "enable",
+            "{service_unit_name}",
+            "--quiet",
+        ),
+        service_start_command=(
+            "systemctl",
+            "start",
+            "{service_unit_name}",
+            "--no-block",
+        ),
+    )
+    ctx = replace(
+        ctx, config=replace(ctx.config, ssh_daemon_setup=configured)
+    )
+    cfg = ctx.config.ssh_daemon_setup
+    calls = _install_fake(
+        monkeypatch, enabled=False, active=False, socket_enabled=True
+    )
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert ["sshd", "-T", "-C", "user=root"] in calls
+    assert ["ss", "-tlnp", "-4"] in calls
+    assert [
+        "systemctl",
+        "disable",
+        "--now",
+        cfg.socket_unit_name,
+        "--quiet",
+    ] in calls
+    assert [
+        "systemctl",
+        "enable",
+        cfg.service_unit_name,
+        "--quiet",
+    ] in calls
+    assert [
+        "systemctl",
+        "start",
+        cfg.service_unit_name,
+        "--no-block",
+    ] in calls
+
+
+@pytest.mark.parametrize(
+    "overrides, outcome",
+    [
+        ({"Port": "22"}, "restart"),
+        ({"PasswordAuthentication": "yes"}, "reload"),
+    ],
+)
+def test_restart_and_reload_commands_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    overrides: dict[str, str],
+    outcome: str,
+) -> None:
+    # The restart and the reload of the service are config values too:
+    # another command line in the section is the argv the task runs.
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    _write_sshd_config(ctx)
+    configured = replace(
+        ctx.config.ssh_daemon_setup,
+        service_restart_command=(
+            "systemctl",
+            "restart",
+            "--no-block",
+            "{service_unit_name}",
+        ),
+        service_reload_command=(
+            "systemctl",
+            "reload",
+            "{service_unit_name}",
+            "--quiet",
+        ),
+    )
+    ctx = replace(
+        ctx, config=replace(ctx.config, ssh_daemon_setup=configured)
+    )
+    cfg = ctx.config.ssh_daemon_setup
+    cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.sshd_config_dropin_path.write_text(
+        _expected_dropin_content(overrides=overrides),
+        encoding="utf-8",
+    )
+    calls = _install_fake(monkeypatch, active=True)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    expected = {
+        "restart": [
+            "systemctl",
+            "restart",
+            "--no-block",
+            cfg.service_unit_name,
+        ],
+        "reload": [
+            "systemctl",
+            "reload",
+            cfg.service_unit_name,
+            "--quiet",
+        ],
+    }[outcome]
+    assert expected in calls
+
+
 def test_reload_when_active_and_non_port_changed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

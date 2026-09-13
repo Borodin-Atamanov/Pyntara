@@ -2859,6 +2859,41 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         dropin_header=dropin_header,
         augeas_lens=augeas_lens,
         port_directive=port_directive,
+        effective_config_command=_placeholder_command_field(
+            raw.get("effective_config_command"),
+            "ssh_daemon_setup.effective_config_command",
+            (),
+        ),
+        listening_sockets_command=_placeholder_command_field(
+            raw.get("listening_sockets_command"),
+            "ssh_daemon_setup.listening_sockets_command",
+            (),
+        ),
+        socket_disable_command=_placeholder_command_field(
+            raw.get("socket_disable_command"),
+            "ssh_daemon_setup.socket_disable_command",
+            ("{socket_unit_name}",),
+        ),
+        service_enable_command=_placeholder_command_field(
+            raw.get("service_enable_command"),
+            "ssh_daemon_setup.service_enable_command",
+            ("{service_unit_name}",),
+        ),
+        service_start_command=_placeholder_command_field(
+            raw.get("service_start_command"),
+            "ssh_daemon_setup.service_start_command",
+            ("{service_unit_name}",),
+        ),
+        service_restart_command=_placeholder_command_field(
+            raw.get("service_restart_command"),
+            "ssh_daemon_setup.service_restart_command",
+            ("{service_unit_name}",),
+        ),
+        service_reload_command=_placeholder_command_field(
+            raw.get("service_reload_command"),
+            "ssh_daemon_setup.service_reload_command",
+            ("{service_unit_name}",),
+        ),
         private_key_file_name=private_key_file_name,
         public_key_file_name=public_key_file_name,
         private_key_file_mode=_file_mode_field("private_key_file_mode"),

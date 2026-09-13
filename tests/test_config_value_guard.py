@@ -189,17 +189,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["ip", "-o", family, "route", "show", "proto", "kernel"],',
         }
     ),
-    "src/pyntara/tasks/ssh_daemon_setup.py": frozenset(
-        {
-            '["ss", "-tlnp"], check=False, capture=True, timeout=timeout',
-            '["sshd", "-T"], check=False, capture=True, timeout=timeout',
-            '["systemctl", "disable", "--now", cfg.socket_unit_name],',
-            '["systemctl", "enable", cfg.service_unit_name], timeout=timeout',
-            '["systemctl", "reload", cfg.service_unit_name], timeout=timeout',
-            '["systemctl", "restart", cfg.service_unit_name], timeout=timeout',
-            '["systemctl", "start", cfg.service_unit_name], timeout=timeout',
-        }
-    ),
     "src/pyntara/tasks/system_metrics_setup.py": frozenset(
         {
             '["systemctl", "restart", collector_timer_name], timeout=timeout',

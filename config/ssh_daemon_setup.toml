@@ -90,6 +90,16 @@ root_ssh_dir = "/root/.ssh"
 # does not exist yet is skipped with a log line, so the task stays
 # idempotent.
 users = ["i", "j", "k"]
+# Commands the task runs: the effective configuration of the daemon, the
+# listener table, and the systemctl calls on the two units. The unit is
+# named by socket_unit_name or service_unit_name at the call site.
+effective_config_command = ["sshd", "-T"]
+listening_sockets_command = ["ss", "-tlnp"]
+socket_disable_command = ["systemctl", "disable", "--now", "{socket_unit_name}"]
+service_enable_command = ["systemctl", "enable", "{service_unit_name}"]
+service_start_command = ["systemctl", "start", "{service_unit_name}"]
+service_restart_command = ["systemctl", "restart", "{service_unit_name}"]
+service_reload_command = ["systemctl", "reload", "{service_unit_name}"]
 # sshd_config directives guaranteed by the task, written through augeas
 # into the drop-in. Each entry is a keyword and its value; a directive
 # that is already present with the same value is left untouched, a
