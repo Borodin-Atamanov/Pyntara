@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -117,3 +117,7 @@ class EngineConfig:
     default_route_command: tuple[str, ...] = ()
     augtool_command: tuple[str, ...] = ()
     augeas_files_node_prefix: str = ""
+    interface_addresses_command: tuple[str, ...] = ()
+    address_family_by_flag: dict[str, str] = field(default_factory=dict)
+    iproute2_address_family_names: dict[str, str] = field(default_factory=dict)
+    link_scope_name: str = ""

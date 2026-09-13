@@ -1193,6 +1193,22 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("augeas_files_node_prefix"),
             "engine.augeas_files_node_prefix",
         ),
+        interface_addresses_command=_placeholder_command_field(
+            raw.get("interface_addresses_command"),
+            "engine.interface_addresses_command",
+            (),
+        ),
+        address_family_by_flag=_string_map(
+            raw.get("address_family_by_flag"),
+            "engine.address_family_by_flag",
+        ),
+        iproute2_address_family_names=_string_map(
+            raw.get("iproute2_address_family_names"),
+            "engine.iproute2_address_family_names",
+        ),
+        link_scope_name=_nonempty_string_field(
+            raw.get("link_scope_name"), "engine.link_scope_name"
+        ),
     )
 
 

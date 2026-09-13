@@ -77,6 +77,10 @@ def base_config() -> str:
         'default_route_command = ["ip", "-4", "route", "show", "default"]\n'
         'augtool_command = ["augtool", "--noautoload"]\n'
         'augeas_files_node_prefix = "/files"\n'
+        'interface_addresses_command = ["ip", "-j", "addr", "show"]\n'
+        'address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }\n'
+        'iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }\n'
+        'link_scope_name = "link"\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

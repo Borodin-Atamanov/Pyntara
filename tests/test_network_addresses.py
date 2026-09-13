@@ -104,8 +104,18 @@ def test_link_scope_address_carries_its_zone_in_the_command() -> None:
 def test_unexpected_document_contributes_nothing() -> None:
     # A document of an unexpected shape is not a crash: it carries no
     # address, and the caller reports the family as empty.
-    assert network_addresses.parse_interface_addresses("not a list", "ipv4") == ()
-    assert network_addresses.parse_interface_addresses([{"ifname": "lo"}], "ipv4") == ()
+    assert (
+        network_addresses.parse_interface_addresses(
+            make_config().engine, "not a list", "ipv4"
+        )
+        == ()
+    )
+    assert (
+        network_addresses.parse_interface_addresses(
+            make_config().engine, [{"ifname": "lo"}], "ipv4"
+        )
+        == ()
+    )
 
 
 def test_main_prints_every_address_of_the_family(
@@ -182,7 +192,82 @@ def test_main_without_a_port_directive_fails_loudly(
     assert "Port" in capsys.readouterr().err
 
 
-def test_usage_requires_a_known_family(capsys: pytest.CaptureFixture[str]) -> None:
+def test_usage_requires_a_known_family(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # A missing argument is a usage error before any config is read; an
+    # unknown family is judged against the configured flag mapping, so the
+    # run needs a real config to reach that branch.
+    config_path = _config(tmp_path)
     assert network_addresses.main(["network_addresses"]) == 2
-    assert network_addresses.main(["network_addresses", "config.toml", "8"]) == 2
+    assert network_addresses.main(["network_addresses", str(config_path)]) == 2
+    assert network_addresses.main(["network_addresses", str(config_path), "8"]) == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_the_address_vocabulary_comes_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # The query, the flag mapping, the iproute2 family names and the scope
+    # value that counts as a link scope are engine values: a config with
+    # other values is the argv the command runs and the family and zone
+    # the records carry.
+    content = (
+        base_config()
+        .replace(
+            'interface_addresses_command = ["ip", "-j", "addr", "show"]\n',
+            'interface_addresses_command = ["my-ip", "addr"]\n',
+        )
+        .replace(
+            'address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }\n',
+            'address_family_by_flag = { "4" = "ipv6" }\n',
+        )
+        .replace(
+            'iproute2_address_family_names = { "ipv4" = "inet", '
+            '"ipv6" = "inet6" }\n',
+            'iproute2_address_family_names = { "ipv6" = "my-inet" }\n',
+        )
+        .replace('link_scope_name = "link"\n', 'link_scope_name = "my-link"\n')
+        .replace(
+            "[ssh_client_setup]",
+            "[[ssh_daemon_setup.directives]]\n"
+            'name = "Port"\n'
+            'value = "30222"\n'
+            "[ssh_client_setup]",
+        )
+    )
+    config_path = write_config(tmp_path, content)
+    document = [
+        {
+            "ifname": "enp87s0",
+            "addr_info": [
+                {
+                    "family": "my-inet",
+                    "local": "10.10.0.1",
+                    "prefixlen": 24,
+                    "scope": "global",
+                },
+                {
+                    "family": "my-inet",
+                    "local": "fe80::1",
+                    "prefixlen": 64,
+                    "scope": "my-link",
+                },
+            ],
+        }
+    ]
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> FakeProc:
+        calls.append(list(command))
+        return FakeProc(0, json.dumps(document))
+
+    monkeypatch.setattr(network_addresses, "run_command", fake_run)
+    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
+    records = json.loads(capsys.readouterr().out)
+    assert calls == [["my-ip", "addr"]]
+    assert [record["family"] for record in records] == ["ipv6", "ipv6"]
+    assert records[0]["ssh"] == "ssh -v -p 30222 10.10.0.1"
+    assert records[1]["ssh"] == "ssh -v -p 30222 fe80::1%enp87s0"

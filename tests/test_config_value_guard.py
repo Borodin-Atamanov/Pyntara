@@ -80,14 +80,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
         }
     ),
     "src/pyntara/metrics_ingest.py": frozenset({"INGEST_CONFIG_KEYS = ("}),
-    "src/pyntara/network_addresses.py": frozenset(
-        {
-            'FAMILY_BY_FLAG = {"4": "ipv4", "6": "ipv6"}',
-            'IP_ADDRESS_COMMAND = ("ip", "-j", "addr", "show")',
-            'IP_FAMILY_BY_FAMILY = {"ipv4": "inet", "ipv6": "inet6"}',
-            'LINK_SCOPE = "link"',
-        }
-    ),
     "src/pyntara/nextdns.py": frozenset({'PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")'}),
     "src/pyntara/port_forwarding.py": frozenset(
         {

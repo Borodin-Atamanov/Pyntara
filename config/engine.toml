@@ -224,3 +224,12 @@ default_route_command = ["ip", "-4", "route", "show", "default"]
 # prefix followed by the absolute path of the edited file.
 augtool_command = ["augtool", "--noautoload"]
 augeas_files_node_prefix = "/files"
+# Address vocabulary of the collector modules that report the local
+# addresses of a machine (pyntara.network_addresses): the iproute2 query
+# in JSON form, the mapping of the command line family flag to the family
+# the report uses, the mapping of that family to the family name iproute2
+# prints, and the scope value iproute2 reports for a link scope address.
+interface_addresses_command = ["ip", "-j", "addr", "show"]
+address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }
+iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }
+link_scope_name = "link"

@@ -3,7 +3,7 @@
 The System Metrics collector runs this command as its ipv4 and ipv6
 network modules, so every address the machine carries reaches the
 network report and each address carries the ssh command that connects to
-it. The addresses come from iproute2 in JSON form (`ip -j addr show`),
+it. The addresses come from the configured iproute2 query in JSON form,
 which reports every address of every interface together with its
 family, scope and interface name: the loopback, link scope, global,
 bridge and overlay addresses are all present, so no address class is
@@ -11,7 +11,8 @@ lost the way a scope filter loses it.
 
 A link scope IPv6 address is reachable only through the interface that
 owns it, so its ssh command carries the zone index (%interface) while
-the address field stays the plain address. A family the machine does not
+the address field stays the plain address; the scope value that counts
+as a link scope is the configured one. A family the machine does not
 carry prints nothing and exits 0, so the module reports empty instead of
 error: a machine without IPv6 is not a failure.
 
@@ -19,7 +20,8 @@ The ssh command needs the sshd listen port, so the command reads the
 single system config it is given, which is the same source the SSH
 daemon task writes (architecture contract, Configuration). Runs as
 `python -m pyntara.network_addresses CONFIG_PATH FAMILY`, where FAMILY
-is 4 or 6 (docs/spec/system-metrics.md, section Report collector).
+is one of the flags the engine table maps to a family
+(docs/spec/system-metrics.md, section Report collector).
 """
 
 from __future__ import annotations
@@ -30,25 +32,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyntara.config import Config, load_config
+from pyntara.config import Config, EngineConfig, load_config
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.utils import run_command
-
-# iproute2 in JSON form: one object per interface with an addr_info array
-# that carries the family of every address, so no scope filter is needed
-# and no address class can be lost.
-IP_ADDRESS_COMMAND = ("ip", "-j", "addr", "show")
-
-# The command line family flag and the iproute2 family names, keyed by the
-# address family of the report.
-FAMILY_BY_FLAG = {"4": "ipv4", "6": "ipv6"}
-IP_FAMILY_BY_FAMILY = {"ipv4": "inet", "ipv6": "inet6"}
-
-# The scope value iproute2 reports for a link scope address. Such an IPv6
-# address is reachable only through its own interface, so the ssh target
-# carries the zone index.
-LINK_SCOPE = "link"
 
 
 @dataclass(frozen=True)
@@ -60,32 +47,35 @@ class InterfaceAddress:
     interface: str
     scope: str
 
-    @property
-    def ssh_target(self) -> str:
+    def ssh_target(self, link_scope_name: str) -> str:
         """The address as an ssh target, with the zone of a link address.
 
         An IPv6 link scope address without its zone index is ambiguous
         (every interface carries one), so the interface name is appended
-        after a percent sign, which is the form ssh resolves.
+        after a percent sign, which is the form ssh resolves. The scope
+        value counts as a link scope only when it equals the configured
+        link_scope_name, so the vocabulary stays in the config.
         """
 
-        if self.family == "ipv6" and self.scope == LINK_SCOPE:
+        if self.family == "ipv6" and self.scope == link_scope_name:
             return f"{self.address}%{self.interface}"
         return self.address
 
 
 def parse_interface_addresses(
-    document: object, family: str
+    engine: EngineConfig, document: object, family: str
 ) -> tuple[InterfaceAddress, ...]:
     """Every address of one family in the document, in the order ip reports.
 
-    The document is the parsed output of `ip -j addr show`. A document
-    of an unexpected shape contributes nothing instead of raising, so a
-    future iproute2 change is reported as a missing address, never as a
-    traceback on the target machine.
+    The document is the parsed output of the configured iproute2 query. A
+    document of an unexpected shape contributes nothing instead of
+    raising, so a future iproute2 change is reported as a missing
+    address, never as a traceback on the target machine. The family name
+    iproute2 prints is the configured one, so a rename of its vocabulary
+    is a config change.
     """
 
-    ip_family = IP_FAMILY_BY_FAMILY[family]
+    ip_family = engine.iproute2_address_family_names[family]
     addresses: list[InterfaceAddress] = []
     if not isinstance(document, list):
         return ()
@@ -127,15 +117,18 @@ def address_records(
 
     engine = cfg.engine
     keys = engine.report_record_keys
+    link_scope_name = engine.link_scope_name
     return [
         {
             keys["address"]: entry.address,
             keys["family"]: entry.family,
             keys["interface"]: entry.interface,
             keys["scope"]: entry.scope,
-            keys["ssh"]: ssh_command(engine, entry.ssh_target, ssh_port),
+            keys["ssh"]: ssh_command(
+                engine, entry.ssh_target(link_scope_name), ssh_port
+            ),
         }
-        for entry in parse_interface_addresses(document, family)
+        for entry in parse_interface_addresses(engine, document, family)
     ]
 
 
@@ -147,11 +140,14 @@ def main(argv: list[str]) -> int:
     family without an address prints nothing and exits 0.
     """
 
-    if len(argv) != 3 or argv[2] not in FAMILY_BY_FLAG:
+    if len(argv) != 3:
         print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
         return 2
-    family = FAMILY_BY_FLAG[argv[2]]
     cfg = load_config(Path(argv[1]))
+    if argv[2] not in cfg.engine.address_family_by_flag:
+        print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
+        return 2
+    family = cfg.engine.address_family_by_flag[argv[2]]
     try:
         ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup.directives)
     except RuntimeError as exc:
@@ -159,7 +155,7 @@ def main(argv: list[str]) -> int:
         return 1
     try:
         result = run_command(
-            list(IP_ADDRESS_COMMAND),
+            list(cfg.engine.interface_addresses_command),
             check=False,
             capture=True,
             timeout=cfg.engine.command_timeout_seconds,
