@@ -296,51 +296,55 @@ def test_dropin_rewritten_when_missing_and_restarts(
     assert ["systemctl", "start", "tor@default.service"] not in calls
 
 
-def test_verify_config_failure_is_an_error(
+def test_verify_config_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # tor --verify-config reports an invalid configuration: the task
-    # fails instead of silently accepting a broken drop-in, and the
-    # message carries the Tor output from stdout.
+    # reports the daemon output as a warning and still converges the
+    # hidden service directory and the service state.
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, ctx, verify_ok=False)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "tor --verify-config" in (result.error or "")
-    assert "Reading config failed" in (result.error or "")
-    assert not any(
+    assert result.success is True
+    assert any(
+        "tor --verify-config" in warning for warning in result.warnings
+    )
+    assert any("Reading config failed" in warning for warning in result.warnings)
+    assert any(
         call[0] == "systemctl" and call[1] in ("start", "restart")
         for call in calls
     )
 
 
-def test_missing_main_torrc_is_an_error(
+def test_missing_main_torrc_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The package is installed but the main configuration file is absent:
-    # the include line cannot be guaranteed, so the task fails instead of
-    # pretending the drop-in is connected.
+    # the include line cannot be guaranteed and is reported, while the
+    # drop-in is written so the settings work once the file appears.
     ctx = _ctx(tmp_path)
     _install_fake(monkeypatch, ctx, installed=True)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "is missing" in (result.error or "")
+    assert result.success is True
+    assert any("is missing" in warning for warning in result.warnings)
+    assert ctx.config.tor_setup.torrc_dropin_path.is_file()
 
 
 def test_install_gives_up_after_retries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # apt always fails: the task tries one initial attempt plus the
-    # configured retries, then reports the failure.
+    # configured retries, reports the reason and still writes the drop-in.
     ctx = _ctx(tmp_path, retries=3)
     calls = _install_fake(monkeypatch, ctx, fail_install=99)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "cannot install tor" in (result.error or "")
+    assert result.success is True
+    assert any("cannot install tor" in warning for warning in result.warnings)
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert len(install_calls) == 4
+    assert ctx.config.tor_setup.torrc_dropin_path.is_file()
 
 
 def test_install_retries_transient_failure(
@@ -404,52 +408,58 @@ def test_hidden_service_dir_gets_configured_mode(
     assert mode == ctx.config.tor_setup.hidden_service_dir_mode
 
 
-def test_missing_tor_user_is_an_error(
+def test_missing_tor_user_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The configured Tor system user does not exist: the task fails
-    # instead of leaving a directory Tor cannot write.
+    # The configured Tor system user does not exist: the task reports the
+    # reason and still enables and starts the service.
     ctx = _ctx(tmp_path)
-    _install_fake(monkeypatch, ctx, tor_user_exists=False)
+    calls = _install_fake(monkeypatch, ctx, tor_user_exists=False)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "tor user" in (result.error or "")
+    assert result.success is True
+    assert any("tor user" in warning for warning in result.warnings)
+    assert ["systemctl", "enable", "tor@default.service"] in calls
 
 
-def test_service_that_stays_inactive_is_an_error(
+def test_service_that_stays_inactive_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The service never reports active within the readiness loop: the
-    # task reports the failure instead of a silent success.
+    # task reports the reason instead of a silent success.
     ctx = _ctx(tmp_path)
     _install_fake(monkeypatch, ctx, active_becomes=False)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "did not become active" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "did not become active" in warning for warning in result.warnings
+    )
 
 
-def test_missing_ssh_port_directive_is_an_error(
+def test_missing_ssh_port_directive_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # ssh_daemon_setup has no Port directive: the forward target is
-    # unknown, so the task fails explicitly.
+    # unknown, so the drop-in is skipped and the service state is still
+    # converged.
     ctx = _ctx(tmp_path, ssh_port=None)
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "no Port directive" in (result.error or "")
+    assert result.success is True
+    assert any("no Port directive" in warning for warning in result.warnings)
+    assert not ctx.config.tor_setup.torrc_dropin_path.exists()
 
 
-def test_non_numeric_ssh_port_is_an_error(
+def test_non_numeric_ssh_port_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The sshd Port directive is not a number: the forward target is
-    # invalid, so the task fails explicitly.
+    # The sshd Port directive is not a number: the drop-in is skipped and
+    # the rest of the task still runs.
     ctx = _ctx(tmp_path, ssh_port="abc")
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
-    assert result.success is False
-    assert "not a number" in (result.error or "")
+    assert result.success is True
+    assert any("not a number" in warning for warning in result.warnings)
+    assert not ctx.config.tor_setup.torrc_dropin_path.exists()
 
 
 def test_force_mode_restarts_and_rewrites(

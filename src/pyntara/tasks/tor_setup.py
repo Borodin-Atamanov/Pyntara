@@ -246,6 +246,16 @@ def _saved_address_matches(address_file_path: Path, address: str | None) -> bool
     return saved == address
 
 
+def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build the result of the task, carrying the warning of a skipped step."""
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )
+
+
 def task(ctx: Context) -> TaskResult:
     """Install Tor and publish the SSH onion service; skip when done.
 
@@ -264,9 +274,10 @@ def task(ctx: Context) -> TaskResult:
     the address appears after the first start and still names the
     virtual port. Every step is reported to stdout: measurements and
     decisions as single lines that include their result, long-running
-    commands as a line before and a line after. Any failure is returned
-    as an error TaskResult: the runner continues with the remaining
-    tasks and never stops here.
+    commands as a line before and a line after. A step that cannot run is
+    reported as a warning of a completed task: the missing mechanism skips
+    that step alone and every independent step still runs, so the runner
+    continues with the remaining tasks and never stops here.
     """
 
     cfg = ctx.config.tor_setup
@@ -279,6 +290,7 @@ def task(ctx: Context) -> TaskResult:
         / cfg.dropin_template_file_name
     )
     hostname_file_path = cfg.hidden_service_dir / cfg.hostname_file_name
+    warnings: list[str] = []
 
     installed = package_is_installed(ctx.config.engine, cfg.package_name, timeout)
     _log(
@@ -286,15 +298,21 @@ def task(ctx: Context) -> TaskResult:
         f"{'installed' if installed else 'missing'}"
     )
 
+    ssh_port: int | None = None
     try:
         ssh_port = ssh_port_from_directives(
             ctx.config.ssh_daemon_setup.directives
         )
     except RuntimeError as exc:
-        return TaskResult(success=False, error=str(exc))
-    _log(
-        f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}"
-    )
+        # Without the port the drop-in cannot be rendered, so that step is
+        # skipped alone while the include line, the service state and the
+        # published address are still handled.
+        warnings.append(str(exc))
+    if ssh_port is not None:
+        _log(
+            f"reading SSH listen port from ssh_daemon_setup directives: "
+            f"{ssh_port}"
+        )
 
     changed = False
     if not installed:
@@ -305,28 +323,34 @@ def task(ctx: Context) -> TaskResult:
             ok, error = install_package_once(ctx.config.engine, cfg.package_name, timeout)
             if ok:
                 break
-        if not ok:
-            return TaskResult(
-                success=False,
-                error=f"cannot install {cfg.package_name}: {error}",
-            )
-        _log("package installed")
-        changed = True
+        if ok:
+            _log("package installed")
+            changed = True
+        else:
+            warnings.append(f"cannot install {cfg.package_name}: {error}")
 
     # The package postinst creates /etc/tor/torrc, so the include line
     # is guaranteed only after the install; a still missing main file is
-    # an error, because the drop-in would be silently ignored.
+    # reported, because the drop-in would be silently ignored, and it is
+    # written anyway so the settings start to work as soon as the file
+    # appears.
     include_changed, include_error = _ensure_torrc_include(cfg)
     if include_error is not None:
-        return TaskResult(success=False, changed=changed, error=include_error)
+        warnings.append(include_error)
     _log(
         f"checking {cfg.include_directive} line in {cfg.torrc_path}: "
         f"{'present' if not include_changed else 'added'}"
     )
 
-    target_config = _render_config(cfg, ssh_port, template_path)
+    target_config = (
+        _render_config(cfg, ssh_port, template_path)
+        if ssh_port is not None
+        else None
+    )
     current_config = _read_dropin(cfg.torrc_dropin_path)
-    config_changed = force or current_config != target_config
+    config_changed = target_config is not None and (
+        force or current_config != target_config
+    )
 
     dir_exists = cfg.hidden_service_dir.is_dir()
     address = onion_address_from_hostname_file(hostname_file_path)
@@ -358,41 +382,36 @@ def task(ctx: Context) -> TaskResult:
         and _saved_address_matches(cfg.address_file_path, address)
     ):
         _log("target state already reached, skipping")
-        return TaskResult(success=True, changed=False, message="already configured")
+        return _result(changed=False, message="already configured", warnings=warnings)
 
     if include_changed:
         _log(f"adding {cfg.include_directive} line to {cfg.torrc_path}")
         changed = True
 
-    if config_changed:
+    if config_changed and ssh_port is not None:
         _log(f"writing drop-in {cfg.torrc_dropin_path}")
         try:
             _write_dropin(cfg, ssh_port, owner_uid, owner_gid, template_path)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write drop-in: {exc}",
-            )
-        _log("drop-in written")
-        changed = True
+            warnings.append(f"cannot write drop-in: {exc}")
+        else:
+            _log("drop-in written")
+            changed = True
 
     if config_changed or include_changed or force:
         verify = _verify_config(cfg, timeout)
-        if verify is not None:
-            return TaskResult(success=False, changed=changed, error=verify)
-        _log("configuration verified")
+        if verify is None:
+            _log("configuration verified")
+        else:
+            warnings.append(verify)
 
     _log(f"preparing hidden service directory {cfg.hidden_service_dir}")
     try:
         _ensure_hidden_service_dir(cfg)
     except (OSError, RuntimeError) as exc:
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"cannot prepare hidden service directory: {exc}",
-        )
-    _log("hidden service directory ready")
+        warnings.append(f"cannot prepare hidden service directory: {exc}")
+    else:
+        _log("hidden service directory ready")
 
     if not enabled:
         enable_argv = substituted_command(
@@ -403,13 +422,10 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(enable_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"{enable_argv[0]} enable failed: {exc}",
-            )
-        _log("service enabled")
-        changed = True
+            warnings.append(f"{enable_argv[0]} enable failed: {exc}")
+        else:
+            _log("service enabled")
+            changed = True
 
     if (
         not active
@@ -426,36 +442,32 @@ def task(ctx: Context) -> TaskResult:
             service_command, {"service_unit_name": cfg.service_unit_name}
         )
         _log(f"{action}ing service: {' '.join(service_argv)}")
+        started = True
         try:
             run_command(service_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"{service_argv[0]} {action} failed: {exc}",
+            warnings.append(f"{service_argv[0]} {action} failed: {exc}")
+            started = False
+        if started:
+            _log(f"service {action}ed")
+            _log(
+                f"waiting for service to become active (up to "
+                f"{cfg.start_check_attempts} checks)"
             )
-        _log(f"service {action}ed")
-        _log(
-            f"waiting for service to become active (up to "
-            f"{cfg.start_check_attempts} checks)"
-        )
-        if not _wait_active(
-            ctx.config.engine,
-            cfg.service_unit_name,
-            cfg.start_check_attempts,
-            cfg.start_check_retry_delay_seconds,
-            timeout,
-        ):
-            return TaskResult(
-                success=False,
-                changed=True,
-                error=(
+            if _wait_active(
+                ctx.config.engine,
+                cfg.service_unit_name,
+                cfg.start_check_attempts,
+                cfg.start_check_retry_delay_seconds,
+                timeout,
+            ):
+                _log("service active")
+                changed = True
+            else:
+                warnings.append(
                     f"{cfg.service_unit_name} did not become active after "
                     f"{cfg.start_check_attempts} checks"
-                ),
-            )
-        _log("service active")
-        changed = True
+                )
 
     address = onion_address_from_hostname_file(hostname_file_path)
     if address and not _saved_address_matches(cfg.address_file_path, address):
@@ -465,13 +477,10 @@ def task(ctx: Context) -> TaskResult:
             cfg.address_file_path.chmod(cfg.address_file_mode)
             apply_owner(cfg.address_file_path, owner_uid, owner_gid)
         except OSError as exc:
-            return TaskResult(
-                success=False,
-                changed=changed,
-                error=f"cannot write address file: {exc}",
-            )
-        _log(f"writing address file {cfg.address_file_path}: {address}")
-        changed = True
+            warnings.append(f"cannot write address file: {exc}")
+        else:
+            _log(f"writing address file {cfg.address_file_path}: {address}")
+            changed = True
 
     if address:
         _log(
@@ -490,4 +499,4 @@ def task(ctx: Context) -> TaskResult:
             f"virtual port {cfg.onion_ssh_port}"
         )
 
-    return TaskResult(success=True, changed=changed, message=message)
+    return _result(changed=changed, message=message, warnings=warnings)
