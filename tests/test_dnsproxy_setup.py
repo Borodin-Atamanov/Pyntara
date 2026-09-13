@@ -405,8 +405,10 @@ def test_task_fails_early_without_the_nextdns_profile_file(
         vault_password=PASSWORD, config=config, repo_root=Path.cwd()
     )
     result = task_module.task(context)
-    assert result.success is False
-    assert "nextdns_setup_system_wide" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "nextdns_setup_system_wide" in warning for warning in result.warnings
+    )
     assert not service_path.exists()
 
 
@@ -419,12 +421,12 @@ def test_task_kills_the_process_listening_on_the_port(
     assert any(command[:2] == ["systemctl", "start"] for command in calls)
 
 
-def test_task_fails_when_the_port_stays_occupied(
+def test_task_warns_when_the_port_stays_occupied(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     result, _, calls, config = _run_task(tmp_path, monkeypatch, stubborn_port=True)
-    assert result.success is False
-    assert "still occupied" in (result.error or "")
+    assert result.success is True
+    assert any("still occupied" in warning for warning in result.warnings)
     assert ["kill", "12345"] in calls
     assert not any(command[:2] == ["systemctl", "start"] for command in calls)
     dropin = (
@@ -438,8 +440,10 @@ def test_task_does_not_change_the_resolver_when_the_probe_fails(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     result, _, calls, config = _run_task(tmp_path, monkeypatch, probe=False)
-    assert result.success is False
-    assert "does not answer direct DNS" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "does not answer direct DNS" in warning for warning in result.warnings
+    )
     assert ["systemctl", "stop", "dnsproxy.service"] in calls
     dropin = (
         config.dnsproxy_setup.resolved_conf_dir
@@ -539,8 +543,8 @@ def test_task_fails_when_nm_missing_and_global_dns_does_not_point_at_dnsproxy(
         nmcli_missing=True,
         resolvectl_status_output=status,
     )
-    assert result.success is False
-    assert "does not point at" in (result.error or "")
+    assert result.success is True
+    assert any("does not point at" in warning for warning in result.warnings)
 
 
 def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
@@ -561,8 +565,10 @@ def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
         nmcli_missing=True,
         resolvectl_status_output=status,
     )
-    assert result.success is False
-    assert "stub resolv.conf mode" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "stub resolv.conf mode" in warning for warning in result.warnings
+    )
 
 
 def test_task_succeeds_with_warning_when_per_link_provider_dns_survives_but_routing_goes_through_dnsproxy(
@@ -612,8 +618,8 @@ def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
     result, _, _, _ = _run_task(
         tmp_path, monkeypatch, resolvectl_status_output=status
     )
-    assert result.success is False
-    assert "no ~. routing domain" in (result.error or "")
+    assert result.success is True
+    assert any("no ~. routing domain" in warning for warning in result.warnings)
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:

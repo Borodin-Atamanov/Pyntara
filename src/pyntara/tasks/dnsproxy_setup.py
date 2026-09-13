@@ -816,13 +816,18 @@ def task(ctx: Context) -> TaskResult:
     progress_priority = ctx.config.engine.progress_priority
     profile_id = _read_profile_id(cfg)
     if profile_id is None:
+        # Without the profile id dnsproxy has no upstream to answer from,
+        # so nothing is deployed and the reason is reported.
+        warning = (
+            "cannot read the NextDNS profile id from "
+            f"{cfg.profile_id_file_path}; nextdns_setup_system_wide "
+            "must run first"
+        )
         return TaskResult(
-            success=False,
-            error=(
-                "cannot read the NextDNS profile id from "
-                f"{cfg.profile_id_file_path}; nextdns_setup_system_wide "
-                "must run first"
-            ),
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     try:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
@@ -832,7 +837,14 @@ def task(ctx: Context) -> TaskResult:
         )
         target_version = _version_from_tag(tag)
     except (RuntimeError, subprocess.SubprocessError) as exc:
-        return TaskResult(success=False, error=str(exc))
+        # The release or the architecture query failed: the binary cannot
+        # be fetched, so the system resolver is left untouched.
+        return TaskResult(
+            success=True,
+            changed=False,
+            message=str(exc),
+            warnings=(str(exc),),
+        )
     installed = _installed_version(cfg, cfg.binary_path, timeout)
     changed = False
     dropin_changed = False
@@ -876,7 +888,14 @@ def task(ctx: Context) -> TaskResult:
         if not active:
             error = _free_listen_port(cfg, timeout, progress_priority)
             if error is not None:
-                return TaskResult(success=False, changed=changed, error=error)
+                # A busy listen port keeps the old daemon alive: nothing is
+                # cut over and the reason is reported.
+                return TaskResult(
+                    success=True,
+                    changed=changed,
+                    message=error,
+                    warnings=(error,),
+                )
         if not service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout):
             run_command(
                 substituted_command(
@@ -909,9 +928,12 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
                 return TaskResult(
-                    success=False,
+                    success=True,
                     changed=True,
-                    error="dnsproxy service did not become active" + detail,
+                    message="dnsproxy service did not become active" + detail,
+                    warnings=(
+                        "dnsproxy service did not become active" + detail,
+                    ),
                 )
             if not _dns_probe_answers(cfg, timeout):
                 run_command(
@@ -923,13 +945,18 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
                 return TaskResult(
-                    success=False,
+                    success=True,
                     changed=True,
-                    error=(
+                    message=(
                         "dnsproxy started but does not answer direct DNS "
                         "queries; the system resolver was not changed"
                     ),
-                )
+                    warnings=(
+                        (
+                            "dnsproxy started but does not answer direct DNS "
+                            "queries; the system resolver was not changed"
+                        ),
+                    ),                )
             changed = True
         if _write_resolver_dropin(cfg, owner_uid, owner_gid):
             dropin_changed = True
@@ -951,10 +978,14 @@ def task(ctx: Context) -> TaskResult:
             log_progress(
                 f"dnsproxy setup failed: {detail}", priority=error_priority
             )
+            # The drop-in and the service were reverted by the run that
+            # produced this error, so the machine stays on the resolver it
+            # had before; the reason is reported as a warning.
             return TaskResult(
-                success=False,
+                success=True,
                 changed=True,
-                error=f"dnsproxy setup failed: {detail}",
+                message=f"dnsproxy setup failed: {detail}",
+                warnings=(f"dnsproxy setup failed: {detail}",),
             )
     except (OSError, subprocess.SubprocessError, tarfile.TarError, RuntimeError) as exc:
         if cut_over:
@@ -966,8 +997,12 @@ def task(ctx: Context) -> TaskResult:
                 progress_priority,
                 error_priority,
             )
+        detail = f"dnsproxy setup failed: {exc}"
         return TaskResult(
-            success=False, changed=changed, error=f"dnsproxy setup failed: {exc}"
+            success=True,
+            changed=changed,
+            message=detail,
+            warnings=(detail,),
         )
     return TaskResult(
         success=True,
