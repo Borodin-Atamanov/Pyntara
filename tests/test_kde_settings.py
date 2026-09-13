@@ -19,6 +19,7 @@ from support import make_config, make_context
 from pyntara.config import KConfigRecord
 from pyntara.config.kde_settings import KdeSettingsConfig
 from pyntara.tasks import kde_settings as task_module
+from pyntara.utils import task_data_dir
 
 # The templates of the task live in the clone the tests run from, so a test
 # that pre-writes the files the task expects reads the shipped template.
@@ -1272,6 +1273,7 @@ def test_free_script_hotkeys_clears_and_releases_live(
     env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
     changed = task_module._free_script_hotkeys(
         ctx.config.kde_settings,
+        script_path=_write_release_client(tmp_path),
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
@@ -1283,6 +1285,47 @@ def test_free_script_hotkeys_clears_and_releases_live(
     assert releases
     assert releases[0][:4] == ["runuser", "-u", "i", "--"]
     assert "/usr/bin/python3" in releases[0]
+    assert (
+        _write_release_client(tmp_path).read_text(encoding="utf-8")
+        in releases[0]
+    )
+
+
+def test_release_client_text_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The client text comes from the task data file the config names, so
+    # editing that file changes what the daemon is asked without touching
+    # the code.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path, repo_root=tmp_path)
+    data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    client = data_dir / "other_release.py"
+    client.write_text(
+        "import dbus\nprint('another client')\n", encoding="utf-8"
+    )
+    _writes, releases = _script_fakes(monkeypatch, session=True)
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    changed = task_module._free_script_hotkeys(
+        replace(
+            ctx.config.kde_settings,
+            kglobalaccel_release_script_file_name=client.name,
+        ),
+        script_path=data_dir / client.name,
+        env=env,
+        timeout=5,
+        system_python=ctx.config.engine.system_python,
+    )
+    assert changed is True
+    assert releases
+    assert client.read_text(encoding="utf-8") in releases[0]
 
 
 def test_hotkey_release_prefix_comes_from_the_config(
@@ -1312,6 +1355,7 @@ def test_hotkey_release_prefix_comes_from_the_config(
                 "{python}",
             ),
         ),
+        script_path=_write_release_client(tmp_path),
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
@@ -1338,6 +1382,7 @@ def test_free_script_hotkeys_without_session_skips_live(
     _, releases = _script_fakes(monkeypatch, session=False)
     changed = task_module._free_script_hotkeys(
         ctx.config.kde_settings,
+        script_path=_write_release_client(tmp_path),
         env=None,
         timeout=5,
         system_python=ctx.config.engine.system_python,
@@ -1806,6 +1851,21 @@ def _write_desktop_ids_client(tmp_path: Path) -> Path:
     return path
 
 
+def _write_release_client(tmp_path: Path) -> Path:
+    """Write the python hotkey release client the task runs, its path.
+
+    Like the desktop id client, the text travels from the task data file
+    the config names into the interpreter call, so the test recognises the
+    release call by that exact text.
+    """
+
+    path = tmp_path / "kglobalaccel_release.py"
+    path.write_text(
+        "import dbus\nprint('release the hotkeys')\n", encoding="utf-8"
+    )
+    return path
+
+
 def test_desktop_count_live_removes_extra_desktops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2027,6 +2087,7 @@ def test_free_script_hotkeys_release_failure_is_warning(
     warnings: list[str] = []
     changed = task_module._free_script_hotkeys(
         ctx.config.kde_settings,
+        script_path=_write_release_client(tmp_path),
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,

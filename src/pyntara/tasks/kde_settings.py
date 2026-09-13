@@ -1109,6 +1109,7 @@ def _release_hotkeys_live(
     cfg: KdeSettingsConfig,
     targets: list[tuple[str, str]],
     *,
+    script_path: Path,
     env: dict[str, str],
     timeout: float,
     system_python: str,
@@ -1120,20 +1121,11 @@ def _release_hotkeys_live(
     the change to apply live. The call runs through python3-dbus as the
     target user, the package the task installs, under the system
     interpreter because the bindings install into the system Python only.
+    The client is a file under task_data/ named by the config, because its
+    body is longer than five lines (config content spec, Exceptions).
     """
 
-    code = (
-        "import dbus\n"
-        "import sys\n"
-        "bus = dbus.SessionBus()\n"
-        "obj = bus.get_object('org.kde.kglobalaccel', '/kglobalaccel')\n"
-        "iface = dbus.Interface(obj, 'org.kde.KGlobalAccel')\n"
-        "empty = dbus.Array([], signature='(ai)')\n"
-        "for index in range(1, len(sys.argv), 2):\n"
-        "    group = sys.argv[index]\n"
-        "    action = sys.argv[index + 1]\n"
-        "    iface.setForeignShortcutKeys([group, action, group, action], empty)\n"
-    )
+    code = script_path.read_text(encoding="utf-8")
     command = [
         *substituted_command(cfg.python_script_command, {"python": system_python}),
         code,
@@ -1151,6 +1143,7 @@ def _release_hotkeys_live(
 def _free_script_hotkeys(
     cfg: KdeSettingsConfig,
     *,
+    script_path: Path,
     env: dict[str, str] | None,
     timeout: float,
     system_python: str,
@@ -1204,9 +1197,18 @@ def _free_script_hotkeys(
     if targets and env is not None:
         try:
             _release_hotkeys_live(
-                cfg, targets, env=env, timeout=timeout, system_python=system_python
+                cfg,
+                targets,
+                script_path=script_path,
+                env=env,
+                timeout=timeout,
+                system_python=system_python,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        except (
+            OSError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
             warning = f"cannot release the script hotkeys in the running daemon: {exc}"
             _log(warning)
             if warnings is not None:
@@ -1831,6 +1833,10 @@ def task(ctx: Context) -> TaskResult:
         "free the kwin script hotkeys",
         lambda: _free_script_hotkeys(
             cfg,
+            script_path=(
+                task_data_dir(ctx.repo_root, ctx.task_name)
+                / cfg.kglobalaccel_release_script_file_name
+            ),
             env=apply_env,
             timeout=timeout,
             system_python=ctx.config.engine.system_python,

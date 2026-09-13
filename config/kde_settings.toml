@@ -178,11 +178,15 @@ kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
 kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
 # The python client that prints the id of every virtual desktop, one per
 # line, in position order; the directory under task_data that holds one
-# directory per kwin script; and the Konsole profile shipped as a task
-# data file. All three are read from task_data/ of the clone.
+# directory per kwin script; the Konsole profile shipped as a task
+# data file; and the client that asks the running KGlobalAccel daemon to
+# release the hotkeys a script owns. All four are read from task_data/ of
+# the clone, and a body longer than five lines lives in a file like the
+# two clients rather than in the code.
 desktop_ids_script_file_name = "list_desktop_ids.py"
 kwin_scripts_dir_name = "kwin"
 konsole_profile_file_name = "Pyntara.profile"
+kglobalaccel_release_script_file_name = "kglobalaccel_release.py"
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.

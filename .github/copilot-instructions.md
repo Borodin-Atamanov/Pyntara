@@ -2,7 +2,8 @@
 
 AGENTS.md is the authority for every action; read it first, then README.md and
 the document the task needs. This file adds the standing order the user gives
-for the value work, so it does not have to be repeated.
+for the value work, so it does not have to be repeated. The user does not repeat
+it: it is loaded with every session and it is the order to continue with.
 
 ## Standing order
 
@@ -13,6 +14,13 @@ deliberately and continue. The goal of the whole effort is that every value the
 run uses comes from config/ instead of being written in the code
 (docs/contracts/architecture.md, Configuration; the closed list of types is
 docs/spec/config-content.md).
+
+Two fronts belong to the same order: the values above, and the recoverable
+failure policy of the task contract (architecture contract, Task contract): a
+step that cannot run is a warning of a completed task and the missing mechanism
+skips that step alone. The second front is held closed by
+tests/test_runner.py::test_task_modules_report_findings_in_warnings, which
+demands that no module under src/pyntara/tasks/ builds an error result.
 
 ## Cycle of one block
 
@@ -38,3 +46,12 @@ to main, and check that HEAD equals origin/main.
 /memories/session/config-migration-progress.md carries the state of the front:
 the blocks already closed with their commits, the gotchas met, and the next
 block. Read it before choosing work and update it after every block.
+
+## While the front is open
+
+Do not end the turn between blocks and do not ask whether to continue; the
+user gave this order once and does not repeat it. Close several blocks in one
+turn when they are within reach, report in one message at the end of the group
+with the commits and the live checks, and name the next block explicitly. End
+the turn only when the front is closed or when a decision of the user is
+required, and say plainly which decision that is.

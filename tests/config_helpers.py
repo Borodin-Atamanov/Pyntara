@@ -276,6 +276,7 @@ def base_config() -> str:
         'desktop_ids_script_file_name = "list_desktop_ids.py"\n'
         'kwin_scripts_dir_name = "kwin"\n'
         'konsole_profile_file_name = "Pyntara.profile"\n'
+        'kglobalaccel_release_script_file_name = "kglobalaccel_release.py"\n'
         'sddm_theme_font = "Noto Sans,20"\n'
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"

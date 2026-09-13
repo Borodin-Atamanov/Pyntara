@@ -12,6 +12,11 @@ cover the other direction, the names written in the config:
 The value of a key whose name ends in _template_file_name is the name of a
 file under task_data/<section>/ of the section that holds the key.
 
+The value of a key whose name ends in _script_file_name is a client the task
+runs, a file under task_data/<section>/ of the same section just like a
+template, because a body longer than five lines belongs in a file and not in
+the code (config content spec, Exceptions).
+
 A string value that starts with task_data/ is a path from the clone root,
 the shape a section uses when the template of a whole file tree is named
 rather than a single file.
@@ -63,6 +68,21 @@ def test_every_named_template_exists_in_its_task_data_directory() -> None:
                 missing.append(f"{key} = {value!r}")
     assert not missing, (
         "templates named by the config and missing under "
+        f"task_data/<section>/: {missing}"
+    )
+
+
+def test_every_named_script_exists_in_its_task_data_directory() -> None:
+    missing: list[str] = []
+    for section, data in _sections():
+        for key, value in _string_values(data):
+            if not key.endswith("_script_file_name"):
+                continue
+            candidate = TASK_DATA_DIR / section / value
+            if not candidate.is_file():
+                missing.append(f"{key} = {value!r}")
+    assert not missing, (
+        "clients named by the config and missing under "
         f"task_data/<section>/: {missing}"
     )
 

@@ -2029,6 +2029,10 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("konsole_profile_file_name"),
             "kde_settings.konsole_profile_file_name",
         ),
+        kglobalaccel_release_script_file_name=_nonempty_string_field(
+            raw.get("kglobalaccel_release_script_file_name"),
+            "kde_settings.kglobalaccel_release_script_file_name",
+        ),
         runuser_command=_placeholder_command_field(
             raw.get("runuser_command"),
             "kde_settings.runuser_command",
