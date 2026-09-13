@@ -21,6 +21,7 @@ from pykeepass import PyKeePass, create_database
 from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
+from pyntara.config.engine import EngineConfig
 from pyntara.port_forwarding import (
     _normalize_host,
     desired_port,
@@ -613,6 +614,24 @@ class TestMain:
                 entries[0] if passphrase else None
             ),
         )
+
+    def test_journals_under_the_configured_service_identifier(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The auto forwarding service announces itself under its own
+        # configured identifier, never under the engine name, so a journal
+        # query separates the service from the run that deployed it.
+        configured: list[EngineConfig] = []
+        monkeypatch.setattr(pf, "configure_journal", configured.append)
+        monkeypatch.setattr(
+            pf.metrics,
+            "open_runtime_vault",
+            lambda cfg: self._kp(group=False, passphrase=True),
+        )
+        pf.main()
+        expected = self.config.port_forwarding_setup.journal_identifier
+        assert configured[-1].journal_identifier == expected
+        assert configured[-1].journal_command == self.config.engine.journal_command
 
     def test_exits_cleanly_without_servers(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

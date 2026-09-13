@@ -205,14 +205,12 @@ def _render_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
-    journal_identifier: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
     The service runs the venv python with the metrics module and the
     configured system config path as its only argument; the line is fully
     expanded here, so the template carries no shell variables of its own.
-    The journal identifier comes from the config.
     """
 
     command = " ".join(
@@ -222,9 +220,7 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}")
 
 
 def _render_ingest_service_unit(
@@ -232,7 +228,6 @@ def _render_ingest_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
-    journal_identifier: str,
 ) -> str:
     """Render the ingest service unit with the ExecStart line substituted.
 
@@ -247,9 +242,7 @@ def _render_ingest_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}")
 
 
 def _render_ingest_path_unit(template_path: Path, spool_dir: Path) -> str:
@@ -264,14 +257,13 @@ def _render_collector_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
-    journal_identifier: str,
 ) -> str:
     """Render the collector oneshot unit with the ExecStart line substituted.
 
     The service runs the venv python with the metrics_collect module and
     the configured system config path as its only argument; the line is
     fully expanded here, so the template carries no shell variables of
-    its own. The journal identifier comes from the config.
+    its own.
     """
 
     command = " ".join(
@@ -281,9 +273,7 @@ def _render_collector_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", journal_identifier=journal_identifier
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}")
 
 
 def _render_collector_timer_unit(
@@ -449,7 +439,6 @@ def task(ctx: Context) -> TaskResult:
     collector_service_name = metrics.collector.service_unit_name
     collector_timer_name = metrics.collector.timer_unit_name
     spool_dir = metrics.spool_dir
-    journal_identifier = metrics.service_journal_identifier
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
 
     service_unit = _render_service_unit(
@@ -457,14 +446,12 @@ def task(ctx: Context) -> TaskResult:
         template_dir / "system_metrics.service",
         venv_python,
         system_config_path,
-        journal_identifier,
     )
     ingest_service_unit = _render_ingest_service_unit(
         metrics,
         template_dir / "system_metrics-ingest.service",
         venv_python,
         system_config_path,
-        journal_identifier,
     )
     ingest_path_unit = _render_ingest_path_unit(
         template_dir / "system_metrics-ingest.path", spool_dir
@@ -474,7 +461,6 @@ def task(ctx: Context) -> TaskResult:
         template_dir / "system_metrics_collector.service",
         venv_python,
         system_config_path,
-        metrics.collector.journal_identifier,
     )
     collector_timer_unit = _render_collector_timer_unit(
         template_dir / "system_metrics_collector.timer",

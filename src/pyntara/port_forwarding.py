@@ -652,8 +652,10 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    configure_journal(cfg.engine)
     pf = cfg.port_forwarding_setup
+    configure_journal(
+        cfg.engine.with_journal_identifier(pf.journal_identifier)
+    )
     kp = metrics.open_runtime_vault(cfg)
     if kp is None:
         _log(

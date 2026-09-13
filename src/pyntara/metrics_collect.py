@@ -311,9 +311,11 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    configure_journal(cfg.engine)
     metrics = cfg.system_metrics_setup
     collector = metrics.collector
+    configure_journal(
+        cfg.engine.with_journal_identifier(collector.journal_identifier)
+    )
     absent = describe_absent_config_keys(
         (
             (

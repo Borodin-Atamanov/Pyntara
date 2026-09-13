@@ -13,7 +13,27 @@ import pytest
 from support import make_config
 
 from pyntara.config import Config
+from pyntara.config.engine import EngineConfig
 from pyntara.metrics_ingest import main
+
+
+def test_main_journals_under_the_configured_service_identifier(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The ingest announces itself in the journal under the identifier of its
+    # own section, never under the engine name.
+    config_path = tmp_path / "config.toml"
+    config = make_config(task_data_root=tmp_path)
+    configured: list[EngineConfig] = []
+    monkeypatch.setattr("pyntara.metrics_ingest.load_config", lambda path: config)
+    monkeypatch.setattr("pyntara.metrics_ingest.configure_journal", configured.append)
+    monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", lambda cfg: None)
+    monkeypatch.setattr(
+        "sys.argv", ["pyntara.metrics_ingest", str(config_path)]
+    )
+    main()
+    service_identifier = config.system_metrics_setup.service_journal_identifier
+    assert configured[-1].journal_identifier == service_identifier
 
 
 def test_main_loads_config_and_ingests(

@@ -12,8 +12,40 @@ from pathlib import Path
 import pytest
 from support import make_config
 
+from pyntara.config.engine import EngineConfig
 from pyntara.metrics import main
 from pyntara.utils import backoff_delay
+
+
+def test_main_journals_under_the_configured_service_identifier(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The deployed service announces itself in the journal under the
+    # identifier of its own section, never under the engine name: the entry
+    # point hands the logger the engine table carrying that identifier.
+    config_path = tmp_path / "config.toml"
+    config = make_config(task_data_root=tmp_path)
+    configured: list[EngineConfig] = []
+
+    def fake_load(path: Path) -> object:
+        return config
+
+    def fake_sleep(seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("pyntara.metrics.load_config", fake_load)
+    monkeypatch.setattr("pyntara.metrics.configure_journal", configured.append)
+    monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda cfg: None)
+    monkeypatch.setattr(
+        "pyntara.metrics_send.send_google_queue", lambda cfg, single_random=False: (0, 0)
+    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
+    with pytest.raises(KeyboardInterrupt):
+        main()
+    service_identifier = config.system_metrics_setup.service_journal_identifier
+    assert configured[-1].journal_identifier == service_identifier
+    assert configured[-1].journal_command == config.engine.journal_command
 
 
 def test_main_loops_with_base_pause(

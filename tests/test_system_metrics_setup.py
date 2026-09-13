@@ -32,7 +32,6 @@ After=local-fs.target
 
 [Service]
 Type=simple
-Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 StandardOutput=null
 Restart=on-failure
 $exec_lines
@@ -48,7 +47,6 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 $exec_lines
 """
 
@@ -71,7 +69,6 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 Restart=on-failure
 $exec_lines
 """
@@ -218,7 +215,6 @@ def _expected_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=SERVICE_JOURNAL_IDENTIFIER,
     )
 
 
@@ -235,7 +231,6 @@ def _expected_ingest_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(INGEST_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=SERVICE_JOURNAL_IDENTIFIER,
     )
 
 
@@ -258,7 +253,6 @@ def _expected_collector_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(COLLECTOR_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=COLLECTOR_JOURNAL_IDENTIFIER,
     )
 
 
@@ -906,7 +900,7 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
     cfg = make_config().system_metrics_setup
     template = tmp_path / "system_metrics.service"
     template.write_text(
-        "[Service]\n$exec_lines\nSyslogIdentifier=$journal_identifier\n",
+        "[Service]\n$exec_lines\nRestart=on-failure\n",
         encoding="utf-8",
     )
     unit = system_metrics_setup._render_service_unit(
@@ -917,10 +911,9 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
         template,
         Path("/venv/bin/python"),
         Path("/etc/pyntara/config.toml"),
-        "pyntara-metrics",
     )
     assert "ExecStart=myrun -m mymod /etc/pyntara/config.toml" in unit
-    assert "SyslogIdentifier=pyntara-metrics" in unit
+    assert "Restart=on-failure" in unit
 
 
 def test_only_path_unit_disabled_enables_and_starts_it(

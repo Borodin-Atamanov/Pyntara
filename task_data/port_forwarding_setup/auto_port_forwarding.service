@@ -5,7 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 StandardOutput=null
 Restart=on-failure
 RestartSec=$restart_seconds

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -141,3 +141,15 @@ class EngineConfig:
     socket_listener_command: tuple[str, ...] = ()
     systemctl_main_pid_command: tuple[str, ...] = ()
     systemctl_stop_command: tuple[str, ...] = ()
+
+    def with_journal_identifier(self, identifier: str) -> EngineConfig:
+        """The same table under the journal identifier of a deployed service.
+
+        The [engine] table names the engine; a deployed service announces
+        itself under its own identifier of its own section, which the task
+        writes into the unit. The entry point of such a service hands the
+        journal writer this variant of the table, so a journal query
+        separates the run from the services it deployed.
+        """
+
+        return replace(self, journal_identifier=identifier)

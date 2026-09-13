@@ -28,7 +28,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=PYNTARA_JOURNAL_IDENTIFIER=$journal_identifier
 StandardOutput=null
 Restart=on-failure
 RestartSec=$restart_seconds
@@ -112,7 +111,6 @@ def _expected_unit(
     )
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=cfg.journal_identifier,
         restart_seconds=cfg.service_restart_seconds,
     )
 
@@ -157,7 +155,6 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
         Path("/venv/bin/python"),
         cfg.service_module_name,
         Path("/etc/pyntara/config.toml"),
-        cfg.journal_identifier,
         cfg.service_restart_seconds,
     )
     assert (

@@ -20,6 +20,7 @@ from support import make_config
 
 from pyntara import metrics_collect
 from pyntara.config import CollectorModuleConfig
+from pyntara.config.engine import EngineConfig
 
 IPV4 = CollectorModuleConfig(
     name="ipv4", command=("ip", "-4", "addr", "show", "scope", "global")
@@ -538,6 +539,29 @@ def test_main_reports_a_failed_run_in_one_line(
     captured = capsys.readouterr()
     assert "error: the collector failed: no space left on device" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_main_journals_under_the_configured_collector_identifier(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The collector announces itself under the identifier of its own
+    # subsection, never under the engine name, so a journal query separates
+    # the collector from the service and from the run that deployed them.
+    cfg = _config(tmp_path)
+    configured: list[EngineConfig] = []
+    monkeypatch.setattr(metrics_collect, "load_config", lambda path: cfg)
+    monkeypatch.setattr(metrics_collect, "configure_journal", configured.append)
+    monkeypatch.setattr(metrics_collect, "_acquire_lock", lambda path: object())
+    monkeypatch.setattr(metrics_collect, "collect_until_ready", lambda cfg: {})
+    monkeypatch.setattr(metrics_collect, "_commit_report", lambda cfg, report: True)
+    monkeypatch.setattr(
+        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+    )
+    metrics_collect.main()
+    assert (
+        configured[-1].journal_identifier
+        == cfg.system_metrics_setup.collector.journal_identifier
+    )
 
 
 def test_main_collects_and_commits(

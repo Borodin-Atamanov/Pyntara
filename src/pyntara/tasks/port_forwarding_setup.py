@@ -47,7 +47,6 @@ def _render_service_unit(
     venv_python: Path,
     module_name: str,
     system_config_path: Path,
-    journal_identifier: str,
     restart_seconds: int,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
@@ -55,8 +54,7 @@ def _render_service_unit(
     The service runs the venv python with the configured port_forwarding
     module and the configured system config path as its only argument; the
     line is fully expanded here, so the template carries no shell variables
-    of its own. The journal identifier and the restart pause come from the
-    config.
+    of its own. The restart pause comes from the config.
     """
 
     command = " ".join(
@@ -72,7 +70,6 @@ def _render_service_unit(
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={command}",
-        journal_identifier=journal_identifier,
         restart_seconds=restart_seconds,
     )
 
@@ -168,7 +165,6 @@ def task(ctx: Context) -> TaskResult:
             venv_python,
             pf.service_module_name,
             system_config_path,
-            pf.journal_identifier,
             pf.service_restart_seconds,
         )
     except OSError as exc:
