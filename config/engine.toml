@@ -80,6 +80,11 @@ curl_parallel_write_out = "\n@@pyntara-source@@ %{url_effective}\n"
 # The marker that separates the answers of a parallel query; it must be
 # the marker inside curl_parallel_write_out.
 curl_parallel_source_marker = "@@pyntara-source@@"
+# Answers of the boolean environment flags of the run (PYNTARA_SKIP_APT_UPDATE
+# and any flag added later), compared without case and without surrounding
+# spaces. Every other value, including an empty one, means false; the list
+# being explicit is what stops a stray 0 from enabling a flag.
+environment_flag_true_values = ["1", "true", "yes"]
 # Format of the moment the run writes down, used where a timestamp of the
 # run appears: the prefix of a progress line and the moment a collected
 # report states. One value, so the console and the report name the same

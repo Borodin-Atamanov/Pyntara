@@ -1229,6 +1229,10 @@ def _engine_table(raw: object) -> EngineConfig:
         raw.get("curl_parallel_source_marker"),
         "engine.curl_parallel_source_marker",
     )
+    environment_flag_true_values = _string_list(
+        raw.get("environment_flag_true_values"),
+        "engine.environment_flag_true_values",
+    )
     datetime_format = _nonempty_string_field(
         raw.get("datetime_format"), "engine.datetime_format"
     )
@@ -1317,6 +1321,7 @@ def _engine_table(raw: object) -> EngineConfig:
         curl_parallel_source_marker=_checked_parallel_source_marker(
             curl_parallel_write_out, curl_parallel_source_marker
         ),
+        environment_flag_true_values=environment_flag_true_values,
         report_json_indent=report_json_indent,
         datetime_format=datetime_format,
         ssh_report_command_format=ssh_report_command_format,
@@ -4599,6 +4604,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("tunnel_probe_write_out"),
         "three_x_ui_xray_setup.tunnel_probe_write_out",
     )
+    tunnel_probe_no_answer_code = _nonempty_string_field(
+        raw.get("tunnel_probe_no_answer_code"),
+        "three_x_ui_xray_setup.tunnel_probe_no_answer_code",
+    )
     server_ip_services = _string_list(
         raw.get("server_ip_services"),
         "three_x_ui_xray_setup.server_ip_services",
@@ -5139,6 +5148,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_probe_command=panel_probe_command,
         tunnel_probe_command=tunnel_probe_command,
         tunnel_probe_write_out=tunnel_probe_write_out,
+        tunnel_probe_no_answer_code=tunnel_probe_no_answer_code,
         upnp_enabled=upnp_enabled,
         upnp_package=upnp_package,
         upnp_client_command=upnp_client_command,

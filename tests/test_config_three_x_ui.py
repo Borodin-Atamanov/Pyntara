@@ -87,6 +87,16 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             'route_test_protocol = "tls"', 'route_test_protocol = ""'
         ),
+        # tunnel_probe_no_answer_code is an empty string
+        base_config().replace(
+            'tunnel_probe_no_answer_code = "000"',
+            'tunnel_probe_no_answer_code = ""',
+        ),
+        # tunnel_probe_no_answer_code is a number, not a string
+        base_config().replace(
+            'tunnel_probe_no_answer_code = "000"',
+            "tunnel_probe_no_answer_code = 0",
+        ),
     ],
 )
 def test_three_x_ui_invalid_values_raise(

@@ -40,6 +40,7 @@ def base_config() -> str:
         'curl_parallel_command = ["curl", "--parallel", "--parallel-max", "{parallel_max}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
         'curl_parallel_write_out = "\\n@@pyntara-source@@ %{url_effective}\\n"\n'
         'curl_parallel_source_marker = "@@pyntara-source@@"\n'
+        'environment_flag_true_values = ["1", "true", "yes"]\n'
         "report_json_indent = 2\n"
         'datetime_format = "%Y-%m-%d-%H-%M-%S"\n'
         'ssh_report_command_format = "ssh -v -p {port}{proxy_option} {address}"\n'
@@ -546,6 +547,7 @@ def base_config() -> str:
         'panel_probe_command = ["curl", "--silent", "--max-time", "{timeout_seconds}", "--insecure", "--output", "/dev/null", "--header", "X-Requested-With: XMLHttpRequest"]\n'
         'tunnel_probe_command = ["curl", "--silent", "--show-error", "--proxy", "{proxy_address}", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
         'tunnel_probe_write_out = "\\n%{http_code}"\n'
+        'tunnel_probe_no_answer_code = "000"\n'
         "upnp_enabled = true\n"
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'

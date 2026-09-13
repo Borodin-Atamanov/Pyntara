@@ -113,17 +113,22 @@ def _env(name: str) -> str | None:
     return value
 
 
-def _env_flag(name: str) -> bool:
-    """Read a boolean environment variable; True for 1, true or yes.
+def _env_flag(engine: EngineConfig, name: str) -> bool:
+    """Read a boolean environment variable; True for a configured answer.
 
-    Any other value, including an unset or empty variable, is False. The
-    explicit value list prevents a stray "0" from silently enabling a flag.
+    The accepted answers are environment_flag_true_values of the engine
+    table, compared without case and without surrounding spaces. Any other
+    value, including an unset or empty variable, is False. The explicit
+    value list prevents a stray "0" from silently enabling a flag.
     """
 
     value = os.environ.get(name)
     if not value:
         return False
-    return value.strip().lower() in ("1", "true", "yes")
+    answer = value.strip().casefold()
+    return answer in {
+        word.casefold() for word in engine.environment_flag_true_values
+    }
 
 
 def _load_config() -> Config:
@@ -360,7 +365,7 @@ def run() -> None:
         force_tasks=force_tasks,
         repo_root=REPO_ROOT,
         task_data_root=cfg.engine.task_data_root,
-        skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
+        skip_apt_update=_env_flag(cfg.engine, "PYNTARA_SKIP_APT_UPDATE"),
         config=cfg,
     )
     log_event(f"Install mode: {mode}")

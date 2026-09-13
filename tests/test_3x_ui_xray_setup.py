@@ -3791,6 +3791,46 @@ class TestRoutingPolicyStage:
         assert warnings
         assert "curl exit 28" in warnings[0]
 
+    def test_the_no_answer_code_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The code curl prints when nothing answered is a config value: an
+        # answer carrying the configured code counts as no answer, while the
+        # same answer is a status when the shipped code is configured.
+        self._prepare(monkeypatch, tmp_path, in_country=True)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", lambda _c, _e, **kwargs: (True, "direct")
+        )
+        cfg = self._cfg(tmp_path)
+        renamed = replace(cfg, tunnel_probe_no_answer_code="NONE")
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [(0, "77.245.209.27\n200")],
+                    cfg.proxy_check_blocked_url: [(0, "body\nNONE")],
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(
+            renamed, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
+        assert result is not None
+        warnings = [
+            w for w in result.warnings or () if cfg.proxy_check_blocked_url in w
+        ]
+        assert warnings
+        assert "NONE" in warnings[0]
+
+        shipped = xui._stage_routing_policy(
+            cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
+        )
+        assert shipped is not None
+        assert not [
+            w for w in shipped.warnings or () if cfg.proxy_check_blocked_url in w
+        ]
+
     def test_a_stalled_request_is_attempted_twice(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

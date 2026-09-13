@@ -310,6 +310,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             "{write_out}",
         ),
         "tunnel_probe_write_out": "\n%{http_code}",
+        "tunnel_probe_no_answer_code": "000",
         "panel_inbound_protocol": "mixed",
         "panel_blocked_rule_protocols": ("bittorrent",),
         "panel_private_block_category": "geoip:private",

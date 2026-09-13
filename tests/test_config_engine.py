@@ -261,6 +261,26 @@ def test_load_config_requires_keep_downloaded_debs(tmp_path: Path) -> None:
     assert_config_error(tmp_path, content, match="must be a boolean")
 
 
+def test_load_config_true_answers_of_the_environment_flags(
+    tmp_path: Path,
+) -> None:
+    # The answers that mean true round-trip, so the entry point follows the
+    # configured list instead of a spelling of its own.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    assert config.engine.environment_flag_true_values == ("1", "true", "yes")
+
+
+def test_load_config_requires_the_true_answers(tmp_path: Path) -> None:
+    # Without the list no environment flag could ever be true, so the checks
+    # refuse a config that lost the key instead of defaulting it.
+    content = base_config().replace(
+        'environment_flag_true_values = ["1", "true", "yes"]\n', ""
+    )
+    assert_config_error(
+        tmp_path, content, match="must be a non-empty array of strings"
+    )
+
+
 def test_load_config_route_source_key(tmp_path: Path) -> None:
     # The keyword that marks the source address in the output of the route
     # query round-trips, so the reader of the public address follows the

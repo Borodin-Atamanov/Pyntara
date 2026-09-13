@@ -2187,12 +2187,14 @@ def _proxy_request(
     """One request through the local proxy: body, HTTP code, curl exit code.
 
     The HTTP code comes from a write-out marker, so a refused or timed out
-    transfer is reported as 000 instead of being mistaken for a body. The
+    transfer is reported as the configured no-answer code of the tool
+    instead of being mistaken for a body. The
     request is not retried here: the caller decides how many attempts a
     check is worth, so a stalling tunnel is reported with the number of
     attempts it got instead of being hidden by a retry loop.
     """
 
+    no_answer = cfg.tunnel_probe_no_answer_code
     try:
         result = run_command(
             substituted_command(
@@ -2209,10 +2211,14 @@ def _proxy_request(
             timeout=cfg.proxy_check_command_timeout_seconds,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"the request could not be run: {exc}", "000", 1
+        return f"the request could not be run: {exc}", no_answer, 1
     output = result.stdout
     body, _, code = output.rpartition("\n")
-    return trim_whitespace(body), trim_whitespace(code) or "000", result.returncode
+    return (
+        trim_whitespace(body),
+        trim_whitespace(code) or no_answer,
+        result.returncode,
+    )
 
 
 def _own_addresses(facts: _RunFacts) -> tuple[str, ...]:
@@ -2243,7 +2249,7 @@ def _check_egress_address(
     _log(f"checking where a request through {proxy} leaves")
     answer = ""
     code = 0
-    http_code = "000"
+    http_code = cfg.tunnel_probe_no_answer_code
     for attempt in (1, 2):
         answer, http_code, code = _proxy_request(cfg, proxy, cfg.proxy_check_url)
         if code == 0 and answer:
@@ -2315,11 +2321,11 @@ def _check_remote_path(
 
     url = cfg.proxy_check_blocked_url
     _log(f"checking the remote path through {proxy} with {url}")
-    http_code = "000"
+    http_code = cfg.tunnel_probe_no_answer_code
     code = 0
     for attempt in (1, 2):
         _, http_code, code = _proxy_request(cfg, proxy, url)
-        if code == 0 and http_code not in ("000", ""):
+        if code == 0 and http_code not in (cfg.tunnel_probe_no_answer_code, ""):
             _log(f"the remote path works: {url} answered HTTP {http_code}")
             return ()
         if attempt == 1:

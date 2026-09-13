@@ -89,6 +89,7 @@ class EngineConfig:
     curl_parallel_command: tuple[str, ...]
     curl_parallel_write_out: str
     curl_parallel_source_marker: str
+    environment_flag_true_values: tuple[str, ...]
     report_json_indent: int
     datetime_format: str
     ssh_report_command_format: str

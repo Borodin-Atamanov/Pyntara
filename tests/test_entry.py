@@ -700,6 +700,41 @@ def test_run_skip_apt_update_false_by_default(
     assert _captured_skip_flag(monkeypatch, None) is False
 
 
+def test_the_true_answers_of_the_flag_come_from_the_engine_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The answers that mean true are engine values: with another list in
+    # the table another answer enables the flag, while the shipped ones no
+    # longer do.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", "aye")
+    base = _test_config(notice_timeout=0)
+    renamed = replace(
+        base,
+        engine=replace(
+            base.engine, environment_flag_true_values=("aye", "si")
+        ),
+    )
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: renamed)
+    captured: dict[str, bool | None] = {"flag": None}
+
+    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+        captured["flag"] = ctx.skip_apt_update
+        return []
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert captured["flag"] is True
+
+    monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", "yes")
+    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: renamed)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert captured["flag"] is False
+
+
 def test_run_skip_apt_update_zero_is_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

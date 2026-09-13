@@ -82,6 +82,10 @@ tunnel_probe_command = ["curl", "--silent", "--show-error", "--proxy", "{proxy_a
 # It is a value of its own and not part of the command above, because curl
 # reads its fields as %{name} and the command template is a format string.
 tunnel_probe_write_out = "\n%{http_code}"
+# Code curl reports through that write-out when no answer arrived at all. It
+# is a word of the tool and not a status of the peer, so a check compares
+# against it instead of a number written in the code.
+tunnel_probe_no_answer_code = "000"
 # Readiness loop after the installer runs: attempts and pause between
 # two is-active checks.
 start_check_attempts = 10

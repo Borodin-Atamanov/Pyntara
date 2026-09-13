@@ -53,6 +53,28 @@ def test_discover_dns_servers_keeps_one_source_when_other_fails(monkeypatch: Any
     assert result.errors == ("resolvectl exited with 1",)
 
 
+def test_the_program_name_in_a_diagnostic_comes_from_the_command(
+    monkeypatch: Any,
+) -> None:
+    # A diagnostic names the program the configured command starts with, so
+    # the name can never disagree with the command and no program name
+    # written in the code reaches the log.
+    def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
+        return FakeProc(1, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    cfg = replace(
+        make_config().dnsproxy_setup,
+        resolvectl_dns_command=("myresolvectl", "--status"),
+        nmcli_dns_command=("mynmcli", "device", "show"),
+    )
+    result = task_module.discover_dns_servers(cfg, 3.0)
+    assert result.errors == (
+        "myresolvectl exited with 1",
+        "mynmcli exited with 1",
+    )
+
+
 def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> None:
     config = make_config()
     command = task_module._command(

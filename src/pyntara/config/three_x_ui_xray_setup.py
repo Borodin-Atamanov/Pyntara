@@ -187,6 +187,7 @@ class ThreeXuiXraySetupConfig:
     panel_probe_command: tuple[str, ...]
     tunnel_probe_command: tuple[str, ...]
     tunnel_probe_write_out: str
+    tunnel_probe_no_answer_code: str
     upnp_enabled: bool
     upnp_package: str
     upnp_client_command: str

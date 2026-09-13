@@ -59,6 +59,37 @@ def _add_valid_dns_tokens(
             addresses_v6.add(str(address))
 
 
+def _resolvectl_dns_tokens(output: str) -> list[str]:
+    """Names of the DNS servers in the output of the resolvectl query.
+
+    Every line of that output carries its value after a colon, so the part
+    behind the first colon is taken as a list of tokens; a line without a
+    colon contributes nothing.
+    """
+
+    tokens: list[str] = []
+    for line in output.splitlines():
+        tokens.extend(line.split(":", 1)[-1].split())
+    return tokens
+
+
+def _nmcli_dns_tokens(output: str) -> list[str]:
+    """Names of the DNS servers in the output of the nmcli query.
+
+    Only the lines of the two DNS property fields carry addresses, so every
+    other line of the answer (a device line, a route line) is skipped. The
+    field name itself is the vocabulary of the tool and is matched as a
+    pattern.
+    """
+
+    tokens: list[str] = []
+    for line in output.splitlines():
+        match = re.match(r"IP[46]\.DNS(?:\[\d+\])?:(.*)$", line)
+        if match:
+            tokens.extend(match.group(1).split())
+    return tokens
+
+
 def discover_dns_servers(
     cfg: DnsproxySetupConfig, timeout: float
 ) -> DiscoveredDnsServers:
@@ -67,33 +98,29 @@ def discover_dns_servers(
     Both commands are always called and their current-state outputs are combined.
     Duplicate addresses are removed, valid IPv4 and IPv6 addresses are sorted,
     and command diagnostics are returned. No files are read, system state is not
-    changed, and DNS reachability is not tested.
+    changed, and DNS reachability is not tested. Each command carries the reader
+    of its own output, and a diagnostic names the program the configured command
+    starts with, so no program name written in the code can disagree with the
+    configured command.
     '''
     addresses_v4: set[str] = set()
     addresses_v6: set[str] = set()
     errors: list[str] = []
-    commands = (
-        ("resolvectl", cfg.resolvectl_dns_command),
-        ("nmcli", cfg.nmcli_dns_command),
+    probes = (
+        (cfg.resolvectl_dns_command, _resolvectl_dns_tokens),
+        (cfg.nmcli_dns_command, _nmcli_dns_tokens),
     )
-    for name, command in commands:
+    for command, parse_tokens in probes:
+        program = command[0]
         try:
             result = run_command(command, check=False, capture=True, timeout=timeout)
             if result.returncode != 0:
-                errors.append(f"{name} exited with {result.returncode}")
-            if name == "resolvectl":
-                for line in result.stdout.splitlines():
-                    _add_valid_dns_tokens(
-                        line.split(":", 1)[-1].split(), addresses_v4, addresses_v6
-                    )
-            else:
-                for line in result.stdout.splitlines():
-                    match = re.match(r"IP[46]\.DNS(?:\[\d+\])?:(.*)$", line)
-                    if match:
-                        _add_valid_dns_tokens(match.group(1).split(), addresses_v4, addresses_v6)
-
+                errors.append(f"{program} exited with {result.returncode}")
+            _add_valid_dns_tokens(
+                parse_tokens(result.stdout), addresses_v4, addresses_v6
+            )
         except (OSError, subprocess.SubprocessError) as exc:
-            errors.append(f"{name} failed: {exc}")
+            errors.append(f"{program} failed: {exc}")
     return DiscoveredDnsServers(
         tuple(sorted(addresses_v4)), tuple(sorted(addresses_v6)), tuple(errors)
     )
