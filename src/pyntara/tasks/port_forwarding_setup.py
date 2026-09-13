@@ -145,8 +145,11 @@ def task(ctx: Context) -> TaskResult:
     service and starts it, and verifies that the started service is not
     in the failed state. Force mode also removes the port-forwarding
     state file before the restart, so the service re-derives the desired
-    remote port from the hostname and re-forwards. A missing template is
-    a broken deployment and an error.
+    remote port from the hostname and re-forwards. Every step that cannot
+    run is a warning of a completed task: a missing template skips the
+    unit write alone, a failed write, reload or enable leaves the other
+    steps, and a service that entered the failed state is reported while
+    the deployment stays in place.
     """
 
     timeout = ctx.config.engine.command_timeout_seconds
@@ -156,9 +159,10 @@ def task(ctx: Context) -> TaskResult:
     venv_python = metrics.venv_dir / metrics.venv_python_relative_path
     system_config_path = metrics.system_config_path
     service_name = pf.service_unit_name
+    warnings: list[str] = []
 
     try:
-        unit = _render_service_unit(
+        unit: str | None = _render_service_unit(
             pf,
             task_data_dir(ctx.repo_root, ctx.task_name)
             / pf.service_template_file_name,
@@ -168,12 +172,13 @@ def task(ctx: Context) -> TaskResult:
             pf.service_restart_seconds,
         )
     except OSError as exc:
-        return TaskResult(
-            success=False,
-            error=f"cannot read the service template: {exc}",
-        )
+        # Without the rendered unit the unit file cannot be written; the
+        # enable and the restart below still act on the unit that is
+        # installed on the machine.
+        warnings.append(f"cannot read the service template: {exc}")
+        unit = None
     unit_dir = ctx.config.engine.systemd_unit_dir
-    unit_ok = _unit_matches(unit_dir, service_name, unit)
+    unit_ok = unit is not None and _unit_matches(unit_dir, service_name, unit)
     _log(f"checking unit {service_name}: {'ok' if unit_ok else 'missing or stale'}")
     enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
@@ -181,30 +186,33 @@ def task(ctx: Context) -> TaskResult:
     if not force and unit_ok and enabled:
         _log("target state already reached, skipping")
         return TaskResult(
-            success=True, changed=False, message=f"service {service_name} configured"
+            success=True,
+            changed=False,
+            message=f"service {service_name} configured",
+            warnings=tuple(warnings),
         )
 
     changed = False
-    if not unit_ok or force:
+    if unit is not None and (not unit_ok or force):
+        unit_written = False
         try:
             _write_unit(unit_dir, service_name, unit)
         except OSError as exc:
-            return TaskResult(
-                success=False, changed=changed, error=f"cannot write unit {service_name}: {exc}"
-            )
-        _log(f"unit {service_name} written")
-        changed = True
-        try:
-            run_command(
-                substituted_command(
-                    pf.systemctl_daemon_reload_command, {}
-                ),
-                timeout=timeout,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False, changed=changed, error=f"cannot reload systemd: {exc}"
-            )
+            warnings.append(f"cannot write unit {service_name}: {exc}")
+        else:
+            _log(f"unit {service_name} written")
+            unit_written = True
+            changed = True
+        if unit_written:
+            try:
+                run_command(
+                    substituted_command(
+                        pf.systemctl_daemon_reload_command, {}
+                    ),
+                    timeout=timeout,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                warnings.append(f"cannot reload systemd: {exc}")
 
     if not enabled:
         enable_argv = substituted_command(
@@ -213,11 +221,10 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(enable_argv, timeout=timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return TaskResult(
-                success=False, changed=changed, error=f"cannot enable {service_name}: {exc}"
-            )
-        _log(f"service {service_name} enabled")
-        changed = True
+            warnings.append(f"cannot enable {service_name}: {exc}")
+        else:
+            _log(f"service {service_name} enabled")
+            changed = True
 
     if force:
         state_path = pf.state_file_path
@@ -225,16 +232,13 @@ def task(ctx: Context) -> TaskResult:
             try:
                 state_path.unlink()
             except OSError as exc:
-                return TaskResult(
-                    success=False,
-                    changed=changed,
-                    error=(
-                        "cannot remove the port-forwarding state "
-                        f"{state_path}: {exc}"
-                    ),
+                warnings.append(
+                    "cannot remove the port-forwarding state "
+                    f"{state_path}: {exc}"
                 )
-            _log(f"port-forwarding state {state_path} removed for a fresh port")
-            changed = True
+            else:
+                _log(f"port-forwarding state {state_path} removed for a fresh port")
+                changed = True
 
     restart_argv = substituted_command(
         pf.systemctl_restart_command, {"service_unit_name": service_name}
@@ -242,21 +246,21 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(restart_argv, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"cannot start {service_name}: {exc}",
-        )
-    _log(f"service {service_name} started")
-    if not _started_ok(ctx.config.engine, pf, service_name, timeout):
-        return TaskResult(
-            success=False,
-            changed=changed,
-            error=f"service {service_name} entered the failed state after start",
-        )
-    _log(f"service {service_name} is running or cleanly exited")
+        warnings.append(f"cannot start {service_name}: {exc}")
+    else:
+        _log(f"service {service_name} started")
+        if not _started_ok(ctx.config.engine, pf, service_name, timeout):
+            warnings.append(
+                f"service {service_name} entered the failed state after start"
+            )
+        else:
+            _log(f"service {service_name} is running or cleanly exited")
+    message = f"service {service_name} deployed"
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(
         success=True,
         changed=changed,
-        message=f"service {service_name} deployed",
+        message=message,
+        warnings=tuple(warnings),
     )

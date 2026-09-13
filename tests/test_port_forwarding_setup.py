@@ -290,14 +290,16 @@ def test_non_force_keeps_state(
     assert any(command[1] == "restart" for command in calls)
 
 
-def test_failed_after_start_is_error(
+def test_failed_after_start_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The service entered the failed state after the start: the reason is a
+    # warning of a completed task and the deployed unit stays in place.
     _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, failed=True)
     result = port_forwarding_setup.task(ctx)
-    assert not result.success
-    assert "failed state" in (result.error or "")
+    assert result.success
+    assert any("failed state" in warning for warning in result.warnings)
 
 
 def test_inactive_clean_exit_is_ok(
@@ -312,9 +314,12 @@ def test_inactive_clean_exit_is_ok(
     assert result.success
 
 
-def test_missing_template_is_error(
+def test_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The unit template is missing: the reason is a warning of a completed
+    # task, because the service that is installed on the machine is still
+    # enabled and restarted.
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
     task_data = repo / "task_data" / "port_forwarding_setup"
@@ -327,5 +332,5 @@ def test_missing_template_is_error(
         ),
     )
     result = port_forwarding_setup.task(ctx)
-    assert not result.success
-    assert "template" in (result.error or "")
+    assert result.success
+    assert any("template" in warning for warning in result.warnings)
