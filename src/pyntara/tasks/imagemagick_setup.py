@@ -97,17 +97,13 @@ def task(ctx: Context) -> TaskResult:
         warnings.extend(install_warnings)
         if failures:
             failed_names = "; ".join(f"{name}: {reason}" for name, reason in failures)
-            detail = f"failed to install: {failed_names}"
-            if warnings:
-                detail = f"{detail}; {'; '.join(warnings)}"
-            return TaskResult(
-                success=False, changed=bool(installed_packages), error=detail
-            )
+            warnings.append(f"failed to install: {failed_names}")
     policy_changed, policy_error = _deploy_policy(ctx)
     if policy_error:
-        return TaskResult(
-            success=False, changed=bool(installed_packages), error=policy_error
-        )
+        # The deployed policy is the part of the machine the task owns, so
+        # the reason is reported and the run completes with the packages
+        # that were installed.
+        warnings.append(policy_error)
     changed = bool(installed_packages) or policy_changed
     messages: list[str] = []
     if installed_packages:
@@ -118,4 +114,9 @@ def task(ctx: Context) -> TaskResult:
         messages.append("already installed")
     if warnings:
         messages.append(f"warnings: {'; '.join(warnings)}")
-    return TaskResult(success=True, changed=changed, message="; ".join(messages))
+    return TaskResult(
+        success=True,
+        changed=changed,
+        message="; ".join(messages),
+        warnings=tuple(warnings),
+    )

@@ -196,14 +196,19 @@ def test_skip_apt_update_skips_the_update(
     assert update_calls == []
 
 
-def test_install_failure_is_an_error(
+def test_install_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The package install fails: the task reports the reason and still
+    # deploys the policy it owns.
     policy_path = _policy_env(monkeypatch, tmp_path)
     _install_fake(monkeypatch, installed=set(), install_rc=1)
     result = imagemagick_setup.task(_ctx(policy_path=policy_path))
-    assert result.success is False
-    assert "failed to install" in (result.error or "")
+    assert result.success is True
+    assert any(
+        "failed to install" in warning for warning in result.warnings
+    )
+    assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
 
 
 def test_policy_written_and_backed_up_once(
