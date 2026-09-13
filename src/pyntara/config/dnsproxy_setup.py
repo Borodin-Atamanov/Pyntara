@@ -85,6 +85,7 @@ class DnsproxySetupConfig:
     nmcli_restore_auto_dns_value: str
     service_stop_command: tuple[str, ...]
     installed_version_command: tuple[str, ...]
+    daemon_flag_templates: dict[str, str]
     service_enable_command: tuple[str, ...]
     service_start_command: tuple[str, ...]
     service_restart_command: tuple[str, ...]

@@ -232,6 +232,11 @@ nmcli_restore_auto_dns_value = "false"
 # Command that reads the version of an installed dnsproxy binary, with the
 # path of the binary as its placeholder.
 installed_version_command = ["{binary}", "--version"]
+# Flags of the dnsproxy daemon, one template per flag: {value} carries the
+# value a flag takes, and a flag that takes no value is written as itself.
+# The task assembles the ExecStart line of the unit from them, so a daemon
+# that renames a flag is answered in the config.
+daemon_flag_templates = { port = "--port={value}", listen = "--listen={value}", upstream = "--upstream={value}", fallback = "--fallback={value}", upstream_mode = "--upstream-mode={value}", timeout = "--timeout={value}s", cache = "--cache", cache_size = "--cache-size={value}", bootstrap = "--bootstrap={value}" }
 # The four commands that stop, enable, start and restart the service unit;
 # {service_unit_name} is the unit of this section.
 service_stop_command = ["systemctl", "stop", "{service_unit_name}"]

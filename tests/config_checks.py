@@ -815,6 +815,10 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
             "dnsproxy_setup.installed_version_command",
             ("{binary}",),
         ),
+        daemon_flag_templates=_string_map(
+            raw.get("daemon_flag_templates"),
+            "dnsproxy_setup.daemon_flag_templates",
+        ),
         service_enable_command=_string_list(
             raw.get("service_enable_command"),
             "dnsproxy_setup.service_enable_command",

@@ -235,29 +235,46 @@ def _plain_udp_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(forms)
 
 
+def _flag(cfg: DnsproxySetupConfig, name: str, value: str | None = None) -> str:
+    """The configured flag of the daemon, with its value filled in.
+
+    The flags of the daemon live in daemon_flag_templates, so the flag a
+    value is passed with is a config value; a flag that takes no value is
+    returned as it stands.
+    """
+
+    template = cfg.daemon_flag_templates[name]
+    if value is None:
+        return template
+    return template.format(value=value)
+
+
 def _command(
     cfg: DnsproxySetupConfig, profile_id: str, discovered: DiscoveredDnsServers
 ) -> list[str]:
-    command = [str(cfg.binary_path), "--port=" + str(cfg.listen_port)]
+    command = [
+        str(cfg.binary_path),
+        _flag(cfg, "port", str(cfg.listen_port)),
+    ]
     for address in cfg.listen_addresses:
-        command.append("--listen=" + address)
+        command.append(_flag(cfg, "listen", address))
     for upstream in _upstreams(cfg, profile_id):
-        command.append("--upstream=" + upstream)
+        command.append(_flag(cfg, "upstream", upstream))
     pool_forms = _protocol_forms(cfg.bootstrap_resolvers)
     provider_forms = _plain_udp_forms((*discovered.ipv4, *discovered.ipv6))
     for fallback in (*pool_forms, *provider_forms):
-        command.append("--fallback=" + fallback)
+        command.append(_flag(cfg, "fallback", fallback))
     command.extend(
         (
-            "--upstream-mode=" + cfg.upstream_mode,
-            "--timeout=" + str(cfg.timeout_seconds) + "s",
+            _flag(cfg, "upstream_mode", cfg.upstream_mode),
+            _flag(cfg, "timeout", str(cfg.timeout_seconds)),
         )
     )
     if cfg.cache_enabled:
-        command.append("--cache")
-        command.append("--cache-size=" + str(cfg.cache_size_bytes))
+        command.append(_flag(cfg, "cache"))
+        command.append(_flag(cfg, "cache_size", str(cfg.cache_size_bytes)))
     for bootstrap in (*pool_forms, *provider_forms):
-        command.append("--bootstrap=" + bootstrap)
+        command.append(_flag(cfg, "bootstrap", bootstrap))
     return command
 
 

@@ -123,6 +123,28 @@ def test_installed_version_command_comes_from_the_config(
     assert calls[-1] == [str(binary), "--version"]
 
 
+def test_daemon_flags_come_from_the_config() -> None:
+    # The flags the daemon starts with are config values: another template
+    # per flag is exactly what the command carries, and a renamed flag
+    # never appears.
+    cfg = make_config().dnsproxy_setup
+    marked = replace(
+        cfg,
+        cache_enabled=True,
+        daemon_flag_templates={
+            **cfg.daemon_flag_templates,
+            "port": "--listener={value}",
+            "cache": "--enable-cache",
+        },
+    )
+    command = task_module._command(
+        marked, "abc123", task_module.DiscoveredDnsServers((), (), ())
+    )
+    assert command[1] == f"--listener={marked.listen_port}"
+    assert "--enable-cache" in command
+    assert not any(part.startswith("--port=") for part in command)
+
+
 def test_service_log_excerpt_length_comes_from_the_config(
     monkeypatch: Any,
 ) -> None:
