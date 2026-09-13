@@ -1,4 +1,4 @@
-# Pyntara 0.3.438
+# Pyntara 0.3.439
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -38,12 +38,15 @@ PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is a
 PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
 
 PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state
-is already reached. When omitted, no task is forced. The keyword all forces every task of
-the resolved run set. Task names and the keyword are case-insensitive. Invalid names are
+is already reached. When omitted, no task is forced. The keyword that forces every task of
+the resolved run set is `force_all_keyword` of the `[engine]` table of the config (`all` by
+default). Task names and that keyword are compared without case. Invalid names are
 reported with a countdown notice and ignored.
 
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that inst.sh,
-add_extra_repos and cli_tools run before package operations. Use for test or offline runs;
+add_extra_repos and cli_tools run before package operations. The answers that mean true are
+`environment_flag_true_values` of the `[engine]` table (1, true and yes by default), compared
+without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
 The developer run resolves the production vault password inside one sudo invocation, so

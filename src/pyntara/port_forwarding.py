@@ -463,14 +463,18 @@ def save_state(
     The write goes through a temporary file in the same directory, so a
     crash never leaves a half-written state file behind. The suffix of
     that file, the mode of the state file and the indentation of its JSON
-    are values of the table.
+    are values of the table. The temporary file is removed whether the
+    write succeeded or failed, and a failure to remove it is logged
+    instead of raised, because the deployed service must keep running:
+    a file left in the state directory beside the state file is exactly
+    the leftover this cleanup is here to prevent.
     """
 
     pf = cfg.port_forwarding_setup
     path = pf.state_file_path
+    temp = path.with_name(path.name + pf.state_temp_file_suffix)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp = path.with_name(path.name + pf.state_temp_file_suffix)
         temp.write_text(
             json.dumps(state, ensure_ascii=False, indent=pf.state_json_indent),
             encoding="utf-8",
@@ -479,6 +483,11 @@ def save_state(
         os.replace(temp, path)
     except OSError as exc:
         _log(f"cannot save the port-forwarding state {path}: {exc}")
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError as exc:
+            _log(f"cannot remove the temporary state file {temp}: {exc}")
 
 
 def trigger_collector(cfg: Config) -> None:

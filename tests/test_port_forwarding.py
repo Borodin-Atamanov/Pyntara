@@ -434,6 +434,31 @@ def test_state_write_uses_the_configured_suffix_and_indent(
     ).exists()
 
 
+def test_a_failed_state_write_leaves_no_temporary_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The atomic write cleans up after itself: when the move into place
+    # fails, the temporary file is gone and the state file that was there
+    # before still carries the old state, so the state directory holds no
+    # stray file.
+    config = make_config(port_forwarding_state_file_path=tmp_path / "state.json")
+    section = config.port_forwarding_setup
+    target = tmp_path / "state.json"
+    save_state(config, {"server": {"30222": 20000}})
+    before = target.read_text(encoding="utf-8")
+
+    def fail_replace(source: object, destination: object) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(pf.os, "replace", fail_replace)
+    save_state(config, {"server": {"30222": 20001}})
+    assert target.read_text(encoding="utf-8") == before
+    assert list(tmp_path.iterdir()) == [target]
+    assert not (
+        tmp_path / f"state.json{section.state_temp_file_suffix}"
+    ).exists()
+
+
 class TestRunForwardLoop:
     @pytest.fixture(autouse=True)
     def _env(
