@@ -38,6 +38,7 @@ from pyntara.task_runner import run_tasks
 from pyntara.utils import (
     export_session_environment,
     session_environment,
+    substituted_command,
 )
 
 app = typer.Typer(invoke_without_command=True)
@@ -195,18 +196,25 @@ def _warn_and_continue(message: str, notice_timeout: int | None) -> None:
     print("\r", end="", flush=True, file=sys.stderr)
 
 
-def _process_running(name: str, timeout: float) -> bool:
-    """True when a process with the exact name is running (pgrep -x).
+def _process_running(engine: EngineConfig, name: str, timeout: float) -> bool:
+    """True when a process with the exact name is running.
 
-    The timeout comes from config.toml and bounds the pgrep query.
+    The query is the [engine] process_check_command with its {process_name}
+    replaced by the name, and the exit status alone answers: zero means
+    running. A missing tool, a timeout and a failed query all mean "not
+    running", because the check only picks a default install mode and must
+    never stop the run.
     """
 
-    pgrep = shutil.which("pgrep")
-    if pgrep is None:
+    command = substituted_command(
+        engine.process_check_command, {"process_name": name}
+    )
+    executable = shutil.which(command[0])
+    if executable is None:
         return False
     try:
         result = subprocess.run(
-            [pgrep, "-x", name],
+            [executable, *command[1:]],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
@@ -217,21 +225,19 @@ def _process_running(name: str, timeout: float) -> bool:
     return result.returncode == 0
 
 
-def detect_default_mode(
-    process_check_timeout: float, desktop_processes: tuple[str, ...]
-) -> str:
+def detect_default_mode(engine: EngineConfig) -> str:
     """Pick the default install mode without asking: desktop when a desktop
     session is present, otherwise server. Mirrors inst.sh detection.
 
-    desktop_processes is the configured list of process names whose
-    presence marks a desktop session; the check runs only when no session
-    variable is set.
+    The desktop processes are engine.desktop_detect_processes, the list of
+    process names whose presence marks a desktop session, and the check
+    runs only when no session variable is set.
     """
 
     if os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION"):
         return "desktop"
-    for process in desktop_processes:
-        if _process_running(process, process_check_timeout):
+    for process in engine.desktop_detect_processes:
+        if _process_running(engine, process, engine.process_check_timeout_seconds):
             return "desktop"
     return "server"
 
@@ -247,16 +253,12 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 
     mode = _env("PYNTARA_INSTALL_MODE")
     if mode is None:
-        detected = detect_default_mode(
-            cfg.process_check_timeout_seconds, cfg.desktop_detect_processes
-        )
+        detected = detect_default_mode(cfg)
         log_event(f"Install mode not set, using detected default: {detected}")
         return detected
     if mode in MODES:
         return mode
-    detected = detect_default_mode(
-        cfg.process_check_timeout_seconds, cfg.desktop_detect_processes
-    )
+    detected = detect_default_mode(cfg)
     _warn_and_continue(
         f"Install mode '{mode}' was set through environment variables but not "
         f"found in the configuration, applied mode '{detected}'. If this does "

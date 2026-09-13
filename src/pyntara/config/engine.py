@@ -45,8 +45,13 @@ class EngineConfig:
     system_python is the interpreter of the managed system, used by a task
     that runs an embedded client against the system packages.
     journal_identifier is the name under which the engine mirrors its own
-    messages into the system journal; the composition root hands it to the
-    journal writer before the first message. root_owner_uid and
+    messages into the system journal, journal_command is the command that
+    writes one line under that name and journal_priority_command the same
+    for a line that carries its own priority; the composition root hands
+    the table to the journal writer before the first message.
+    process_check_command answers whether a process with an exact name is
+    running, its {process_name} replaced by the name, and
+    process_check_timeout_seconds bounds that query. root_owner_uid and
     root_owner_gid are the owner the shared apply_owner helper gives
     a file the run creates as root. percent_scale is the scale that turns
     a fraction into a percent, and bytes_per_kib with bytes_per_mib are
@@ -101,6 +106,7 @@ class EngineConfig:
     error_priority: int
     progress_priority: int
     process_check_timeout_seconds: int
+    process_check_command: tuple[str, ...]
     task_start_delay_seconds: float
     desktop_detect_processes: tuple[str, ...]
     desktop_username: str = ""

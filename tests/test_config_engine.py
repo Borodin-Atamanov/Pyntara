@@ -319,6 +319,7 @@ def test_load_config_bool_not_accepted_as_timeout(tmp_path: Path) -> None:
         tmp_path,
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = true\n'
         'command_timeout_seconds = 1800\nerror_priority = 3\nprogress_priority = 7\nprocess_check_timeout_seconds = 5\n'
+        'process_check_command = ["pgrep", "-x", "{process_name}"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\npackage_install_retries = 3\n',
     )
 
@@ -329,6 +330,7 @@ def test_load_config_bool_not_accepted_as_retries(tmp_path: Path) -> None:
         tmp_path,
         '[engine]\ntask_data_root = "/tmp"\nnotice_timeout = 7\n'
         'command_timeout_seconds = 1800\nerror_priority = 3\nprogress_priority = 7\nprocess_check_timeout_seconds = 5\n'
+        'process_check_command = ["pgrep", "-x", "{process_name}"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\npackage_install_retries = true\n',
     )
 

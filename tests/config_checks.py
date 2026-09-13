@@ -1148,6 +1148,11 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("process_check_timeout_seconds"),
             "engine.process_check_timeout_seconds",
         ),
+        process_check_command=_placeholder_command_field(
+            raw.get("process_check_command"),
+            "engine.process_check_command",
+            ("{process_name}",),
+        ),
         task_start_delay_seconds=_float_field(
             raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
         ),

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,7 +17,7 @@ from pyntara.config import Config, load_config
 from pyntara.config.engine import EngineConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
-from pyntara.pyntara import app, detect_default_mode
+from pyntara.pyntara import _process_running, app, detect_default_mode
 
 runner = CliRunner()
 
@@ -139,7 +142,7 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     _clear_env(monkeypatch)
     monkeypatch.setattr(
         "pyntara.pyntara.detect_default_mode",
-        lambda timeout, processes: "server",
+        lambda engine: "server",
     )
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
@@ -160,7 +163,7 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=0))
     monkeypatch.setattr(
         "pyntara.pyntara.detect_default_mode",
-        lambda timeout, processes: "server",
+        lambda engine: "server",
     )
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.
@@ -180,13 +183,17 @@ def test_detect_default_mode_uses_desktop_session(
     # A desktop session variable means desktop.
     monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
     monkeypatch.delenv("DESKTOP_SESSION", raising=False)
-    monkeypatch.setattr("pyntara.pyntara._process_running", lambda name, timeout: False)
-    assert detect_default_mode(5, DEFAULT_DESKTOP_PROCESSES) == "server"
+    monkeypatch.setattr(
+        "pyntara.pyntara._process_running",
+        lambda engine, name, timeout: False,
+    )
+    engine = make_config().engine
+    assert detect_default_mode(engine) == "server"
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
-    assert detect_default_mode(5, DEFAULT_DESKTOP_PROCESSES) == "desktop"
+    assert detect_default_mode(engine) == "desktop"
     monkeypatch.delenv("XDG_CURRENT_DESKTOP")
     monkeypatch.setenv("DESKTOP_SESSION", "plasma")
-    assert detect_default_mode(5, DEFAULT_DESKTOP_PROCESSES) == "desktop"
+    assert detect_default_mode(engine) == "desktop"
 
 
 def test_detect_default_mode_uses_desktop_process(
@@ -196,11 +203,45 @@ def test_detect_default_mode_uses_desktop_process(
     monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
     monkeypatch.delenv("DESKTOP_SESSION", raising=False)
 
-    def fake_running(name: str, timeout: float) -> bool:
+    def fake_running(engine: EngineConfig, name: str, timeout: float) -> bool:
         return name == "plasmashell"
 
     monkeypatch.setattr("pyntara.pyntara._process_running", fake_running)
-    assert detect_default_mode(5, DEFAULT_DESKTOP_PROCESSES) == "desktop"
+    assert detect_default_mode(make_config().engine) == "desktop"
+
+
+def test_process_check_uses_the_configured_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The query is the configured [engine] process_check_command with the
+    # process name filled in: another tool and another flag produce the argv
+    # the check runs, and the exit status alone answers.
+    seen: list[list[str]] = []
+
+    class FakeResult:
+        returncode = 0
+
+    def fake_run(command: list[str], **kwargs: object) -> FakeResult:
+        seen.append(command)
+        return FakeResult()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    engine = replace(
+        make_config().engine,
+        process_check_command=("pidof", "-x", "{process_name}"),
+    )
+    assert _process_running(engine, "plasmashell", 5) is True
+    assert seen == [["/usr/bin/pidof", "-x", "plasmashell"]]
+
+
+def test_process_check_without_the_tool_is_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Best effort: a machine without the configured tool reports no running
+    # process instead of stopping the run, and the default mode is server.
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert _process_running(make_config().engine, "plasmashell", 5) is False
 
 
 def test_run_unknown_mode_countdown_has_no_unit_letter(
@@ -212,7 +253,7 @@ def test_run_unknown_mode_countdown_has_no_unit_letter(
     monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config(notice_timeout=2))
     monkeypatch.setattr(
         "pyntara.pyntara.detect_default_mode",
-        lambda timeout, processes: "server",
+        lambda engine: "server",
     )
     # All task modules are mocked as not implemented so no real dpkg or apt
     # command runs inside the unit test.

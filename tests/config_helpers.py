@@ -62,6 +62,7 @@ def base_config() -> str:
         "error_priority = 3\n"
         "progress_priority = 7\n"
         "process_check_timeout_seconds = 5\n"
+        'process_check_command = ["pgrep", "-x", "{process_name}"]\n'
         "task_start_delay_seconds = 0.5\n"
         'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
         'desktop_username = "i"\n'

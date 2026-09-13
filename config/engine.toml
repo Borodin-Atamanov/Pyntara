@@ -168,6 +168,10 @@ error_priority = 3
 progress_priority = 7
 # Seconds the desktop detection process check may take.
 process_check_timeout_seconds = 5
+# Command that answers whether a process with an exact name is running: exit
+# status 0 means running. {process_name} is replaced with the name, and the
+# engine reads the exit status only.
+process_check_command = ["pgrep", "-x", "{process_name}"]
 # Seconds the engine pauses after showing a task title before running it.
 task_start_delay_seconds = 0.5
 # Process names whose presence marks a desktop session in the default
