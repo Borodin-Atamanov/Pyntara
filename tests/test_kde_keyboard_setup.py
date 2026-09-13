@@ -593,3 +593,25 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     assert task_module._as_user_command(
         cfg, ["kreadconfig6", "--file", "kxkbrc"]
     ) == ["sudo", "-u", cfg.username, "--", "kreadconfig6", "--file", "kxkbrc"]
+
+
+def test_kconfig_calls_come_from_the_config() -> None:
+    # The reader and the two selectors are config values: another set of
+    # commands is what the task builds.
+    cfg = replace(
+        make_config().kde_keyboard_setup,
+        kreadconfig_command=("my-reader", "--config", "{file_name}"),
+        config_group_flag=("--section", "{group}"),
+        config_key_flag=("--entry", "{key}"),
+    )
+    assert task_module._kconfig_command(
+        cfg, cfg.kreadconfig_command, "kxkbrc", ("Layout",), "LayoutList"
+    ) == [
+        "my-reader",
+        "--config",
+        "kxkbrc",
+        "--section",
+        "Layout",
+        "--entry",
+        "LayoutList",
+    ]

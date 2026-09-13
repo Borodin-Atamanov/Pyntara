@@ -192,8 +192,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tasks/kde_keyboard_setup.py": frozenset(
         {
             '_as_user_command(cfg, ["mkdir", "-p", cfg.config_dir]),',
-            'command = ["kreadconfig6", "--file", file_name]',
-            'command = ["kwriteconfig6", "--file", file_name]',
         }
     ),
     "src/pyntara/tasks/kde_settings.py": frozenset(
@@ -202,8 +200,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
             '["chown", f"{cfg.username}:{cfg.username}", str(target)],',
             '_as_user_command(cfg, ["mkdir", "-p", str(target.parent)]),',
             'cfg, ["mkdir", "-p", str(Path(cfg.home_dir) / cfg.user_config_dir)]',
-            'command = ["kreadconfig6", "--file", file_name]',
-            'command = ["kwriteconfig6", "--file", file_name]',
             'command=["plasma-apply-colorscheme", cfg.color_scheme],',
             'command=["plasma-apply-cursortheme", cfg.cursor_theme],',
             'command=["plasma-apply-lookandfeel", "-a", cfg.look_and_feel],',
@@ -245,8 +241,6 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
         {
             '["chmod", f"{cfg.executable_file_mode:o}", str(target)], timeout=timeout',
             '["id", "-nG", cfg.username],',
-            'command = ["kreadconfig6", "--file", cfg.shortcuts_file_name]',
-            'command = ["kwriteconfig6", "--file", cfg.shortcuts_file_name]',
             'prefix = ["systemctl", "--user", "--machine", f"{cfg.username}@.host"]',
             'run_command(["chmod", f"{file_mode:o}", str(target)], timeout=timeout)',
             'run_command(["chown", f"{cfg.username}:{cfg.username}", str(target)], timeout=timeout)',

@@ -63,3 +63,7 @@ class VocalinuxSetupConfig:
     user_file_mode: int
     executable_file_mode: int
     runuser_command: tuple[str, ...]
+    kreadconfig_command: tuple[str, ...]
+    kwriteconfig_command: tuple[str, ...]
+    config_group_flag: tuple[str, ...]
+    config_key_flag: tuple[str, ...]

@@ -67,3 +67,10 @@ executable_file_mode = "0755"
 # Prefix that runs a command as the desktop user, so the task reaches the
 # session files the user owns; {username} is the account of the machine.
 runuser_command = ["runuser", "-u", "{username}", "--"]
+# Vocabulary of the KConfig tools the task reads and writes the shortcut
+# file with: the two base calls carry the file as {file_name}, a group is
+# selected with config_group_flag and a key with config_key_flag.
+kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]
+kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]
+config_group_flag = ["--group", "{group}"]
+config_key_flag = ["--key", "{key}"]

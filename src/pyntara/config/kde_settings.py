@@ -154,6 +154,13 @@ class KdeSettingsConfig:
     kwin_scripts_dir_name: str
     konsole_profile_file_name: str
     runuser_command: tuple[str, ...]
+    kreadconfig_command: tuple[str, ...]
+    kwriteconfig_command: tuple[str, ...]
+    config_group_flag: tuple[str, ...]
+    config_key_flag: tuple[str, ...]
+    config_bool_type_flag: tuple[str, ...]
+    config_notify_flag: tuple[str, ...]
+    config_delete_flag: tuple[str, ...]
     places_hidden: tuple[str, ...] = ()
     places_metadata_owner: str = ""
     kconfig: tuple[KConfigRecord, ...] = ()

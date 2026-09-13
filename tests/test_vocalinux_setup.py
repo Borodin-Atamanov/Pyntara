@@ -433,3 +433,25 @@ def test_user_command_prefix_comes_from_the_config() -> None:
         "--file",
         "kglobalshortcutsrc",
     ]
+
+
+def test_kconfig_calls_come_from_the_config() -> None:
+    # The writer and the two selectors are config values: another set of
+    # commands is what the task builds for the shortcut file.
+    cfg = replace(
+        make_config().vocalinux_setup,
+        kwriteconfig_command=("my-writer", "--config", "{file_name}"),
+        config_group_flag=("--section", "{group}"),
+        config_key_flag=("--entry", "{key}"),
+    )
+    assert task_module._kconfig_command(
+        cfg, cfg.kwriteconfig_command, ("services",), "myservice"
+    ) == [
+        "my-writer",
+        "--config",
+        cfg.shortcuts_file_name,
+        "--section",
+        "services",
+        "--entry",
+        "myservice",
+    ]

@@ -149,6 +149,31 @@ def _write_user_file(
     return True
 
 
+def _kconfig_command(
+    cfg: VocalinuxSetupConfig,
+    base_command: tuple[str, ...],
+    group_segments: tuple[str, ...],
+    key: str,
+) -> list[str]:
+    """One KConfig call: the configured base, the groups and the key.
+
+    The base call carries the shortcut file name and every selector is a
+    config value, so another KConfig version or another tool is a config
+    change. The reader and the writer share this builder, so the two calls
+    can never drift apart.
+    """
+
+    command = substituted_command(
+        base_command, {"file_name": cfg.shortcuts_file_name}
+    )
+    for segment in group_segments:
+        command.extend(
+            substituted_command(cfg.config_group_flag, {"group": segment})
+        )
+    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    return command
+
+
 def _kreadconfig(
     cfg: VocalinuxSetupConfig,
     group_segments: tuple[str, ...],
@@ -157,10 +182,9 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = ["kreadconfig6", "--file", cfg.shortcuts_file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key])
+    command = _kconfig_command(
+        cfg, cfg.kreadconfig_command, group_segments, key
+    )
     result = run_command(
         _as_user_command(cfg, command),
         extra_env=_home_env(cfg),
@@ -179,12 +203,12 @@ def _kwriteconfig(
     *,
     timeout: float,
 ) -> None:
-    """Write one KConfig key with kwriteconfig6 as the target user."""
+    """Write one KConfig key with the configured writer as the target user."""
 
-    command = ["kwriteconfig6", "--file", cfg.shortcuts_file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key, value])
+    command = _kconfig_command(
+        cfg, cfg.kwriteconfig_command, group_segments, key
+    )
+    command.append(value)
     run_command(
         _as_user_command(cfg, command),
         extra_env=_home_env(cfg),

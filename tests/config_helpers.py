@@ -135,6 +135,11 @@ def base_config() -> str:
         'shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }\n'
         'apply_hotkeys_script_file_name = "apply_hotkeys.py"\n'
         'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
+        'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
+        'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
+        'config_group_flag = ["--group", "{group}"]\n'
+        'config_key_flag = ["--key", "{key}"]\n'
+        'config_bool_type_flag = ["--type", "bool"]\n'
         '[kde_settings]\n'
         'packages = ["plasma-workspace", "libkf6config-bin"]\n'
         'username = "i"\n'
@@ -195,6 +200,13 @@ def base_config() -> str:
         'color_scheme = "BreezeDark"\n'
         'look_and_feel = "org.kubuntudark.desktop"\n'
         'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
+        'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
+        'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
+        'config_group_flag = ["--group", "{group}"]\n'
+        'config_key_flag = ["--key", "{key}"]\n'
+        'config_bool_type_flag = ["--type", "bool"]\n'
+        'config_notify_flag = ["--notify"]\n'
+        'config_delete_flag = ["--delete"]\n'
         'look_and_feel_light = "org.kubuntulight.desktop"\n'
         "automatic_look_and_feel = true\n"
         'cursor_theme = "Oxygen_Yellow"\n'
@@ -766,6 +778,10 @@ def base_config() -> str:
         "package_install_retries = 3\n"
         'user_file_mode = "0644"\nexecutable_file_mode = "0755"\n'
         'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
+        'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
+        'kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]\n'
+        'config_group_flag = ["--group", "{group}"]\n'
+        'config_key_flag = ["--key", "{key}"]\n'
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"

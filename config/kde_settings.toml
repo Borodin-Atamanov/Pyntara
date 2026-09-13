@@ -176,6 +176,18 @@ konsole_profile_file_name = "Pyntara.profile"
 # Prefix that runs a command as the desktop user, so the task reaches the
 # session files the user owns; {username} is the account of the machine.
 runuser_command = ["runuser", "-u", "{username}", "--"]
+# Vocabulary of the KConfig tools the task reads, writes and deletes the
+# desktop configuration with: the two base calls carry the file as
+# {file_name}, a group is selected with config_group_flag, a key with
+# config_key_flag, a boolean value with config_bool_type_flag and a write
+# that must reach a live owner with config_notify_flag.
+kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]
+kwriteconfig_command = ["kwriteconfig6", "--file", "{file_name}"]
+config_group_flag = ["--group", "{group}"]
+config_key_flag = ["--key", "{key}"]
+config_bool_type_flag = ["--type", "bool"]
+config_notify_flag = ["--notify"]
+config_delete_flag = ["--delete"]
 
 [kde_settings.user_dirs]
 XDG_DOCUMENTS_DIR = "$HOME/Downloads"

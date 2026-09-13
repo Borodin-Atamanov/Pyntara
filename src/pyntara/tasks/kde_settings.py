@@ -77,6 +77,30 @@ def _home_env(cfg: KdeSettingsConfig) -> dict[str, str]:
     return {"HOME": cfg.home_dir}
 
 
+def _kconfig_command(
+    cfg: KdeSettingsConfig,
+    base_command: tuple[str, ...],
+    file_name: str,
+    group_segments: tuple[str, ...],
+    key: str,
+) -> list[str]:
+    """One KConfig call: the configured base, the groups and the key.
+
+    The base call carries the file name and every selector is a config
+    value, so another KConfig version or another tool is a config change.
+    The reader, the writer and the delete share this builder, so the three
+    calls can never drift apart.
+    """
+
+    command = substituted_command(base_command, {"file_name": file_name})
+    for segment in group_segments:
+        command.extend(
+            substituted_command(cfg.config_group_flag, {"group": segment})
+        )
+    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    return command
+
+
 def _kreadconfig(
     cfg: KdeSettingsConfig,
     file_name: str,
@@ -86,10 +110,9 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = ["kreadconfig6", "--file", file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key])
+    command = _kconfig_command(
+        cfg, cfg.kreadconfig_command, file_name, group_segments, key
+    )
     result = run_command(
         _as_user_command(cfg, command),
         extra_env=_home_env(cfg),
@@ -117,7 +140,7 @@ def _notify_flag(
         return []
     if file_name not in (cfg.kwinrc_file_name, cfg.kdeglobals_file_name):
         return []
-    return ["--notify"]
+    return list(cfg.config_notify_flag)
 
 
 def _kwriteconfig(
@@ -138,13 +161,11 @@ def _kwriteconfig(
     live owner of the file.
     """
 
-    command = ["kwriteconfig6", "--file", file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key])
+    command = _kconfig_command(
+        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+    )
     if bool_value:
-        command.append("--type")
-        command.append("bool")
+        command.extend(cfg.config_bool_type_flag)
     command.append(value)
     command.extend(_notify_flag(cfg, file_name, env))
     write_env = env if env is not None else _home_env(cfg)
@@ -166,10 +187,10 @@ def _delete_kconfig_key(
 ) -> None:
     """Delete one KConfig key with kwriteconfig6 as the target user."""
 
-    command = ["kwriteconfig6", "--file", file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key, "--delete"])
+    command = _kconfig_command(
+        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+    )
+    command.extend(cfg.config_delete_flag)
     command.extend(_notify_flag(cfg, file_name, env))
     write_env = env if env is not None else _home_env(cfg)
     run_command(
@@ -1325,6 +1346,7 @@ def _apply_konsole_profile(
 
 
 def _system_kreadconfig(
+    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1332,15 +1354,15 @@ def _system_kreadconfig(
 ) -> str:
     """Current value of one system KConfig key, read as the root process."""
 
-    command = ["kreadconfig6", "--file", file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key])
+    command = _kconfig_command(
+        cfg, cfg.kreadconfig_command, file_name, group_segments, key
+    )
     result = run_command(command, check=False, capture=True, timeout=timeout)
     return trim_whitespace(result.stdout)
 
 
 def _system_kwriteconfig(
+    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1350,14 +1372,15 @@ def _system_kwriteconfig(
 ) -> None:
     """Write one system KConfig key as the root process."""
 
-    command = ["kwriteconfig6", "--file", file_name]
-    for segment in group_segments:
-        command.extend(["--group", segment])
-    command.extend(["--key", key, value])
+    command = _kconfig_command(
+        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+    )
+    command.append(value)
     run_command(command, timeout=timeout)
 
 
 def _sync_system_value(
+    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1368,10 +1391,12 @@ def _sync_system_value(
 ) -> bool:
     """Write a system KConfig key when it differs; True when written."""
 
-    current = _system_kreadconfig(file_name, group_segments, key, timeout)
+    current = _system_kreadconfig(cfg, file_name, group_segments, key, timeout)
     if not force and current == target:
         return False
-    _system_kwriteconfig(file_name, group_segments, key, target, timeout=timeout)
+    _system_kwriteconfig(
+        cfg, file_name, group_segments, key, target, timeout=timeout
+    )
     _log(f"set {file_name} {key}: {target}")
     return True
 
@@ -1398,6 +1423,7 @@ def _apply_sddm(
     ):
         try:
             changed |= _sync_system_value(
+                cfg,
                 str(cfg.sddm_conf_file),
                 ("Autologin",),
                 key,
@@ -1422,6 +1448,7 @@ def _apply_sddm(
     ):
         try:
             changed |= _sync_system_value(
+                cfg,
                 str(cfg.sddm_theme_conf_file),
                 ("Theme",),
                 key,

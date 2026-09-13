@@ -1682,6 +1682,30 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             "kde_keyboard_setup.runuser_command",
             ("{username}",),
         ),
+        kreadconfig_command=_placeholder_command_field(
+            raw.get("kreadconfig_command"),
+            "kde_keyboard_setup.kreadconfig_command",
+            ("{file_name}",),
+        ),
+        kwriteconfig_command=_placeholder_command_field(
+            raw.get("kwriteconfig_command"),
+            "kde_keyboard_setup.kwriteconfig_command",
+            ("{file_name}",),
+        ),
+        config_group_flag=_placeholder_command_field(
+            raw.get("config_group_flag"),
+            "kde_keyboard_setup.config_group_flag",
+            ("{group}",),
+        ),
+        config_key_flag=_placeholder_command_field(
+            raw.get("config_key_flag"),
+            "kde_keyboard_setup.config_key_flag",
+            ("{key}",),
+        ),
+        config_bool_type_flag=_string_list(
+            raw.get("config_bool_type_flag"),
+            "kde_keyboard_setup.config_bool_type_flag",
+        ),
     )
 
 
@@ -1870,6 +1894,38 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("runuser_command"),
             "kde_settings.runuser_command",
             ("{username}",),
+        ),
+        kreadconfig_command=_placeholder_command_field(
+            raw.get("kreadconfig_command"),
+            "kde_settings.kreadconfig_command",
+            ("{file_name}",),
+        ),
+        kwriteconfig_command=_placeholder_command_field(
+            raw.get("kwriteconfig_command"),
+            "kde_settings.kwriteconfig_command",
+            ("{file_name}",),
+        ),
+        config_group_flag=_placeholder_command_field(
+            raw.get("config_group_flag"),
+            "kde_settings.config_group_flag",
+            ("{group}",),
+        ),
+        config_key_flag=_placeholder_command_field(
+            raw.get("config_key_flag"),
+            "kde_settings.config_key_flag",
+            ("{key}",),
+        ),
+        config_bool_type_flag=_string_list(
+            raw.get("config_bool_type_flag"),
+            "kde_settings.config_bool_type_flag",
+        ),
+        config_notify_flag=_string_list(
+            raw.get("config_notify_flag"),
+            "kde_settings.config_notify_flag",
+        ),
+        config_delete_flag=_string_list(
+            raw.get("config_delete_flag"),
+            "kde_settings.config_delete_flag",
         ),
         color_scheme=_nonempty_string_field(
             raw.get("color_scheme"), "kde_settings.color_scheme"
@@ -4789,6 +4845,26 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
             raw.get("runuser_command"),
             "vocalinux_setup.runuser_command",
             ("{username}",),
+        ),
+        kreadconfig_command=_placeholder_command_field(
+            raw.get("kreadconfig_command"),
+            "vocalinux_setup.kreadconfig_command",
+            ("{file_name}",),
+        ),
+        kwriteconfig_command=_placeholder_command_field(
+            raw.get("kwriteconfig_command"),
+            "vocalinux_setup.kwriteconfig_command",
+            ("{file_name}",),
+        ),
+        config_group_flag=_placeholder_command_field(
+            raw.get("config_group_flag"),
+            "vocalinux_setup.config_group_flag",
+            ("{group}",),
+        ),
+        config_key_flag=_placeholder_command_field(
+            raw.get("config_key_flag"),
+            "vocalinux_setup.config_key_flag",
+            ("{key}",),
         ),
     )
 

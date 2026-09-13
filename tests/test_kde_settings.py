@@ -2008,3 +2008,38 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     assert task_module._as_user_command(
         cfg, ["kwriteconfig6", "--file", "kwinrc"]
     ) == ["sudo", "-u", cfg.username, "--", "kwriteconfig6", "--file", "kwinrc"]
+
+
+def test_kconfig_calls_come_from_the_config() -> None:
+    # The reader, the group selector and the key selector of the KConfig
+    # access are config values: another set of commands and selectors is
+    # what the task builds, for the user session and for the system files.
+    cfg = replace(
+        make_config().kde_settings,
+        kreadconfig_command=("my-reader", "--config", "{file_name}"),
+        config_group_flag=("--section", "{group}"),
+        config_key_flag=("--entry", "{key}"),
+    )
+    expected = [
+        "my-reader",
+        "--config",
+        "kwinrc",
+        "--section",
+        "Group",
+        "--section",
+        "Sub",
+        "--entry",
+        "Key",
+    ]
+    assert (
+        task_module._kconfig_command(
+            cfg, cfg.kreadconfig_command, "kwinrc", ("Group", "Sub"), "Key"
+        )
+        == expected
+    )
+    written = replace(
+        cfg, kwriteconfig_command=("my-writer", "--config", "{file_name}")
+    )
+    assert task_module._kconfig_command(
+        written, written.kwriteconfig_command, "kdeglobals", ("Group",), "Key"
+    ) == ["my-writer", "--config", "kdeglobals", "--section", "Group", "--entry", "Key"]
