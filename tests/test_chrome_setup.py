@@ -763,9 +763,11 @@ def test_force_rewrites_files_and_reinstalls(
     assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
 
 
-def test_repository_failure_is_error(
+def test_repository_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A failed repository registration leaves the task completed: the
+    # profile settings are independent of the apt source.
     ctx = _ctx(tmp_path)
     cfg = ctx.config.chrome_setup
     _write_repo(cfg)
@@ -774,13 +776,19 @@ def test_repository_failure_is_error(
 
     result = chrome_setup.task(ctx)
 
-    assert not result.success
-    assert "cannot register the Google Chrome apt repository" in (result.error or "")
+    assert result.success
+    assert any(
+        "cannot register the Google Chrome apt repository" in warning
+        for warning in result.warnings
+    )
+    assert _profile_path(cfg).exists()
 
 
-def test_install_failure_is_error(
+def test_install_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A failed package install leaves the task completed: the delivered
+    # browser settings do not depend on the package step.
     ctx = _ctx(tmp_path)
     cfg = ctx.config.chrome_setup
     _write_repo(cfg)
@@ -789,8 +797,47 @@ def test_install_failure_is_error(
 
     result = chrome_setup.task(ctx)
 
-    assert not result.success
-    assert "cannot install google-chrome-stable" in (result.error or "")
+    assert result.success
+    assert any(
+        "cannot install google-chrome-stable" in warning
+        for warning in result.warnings
+    )
+    assert _profile_path(cfg).exists()
+    assert cfg.desktop_override_path.exists()
+
+
+def test_missing_templates_leave_settings_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without the task templates the repository and the mirror unit are
+    # skipped, while the settings of the cloned repository still deploy.
+    ctx = make_context(
+        task_name="chrome_setup",
+        install_mode="desktop",
+        config=_test_config(tmp_path),
+        repo_root=tmp_path,
+    )
+    cfg = ctx.config.chrome_setup
+    _write_repo(cfg)
+    _write_desktop_source(cfg)
+    calls = _fake_run_factory(monkeypatch, chrome_installed=True)
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    assert any(
+        "missing apt source template" in warning
+        for warning in result.warnings
+    )
+    assert any(
+        "missing mirror unit template" in warning
+        for warning in result.warnings
+    )
+    assert _profile_path(cfg).exists()
+    assert not any(call[0] == "curl" for call in calls)
+    assert not any(
+        call[:2] == ["systemctl", "enable"] for call in calls
+    )
 
 
 def test_desktop_override_warns_when_packaged_entry_missing(

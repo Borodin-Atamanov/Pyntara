@@ -812,33 +812,29 @@ def task(ctx: Context) -> TaskResult:
     apt_source_template_path = (
         template_dir / cfg.apt_source_template_file_name
     )
-    if not apt_source_template_path.is_file():
-        return TaskResult(
-            success=False,
-            error=f"missing apt source template: {apt_source_template_path}",
-        )
     mount_unit_template_path = (
         template_dir / cfg.mount_unit_template_file_name
     )
-    if not mount_unit_template_path.is_file():
-        return TaskResult(
-            success=False,
-            error=f"missing mirror unit template: {mount_unit_template_path}",
-        )
 
-    _log("registering the Google Chrome apt repository")
-    repo_changed, error = _ensure_repository(
-        engine,
-        cfg,
-        apt_source_template_path,
-        timeout,
-        owner_uid,
-        owner_gid,
-    )
-    if error:
-        return TaskResult(success=False, changed=changed, error=error)
-    if repo_changed:
-        messages.append("registered the Google Chrome apt repository")
+    if apt_source_template_path.is_file():
+        _log("registering the Google Chrome apt repository")
+        repo_changed, error = _ensure_repository(
+            engine,
+            cfg,
+            apt_source_template_path,
+            timeout,
+            owner_uid,
+            owner_gid,
+        )
+        if error:
+            warnings.append(error)
+        elif repo_changed:
+            messages.append("registered the Google Chrome apt repository")
+            changed = True
+    else:
+        warnings.append(
+            f"missing apt source template: {apt_source_template_path}"
+        )
 
     _log("checking the Google Chrome installation")
     install_changed, error = _ensure_chrome_installed(
@@ -849,16 +845,16 @@ def task(ctx: Context) -> TaskResult:
         timeout=timeout,
     )
     if error:
-        return TaskResult(success=False, changed=changed, error=error)
-    if install_changed:
+        warnings.append(error)
+    elif install_changed:
         messages.append(f"installed {cfg.package_name}")
         changed = True
 
     _log("updating the browser settings repository")
     sync_changed, error = _sync_settings_repo(cfg, timeout=timeout)
     if error:
-        return TaskResult(success=False, changed=changed, error=error)
-    if sync_changed:
+        warnings.append(error)
+    elif sync_changed:
         messages.append("updated the browser settings repository")
         changed = True
 
@@ -892,19 +888,25 @@ def task(ctx: Context) -> TaskResult:
         _log(f"Chrome starts with the local proxy {proxy_server}")
 
     _log("mounting the Chrome profile mirror for the DevTools listener")
-    mirror_mounted, mirror_note = _ensure_profile_mirror(
-        cfg,
-        engine.systemd_unit_dir,
-        mount_unit_template_path,
-        force=force,
-        timeout=timeout,
-        owner_uid=owner_uid,
-        owner_gid=owner_gid,
-    )
-    if mirror_note:
-        warnings.append(mirror_note)
+    if mount_unit_template_path.is_file():
+        mirror_mounted, mirror_note = _ensure_profile_mirror(
+            cfg,
+            engine.systemd_unit_dir,
+            mount_unit_template_path,
+            force=force,
+            timeout=timeout,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+        )
+        if mirror_note:
+            warnings.append(mirror_note)
+        else:
+            _log(f"the profile mirror is mounted at {cfg.profile_mirror_path}")
     else:
-        _log(f"the profile mirror is mounted at {cfg.profile_mirror_path}")
+        mirror_mounted = False
+        warnings.append(
+            f"missing mirror unit template: {mount_unit_template_path}"
+        )
 
     override_changed, override_note = _ensure_desktop_override(
         cfg,
