@@ -449,6 +449,24 @@ def test_already_configured_skips(
     assert writes == []
 
 
+def test_the_device_name_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The name of a device is the configured module name with its index:
+    # another module name in the table is the /sys/block entry the task
+    # counts and the swap device path it formats and activates.
+    sys_block = tmp_path / "sys" / "block"
+    (sys_block / "myzram0").mkdir(parents=True)
+    (sys_block / "myzram1").mkdir()
+    (sys_block / "zram7").mkdir()
+    monkeypatch.setattr(zram_service, "SYS_BLOCK_PATH", sys_block)
+    module_name = make_config(zram_module_name="myzram").zram_service.module_name
+    assert zram_service._existing_device_indices(module_name) == [0, 1]
+    assert zram_service._existing_device_count(module_name) == 2
+    assert zram_service._device_path(module_name, 4) == "/dev/myzram4"
+    assert zram_service._device_name(module_name, 4) == "myzram4"
+
+
 def test_creates_devices_and_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

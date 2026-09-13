@@ -48,6 +48,23 @@ ZRAM_HOT_ADD_PATH = ZRAM_CONTROL_DIR / "hot_add"
 ZRAM_HOT_REMOVE_PATH = ZRAM_CONTROL_DIR / "hot_remove"
 
 
+def _device_name(module_name: str, index: int) -> str:
+    """Name of one device as the kernel exposes it in /sys/block.
+
+    The name is the configured module name and the index, because the
+    kernel names every device of a module that way; the name is never
+    spelled in this module.
+    """
+
+    return f"{module_name}{index}"
+
+
+def _device_path(module_name: str, index: int) -> str:
+    """Path of the swap device the kernel creates for one device."""
+
+    return f"/dev/{_device_name(module_name, index)}"
+
+
 def _read_ram_kib(meminfo_total_key: str) -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
 
@@ -107,12 +124,13 @@ def _calculate_devices(
     return cpu_count, per_device_bytes
 
 
-def _existing_device_indices() -> list[int]:
+def _existing_device_indices(module_name: str) -> list[int]:
     """Sorted device indices currently present in /sys/block.
 
     Iterating the actual indices instead of a numeric range keeps the
     teardown correct when a device is missing in the middle, which
-    happens when a device was removed by hand.
+    happens when a device was removed by hand. An entry whose name is the
+    configured module name followed by a number is a device of it.
     """
 
     if not SYS_BLOCK_PATH.is_dir():
@@ -120,23 +138,28 @@ def _existing_device_indices() -> list[int]:
     indices: list[int] = []
     for path in SYS_BLOCK_PATH.iterdir():
         name = path.name
-        if name.startswith("zram") and name[4:].isdigit():
-            indices.append(int(name[4:]))
+        if not name.startswith(module_name):
+            continue
+        index_text = name[len(module_name) :]
+        if index_text.isdigit():
+            indices.append(int(index_text))
     return sorted(indices)
 
 
-def _existing_device_count() -> int:
-    """Number of zram devices currently present in /sys/block."""
+def _existing_device_count(module_name: str) -> int:
+    """Number of devices of the module currently present in /sys/block."""
 
-    return len(_existing_device_indices())
+    return len(_existing_device_indices(module_name))
 
 
-def _read_disksize(index: int) -> int | None:
+def _read_disksize(index: int, module_name: str) -> int | None:
     """Configured disksize in bytes for one device, or None when unreadable."""
 
     try:
         text = (
-            SYS_BLOCK_PATH.joinpath(f"zram{index}", "disksize")
+            SYS_BLOCK_PATH.joinpath(
+                _device_name(module_name, index), "disksize"
+            )
             .read_text(encoding="utf-8")
             .strip()
         )
@@ -145,7 +168,9 @@ def _read_disksize(index: int) -> int | None:
         return None
 
 
-def _read_active_algorithm(index: int) -> str | None:
+def _read_active_algorithm(
+    index: int, module_name: str
+) -> str | None:
     """Currently active compression algorithm for one device, or None.
 
     comp_algorithm lists every supported algorithm; the active one is
@@ -154,8 +179,9 @@ def _read_active_algorithm(index: int) -> str | None:
 
     try:
         text = (
-            SYS_BLOCK_PATH.joinpath(f"zram{index}", "comp_algorithm")
-            .read_text(encoding="utf-8")
+            SYS_BLOCK_PATH.joinpath(
+                _device_name(module_name, index), "comp_algorithm"
+            ).read_text(encoding="utf-8")
         )
     except OSError:
         return None
@@ -215,8 +241,10 @@ def _hot_add_read_interface(readable_mode_bit: int) -> bool:
     return bool(mode & readable_mode_bit)
 
 
-def _add_devices(count: int, read_interface: bool) -> str | None:
-    """Create zram devices via hot_add; return an error message or None.
+def _add_devices(
+    count: int, read_interface: bool, module_name: str
+) -> str | None:
+    """Create devices via hot_add; return an error message or None.
 
     On the read-to-add interface every read creates one device and
     returns its id, which is logged; on the write interface every write
@@ -229,17 +257,17 @@ def _add_devices(count: int, read_interface: bool) -> str | None:
             try:
                 text = ZRAM_HOT_ADD_PATH.read_text(encoding="utf-8").strip()
             except OSError as exc:
-                return f"cannot add zram devices: {exc}"
+                return f"cannot add {module_name} devices: {exc}"
             try:
                 device_id = int(text)
             except ValueError:
-                return f"cannot add zram devices: hot_add returned {text!r}"
-            _log(f"device added: zram{device_id}")
+                return f"cannot add devices: hot_add returned {text!r}"
+            _log(f"device added: {_device_name(module_name, device_id)}")
         else:
             try:
                 _write_sysfs(ZRAM_HOT_ADD_PATH, "1")
             except OSError as exc:
-                return f"cannot add zram devices: {exc}"
+                return f"cannot add {module_name} devices: {exc}"
             _log("device added via hot_add write")
     return None
 
@@ -284,14 +312,14 @@ def _target_reached(
 
     if not enabled:
         return False
-    if _existing_device_count() != device_count:
+    if _existing_device_count(cfg.module_name) != device_count:
         return False
     for index in range(device_count):
-        if _read_disksize(index) != per_device_bytes:
+        if _read_disksize(index, cfg.module_name) != per_device_bytes:
             return False
-        if _read_active_algorithm(index) != cfg.compressor:
+        if _read_active_algorithm(index, cfg.module_name) != cfg.compressor:
             return False
-        if f"/dev/zram{index}" not in active_paths:
+        if _device_path(cfg.module_name, index) not in active_paths:
             return False
     return True
 
@@ -335,7 +363,9 @@ def _render_unit(
             cfg.unit_algorithm_line.format(
                 compressor=cfg.compressor,
                 algorithm_attribute=str(
-                    SYS_BLOCK_PATH / f"zram{index}" / "comp_algorithm"
+                    SYS_BLOCK_PATH
+                    / _device_name(cfg.module_name, index)
+                    / "comp_algorithm"
                 ),
             )
         )
@@ -343,17 +373,21 @@ def _render_unit(
             cfg.unit_disksize_line.format(
                 size_bytes=per_device_bytes,
                 disksize_attribute=str(
-                    SYS_BLOCK_PATH / f"zram{index}" / "disksize"
+                    SYS_BLOCK_PATH
+                    / _device_name(cfg.module_name, index)
+                    / "disksize"
                 ),
             )
         )
         lines.append(
-            cfg.unit_format_line.format(device_path=f"/dev/zram{index}")
+            cfg.unit_format_line.format(
+                device_path=_device_path(cfg.module_name, index)
+            )
         )
         lines.append(
             cfg.unit_swap_on_line.format(
                 swap_priority=cfg.swap_priority,
-                device_path=f"/dev/zram{index}",
+                device_path=_device_path(cfg.module_name, index),
             )
         )
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -408,7 +442,7 @@ def task(ctx: Context) -> TaskResult:
     except OSError as exc:
         return _result(
             changed=False,
-            message="zram not configured",
+            message=f"{cfg.module_name} not configured",
             warnings=[f"cannot determine RAM size: {exc}"],
         )
     cpu_count, cpu_fallback = _read_cpu_count(
@@ -434,8 +468,8 @@ def task(ctx: Context) -> TaskResult:
 
     active_paths = _active_swap_devices(cfg, timeout)
     enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
-    existing_count = _existing_device_count()
-    _log(f"checking existing zram devices: {existing_count}")
+    existing_count = _existing_device_count(cfg.module_name)
+    _log(f"checking existing {cfg.module_name} devices: {existing_count}")
     _log(f"checking active swap devices: {len(active_paths)}")
     _log(
         f"checking autorun service {service_name}: "
@@ -451,8 +485,9 @@ def task(ctx: Context) -> TaskResult:
     # Deactivate, reset and remove the existing devices so sizes and
     # algorithms can be rewritten; devices beyond the target count are
     # removed entirely.
-    for index in _existing_device_indices():
-        device_path = f"/dev/zram{index}"
+    for index in _existing_device_indices(cfg.module_name):
+        name = _device_name(cfg.module_name, index)
+        device_path = _device_path(cfg.module_name, index)
         if device_path in active_paths:
             _log(f"deactivating swap: swapoff {device_path}")
             try:
@@ -467,20 +502,20 @@ def task(ctx: Context) -> TaskResult:
             else:
                 _log("swap deactivated")
         if index < device_count:
-            _log(f"resetting device zram{index}: echo 1 > reset")
+            _log(f"resetting device {name}: echo 1 > reset")
             try:
                 _write_sysfs_with_retry(
-                    SYS_BLOCK_PATH / f"zram{index}" / "reset",
+                    SYS_BLOCK_PATH / name / "reset",
                     "1",
                     attempts=cfg.reset_busy_attempts,
                     delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
-                warnings.append(f"cannot reset zram{index}: {exc}")
+                warnings.append(f"cannot reset {name}: {exc}")
             else:
                 _log("device reset")
         else:
-            _log(f"removing extra device zram{index}: echo {index} > hot_remove")
+            _log(f"removing extra device {name}: echo {index} > hot_remove")
             try:
                 _write_sysfs_with_retry(
                     ZRAM_HOT_REMOVE_PATH,
@@ -489,7 +524,7 @@ def task(ctx: Context) -> TaskResult:
                     delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
-                warnings.append(f"cannot remove zram{index}: {exc}")
+                warnings.append(f"cannot remove {name}: {exc}")
             else:
                 _log("device removed")
 
@@ -515,10 +550,10 @@ def task(ctx: Context) -> TaskResult:
         # creation step reports its own failure if the module is absent.
         warnings.append(f"cannot query hot_add: {exc}")
     _log(f"hot_add interface: {'read' if read_interface else 'write'}")
-    missing = device_count - _existing_device_count()
+    missing = device_count - _existing_device_count(cfg.module_name)
     if missing > 0:
         _log(f"creating missing devices: hot_add {missing} times")
-        add_error = _add_devices(missing, read_interface)
+        add_error = _add_devices(missing, read_interface, cfg.module_name)
         if add_error is not None:
             warnings.append(add_error)
         else:
@@ -529,22 +564,23 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     device_changed = False
     for index in range(device_count):
-        device_path = f"/dev/zram{index}"
-        _log(f"configuring zram{index}: algorithm {cfg.compressor}")
+        name = _device_name(cfg.module_name, index)
+        device_path = _device_path(cfg.module_name, index)
+        _log(f"configuring {name}: algorithm {cfg.compressor}")
         try:
             _write_sysfs(
-                SYS_BLOCK_PATH / f"zram{index}" / "comp_algorithm",
+                SYS_BLOCK_PATH / name / "comp_algorithm",
                 cfg.compressor,
             )
             _write_sysfs(
-                SYS_BLOCK_PATH / f"zram{index}" / "disksize",
+                SYS_BLOCK_PATH / name / "disksize",
                 str(per_device_bytes),
             )
         except OSError as exc:
-            warnings.append(f"cannot configure zram{index}: {exc}")
+            warnings.append(f"cannot configure {name}: {exc}")
             continue
-        _log(f"zram{index} configured: {per_device_bytes} bytes")
-        _log(f"formatting zram{index}: mkswap {device_path}")
+        _log(f"{name} configured: {per_device_bytes} bytes")
+        _log(f"formatting {name}: mkswap {device_path}")
         try:
             run_command(
                 substituted_command(
@@ -552,7 +588,7 @@ def task(ctx: Context) -> TaskResult:
                 ),
                 timeout=timeout,
             )
-            _log(f"activating zram{index}: swapon --priority {cfg.swap_priority}")
+            _log(f"activating {name}: swapon --priority {cfg.swap_priority}")
             run_command(
                 substituted_command(
                     cfg.swap_on_command,
@@ -564,25 +600,26 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"zram{index} setup failed: {exc}")
+            warnings.append(f"{name} setup failed: {exc}")
             continue
-        _log(f"zram{index} active")
+        _log(f"{name} active")
         device_changed = True
     changed = changed or device_changed
 
     # Verify the configured state by reading the system files back.
-    _log("verifying zram configuration")
+    _log(f"verifying {cfg.module_name} configuration")
     problems: list[str] = []
     verified_active = _active_swap_devices(cfg, timeout)
     for index in range(device_count):
-        if _read_disksize(index) != per_device_bytes:
-            problems.append(f"zram{index} disksize mismatch")
-        if _read_active_algorithm(index) != cfg.compressor:
-            problems.append(f"zram{index} algorithm mismatch")
-        if f"/dev/zram{index}" not in verified_active:
-            problems.append(f"zram{index} not active")
-    if _existing_device_count() != device_count:
-        problems.append("extra zram devices present")
+        name = _device_name(cfg.module_name, index)
+        if _read_disksize(index, cfg.module_name) != per_device_bytes:
+            problems.append(f"{name} disksize mismatch")
+        if _read_active_algorithm(index, cfg.module_name) != cfg.compressor:
+            problems.append(f"{name} algorithm mismatch")
+        if _device_path(cfg.module_name, index) not in verified_active:
+            problems.append(f"{name} not active")
+    if _existing_device_count(cfg.module_name) != device_count:
+        problems.append(f"extra {cfg.module_name} devices present")
     if problems:
         warnings.append("; ".join(problems))
     else:
@@ -635,7 +672,7 @@ def task(ctx: Context) -> TaskResult:
     return _result(
         changed=changed,
         message=(
-            f"zram configured: {device_count} devices, "
+            f"{cfg.module_name} configured: {device_count} devices, "
             f"{per_device_bytes} bytes each, total {total_mb} MiB"
         ),
         warnings=warnings,

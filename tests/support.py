@@ -332,6 +332,7 @@ def make_config(
 
     zram_reset_busy_attempts: int = 5,
     zram_meminfo_total_key: str = "MemTotal:",
+    zram_module_name: str = "zram",
     zram_cpuinfo_processor_key: str = "processor",
     zram_reset_busy_retry_delay_seconds: float = 0.5,
     zram_module_load_command: tuple[str, ...] = ("modprobe", "{module_name}"),
@@ -697,6 +698,7 @@ def make_config(
         ),
         zram_service=replace(
             base.zram_service,
+            module_name=zram_module_name,
             meminfo_total_key=zram_meminfo_total_key,
             cpuinfo_processor_key=zram_cpuinfo_processor_key,
             reset_busy_attempts=zram_reset_busy_attempts,
