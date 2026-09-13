@@ -181,7 +181,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 # still spell their argv in code, module by module; the list is the work
 # that is left and must shrink with every migration block.
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
-    "src/pyntara/augeas.py": frozenset({'["augtool", "--noautoload"],'}),
     "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
         {
             '["bash", "-c", "curl -s https://get.acme.sh | sh"],',
@@ -209,14 +208,7 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
 # Absolute path literals outside /proc, /sys and /dev: the augeas node
 # prefix of the two ssh tasks, which is the interface of an external tool
 # and therefore a value.
-PATH_LITERALS_ALLOWED: dict[str, frozenset[str]] = {
-    "src/pyntara/augeas.py": frozenset(
-        {
-            'node = f"/files{dropin_path}"',
-            'result.stdout, f"/files{dropin_path}", skip_labels=skip_labels',
-        }
-    ),
-}
+PATH_LITERALS_ALLOWED: dict[str, frozenset[str]] = {}
 
 # A regular expression shared by two or more modules: the pattern of a
 # three part version and the tag prefix of a release, each written once

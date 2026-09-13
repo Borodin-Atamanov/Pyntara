@@ -15,6 +15,7 @@ import os
 import re
 from pathlib import Path
 
+from pyntara.config import EngineConfig
 from pyntara.utils import (
     apply_owner,
     install_packages,
@@ -63,6 +64,7 @@ def parse_augtool_print(
 
 
 def read_dropin_state(
+    engine: EngineConfig,
     dropin_path: Path,
     lens: str,
     timeout: float,
@@ -73,17 +75,19 @@ def read_dropin_state(
 
     The tree comes from a single augtool print over a manual load entry,
     so only the drop-in file is parsed; a missing file yields an empty
-    map and a None comment.
+    map and a None comment. The driver and its node prefix are engine
+    values, so the helper holds no vocabulary of the tool.
     """
 
+    node = f"{engine.augeas_files_node_prefix}{dropin_path}"
     script = (
         "set /augeas/load/entry/lens " + lens + "\n"
         f"set /augeas/load/entry/incl {dropin_path}\n"
         "load\n"
-        f"print /files{dropin_path}\n"
+        f"print {node}\n"
     )
     result = run_command(
-        ["augtool", "--noautoload"],
+        list(engine.augtool_command),
         input=script,
         capture=True,
         timeout=timeout,
@@ -95,11 +99,12 @@ def read_dropin_state(
             f"{result.stderr.strip()}"
         )
     return parse_augtool_print(
-        result.stdout, f"/files{dropin_path}", skip_labels=skip_labels
+        result.stdout, node, skip_labels=skip_labels
     )
 
 
 def write_dropin(
+    engine: EngineConfig,
     dropin_path: Path,
     directives: tuple[tuple[str, str], ...],
     stale_names: list[str],
@@ -120,7 +125,7 @@ def write_dropin(
     """
 
     dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    node = f"/files{dropin_path}"
+    node = f"{engine.augeas_files_node_prefix}{dropin_path}"
     container_name = container[0] if container else None
     container_value = container[1] if container else ""
     lines = [
@@ -145,7 +150,7 @@ def write_dropin(
             lines.append(f"rm {node}/{name}")
     lines.append("save")
     result = run_command(
-        ["augtool", "--noautoload"],
+        list(engine.augtool_command),
         input="\n".join(lines) + "\n",
         capture=True,
         timeout=timeout,
@@ -159,6 +164,7 @@ def write_dropin(
 
 
 def sync_dropin(
+    engine: EngineConfig,
     dropin_path: Path,
     directives: tuple[tuple[str, str], ...],
     mode: int,
@@ -191,7 +197,7 @@ def sync_dropin(
         return existed, False
     skip_labels = frozenset({container[0]}) if container else frozenset()
     current, comment = read_dropin_state(
-        dropin_path, lens, timeout, skip_labels=skip_labels
+        engine, dropin_path, lens, timeout, skip_labels=skip_labels
     )
     desired = dict(directives)
     changed = force or current != desired or comment != header
@@ -203,6 +209,7 @@ def sync_dropin(
         return False, False
     stale_names = [name for name in current if name not in desired]
     write_dropin(
+        engine,
         dropin_path,
         directives,
         stale_names,

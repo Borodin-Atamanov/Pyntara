@@ -1184,6 +1184,15 @@ def _engine_table(raw: object) -> EngineConfig:
             "engine.default_route_command",
             (),
         ),
+        augtool_command=_placeholder_command_field(
+            raw.get("augtool_command"),
+            "engine.augtool_command",
+            (),
+        ),
+        augeas_files_node_prefix=_nonempty_string_field(
+            raw.get("augeas_files_node_prefix"),
+            "engine.augeas_files_node_prefix",
+        ),
     )
 
 

@@ -121,6 +121,7 @@ def task(ctx: Context) -> TaskResult:
     )
     try:
         changed, _ = sync_dropin(
+            ctx.config.engine,
             cfg.ssh_config_dropin_path,
             directives,
             cfg.dropin_file_mode,

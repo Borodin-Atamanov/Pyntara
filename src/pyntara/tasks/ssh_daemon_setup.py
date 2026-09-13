@@ -416,6 +416,7 @@ def task(ctx: Context) -> TaskResult:
             for directive in cfg.directives
         )
         dropin_changed, port_changed = sync_dropin(
+            ctx.config.engine,
             cfg.sshd_config_dropin_path,
             directives,
             cfg.dropin_file_mode,
