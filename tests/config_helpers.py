@@ -84,6 +84,9 @@ def base_config() -> str:
         'dpkg_architecture_command = ["dpkg", "--print-architecture"]\n'
         'package_status_query_command = '
         '["dpkg-query", "-W", "-f=${{Status}}", "{package}"]\n'
+        'apt_update_command = ["apt-get", "update"]\n'
+        'apt_install_command = ["apt-get", "install", "-y", "{package}"]\n'
+        'apt_noninteractive_environment = { DEBIAN_FRONTEND = "noninteractive" }\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

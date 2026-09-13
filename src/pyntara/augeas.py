@@ -288,6 +288,7 @@ def ensure_augtool(
     if package_is_installed(engine, package_name, status_timeout):
         return None
     _, failures, _ = install_packages(
+        engine,
         [package_name],
         install_timeout=install_timeout,
         update_timeout=install_timeout,

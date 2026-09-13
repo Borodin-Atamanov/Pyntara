@@ -46,6 +46,7 @@ def task(ctx: Context) -> TaskResult:
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")
     installed, failures, warnings = install_packages(
+        engine,
         missing,
         install_timeout=ctx.config.engine.command_timeout_seconds,
         update_timeout=ctx.config.engine.command_timeout_seconds,

@@ -86,6 +86,7 @@ def task(ctx: Context) -> TaskResult:
     if missing:
         _log(f"installing: {', '.join(missing)}")
         installed, failures, install_warnings = install_packages(
+            engine,
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,

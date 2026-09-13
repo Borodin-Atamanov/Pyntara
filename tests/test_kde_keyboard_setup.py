@@ -140,7 +140,9 @@ def _install_fakes(
     def fake_installed(_engine: object, package: str, timeout: float) -> bool:
         return installed
 
-    def fake_install(package: str, timeout: float) -> tuple[bool, str]:
+    def fake_install(
+        _engine: object, package: str, timeout: float
+    ) -> tuple[bool, str]:
         if fail_install:
             return False, "cannot install"
         installs.append(package)

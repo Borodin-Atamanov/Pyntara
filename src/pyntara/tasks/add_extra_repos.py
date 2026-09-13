@@ -335,7 +335,9 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log("refreshing apt index: apt-get update")
             try:
-                refresh_apt_index(ctx.config.engine.command_timeout_seconds)
+                refresh_apt_index(
+                    ctx.config.engine, ctx.config.engine.command_timeout_seconds
+                )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 warnings.append(f"apt index refresh: {exc}")
             else:

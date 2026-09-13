@@ -166,10 +166,10 @@ def _ensure_chrome_installed(
         return False, None
     try:
         if not skip_apt_update:
-            refresh_apt_index(timeout)
+            refresh_apt_index(engine, timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot refresh the apt index: {exc}"
-    ok, error = install_package_once(cfg.package_name, timeout)
+    ok, error = install_package_once(engine, cfg.package_name, timeout)
     if not ok:
         return False, f"cannot install {cfg.package_name}: {error}"
     return True, None

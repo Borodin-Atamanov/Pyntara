@@ -112,6 +112,7 @@ def task(ctx: Context) -> TaskResult:
     if missing:
         _log("installing the playwright runtime packages")
         installed, failures, apt_warnings = install_packages(
+            engine,
             missing,
             install_timeout=timeout,
             update_timeout=timeout,

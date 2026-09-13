@@ -137,6 +137,7 @@ def _download_deb(
 
 
 def _install_deb(
+    engine: EngineConfig,
     download_dir: Path,
     name: str,
     *,
@@ -155,14 +156,14 @@ def _install_deb(
 
     if not skip_update:
         try:
-            refresh_apt_index(update_timeout)
+            refresh_apt_index(engine, update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
     for _ in range(retries + 1):
         ok, error = install_package_once(
-            str(download_dir / name), install_timeout
+            engine, str(download_dir / name), install_timeout
         )
         if ok:
             break
@@ -479,6 +480,7 @@ def task(ctx: Context) -> TaskResult:
             return TaskResult(success=False, error=str(exc))
         _log("installing rustdesk deb")
         ok, error = _install_deb(
+            ctx.config.engine,
             cfg.download_dir,
             name,
             install_timeout=cfg.install_timeout_seconds,

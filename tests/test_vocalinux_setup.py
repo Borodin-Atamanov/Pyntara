@@ -177,6 +177,7 @@ def _install_fakes(
         return installed
 
     def fake_install(
+        _engine: object,
         packages: list[str],
         *,
         install_timeout: float,

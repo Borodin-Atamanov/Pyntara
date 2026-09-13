@@ -1219,6 +1219,20 @@ def _engine_table(raw: object) -> EngineConfig:
             "engine.package_status_query_command",
             ("{package}",),
         ),
+        apt_update_command=_placeholder_command_field(
+            raw.get("apt_update_command"),
+            "engine.apt_update_command",
+            (),
+        ),
+        apt_install_command=_placeholder_command_field(
+            raw.get("apt_install_command"),
+            "engine.apt_install_command",
+            ("{package}",),
+        ),
+        apt_noninteractive_environment=_string_map(
+            raw.get("apt_noninteractive_environment"),
+            "engine.apt_noninteractive_environment",
+        ),
     )
 
 

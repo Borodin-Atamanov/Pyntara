@@ -123,3 +123,6 @@ class EngineConfig:
     link_scope_name: str = ""
     dpkg_architecture_command: tuple[str, ...] = ()
     package_status_query_command: tuple[str, ...] = ()
+    apt_update_command: tuple[str, ...] = ()
+    apt_install_command: tuple[str, ...] = ()
+    apt_noninteractive_environment: dict[str, str] = field(default_factory=dict)

@@ -2011,7 +2011,7 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.install_package_once",
-            lambda _p, _t: (False, "apt failed"),
+            lambda _e, _p, _t: (False, "apt failed"),
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
@@ -2761,7 +2761,9 @@ class TestUpnpClientPackage:
     def test_skips_installation_when_the_package_is_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def fail_install(_package: str, _timeout: float) -> tuple[bool, str]:
+        def fail_install(
+            _engine: object, _package: str, _timeout: float
+        ) -> tuple[bool, str]:
             raise AssertionError("apt must not run for an installed package")
 
         monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: True)
@@ -2774,7 +2776,9 @@ class TestUpnpClientPackage:
     ) -> None:
         installed: list[str] = []
 
-        def fake_install(package: str, _timeout: float) -> tuple[bool, str]:
+        def fake_install(
+            _engine: object, package: str, _timeout: float
+        ) -> tuple[bool, str]:
             installed.append(package)
             return (True, "")
 
@@ -2789,7 +2793,7 @@ class TestUpnpClientPackage:
     ) -> None:
         monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: False)
         monkeypatch.setattr(
-            xui, "install_package_once", lambda _p, _t: (False, "no candidate")
+            xui, "install_package_once", lambda _e, _p, _t: (False, "no candidate")
         )
         cfg = make_config().three_x_ui_xray_setup
         assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is False

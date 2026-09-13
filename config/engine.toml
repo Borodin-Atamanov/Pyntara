@@ -240,3 +240,9 @@ link_scope_name = "link"
 # because the substitution helper formats the command as a template.
 dpkg_architecture_command = ["dpkg", "--print-architecture"]
 package_status_query_command = ["dpkg-query", "-W", "-f=${{Status}}", "{package}"]
+# The apt calls of the package helpers: the index refresh and the install
+# of one package. The environment is the variable apt needs to never ask a
+# question on the target machine, where nobody watches the terminal.
+apt_update_command = ["apt-get", "update"]
+apt_install_command = ["apt-get", "install", "-y", "{package}"]
+apt_noninteractive_environment = { DEBIAN_FRONTEND = "noninteractive" }

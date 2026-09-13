@@ -1701,7 +1701,7 @@ def task(ctx: Context) -> TaskResult:
         if package_is_installed(engine, package, timeout):
             continue
         _log(f"installing {package}")
-        ok, error = install_package_once(package, timeout)
+        ok, error = install_package_once(engine, package, timeout)
         if not ok:
             packages_failed = True
             warning = f"cannot install {package}: {error}"

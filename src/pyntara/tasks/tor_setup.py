@@ -301,7 +301,7 @@ def task(ctx: Context) -> TaskResult:
         ok = False
         error = ""
         for _ in range(cfg.install_retries + 1):
-            ok, error = install_package_once(cfg.package_name, timeout)
+            ok, error = install_package_once(ctx.config.engine, cfg.package_name, timeout)
             if ok:
                 break
         if not ok:

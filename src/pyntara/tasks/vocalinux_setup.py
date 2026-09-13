@@ -469,6 +469,7 @@ def _install_packages(ctx: Context) -> tuple[bool, bool]:
         return True, False
     _log(f"installing: {', '.join(missing)}")
     installed, failures, _ = install_packages(
+        engine,
         missing,
         install_timeout=timeout,
         update_timeout=timeout,

@@ -1523,7 +1523,7 @@ def _ensure_upnp_client(
 
     if package_is_installed(engine, cfg.upnp_package, timeout):
         return True
-    installed, error = install_package_once(cfg.upnp_package, timeout)
+    installed, error = install_package_once(engine, cfg.upnp_package, timeout)
     if not installed:
         _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
         return False
@@ -1543,7 +1543,7 @@ def _ensure_openssl(engine: EngineConfig, timeout: float) -> bool:
     if package_is_installed(engine, "openssl", timeout):
         return True
     _log("openssl is missing, installing the package")
-    ok, _ = install_package_once("openssl", timeout)
+    ok, _ = install_package_once(engine, "openssl", timeout)
     if ok:
         _log("openssl installed")
     return ok

@@ -20,10 +20,6 @@ from pathlib import Path
 from pyntara import logger
 from pyntara.config.engine import EngineConfig
 
-# apt must never ask questions; every package operation runs noninteractive.
-# The single definition lives here so tasks cannot diverge.
-APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
-
 
 def task_data_dir(repo_root: Path, section: str) -> Path:
     """The task data directory of one task, from the clone root.
@@ -54,18 +50,23 @@ def package_is_installed(
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
-def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
+def install_package_once(
+    engine: EngineConfig, package: str, timeout: float
+) -> tuple[bool, str]:
     """Install one package; return (success, error_text).
 
-    apt runs noninteractive through the shared environment so it never
-    asks questions. Any nonzero exit or timeout is a failure with the
-    exception text; the caller decides whether to retry.
+    apt runs noninteractive through the environment of the engine table so
+    it never asks questions, and the argv of the install comes from the same
+    table. Any nonzero exit or timeout is a failure with the exception text;
+    the caller decides whether to retry.
     """
 
     try:
         run_command(
-            ["apt-get", "install", "-y", package],
-            extra_env=APT_NONINTERACTIVE_ENV,
+            substituted_command(
+                engine.apt_install_command, {"package": package}
+            ),
+            extra_env=dict(engine.apt_noninteractive_environment),
             timeout=timeout,
         )
         return True, ""
@@ -73,7 +74,7 @@ def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def refresh_apt_index(timeout: float) -> None:
+def refresh_apt_index(engine: EngineConfig, timeout: float) -> None:
     """Refresh the apt package index.
 
     One place runs the refresh, so the tasks that need a fresh index before
@@ -83,13 +84,14 @@ def refresh_apt_index(timeout: float) -> None:
     """
 
     run_command(
-        ["apt-get", "update"],
-        extra_env=APT_NONINTERACTIVE_ENV,
+        list(engine.apt_update_command),
+        extra_env=dict(engine.apt_noninteractive_environment),
         timeout=timeout,
     )
 
 
 def install_packages(
+    engine: EngineConfig,
     packages: list[str],
     *,
     install_timeout: float,
@@ -112,14 +114,14 @@ def install_packages(
     warnings: list[str] = []
     if not skip_update:
         try:
-            refresh_apt_index(update_timeout)
+            refresh_apt_index(engine, update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"apt index refresh: {exc}")
     for package in packages:
         ok = False
         error = ""
         for _ in range(retries + 1):
-            ok, error = install_package_once(package, install_timeout)
+            ok, error = install_package_once(engine, package, install_timeout)
             if ok:
                 break
         if ok:

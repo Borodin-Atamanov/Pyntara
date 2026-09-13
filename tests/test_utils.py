@@ -200,6 +200,81 @@ def test_package_is_installed_needs_the_installed_status(
     assert utils.package_is_installed(engine, "mc", 5.0) is False
 
 
+def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The install of one package, the index refresh and the noninteractive
+    # environment are config values: the helpers run exactly the configured
+    # argv with the configured environment, so a derivative that installs
+    # packages another way edits only the config.
+    engine = make_config().engine
+    calls: list[list[str]] = []
+    envs: list[dict[str, str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        extra_env = kwargs.get("extra_env")
+        envs.append(dict(extra_env) if isinstance(extra_env, dict) else {})
+        return _FakeProc(0)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.install_package_once(engine, "mc", 30.0) == (True, "")
+    assert calls == [["apt-get", "install", "-y", "mc"]]
+    assert envs == [{"DEBIAN_FRONTEND": "noninteractive"}]
+    utils.refresh_apt_index(engine, 30.0)
+    assert calls[-1] == ["apt-get", "update"]
+
+    marker = replace(
+        engine,
+        apt_install_command=("myinstall", "{package}", "--yes"),
+        apt_update_command=("myupdate",),
+        apt_noninteractive_environment={"APT_ANSWER": "always"},
+    )
+    assert utils.install_package_once(marker, "nc", 30.0) == (True, "")
+    assert calls[-1] == ["myinstall", "nc", "--yes"]
+    assert envs[-1] == {"APT_ANSWER": "always"}
+    utils.refresh_apt_index(marker, 30.0)
+    assert calls[-1] == ["myupdate"]
+
+
+def test_install_packages_refreshes_once_and_installs_each_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One refresh for the whole list, one install per package, and no
+    # refresh when the run asked to skip it.
+    engine = make_config().engine
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    installed, failures, warnings = utils.install_packages(
+        engine,
+        ["mc", "nc"],
+        install_timeout=30.0,
+        update_timeout=30.0,
+        retries=0,
+        skip_update=False,
+    )
+    assert (installed, failures, warnings) == (["mc", "nc"], [], [])
+    assert calls[0] == ["apt-get", "update"]
+    assert calls[1:] == [
+        ["apt-get", "install", "-y", "mc"],
+        ["apt-get", "install", "-y", "nc"],
+    ]
+
+    calls.clear()
+    utils.install_packages(
+        engine,
+        ["mc"],
+        install_timeout=30.0,
+        update_timeout=30.0,
+        retries=0,
+        skip_update=True,
+    )
+    assert calls == [["apt-get", "install", "-y", "mc"]]
+
+
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

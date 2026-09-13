@@ -156,7 +156,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tor_address.py": frozenset({"FALLBACK_NOTE = ("}),
     "src/pyntara/utils.py": frozenset(
         {
-            'APT_NONINTERACTIVE_ENV = {"DEBIAN_FRONTEND": "noninteractive"}',
             "CONSONANT_INDEX = {char: index for index, char in enumerate(CONSONANTS)}",
             'CONSONANTS = "bdfghjklmnprstvz"',
             "PROQUINT_LETTERS = frozenset(CONSONANTS + VOWELS)",
@@ -175,8 +174,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/utils.py": frozenset(
         {
-            '["apt-get", "install", "-y", package],',
-            '["apt-get", "update"],',
             '["ss", "-tlnp", f"sport = :{port}"],',
             '["systemctl", "is-active", name],',
             '["systemctl", "is-enabled", name],',

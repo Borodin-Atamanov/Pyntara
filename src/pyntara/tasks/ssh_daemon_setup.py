@@ -57,7 +57,7 @@ from pyntara.augeas import (
     include_covers_dropin,
     sync_dropin,
 )
-from pyntara.config import SshDaemonSetupConfig, SshDirective
+from pyntara.config import EngineConfig, SshDaemonSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -263,6 +263,7 @@ def _deploy_keys(
 
 
 def _ensure_package(
+    engine: EngineConfig,
     cfg: SshDaemonSetupConfig,
     timeout: float,
     skip_update: bool,
@@ -278,13 +279,13 @@ def _ensure_package(
 
     if not skip_update:
         try:
-            refresh_apt_index(timeout)
+            refresh_apt_index(engine, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
     for _ in range(cfg.install_retries + 1):
-        ok, error = install_package_once(cfg.package_name, timeout)
+        ok, error = install_package_once(engine, cfg.package_name, timeout)
         if ok:
             break
     return ok, error
@@ -375,7 +376,9 @@ def task(ctx: Context) -> TaskResult:
     )
     if not installed:
         _log(f"installing package {cfg.package_name}")
-        ok, error = _ensure_package(cfg, timeout, ctx.skip_apt_update)
+        ok, error = _ensure_package(
+            ctx.config.engine, cfg, timeout, ctx.skip_apt_update
+        )
         if not ok:
             return TaskResult(
                 success=False,
