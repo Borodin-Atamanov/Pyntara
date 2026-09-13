@@ -95,6 +95,7 @@ class PortForwardingSetupConfig:
     systemctl_daemon_reload_command: tuple[str, ...]
     systemctl_enable_command: tuple[str, ...]
     systemctl_restart_command: tuple[str, ...]
+    module_run_command: tuple[str, ...]
     systemctl_is_failed_command: tuple[str, ...]
     start_check_attempts: int
     start_check_retry_delay_seconds: float

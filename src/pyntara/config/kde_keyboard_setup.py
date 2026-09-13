@@ -71,3 +71,4 @@ class KdeKeyboardSetupConfig:
     config_key_flag: tuple[str, ...]
     config_bool_type_flag: tuple[str, ...]
     mkdir_command: tuple[str, ...]
+    python_script_command: tuple[str, ...]

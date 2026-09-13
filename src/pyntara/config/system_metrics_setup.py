@@ -185,6 +185,10 @@ class SystemMetricsSetupConfig:
     send_service_command: tuple[str, ...]
     ingest_service_command: tuple[str, ...]
     collector_service_command: tuple[str, ...]
+    venv_version_command: tuple[str, ...]
+    venv_create_command: tuple[str, ...]
+    venv_sync_command: tuple[str, ...]
+    venv_reinstall_flags: tuple[str, ...]
     service_journal_identifier: str
     commit_journal_identifier: str
     main_outbox_dir: str

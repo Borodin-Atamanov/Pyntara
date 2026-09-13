@@ -98,3 +98,7 @@ config_bool_type_flag = ["--type", "bool"]
 # Command that creates the directories of the user configuration; {path} is
 # filled in at the call site.
 mkdir_command = ["mkdir", "-p", "{path}"]
+# Prefix of the call that runs the apply_hotkeys client with the system
+# interpreter of the [engine] table; the client source and its payload
+# follow as the next arguments of the command line.
+python_script_command = ["{python}", "-c"]

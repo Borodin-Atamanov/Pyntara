@@ -138,6 +138,35 @@ def test_deploys_unit_and_starts_service(
     assert ("systemctl", "restart", service) in command_names
 
 
+def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
+    # The line the deployed unit starts with is a config value: another
+    # command in the table is exactly what the unit runs, with the venv
+    # interpreter, the module and the config path in their placeholders.
+    cfg = make_config().port_forwarding_setup
+    template = tmp_path / "auto_port_forwarding.service"
+    template.write_text(
+        "[Service]\n$exec_lines\nRestartSec=$restart_seconds\n",
+        encoding="utf-8",
+    )
+    unit = port_forwarding_setup._render_service_unit(
+        replace(
+            cfg,
+            module_run_command=("myrun", "-m", "{module}", "{config_path}"),
+        ),
+        template,
+        Path("/venv/bin/python"),
+        cfg.service_module_name,
+        Path("/etc/pyntara/config.toml"),
+        cfg.journal_identifier,
+        cfg.service_restart_seconds,
+    )
+    assert (
+        f"ExecStart=myrun -m {cfg.service_module_name} /etc/pyntara/config.toml"
+        in unit
+    )
+    assert f"RestartSec={cfg.service_restart_seconds}" in unit
+
+
 def test_renders_the_configured_module_and_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

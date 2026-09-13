@@ -366,8 +366,9 @@ def _apply_hotkeys_live(
             _as_user_command(
                 cfg,
                 [
-                    system_python,
-                    "-c",
+                    *substituted_command(
+                        cfg.python_script_command, {"python": system_python}
+                    ),
                     script_path.read_text(encoding="utf-8"),
                     payload,
                 ],

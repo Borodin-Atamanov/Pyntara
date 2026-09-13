@@ -517,6 +517,36 @@ def test_live_apply_runs_the_script_the_config_names(
     assert script_path.read_text(encoding="utf-8") in live_applies[0]
 
 
+def test_live_apply_prefix_comes_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The prefix of the client call is a config value: another interpreter
+    # command is exactly what runs, with the system interpreter filling its
+    # {python} slot and the client source following as the next argument.
+    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            kde_keyboard_setup=replace(
+                ctx.config.kde_keyboard_setup,
+                python_script_command=(
+                    ctx.config.engine.system_python,
+                    "--apply",
+                    "{python}",
+                ),
+            ),
+        ),
+    )
+    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert live_applies
+    assert live_applies[0][:4] == ["runuser", "-u", "i", "--"]
+    assert live_applies[0][5] == "--apply"
+    assert live_applies[0][6] == ctx.config.engine.system_python
+
+
 def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
     # A missing task data file is reported with its path, so the run tells
     # the user which file is not there instead of crashing on it.

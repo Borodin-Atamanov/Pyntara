@@ -77,6 +77,9 @@ journal_identifier = "auto_port_forwarding"
 service_template_file_name = "auto_port_forwarding.service"
 # Python module the deployed unit runs from the shared deployment venv.
 service_module_name = "pyntara.port_forwarding"
+# Command the deployed unit runs: the interpreter of the deployed venv with
+# the module above and the system config path as its placeholders.
+module_run_command = ["{python}", "-m", "{module}", "{config_path}"]
 # The systemctl calls of the task, each carrying the unit name as its
 # {service_unit_name} placeholder except the daemon reload.
 systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]

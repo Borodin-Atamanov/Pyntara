@@ -1816,6 +1816,11 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
             "kde_keyboard_setup.mkdir_command",
             ("{path}",),
         ),
+        python_script_command=_placeholder_command_field(
+            raw.get("python_script_command"),
+            "kde_keyboard_setup.python_script_command",
+            ("{python}",),
+        ),
     )
 
 
@@ -2482,6 +2487,11 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     service_module_name = _nonempty_string_field(
         raw.get("service_module_name"), section + "service_module_name"
     )
+    module_run_command = _placeholder_command_field(
+        raw.get("module_run_command"),
+        section + "module_run_command",
+        ("{python}", "{module}", "{config_path}"),
+    )
     command_checks: dict[str, tuple[str, ...]] = {}
     for key in (
         "systemctl_daemon_reload_command",
@@ -2642,6 +2652,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         ],
         systemctl_enable_command=command_checks["systemctl_enable_command"],
         systemctl_restart_command=command_checks["systemctl_restart_command"],
+        module_run_command=module_run_command,
         systemctl_is_failed_command=command_checks[
             "systemctl_is_failed_command"
         ],
@@ -3738,6 +3749,25 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             raw.get("collector_service_command"),
             "system_metrics_setup.collector_service_command",
             ("{python}", "{config_path}"),
+        ),
+        venv_version_command=_placeholder_command_field(
+            raw.get("venv_version_command"),
+            "system_metrics_setup.venv_version_command",
+            ("{python}",),
+        ),
+        venv_create_command=_placeholder_command_field(
+            raw.get("venv_create_command"),
+            "system_metrics_setup.venv_create_command",
+            ("{uv}", "{venv_dir}", "{python_version}"),
+        ),
+        venv_sync_command=_placeholder_command_field(
+            raw.get("venv_sync_command"),
+            "system_metrics_setup.venv_sync_command",
+            ("{uv}", "{repo_root}"),
+        ),
+        venv_reinstall_flags=_string_list(
+            raw.get("venv_reinstall_flags"),
+            "system_metrics_setup.venv_reinstall_flags",
         ),
         service_journal_identifier=_nonempty_string_field(
             raw.get("service_journal_identifier"),

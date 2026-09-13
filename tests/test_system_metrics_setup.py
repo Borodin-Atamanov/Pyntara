@@ -565,7 +565,37 @@ def test_venv_package_version_returns_trimmed_version(
         import_ok=True,
         venv_version="0.1.6",
     )
-    assert system_metrics_setup._venv_package_version(venv_python, 5) == "0.1.6"
+    assert system_metrics_setup._venv_package_version(
+        make_config().system_metrics_setup, venv_python, 5
+    ) == "0.1.6"
+
+
+def test_venv_version_command_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The check that the venv runs the repository version is a config
+    # value: another argv is exactly what runs, with the venv interpreter
+    # filling its {python} slot.
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0, "0.1.6\n")
+
+    monkeypatch.setattr(system_metrics_setup, "run_command", fake_run)
+    cfg = make_config().system_metrics_setup
+    marked = replace(
+        cfg,
+        venv_version_command=("myvenv-python", "--check", "{python}"),
+    )
+    assert (
+        system_metrics_setup._venv_package_version(marked, venv_python, 5)
+        == "0.1.6"
+    )
+    assert calls == [["myvenv-python", "--check", str(venv_python)]]
 
 
 def test_venv_package_version_returns_none_on_import_failure(
@@ -581,7 +611,9 @@ def test_venv_package_version_returns_none_on_import_failure(
         active_names=set(),
         import_ok=False,
     )
-    assert system_metrics_setup._venv_package_version(venv_python, 5) is None
+    assert system_metrics_setup._venv_package_version(
+        make_config().system_metrics_setup, venv_python, 5
+    ) is None
 
 
 def test_stale_venv_is_updated_and_service_restarted(

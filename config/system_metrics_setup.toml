@@ -113,6 +113,14 @@ systemctl_start_command = ["systemctl", "start", "{unit_name}"]
 send_service_command = ["{python}", "-m", "pyntara.metrics", "{config_path}"]
 ingest_service_command = ["{python}", "-m", "pyntara.metrics_ingest", "{config_path}"]
 collector_service_command = ["{python}", "-m", "pyntara.metrics_collect", "{config_path}"]
+# Commands of the deployed venv: the check that the venv imports the
+# package and reports the repository version, the creation of the venv with
+# the configured interpreter, the sync from the repository lockfile and the
+# arguments that reinstall the local package when the venv is refreshed.
+venv_version_command = ["{python}", "-c", "import pyntara; print(pyntara.__version__)"]
+venv_create_command = ["{uv}", "venv", "{venv_dir}", "--python", "{python_version}"]
+venv_sync_command = ["{uv}", "sync", "--project", "{repo_root}", "--active", "--locked", "--no-dev", "--no-editable"]
+venv_reinstall_flags = ["--reinstall-package", "pyntara"]
 # Journal identifier of the System Metrics services.
 service_journal_identifier = "system_metrics"
 # Journal identifier of the commit command.

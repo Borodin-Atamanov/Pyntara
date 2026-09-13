@@ -69,7 +69,9 @@ from pyntara.utils import (
 # live in config.toml through Context.
 
 
-def _venv_package_version(venv_python: Path, timeout: float) -> str | None:
+def _venv_package_version(
+    cfg: SystemMetricsSetupConfig, venv_python: Path, timeout: float
+) -> str | None:
     """The pyntara version installed in the venv, or None.
 
     The import is the proof that the package is installed in the venv;
@@ -83,11 +85,9 @@ def _venv_package_version(venv_python: Path, timeout: float) -> str | None:
         return None
     try:
         result = run_command(
-            [
-                str(venv_python),
-                "-c",
-                "import pyntara; print(pyntara.__version__)",
-            ],
+            substituted_command(
+                cfg.venv_version_command, {"python": str(venv_python)}
+            ),
             check=False,
             capture=True,
             timeout=timeout,
@@ -106,6 +106,7 @@ def _uv_path() -> str | None:
 
 
 def _ensure_venv(
+    cfg: SystemMetricsSetupConfig,
     repo_root: Path,
     uv: str,
     force: bool,
@@ -136,25 +137,25 @@ def _ensure_venv(
         _log(f"creating venv: uv venv {venv_dir}")
         try:
             run_command(
-                [uv, "venv", str(venv_dir), "--python", python_version],
+                substituted_command(
+                    cfg.venv_create_command,
+                    {
+                        "uv": uv,
+                        "venv_dir": str(venv_dir),
+                        "python_version": python_version,
+                    },
+                ),
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"cannot create venv: {exc}"
         _log("venv created")
         created = True
-    sync = [
-        uv,
-        "sync",
-        "--project",
-        str(repo_root),
-        "--active",
-        "--locked",
-        "--no-dev",
-        "--no-editable",
-    ]
+    sync = substituted_command(
+        cfg.venv_sync_command, {"uv": uv, "repo_root": str(repo_root)}
+    )
     if force or (not venv_up_to_date and not created):
-        sync += ["--reinstall-package", "pyntara"]
+        sync += list(cfg.venv_reinstall_flags)
     _log(f"installing pyntara into the venv from the lockfile of {repo_root}")
     try:
         run_command(
@@ -489,7 +490,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     venv_python = venv_dir / metrics.venv_python_relative_path
-    venv_version = _venv_package_version(venv_python, timeout)
+    venv_version = _venv_package_version(metrics, venv_python, timeout)
     venv_ok = venv_version == __version__
     _log(
         f"checking venv {venv_python}: "
@@ -567,7 +568,14 @@ def task(ctx: Context) -> TaskResult:
     if uv is None:
         return TaskResult(success=False, error="uv executable not found on PATH")
     venv_changed, error = _ensure_venv(
-        ctx.repo_root, uv, force, timeout, venv_dir, metrics.python_version, venv_ok
+        metrics,
+        ctx.repo_root,
+        uv,
+        force,
+        timeout,
+        venv_dir,
+        metrics.python_version,
+        venv_ok,
     )
     if error is not None:
         return TaskResult(success=False, error=error)

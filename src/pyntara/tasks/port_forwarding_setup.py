@@ -42,6 +42,7 @@ from pyntara.utils import (
 
 
 def _render_service_unit(
+    cfg: PortForwardingSetupConfig,
     template_path: Path,
     venv_python: Path,
     module_name: str,
@@ -59,12 +60,14 @@ def _render_service_unit(
     """
 
     command = " ".join(
-        [
-            str(venv_python),
-            "-m",
-            module_name,
-            str(system_config_path),
-        ]
+        substituted_command(
+            cfg.module_run_command,
+            {
+                "python": str(venv_python),
+                "module": module_name,
+                "config_path": str(system_config_path),
+            },
+        )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
@@ -159,6 +162,7 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         unit = _render_service_unit(
+            pf,
             task_data_dir(ctx.repo_root, ctx.task_name)
             / pf.service_template_file_name,
             venv_python,
