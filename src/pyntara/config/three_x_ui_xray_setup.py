@@ -82,6 +82,9 @@ class ThreeXuiXraySetupConfig:
     panel_xray_update_path: str
     panel_xray_geodata_validate_path: str
     panel_xray_route_test_path: str
+    panel_inbound_protocol: str
+    panel_blocked_rule_protocols: tuple[str, ...]
+    panel_private_block_category: str
     vault_entry_title: str
     connection_vault_entry_title: str
     share_addr_strategy: str

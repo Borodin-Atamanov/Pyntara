@@ -90,6 +90,9 @@ def make_policy(**overrides: Any) -> LocalProxyPolicy:
         "geo_restricted_domain_categories": ("geosite:category-ai-!cn", "geosite:netflix"),
         "russia_domain_strategy": "IPIfNonMatch",
         "outside_russia_domain_strategy": "AsIs",
+        "panel_inbound_protocol": "mixed",
+        "panel_blocked_rule_protocols": ("bittorrent",),
+        "panel_private_block_category": "geoip:private",
     }
     values.update(overrides)
     return LocalProxyPolicy(**values)
@@ -247,6 +250,7 @@ class TestLocalProxyInbound:
     def test_the_payload_has_everything_the_panel_needs(self) -> None:
         payload = build_local_proxy_inbound(
             tag="pyntara-local-proxy",
+            protocol="mixed",
             remark="pyntara local proxy",
             listen_address="127.0.0.1",
             port=10800,
@@ -530,3 +534,49 @@ class TestApplyRoutingPolicy:
         )
         tags = [outbound["tag"] for outbound in outbounds_of(updated)]
         assert tags.count("pyntara-tor") == 1
+
+
+def test_the_panel_vocabulary_comes_from_the_config() -> None:
+    # The inbound protocol, the rule protocols that count as a panel
+    # restriction and the address category of the private block rule are
+    # policy values: another set of them is the payload the panel gets and
+    # the rules the policy removes, so no panel word lives in the code.
+    policy = make_policy(
+        panel_inbound_protocol="my-mixed",
+        panel_blocked_rule_protocols=("my-bittorrent",),
+        panel_private_block_category="my-geoip:private",
+    )
+    payload = build_local_proxy_inbound(
+        tag=policy.inbound_tag,
+        protocol=policy.panel_inbound_protocol,
+        remark="pyntara local proxy",
+        listen_address="127.0.0.1",
+        port=10800,
+        udp_enabled=True,
+        sniffing_protocols=("http", "tls"),
+    )
+    assert payload["protocol"] == "my-mixed"
+    template = make_template()
+    rules_of(template).append(
+        {
+            "type": "field",
+            "protocol": ["my-bittorrent"],
+            "outboundTag": policy.blocked_outbound_tag,
+        }
+    )
+    rules_of(template).append(
+        {
+            "type": "field",
+            "ip": ["my-geoip:private"],
+            "outboundTag": policy.blocked_outbound_tag,
+        }
+    )
+    updated, _ = apply_routing_policy(
+        template,
+        policy,
+        remote_outbound=None,
+        remove_panel_restrictions=True,
+    )
+    rules = rules_of(updated)
+    assert not any(rule.get("protocol") == ["my-bittorrent"] for rule in rules)
+    assert not any(rule.get("ip") == ["my-geoip:private"] for rule in rules)

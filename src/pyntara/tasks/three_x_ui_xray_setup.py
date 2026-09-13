@@ -1869,6 +1869,7 @@ def _stage_local_proxy(
         )
     payload = routing_policy.build_local_proxy_inbound(
         tag=cfg.local_proxy_tag,
+        protocol=cfg.panel_inbound_protocol,
         remark=cfg.local_proxy_tag,
         listen_address=cfg.local_proxy_listen_address,
         port=cfg.local_proxy_port,
@@ -2331,6 +2332,9 @@ def _stage_routing_policy(
         geo_restricted_domain_categories=lists["geo_restricted_domain_categories"],
         russia_domain_strategy=cfg.russia_domain_strategy,
         outside_russia_domain_strategy=cfg.outside_russia_domain_strategy,
+        panel_inbound_protocol=cfg.panel_inbound_protocol,
+        panel_blocked_rule_protocols=cfg.panel_blocked_rule_protocols,
+        panel_private_block_category=cfg.panel_private_block_category,
     )
     updated, differs = routing_policy.apply_routing_policy(
         template.settings,

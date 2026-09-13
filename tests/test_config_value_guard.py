@@ -93,13 +93,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
         }
     ),
     "src/pyntara/pyntara.py": frozenset({'CONFIG_PATH = Path("config")'}),
-    "src/pyntara/routing_policy.py": frozenset(
-        {
-            'PANEL_BLOCKED_PROTOCOLS = ("bittorrent",)',
-            'PANEL_MIXED_PROTOCOL = "mixed"',
-            'PANEL_PRIVATE_BLOCK_CATEGORY = "geoip:private"',
-        }
-    ),
     "src/pyntara/tasks/chrome_setup.py": frozenset(
         {'FLAG_PLACEHOLDER_PATTERN = re.compile(r"\\{([a-z_]+)\\}")'}
     ),

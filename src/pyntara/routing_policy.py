@@ -47,19 +47,6 @@ import json
 import urllib.parse
 from dataclasses import dataclass
 
-# The panel accepts a fixed set of inbound protocols and has no plain
-# "socks" inbound: "mixed" serves SOCKS5 and HTTP on one port, which is
-# what a local proxy needs.
-PANEL_MIXED_PROTOCOL = "mixed"
-
-# The rules the panel ships by default that make the proxy less useful
-# than it can be: bittorrent traffic is blocked, every private destination
-# is blocked instead of going directly, and the direct outbound carries
-# internal block rules of its own. The policy removes them, so the proxy
-# passes what the machine can reach.
-PANEL_BLOCKED_PROTOCOLS = ("bittorrent",)
-PANEL_PRIVATE_BLOCK_CATEGORY = "geoip:private"
-
 
 @dataclass(frozen=True)
 class VlessProfile:
@@ -92,6 +79,10 @@ class LocalProxyPolicy:
     The category lists hold ready routing tokens (geosite:, geoip:, ext-):
     the community datasets behind them are maintained outside this
     project, the policy only decides which of them apply.
+    panel_inbound_protocol, panel_blocked_rule_protocols and
+    panel_private_block_category are the vocabulary of the panel itself,
+    so which inbound it accepts and which of its shipped rules count as a
+    restriction are config values.
     """
 
     inbound_tag: str
@@ -115,6 +106,9 @@ class LocalProxyPolicy:
     geo_restricted_domain_categories: tuple[str, ...]
     russia_domain_strategy: str
     outside_russia_domain_strategy: str
+    panel_inbound_protocol: str
+    panel_blocked_rule_protocols: tuple[str, ...]
+    panel_private_block_category: str
 
     def direct_ip_values(self) -> list[str]:
         """The category and network entries of the direct address rule.
@@ -263,6 +257,7 @@ def build_i2p_outbound(tag: str, address: str) -> dict[str, object]:
 def build_local_proxy_inbound(
     *,
     tag: str,
+    protocol: str,
     remark: str,
     listen_address: str,
     port: int,
@@ -271,19 +266,20 @@ def build_local_proxy_inbound(
 ) -> dict[str, object]:
     """The panel payload for the local proxy inbound.
 
-    The panel has no plain "socks" inbound protocol: "mixed" serves SOCKS5
-    and HTTP on one port, which is exactly a local proxy. The inbound is
-    created without a traffic limit and without an expiry date, because a
-    local proxy that stops working after a quota is worse than useless.
-    Sniffing is what lets the rules decide by the requested name, so the
-    protocols the panel can sniff are enabled.
+    protocol is the configured inbound protocol of the panel, mixed by
+    default: the panel has no plain "socks" inbound, and mixed serves
+    SOCKS5 and HTTP on one port, which is exactly a local proxy. The
+    inbound is created without a traffic limit and without an expiry date,
+    because a local proxy that stops working after a quota is worse than
+    useless. Sniffing is what lets the rules decide by the requested name,
+    so the protocols the panel can sniff are enabled.
     """
 
     return {
         "remark": remark,
         "listen": listen_address,
         "port": port,
-        "protocol": PANEL_MIXED_PROTOCOL,
+        "protocol": protocol,
         "tag": tag,
         "enable": True,
         "expiryTime": 0,
@@ -433,12 +429,14 @@ def _is_panel_restriction(rule: object, policy: LocalProxyPolicy) -> bool:
     if not isinstance(rule, dict):
         return False
     protocol = rule.get("protocol")
-    if isinstance(protocol, list) and set(PANEL_BLOCKED_PROTOCOLS) & set(protocol):
+    if isinstance(protocol, list) and set(
+        policy.panel_blocked_rule_protocols
+    ) & set(protocol):
         return True
     ip_entries = rule.get("ip")
     return (
         isinstance(ip_entries, list)
-        and PANEL_PRIVATE_BLOCK_CATEGORY in ip_entries
+        and policy.panel_private_block_category in ip_entries
         and rule.get("outboundTag") == policy.blocked_outbound_tag
     )
 

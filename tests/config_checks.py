@@ -4302,6 +4302,18 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("panel_xray_route_test_path"),
         "three_x_ui_xray_setup.panel_xray_route_test_path",
     )
+    panel_inbound_protocol = _nonempty_string_field(
+        raw.get("panel_inbound_protocol"),
+        "three_x_ui_xray_setup.panel_inbound_protocol",
+    )
+    panel_blocked_rule_protocols = _string_list(
+        raw.get("panel_blocked_rule_protocols"),
+        "three_x_ui_xray_setup.panel_blocked_rule_protocols",
+    )
+    panel_private_block_category = _nonempty_string_field(
+        raw.get("panel_private_block_category"),
+        "three_x_ui_xray_setup.panel_private_block_category",
+    )
     return ThreeXuiXraySetupConfig(
         github_repo=github_repo,
         install_script_url=install_script_url,
@@ -4330,6 +4342,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_xray_update_path=panel_xray_update_path,
         panel_xray_geodata_validate_path=panel_xray_geodata_validate_path,
         panel_xray_route_test_path=panel_xray_route_test_path,
+        panel_inbound_protocol=panel_inbound_protocol,
+        panel_blocked_rule_protocols=panel_blocked_rule_protocols,
+        panel_private_block_category=panel_private_block_category,
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,

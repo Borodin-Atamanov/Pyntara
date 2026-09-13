@@ -206,6 +206,9 @@ New fields in the `[three_x_ui_xray_setup]` table:
 `local_proxy_port` (integer, optional, default `10800`): port of the local proxy, serving SOCKS5 and HTTP at once. Must be between 1 and 65535 and must differ from `panel_port` and `inbound_port`.  
 `local_proxy_udp` (boolean, optional, default `true`): whether the local proxy carries UDP, which QUIC and DNS through the proxy need.  
 `local_proxy_sniffing_protocols` (array of strings, optional, default `["http", "tls", "quic"]`): protocols the panel sniffs to learn the requested name.  
+`panel_inbound_protocol` (string, optional, default `"mixed"`): inbound protocol the policy asks the panel for. The panel has no plain SOCKS inbound, and `mixed` serves SOCKS5 and HTTP on one port, which is what a local proxy needs.  
+`panel_blocked_rule_protocols` (array of strings, optional, default `["bittorrent"]`): rule protocols of the panel that count as a restriction the policy removes, so the proxy passes what the machine can reach.  
+`panel_private_block_category` (string, optional, default `"geoip:private"`): address category of the panel rule that blocks every private destination, which the policy removes for the same reason.  
 `remote_outbound_tag`, `tor_outbound_tag`, `i2p_outbound_tag` (strings, optional, defaults `"pyntara-remote"`, `"pyntara-tor"`, `"pyntara-i2p"`): tags of the outbounds the policy owns. They must all differ from each other and from `local_proxy_tag`, so a rerun can replace its own objects and no tag collides.  
 `direct_outbound_tag`, `blocked_outbound_tag` (strings, optional, defaults `"direct"`, `"blocked"`): tags of the panel's own outbounds the policy jumps to, the freedom outbound and the blackhole.  
 `tor_proxy_address`, `i2p_proxy_address` (strings, optional, defaults `"127.0.0.1:9050"`, `"127.0.0.1:4444"`): local SOCKS proxy of tor and local HTTP proxy of i2pd. Each must be an address:port value with a port between 1 and 65535.  

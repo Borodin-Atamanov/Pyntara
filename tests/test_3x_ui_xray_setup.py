@@ -3469,6 +3469,9 @@ class TestRoutingPolicyStage:
             geo_restricted_domain_categories=cfg.geo_restricted_domain_categories,
             russia_domain_strategy=cfg.russia_domain_strategy,
             outside_russia_domain_strategy=cfg.outside_russia_domain_strategy,
+            panel_inbound_protocol=cfg.panel_inbound_protocol,
+            panel_blocked_rule_protocols=cfg.panel_blocked_rule_protocols,
+            panel_private_block_category=cfg.panel_private_block_category,
         )
 
     def test_skips_the_machine_that_is_the_remote_server(
