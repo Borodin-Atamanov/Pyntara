@@ -189,8 +189,11 @@ def task(ctx: Context) -> TaskResult:
     a file the run creates as root and verifies the runtime vault by
     opening it. A vault
     that cannot be opened, a missing or empty password entry and a failed
-    write are errors: the serious ones are journaled at syslog level 3,
-    the task returns success=False and the runner continues.
+    write are journaled at the configured error priority and reported as
+    warnings of a completed task: without a source vault or without the
+    local password entry there is nothing to build from, so the run ends
+    there, while a runtime vault that could not be written skips the
+    password file and the verification that depend on it.
     """
 
     cfg = ctx.config.local_vault_setup
@@ -215,35 +218,37 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking runtime vault {cfg.local_vault_path}: absent")
     opened = _open_source_vault(production_path, default_path, ctx.vault_password)
     if opened is None:
-        _log(
-            "cannot open any source vault: production and default did not open",
-            priority=cfg.error_priority,
+        warning = (
+            "cannot open any source vault: neither production nor default "
+            "opened with the run password"
         )
+        _log(warning, priority=cfg.error_priority)
         return TaskResult(
-            success=False,
-            error=(
-                "cannot open any source vault: neither production nor default "
-                "opened with the run password"
-            ),
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     kp, source_path = opened
 
     _log(f"reading entry {cfg.vault_password_entry_title!r} from {source_path}")
     local_password = _read_local_vault_password(kp, cfg)
     if local_password is None:
-        _log(
-            "cannot read local vault password: entry missing or empty",
-            priority=cfg.error_priority,
+        warning = (
+            f"entry {cfg.vault_password_entry_title!r} is missing or empty "
+            "in the source vault"
         )
+        _log(warning, priority=cfg.error_priority)
         return TaskResult(
-            success=False,
-            error=(
-                f"entry {cfg.vault_password_entry_title!r} is missing or empty "
-                "in the source vault"
-            ),
+            success=True,
+            changed=False,
+            message=warning,
+            warnings=(warning,),
         )
     _log("local vault password entry found")
 
+    warnings: list[str] = []
+    vault_written = True
     try:
         _log(f"writing runtime vault {cfg.local_vault_path} with local password")
         _write_local_vault(
@@ -254,16 +259,27 @@ def task(ctx: Context) -> TaskResult:
             cfg.local_vault_file_mode,
         )
     except (OSError, ValueError) as exc:
-        _log(
-            f"cannot write runtime vault {cfg.local_vault_path}: {exc}",
-            priority=cfg.error_priority,
+        warning = f"cannot write runtime vault: {exc}"
+        _log(warning, priority=cfg.error_priority)
+        warnings.append(warning)
+        vault_written = False
+    else:
+        _log("runtime vault written")
+        try:
+            apply_owner(cfg.local_vault_path, owner_uid, owner_gid)
+        except OSError:
+            _log("cannot set owner of the runtime vault")
+
+    if not vault_written:
+        # The password file and the verification belong to the runtime
+        # vault, so they are skipped while the reason stays visible.
+        _log("skipping the password file and the verification")
+        return TaskResult(
+            success=True,
+            changed=False,
+            message="; ".join(warnings),
+            warnings=tuple(warnings),
         )
-        return TaskResult(success=False, error=f"cannot write runtime vault: {exc}")
-    _log("runtime vault written")
-    try:
-        apply_owner(cfg.local_vault_path, owner_uid, owner_gid)
-    except OSError:
-        _log("cannot set owner of the runtime vault")
 
     try:
         _log(f"writing password file {cfg.pass_file_path}")
@@ -275,31 +291,29 @@ def task(ctx: Context) -> TaskResult:
             cfg.pass_file_writable_mode,
         )
     except (OSError, ValueError) as exc:
-        _log(
-            f"cannot write password file {cfg.pass_file_path}: {exc}",
-            priority=cfg.error_priority,
-        )
-        return TaskResult(success=False, error=f"cannot write password file: {exc}")
-    _log("password file written")
-    try:
-        apply_owner(cfg.pass_file_path, owner_uid, owner_gid)
-    except OSError:
-        _log("cannot set owner of the password file")
+        warning = f"cannot write password file: {exc}"
+        _log(warning, priority=cfg.error_priority)
+        warnings.append(warning)
+    else:
+        _log("password file written")
+        try:
+            apply_owner(cfg.pass_file_path, owner_uid, owner_gid)
+        except OSError:
+            _log("cannot set owner of the password file")
 
     _log(f"verifying runtime vault {cfg.local_vault_path}")
     if not _verify_local_vault(cfg.local_vault_path, local_password.strip()):
+        warning = "runtime vault verification failed"
         _log(
             "verification failed: runtime vault does not open with the local password",
             priority=cfg.error_priority,
         )
-        return TaskResult(
-            success=False,
-            changed=True,
-            error="runtime vault verification failed",
-        )
-    _log("verification passed")
+        warnings.append(warning)
+    else:
+        _log("verification passed")
+    message = f"runtime vault created from {source_path}"
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(
-        success=True,
-        changed=True,
-        message=f"runtime vault created from {source_path}",
+        success=True, changed=True, message=message, warnings=tuple(warnings)
     )

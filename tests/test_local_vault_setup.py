@@ -177,11 +177,13 @@ def test_falls_back_to_default_vault(
     assert _opens_with(tmp_path / "secrets" / "pyntara.vault", LOCAL_PASSWORD)
 
 
-def test_fails_when_no_vault_opens(
+def test_warns_when_no_vault_opens(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # When neither vault opens, the task must fail with a journal error at
-    # syslog level 3 and not raise.
+    # When neither vault opens, the task reports the reason as a warning,
+    # journals it at the configured error priority and does not raise; the
+    # runtime vault is the only thing the task builds, so there is nothing
+    # else to do.
     _create_source_vault(tmp_path / "production.vault", "other-pass")
     _create_source_vault(tmp_path / "default.vault", "another-pass")
     recorded: list[tuple[str, int]] = []
@@ -192,26 +194,28 @@ def test_fails_when_no_vault_opens(
     monkeypatch.setattr(local_vault_setup, "_log", _recording_log)
     ctx = _ctx(monkeypatch, tmp_path, vault_password="wrong-pass")
     result = local_vault_setup.task(ctx)
-    assert result.success is False
-    assert "source vault" in (result.error or "")
+    assert result.success is True
+    assert any("source vault" in warning for warning in result.warnings)
     serious = [entry for entry in recorded if entry[1] == 3]
     assert serious, "the serious error must be journaled at priority 3"
 
 
-def test_fails_when_entry_missing(
+def test_warns_when_entry_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A source vault without the local password entry must fail the task.
+    # A source vault without the local password entry is reported and no
+    # runtime vault is written, because an empty password would be unsafe.
     _create_source_vault(
         tmp_path / "production.vault", "prod-pass", local_password=None
     )
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
-    assert result.success is False
-    assert "missing or empty" in (result.error or "")
+    assert result.success is True
+    assert any("missing or empty" in warning for warning in result.warnings)
+    assert not ctx.config.local_vault_setup.local_vault_path.exists()
 
 
-def test_fails_when_entry_nested_in_subgroup(
+def test_warns_when_entry_nested_in_subgroup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The vault structure is flat: an entry inside a group is not part of
@@ -223,20 +227,21 @@ def test_fails_when_entry_nested_in_subgroup(
     kp.save()
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
-    assert result.success is False
-    assert "missing or empty" in (result.error or "")
+    assert result.success is True
+    assert any("missing or empty" in warning for warning in result.warnings)
 
 
-def test_fails_when_entry_empty(
+def test_warns_when_entry_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # An empty password value must fail the task: a vault with an empty
-    # password would be unsafe.
+    # An empty password value is reported: a vault with an empty password
+    # would be unsafe, so nothing is written.
     _create_source_vault(tmp_path / "production.vault", "prod-pass", local_password="")
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
-    assert result.success is False
-    assert "missing or empty" in (result.error or "")
+    assert result.success is True
+    assert any("missing or empty" in warning for warning in result.warnings)
+    assert not ctx.config.local_vault_setup.local_vault_path.exists()
 
 
 def test_password_file_is_trimmed_without_trailing_newline(
