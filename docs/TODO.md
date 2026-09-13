@@ -427,4 +427,6 @@ Done 2026-09-13, the hundredth block, two defects of the same kind found by the 
 
 Live check planned for this block, the same run that produced the finding: vocalinux_setup forced again on the target machine with the app running, expecting no warning and exit code 0, with the log line that the installed image already matches the cached release.
 
+Live check of the hundredth block, done and green: Vocalinux was running during the run (the mounted image process and the AppImage process were both alive), the task logged "the installed image already matches Vocalinux-0.16.2-x86_64.AppImage" and did not touch the file, the run finished with exit code 0 and no warning line, and the autostart entry was written, which the previous behaviour skipped exactly because the copy had failed. The AppImage kept its published digest 0ee0d8e6, its size and its date, and the app kept running from it.
+
 
