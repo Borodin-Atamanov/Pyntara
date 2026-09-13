@@ -44,7 +44,7 @@ def test_the_tool_and_the_node_prefix_come_from_the_engine(
 
     monkeypatch.setattr(augeas_module, "run_command", fake_run)
     directives, comment = augeas_module.read_dropin_state(
-        engine, dropin_path, "Sshd.lns", 30.0
+        engine, dropin_path, "Sshd.lns", 30.0, "#"
     )
     assert captured[0]["command"] == [
         "myaugtool",
@@ -54,6 +54,32 @@ def test_the_tool_and_the_node_prefix_come_from_the_engine(
     assert f"print {node}\n" in str(captured[0]["input"])
     assert comment == "owned by the test"
     assert directives == {"Port": "30222"}
+
+
+def test_the_comment_label_sign_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The sign a comment node of the augtool listing carries is a config
+    # value: another sign in the table means the ownership comment is not
+    # recognized, so the caller decides how a comment is spelled and a
+    # task whose files carry it differently is answered there.
+    engine = make_config().engine
+    dropin_path = Path("/etc/ssh/sshd_config.d/pyntara.conf")
+    node = f"{engine.augeas_files_node_prefix}{dropin_path}"
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        listing = (
+            f'{node}/#comment = "owned by the test"\n'
+            f'{node}/Port = "30222"\n'
+        )
+        return _FakeProc(0, listing)
+
+    monkeypatch.setattr(augeas_module, "run_command", fake_run)
+    directives, comment = augeas_module.read_dropin_state(
+        engine, dropin_path, "Sshd.lns", 30.0, ";"
+    )
+    assert comment is None
+    assert directives == {"#comment": "owned by the test", "Port": "30222"}
 
 
 def test_the_program_lines_come_from_the_engine(

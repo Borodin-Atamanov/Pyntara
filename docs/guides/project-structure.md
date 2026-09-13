@@ -115,7 +115,7 @@ utils.py            run_command, package_is_installed, install_package_once,
                     backoff_delay
 
 config_edit.py      replace_line_by_string, add_line_to_file,
-                    sync_directives_by_key, sync_toml_root_directive
+                    sync_directives_by_key
 
 augeas.py           parse_augtool_print, sync_dropin, read_dropin,
                     dropin_exists, remove_dropin

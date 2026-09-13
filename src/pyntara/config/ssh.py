@@ -55,7 +55,10 @@ class SshDaemonSetupConfig:
     names the package that provides augtool, which the task installs
     itself when the tool is missing. dropin_header is the ownership
     comment written at the top of the drop-in, without the leading hash,
-    augeas_lens is the lens of the sshd_config syntax and port_directive
+    and dropin_comment_sign is the sign that marks a comment in the
+    edited files, which decides both the lines the task leaves untouched
+    and the sign it reads the ownership comment by. augeas_lens is the
+    lens of the sshd_config syntax and port_directive
     is the directive whose change needs a restart instead of a reload.
     effective_config_command and listening_sockets_command query the
     daemon and the listener table, and the remaining commands carry the
@@ -75,6 +78,7 @@ class SshDaemonSetupConfig:
     sshd_config_dropin_path: Path
     dropin_file_mode: int
     dropin_header: str
+    dropin_comment_sign: str
     augeas_lens: str
     port_directive: str
     effective_config_command: tuple[str, ...]
@@ -109,7 +113,8 @@ class SshClientSetupConfig:
     the task, written through augeas under the container block the
     config names, so they apply to every connection; dropin_file_mode is
     the file mode of the drop-in and dropin_header is the ownership
-    comment written at its top, without the leading hash. augeas_lens is
+    comment written at its top, without the leading hash; the sign that
+    marks a comment in the edited files is dropin_comment_sign. augeas_lens is
     the lens and augeas_container with augeas_container_value name the
     node the directives live under. augeas_tools_package_name names the
     package that provides augtool, which the task installs itself when
@@ -122,6 +127,7 @@ class SshClientSetupConfig:
     ssh_config_dropin_path: Path
     dropin_file_mode: int
     dropin_header: str
+    dropin_comment_sign: str
     augeas_lens: str
     augeas_container: str
     augeas_container_value: str

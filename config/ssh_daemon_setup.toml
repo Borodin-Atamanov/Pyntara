@@ -49,6 +49,10 @@ dropin_file_mode = "0644"
 # Ownership comment of the drop-in. It is written without the leading hash,
 # because augeas stores and writes comment values without it.
 dropin_header = "Managed by the Pyntara ssh_daemon_setup task."
+# Sign that marks a comment in the edited files. The task leaves a line
+# carrying it untouched and reads the ownership comment of the drop-in by
+# it, so a file whose syntax marks comments in another way is answered here.
+dropin_comment_sign = "#"
 # augeas lens of the sshd_config syntax.
 augeas_lens = "Sshd.lns"
 # Name of the directive that carries the listen port. The task compares it

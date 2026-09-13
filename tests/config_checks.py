@@ -3247,6 +3247,10 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
         sshd_config_dropin_path=Path(sshd_config_dropin_path),
         dropin_file_mode=_file_mode_field("dropin_file_mode"),
         dropin_header=dropin_header,
+        dropin_comment_sign=_nonempty_string_field(
+            raw.get("dropin_comment_sign"),
+            "ssh_daemon_setup.dropin_comment_sign",
+        ),
         augeas_lens=augeas_lens,
         port_directive=port_directive,
         effective_config_command=_placeholder_command_field(
@@ -3378,6 +3382,10 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
         ssh_config_dropin_path=ssh_config_dropin_path,
         dropin_file_mode=dropin_file_mode,
         dropin_header=dropin_header,
+        dropin_comment_sign=_nonempty_string_field(
+            raw.get("dropin_comment_sign"),
+            "ssh_client_setup.dropin_comment_sign",
+        ),
         augeas_lens=augeas_lens,
         augeas_container=augeas_container,
         augeas_container_value=augeas_container_value,

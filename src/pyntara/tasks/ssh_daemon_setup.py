@@ -395,7 +395,9 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(f"cannot install {cfg.package_name}: {error}")
 
     include_ok = include_covers_dropin(
-        cfg.sshd_config_path, cfg.sshd_config_dropin_path
+        cfg.sshd_config_path,
+        cfg.sshd_config_dropin_path,
+        cfg.dropin_comment_sign,
     )
     _log(
         f"checking Include directive in {cfg.sshd_config_path}: "
@@ -439,6 +441,7 @@ def task(ctx: Context) -> TaskResult:
                 cfg.augeas_lens,
                 cfg.dropin_header,
                 timeout,
+                cfg.dropin_comment_sign,
                 owner_uid=owner_uid,
                 owner_gid=owner_gid,
                 port_directive=cfg.port_directive,

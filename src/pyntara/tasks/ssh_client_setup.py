@@ -98,7 +98,9 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     include_ok = include_covers_dropin(
-        cfg.ssh_config_path, cfg.ssh_config_dropin_path
+        cfg.ssh_config_path,
+        cfg.ssh_config_dropin_path,
+        cfg.dropin_comment_sign,
     )
     _log(
         f"checking Include directive in {cfg.ssh_config_path}: "
@@ -141,6 +143,7 @@ def task(ctx: Context) -> TaskResult:
             cfg.augeas_lens,
             cfg.dropin_header,
             timeout,
+            cfg.dropin_comment_sign,
             owner_uid=owner_uid,
             owner_gid=owner_gid,
             container=(cfg.augeas_container, cfg.augeas_container_value),

@@ -30,17 +30,19 @@ AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = "(?P<value>.*)"$')
 def parse_augtool_print(
     output: str,
     base: str,
+    comments_sign: str,
     *,
     skip_labels: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, str], str | None]:
     """Parse an augtool print listing into (directives, first comment).
 
     Every line has the form /files<path>/<node> = "<value>"; comment
-    nodes carry the # label and an optional [n] index. The label is the
-    last path segment without the index; labels in skip_labels (the
-    container node) are ignored, so the container itself never looks
-    like a directive. The first comment is the ownership header, the
-    rest are ignored.
+    nodes carry the comment sign of the edited file as their label prefix
+    and an optional [n] index. The label is the last path segment without
+    the index; labels in skip_labels (the container node) are ignored, so
+    the container itself never looks like a directive. The first comment
+    is the ownership header, the rest are ignored. The sign is an
+    argument, because it belongs to the syntax of the edited file.
     """
 
     directives: dict[str, str] = {}
@@ -55,7 +57,7 @@ def parse_augtool_print(
         node = match.group("node")
         label = node.rsplit("/", 1)[-1].split("[", 1)[0]
         value = match.group("value")
-        if label.startswith("#"):
+        if label.startswith(comments_sign):
             if comment is None:
                 comment = value
         elif label not in skip_labels:
@@ -68,6 +70,7 @@ def read_dropin_state(
     dropin_path: Path,
     lens: str,
     timeout: float,
+    comments_sign: str,
     *,
     skip_labels: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, str], str | None]:
@@ -76,7 +79,9 @@ def read_dropin_state(
     The tree comes from a single augtool print over a manual load entry,
     so only the drop-in file is parsed; a missing file yields an empty
     map and a None comment. The driver and its node prefix are engine
-    values, so the helper holds no vocabulary of the tool.
+    values, so the helper holds no vocabulary of the tool; the sign that
+    marks a comment is an argument, because it belongs to the syntax of
+    the edited file.
     """
 
     node = f"{engine.augeas_files_node_prefix}{dropin_path}"
@@ -101,7 +106,7 @@ def read_dropin_state(
             f"{result.stderr.strip()}"
         )
     return parse_augtool_print(
-        result.stdout, node, skip_labels=skip_labels
+        result.stdout, node, comments_sign, skip_labels=skip_labels
     )
 
 
@@ -190,6 +195,7 @@ def sync_dropin(
     lens: str,
     header: str,
     timeout: float,
+    comments_sign: str,
     *,
     owner_uid: int,
     owner_gid: int,
@@ -205,7 +211,8 @@ def sync_dropin(
     port change needs a restart, not a reload; it is always False when
     port_directive is None. The written file gets the owner pair the
     caller passes, so no module writes the owner of root itself. An empty
-    directives list removes the drop-in.
+    directives list removes the drop-in. The sign that marks a comment is
+    an argument, because it belongs to the syntax of the edited file.
     """
 
     if not directives:
@@ -215,7 +222,12 @@ def sync_dropin(
         return existed, False
     skip_labels = frozenset({container[0]}) if container else frozenset()
     current, comment = read_dropin_state(
-        engine, dropin_path, lens, timeout, skip_labels=skip_labels
+        engine,
+        dropin_path,
+        lens,
+        timeout,
+        comments_sign,
+        skip_labels=skip_labels,
     )
     desired = dict(directives)
     changed = force or current != desired or comment != header
@@ -250,13 +262,16 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def include_covers_dropin(config_path: Path, dropin_path: Path) -> bool:
+def include_covers_dropin(
+    config_path: Path, dropin_path: Path, comments_sign: str
+) -> bool:
     """True when the main config pulls the drop-in directory in.
 
     Every Include directive of the main config is matched against the
     drop-in path with fnmatch, which understands the glob patterns
     OpenSSH accepts; a relative pattern resolves against the directory
-    of the main config. A missing file, an unreadable file or a
+    of the main config. A line that starts with the comment sign of the
+    file is not a directive. A missing file, an unreadable file or a
     directive that does not cover the drop-in all mean the rendered
     drop-in would be ignored, so a task must fail loudly instead of
     pretending the configuration is in place.
@@ -268,7 +283,7 @@ def include_covers_dropin(config_path: Path, dropin_path: Path) -> bool:
     base_dir = config_path.parent
     for line in content.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not stripped or stripped.startswith(comments_sign):
             continue
         keyword, sep, pattern = stripped.partition(" ")
         if not sep or keyword.casefold() != "include":
