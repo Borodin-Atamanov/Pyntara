@@ -112,3 +112,6 @@ class EngineConfig:
     upnpc_external_address_key: str = ""
     upnpc_protocol_names: tuple[str, ...] = ()
     upnpc_mapping_arrow: str = ""
+    local_addresses_command: tuple[str, ...] = ()
+    directly_connected_networks_command: tuple[str, ...] = ()
+    default_route_command: tuple[str, ...] = ()

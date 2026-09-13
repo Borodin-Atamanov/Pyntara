@@ -795,7 +795,7 @@ def _collect_run_facts(
     """
 
     public = _public_addresses(engine, cfg, timeout)
-    local = local_addresses(timeout)
+    local = local_addresses(engine, timeout)
     router_address: str | None = None
     if cfg.upnp_enabled:
         if _machine_public_address(public, local) is not None:
@@ -2288,7 +2288,7 @@ def _stage_routing_policy(
 
     lists, category_warnings = _checked_categories(cfg, env, timeout)
     warnings = list(category_warnings)
-    own_networks = directly_connected_networks(timeout)
+    own_networks = directly_connected_networks(ctx.config.engine, timeout)
     report = detect_country(
         ctx.config.engine,
         cfg.country_services,

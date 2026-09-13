@@ -2604,7 +2604,7 @@ class TestCollectRunFacts:
             "_public_addresses",
             lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("10.0.0.1",))
+        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ("10.0.0.1",))
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: True)
 
         def fake_router(engine: object, command: str, timeout: float) -> str:
@@ -2638,7 +2638,7 @@ class TestCollectRunFacts:
         monkeypatch.setattr(
             xui, "_public_addresses", lambda _e, _c, _t: _addresses()
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
+        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ())
         monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
@@ -2649,7 +2649,7 @@ class TestCollectRunFacts:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(xui, "_public_addresses", lambda _e, _c, _t: _addresses())
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: ())
+        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ())
         monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _c, _t: False)
         facts = xui._collect_run_facts(
             make_config().engine,
@@ -2675,7 +2675,7 @@ class TestCollectRunFacts:
             "_public_addresses",
             lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _t: ("203.0.113.5",))
+        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ("203.0.113.5",))
         monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         facts = xui._collect_run_facts(
@@ -2977,7 +2977,9 @@ class TestRoutingPolicyStage:
         _profile_source(monkeypatch)
         _panel_env_fake(monkeypatch)
         monkeypatch.setattr(
-            xui, "directly_connected_networks", lambda _t: ("10.10.0.0/24",)
+            xui,
+            "directly_connected_networks",
+            lambda _e, _t: ("10.10.0.0/24",),
         )
         monkeypatch.setattr(
             xui,

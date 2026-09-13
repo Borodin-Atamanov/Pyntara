@@ -72,6 +72,9 @@ def base_config() -> str:
         'upnpc_external_address_key = "ExternalIPAddress"\n'
         'upnpc_protocol_names = ["TCP", "UDP"]\n'
         'upnpc_mapping_arrow = "->"\n'
+        'local_addresses_command = ["ip", "-o", "addr", "show", "scope", "global"]\n'
+        'directly_connected_networks_command = ["ip", "-o", "{family}", "route", "show", "proto", "kernel"]\n'
+        'default_route_command = ["ip", "-4", "route", "show", "default"]\n'
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
 

@@ -1169,6 +1169,21 @@ def _engine_table(raw: object) -> EngineConfig:
         upnpc_mapping_arrow=_nonempty_string_field(
             raw.get("upnpc_mapping_arrow"), "engine.upnpc_mapping_arrow"
         ),
+        local_addresses_command=_placeholder_command_field(
+            raw.get("local_addresses_command"),
+            "engine.local_addresses_command",
+            (),
+        ),
+        directly_connected_networks_command=_placeholder_command_field(
+            raw.get("directly_connected_networks_command"),
+            "engine.directly_connected_networks_command",
+            ("{family}",),
+        ),
+        default_route_command=_placeholder_command_field(
+            raw.get("default_route_command"),
+            "engine.default_route_command",
+            (),
+        ),
     )
 
 

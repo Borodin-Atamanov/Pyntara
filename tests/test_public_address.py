@@ -6,6 +6,8 @@ the tests only touch temporary fixtures (docs/guides/developer-guide.md).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from support import make_config
 
@@ -73,7 +75,11 @@ class TestLocalAddresses:
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        assert local_addresses(30.0) == ("10.10.0.1", "192.168.1.5", "2001:db8::5")
+        assert local_addresses(make_config().engine, 30.0) == (
+            "10.10.0.1",
+            "192.168.1.5",
+            "2001:db8::5",
+        )
 
     def test_reports_nothing_without_the_ip_tool(
         self, monkeypatch: pytest.MonkeyPatch
@@ -82,7 +88,7 @@ class TestLocalAddresses:
             raise OSError("ip not found")
 
         monkeypatch.setattr(public_address_module, "run_command", fail)
-        assert local_addresses(30.0) == ()
+        assert local_addresses(make_config().engine, 30.0) == ()
 
 
 class TestDirectlyConnectedNetworks:
@@ -108,7 +114,7 @@ class TestDirectlyConnectedNetworks:
             return _Completed(outputs[family])
 
         monkeypatch.setattr(public_address_module, "run_command", fake_run)
-        assert directly_connected_networks(30.0) == (
+        assert directly_connected_networks(make_config().engine, 30.0) == (
             "10.10.0.0/24",
             "127.0.0.0/8",
             "200::/7",
@@ -122,7 +128,7 @@ class TestDirectlyConnectedNetworks:
             raise OSError("ip not found")
 
         monkeypatch.setattr(public_address_module, "run_command", fail)
-        assert directly_connected_networks(30.0) == ()
+        assert directly_connected_networks(make_config().engine, 30.0) == ()
 
 
 class TestDefaultRouteAddress:
@@ -140,7 +146,7 @@ class TestDefaultRouteAddress:
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        assert default_route_address(30.0) == "192.168.1.5"
+        assert default_route_address(make_config().engine, 30.0) == "192.168.1.5"
 
     def test_reports_nothing_without_a_route(
         self, monkeypatch: pytest.MonkeyPatch
@@ -150,7 +156,7 @@ class TestDefaultRouteAddress:
             "run_command",
             lambda *a, **k: _Completed(""),
         )
-        assert default_route_address(30.0) is None
+        assert default_route_address(make_config().engine, 30.0) is None
 
 
 class TestCollectPublicAddresses:
@@ -194,3 +200,41 @@ class TestCollectPublicAddresses:
             public_address_module, "fetch_urls_in_parallel", fail_fetch
         )
         assert fetch_public_addresses(make_config().engine, (), 60, 1800.0).is_empty is True
+
+
+class TestConfiguredQueries:
+    """Tests that the iproute2 vocabulary comes from the engine table."""
+
+    def test_queries_come_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Another query in the [engine] table is exactly the argv the
+        # helpers run, and the family flag of the route query is the
+        # {family} placeholder of its template.
+        engine = replace(
+            make_config().engine,
+            local_addresses_command=("my-ip", "addr", "show"),
+            directly_connected_networks_command=(
+                "my-ip",
+                "route",
+                "show",
+                "{family}",
+            ),
+            default_route_command=("my-ip", "route", "default"),
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _Completed:
+            calls.append(list(command))
+            return _Completed(
+                "default via 192.168.1.1 dev wlp1s0 src 192.168.1.5\n"
+            )
+
+        monkeypatch.setattr(public_address_module, "run_command", fake_run)
+        assert local_addresses(engine, 30.0) == ()
+        assert directly_connected_networks(engine, 30.0) == ()
+        assert default_route_address(engine, 30.0) == "192.168.1.5"
+        assert ["my-ip", "addr", "show"] in calls
+        assert ["my-ip", "route", "show", "-4"] in calls
+        assert ["my-ip", "route", "show", "-6"] in calls
+        assert ["my-ip", "route", "default"] in calls

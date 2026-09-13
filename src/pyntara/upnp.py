@@ -177,7 +177,7 @@ def forward_inbound_port(
     if router_address is None:
         log_progress("no UPnP router on this network, port forwarding skipped")
         return None
-    internal_address = default_route_address(timeout)
+    internal_address = default_route_address(engine, timeout)
     if internal_address is None:
         log_progress(
             "cannot read the default route address, port forwarding skipped"

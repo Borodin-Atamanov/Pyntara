@@ -223,7 +223,9 @@ class TestForwardInboundPort:
             upnp_module, "router_external_address", lambda _e, _c, _t: router
         )
         monkeypatch.setattr(
-            upnp_module, "default_route_address", lambda _t: internal
+            upnp_module,
+            "default_route_address",
+            lambda _e, _t: internal,
         )
         monkeypatch.setattr(
             upnp_module,

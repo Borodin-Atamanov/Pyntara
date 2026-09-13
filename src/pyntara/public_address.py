@@ -22,7 +22,11 @@ import subprocess
 from dataclasses import dataclass
 
 from pyntara.config import EngineConfig
-from pyntara.utils import fetch_urls_in_parallel, run_command
+from pyntara.utils import (
+    fetch_urls_in_parallel,
+    run_command,
+    substituted_command,
+)
 
 
 @dataclass(frozen=True)
@@ -43,10 +47,10 @@ class PublicAddresses:
         return not self.ipv4 and not self.ipv6
 
 
-def local_addresses(timeout: float) -> tuple[str, ...]:
+def local_addresses(engine: EngineConfig, timeout: float) -> tuple[str, ...]:
     """Every global-scope address of the machine interfaces.
 
-    Parsed from `ip -o addr show scope global`; loopback and link-local
+    Parsed from the configured address query; loopback and link-local
     addresses fall outside that scope. The addresses tell whether an
     address reported by an echo service really belongs to this machine (a
     white address) or the machine sits behind NAT.
@@ -54,7 +58,7 @@ def local_addresses(timeout: float) -> tuple[str, ...]:
 
     try:
         result = run_command(
-            ["ip", "-o", "addr", "show", "scope", "global"],
+            list(engine.local_addresses_command),
             check=False,
             capture=True,
             timeout=timeout,
@@ -73,23 +77,28 @@ def local_addresses(timeout: float) -> tuple[str, ...]:
     return tuple(addresses)
 
 
-def directly_connected_networks(timeout: float) -> tuple[str, ...]:
+def directly_connected_networks(
+    engine: EngineConfig, timeout: float
+) -> tuple[str, ...]:
     """Every subnet the kernel reports as directly connected, in order.
 
-    Parsed from the kernel routes of both address families
-    (`ip -o -4 route show proto kernel` and its -6 counterpart). These are
-    the machine's own networks: a local network, a bridge and the
-    yggdrasil overlay all appear here, so a routing policy can send them
-    to the direct outbound whatever range they use. The subnets are read
-    from the kernel instead of being configured, so a machine with an
-    unusual local range is still handled correctly.
+    Parsed from the kernel routes of both address families through the
+    configured route query, whose {family} placeholder takes the family
+    flag. These are the machine's own networks: a local network, a bridge
+    and the yggdrasil overlay all appear here, so a routing policy can
+    send them to the direct outbound whatever range they use. The subnets
+    are read from the kernel instead of being configured, so a machine
+    with an unusual local range is still handled correctly.
     """
 
     networks: list[str] = []
     for family in ("-4", "-6"):
         try:
             result = run_command(
-                ["ip", "-o", family, "route", "show", "proto", "kernel"],
+                substituted_command(
+                    engine.directly_connected_networks_command,
+                    {"family": family},
+                ),
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -106,7 +115,9 @@ def directly_connected_networks(timeout: float) -> tuple[str, ...]:
     return tuple(networks)
 
 
-def default_route_address(timeout: float) -> str | None:
+def default_route_address(
+    engine: EngineConfig, timeout: float
+) -> str | None:
     """The address the machine uses to reach the internet, or None.
 
     The default route carries the source address of the outgoing
@@ -116,7 +127,7 @@ def default_route_address(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            ["ip", "-4", "route", "show", "default"],
+            list(engine.default_route_command),
             check=False,
             capture=True,
             timeout=timeout,

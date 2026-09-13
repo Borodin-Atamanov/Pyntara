@@ -182,14 +182,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 # that is left and must shrink with every migration block.
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/augeas.py": frozenset({'["augtool", "--noautoload"],'}),
-    "src/pyntara/public_address.py": frozenset(
-        {
-            '["ip", "-4", "route", "show", "default"],',
-            '["ip", "-o", "addr", "show", "scope", "global"],',
-            '["ip", "-o", family, "route", "show", "proto", "kernel"],',
-        }
-    ),
-
     "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
         {
             '["bash", "-c", "curl -s https://get.acme.sh | sh"],',

@@ -212,3 +212,10 @@ upnpc_mapping_add_command = [
 upnpc_external_address_key = "ExternalIPAddress"
 upnpc_protocol_names = ["TCP", "UDP"]
 upnpc_mapping_arrow = "->"
+# Queries of the local network the shared helper pyntara.public_address
+# runs: the addresses of this machine, the networks it is connected to
+# and its default route. The route query of a family carries that family
+# as a flag, so the family is the {family} placeholder of the template.
+local_addresses_command = ["ip", "-o", "addr", "show", "scope", "global"]
+directly_connected_networks_command = ["ip", "-o", "{family}", "route", "show", "proto", "kernel"]
+default_route_command = ["ip", "-4", "route", "show", "default"]
