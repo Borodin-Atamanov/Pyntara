@@ -88,8 +88,8 @@ Texts and vocabularies:
 Command argv of every command the run invokes, with the arguments that are ours
 to choose: nmcli_modify_command, resolvectl_status_command,
 kwin_reload_command, panel_restart_command, the update command of the apt
-tasks. About 21 values today; the commands that are assembled inside the task
-modules belong to this type as well.
+tasks. About 200 values today, one per call shape a task reads; the commands
+that are assembled inside the task modules belong to this type as well.
 URL and URL template of an external service: settings_repo_url,
 install_script_url, github_latest_release_url, doh_url_format.  
 Host name, domain, IP address and address:port: ubuntu_hosts,
