@@ -41,6 +41,7 @@ from pykeepass import PyKeePass
 
 from pyntara import metrics
 from pyntara.config import Config, load_config
+from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
@@ -651,6 +652,7 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
+    configure_journal(cfg.engine)
     pf = cfg.port_forwarding_setup
     kp = metrics.open_runtime_vault(cfg)
     if kp is None:

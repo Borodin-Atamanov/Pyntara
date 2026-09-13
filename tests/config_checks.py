@@ -1125,6 +1125,16 @@ def _engine_table(raw: object) -> EngineConfig:
         journal_identifier=_nonempty_string_field(
             raw.get("journal_identifier"), "engine.journal_identifier"
         ),
+        journal_command=_placeholder_command_field(
+            raw.get("journal_command"),
+            "engine.journal_command",
+            ("{identifier}",),
+        ),
+        journal_priority_command=_placeholder_command_field(
+            raw.get("journal_priority_command"),
+            "engine.journal_priority_command",
+            ("{identifier}", "{priority}"),
+        ),
         root_owner_uid=_int_field(raw.get("root_owner_uid"), "engine.root_owner_uid"),
         root_owner_gid=_int_field(raw.get("root_owner_gid"), "engine.root_owner_gid"),
         percent_scale=_positive_int_field(

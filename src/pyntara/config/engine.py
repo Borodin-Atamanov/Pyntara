@@ -91,6 +91,8 @@ class EngineConfig:
     os_release_debian_family_names: tuple[str, ...]
     system_python: str
     journal_identifier: str
+    journal_command: tuple[str, ...]
+    journal_priority_command: tuple[str, ...]
     root_owner_uid: int
     root_owner_gid: int
     percent_scale: int

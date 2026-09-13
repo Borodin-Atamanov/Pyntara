@@ -142,6 +142,13 @@ system_python = "/usr/bin/python3"
 # pyntara-install identifier of the bootstrap, so a journal query separates
 # the installer from the run it launched.
 journal_identifier = "pyntara-engine"
+# Commands that write one line into the system journal, with the identifier
+# of the message and, for a message of another syslog level, the numeric
+# priority as their placeholders. The logger of the engine reads them from
+# the config it was handed, and the console keeps working without a
+# journal, so a machine that carries another journal tool names it here.
+journal_command = ["systemd-cat", "--identifier", "{identifier}"]
+journal_priority_command = ["systemd-cat", "--identifier", "{identifier}", "--priority", "{priority}"]
 # Owner of a file the run creates as root: the uid and the gid the shared
 # ensure_root_owner helper applies to it. The pair belongs to the engine
 # and not to a task, because eight tasks give the same ownership.

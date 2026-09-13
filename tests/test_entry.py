@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
 from pyntara.config import Config, load_config
+from pyntara.config.engine import EngineConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import app, detect_default_mode
@@ -296,15 +297,16 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_run_exports_the_journal_identifier_from_config(
+def test_run_configures_the_journal_from_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The journal writer reads its identifier from the environment and the
-    # run fills it from [engine] journal_identifier before the first
-    # message, so the engine announces itself under the configured name.
+    # The logger writes with the journal vocabulary of [engine], and the run
+    # hands that table over before the first message, so the engine
+    # announces itself under the configured name.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "")
+    configured: list[EngineConfig] = []
+    monkeypatch.setattr("pyntara.pyntara.configure_journal", configured.append)
     monkeypatch.setattr(
         "pyntara.pyntara.load_config",
         lambda path: make_config(
@@ -316,25 +318,28 @@ def test_run_exports_the_journal_identifier_from_config(
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert os.environ["PYNTARA_JOURNAL_IDENTIFIER"] == "pyntara-journal-test"
+    assert configured
+    assert configured[-1].journal_identifier == "pyntara-journal-test"
 
 
-def test_run_leaves_an_absent_journal_identifier_alone(
+def test_run_journals_the_engine_of_an_unreadable_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A config without the key reads as an absent value, which the run never
-    # replaces with an invented name: the engine keeps the identifier its
-    # caller set (here empty, so nothing reaches the journal) and reports
-    # the missing task catalog instead of crashing.
+    # An unreadable config reaches the run as an empty engine table; the
+    # logger receives exactly that table and forwards nothing, because the
+    # table names no journal command. Nothing is invented for such a run and
+    # the missing task catalog is reported instead.
     _clear_env(monkeypatch)
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "")
+    configured: list[EngineConfig] = []
+    monkeypatch.setattr("pyntara.pyntara.configure_journal", configured.append)
     monkeypatch.setattr(
         "pyntara.pyntara.load_config",
         lambda path: load_config(Path("/nonexistent-config")),
     )
     result = runner.invoke(app, [])
     assert result.exit_code == 1
-    assert os.environ["PYNTARA_JOURNAL_IDENTIFIER"] == ""
+    assert configured
+    assert configured[-1].journal_command == ()
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:

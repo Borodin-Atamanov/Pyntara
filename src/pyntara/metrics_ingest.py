@@ -19,6 +19,7 @@ from pyntara.config import (
     describe_absent_config_keys,
     load_config,
 )
+from pyntara.logger import configure_journal
 from pyntara.metrics_commit import ingest_spool
 
 
@@ -35,6 +36,7 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
+    configure_journal(cfg.engine)
     absent = describe_absent_config_keys(
         (
             (

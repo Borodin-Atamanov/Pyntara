@@ -1,11 +1,11 @@
 """Integration tests for journal forwarding through src/pyntara/logger.py.
 
 The tests write into the real system journal through systemd-cat and read
-the entries back through journalctl. conftest.py disables journal
-forwarding globally with an empty PYNTARA_JOURNAL_IDENTIFIER, so each test
-here sets its own unique identifier and restores the state through
-monkeypatch. When journald is not available the integration tests skip,
-the best-effort unit tests still run.
+the entries back through journalctl. conftest.py switches journal forwarding
+off globally, so each test here configures the journal with its own unique
+identifier and the autouse fixture restores the off state afterwards. When
+journald is not available the integration tests skip, the best-effort unit
+tests still run.
 """
 
 from __future__ import annotations
@@ -15,11 +15,25 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 
 import pytest
+from support import make_config
 
 from pyntara import logger
 from pyntara.models import TaskResult
+
+
+def _use_identifier(identifier: str) -> None:
+    """Write the journal with one identifier for the current test.
+
+    The logger receives the whole engine table, exactly as the composition
+    root and the deployed services hand it over: the journal command of the
+    table stays the configured one and only the identifier is replaced, so
+    the test exercises the real rendering path.
+    """
+
+    logger.configure_journal(make_config(journal_identifier=identifier).engine)
 
 
 def _close_journal_proc() -> None:
@@ -54,11 +68,16 @@ def _close_journal_proc() -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_journal_proc() -> Iterator[None]:
-    """Start every test with no journal process and leave none behind."""
+    """Start every test with no journal process and leave none behind.
+
+    The configured engine is dropped as well, so the identifier of one test
+    never routes the messages of the next one.
+    """
 
     _close_journal_proc()
     yield
     _close_journal_proc()
+    logger.configure_journal(None)
 
 
 def _read_journal(identifier: str) -> str:
@@ -187,7 +206,7 @@ def _read_journal_priority(identifier: str, needle: str) -> str | None:
 
 
 def test_log_progress_mirrors_message_without_timestamp(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+    journal_available: bool,
 ) -> None:
     # The journal line carries the task name and the message, no timestamp
     # and no ANSI codes; the task name is the calling module name.
@@ -195,41 +214,41 @@ def test_log_progress_mirrors_message_without_timestamp(
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("progress")
     marker = f"progress-{uuid.uuid4().hex[:8]}"
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_progress(marker)
     assert _wait_for(identifier, f"test_logger: {marker}")
 
 
-def test_log_task_start_mirrors_banner(monkeypatch: pytest.MonkeyPatch, journal_available: bool) -> None:
+def test_log_task_start_mirrors_banner(journal_available: bool) -> None:
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("start")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_task_start("sample_task")
     assert _wait_for(identifier, "starting task: sample_task")
 
 
-def test_log_result_line_mirrors_outcome(monkeypatch: pytest.MonkeyPatch, journal_available: bool) -> None:
+def test_log_result_line_mirrors_outcome(journal_available: bool) -> None:
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("result")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_result_line("cli_tools", TaskResult(success=True, message="all good"))
     assert _wait_for(identifier, "[done] cli_tools: all good")
 
 
-def test_log_event_mirrors_status_line(monkeypatch: pytest.MonkeyPatch, journal_available: bool) -> None:
+def test_log_event_mirrors_status_line(journal_available: bool) -> None:
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("event")
     marker = f"event-{uuid.uuid4().hex[:8]}"
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_event(marker)
     assert _wait_for(identifier, marker)
 
 
 def test_log_event_default_priority_is_informational(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+    journal_available: bool,
 ) -> None:
     # Without an explicit priority the journal entry must be informational
     # (syslog level 6), the default for messages inside tasks.
@@ -237,14 +256,14 @@ def test_log_event_default_priority_is_informational(
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("info-priority")
     marker = f"info-{uuid.uuid4().hex[:8]}"
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_event(marker)
     assert _wait_for(identifier, marker)
     assert _read_journal_priority(identifier, marker) == "6"
 
 
 def test_log_event_explicit_priority_reaches_the_journal(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+    journal_available: bool,
 ) -> None:
     # A serious error must be journaled at syslog level 3, passed as a
     # number, never as text in the message.
@@ -252,14 +271,14 @@ def test_log_event_explicit_priority_reaches_the_journal(
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("error-priority")
     marker = f"error-{uuid.uuid4().hex[:8]}"
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_event(marker, priority=3)
     assert _wait_for(identifier, marker)
     assert _read_journal_priority(identifier, marker) == "3"
 
 
 def test_log_result_line_to_journal_false_skips_journal(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+    journal_available: bool,
 ) -> None:
     # to_journal=False prints to the console only; the journal must keep
     # the earlier line and never see the hidden one. The marker line goes
@@ -268,7 +287,7 @@ def test_log_result_line_to_journal_false_skips_journal(
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("quiet-result")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_result_line("cli_tools", TaskResult(success=True, message="visible"))
     assert _wait_for(identifier, "[done] cli_tools: visible")
     logger.log_result_line("cli_tools", TaskResult(success=True, message="hidden"), to_journal=False)
@@ -277,7 +296,6 @@ def test_log_result_line_to_journal_false_skips_journal(
 
 
 def test_log_result_line_prints_warnings(
-    monkeypatch: pytest.MonkeyPatch,
     journal_available: bool,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -286,7 +304,7 @@ def test_log_result_line_prints_warnings(
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("warn-result")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_result_line(
         "cli_tools",
         TaskResult(
@@ -339,7 +357,7 @@ def test_log_result_line_skip_never_invents_not_implemented(
 
 
 def test_log_event_to_journal_false_skips_journal(
-    monkeypatch: pytest.MonkeyPatch, journal_available: bool
+    journal_available: bool,
 ) -> None:
     # The event form of the same rule: the marker line travels through the
     # shared process after the hidden event, so its arrival proves the
@@ -347,7 +365,7 @@ def test_log_event_to_journal_false_skips_journal(
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("quiet-event")
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", identifier)
+    _use_identifier(identifier)
     logger.log_event("visible event")
     assert _wait_for(identifier, "visible event")
     logger.log_event("hidden event", to_journal=False)
@@ -355,28 +373,33 @@ def test_log_event_to_journal_false_skips_journal(
     assert "hidden event" not in journal
 
 
-def test_empty_identifier_disables_forwarding(monkeypatch: pytest.MonkeyPatch) -> None:
-    # An empty identifier must short-circuit before any process is created;
-    # the missing process is the deterministic proof that nothing was sent.
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "")
+def test_unconfigured_journal_forwards_nothing() -> None:
+    # Without a configured engine nothing is sent: the composition root and
+    # the deployed services hand the table over before the first message,
+    # so an unconfigured logger means the caller is not the engine and no
+    # name may be invented for it. The missing systemd-cat process is the
+    # deterministic proof that nothing was sent.
+    logger.configure_journal(None)
     logger.log_event("must not reach the journal")
     assert logger._journal_proc is None
 
 
-def test_unset_identifier_forwards_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Without the variable nothing is sent: the engine hands the identifier
-    # over before its first message, so an unset variable means the caller
-    # is not the engine and no name may be invented for it. The missing
-    # systemd-cat process is the deterministic proof that nothing was sent.
-    monkeypatch.delenv("PYNTARA_JOURNAL_IDENTIFIER")
+def test_empty_journal_command_forwards_nothing() -> None:
+    # An engine table that names no journal command cannot start a process;
+    # the console and the install log keep working as before. The missing
+    # process is the deterministic proof that nothing was sent.
+    engine = make_config().engine
+    logger.configure_journal(replace(engine, journal_command=()))
     logger.log_event("must not reach the journal")
     assert logger._journal_proc is None
 
 
-def test_missing_systemd_cat_is_silent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_systemd_cat_is_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Best effort: without systemd-cat the call does nothing and never raises.
     monkeypatch.setattr(logger.shutil, "which", lambda name: None)
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "some-identifier")
+    _use_identifier("some-identifier")
     logger._send_to_journal("hello")
     assert logger._journal_proc is None
 
@@ -387,6 +410,6 @@ def test_popen_failure_is_silent(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError("no systemd")
 
     monkeypatch.setattr(logger.subprocess, "Popen", boom)
-    monkeypatch.setenv("PYNTARA_JOURNAL_IDENTIFIER", "some-identifier")
+    _use_identifier("some-identifier")
     logger._send_to_journal("hello")
     assert logger._journal_proc is None

@@ -1,11 +1,10 @@
 """Shared pytest configuration.
 
 Journal forwarding must never reach the real system journal during unit
-tests, so PYNTARA_JOURNAL_IDENTIFIER is set to an empty value here, before
-any test module imports the application. logger reads the variable lazily,
-so an empty value disables systemd-cat for the whole test run. The journal
-integration tests in test_logger.py override the variable locally with
-their own identifiers.
+tests, so the journal is switched off here before any test module imports the
+application: configure_journal(None) leaves the console path in place and
+forwards nothing. The journal integration tests in test_logger.py configure
+their own identifier and restore the off state when they finish.
 
 KeePass databases carry Argon2 with 64 MiB and 14 iterations, which costs
 about half a second per open or save. The vault tests create and reopen
@@ -32,7 +31,6 @@ format:
 """
 
 import atexit
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -40,7 +38,9 @@ from pathlib import Path
 import pykeepass as _pykeepass
 from pykeepass.exceptions import CredentialsError
 
-os.environ["PYNTARA_JOURNAL_IDENTIFIER"] = ""
+from pyntara import logger
+
+logger.configure_journal(None)
 
 _original_create_database = _pykeepass.create_database
 

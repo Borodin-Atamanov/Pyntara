@@ -32,6 +32,7 @@ from pyntara.config import (
     describe_absent_config_keys,
     load_config,
 )
+from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay
 
@@ -118,6 +119,7 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
+    configure_journal(cfg.engine)
     metrics = cfg.system_metrics_setup
     absent = describe_absent_config_keys(
         (("system_metrics_setup", absent_config_keys(metrics, SERVICE_CONFIG_KEYS)),)

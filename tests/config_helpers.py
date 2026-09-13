@@ -54,6 +54,9 @@ def base_config() -> str:
         'partial_download_file_suffix = ".download"\n'
         'system_python = "/usr/bin/python3"\n'
         'journal_identifier = "pyntara-engine"\n'
+        'journal_command = ["systemd-cat", "--identifier", "{identifier}"]\n'
+        'journal_priority_command = ["systemd-cat", "--identifier", '
+        '"{identifier}", "--priority", "{priority}"]\n'
         "root_owner_uid = 0\nroot_owner_gid = 0\n"
         "percent_scale = 100\nbytes_per_kib = 1024\nbytes_per_mib = 1048576\n"
         "error_priority = 3\n"

@@ -29,7 +29,11 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.context import Context
-from pyntara.logger import log_event, log_result_line
+from pyntara.logger import (
+    configure_journal,
+    log_event,
+    log_result_line,
+)
 from pyntara.task_runner import run_tasks
 from pyntara.utils import (
     export_session_environment,
@@ -129,25 +133,6 @@ def _load_config() -> Config:
     """
 
     return load_config(CONFIG_PATH)
-
-
-def _export_journal_identifier(engine: EngineConfig) -> None:
-    """Hand the journal writer the engine identifier of the config.
-
-    The identifier travels through the environment because the journal
-    writer keeps one systemd-cat process for the whole run and is not part
-    of the call chain, and because the deployed services of the run already
-    read the same variable from their unit files (bootstrap contract,
-    Logging). The export happens before the first message of the run. An
-    absent or empty value is left alone: the reader invents no name, so the
-    engine of such a config forwards nothing and keeps the identifier its
-    caller set.
-    """
-
-    identifier = engine.journal_identifier
-    if not identifier:
-        return
-    os.environ["PYNTARA_JOURNAL_IDENTIFIER"] = identifier
 
 
 def _export_desktop_session(engine: EngineConfig) -> None:
@@ -351,7 +336,7 @@ def run() -> None:
     """Run the Pyntara provisioning engine."""
 
     cfg = _load_config()
-    _export_journal_identifier(cfg.engine)
+    configure_journal(cfg.engine)
     _export_desktop_session(cfg.engine)
     if not cfg.tasks:
         # Without the catalog there is nothing to run, so the run reports the
