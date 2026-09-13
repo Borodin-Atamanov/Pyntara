@@ -72,6 +72,9 @@ send_order = "oldest_first"
 # identical original names coexist; the sender strips it before upload,
 # so the remote server receives the original name.
 queue_file_suffix_length = 12
+# Alphabet of that suffix. Letters and digits by default, so an entry
+# name stays readable and needs no quoting in the queue or in the upload.
+queue_file_suffix_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 # Directory of the System Metrics spool: the intake directory where the
 # generated commit_system_metrics command publishes files for the ingest
 # service to move into main_outbox. The path is a behavioral value and
@@ -185,9 +188,10 @@ google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-
 # boot_delay_seconds only sets the OnBootSec of the timer.
 # Seconds after boot before the timer fires the collector service.
 boot_delay_seconds = 30
-# Time of day of the daily collector run, "HH:MM" or "HH:MM:SS"; the
-# timer fires every day at this local time.
-daily_send_time = "12:00:00"
+# Times of day of the collector runs, "HH:MM" or "HH:MM:SS", one or
+# more. The report is built when the machine boots, at every time of
+# this list, and whenever a producer commits new data into the queue.
+daily_send_times = ["12:00:00", "00:00:00"]
 # Minimum share of the configured network modules that must have
 # answered (status ok) before the report is committed immediately, in
 # percent from 0 to 100. Below this share the service retries with the

@@ -12,7 +12,9 @@ The guard recognises four shapes that a value takes in code:
 A module level constant of a value, the name in capitals, which is the
 shape the audit of the migration calls a module level constant
 (docs/TODO.md, Values outside config/ are not classified by a written
-rule).
+rule). The name may start with an underscore: a private constant is a
+constant like any other, and leaving it out of the rule left four paths of
+the version tool unguarded until the rule was widened.
 A command argv written as a list literal whose first element is a program
 name, which is an unconfigured call of an external tool.
 An absolute path literal outside the kernel and device prefixes.
@@ -40,7 +42,7 @@ import pytest
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "pyntara"
 CONFIG_LAYER = PACKAGE_ROOT / "config"
 
-VALUE_CONSTANT_DEFINITION = re.compile(r"^([A-Z][A-Z0-9_]*)\s+=\s+\S")
+VALUE_CONSTANT_DEFINITION = re.compile(r"^(_?[A-Z][A-Z0-9_]*)\s+=\s+\S")
 COMMAND_ARGV_LITERAL = re.compile(r'\[\s*"([a-z0-9][a-z0-9._+-]*)"\s*,', re.DOTALL)
 ABSOLUTE_PATH_LITERAL = re.compile(r'"(/[a-z][^"]*)"')
 COMPILED_PATTERN = re.compile(r"re\.compile\(\s*r?([\"'])(.*?)\1", re.DOTALL)
@@ -63,6 +65,23 @@ KERNEL_PATH_PREFIXES = ("/proc", "/sys", "/dev")
 # three metrics modules read from the component config, and the version
 # pattern the setup tasks copy. Each leaves with the block of its task.
 VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
+    "src/pyntara/bump_version.py": frozenset(
+        {
+            # A regular expression, an exception of the spec.
+            '_VERSION_PATTERN = re.compile(r\'__version__ = "([^"]+)"\')',
+            # Candidate for the Exceptions section of the spec: the paths
+            # of the files the version tool rewrites and the prefix of the
+            # README title describe the layout of this repository, not a
+            # value of the target machine, and the tool is not part of the
+            # installer run. They stay until the user decides whether the
+            # spec gains such a type or the tool reads them from the
+            # config.
+            '_PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")',
+            '_INSTALLER_VERSION_FILE = Path("inst.sh")',
+            '_README_VERSION_FILE = Path("README.md")',
+            '_README_TITLE_PREFIX = "# Pyntara "',
+        }
+    ),
     "src/pyntara/augeas.py": frozenset(
         {
             'AUGTOOL_VALUE_RE = re.compile(r\'^(?P<node>.+) = "(?P<value>.*)"$\')',
@@ -362,6 +381,7 @@ def test_every_rule_finds_its_shape_in_a_module(
     first.parent.mkdir(parents=True)
     first.write_text(
         "THRESHOLD_SECONDS = 30\n"
+        "_PRIVATE_THRESHOLD_SECONDS = 30\n"
         "PROFILE_ID_PATTERN = re.compile(r'[0-9a-f]{6}')\n"
         'run_command(["nmcli", "general", "reload"], timeout=60)\n'
         'STATE_FILE_PATH = Path("/var/lib/pyntara/state")\n'
@@ -388,6 +408,7 @@ def test_every_rule_finds_its_shape_in_a_module(
     assert constants["src/pyntara/first.py"] == frozenset(
         {
             "THRESHOLD_SECONDS = 30",
+            "_PRIVATE_THRESHOLD_SECONDS = 30",
             "PROFILE_ID_PATTERN = re.compile(r'[0-9a-f]{6}')",
             "STATE_FILE_PATH = Path(\"/var/lib/pyntara/state\")",
             "MEMORY_FILE_PATH = Path('/proc/meminfo')",

@@ -82,6 +82,17 @@ def base_config() -> str:
         'default_route_command = ["ip", "-4", "route", "show", "default"]\n'
         'augtool_command = ["augtool", "--noautoload"]\n'
         'augeas_files_node_prefix = "/files"\n'
+        'augeas_lens_line = "set /augeas/load/entry/lens {lens}"\n'
+        'augeas_incl_line = "set /augeas/load/entry/incl {path}"\n'
+        'augeas_load_line = "load"\n'
+        'augeas_print_line = "print {node}"\n'
+        'augeas_save_line = "save"\n'
+        'augeas_comment_line = \'set {node}/#comment "{header}"\'\n'
+        'augeas_container_line = "set {node}/{container}[last()] {value}"\n'
+        'augeas_directive_line = \'set {node}/{name} "{value}"\'\n'
+        'augeas_container_directive_line = \'set {node}/{container}[last()]/{name}[last()] "{value}"\'\n'
+        'augeas_remove_line = "rm {node}/{name}"\n'
+        'augeas_container_remove_line = "rm {node}/{container}/{name}"\n'
         'interface_addresses_command = ["ip", "-j", "addr", "show"]\n'
         'address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }\n'
         'iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }\n'
@@ -702,6 +713,12 @@ def base_config() -> str:
         'doh_url_format = "https://dns.nextdns.io/{profile_id}"\n'
         'dot_host_format = "tls://{profile_id}.dns.nextdns.io"\n'
         'doq_host_format = "quic://{profile_id}.dns.nextdns.io"\n'
+        "bootstrap_form_templates = [\n"
+        '    "{host}",\n'
+        '    "tls://{host}:853",\n'
+        '    "https://{host}:443/dns-query",\n'
+        '    "quic://{host}:853",\n'
+        "]\n"
         'upstream_mode = "load_balance"\ncache_enabled = true\n'
         "cache_size_bytes = 16777216\n"
         'bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]\n'
@@ -909,6 +926,7 @@ def base_config() -> str:
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
         'queue_file_suffix_length = 12\n'
+        'queue_file_suffix_alphabet = "abcxyz0123456789"\n'
         'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
         'spool_dir_permission_mask = "7777"\n'
         'command_file_mode = "0755"\n'
@@ -951,7 +969,7 @@ def base_config() -> str:
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
         '[system_metrics_setup.collector]\n'
         "boot_delay_seconds = 30\n"
-        'daily_send_time = "12:00:00"\n'
+        'daily_send_times = ["12:00:00", "00:00:00"]\n'
         "threshold_percent = 50\n"
         "retry_base_seconds = 2\n"
         "retry_multiplier = 2\n"

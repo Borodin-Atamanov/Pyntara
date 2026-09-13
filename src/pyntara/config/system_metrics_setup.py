@@ -29,7 +29,10 @@ class SystemMetricsCollectorConfig:
 
     The collector is a producer of the System Metrics queue: the systemd
     timer (timer_unit_name) starts the oneshot service
-    (service_unit_name) after boot and at daily_send_time every day; the
+    (service_unit_name) after boot and at every time of daily_send_times,
+    so a report is built when the machine comes up and at the hours the
+    operator names, while new data of a producer is sent by the running
+    service on its own; the
     service runs the configured console commands, keeps their full
     output, waits up to the retry window for threshold_percent of the
     network modules to answer, writes the report as report_file_name and
@@ -49,7 +52,7 @@ class SystemMetricsCollectorConfig:
     """
 
     boot_delay_seconds: int
-    daily_send_time: str
+    daily_send_times: tuple[str, ...]
     threshold_percent: int
     retry_base_seconds: int
     retry_multiplier: int
@@ -117,6 +120,7 @@ class SystemMetricsSetupConfig:
     and entries, max_queue_file_size_bytes is the per-entry size limit,
     send_order is the drain order of the senders,
     queue_file_suffix_length is the length of the random name suffix and
+    queue_file_suffix_alphabet the characters it is drawn from,
     queue_link_attempts is the number of publication attempts before the
     ingest gives up on a unique queue name
     (docs/spec/system-metrics.md, section Queue architecture). The
@@ -175,6 +179,7 @@ class SystemMetricsSetupConfig:
     max_queue_file_size_bytes: int
     send_order: str
     queue_file_suffix_length: int
+    queue_file_suffix_alphabet: str
     spool_dir: Path
     spool_dir_mode: int
     spool_dir_permission_mask: int

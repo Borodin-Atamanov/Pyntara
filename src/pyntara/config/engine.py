@@ -128,6 +128,17 @@ class EngineConfig:
     default_route_command: tuple[str, ...] = ()
     augtool_command: tuple[str, ...] = ()
     augeas_files_node_prefix: str = ""
+    augeas_lens_line: str = ""
+    augeas_incl_line: str = ""
+    augeas_load_line: str = ""
+    augeas_print_line: str = ""
+    augeas_save_line: str = ""
+    augeas_comment_line: str = ""
+    augeas_container_line: str = ""
+    augeas_directive_line: str = ""
+    augeas_container_directive_line: str = ""
+    augeas_remove_line: str = ""
+    augeas_container_remove_line: str = ""
     interface_addresses_command: tuple[str, ...] = ()
     address_family_by_flag: dict[str, str] = field(default_factory=dict)
     iproute2_address_family_names: dict[str, str] = field(default_factory=dict)

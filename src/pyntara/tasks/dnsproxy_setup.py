@@ -187,15 +187,20 @@ def _upstreams(cfg: DnsproxySetupConfig, profile_id: str) -> tuple[str, ...]:
     )
 
 
-def _protocol_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
-    '''Protocol forms of each address, one argument per protocol.
+def _protocol_forms(
+    cfg: DnsproxySetupConfig, addresses: tuple[str, ...]
+) -> tuple[str, ...]:
+    '''Protocol forms of each address, one argument per configured form.
 
-    Every address yields four forms: plain DNS on port 53, DoT on 853, DoH
-    on 443 and DoQ on 853. IPv6 hosts are enclosed in square brackets.
-    DNSCrypt is not generated because a bare IP is not enough for it and
-    the pool carries no stamps. The same forms feed both the bootstrap and
-    the fallback resolver groups.
+    Every address yields one argument per entry of
+    bootstrap_form_templates, with {host} replaced by the address; an IPv6
+    host is enclosed in square brackets. The shipped templates are plain
+    DNS on port 53, DoT on 853, DoH on 443 and DoQ on 853. DNSCrypt is not
+    generated because a bare IP is not enough for it and the pool carries
+    no stamps. The same forms feed both the bootstrap and the fallback
+    resolver groups.
     '''
+
     forms: list[str] = []
     for address in addresses:
         try:
@@ -203,14 +208,9 @@ def _protocol_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
         except ValueError as exc:
             raise RuntimeError(f"invalid bootstrap address {address!r}: {exc}") from exc
         host = f"[{ip}]" if ip.version == 6 else str(ip)
-        plain = host if ip.version == 6 else address
         forms.extend(
-            (
-                plain,
-                f"tls://{host}:853",
-                f"https://{host}:443/dns-query",
-                f"quic://{host}:853",
-            )
+            template.format(host=host)
+            for template in cfg.bootstrap_form_templates
         )
     return tuple(forms)
 
@@ -260,7 +260,7 @@ def _command(
         command.append(_flag(cfg, "listen", address))
     for upstream in _upstreams(cfg, profile_id):
         command.append(_flag(cfg, "upstream", upstream))
-    pool_forms = _protocol_forms(cfg.bootstrap_resolvers)
+    pool_forms = _protocol_forms(cfg, cfg.bootstrap_resolvers)
     provider_forms = _plain_udp_forms((*discovered.ipv4, *discovered.ipv6))
     for fallback in (*pool_forms, *provider_forms):
         command.append(_flag(cfg, "fallback", fallback))

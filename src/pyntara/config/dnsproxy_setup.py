@@ -42,6 +42,7 @@ class DnsproxySetupConfig:
     doh_url_format: str
     dot_host_format: str
     doq_host_format: str
+    bootstrap_form_templates: tuple[str, ...]
     upstream_mode: str
     cache_enabled: bool
     cache_size_bytes: int

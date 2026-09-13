@@ -161,6 +161,22 @@ def test_service_log_excerpt_length_comes_from_the_config(
     assert tail == "y" * 11
 
 
+def test_bootstrap_forms_come_from_the_config() -> None:
+    # The proof of the value: the protocol forms of every address are the
+    # templates of the table, so a pool that needs another form names it
+    # in the config without a code change.
+    cfg = replace(
+        make_config().dnsproxy_setup,
+        bootstrap_form_templates=("{host}", "tls://{host}:8853"),
+    )
+    assert task_module._protocol_forms(cfg, ("1.1.1.1", "2001:db8::1")) == (
+        "1.1.1.1",
+        "tls://1.1.1.1:8853",
+        "[2001:db8::1]",
+        "tls://[2001:db8::1]:8853",
+    )
+
+
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
     config = make_config()
     command = task_module._command(

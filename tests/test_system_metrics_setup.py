@@ -79,7 +79,7 @@ Description=System Metrics report collector timer
 
 [Timer]
 OnBootSec=$boot_delay_seconds
-OnCalendar=*-*-* $daily_send_time
+$daily_send_calendar
 Unit=$service_unit_name
 
 [Install]
@@ -260,9 +260,13 @@ def _expected_collector_timer_unit(fixtures: SystemMetricsFixtures) -> str:
     """The collector timer unit the task must render for the fixtures."""
 
     collector = fixtures["config"].system_metrics_setup.collector
+    calendar = "\n".join(
+        f"OnCalendar=*-*-* {time_of_day}"
+        for time_of_day in collector.daily_send_times
+    )
     return Template(COLLECTOR_TIMER_TEMPLATE).substitute(
         boot_delay_seconds=collector.boot_delay_seconds,
-        daily_send_time=collector.daily_send_time,
+        daily_send_calendar=calendar,
         service_unit_name=collector.service_unit_name,
     )
 
@@ -940,6 +944,26 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
     )
     assert "ExecStart=myrun -m mymod /etc/pyntara/config.toml" in unit
     assert "Restart=on-failure" in unit
+
+
+def test_collector_calendar_comes_from_the_config(tmp_path: Path) -> None:
+    # The proof of the value: every time of day of the collector table is
+    # one OnCalendar line of the deployed timer, so the operator decides
+    # when the report is built without a code change.
+    template = tmp_path / "system_metrics_collector.timer"
+    template.write_text(
+        "[Timer]\n$daily_send_calendar\nUnit=collector.service\n",
+        encoding="utf-8",
+    )
+    unit = system_metrics_setup._render_collector_timer_unit(
+        template,
+        boot_delay_seconds=30,
+        daily_send_times=("06:30:00", "18:15:00"),
+        service_unit_name="collector.service",
+    )
+    assert "OnCalendar=*-*-* 06:30:00" in unit
+    assert "OnCalendar=*-*-* 18:15:00" in unit
+    assert "Unit=collector.service" in unit
 
 
 def test_only_path_unit_disabled_enables_and_starts_it(

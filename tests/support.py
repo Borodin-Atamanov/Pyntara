@@ -503,7 +503,10 @@ def make_config(
     system_metrics_spool_dir: Path = Path("/var/spool/system_metrics"),
     system_metrics_unit_template_file_name: str = "system_metrics.service",
     system_metrics_collector_boot_delay_seconds: int = 30,
-    system_metrics_collector_daily_send_time: str = "12:00:00",
+    system_metrics_collector_daily_send_times: tuple[str, ...] = (
+        "12:00:00",
+        "00:00:00",
+    ),
     system_metrics_collector_threshold_percent: int = 50,
     system_metrics_collector_retry_base_seconds: int = 2,
     system_metrics_collector_retry_multiplier: int = 2,
@@ -820,7 +823,7 @@ def make_config(
             collector=replace(
                 base.system_metrics_setup.collector,
                 boot_delay_seconds=system_metrics_collector_boot_delay_seconds,
-                daily_send_time=system_metrics_collector_daily_send_time,
+                daily_send_times=system_metrics_collector_daily_send_times,
                 threshold_percent=system_metrics_collector_threshold_percent,
                 retry_base_seconds=system_metrics_collector_retry_base_seconds,
                 retry_multiplier=system_metrics_collector_retry_multiplier,

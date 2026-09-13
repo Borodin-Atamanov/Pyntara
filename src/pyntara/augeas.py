@@ -80,12 +80,14 @@ def read_dropin_state(
     """
 
     node = f"{engine.augeas_files_node_prefix}{dropin_path}"
-    script = (
-        "set /augeas/load/entry/lens " + lens + "\n"
-        f"set /augeas/load/entry/incl {dropin_path}\n"
-        "load\n"
-        f"print {node}\n"
-    )
+    script = "\n".join(
+        (
+            engine.augeas_lens_line.format(lens=lens),
+            engine.augeas_incl_line.format(path=dropin_path),
+            engine.augeas_load_line,
+            engine.augeas_print_line.format(node=node),
+        )
+    ) + "\n"
     result = run_command(
         list(engine.augtool_command),
         input=script,
@@ -129,26 +131,42 @@ def write_dropin(
     container_name = container[0] if container else None
     container_value = container[1] if container else ""
     lines = [
-        "set /augeas/load/entry/lens " + lens,
-        f"set /augeas/load/entry/incl {dropin_path}",
-        "load",
-        f'set {node}/#comment "{header}"',
+        engine.augeas_lens_line.format(lens=lens),
+        engine.augeas_incl_line.format(path=dropin_path),
+        engine.augeas_load_line,
+        engine.augeas_comment_line.format(node=node, header=header),
     ]
     if container_name is not None:
-        lines.append(f"set {node}/{container_name}[last()] {container_value}")
+        lines.append(
+            engine.augeas_container_line.format(
+                node=node, container=container_name, value=container_value
+            )
+        )
     for name, value in directives:
         if container_name is not None:
             lines.append(
-                f'set {node}/{container_name}[last()]/{name}[last()] "{value}"'
+                engine.augeas_container_directive_line.format(
+                    node=node, container=container_name, name=name, value=value
+                )
             )
         else:
-            lines.append(f'set {node}/{name} "{value}"')
+            lines.append(
+                engine.augeas_directive_line.format(
+                    node=node, name=name, value=value
+                )
+            )
     for name in stale_names:
         if container_name is not None:
-            lines.append(f"rm {node}/{container_name}/{name}")
+            lines.append(
+                engine.augeas_container_remove_line.format(
+                    node=node, container=container_name, name=name
+                )
+            )
         else:
-            lines.append(f"rm {node}/{name}")
-    lines.append("save")
+            lines.append(
+                engine.augeas_remove_line.format(node=node, name=name)
+            )
+    lines.append(engine.augeas_save_line)
     result = run_command(
         list(engine.augtool_command),
         input="\n".join(lines) + "\n",

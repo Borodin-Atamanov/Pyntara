@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import string
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,22 @@ def test_dirs_and_entry_carry_configured_modes(tmp_path: Path) -> None:
         assert stat_mode(directory) == 0o700
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     assert stat_mode(committed) == 0o600
+
+
+def test_suffix_alphabet_comes_from_the_config(tmp_path: Path) -> None:
+    # The proof of the value: the random part of a queue name is drawn
+    # from the alphabet of the table, so a queue whose names must avoid a
+    # character says so in the config.
+    cfg = _spool_config(tmp_path)
+    metrics = replace(
+        cfg.system_metrics_setup,
+        queue_file_suffix_alphabet="a",
+        queue_file_suffix_length=6,
+    )
+    _spool_file(tmp_path, "alpha.txt", "x")
+    ingest_spool(replace(cfg, system_metrics_setup=metrics))
+    names = [path.name for path in (tmp_path / "metrics" / OUTBOX).iterdir()]
+    assert names == ["alpha.txt.aaaaaa"]
 
 
 def test_entry_mtime_is_commit_time(tmp_path: Path) -> None:

@@ -279,21 +279,25 @@ def _render_collector_service_unit(
 def _render_collector_timer_unit(
     template_path: Path,
     boot_delay_seconds: int,
-    daily_send_time: str,
+    daily_send_times: tuple[str, ...],
     service_unit_name: str,
 ) -> str:
     """Render the timer unit that starts the collector after boot and daily.
 
     The collector does all waiting itself, so the timer only schedules
-    the start: OnBootSec comes from the config and OnCalendar from the
-    normalized daily time of the config (docs/spec/system-metrics.md,
-    section Report collector).
+    the start: OnBootSec comes from the config, and every configured time
+    of day becomes one OnCalendar line, because systemd reads one line
+    per calendar event (docs/spec/system-metrics.md, section Report
+    collector).
     """
 
+    calendar = "\n".join(
+        f"OnCalendar=*-*-* {time_of_day}" for time_of_day in daily_send_times
+    )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         boot_delay_seconds=boot_delay_seconds,
-        daily_send_time=daily_send_time,
+        daily_send_calendar=calendar,
         service_unit_name=service_unit_name,
     )
 
@@ -477,7 +481,7 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_unit = _render_collector_timer_unit(
         template_dir / metrics.collector_timer_template_file_name,
         metrics.collector.boot_delay_seconds,
-        metrics.collector.daily_send_time,
+        metrics.collector.daily_send_times,
         collector_service_name,
     )
     command_content = _render_commit_command(

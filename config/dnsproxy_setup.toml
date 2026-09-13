@@ -25,6 +25,15 @@ listen_port = 53053
 doh_url_format = "https://dns.nextdns.io/{profile_id}"
 dot_host_format = "tls://{profile_id}.dns.nextdns.io"
 doq_host_format = "quic://{profile_id}.dns.nextdns.io"
+# Protocol forms of every bootstrap and fallback address, one entry per
+# form, with {host} replaced by the address (an IPv6 address in square
+# brackets). The order is the order of the generated arguments.
+bootstrap_form_templates = [
+    "{host}",
+    "tls://{host}:853",
+    "https://{host}:443/dns-query",
+    "quic://{host}:853",
+]
 upstream_mode = "load_balance"
 cache_enabled = true
 # dnsproxy cache size in bytes, passed as --cache-size. 16 MiB.

@@ -236,6 +236,24 @@ default_route_command = ["ip", "-4", "route", "show", "default"]
 # prefix followed by the absolute path of the edited file.
 augtool_command = ["augtool", "--noautoload"]
 augeas_files_node_prefix = "/files"
+# Lines of the augtool program the helper feeds on stdin, one template
+# per line shape, with the placeholders the helper fills: the driver of a
+# load entry, the file the load entry includes, the load call, the
+# ownership comment of the node, a container node with its value, one
+# directive, a directive inside a container, the removal of a name
+# outside and inside a container, the print of a node, and the save call
+# that writes the tree back.
+augeas_lens_line = "set /augeas/load/entry/lens {lens}"
+augeas_incl_line = "set /augeas/load/entry/incl {path}"
+augeas_load_line = "load"
+augeas_print_line = "print {node}"
+augeas_save_line = "save"
+augeas_comment_line = "set {node}/#comment \"{header}\""
+augeas_container_line = "set {node}/{container}[last()] {value}"
+augeas_directive_line = "set {node}/{name} \"{value}\""
+augeas_container_directive_line = "set {node}/{container}[last()]/{name}[last()] \"{value}\""
+augeas_remove_line = "rm {node}/{name}"
+augeas_container_remove_line = "rm {node}/{container}/{name}"
 # Address vocabulary of the collector modules that report the local
 # addresses of a machine (pyntara.network_addresses): the iproute2 query
 # in JSON form, the mapping of the command line family flag to the family

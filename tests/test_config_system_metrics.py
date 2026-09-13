@@ -291,21 +291,35 @@ from config_helpers import (
         base_config().replace(
             "boot_delay_seconds = 30", "boot_delay_seconds = -1"
         ),
-        # collector daily_send_time is a number, not a string
+        # collector daily_send_times is a time, not a list
         base_config().replace(
-            'daily_send_time = "12:00:00"', "daily_send_time = 1200"
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            'daily_send_times = "12:00:00"',
         ),
-        # collector daily_send_time is not a time of day
+        # collector daily_send_times is empty
         base_config().replace(
-            'daily_send_time = "12:00:00"', 'daily_send_time = "25:00:00"'
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            "daily_send_times = []",
         ),
-        # collector daily_send_time misses the minutes
+        # collector daily_send_times holds a number, not a time
         base_config().replace(
-            'daily_send_time = "12:00:00"', 'daily_send_time = "12"'
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            "daily_send_times = [1200]",
         ),
-        # collector daily_send_time has four parts
+        # collector daily_send_times is not a time of day
         base_config().replace(
-            'daily_send_time = "12:00:00"', 'daily_send_time = "12:00:00:00"'
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            'daily_send_times = ["25:00:00"]',
+        ),
+        # collector daily_send_times misses the minutes
+        base_config().replace(
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            'daily_send_times = ["12"]',
+        ),
+        # collector daily_send_times has four parts
+        base_config().replace(
+            'daily_send_times = ["12:00:00", "00:00:00"]',
+            'daily_send_times = ["12:00:00:00"]',
         ),
         # collector threshold_percent is a string, not an integer
         base_config().replace(

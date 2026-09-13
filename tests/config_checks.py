@@ -603,6 +603,18 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     )
     if any("{profile_id}" not in value for value in endpoint_values):
         raise ConfigError("dnsproxy_setup endpoint formats must contain {profile_id}")
+    bootstrap_form_templates = _string_list(
+        raw.get("bootstrap_form_templates"),
+        "dnsproxy_setup.bootstrap_form_templates",
+    )
+    if not bootstrap_form_templates:
+        raise ConfigError("dnsproxy_setup.bootstrap_form_templates is empty")
+    for template in bootstrap_form_templates:
+        if "{host}" not in template:
+            raise ConfigError(
+                "dnsproxy_setup.bootstrap_form_templates entries must contain "
+                "{host}"
+            )
     upstream_mode = _nonempty_string_field(
         raw.get("upstream_mode"), "dnsproxy_setup.upstream_mode"
     )
@@ -744,6 +756,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         doh_url_format=endpoint_values[0],
         dot_host_format=endpoint_values[1],
         doq_host_format=endpoint_values[2],
+        bootstrap_form_templates=bootstrap_form_templates,
         upstream_mode=upstream_mode,
         cache_enabled=cache_enabled,
         cache_size_bytes=cache_size_bytes,
@@ -1221,6 +1234,51 @@ def _engine_table(raw: object) -> EngineConfig:
         augeas_files_node_prefix=_nonempty_string_field(
             raw.get("augeas_files_node_prefix"),
             "engine.augeas_files_node_prefix",
+        ),
+        augeas_lens_line=_placeholder_text_field(
+            raw.get("augeas_lens_line"), "engine.augeas_lens_line", ("{lens}",)
+        ),
+        augeas_incl_line=_placeholder_text_field(
+            raw.get("augeas_incl_line"), "engine.augeas_incl_line", ("{path}",)
+        ),
+        augeas_load_line=_nonempty_string_field(
+            raw.get("augeas_load_line"), "engine.augeas_load_line"
+        ),
+        augeas_print_line=_placeholder_text_field(
+            raw.get("augeas_print_line"), "engine.augeas_print_line", ("{node}",)
+        ),
+        augeas_save_line=_nonempty_string_field(
+            raw.get("augeas_save_line"), "engine.augeas_save_line"
+        ),
+        augeas_comment_line=_placeholder_text_field(
+            raw.get("augeas_comment_line"),
+            "engine.augeas_comment_line",
+            ("{node}", "{header}"),
+        ),
+        augeas_container_line=_placeholder_text_field(
+            raw.get("augeas_container_line"),
+            "engine.augeas_container_line",
+            ("{node}", "{container}", "{value}"),
+        ),
+        augeas_directive_line=_placeholder_text_field(
+            raw.get("augeas_directive_line"),
+            "engine.augeas_directive_line",
+            ("{node}", "{name}", "{value}"),
+        ),
+        augeas_container_directive_line=_placeholder_text_field(
+            raw.get("augeas_container_directive_line"),
+            "engine.augeas_container_directive_line",
+            ("{node}", "{container}", "{name}", "{value}"),
+        ),
+        augeas_remove_line=_placeholder_text_field(
+            raw.get("augeas_remove_line"),
+            "engine.augeas_remove_line",
+            ("{node}", "{name}"),
+        ),
+        augeas_container_remove_line=_placeholder_text_field(
+            raw.get("augeas_container_remove_line"),
+            "engine.augeas_container_remove_line",
+            ("{node}", "{container}", "{name}"),
         ),
         interface_addresses_command=_placeholder_command_field(
             raw.get("interface_addresses_command"),
@@ -3344,6 +3402,20 @@ def _daily_time_field(raw: object, name: str) -> str:
     return f"{hour:02d}:{minute:02d}:{second:02d}"
 
 
+def _daily_time_list_field(raw: object, name: str) -> tuple[str, ...]:
+    """Validate the times of day of a schedule; return them normalized.
+
+    Every entry is a time of day in the form _daily_time_field accepts,
+    and the list is not empty: a schedule with no time would leave the
+    timer with the boot run alone, which is not what an empty list means
+    to a reader.
+    """
+
+    if not isinstance(raw, list) or not raw:
+        raise ConfigError(f"{name} must be a non-empty array of times of day")
+    return tuple(_daily_time_field(entry, name) for entry in raw)
+
+
 def _collector_modules_field(
     raw: object, name: str
 ) -> tuple[CollectorModuleConfig, ...]:
@@ -3390,7 +3462,8 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
     config.
 
     The section is mandatory. boot_delay_seconds is a non-negative
-    integer; daily_send_time is a time of day "HH:MM" or "HH:MM:SS"
+    integer; daily_send_times is a non-empty array of times of day "HH:MM"
+    or "HH:MM:SS"
     normalized to "HH:MM:SS"; threshold_percent is an integer between 0
     and 100; retry_base_seconds is positive, retry_multiplier is at
     least 2 and retry_max_seconds is not below retry_base_seconds;
@@ -3456,9 +3529,9 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
         )
     return SystemMetricsCollectorConfig(
         boot_delay_seconds=boot_delay_seconds,
-        daily_send_time=_daily_time_field(
-            raw.get("daily_send_time"),
-            "system_metrics_setup.collector.daily_send_time",
+        daily_send_times=_daily_time_list_field(
+            raw.get("daily_send_times"),
+            "system_metrics_setup.collector.daily_send_times",
         ),
         threshold_percent=threshold_percent,
         retry_base_seconds=retry_base_seconds,
@@ -3626,6 +3699,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.queue_file_suffix_length must be positive"
         )
+    queue_file_suffix_alphabet = _nonempty_string_field(
+        raw.get("queue_file_suffix_alphabet"),
+        "system_metrics_setup.queue_file_suffix_alphabet",
+    )
     queue_link_attempts = _int_field(
         raw.get("queue_link_attempts"),
         "system_metrics_setup.queue_link_attempts",
@@ -3715,6 +3792,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         max_queue_file_size_bytes=max_queue_file_size_bytes,
         send_order=send_order,
         queue_file_suffix_length=queue_file_suffix_length,
+        queue_file_suffix_alphabet=queue_file_suffix_alphabet,
         spool_dir=Path(
             _nonempty_string_field(
                 raw.get("spool_dir"), "system_metrics_setup.spool_dir"

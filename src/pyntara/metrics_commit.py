@@ -20,14 +20,10 @@ import os
 import secrets
 import shutil
 import stat
-import string
 from pathlib import Path
 
 from pyntara.config import Config
 from pyntara.logger import log_progress as _log
-
-# Characters of the random entry-name suffix: letters and digits.
-_SUFFIX_ALPHABET = string.ascii_letters + string.digits
 
 
 def build_queue_name(original_name: str, suffix: str) -> str:
@@ -46,10 +42,10 @@ def restore_original_name(queue_name: str, suffix_length: int) -> str:
     return queue_name[: -(suffix_length + 1)]
 
 
-def _random_suffix(length: int) -> str:
-    """Random suffix of the given length from letters and digits."""
+def _random_suffix(length: int, alphabet: str) -> str:
+    """Random suffix of the given length from the configured alphabet."""
 
-    return "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(length))
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def _queue_dirs(cfg: Config) -> tuple[Path, Path, Path]:
@@ -109,6 +105,7 @@ def ingest_spool(cfg: Config) -> None:
             temp,
             metrics.queue_file_mode,
             metrics.queue_file_suffix_length,
+            metrics.queue_file_suffix_alphabet,
             metrics.queue_link_attempts,
             cfg.engine.nanoseconds_per_second,
             cfg.engine.error_priority,
@@ -144,6 +141,7 @@ def _publish_entry(
     temp: Path,
     file_mode: int,
     suffix_length: int,
+    suffix_alphabet: str,
     link_attempts: int,
     nanoseconds_per_second: int,
     error_priority: int,
@@ -168,7 +166,9 @@ def _publish_entry(
         commit_time_ns = int(commit_time * nanoseconds_per_second)
         os.utime(temp_path, ns=(commit_time_ns, commit_time_ns))
         for _ in range(link_attempts):
-            queue_name = build_queue_name(entry.name, _random_suffix(suffix_length))
+            queue_name = build_queue_name(
+                entry.name, _random_suffix(suffix_length, suffix_alphabet)
+            )
             entry_path = outbox / queue_name
             try:
                 os.link(temp_path, entry_path)

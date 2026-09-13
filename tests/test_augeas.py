@@ -54,3 +54,42 @@ def test_the_tool_and_the_node_prefix_come_from_the_engine(
     assert f"print {node}\n" in str(captured[0]["input"])
     assert comment == "owned by the test"
     assert directives == {"Port": "30222"}
+
+
+def test_the_program_lines_come_from_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The proof of the value: every line of the augtool program is a
+    # template of the [engine] table, so another driver entry or another
+    # removal shape is answered in the config and not in the helper.
+    engine = replace(
+        make_config().engine,
+        augeas_lens_line="MARK-LENS {lens}",
+        augeas_incl_line="MARK-INCL {path}",
+        augeas_load_line="MARK-LOAD",
+        augeas_save_line="MARK-SAVE",
+        augeas_directive_line="MARK-DIRECTIVE {node} {name} {value}",
+    )
+    dropin_path = Path("/etc/ssh/sshd_config.d/pyntara.conf")
+    captured: list[dict[str, object]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        captured.append({"command": command, **kwargs})
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(augeas_module, "run_command", fake_run)
+    augeas_module.write_dropin(
+        engine,
+        dropin_path,
+        (("Port", "30222"),),
+        [],
+        "Sshd.lns",
+        "owned by the test",
+        30.0,
+    )
+    script = str(captured[0]["input"])
+    assert "MARK-LENS Sshd.lns" in script
+    assert f"MARK-INCL {dropin_path}" in script
+    assert "MARK-LOAD" in script
+    assert "MARK-DIRECTIVE" in script
+    assert "MARK-SAVE" in script
