@@ -46,14 +46,22 @@ ABSOLUTE_PATH_LITERAL = re.compile(r'"(/[a-z][^"]*)"')
 COMPILED_PATTERN = re.compile(r"re\.compile\(\s*r?([\"'])(.*?)\1", re.DOTALL)
 KERNEL_PATH_PREFIXES = ("/proc", "/sys", "/dev")
 
-# Module level constants of a value. A kernel or device path, a regular
-# expression, the wording of a message and the names of the config keys a
-# deployed component reads are spec exceptions; the rest of the entries is
-# the work of the migration: the iproute2 vocabulary of the local address
-# module, the panel vocabulary of the routing policy and of the xui client,
-# the country word the echo services report, the field name of the UPnP
-# answer, the environment of the noninteractive apt and the augeas node
-# prefix of the two ssh tasks.
+# Module level constants of a value. The entries below are the exceptions
+# of docs/spec/config-content.md and the few values that still wait for
+# their migration block.
+#
+# Exceptions: a regular expression (the node pattern of the augeas calls,
+# the profile identifier of the dnsproxy, the release and address patterns
+# of the setup tasks), the wording of a message (the note an address lookup
+# leaves when no service answers), the numbers of an encoding (the proquint
+# alphabet, the identity size and the certificate type of an i2pd key) and
+# the kernel paths of the swapfile and the zram modules. The location of
+# the code itself, the config path and the repository root of the entry
+# point, is the layout of the installation and stays with it.
+#
+# Pending: the environment of the noninteractive apt, the key names the
+# three metrics modules read from the component config, and the version
+# pattern the setup tasks copy. Each leaves with the block of its task.
 VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/augeas.py": frozenset(
         {
@@ -162,7 +170,8 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
 # Command argv literals: every command of an external tool the run invokes
 # is a config value with its placeholders. These are the call sites that
 # still spell their argv in code, module by module; the list is the work
-# that is left and must shrink with every migration block.
+# that is left and must shrink with every migration block. The package
+# group of the shared helpers is the last module on the list.
 COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/utils.py": frozenset(
         {
@@ -184,8 +193,10 @@ COMMAND_ARGV_ALLOWED: dict[str, frozenset[str]] = {
 PATH_LITERALS_ALLOWED: dict[str, frozenset[str]] = {}
 
 # A regular expression shared by two or more modules: the pattern of a
-# three part version and the tag prefix of a release, each written once
-# today and copied in the modules that read a release version.
+# three part version, copied in the modules that read a release version.
+# A pattern is an exception, so the copies are allowed to exist; the count
+# here states how many modules write it, and a fifth copy fails the suite
+# and asks for the shared vocabulary of the engine table instead.
 DUPLICATED_PATTERNS_ALLOWED: dict[str, int] = {
     "(\\d+\\.\\d+\\.\\d+)": 3,
 }
