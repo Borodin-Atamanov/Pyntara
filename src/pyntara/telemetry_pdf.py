@@ -254,8 +254,8 @@ def build(cfg: Config, report: dict[str, object], hostname: str) -> bytes | None
     entries = _read_vault_entries(
         kp, sms.telemetry_pdf_vault_entry_titles, sms.telemetry_pdf.field_order
     )
-    text = build_text(cfg, report, entries, hostname)
     try:
+        text = build_text(cfg, report, entries, hostname)
         return encrypt(render(text, sms.telemetry_pdf), password)
     except Exception as exc:  # noqa: BLE001 - any failure skips the PDF only
         _log(f"telemetry pdf skipped: {exc}", priority=sms.error_priority)

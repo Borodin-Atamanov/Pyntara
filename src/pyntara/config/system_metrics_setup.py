@@ -125,21 +125,6 @@ class TelemetryPdfConfig:
     field_order: tuple[str, ...]
 
 
-TELEMETRY_PDF_TABLE_KEYS = (
-    "font",
-    "font_size",
-    "line_width_chars",
-    "margin",
-    "format_version",
-    "section_ssh",
-    "section_network",
-    "section_system",
-    "section_secrets",
-    "section_json",
-    "field_order",
-)
-
-
 @dataclass(frozen=True)
 class SystemMetricsSetupConfig:
     """Runtime parameters of the long-running System Metrics service.
@@ -328,14 +313,7 @@ INGEST_CONFIG_KEYS = (
     "queue_file_suffix_length",
     "queue_link_attempts",
 )
-COLLECTOR_SECTION_KEYS = (
-    "commit_command",
-    "command_path",
-    "error_priority",
-    "telemetry_pdf_report_file_name",
-    "telemetry_password_entry_title",
-    "telemetry_pdf_vault_entry_titles",
-)
+COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
 
 # The order in which the deployed sender drains a channel, as the send_order
 # field of the [system_metrics_setup] table spells it. The sender reads the
