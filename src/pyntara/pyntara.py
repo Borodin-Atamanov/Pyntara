@@ -345,6 +345,32 @@ def _resolve_force_tasks(
     return frozenset(name for name in names if name.casefold() in force_folded)
 
 
+def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
+    """The Context every task of a run receives.
+
+    The clone root is the one computation of REPO_ROOT, which points at
+    the repository the running code lives in; the tasks read the shipped
+    templates under task_data/ through it, so a wrong depth would reach
+    every task at once. tests/test_entry.py proves the root the Context
+    carries is the clone root, which is the check the live run of
+    2026-09-13 did not have when the depth was wrong.
+    """
+
+    force_tasks = _resolve_force_tasks(
+        cfg.engine, names, cfg.engine.notice_timeout, cfg.tasks
+    )
+    return Context(
+        install_mode=mode,
+        vault_password=_env("PYNTARA_VAULT_PASSWORD"),
+        vault_source=_env("PYNTARA_VAULT_SOURCE"),
+        force_tasks=force_tasks,
+        repo_root=REPO_ROOT,
+        task_data_root=cfg.engine.task_data_root,
+        skip_apt_update=_env_flag(cfg.engine, "PYNTARA_SKIP_APT_UPDATE"),
+        config=cfg,
+    )
+
+
 @app.command()
 def run() -> None:
     """Run the Pyntara provisioning engine."""
@@ -362,21 +388,11 @@ def run() -> None:
         raise typer.Exit(1)
     mode = _resolve_mode(cfg.engine)
     names = _resolve_task_names(mode, cfg.engine.notice_timeout, cfg.tasks)
-    force_tasks = _resolve_force_tasks(cfg.engine, names, cfg.engine.notice_timeout, cfg.tasks)
-    ctx = Context(
-        install_mode=mode,
-        vault_password=_env("PYNTARA_VAULT_PASSWORD"),
-        vault_source=_env("PYNTARA_VAULT_SOURCE"),
-        force_tasks=force_tasks,
-        repo_root=REPO_ROOT,
-        task_data_root=cfg.engine.task_data_root,
-        skip_apt_update=_env_flag(cfg.engine, "PYNTARA_SKIP_APT_UPDATE"),
-        config=cfg,
-    )
+    ctx = _run_context(cfg, mode, names)
     log_event(f"Install mode: {mode}")
     log_event(f"Tasks: {' '.join(names)}")
-    if force_tasks:
-        log_event(f"Force: {' '.join(sorted(force_tasks))}")
+    if ctx.force_tasks:
+        log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
     results = run_tasks(ctx, names)
     failed = [
         name

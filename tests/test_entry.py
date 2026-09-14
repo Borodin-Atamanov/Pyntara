@@ -17,7 +17,12 @@ from pyntara.config import Config, load_config
 from pyntara.config.engine import EngineConfig
 from pyntara.context import Context
 from pyntara.models import TaskResult
-from pyntara.pyntara import _process_running, app, detect_default_mode
+from pyntara.pyntara import (
+    _process_running,
+    _run_context,
+    app,
+    detect_default_mode,
+)
 
 runner = CliRunner()
 
@@ -551,6 +556,26 @@ def test_the_force_all_keyword_comes_from_the_engine_table(
     assert result.exit_code == 0
     assert "invalid task names in PYNTARA_FORCE_TASKS: every" in result.output
     assert "Force:" not in result.output
+
+
+def test_the_run_context_carries_the_clone_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every task reads the shipped templates under task_data/ through
+    # ctx.repo_root, which the composition root fills with the one
+    # computation of the clone root. A wrong depth would reach every task
+    # at once and pass the suite while failing on the machine, which is
+    # what happened before this proof existed, so the root is compared
+    # with the clone the tests run from and both directories are required.
+    _clear_env(monkeypatch)
+    cfg = _test_config(notice_timeout=0)
+    ctx = _run_context(cfg, "minimal", ["hostname"])
+    assert ctx.repo_root == REPO_ROOT
+    assert (ctx.repo_root / "config").is_dir()
+    assert (ctx.repo_root / "task_data").is_dir()
+    assert not (ctx.repo_root / "task_data").is_relative_to(
+        ctx.repo_root / "src"
+    )
 
 
 def test_run_force_all_still_reports_invalid_names(
