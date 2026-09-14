@@ -7,6 +7,7 @@ via monkeypatch; the tests never touch the real system
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -39,6 +40,10 @@ WAYRECORD_BINARY = b"\x7fELF-sentinel-wayrecord-binary\n"
 WAYRECORD_C = "int main(void) { return 0; }\n"
 ZKDE_CLIENT_C = "/* generated wayland protocol stubs */\n"
 
+# The Wayland interface names the capture engine binds by name; the
+# desktop entry must grant exactly these, so the two copies cannot drift.
+_ZKDE_INTERFACE_NAME = re.compile(r'"(zkde_[a-z0-9_]+)"')
+
 # The desktop entry template the fixture clone carries; it mirrors the
 # shipped task_data/ffmpeg_setup/pyntara-wayrecord.desktop.
 DESKTOP_TEMPLATE = (
@@ -55,7 +60,6 @@ DESKTOP_TEMPLATE = (
 
 def _desktop_template_path() -> Path:
     """The desktop entry template of the clone the fixture points at."""
-
     repo = _FIXTURE_REPO or _CLONE_ROOT
     name = make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
     return repo / "task_data" / "ffmpeg_setup" / name
@@ -408,6 +412,36 @@ def test_desktop_written_when_missing(
     assert wayrecord_desktop_path.read_text(encoding="utf-8") == expected
     assert "X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1" in expected
     assert "desktop entry" in (result.message or "")
+
+
+def test_the_desktop_entry_grants_the_interface_the_engine_binds() -> None:
+    # The capture engine binds the KWin screencast protocol by the name the
+    # C source carries, and the desktop entry grants the interfaces it
+    # lists: two copies of one name that must agree, because a rename in
+    # one of them would leave the engine without the grant and break the
+    # capture without a word. The name itself stays in both files: it is
+    # the identity of the protocol the generated client implements, not a
+    # value of the machine (config content spec, Exceptions).
+    task_data = REPO_ROOT / "task_data" / "ffmpeg_setup"
+    source = (task_data / "wayrecord.c").read_text(encoding="utf-8")
+    bound = sorted(set(_ZKDE_INTERFACE_NAME.findall(source)))
+    assert bound, "the C source no longer names the KWin screencast interface"
+    template = (
+        task_data
+        / make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+    ).read_text(encoding="utf-8")
+    granted = [
+        line.removeprefix("X-KDE-Wayland-Interfaces=")
+        for line in template.splitlines()
+        if line.startswith("X-KDE-Wayland-Interfaces=")
+    ]
+    assert granted, "the desktop entry grants no Wayland interface"
+    granted_names = granted[0].split(";")
+    for name in bound:
+        assert name in granted_names, (
+            f"the desktop entry grants {granted_names}, "
+            f"but the engine binds {name}"
+        )
 
 
 def test_wayrecord_missing_template_is_a_warning(
