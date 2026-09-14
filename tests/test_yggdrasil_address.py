@@ -130,6 +130,30 @@ def test_address_unavailable(
     assert "ctl failed" in captured.err
 
 
+def test_a_missing_key_of_the_channel_is_named(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # The live query answers, but the config has no report channel name:
+    # the record would carry an empty channel, so the command refuses the
+    # channel and names the key it cannot read.
+    monkeypatch.setattr(
+        yggdrasil_address.subprocess,
+        "run",
+        _fake_run(0, json.dumps({"address": SELF_ADDRESS})),
+    )
+    content = _config(tmp_path, tmp_path / "saved").read_text(encoding="utf-8")
+    quiet = content.replace(
+        'report_channel_name = "yggdrasil"', "", 1
+    )
+    assert quiet != content, "the fixture no longer carries the key"
+    config_path = tmp_path / "without-channel.toml"
+    config_path.write_text(quiet, encoding="utf-8")
+    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "has no report_channel_name" in captured.err
+
+
 def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:
     # A wrong argument count is a usage error with a nonzero exit.
     assert yggdrasil_address.main(["yggdrasil_address"]) == 2

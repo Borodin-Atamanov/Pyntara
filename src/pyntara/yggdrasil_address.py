@@ -76,20 +76,22 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     The live admin socket query is the primary source; the saved address
     file is the fallback, because the daemon may be down at collection
     time. A fallback keeps the live reason as a note, so the report shows
-    why the live source failed instead of hiding it.
+    why the live source failed instead of hiding it. The section is
+    checked before either source is used, so a config that lacks a key of
+    this channel is named in one line instead of producing a record with
+    an empty value.
     """
 
     setup = cfg.yggdrasil_service_setup
+    missing = absent_config_keys(setup, YGGDRASIL_ADDRESS_CONFIG_KEYS)
+    if missing:
+        return None, (
+            "the yggdrasil_service_setup section of the config has no "
+            + ", ".join(missing)
+        )
     address, reason = _live_self_address(cfg)
     note = ""
     if not address:
-        missing = absent_config_keys(setup, YGGDRASIL_ADDRESS_CONFIG_KEYS)
-        if missing:
-            return None, (
-                "the yggdrasil_service_setup section of the config has no "
-                + ", ".join(missing)
-                + f", so the saved address cannot be read: {reason}"
-            )
         try:
             saved = setup.address_file_path.read_text(encoding="utf-8").strip()
         except OSError:
