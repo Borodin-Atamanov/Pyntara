@@ -42,13 +42,17 @@ class ServiceAnswer:
     raw is the answer exactly as it arrived. values holds every scalar the
     answer carried, in the order of the document, and fields holds the
     same scalars with their names when the format provided names; a bare
-    value or a separated record without names fills values only.
+    value or a separated record without names fills values only. document
+    is the parsed JSON document when the answer was one, and None
+    otherwise, so a JSON answer reaches the report as structured data
+    instead of a string while a text answer keeps its raw text.
     """
 
     source: str
     raw: str
     values: tuple[str, ...]
     fields: tuple[tuple[str, str], ...]
+    document: object | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +186,7 @@ def standardize_answer(source: str, raw: str) -> ServiceAnswer:
             raw=raw,
             values=tuple(value for _, value in fields),
             fields=fields,
+            document=document,
         )
     fields_out: list[tuple[str, str]] = []
     values: list[str] = []

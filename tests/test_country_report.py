@@ -63,10 +63,32 @@ def test_document_carries_the_decision_and_the_answers() -> None:
             {
                 "source": "https://ip2c.org/self",
                 "values": ["1", "AR", "ARG", "Argentina"],
-                "raw": "1;AR;ARG;Argentina",
+                "document": "1;AR;ARG;Argentina",
             }
         ],
     }
+
+
+def test_a_json_answer_is_kept_structured_not_a_string() -> None:
+    # A service that answers with a JSON document contributes its parsed
+    # structure to the report, so the report carries no JSON string.
+    report = _report(
+        ServiceAnswer(
+            source="https://ifconfig.co/json",
+            raw='{"country": "AR", "country_name": "Argentina"}',
+            values=("AR", "Argentina"),
+            fields=(("country", "AR"), ("country_name", "Argentina")),
+            document={"country": "AR", "country_name": "Argentina"},
+        )
+    )
+    document = country_report.country_document(report, "russia", RECORD_KEYS)
+    assert document["answers"] == [
+        {
+            "source": "https://ifconfig.co/json",
+            "values": ["AR", "Argentina"],
+            "document": {"country": "AR", "country_name": "Argentina"},
+        }
+    ]
 
 
 def test_the_record_keys_come_from_the_engine_table() -> None:
@@ -86,7 +108,7 @@ def test_the_record_keys_come_from_the_engine_table() -> None:
     keys["values"] = "seen"
     keys["answers"] = "replies"
     keys["source"] = "service"
-    keys["raw"] = "body"
+    keys["document"] = "body"
     assert country_report.country_document(report, "russia", keys) == {
         "target": "russia",
         "hit": False,

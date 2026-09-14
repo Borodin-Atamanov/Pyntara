@@ -117,7 +117,7 @@ ssh_report_proxy_host = "127.0.0.1"
 # Field names of one report record, by the meaning of the field. Every
 # address command builds its records through them, so the collector and
 # the commands agree on the shape in one place.
-report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", raw = "raw", reason = "reason" }
+report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", document = "document", reason = "reason" }
 # Words the public address report writes into the family field of its records,
 # by the address family the model names (ipv4, ipv6). The report of a silent
 # family carries the same word next to its reason, so the consumer of the

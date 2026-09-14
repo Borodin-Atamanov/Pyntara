@@ -11,6 +11,7 @@ stdout and stderr with capsys.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -146,6 +147,33 @@ def test_main_prints_every_address_of_the_family(
         "run_command",
         lambda *args, **kwargs: FakeProc(0, IP_JSON),
     )
+    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
+    records = json.loads(capsys.readouterr().out)
+    assert [record["address"] for record in records] == ["127.0.0.1", "10.10.0.1"]
+
+
+def test_main_stdout_is_a_clean_json_document(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # The module runs the ip query through run_command, whose command
+    # tracing writes `run :` lines to stdout; the call must ask it to stay
+    # quiet, otherwise the collector keeps the whole output as a string
+    # instead of a JSON document.
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake_ip = bindir / "ip"
+    fake_ip.write_text(
+        "#!/bin/sh\n"
+        "cat <<'PYNTARA_IP_JSON'\n"
+        f"{IP_JSON}\n"
+        "PYNTARA_IP_JSON\n",
+        encoding="utf-8",
+    )
+    fake_ip.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
+    config_path = _config(tmp_path)
     assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
     records = json.loads(capsys.readouterr().out)
     assert [record["address"] for record in records] == ["127.0.0.1", "10.10.0.1"]

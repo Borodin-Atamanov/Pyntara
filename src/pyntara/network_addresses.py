@@ -171,6 +171,7 @@ def main(argv: list[str]) -> int:
             check=False,
             capture=True,
             timeout=cfg.engine.command_timeout_seconds,
+            log_command=False,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         print(f"error: cannot read the interface addresses: {exc}", file=sys.stderr)

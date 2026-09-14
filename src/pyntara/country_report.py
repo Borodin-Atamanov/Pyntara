@@ -42,7 +42,9 @@ def country_document(
 
     The field names come from the engine map of report record keys, which
     the address commands of the collector share, so the shape of a record
-    lives in one place.
+    lives in one place. An answer that arrived as a JSON document keeps
+    its parsed structure, never a JSON string; a text answer keeps its
+    raw text.
     """
 
     return {
@@ -53,7 +55,11 @@ def country_document(
             {
                 keys["source"]: answer.source,
                 keys["values"]: list(answer.values),
-                keys["raw"]: answer.raw,
+                keys["document"]: (
+                    answer.document
+                    if answer.document is not None
+                    else answer.raw
+                ),
             }
             for answer in report.answers
         ],

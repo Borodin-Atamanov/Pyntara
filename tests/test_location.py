@@ -110,6 +110,7 @@ class TestStandardizeAnswer:
         assert answer.values == ("AR",)
         assert answer.fields == ()
         assert answer.raw == "AR"
+        assert answer.document is None
 
     def test_a_named_record_yields_a_field(self) -> None:
         answer = standardize_answer("s", "loc=AR")
@@ -130,6 +131,7 @@ class TestStandardizeAnswer:
         answer = standardize_answer("s", '{"ip":"1.2.3.4","country":"AR"}')
         assert answer.values == ("1.2.3.4", "AR")
         assert answer.fields == (("ip", "1.2.3.4"), ("country", "AR"))
+        assert answer.document == {"ip": "1.2.3.4", "country": "AR"}
 
     def test_a_pretty_printed_document_is_read_as_a_whole(self) -> None:
         answer = standardize_answer(
@@ -137,6 +139,7 @@ class TestStandardizeAnswer:
         )
         assert answer.values == ("Russia", "RU")
         assert answer.fields == (("country", "Russia"), ("country_code", "RU"))
+        assert answer.document == {"country": "Russia", "country_code": "RU"}
 
     def test_a_nested_document_keeps_the_path_of_every_value(self) -> None:
         answer = standardize_answer(
@@ -147,6 +150,10 @@ class TestStandardizeAnswer:
             ("borders[0]", "BR"),
             ("borders[1]", "UY"),
         )
+        assert answer.document == {
+            "connection": {"asn": 27747},
+            "borders": ["BR", "UY"],
+        }
 
     def test_a_trace_document_yields_one_field_per_line(self) -> None:
         answer = standardize_answer("s", "ip=1.2.3.4\ncolo=EZE\nloc=AR")

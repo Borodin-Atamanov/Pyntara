@@ -316,7 +316,7 @@ REPORT_RECORD_KEY_MEANINGS = (
     "values",
     "answers",
     "source",
-    "raw",
+    "document",
     "reason",
 )
 
