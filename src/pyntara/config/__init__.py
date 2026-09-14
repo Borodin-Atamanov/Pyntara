@@ -58,9 +58,11 @@ from .system_metrics_setup import (
     SEND_ORDER_OLDEST_FIRST,
     SEND_ORDERS,
     SERVICE_CONFIG_KEYS,
+    TELEMETRY_PDF_TABLE_KEYS,
     CollectorModuleConfig,
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
+    TelemetryPdfConfig,
 )
 from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
@@ -101,6 +103,7 @@ __all__ = [
     "SEND_ORDER_NEWEST_FIRST",
     "SEND_ORDER_OLDEST_FIRST",
     "SERVICE_CONFIG_KEYS",
+    "TELEMETRY_PDF_TABLE_KEYS",
     "TOR_ADDRESS_CONFIG_KEYS",
     "YGGDRASIL_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
@@ -131,6 +134,7 @@ __all__ = [
     "SystemMetricsSetupConfig",
     "TaskConfig",
     "TelegramSetupConfig",
+    "TelemetryPdfConfig",
     "ThreeXuiXraySetupConfig",
     "TorSetupConfig",
     "VaultEntry",

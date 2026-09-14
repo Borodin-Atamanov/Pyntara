@@ -16,20 +16,17 @@ There are two independent send queues; architecture must allow adding more:
 Telegram queue  
 Google Drive queue
 
-## PDF generation and encryption
+## Telemetry PDF
 
-System Metrics data is generated as encrypted PDF files.
-Encryption: AES-256.
+The report collector builds an encrypted PDF next to the report and commits it through the same queue. The PDF is an addition: the report is committed first, so a failure to build or encrypt the PDF never stops the report from being sent.
 
-PDF encryption password is generated during Pyntara initialization from:
-KeePass salt (decrypted with admin password during installation)  
-hostname
+The PDF carries, in order: the machine hostname, the collection moment and the format version; every ssh command of the report, one per line; the network and system module results; the machine secrets of the runtime vault; and the whole report as JSON at the bottom, exactly as it travels in the report file.
 
-Hostname is generated randomly as a proquint word pair ([Hostname](users-and-host.md#hostname)).
+The secret entries the PDF carries come from telemetry_pdf_vault_entry_titles of [system_metrics_setup], which names the entries the operator cannot read from the source vault and needs to connect to the machine. An entry absent from the runtime vault is skipped, so a machine without one of them simply omits it.
 
-Unencrypted PDF versions must never be saved to disk (in-memory generation only).
+Encryption is AES-256, the PDF standard encryption (revision 6), with the password of the telemetry_password_entry_title entry of the runtime vault. The password never appears in any command line, file or log. The unencrypted PDF exists only in memory; only the encrypted bytes are written to the temporary file for the commit.
 
-After send, System Metrics files are saved in a dedicated folder.
+The layout is plain monospace text with large font and narrow lines, readable on a phone, and one ssh command per line so a connection command is copied with a single selection. The format line the PDF carries versions the layout: a future change of the format bumps that line instead of breaking old files.
 
 ## Schedule and retry
 
@@ -103,7 +100,7 @@ main_sent grows without a rotation policy for now; the archive retention is a fu
 
 The commit_system_metrics command is a thin generated bash script installed by the system_metrics_setup task. The task renders it from a template at the configured command_path with the spool path, the journal identifier and the temporary prefix embedded from the system config, and sets the mode from command_file_mode. The command needs no config access and no root privileges, so any user can commit. It takes exactly one file argument, verifies that the file is regular and non-empty, copies it into the spool with queue_file_mode and the commit time and publishes it atomically under the original name; every action and every error is mirrored into the system journal under the configured identifier (best effort, like the installer logging). The callers run it through the commit_command argv of [system_metrics_setup], which names command_path and the file argument, so the report collector and the runtime vault backup task call the command the same way. A name collision is an explicit error. The command file is idempotent: the task is done when its content and mode match, rewrites it on change or in force mode, replaces a foreign file on command_path and reports a directory there as a warning of a completed task, because a directory cannot be replaced without removing it recursively.
 
-Current stage: the spool, the thin commit command, the ingest service with its inotify path unit, the queue config, the directory structure, the dispatcher and the Google Drive channel sender are implemented. The service loop dispatches main_outbox entries into the google_script channel and drains it into the web app; sent entries accumulate in main_sent without a rotation policy for now. The Telegram channel and the encrypted PDF generation are the next stages. The retry mode of the Schedule and retry section is implemented: a cycle with send attempts and no successes switches the loop to the single-random-entry retry with the geometric backoff from the config/ directory. The report is built and queued on four occasions and no others: when a producer commits new data into the queue, which the running service drains on its own, when the machine boots, and at every time of day of daily_send_times of the collector table, which ships as noon and midnight. There is deliberately no once-a-day gate: the boot report of a machine that reboots several times a day is what the operator asked for, and a gate would suppress it.
+Current stage: the spool, the thin commit command, the ingest service with its inotify path unit, the queue config, the directory structure, the dispatcher and the Google Drive channel sender are implemented. The service loop dispatches main_outbox entries into the google_script channel and drains it into the web app; sent entries accumulate in main_sent without a rotation policy for now. The Telegram channel is the next stage. The retry mode of the Schedule and retry section is implemented: a cycle with send attempts and no successes switches the loop to the single-random-entry retry with the geometric backoff from the config/ directory. The report is built and queued on four occasions and no others: when a producer commits new data into the queue, which the running service drains on its own, when the machine boots, and at every time of day of daily_send_times of the collector table, which ships as noon and midnight. There is deliberately no once-a-day gate: the boot report of a machine that reboots several times a day is what the operator asked for, and a gate would suppress it.
 
 ## Report collector
 

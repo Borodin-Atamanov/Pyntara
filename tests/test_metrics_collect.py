@@ -576,10 +576,14 @@ def test_main_reports_a_config_without_the_collector_values(
     captured = capsys.readouterr()
     assert captured.err == (
         "error: the collector cannot run: [system_metrics_setup] has no "
-        "command_path, error_priority; [system_metrics_setup.collector] has no "
+        "command_path, error_priority, telemetry_pdf_report_file_name, "
+        "telemetry_password_entry_title; [system_metrics_setup.collector] has no "
         "lock_file_path, report_file_name, report_keys, report_status_words, "
         "command_timeout_seconds, threshold_percent, retry_base_seconds, "
-        "retry_multiplier, retry_max_seconds\n"
+        "retry_multiplier, retry_max_seconds; "
+        "[system_metrics_setup.telemetry_pdf] has no font, font_size, "
+        "line_width_chars, margin, format_version, section_ssh, "
+        "section_network, section_system, section_secrets, section_json\n"
     )
     assert "Traceback" not in captured.err
 

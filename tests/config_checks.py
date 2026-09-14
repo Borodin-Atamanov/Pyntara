@@ -47,6 +47,7 @@ from pyntara.config import (
     SystemMetricsSetupConfig,
     TaskConfig,
     TelegramSetupConfig,
+    TelemetryPdfConfig,
     ThreeXuiXraySetupConfig,
     TorSetupConfig,
     VaultEntry,
@@ -3905,6 +3906,81 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
     )
 
 
+def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
+    """Validate the [system_metrics_setup.telemetry_pdf] table.
+
+    font and every section heading are non-empty strings; font_size,
+    line_width_chars and format_version are positive integers; margin is
+    a non-negative integer; field_order is a list of non-empty strings.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            "[system_metrics_setup.telemetry_pdf] section is missing or "
+            "not a table"
+        )
+    font = _nonempty_string_field(
+        raw.get("font"), "system_metrics_setup.telemetry_pdf.font"
+    )
+    font_size = _positive_int_field(
+        raw.get("font_size"), "system_metrics_setup.telemetry_pdf.font_size"
+    )
+    line_width_chars = _positive_int_field(
+        raw.get("line_width_chars"),
+        "system_metrics_setup.telemetry_pdf.line_width_chars",
+    )
+    margin = _int_field(
+        raw.get("margin"), "system_metrics_setup.telemetry_pdf.margin"
+    )
+    if margin < 0:
+        raise ConfigError(
+            "system_metrics_setup.telemetry_pdf.margin must not be negative"
+        )
+    format_version = _positive_int_field(
+        raw.get("format_version"),
+        "system_metrics_setup.telemetry_pdf.format_version",
+    )
+    section_ssh = _nonempty_string_field(
+        raw.get("section_ssh"), "system_metrics_setup.telemetry_pdf.section_ssh"
+    )
+    section_network = _nonempty_string_field(
+        raw.get("section_network"),
+        "system_metrics_setup.telemetry_pdf.section_network",
+    )
+    section_system = _nonempty_string_field(
+        raw.get("section_system"),
+        "system_metrics_setup.telemetry_pdf.section_system",
+    )
+    section_secrets = _nonempty_string_field(
+        raw.get("section_secrets"),
+        "system_metrics_setup.telemetry_pdf.section_secrets",
+    )
+    section_json = _nonempty_string_field(
+        raw.get("section_json"), "system_metrics_setup.telemetry_pdf.section_json"
+    )
+    field_order = _string_list(
+        raw.get("field_order"), "system_metrics_setup.telemetry_pdf.field_order"
+    )
+    if any(not field for field in field_order):
+        raise ConfigError(
+            "system_metrics_setup.telemetry_pdf.field_order must hold "
+            "non-empty field names"
+        )
+    return TelemetryPdfConfig(
+        font=font,
+        font_size=font_size,
+        line_width_chars=line_width_chars,
+        margin=margin,
+        format_version=format_version,
+        section_ssh=section_ssh,
+        section_network=section_network,
+        section_system=section_system,
+        section_secrets=section_secrets,
+        section_json=section_json,
+        field_order=field_order,
+    )
+
+
 def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """Validate the [system_metrics_setup] table and build the config.
 
@@ -4084,6 +4160,23 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raise ConfigError(
             "system_metrics_setup.google_script_answer_excerpt_chars must be "
             "positive"
+        )
+    telemetry_pdf_report_file_name = _nonempty_string_field(
+        raw.get("telemetry_pdf_report_file_name"),
+        "system_metrics_setup.telemetry_pdf_report_file_name",
+    )
+    telemetry_password_entry_title = _nonempty_string_field(
+        raw.get("telemetry_password_entry_title"),
+        "system_metrics_setup.telemetry_password_entry_title",
+    )
+    telemetry_pdf_vault_entry_titles = _string_list(
+        raw.get("telemetry_pdf_vault_entry_titles"),
+        "system_metrics_setup.telemetry_pdf_vault_entry_titles",
+    )
+    if any(not title for title in telemetry_pdf_vault_entry_titles):
+        raise ConfigError(
+            "system_metrics_setup.telemetry_pdf_vault_entry_titles must "
+            "hold non-empty titles"
         )
     google_script_deployment_url_regex = raw.get(
         "google_script_deployment_url_regex"
@@ -4275,6 +4368,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_deployment_url_regex=google_script_deployment_url_regex,
         google_script_answer_ok_prefix=google_script_answer_ok_prefix,
         google_script_answer_excerpt_chars=google_script_answer_excerpt_chars,
+        telemetry_pdf_report_file_name=telemetry_pdf_report_file_name,
+        telemetry_password_entry_title=telemetry_password_entry_title,
+        telemetry_pdf_vault_entry_titles=telemetry_pdf_vault_entry_titles,
+        telemetry_pdf=_telemetry_pdf_table(raw.get("telemetry_pdf")),
         collector=_system_metrics_collector_table(raw.get("collector")),
     )
 

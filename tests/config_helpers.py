@@ -1027,6 +1027,9 @@ def base_config() -> str:
         "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/([A-Za-z0-9_-]+)/exec$'\n"
         'google_script_answer_ok_prefix = "OK "\n'
         "google_script_answer_excerpt_chars = 200\n"
+        'telemetry_pdf_report_file_name = "network-{hostname}.pdf"\n'
+        'telemetry_password_entry_title = "telemetry_password"\n'
+        'telemetry_pdf_vault_entry_titles = ["three_x_ui_credentials", "xray_connection", "rustdesk_password"]\n'
         '[system_metrics_setup.collector]\n'
         "boot_delay_seconds = 30\n"
         'daily_send_times = ["12:00:00", "00:00:00"]\n'
@@ -1055,6 +1058,13 @@ def base_config() -> str:
         '[[system_metrics_setup.collector.system_modules]]\n'
         'name = "hostname"\n'
         'command = ["hostname"]\n'
+        '[system_metrics_setup.telemetry_pdf]\n'
+        'font = "Courier"\nfont_size = 12\nline_width_chars = 72\n'
+        'margin = 36\nformat_version = 1\n'
+        'section_ssh = "SSH"\nsection_network = "NETWORK"\n'
+        'section_system = "SYSTEM"\nsection_secrets = "SECRETS"\n'
+        'section_json = "NETWORK.JSON"\n'
+        'field_order = ["username", "password", "url", "notes"]\n'
         '[vault_structure]\n[[vault_structure.entries]]\ntitle = "password_salt"\n'
         'notes = "Primary salt."\n[[vault_structure.entries]]\n'
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'

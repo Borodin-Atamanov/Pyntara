@@ -2,6 +2,10 @@
 
 Planned future work. После реализации - удаляем из этого файла.
 
+## Encrypted telemetry PDF
+
+Done 2026-09-14: the report collector builds an encrypted AES-256 PDF next to the report and commits it through the same queue. The PDF renders the report and the machine-only runtime vault secrets into monospace text with reportlab, encrypts it with the telemetry password entry of the runtime vault through pikepdf (revision 6) and appends the whole report as JSON at the bottom. The PDF is an addition: network.json is committed first, and any failure of the PDF is journaled and never stops the report. The layout values live in the [system_metrics_setup.telemetry_pdf] table and the secret entry titles in telemetry_pdf_vault_entry_titles, so the format changes in config and not in code.
+
 ## Recoverable failure handling for every task
 
 A task must apply whatever it can and must not stop because of one bad step or one crashing external tool: the goal is a configured target system, so a setting that failed must never stop a setting that does not depend on it, and a task must do its configuration instead of falling at every external hiccup. The engine contract already fixes that a recoverable failure is never fatal (docs/contracts/architecture.md, Task contract; docs/contracts/task-model.md): the failure is reported in warnings, the task completes, the runner converts an error or raising task as a safety net, and the entry point exits nonzero. The remaining gap lives inside the task modules: several still wrap their whole apply phase in one try/except or return an error result, so the first failure drops the rest of the machine configuration on the target. Extend the policy to every task module.

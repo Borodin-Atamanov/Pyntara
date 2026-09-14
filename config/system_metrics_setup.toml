@@ -5,8 +5,9 @@
 # system (architecture contract, Configuration). Every cycle the
 # service dispatches committed entries from main_outbox into the channel
 # queues and drains the Google Drive channel into the web app; the
-# encrypted PDF generation and the Telegram channel replace the
-# Google-only sending in a later stage (docs/spec/system-metrics.md).
+# collector adds an encrypted telemetry PDF next to the report, and the
+# Telegram channel replaces the Google-only sending in a later stage
+# (docs/spec/system-metrics.md).
 # Retry mode of the send loop: after a cycle with send attempts and no
 # success the service sends one random uploadable entry per cycle and the
 # pause grows. The first failed cycle waits backoff_base_seconds, every
@@ -188,6 +189,21 @@ google_script_answer_ok_prefix = "OK "
 # readable line instead of that page, so the sender prints the length of the
 # answer and its first non-empty line cut to this many characters.
 google_script_answer_excerpt_chars = 200
+# Name of the committed encrypted telemetry PDF, with {hostname} replaced
+# by the machine hostname at collection time. The collector builds the PDF
+# next to the report and commits it through the same command, so a failure
+# of the PDF never stops the report (docs/spec/system-metrics.md, section
+# Telemetry PDF).
+telemetry_pdf_report_file_name = "network-{hostname}.pdf"
+# Title of the runtime vault entry whose password encrypts the telemetry
+# PDF (docs/spec/secrets-model.md). The value must name an entry of the
+# [vault_structure] table.
+telemetry_password_entry_title = "telemetry_password"
+# Titles of the runtime vault entries the encrypted PDF carries: the
+# machine-only secrets the operator needs to connect to the machine. An
+# entry absent from the vault is skipped, so a machine without one of
+# them simply omits it from the PDF.
+telemetry_pdf_vault_entry_titles = ["three_x_ui_credentials", "xray_connection", "rustdesk_password"]
 
 [system_metrics_setup.collector]
 # Report collector parameters (docs/spec/system-metrics.md, section
@@ -381,3 +397,23 @@ command = ["lscpu"]
 [[system_metrics_setup.collector.system_modules]]
 name = "disk"
 command = ["df", "-h", "/"]
+
+[system_metrics_setup.telemetry_pdf]
+# Layout of the encrypted telemetry PDF the collector builds next to the
+# report (docs/spec/system-metrics.md, section Telemetry PDF). The values
+# describe the printed page and the section headings, so a change of the
+# format edits these keys and not the code.
+font = "Courier"
+font_size = 12
+line_width_chars = 72
+margin = 36
+format_version = 1
+section_ssh = "SSH"
+section_network = "NETWORK"
+section_system = "SYSTEM"
+section_secrets = "SECRETS"
+section_json = "NETWORK.JSON"
+# Order of the runtime vault entry fields the PDF prints under every
+# secret; the names are the KeePass entry field names of the
+# [vault_structure] table.
+field_order = ["username", "password", "url", "notes"]

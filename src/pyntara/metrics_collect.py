@@ -42,6 +42,7 @@ from typing import TextIO
 from pyntara.config import (
     COLLECTOR_SECTION_KEYS,
     COLLECTOR_TABLE_KEYS,
+    TELEMETRY_PDF_TABLE_KEYS,
     CollectorModuleConfig,
     Config,
     absent_config_keys,
@@ -296,6 +297,80 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
     return True
 
 
+def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
+    """Build and commit the encrypted telemetry PDF, best effort.
+
+    The PDF is an addition to the report: the caller commits network.json
+    first, so any failure here drops only the PDF and never the report.
+    The import of the pdf module is deferred into the guarded block, so a
+    missing pikepdf or a broken render cannot take the collector down
+    before the report is committed. Only the encrypted bytes reach the
+    temporary file; the unencrypted PDF never touches the disk.
+    """
+
+    metrics = cfg.system_metrics_setup
+    collector = metrics.collector
+    commit_template = metrics.commit_command
+    if not commit_template:
+        _log(
+            "collecting telemetry pdf: the config names no commit_command",
+            priority=metrics.error_priority,
+        )
+        return
+    hostname = socket.gethostname()
+    try:
+        from pyntara import telemetry_pdf
+
+        pdf_bytes = telemetry_pdf.build(cfg, report, hostname)
+    except Exception as exc:  # noqa: BLE001 - the PDF is best effort
+        _log(
+            f"collecting telemetry pdf: {exc}",
+            priority=metrics.error_priority,
+        )
+        return
+    if pdf_bytes is None:
+        return
+    pdf_name = metrics.telemetry_pdf_report_file_name.format(hostname=hostname)
+    pdf_path = Path(tempfile.gettempdir()) / pdf_name
+    try:
+        pdf_path.write_bytes(pdf_bytes)
+        os.chmod(pdf_path, collector.report_file_mode)
+    except OSError as exc:
+        _log(
+            f"collecting telemetry pdf: cannot write {pdf_path}: {exc}",
+            priority=metrics.error_priority,
+        )
+        return
+    try:
+        result = subprocess.run(
+            substituted_command(
+                commit_template,
+                {
+                    "command_path": str(metrics.command_path),
+                    "file": str(pdf_path),
+                },
+            ),
+            capture_output=True,
+            text=True,
+            timeout=collector.command_timeout_seconds,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _log(
+            f"collecting telemetry pdf: commit failed: {exc}",
+            priority=metrics.error_priority,
+        )
+        pdf_path.unlink(missing_ok=True)
+        return
+    pdf_path.unlink(missing_ok=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        _log(
+            f"collecting telemetry pdf: commit failed: {detail}",
+            priority=metrics.error_priority,
+        )
+
+
 def _acquire_lock(path: Path, error_priority: int) -> TextIO | None:
     """Take the non-blocking exclusive lock, or None when it is held.
 
@@ -354,6 +429,10 @@ def main() -> None:
                 "system_metrics_setup.collector",
                 absent_config_keys(collector, COLLECTOR_TABLE_KEYS),
             ),
+            (
+                "system_metrics_setup.telemetry_pdf",
+                absent_config_keys(metrics.telemetry_pdf, TELEMETRY_PDF_TABLE_KEYS),
+            ),
         )
     )
     if absent:
@@ -369,6 +448,7 @@ def main() -> None:
         report = collect_until_ready(cfg)
         if not _commit_report(cfg, report):
             raise SystemExit(1)
+        _commit_telemetry_pdf(cfg, report)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - a failed run reports one line, never a traceback

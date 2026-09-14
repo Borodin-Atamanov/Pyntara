@@ -98,6 +98,49 @@ COLLECTOR_TABLE_KEYS = (
 
 
 @dataclass(frozen=True)
+class TelemetryPdfConfig:
+    """Layout of the encrypted telemetry PDF from [system_metrics_setup.telemetry_pdf].
+
+    font and font_size are the printed font, line_width_chars is the
+    line length in characters, margin is the page margin in points and
+    format_version is the version the document carries, so a future
+    change of the format bumps it instead of breaking old files.
+    section_ssh, section_network, section_system, section_secrets and
+    section_json are the section headings in the order the document
+    carries them, and field_order is the order of the KeePass entry
+    fields printed under every secret
+    (docs/spec/system-metrics.md, section Telemetry PDF).
+    """
+
+    font: str
+    font_size: int
+    line_width_chars: int
+    margin: int
+    format_version: int
+    section_ssh: str
+    section_network: str
+    section_system: str
+    section_secrets: str
+    section_json: str
+    field_order: tuple[str, ...]
+
+
+TELEMETRY_PDF_TABLE_KEYS = (
+    "font",
+    "font_size",
+    "line_width_chars",
+    "margin",
+    "format_version",
+    "section_ssh",
+    "section_network",
+    "section_system",
+    "section_secrets",
+    "section_json",
+    "field_order",
+)
+
+
+@dataclass(frozen=True)
 class SystemMetricsSetupConfig:
     """Runtime parameters of the long-running System Metrics service.
 
@@ -168,9 +211,16 @@ class SystemMetricsSetupConfig:
     prefix that means the file was stored. google_script_answer_excerpt_chars
     is the longest excerpt of a refusing answer the sender prints, so a
     provider that answers with a whole HTML page leaves one readable line
-    in the journal of the machine. The encrypted PDF generation and the Telegram
-    channel replace the current Google-only sending in a later stage
-    (docs/spec/system-metrics.md).
+    in the journal of the machine. telemetry_pdf_report_file_name is the
+    name of the encrypted telemetry PDF the collector commits next to the
+    report, with {hostname} replaced by the machine hostname;
+    telemetry_password_entry_title is the title of the runtime vault
+    entry whose password encrypts that PDF, and
+    telemetry_pdf_vault_entry_titles names the vault entries the PDF
+    carries, the machine-only secrets the operator needs to connect;
+    telemetry_pdf carries the printed layout of that PDF
+    (docs/spec/system-metrics.md, section Telemetry PDF). The Telegram
+    channel replaces the current Google-only sending in a later stage.
     """
 
     backoff_base_seconds: int
@@ -232,6 +282,10 @@ class SystemMetricsSetupConfig:
     google_script_deployment_url_regex: str
     google_script_answer_ok_prefix: str
     google_script_answer_excerpt_chars: int
+    telemetry_pdf_report_file_name: str
+    telemetry_password_entry_title: str
+    telemetry_pdf_vault_entry_titles: tuple[str, ...]
+    telemetry_pdf: TelemetryPdfConfig
     collector: SystemMetricsCollectorConfig
 
 
@@ -274,7 +328,14 @@ INGEST_CONFIG_KEYS = (
     "queue_file_suffix_length",
     "queue_link_attempts",
 )
-COLLECTOR_SECTION_KEYS = ("commit_command", "command_path", "error_priority")
+COLLECTOR_SECTION_KEYS = (
+    "commit_command",
+    "command_path",
+    "error_priority",
+    "telemetry_pdf_report_file_name",
+    "telemetry_password_entry_title",
+    "telemetry_pdf_vault_entry_titles",
+)
 
 # The order in which the deployed sender drains a channel, as the send_order
 # field of the [system_metrics_setup] table spells it. The sender reads the
