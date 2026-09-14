@@ -250,3 +250,15 @@ PUBLIC_ADDRESS_CONFIG_KEYS = (
     "server_ip_services",
     "server_ip_timeout_seconds",
 )
+
+# The keys of this table the country_report command of the System Metrics
+# collector reads. The list lives next to the fields it names and the command
+# imports it, so a config that lacks a value is reported by naming the key and
+# not by a Python error (docs/spec/config-content.md, Where a value is declared
+# and checked).
+COUNTRY_REPORT_CONFIG_KEYS = (
+    "country_services",
+    "country_word",
+    "country_query_timeout_seconds",
+    "country_command_timeout_seconds",
+)

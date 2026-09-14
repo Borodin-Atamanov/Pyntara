@@ -685,6 +685,25 @@ def test_pin_appends_launcher_to_every_taskbar(
     assert all(call[-1] == expected_value for call in writes)
 
 
+def test_the_launcher_group_comes_from_the_config() -> None:
+    # The group below a task manager applet that holds the pinned launchers
+    # is a value of the foreign file the task edits: another group in the
+    # config is the group the task looks for, and the shipped one stops
+    # matching the fixture.
+    renamed = replace(
+        make_config().chrome_setup,
+        appletsrc_launcher_group=("Pinned", "Launchers"),
+    )
+    assert chrome_setup._taskbar_launcher_groups(renamed, APPLETSRC_TEXT) == [
+        (
+            "Containments", "2", "Applets", "5", "Pinned", "Launchers",
+        ),
+        (
+            "Containments", "7", "Applets", "9", "Pinned", "Launchers",
+        ),
+    ]
+
+
 def test_pin_is_idempotent_when_launcher_already_pinned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

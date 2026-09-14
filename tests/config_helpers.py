@@ -866,6 +866,7 @@ def base_config() -> str:
         'appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"\n'
         'appletsrc_relative_path = ".config/plasma-org.kde.plasma.desktop-appletsrc"\n'
         'appletsrc_launchers_key = "launchers"\n'
+        'appletsrc_launcher_group = ["Configuration", "General"]\n'
         'taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"]\n'
         'panel_launcher_id = "applications:google-chrome.desktop"\n'
         'panel_restart_command = ["systemctl", "--user", "--machine", "{username}@.host", "restart", "plasma-plasmashell.service"]\n'

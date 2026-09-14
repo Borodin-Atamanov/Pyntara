@@ -68,6 +68,12 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
 # cannot find instead of showing a Python error.
 COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
     (
+        "pyntara.country_report",
+        "pyntara.config.three_x_ui_xray_setup",
+        "COUNTRY_REPORT_CONFIG_KEYS",
+        ThreeXuiXraySetupConfig,
+    ),
+    (
         "pyntara.i2pd_address",
         "pyntara.config.i2pd_service_setup",
         "I2PD_ADDRESS_CONFIG_KEYS",

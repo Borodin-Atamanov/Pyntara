@@ -27,7 +27,11 @@ import json
 import sys
 from pathlib import Path
 
-from pyntara.config import absent_config_keys, load_config
+from pyntara.config import (
+    COUNTRY_REPORT_CONFIG_KEYS,
+    absent_config_keys,
+    load_config,
+)
 from pyntara.location import CountryReport, detect_country
 
 
@@ -68,15 +72,7 @@ def main(argv: list[str]) -> int:
         return 2
     cfg = load_config(Path(argv[1]))
     setup = cfg.three_x_ui_xray_setup
-    missing = absent_config_keys(
-        setup,
-        (
-            "country_services",
-            "country_word",
-            "country_query_timeout_seconds",
-            "country_command_timeout_seconds",
-        ),
-    )
+    missing = absent_config_keys(setup, COUNTRY_REPORT_CONFIG_KEYS)
     if missing:
         print(
             "error: the three_x_ui_xray_setup section of the config has no "

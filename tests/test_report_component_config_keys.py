@@ -1,4 +1,4 @@
-"""The key list of each address component names exactly the keys it reads.
+"""The key list of each report component names exactly the keys it reads.
 
 A list of the key names a deployed component reads lives in the config
 layer next to the fields it names, and the component imports it
@@ -9,13 +9,15 @@ layer instead of a copy. It cannot prove the other direction for the
 components it covers, because they read their keys through shared
 modules, and the test says so.
 
-The four address commands read the keys of their own section directly in
-one module, so for them the other direction is provable: this check
-parses the module, follows the local alias of the section
-(setup = cfg.<section>) and refuses a key that is read without being
-named in the list, as well as a name of the list that nothing reads. A
-key the code starts to read therefore reaches the one-line report of an
-incomplete config in the same commit.
+The five report commands of the System Metrics collector (the public
+address report, the country report, the i2pd, tor and yggdrasil address
+reports) read the keys of their own section directly in one module, so
+for them the other direction is provable: this check parses the module,
+follows the local alias of the section (setup = cfg.<section>) and
+refuses a key that is read without being named in the list, as well as a
+name of the list that nothing reads. A key the code starts to read
+therefore reaches the one-line report of an incomplete config in the
+same commit.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from types import ModuleType
 import pytest
 
 from pyntara import (
+    country_report,
     i2pd_address,
     public_address_report,
     tor_address,
@@ -40,6 +43,12 @@ from pyntara.config import (
 )
 
 CASES: tuple[tuple[ModuleType, str, ModuleType, str], ...] = (
+    (
+        country_report,
+        "three_x_ui_xray_setup",
+        three_x_ui_xray_setup,
+        "COUNTRY_REPORT_CONFIG_KEYS",
+    ),
     (
         public_address_report,
         "three_x_ui_xray_setup",

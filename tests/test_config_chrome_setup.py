@@ -21,6 +21,7 @@ CHROME_BLOCK = (
     'appletsrc_file_name = "plasma-org.kde.plasma.desktop-appletsrc"\n'
     'appletsrc_relative_path = ".config/plasma-org.kde.plasma.desktop-appletsrc"\n'
     'appletsrc_launchers_key = "launchers"\n'
+    'appletsrc_launcher_group = ["Configuration", "General"]\n'
     'taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"]\n'
     'panel_launcher_id = "applications:google-chrome.desktop"\n'
     'panel_restart_command = ["systemctl", "--user", "--machine", "{username}@.host", "restart", "plasma-plasmashell.service"]\n'
@@ -146,6 +147,11 @@ CHROME_BLOCK = (
         # appletsrc_launchers_key is empty
         base_config().replace(
             'appletsrc_launchers_key = "launchers"', 'appletsrc_launchers_key = ""'
+        ),
+        # appletsrc_launcher_group is an empty list
+        base_config().replace(
+            'appletsrc_launcher_group = ["Configuration", "General"]',
+            "appletsrc_launcher_group = []",
         ),
         # taskbar_plugin_names is a string, not an array
         base_config().replace(

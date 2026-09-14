@@ -51,6 +51,11 @@ taskbar_plugin_names = ["org.kde.plasma.icontasks", "org.kde.plasma.taskmanager"
 # The appletsrc key that carries the pinned launchers of a task manager
 # applet.
 appletsrc_launchers_key = "launchers"
+# The appletsrc group below such an applet that holds the pinned launchers,
+# written as the group segments Plasma nests the file with. The task pins the
+# Chrome button into that group, so a desktop whose panel keeps its launchers
+# elsewhere is answered here.
+appletsrc_launcher_group = ["Configuration", "General"]
 # Vocabulary of the KConfig tools the task reads and writes the appletsrc
 # with: the two calls carry the file as {file_name}, a group is selected
 # with group_flag, a key with key_flag, and the value of a write is a

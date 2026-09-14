@@ -708,13 +708,14 @@ def _kwriteconfig(
 
 
 def _taskbar_launcher_groups(cfg: ChromeSetupConfig, text: str) -> list[tuple[str, ...]]:
-    """The Configuration/General group of every task manager applet.
+    """The group of every task manager applet that holds pinned launchers.
 
     Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
     applet whose section declares one of the configured task manager
-    plugins holds its pinned launchers in [Configuration][General] below
-    that section. Returns the group segments of every matching applet, so a
-    desktop with both widget types or several panels pins all of them.
+    plugins holds its pinned launchers in the group below that section,
+    named by the configured appletsrc_launcher_group. Returns the group
+    segments of every matching applet, so a desktop with both widget types
+    or several panels pins all of them.
     """
 
     groups: list[tuple[str, ...]] = []
@@ -729,7 +730,7 @@ def _taskbar_launcher_groups(cfg: ChromeSetupConfig, text: str) -> list[tuple[st
         elif line.startswith(plugin_key) and line.removeprefix(
             plugin_key
         ) in cfg.taskbar_plugin_names:
-            groups.append(current + ("Configuration", "General"))
+            groups.append(current + cfg.appletsrc_launcher_group)
     return groups
 
 

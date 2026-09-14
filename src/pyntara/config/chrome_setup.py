@@ -41,6 +41,8 @@ class ChromeSetupConfig:
     confirms the mount. The taskbar pinning uses appletsrc_file_name and
     appletsrc_relative_path of the desktop user, taskbar_plugin_names as
     the applet plugins whose launcher list receives the button and
+    appletsrc_launcher_group as the group below such an applet that holds
+    the pinned launchers (the group segments Plasma nests the file with),
     panel_launcher_id as the pinned launcher, and menu_refresh_command
     rebuilds the menu cache. file_mode is the mode of every deployed
     configuration and desktop file. process_check_command and
@@ -54,6 +56,7 @@ class ChromeSetupConfig:
     appletsrc_file_name: str
     appletsrc_relative_path: str
     appletsrc_launchers_key: str
+    appletsrc_launcher_group: tuple[str, ...]
     desktop_entry_exec_key: str
     kreadconfig_command: tuple[str, ...]
     kwriteconfig_command: tuple[str, ...]

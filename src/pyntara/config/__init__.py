@@ -65,6 +65,7 @@ from .system_metrics_setup import (
 from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import (
+    COUNTRY_REPORT_CONFIG_KEYS,
     PUBLIC_ADDRESS_CONFIG_KEYS,
     ThreeXuiXraySetupConfig,
 )
@@ -88,6 +89,7 @@ from .zswap_service import ZswapServiceConfig
 __all__ = [
     "COLLECTOR_SECTION_KEYS",
     "COLLECTOR_TABLE_KEYS",
+    "COUNTRY_REPORT_CONFIG_KEYS",
     "I2PD_ADDRESS_CONFIG_KEYS",
     "INGEST_CONFIG_KEYS",
     "KCONFIG_BOOL_TYPE",

@@ -526,6 +526,10 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             raw.get("appletsrc_launchers_key"),
             "chrome_setup.appletsrc_launchers_key",
         ),
+        appletsrc_launcher_group=_string_list(
+            raw.get("appletsrc_launcher_group"),
+            "chrome_setup.appletsrc_launcher_group",
+        ),
         kreadconfig_command=_placeholder_command_field(
             raw.get("kreadconfig_command"),
             "chrome_setup.kreadconfig_command",
