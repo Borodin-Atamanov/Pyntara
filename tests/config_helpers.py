@@ -1060,6 +1060,8 @@ def base_config() -> str:
         'title = "pyntara_local_vault_password"\nnotes = "Local vault password."\n'
         '[[vault_structure.entries]]\ntitle = "google_script_key"\n'
         'notes = "Google script credentials."\n'
+        '[[vault_structure.entries]]\ntitle = "telemetry_password"\n'
+        'generated_password = "proquint-4"\nnotes = "Telemetry PDF password."\n'
         '[[vault_structure.entries]]\ntitle = "three_x_ui_credentials"\n'
         'notes = "3x-ui panel credentials."\n'
         '[[vault_structure.entries]]\ntitle = "xray_connection"\n'

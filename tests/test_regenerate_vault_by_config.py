@@ -31,6 +31,11 @@ DEFAULT_ENTRIES: list[dict[str, Any]] = [
         "title": "google_script_key",
         "notes": "Auth key of the System Metrics Google Drive web app.",
     },
+    {
+        "title": "telemetry_password",
+        "generated_password": "proquint-4",
+        "notes": "Telemetry PDF password.",
+    },
 ]
 
 DEFAULT_GROUPS: list[dict[str, Any]] = [
@@ -183,6 +188,7 @@ def test_creates_vault_when_file_absent(
         "password_salt",
         "pyntara_local_vault_password",
         "google_script_key",
+        "telemetry_password",
     }
     salt = kp.find_entries(
         title="password_salt", group=kp.root_group, recursive=False, first=True
@@ -218,6 +224,30 @@ def test_generated_password_entry_gets_proquint_password(
     assert entry.password
     parts = entry.password.split("-")
     assert len(parts) == 7
+    assert all(PROQUINT_WORD_RE.match(part) for part in parts)
+
+
+def test_telemetry_password_entry_gets_four_proquint_words(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The telemetry_password entry with generated_password "proquint-4"
+    # receives a freshly generated password of four proquint words joined
+    # by dashes, so the default vault carries the generated form and the
+    # production vault keeps its hand-made space-joined password.
+    _prepare(gen, tmp_path, monkeypatch)
+    vault_path = tmp_path / "vault.kdbx"
+    assert gen.main([str(vault_path)]) == gen.EXIT_OK
+    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
+    entry = kp.find_entries(
+        title="telemetry_password",
+        group=kp.root_group,
+        recursive=False,
+        first=True,
+    )
+    assert entry is not None
+    assert entry.password
+    parts = entry.password.split("-")
+    assert len(parts) == 4
     assert all(PROQUINT_WORD_RE.match(part) for part in parts)
 
 
@@ -324,6 +354,7 @@ def test_overwrite_recreates_vault(
         "password_salt",
         "pyntara_local_vault_password",
         "google_script_key",
+        "telemetry_password",
     }
 
 

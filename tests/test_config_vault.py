@@ -109,12 +109,13 @@ def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
 
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
-    # seven entries including the cross-checked titles.
+    # eight entries including the cross-checked titles.
     config = load_checked_config(write_config(tmp_path, base_config()))
     assert [entry.title for entry in config.vault_structure.entries] == [
         "password_salt",
         "pyntara_local_vault_password",
         "google_script_key",
+        "telemetry_password",
         "three_x_ui_credentials",
         "xray_connection",
         "ssh_passphase_for_port_forwarding",
@@ -126,7 +127,8 @@ def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> N
 
 def test_load_config_generated_password_parses(tmp_path: Path) -> None:
     # The optional generated_password field of an entry is carried into the
-    # typed entry; the base config sets proquint-7 for the passphrase entry.
+    # typed entry; the base config sets proquint-7 for the passphrase entry
+    # and proquint-4 for the telemetry password entry.
     config = load_checked_config(write_config(tmp_path, base_config()))
     entry = next(
         e
@@ -134,6 +136,12 @@ def test_load_config_generated_password_parses(tmp_path: Path) -> None:
         if e.title == "ssh_passphase_for_port_forwarding"
     )
     assert entry.generated_password == "proquint-7"
+    telemetry = next(
+        e
+        for e in config.vault_structure.entries
+        if e.title == "telemetry_password"
+    )
+    assert telemetry.generated_password == "proquint-4"
 
 
 @pytest.mark.parametrize(
