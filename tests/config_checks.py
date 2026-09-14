@@ -317,6 +317,16 @@ REPORT_RECORD_KEY_MEANINGS = (
     "answers",
     "source",
     "raw",
+    "reason",
+)
+
+
+# The address families the public address report writes into the family field
+# of its records. The words are values of the shipped telemetry, so a map that
+# misses one of them fails here instead of raising on the target machine.
+REPORT_FAMILY_WORD_MEANINGS = (
+    "ipv4",
+    "ipv6",
 )
 
 
@@ -1291,6 +1301,11 @@ def _engine_table(raw: object) -> EngineConfig:
         "engine.report_record_keys",
         REPORT_RECORD_KEY_MEANINGS,
     )
+    report_family_words = _complete_string_map(
+        raw.get("report_family_words"),
+        "engine.report_family_words",
+        REPORT_FAMILY_WORD_MEANINGS,
+    )
     bytes_per_kib = _positive_int_field(
         raw.get("bytes_per_kib"), "engine.bytes_per_kib"
     )
@@ -1332,6 +1347,7 @@ def _engine_table(raw: object) -> EngineConfig:
         ssh_report_socks_command_format=ssh_report_socks_command_format,
         ssh_report_proxy_host=ssh_report_proxy_host,
         report_record_keys=report_record_keys,
+        report_family_words=report_family_words,
         curl_download_write_out=curl_download_write_out,
         os_release_family_keys=os_release_family_keys,
         os_release_debian_family_names=os_release_debian_family_names,

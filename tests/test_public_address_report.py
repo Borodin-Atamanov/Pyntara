@@ -10,6 +10,7 @@ codes without a network.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,48 @@ def test_a_key_missing_from_the_config_is_named(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "has no server_ip_timeout_seconds" in captured.err
+
+
+def test_the_family_words_and_the_reason_field_come_from_the_config() -> None:
+    # The word the report writes into its family field and the name of the
+    # field that carries the reason are config values of the report shape:
+    # another word and another name produce another document, and the
+    # reader of the telemetry follows them.
+    base = make_config()
+    engine = replace(
+        base.engine,
+        report_family_words={"ipv4": "v4", "ipv6": "v6"},
+        report_record_keys={**base.engine.report_record_keys, "reason": "why"},
+    )
+    records = public_address_report.address_records(
+        replace(base, engine=engine),
+        PublicAddresses(ipv4=("190.55.165.52",)),
+        30222,
+    )
+    assert records[0]["family"] == "v4"
+    assert records[-1] == {
+        "family": "v6",
+        "why": public_address_report.NO_ANSWER_REASON,
+    }
+
+
+def test_a_family_without_a_word_is_named(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # A config whose engine table cannot name a family is reported by naming
+    # the missing entry, instead of printing records whose family nobody can
+    # read.
+    content = base_config().replace(
+        'report_family_words = { ipv4 = "ipv4", ipv6 = "ipv6" }',
+        'report_family_words = { ipv4 = "ipv4" }',
+    )
+    config_path = write_config(tmp_path, content)
+    assert public_address_report.main(
+        ["public_address_report", str(config_path)]
+    ) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "has no report_family_words entry for ipv6" in captured.err
 
 
 def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:

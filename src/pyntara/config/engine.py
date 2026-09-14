@@ -42,7 +42,10 @@ class EngineConfig:
     are the field names of a record, by the meaning of each field, so the
     commands and the collector agree on the shape in one place: the fields
     of an anonymity channel record, of a local address record and of a
-    country record, answers included. os_release_family_keys are the
+    country record, answers included. report_family_words are the words the
+    public address report writes into the family field, by the address
+    family the model names (ipv4, ipv6), so the telemetry of a silent family
+    carries a word of the config as well. os_release_family_keys are the
     fields of the distribution identity file that name the distribution and
     os_release_debian_family_names are the values of those fields that mean
     a Debian-based system, which the shared os_family_is_debian helper
@@ -101,6 +104,7 @@ class EngineConfig:
     ssh_report_socks_command_format: str
     ssh_report_proxy_host: str
     report_record_keys: dict[str, str]
+    report_family_words: dict[str, str]
     github_latest_release_url: str
     github_release_download_url: str
     release_asset_architectures: dict[str, str]
