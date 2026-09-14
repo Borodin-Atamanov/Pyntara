@@ -96,3 +96,16 @@ class I2pdServiceSetupConfig:
     address_check_retry_delay_seconds: float
     report_channel_name: str
     address_suffix: str
+
+
+# The keys of this table the i2pd_address command of the address report reads.
+# The list lives next to the fields it names and the command imports it, so a
+# config that lacks a value is reported by naming the key and not by a Python
+# error (docs/spec/config-content.md, Where a value is declared and checked).
+I2PD_ADDRESS_CONFIG_KEYS = (
+    "tunnel_keys_path",
+    "address_file_path",
+    "address_suffix",
+    "socks_proxy_port",
+    "report_channel_name",
+)

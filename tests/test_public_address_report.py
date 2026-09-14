@@ -145,6 +145,21 @@ def test_empty_service_list_is_reported(
     assert "no echo service is configured" in captured.err
 
 
+def test_a_key_missing_from_the_config_is_named(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # A config without the timeout key reports the key itself, so the reader
+    # of the message knows what to add to the file.
+    content = base_config().replace("server_ip_timeout_seconds = 60\n", "")
+    config_path = write_config(tmp_path, content)
+    assert public_address_report.main(
+        ["public_address_report", str(config_path)]
+    ) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "has no server_ip_timeout_seconds" in captured.err
+
+
 def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:
     assert public_address_report.main(["public_address_report"]) == 2
     assert "usage" in capsys.readouterr().err

@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from pyntara.config import (
+    I2PD_ADDRESS_CONFIG_KEYS,
     Config,
     absent_config_keys,
     load_config,
@@ -70,9 +71,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     """
 
     setup = cfg.i2pd_service_setup
-    missing = absent_config_keys(
-        setup, ("tunnel_keys_path", "address_file_path", "socks_proxy_port")
-    )
+    missing = absent_config_keys(setup, I2PD_ADDRESS_CONFIG_KEYS)
     if missing:
         return None, (
             "the i2pd_service_setup section of the config has no "

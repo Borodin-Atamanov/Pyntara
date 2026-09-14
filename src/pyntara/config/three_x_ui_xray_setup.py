@@ -239,3 +239,14 @@ class ThreeXuiXraySetupConfig:
     proxy_check_blocked_url: str
     proxy_check_timeout_seconds: int
     proxy_check_command_timeout_seconds: int
+
+
+# The keys of this table the public_address command of the address report
+# reads. The list lives next to the fields it names and the command imports it,
+# so a config that lacks a value is reported by naming the key and not by a
+# Python error (docs/spec/config-content.md, Where a value is declared and
+# checked).
+PUBLIC_ADDRESS_CONFIG_KEYS = (
+    "server_ip_services",
+    "server_ip_timeout_seconds",
+)

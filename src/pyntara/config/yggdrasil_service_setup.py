@@ -140,3 +140,16 @@ class YggdrasilServiceSetupConfig:
     config_json_indent: int
     config_document_keys: dict[str, str]
     admin_output_keys: dict[str, str]
+
+
+# The keys of this table the yggdrasil_address command of the address report
+# reads. The list lives next to the fields it names and the command imports it,
+# so a config that lacks a value is reported by naming the key and not by a
+# Python error (docs/spec/config-content.md, Where a value is declared and
+# checked).
+YGGDRASIL_ADDRESS_CONFIG_KEYS = (
+    "self_address_command",
+    "admin_output_keys",
+    "address_file_path",
+    "report_channel_name",
+)

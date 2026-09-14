@@ -78,3 +78,16 @@ class TorSetupConfig:
     start_check_retry_delay_seconds: float
     address_file_path: Path
     address_file_mode: int
+
+
+# The keys of this table the tor_address command of the address report reads.
+# The list lives next to the fields it names and the command imports it, so a
+# config that lacks a value is reported by naming the key and not by a Python
+# error (docs/spec/config-content.md, Where a value is declared and checked).
+TOR_ADDRESS_CONFIG_KEYS = (
+    "hidden_service_dir",
+    "address_file_path",
+    "socks_port",
+    "onion_ssh_port",
+    "report_channel_name",
+)

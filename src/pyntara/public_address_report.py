@@ -28,7 +28,12 @@ import json
 import sys
 from pathlib import Path
 
-from pyntara.config import Config, absent_config_keys, load_config
+from pyntara.config import (
+    PUBLIC_ADDRESS_CONFIG_KEYS,
+    Config,
+    absent_config_keys,
+    load_config,
+)
 from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
@@ -82,18 +87,18 @@ def main(argv: list[str]) -> int:
         return 2
     cfg = load_config(Path(argv[1]))
     echo = cfg.three_x_ui_xray_setup
-    if not echo.server_ip_services:
-        print(
-            "error: no echo service is configured in the "
-            "three_x_ui_xray_setup section of the config",
-            file=sys.stderr,
-        )
-        return 1
-    missing = absent_config_keys(echo, ("server_ip_timeout_seconds",))
+    missing = absent_config_keys(echo, PUBLIC_ADDRESS_CONFIG_KEYS)
     if missing:
         print(
             "error: the three_x_ui_xray_setup section of the config has no "
             + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return 1
+    if not echo.server_ip_services:
+        print(
+            "error: no echo service is configured in the "
+            "three_x_ui_xray_setup section of the config",
             file=sys.stderr,
         )
         return 1

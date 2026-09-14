@@ -26,8 +26,12 @@ from support import make_config
 
 from pyntara.config import (
     Config,
+    I2pdServiceSetupConfig,
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
+    ThreeXuiXraySetupConfig,
+    TorSetupConfig,
+    YggdrasilServiceSetupConfig,
 )
 from pyntara.config.loader import render_config_source
 
@@ -64,6 +68,12 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
 # cannot find instead of showing a Python error.
 COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
     (
+        "pyntara.i2pd_address",
+        "pyntara.config.i2pd_service_setup",
+        "I2PD_ADDRESS_CONFIG_KEYS",
+        I2pdServiceSetupConfig,
+    ),
+    (
         "pyntara.metrics_collect",
         "pyntara.config.system_metrics_setup",
         "COLLECTOR_SECTION_KEYS",
@@ -86,6 +96,24 @@ COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
         "pyntara.config.system_metrics_setup",
         "SERVICE_CONFIG_KEYS",
         SystemMetricsSetupConfig,
+    ),
+    (
+        "pyntara.public_address_report",
+        "pyntara.config.three_x_ui_xray_setup",
+        "PUBLIC_ADDRESS_CONFIG_KEYS",
+        ThreeXuiXraySetupConfig,
+    ),
+    (
+        "pyntara.tor_address",
+        "pyntara.config.tor_setup",
+        "TOR_ADDRESS_CONFIG_KEYS",
+        TorSetupConfig,
+    ),
+    (
+        "pyntara.yggdrasil_address",
+        "pyntara.config.yggdrasil_service_setup",
+        "YGGDRASIL_ADDRESS_CONFIG_KEYS",
+        YggdrasilServiceSetupConfig,
     ),
 )
 

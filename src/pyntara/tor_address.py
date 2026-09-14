@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from pyntara.config import (
+    TOR_ADDRESS_CONFIG_KEYS,
     Config,
     absent_config_keys,
     load_config,
@@ -68,10 +69,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     """
 
     setup = cfg.tor_setup
-    missing = absent_config_keys(
-        setup,
-        ("hidden_service_dir", "address_file_path", "socks_port", "onion_ssh_port"),
-    )
+    missing = absent_config_keys(setup, TOR_ADDRESS_CONFIG_KEYS)
     if missing:
         return None, (
             "the tor_setup section of the config has no " + ", ".join(missing)

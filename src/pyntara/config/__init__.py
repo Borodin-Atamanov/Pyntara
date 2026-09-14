@@ -28,7 +28,7 @@ from .dnsproxy_setup import DnsproxySetupConfig
 from .engine import EngineConfig
 from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
-from .i2pd_service_setup import I2pdServiceSetupConfig
+from .i2pd_service_setup import I2PD_ADDRESS_CONFIG_KEYS, I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .kde_settings import (
@@ -64,8 +64,11 @@ from .system_metrics_setup import (
 )
 from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
-from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
-from .tor_setup import TorSetupConfig
+from .three_x_ui_xray_setup import (
+    PUBLIC_ADDRESS_CONFIG_KEYS,
+    ThreeXuiXraySetupConfig,
+)
+from .tor_setup import TOR_ADDRESS_CONFIG_KEYS, TorSetupConfig
 from .vault import (
     LocalVaultSetupConfig,
     VaultEntry,
@@ -75,6 +78,7 @@ from .vault import (
 )
 from .vocalinux_setup import VocalinuxSetupConfig
 from .yggdrasil_service_setup import (
+    YGGDRASIL_ADDRESS_CONFIG_KEYS,
     YggdrasilMulticastInterfaceConfig,
     YggdrasilServiceSetupConfig,
 )
@@ -84,15 +88,19 @@ from .zswap_service import ZswapServiceConfig
 __all__ = [
     "COLLECTOR_SECTION_KEYS",
     "COLLECTOR_TABLE_KEYS",
+    "I2PD_ADDRESS_CONFIG_KEYS",
     "INGEST_CONFIG_KEYS",
     "KCONFIG_BOOL_TYPE",
     "KCONFIG_STRING_TYPE",
     "KCONFIG_TYPES",
     "MODES",
+    "PUBLIC_ADDRESS_CONFIG_KEYS",
     "SEND_ORDERS",
     "SEND_ORDER_NEWEST_FIRST",
     "SEND_ORDER_OLDEST_FIRST",
     "SERVICE_CONFIG_KEYS",
+    "TOR_ADDRESS_CONFIG_KEYS",
+    "YGGDRASIL_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",
