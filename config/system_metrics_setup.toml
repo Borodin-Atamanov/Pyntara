@@ -182,6 +182,12 @@ google_script_deployment_url_regex = '^https://script\.google\.com/macros/s/([A-
 # in the queue otherwise, so a script that answers differently is answered
 # here.
 google_script_answer_ok_prefix = "OK "
+# Longest excerpt of the web app answer the sender prints when the answer is
+# not the OK prefix. A refused upload can answer with a whole HTML page of
+# the provider, and the journal of the target machine must carry one
+# readable line instead of that page, so the sender prints the length of the
+# answer and its first non-empty line cut to this many characters.
+google_script_answer_excerpt_chars = 200
 
 [system_metrics_setup.collector]
 # Report collector parameters (docs/spec/system-metrics.md, section

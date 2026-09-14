@@ -165,7 +165,10 @@ class SystemMetricsSetupConfig:
     google_script_deployment_url_regex is the Python regular expression
     of the web app deployment URL, whose single capture group yields the
     deployment ID, and google_script_answer_ok_prefix is the answer
-    prefix that means the file was stored. The encrypted PDF generation and the Telegram
+    prefix that means the file was stored. google_script_answer_excerpt_chars
+    is the longest excerpt of a refusing answer the sender prints, so a
+    provider that answers with a whole HTML page leaves one readable line
+    in the journal of the machine. The encrypted PDF generation and the Telegram
     channel replace the current Google-only sending in a later stage
     (docs/spec/system-metrics.md).
     """
@@ -228,6 +231,7 @@ class SystemMetricsSetupConfig:
     google_script_key_entry_title: str
     google_script_deployment_url_regex: str
     google_script_answer_ok_prefix: str
+    google_script_answer_excerpt_chars: int
     collector: SystemMetricsCollectorConfig
 
 
@@ -256,6 +260,7 @@ SERVICE_CONFIG_KEYS = (
     "google_script_key_entry_title",
     "google_script_timeout_seconds",
     "google_script_answer_ok_prefix",
+    "google_script_answer_excerpt_chars",
 )
 INGEST_CONFIG_KEYS = (
     "spool_dir",

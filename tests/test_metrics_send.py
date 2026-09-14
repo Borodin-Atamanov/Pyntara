@@ -258,6 +258,35 @@ def test_the_answer_prefix_comes_from_the_config(
     assert other.exists()
 
 
+def test_a_refusing_answer_is_printed_as_one_bounded_line(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # A refused upload can answer with a whole HTML page of the provider.
+    # The journal of the target machine carries the length of the answer
+    # and its first non-empty line cut to the configured length, never the
+    # page itself, so the line stays readable and names what answered.
+    cfg = _send_config(tmp_path)
+    _install_vault(tmp_path)
+    metrics = replace(
+        cfg.system_metrics_setup, google_script_answer_excerpt_chars=40
+    )
+    renamed = replace(cfg, system_metrics_setup=metrics)
+    page = "<html>" + "x" * 400 + "</html>"
+    _fake_curl(monkeypatch, stdout=page)
+    channel = tmp_path / "metrics" / "google_script"
+    entry = _make_entry(channel, "report.txt", "x", time.time())
+    send_google_queue(renamed)
+    captured = capsys.readouterr()
+    assert entry.exists()
+    assert f"answered {len(page)} characters" in captured.out
+    assert page[:40] in captured.out
+    assert page not in captured.out
+    longest = max(len(line) for line in captured.out.splitlines())
+    assert longest < len(page)
+
+
 def test_send_without_vault_skips_without_upload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -3860,7 +3860,8 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     one of the SEND_ORDERS values; google_script_dir, main_sent_dir and
     google_script_key_entry_title are non-empty strings;
     google_script_deployment_url_regex is a non-empty string that
-    compiles as a regular expression with exactly one capture group.
+    compiles as a regular expression with exactly one capture group;
+    google_script_answer_excerpt_chars is a positive integer.
     """
 
     if not isinstance(raw, dict):
@@ -4012,6 +4013,15 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raw.get("google_script_answer_ok_prefix"),
         "system_metrics_setup.google_script_answer_ok_prefix",
     )
+    google_script_answer_excerpt_chars = _int_field(
+        raw.get("google_script_answer_excerpt_chars"),
+        "system_metrics_setup.google_script_answer_excerpt_chars",
+    )
+    if google_script_answer_excerpt_chars < 1:
+        raise ConfigError(
+            "system_metrics_setup.google_script_answer_excerpt_chars must be "
+            "positive"
+        )
     google_script_deployment_url_regex = raw.get(
         "google_script_deployment_url_regex"
     )
@@ -4201,6 +4211,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         google_script_key_entry_title=google_script_key_entry_title,
         google_script_deployment_url_regex=google_script_deployment_url_regex,
         google_script_answer_ok_prefix=google_script_answer_ok_prefix,
+        google_script_answer_excerpt_chars=google_script_answer_excerpt_chars,
         collector=_system_metrics_collector_table(raw.get("collector")),
     )
 

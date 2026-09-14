@@ -227,6 +227,23 @@ def _entry_uploadable(entry: Path, limit: int, error_priority: int) -> bool:
     return True
 
 
+def _answer_excerpt(answer: str, limit: int) -> str:
+    """The answer of the web app as one bounded line for the journal.
+
+    A refusing answer can be a whole HTML page of the provider, and the
+    journal of the target machine must carry a readable line instead of
+    that page. The first non-empty line is collapsed into a single line
+    and cut to the configured length; the caller names the full length of
+    the answer next to it, so nothing is hidden.
+    """
+
+    for line in answer.splitlines():
+        collapsed = " ".join(line.split())
+        if collapsed:
+            return collapsed[:limit]
+    return ""
+
+
 def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> bool:
     """Upload one entry and move it to main_sent on success.
 
@@ -299,9 +316,13 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         return False
     output = (result.stdout or "").strip()
     if not output.startswith(metrics.google_script_answer_ok_prefix):
+        excerpt = _answer_excerpt(
+            output, metrics.google_script_answer_excerpt_chars
+        )
         _log(
             f"google script channel: sending {entry.name} failed: the web app "
-            f"answered: {output}",
+            f"answered {len(output)} characters without the "
+            f"{metrics.google_script_answer_ok_prefix!r} prefix: {excerpt}",
             priority=error_priority,
         )
         return False

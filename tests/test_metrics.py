@@ -301,6 +301,6 @@ def test_main_reports_a_config_without_the_retry_schedule(
         "main_outbox_dir, google_script_dir, main_sent_dir, send_order, "
         "max_queue_file_size_bytes, queue_file_suffix_length, "
         "google_script_key_entry_title, google_script_timeout_seconds, "
-        "google_script_answer_ok_prefix\n"
+        "google_script_answer_ok_prefix, google_script_answer_excerpt_chars\n"
     )
     assert "Traceback" not in captured.err
