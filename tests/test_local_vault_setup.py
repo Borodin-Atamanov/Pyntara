@@ -123,21 +123,53 @@ def test_password_file_writable_mode_comes_from_the_config(
 def test_skips_when_runtime_vault_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Without force an existing runtime vault must be left untouched.
+    # Without force an existing runtime vault that already carries every
+    # source entry is left untouched.
     _create_source_vault(tmp_path / "production.vault", "prod-pass")
     local_vault = tmp_path / "secrets" / "pyntara.vault"
     pass_file = tmp_path / "etc" / "pass"
     local_vault.parent.mkdir(parents=True)
-    local_vault.write_bytes(b"existing-vault")
     pass_file.parent.mkdir(parents=True)
+    create_database(str(local_vault), password="existing-pass")
+    kp = PyKeePass(str(local_vault), password="existing-pass")
+    kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", "existing-pass")
+    kp.save()
     pass_file.write_text("existing-pass", encoding="utf-8")
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert "already exists" in (result.message or "")
-    assert local_vault.read_bytes() == b"existing-vault"
     assert pass_file.read_text(encoding="utf-8") == "existing-pass"
+
+
+def test_syncs_missing_source_entries_into_existing_runtime_vault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A runtime vault created before the telemetry password entry existed
+    # gains it from the source vault on a normal run, without a rewrite.
+    source = tmp_path / "production.vault"
+    _create_source_vault(source, "prod-pass")
+    source_kp = PyKeePass(str(source), password="prod-pass")
+    source_kp.add_entry(source_kp.root_group, "telemetry_password", "", "tele-secret")
+    source_kp.save()
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    pass_file = tmp_path / "etc" / "pass"
+    local_vault.parent.mkdir(parents=True)
+    pass_file.parent.mkdir(parents=True)
+    create_database(str(local_vault), password="local-pass")
+    kp = PyKeePass(str(local_vault), password="local-pass")
+    kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", "local-pass")
+    kp.save()
+    pass_file.write_text("local-pass", encoding="utf-8")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    reopened = PyKeePass(str(local_vault), password="local-pass")
+    entry = reopened.find_entries(title="telemetry_password", first=True)
+    assert entry is not None
+    assert entry.password == "tele-secret"
 
 
 def test_force_rewrites_runtime_vault(

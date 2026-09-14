@@ -13,8 +13,11 @@ contract, Configuration). The source vault is not fixed: the production vault
 is tried first, then the default vault, both with the password from
 Context; when neither opens, the task journals a serious error at syslog
 level 3 and fails without stopping the run. The task is idempotent:
-without force it skips when the runtime vault already exists; force mode
-rewrites the vault and the password file. Passwords are written to files
+without force it leaves an existing runtime vault and only copies the
+source vault root entries that are missing from it, so a vault created
+by an older run gains the entries the structure gained later (the
+telemetry password); force mode rewrites the vault and the password
+file. Passwords are written to files
 trimmed of surrounding whitespace and strictly without a trailing newline.
 """
 
@@ -118,6 +121,92 @@ def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str
     return password
 
 
+def _read_password_file(pass_file_path: Path) -> str | None:
+    """Runtime vault password from the password file, or None.
+
+    The file holds exactly the password with surrounding whitespace
+    trimmed and no trailing newline, so the read applies the same
+    trimming. An unreadable or empty file means no password is
+    available.
+    """
+
+    try:
+        return pass_file_path.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _copy_missing_root_entries(
+    source_kp: PyKeePass, runtime_kp: PyKeePass
+) -> bool:
+    """Copy the source vault root entries missing from the runtime vault.
+
+    A runtime vault created by an older run may lack entries the
+    structure gained later, like the telemetry password; the source vault
+    is the structure, so every root entry it carries and the runtime
+    vault does not is copied. Machine-specific entries that tasks add to
+    the runtime vault are not in the source vault and stay untouched.
+    Returns True when at least one entry was copied.
+    """
+
+    existing_titles = {entry.title for entry in runtime_kp.root_group.entries}
+    changed = False
+    for entry in source_kp.root_group.entries:
+        if entry.title in existing_titles:
+            continue
+        runtime_kp.add_entry(
+            runtime_kp.root_group,
+            entry.title,
+            entry.username or "",
+            entry.password or "",
+            url=entry.url or "",
+            notes=entry.notes or "",
+        )
+        _log(f"adding entry {entry.title!r} to the runtime vault")
+        changed = True
+    return changed
+
+
+def _sync_existing_runtime_vault(
+    cfg: LocalVaultSetupConfig,
+    production_path: Path,
+    default_path: Path,
+    source_password: str | None,
+) -> bool | None:
+    """Sync the source structure entries into the existing runtime vault.
+
+    True means an entry was copied and the vault saved, False means the
+    runtime vault already carried every source root entry, and None means
+    the sync could not run: no source vault opens, the password file is
+    missing or the runtime vault does not open with the local password.
+    A failed sync leaves the runtime vault exactly as it was.
+    """
+
+    opened = _open_source_vault(production_path, default_path, source_password)
+    if opened is None:
+        _log("leaving the runtime vault as is: no source vault opened")
+        return None
+    source_kp, _ = opened
+    local_password = _read_password_file(cfg.pass_file_path)
+    if local_password is None:
+        _log(
+            "leaving the runtime vault as is: password file missing or empty"
+        )
+        return None
+    try:
+        runtime_kp = PyKeePass(str(cfg.local_vault_path), password=local_password)
+    except CredentialsError:
+        _log("leaving the runtime vault as is: local password does not match")
+        return None
+    except Exception as exc:  # noqa: BLE001 - a broken vault stays as it is
+        _log(f"leaving the runtime vault as is: cannot open: {exc}")
+        return None
+    if not _copy_missing_root_entries(source_kp, runtime_kp):
+        return False
+    runtime_kp.save(filename=str(cfg.local_vault_path))
+    return True
+
+
 def _write_local_vault(
     kp: PyKeePass,
     password: str,
@@ -203,16 +292,24 @@ def task(ctx: Context) -> TaskResult:
     production_path, default_path = _resolve_source_vault(ctx.repo_root, cfg)
 
     if not force and cfg.local_vault_path.exists():
-        pass_state = "present" if cfg.pass_file_path.exists() else "missing"
-        _log(
-            f"checking runtime vault {cfg.local_vault_path}: exists, "
-            f"password file {pass_state}"
+        _log(f"checking runtime vault {cfg.local_vault_path}: exists")
+        synced = _sync_existing_runtime_vault(
+            cfg, production_path, default_path, ctx.vault_password
         )
-        _log("target state already reached, skipping")
+        if synced is None:
+            return TaskResult(
+                success=True,
+                changed=False,
+                message="runtime vault already exists",
+            )
         return TaskResult(
             success=True,
-            changed=False,
-            message=f"runtime vault already exists, password file {pass_state}",
+            changed=synced,
+            message=(
+                "runtime vault synced with the source vault"
+                if synced
+                else "runtime vault already exists"
+            ),
         )
 
     _log(f"checking runtime vault {cfg.local_vault_path}: absent")

@@ -70,6 +70,6 @@ The source vault is not fixed: the task tries the production vault first, then t
 
 The future local vault password comes from the pyntara_local_vault_password entry of the source vault, defined in the [vault_structure] table of the config/ directory. The task copies the source vault and re-encrypts the copy with that password, so the source vault password never opens the runtime vault. The copy is written to /var/lib/pyntara/secrets/pyntara.vault (mode 0640, directory 0700) and the password to /etc/pyntara/pass (mode 0400), both owned by root:root.
 
-The task is idempotent: without force it is done when the runtime vault already exists; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file.
+The task is idempotent: without force an existing runtime vault is left as it is, except that the source vault root entries missing from it are copied in, so a vault created by an older run gains the entries the structure gained later, the telemetry password among them; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file. A sync that cannot run, because no source vault opens, the password file is missing or the runtime vault does not open with the local password, leaves the runtime vault exactly as it was.
 
 The default vault carries a well-known test value for this entry, mirroring its well-known vault password.
