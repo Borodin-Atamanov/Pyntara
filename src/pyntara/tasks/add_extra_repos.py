@@ -136,13 +136,18 @@ def _split_trailing_comment(line: str) -> tuple[str, str]:
 
 
 def _process_legacy(
-    text: str, configured: tuple[str, ...], hosts: tuple[str, ...]
+    text: str,
+    configured: tuple[str, ...],
+    hosts: tuple[str, ...],
+    cfg: AddExtraReposConfig,
 ) -> _FileRewrite:
     """Append missing components to legacy Ubuntu deb lines.
 
     A legacy line has the shape deb [options] URI suite component...
     Components are the tokens after the suite. The trailing comment, if
-    any, stays at the end of the line.
+    any, stays at the end of the line. The keywords that open such a line
+    and the schemes that mark its URI token come from the section, so the
+    line format of another distribution is answered in the config.
     """
 
     lines = text.splitlines(keepends=True)
@@ -152,7 +157,7 @@ def _process_legacy(
     problems: list[str] = []
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if not stripped.startswith(("deb ", "deb-src ")):
+        if not stripped.startswith(cfg.legacy_source_type_keywords):
             continue
         if not any(host in line for host in hosts):
             continue
@@ -163,7 +168,7 @@ def _process_legacy(
             (
                 i
                 for i, token in enumerate(tokens)
-                if token.startswith(("http://", "https://"))
+                if token.startswith(cfg.source_url_schemes)
             ),
             None,
         )
@@ -226,7 +231,9 @@ def _process_file(
             cfg.uris_field_name,
             cfg.components_field_name,
         )
-    return _process_legacy(path.read_text(encoding="utf-8"), configured, hosts)
+    return _process_legacy(
+        path.read_text(encoding="utf-8"), configured, hosts, cfg
+    )
 
 
 def _keep_debs_state_note(keep_debs: bool) -> str:

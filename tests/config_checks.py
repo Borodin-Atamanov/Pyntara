@@ -450,6 +450,14 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         raw.get("legacy_source_suffix"),
         "add_extra_repos.legacy_source_suffix",
     )
+    legacy_source_type_keywords = _string_list(
+        raw.get("legacy_source_type_keywords"),
+        "add_extra_repos.legacy_source_type_keywords",
+    )
+    source_url_schemes = _string_list(
+        raw.get("source_url_schemes"),
+        "add_extra_repos.source_url_schemes",
+    )
     deb822_source_suffix = _nonempty_string_field(
         raw.get("deb822_source_suffix"),
         "add_extra_repos.deb822_source_suffix",
@@ -478,6 +486,8 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
         legacy_sources_file=legacy_sources_file,
         sources_list_d=sources_list_d,
         legacy_source_suffix=legacy_source_suffix,
+        legacy_source_type_keywords=legacy_source_type_keywords,
+        source_url_schemes=source_url_schemes,
         deb822_source_suffix=deb822_source_suffix,
         keep_debs_file=keep_debs_file,
         keep_debs_dropin_content=keep_debs_dropin_content,

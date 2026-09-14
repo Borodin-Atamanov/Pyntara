@@ -29,6 +29,15 @@ sources_list_d = "/etc/apt/sources.list.d"
 # Suffix of a one-line sources file (one deb line per entry), the format of
 # the legacy sources file.
 legacy_source_suffix = ".list"
+# Keywords that open a one-line source line, with the space that separates
+# the keyword from the rest of the line, so a word that merely starts with
+# the letters of a keyword is not taken for a source. The task rewrites the
+# lines of these kinds.
+legacy_source_type_keywords = ["deb ", "deb-src "]
+# URL schemes that mark the archive URI token of a one-line source line. The
+# task reads the tokens after the URI and the suite as the components, so a
+# mirror scheme the operator adds here is understood instead of refused.
+source_url_schemes = ["http://", "https://"]
 # Suffix of a deb822 sources file, whose entries are fields. The task reads
 # such a file field by field instead of line by line.
 deb822_source_suffix = ".sources"

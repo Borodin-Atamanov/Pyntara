@@ -142,6 +142,8 @@ def base_config() -> str:
         'legacy_sources_file = "/etc/apt/sources.list"\n'
         'sources_list_d = "/etc/apt/sources.list.d"\n'
         'legacy_source_suffix = ".list"\n'
+        'legacy_source_type_keywords = ["deb ", "deb-src "]\n'
+        'source_url_schemes = ["http://", "https://"]\n'
         'deb822_source_suffix = ".sources"\n'
         'keep_debs_file = "/etc/apt/apt.conf.d/99keep-debs.conf"\n'
         'keep_debs_dropin_content = "# Written by pyntara add_extra_repos\\n# Keep downloaded .deb files after install for offline reinstall.\\nAPT::Keep-Downloaded-Packages \\"true\\";\\nUnattended-Upgrade::Keep-Debs-After-Install \\"true\\";\\n"\n'

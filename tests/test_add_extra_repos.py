@@ -228,6 +228,44 @@ def test_legacy_sources_list_is_rewritten(
     )
 
 
+def test_the_line_keywords_and_schemes_come_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The keywords that open a one-line source line and the schemes that
+    # mark its archive URI belong to the format of the foreign file: with
+    # another keyword and another scheme in the section the task rewrites
+    # the line of that format and leaves the shipped one alone.
+    legacy = tmp_path / "sources.list"
+    legacy.write_text(
+        "repo mirror://archive.ubuntu.com/ubuntu/ resolute main\n"
+        "deb http://archive.ubuntu.com/ubuntu/ resolute main\n",
+        encoding="utf-8",
+    )
+    _install_sources(monkeypatch, tmp_path, {})
+    _record_calls(monkeypatch)
+    ctx = _ctx(tmp_path)
+    renamed = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            add_extra_repos=replace(
+                ctx.config.add_extra_repos,
+                legacy_source_type_keywords=("repo ",),
+                source_url_schemes=("mirror://",),
+            ),
+        ),
+    )
+    result = add_extra_repos.task(renamed)
+    assert result.success is True
+    assert result.changed is True
+    text = legacy.read_text(encoding="utf-8")
+    assert (
+        "repo mirror://archive.ubuntu.com/ubuntu/ resolute main universe "
+        "restricted multiverse" in text
+    )
+    assert "deb http://archive.ubuntu.com/ubuntu/ resolute main\n" in text
+
+
 def test_no_ubuntu_section_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

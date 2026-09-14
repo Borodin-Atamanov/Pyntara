@@ -18,6 +18,10 @@ class AddExtraReposConfig:
     sources the task reads and rewrites, and legacy_source_suffix and
     deb822_source_suffix are the file extensions of the two formats apt
     reads there, so a file with another extension is left alone;
+    legacy_source_type_keywords are the keywords that open a one-line source
+    line, with the space that separates the keyword from the rest of the
+    line, and source_url_schemes are the schemes that mark the archive URI
+    token of such a line, so the line format is answered in the config;
     keep_debs_file is the apt drop-in the task owns while
     keep_downloaded_debs is true, which keeps
     downloaded .deb files after install, and keep_debs_dropin_content is
@@ -35,6 +39,8 @@ class AddExtraReposConfig:
     legacy_sources_file: Path
     sources_list_d: Path
     legacy_source_suffix: str
+    legacy_source_type_keywords: tuple[str, ...]
+    source_url_schemes: tuple[str, ...]
     deb822_source_suffix: str
     keep_debs_file: Path
     keep_debs_dropin_content: str
