@@ -763,6 +763,24 @@ def substituted_command(
     return [part.format(**values) for part in command]
 
 
+def kglobalaccel_names(engine: EngineConfig) -> dict[str, str]:
+    """The DBus names of the KGlobalAccel daemon, by placeholder of a client.
+
+    The keyboard task and the appearance task talk to that daemon through
+    the clients under task_data/, whose bodies receive the names as
+    substitutions, and the commands of their sections name the same daemon;
+    the values live in the [engine] table, so both callers build the
+    mapping in one place and no name of the desktop interface stands in
+    code.
+    """
+
+    return {
+        "kglobalaccel_bus_name": engine.kglobalaccel_bus_name,
+        "kglobalaccel_object_path": engine.kglobalaccel_object_path,
+        "kglobalaccel_interface_name": engine.kglobalaccel_interface_name,
+    }
+
+
 def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
     """Set the given file owner when the process runs as root.
 

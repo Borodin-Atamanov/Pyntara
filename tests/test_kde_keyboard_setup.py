@@ -20,7 +20,7 @@ from support import make_config, make_context
 
 from pyntara.config.kde_keyboard_setup import KdeKeyboardSetupConfig
 from pyntara.tasks import kde_keyboard_setup as task_module
-from pyntara.utils import task_data_dir
+from pyntara.utils import kglobalaccel_names, task_data_dir
 
 
 def _keyboard_cfg() -> KdeKeyboardSetupConfig:
@@ -504,9 +504,17 @@ def test_session_hotkey_already_applied_is_idempotent(
 def test_live_apply_runs_the_script_the_config_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The client text comes from the task data file the config names, so
-    # editing that file changes what runs without touching the code.
+    # The client text comes from the task data file the config names and
+    # its DBus names come from the engine table, so editing that file or
+    # another bus name changes what runs without touching the code.
     ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    engine = replace(
+        ctx.config.engine,
+        kglobalaccel_bus_name="org.example.KGlobalAccel",
+        kglobalaccel_object_path="/example",
+        kglobalaccel_interface_name="org.example.GlobalAccel",
+    )
+    ctx = replace(ctx, config=replace(ctx.config, engine=engine))
     _, _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
@@ -514,7 +522,13 @@ def test_live_apply_runs_the_script_the_config_names(
         task_data_dir(ctx.repo_root, ctx.task_name)
         / ctx.config.kde_keyboard_setup.apply_hotkeys_script_file_name
     )
-    assert script_path.read_text(encoding="utf-8") in live_applies[0]
+    shipped = script_path.read_text(encoding="utf-8")
+    rendered = shipped
+    for placeholder, value in kglobalaccel_names(engine).items():
+        rendered = rendered.replace(f"${placeholder}", value)
+    assert rendered in live_applies[0]
+    assert shipped not in live_applies[0]
+    assert any("org.example.KGlobalAccel" in part for part in live_applies[0])
 
 
 def test_live_apply_prefix_comes_from_the_config(
@@ -559,6 +573,7 @@ def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
         home_env={},
         bus_env={},
         system_python="/usr/bin/python3",
+        kglobalaccel_names=kglobalaccel_names(make_config().engine),
     )
     assert changed is False
     assert error is not None

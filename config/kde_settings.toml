@@ -64,15 +64,26 @@ kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfig
 # interpreter of the [engine] table and the client source as the next
 # argument of the command line.
 python_script_command = ["{python}", "-c"]
+# The DBus interface of the running KWin session, by its parts: the bus name,
+# the object path and the interface name of the virtual desktop manager. The
+# commands below and the desktop list client of task_data/ fill their calls
+# from these values, so no name of the desktop interface stands in code.
+kwin_bus_name = "org.kde.KWin"
+virtual_desktop_manager_object_path = "/VirtualDesktopManager"
+virtual_desktop_manager_interface_name = "org.kde.KWin.VirtualDesktopManager"
+# Property of that interface that lists the desktops, read by the desktop list
+# client, and the standard DBus interface that carries the property call.
+virtual_desktops_property_name = "desktops"
+dbus_properties_interface_name = "org.freedesktop.DBus.Properties"
 # Commands that read and change the number of virtual desktops through the
 # kwin DBus interface: the live count, the creation of one desktop at a
 # position and the removal of one desktop by id. The source of truth stays
 # kwinrc; these calls only make the running session match it. The name the
 # create call carries is left empty by the task, because kwin names a new
 # desktop after its position.
-kwin_desktop_count_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.count"]
-kwin_desktop_create_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.createDesktop", "{position}", "{desktop_name}"]
-kwin_desktop_remove_command = ["qdbus6", "org.kde.KWin", "/VirtualDesktopManager", "org.kde.KWin.VirtualDesktopManager.removeDesktop", "{desktop_id}"]
+kwin_desktop_count_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.count"]
+kwin_desktop_create_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.createDesktop", "{position}", "{desktop_name}"]
+kwin_desktop_remove_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.removeDesktop", "{desktop_id}"]
 # The SDDM login screen: autologin into the configured user session and
 # the login theme. These live in the system files /etc/sddm.conf and
 # /etc/sddm.conf.d/20-kubuntu.conf and are written by the task as root.

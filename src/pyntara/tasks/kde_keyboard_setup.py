@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from string import Template
 
 from pyntara.config import EngineConfig, KdeKeyboardSetupConfig
 from pyntara.context import Context
@@ -34,6 +35,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     install_package_once,
+    kglobalaccel_names,
     package_is_installed,
     run_command,
     session_bus_address,
@@ -333,6 +335,7 @@ def _apply_hotkeys_live(
     home_env: dict[str, str],
     bus_env: dict[str, str],
     system_python: str,
+    kglobalaccel_names: dict[str, str],
 ) -> tuple[str | None, bool]:
     """Apply the supported hotkeys through the running daemon.
 
@@ -362,6 +365,12 @@ def _apply_hotkeys_live(
         }
     )
     try:
+        client_text = Template(script_path.read_text(encoding="utf-8")).substitute(
+            **kglobalaccel_names
+        )
+    except OSError as exc:
+        return f"cannot read the hotkey script {script_path}: {exc}", False
+    try:
         result = run_command(
             _as_user_command(
                 cfg,
@@ -369,7 +378,7 @@ def _apply_hotkeys_live(
                     *substituted_command(
                         cfg.python_script_command, {"python": system_python}
                     ),
-                    script_path.read_text(encoding="utf-8"),
+                    client_text,
                     payload,
                 ],
             ),
@@ -377,8 +386,6 @@ def _apply_hotkeys_live(
             timeout=timeout,
             capture=True,
         )
-    except OSError as exc:
-        return f"cannot read the hotkey script {script_path}: {exc}", False
     except subprocess.CalledProcessError as exc:
         detail = trim_whitespace(exc.stderr or "")
         suffix = f": {detail}" if detail else ""
@@ -560,6 +567,7 @@ def task(ctx: Context) -> TaskResult:
                 home_env=home_env,
                 bus_env=bus_env,
                 system_python=engine.system_python,
+                kglobalaccel_names=kglobalaccel_names(engine),
             )
             if hotkey_error is not None:
                 warnings.append(hotkey_error)

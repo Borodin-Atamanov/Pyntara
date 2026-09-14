@@ -39,8 +39,8 @@ def read_keys(action_id):
 
 
 bus = dbus.SessionBus()
-daemon = bus.get_object("org.kde.kglobalaccel", "/kglobalaccel")
-iface = dbus.Interface(daemon, "org.kde.KGlobalAccel")
+daemon = bus.get_object("$kglobalaccel_bus_name", "$kglobalaccel_object_path")
+iface = dbus.Interface(daemon, "$kglobalaccel_interface_name")
 
 before = {}
 for action, combined in assign:

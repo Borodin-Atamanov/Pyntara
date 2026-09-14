@@ -23,7 +23,7 @@ from pyntara.config.kde_settings import (
     KdeSettingsConfig,
 )
 from pyntara.tasks import kde_settings as task_module
-from pyntara.utils import task_data_dir
+from pyntara.utils import kglobalaccel_names, task_data_dir
 
 # The templates of the task live in the clone the tests run from, so a test
 # that pre-writes the files the task expects reads the shipped template.
@@ -1299,6 +1299,7 @@ def test_free_script_hotkeys_clears_and_releases_live(
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
     assert changed is True
     cleared = [command for command in writes if "Switch One Desktop Up" in command]
@@ -1344,10 +1345,63 @@ def test_release_client_text_comes_from_the_config(
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
     assert changed is True
     assert releases
     assert client.read_text(encoding="utf-8") in releases[0]
+
+
+def test_the_release_client_dbus_names_come_from_the_engine_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The client under task_data/ names the KGlobalAccel daemon through
+    # substitutions: another vocabulary in the engine table is what the
+    # client text carries, and the shipped names stop appearing.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path, repo_root=tmp_path)
+    data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    shipped_client = (
+        Path(__file__).resolve().parents[1]
+        / "task_data"
+        / "kde_settings"
+        / "kglobalaccel_release.py"
+    )
+    client = data_dir / "kglobalaccel_release.py"
+    client.write_text(
+        shipped_client.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    engine = replace(
+        ctx.config.engine,
+        kglobalaccel_bus_name="org.example.KGlobalAccel",
+        kglobalaccel_object_path="/example",
+        kglobalaccel_interface_name="org.example.GlobalAccel",
+    )
+    config = replace(ctx.config, engine=engine)
+    _writes, releases = _script_fakes(monkeypatch, session=True)
+    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+    changed = task_module._free_script_hotkeys(
+        config.kde_settings,
+        script_path=client,
+        env=env,
+        timeout=5,
+        system_python=engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(engine),
+    )
+    assert changed is True
+    assert releases
+    text = next(part for part in releases[0] if "import dbus" in part)
+    assert "org.example.KGlobalAccel" in text
+    assert "org.example.GlobalAccel" in text
+    assert "org.kde.kglobalaccel" not in text
+    assert "$kglobalaccel_bus_name" not in text
 
 
 def test_hotkey_release_prefix_comes_from_the_config(
@@ -1381,6 +1435,7 @@ def test_hotkey_release_prefix_comes_from_the_config(
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
     assert releases
     assert releases[0][:4] == ["runuser", "-u", "i", "--"]
@@ -1408,6 +1463,7 @@ def test_free_script_hotkeys_without_session_skips_live(
         env=None,
         timeout=5,
         system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
     assert changed is True
     assert releases == []
@@ -1961,6 +2017,76 @@ def test_desktop_count_live_removes_extra_desktops(
     assert removed_ids == ["id5", "id6"]
 
 
+def test_the_desktop_dbus_names_come_from_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The bus name, the object path and the interface of the KWin virtual
+    # desktop manager are config values of the section: another vocabulary
+    # is what the commands carry and what the desktop list client receives,
+    # and the shipped names stop appearing.
+    records = (
+        KConfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),
+    )
+    ctx = _kconfig_ctx(tmp_path, records)
+    renamed = replace(
+        ctx.config.kde_settings,
+        kwin_bus_name="org.example.KWin",
+        virtual_desktop_manager_object_path="/ExampleDesktopManager",
+        virtual_desktop_manager_interface_name="org.example.DesktopManager",
+        virtual_desktops_property_name="screens",
+        dbus_properties_interface_name="org.example.Properties",
+    )
+    calls: list[list[str]] = []
+    client_texts: list[str] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        joined = " ".join(command)
+        if ".count" in joined:
+            return _FakeProc(0, "4")
+        if command and "import dbus" in command[-1]:
+            client_texts.append(command[-1])
+            return _FakeProc(0, "id1\nid2\nid3\nid4\n")
+        if "removeDesktop" in joined:
+            return _FakeProc(0, "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {
+        "HOME": str(tmp_path),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+    shipped_client = (
+        Path(__file__).resolve().parents[1]
+        / "task_data"
+        / "kde_settings"
+        / "list_desktop_ids.py"
+    )
+    client_path = tmp_path / "list_desktop_ids.py"
+    client_path.write_text(
+        shipped_client.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    error = task_module._apply_desktop_count_live(
+        renamed,
+        script_path=client_path,
+        timeout=30.0,
+        env=env,
+        system_python=ctx.config.engine.system_python,
+    )
+    assert error is None
+    assert any("org.example.KWin" in part for part in calls[0])
+    assert all(
+        "$kwin_bus_name" not in part
+        for command in calls
+        for part in command
+    )
+    assert client_texts
+    assert "org.example.KWin" in client_texts[0]
+    assert "org.example.Properties" in client_texts[0]
+    assert "screens" in client_texts[0]
+    assert "$virtual_desktops_property_name" not in client_texts[0]
+
+
 def test_desktop_count_live_creates_missing_desktops_at_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2134,6 +2260,7 @@ def test_free_script_hotkeys_release_failure_is_warning(
         env=env,
         timeout=5,
         system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
         warnings=warnings,
     )
     assert changed is True

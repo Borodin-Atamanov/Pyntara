@@ -127,6 +127,9 @@ class EngineConfig:
     process_check_command: tuple[str, ...]
     task_start_delay_seconds: float
     desktop_detect_processes: tuple[str, ...]
+    kglobalaccel_bus_name: str
+    kglobalaccel_object_path: str
+    kglobalaccel_interface_name: str
     desktop_username: str = ""
     session_environment_command: tuple[str, ...] = ()
     session_environment_keys: tuple[str, ...] = ()

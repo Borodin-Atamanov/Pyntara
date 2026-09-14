@@ -1423,6 +1423,16 @@ def _engine_table(raw: object) -> EngineConfig:
             raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
         ),
         desktop_detect_processes=tuple(desktop_detect_processes),
+        kglobalaccel_bus_name=_nonempty_string_field(
+            raw.get("kglobalaccel_bus_name"), "engine.kglobalaccel_bus_name"
+        ),
+        kglobalaccel_object_path=_nonempty_string_field(
+            raw.get("kglobalaccel_object_path"), "engine.kglobalaccel_object_path"
+        ),
+        kglobalaccel_interface_name=_nonempty_string_field(
+            raw.get("kglobalaccel_interface_name"),
+            "engine.kglobalaccel_interface_name",
+        ),
         desktop_username=desktop_username,
         session_environment_command=tuple(session_environment_command),
         session_environment_keys=tuple(session_environment_keys),
@@ -2486,7 +2496,30 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kwin_desktop_count_command=_placeholder_command_field(
             raw.get("kwin_desktop_count_command"),
             "kde_settings.kwin_desktop_count_command",
-            (),
+            (
+                "{kwin_bus_name}",
+                "{virtual_desktop_manager_object_path}",
+                "{virtual_desktop_manager_interface_name}",
+            ),
+        ),
+        kwin_bus_name=_nonempty_string_field(
+            raw.get("kwin_bus_name"), "kde_settings.kwin_bus_name"
+        ),
+        virtual_desktop_manager_object_path=_nonempty_string_field(
+            raw.get("virtual_desktop_manager_object_path"),
+            "kde_settings.virtual_desktop_manager_object_path",
+        ),
+        virtual_desktop_manager_interface_name=_nonempty_string_field(
+            raw.get("virtual_desktop_manager_interface_name"),
+            "kde_settings.virtual_desktop_manager_interface_name",
+        ),
+        virtual_desktops_property_name=_nonempty_string_field(
+            raw.get("virtual_desktops_property_name"),
+            "kde_settings.virtual_desktops_property_name",
+        ),
+        dbus_properties_interface_name=_nonempty_string_field(
+            raw.get("dbus_properties_interface_name"),
+            "kde_settings.dbus_properties_interface_name",
         ),
         kwin_desktop_create_command=_placeholder_command_field(
             raw.get("kwin_desktop_create_command"),

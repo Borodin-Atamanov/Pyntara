@@ -29,6 +29,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from string import Template
 from xml.etree import ElementTree
 
 from pyntara.config import (
@@ -41,6 +42,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     install_package_once,
+    kglobalaccel_names,
     package_is_installed,
     run_command,
     session_environment,
@@ -1126,6 +1128,7 @@ def _release_hotkeys_live(
     env: dict[str, str],
     timeout: float,
     system_python: str,
+    kglobalaccel_names: dict[str, str],
 ) -> None:
     """Ask the running KGlobalAccel daemon to release the hotkeys.
 
@@ -1138,7 +1141,9 @@ def _release_hotkeys_live(
     body is longer than five lines (config content spec, Exceptions).
     """
 
-    code = script_path.read_text(encoding="utf-8")
+    code = Template(script_path.read_text(encoding="utf-8")).substitute(
+        **kglobalaccel_names
+    )
     command = [
         *substituted_command(cfg.python_script_command, {"python": system_python}),
         code,
@@ -1160,6 +1165,7 @@ def _free_script_hotkeys(
     env: dict[str, str] | None,
     timeout: float,
     system_python: str,
+    kglobalaccel_names: dict[str, str],
     warnings: list[str] | None = None,
 ) -> bool:
     """Clear every action that owns a script hotkey; True when changed.
@@ -1216,6 +1222,7 @@ def _free_script_hotkeys(
                 env=env,
                 timeout=timeout,
                 system_python=system_python,
+                kglobalaccel_names=kglobalaccel_names,
             )
         except (
             OSError,
@@ -1553,6 +1560,36 @@ def _reload_kwin(
     return None
 
 
+def _desktop_dbus_names(cfg: KdeSettingsConfig) -> dict[str, str]:
+    """The DBus names of the KWin virtual desktop interface, by placeholder.
+
+    The three commands of the section and the desktop list client of
+    task_data/ name the same interface, so both take it from these values
+    and no name of the desktop interface stands in code.
+    """
+
+    return {
+        "kwin_bus_name": cfg.kwin_bus_name,
+        "virtual_desktop_manager_object_path": (
+            cfg.virtual_desktop_manager_object_path
+        ),
+        "virtual_desktop_manager_interface_name": (
+            cfg.virtual_desktop_manager_interface_name
+        ),
+    }
+
+
+def _desktop_list_client_text(cfg: KdeSettingsConfig, script_path: Path) -> str:
+    """The desktop list client with the DBus names of the section filled in."""
+
+    template = Template(script_path.read_text(encoding="utf-8"))
+    return template.substitute(
+        **_desktop_dbus_names(cfg),
+        virtual_desktops_property_name=cfg.virtual_desktops_property_name,
+        dbus_properties_interface_name=cfg.dbus_properties_interface_name,
+    )
+
+
 def _apply_desktop_count_live(
     cfg: KdeSettingsConfig,
     *,
@@ -1588,7 +1625,9 @@ def _apply_desktop_count_live(
         result = run_command(
             _as_user_command(
                 cfg,
-                substituted_command(cfg.kwin_desktop_count_command, {}),
+                substituted_command(
+                    cfg.kwin_desktop_count_command, _desktop_dbus_names(cfg)
+                ),
             ),
             extra_env=env,
             timeout=timeout,
@@ -1607,7 +1646,11 @@ def _apply_desktop_count_live(
                         cfg,
                         substituted_command(
                             cfg.kwin_desktop_create_command,
-                            {"position": str(position), "desktop_name": ""},
+                            {
+                                **_desktop_dbus_names(cfg),
+                                "position": str(position),
+                                "desktop_name": "",
+                            },
                         ),
                     ),
                     extra_env=env,
@@ -1618,7 +1661,7 @@ def _apply_desktop_count_live(
         _log(f"created {target - current} desktops, live count now {target}")
     else:
         try:
-            ids_client = script_path.read_text(encoding="utf-8")
+            ids_client = _desktop_list_client_text(cfg, script_path)
         except OSError as exc:
             return f"cannot read the desktop list client {script_path}: {exc}"
         ids_result = run_command(
@@ -1643,7 +1686,10 @@ def _apply_desktop_count_live(
                         cfg,
                         substituted_command(
                             cfg.kwin_desktop_remove_command,
-                            {"desktop_id": desktop_id},
+                            {
+                                **_desktop_dbus_names(cfg),
+                                "desktop_id": desktop_id,
+                            },
                         ),
                     ),
                     extra_env=env,
@@ -1853,6 +1899,7 @@ def task(ctx: Context) -> TaskResult:
             env=apply_env,
             timeout=timeout,
             system_python=ctx.config.engine.system_python,
+            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
             warnings=warnings,
         ),
     )

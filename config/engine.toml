@@ -200,6 +200,14 @@ task_start_delay_seconds = 0.5
 # install mode detection. A desktop session variable wins over these;
 # the list is checked only when no session variable is set.
 desktop_detect_processes = ["kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell"]
+# The DBus interface of the running KGlobalAccel daemon, by its parts: the bus
+# name, the object path and the interface name. The keyboard tasks and the
+# appearance task talk to that daemon through these values, and the clients
+# under task_data/ receive them as substitutions, so no name of the desktop
+# interface stands in code.
+kglobalaccel_bus_name = "org.kde.kglobalaccel"
+kglobalaccel_object_path = "/kglobalaccel"
+kglobalaccel_interface_name = "org.kde.KGlobalAccel"
 # Account of the desktop user, the owner of the live desktop session the run
 # reaches. The run reads the session environment of that account once and
 # exports it, so a run started over a remote console configures the desktop

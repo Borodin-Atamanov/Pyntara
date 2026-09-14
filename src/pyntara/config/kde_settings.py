@@ -101,6 +101,11 @@ class KdeSettingsConfig:
     virtual_keyboard_locales: tuple[str, ...]
     kwin_reload_command: tuple[str, ...]
     python_script_command: tuple[str, ...]
+    kwin_bus_name: str
+    virtual_desktop_manager_object_path: str
+    virtual_desktop_manager_interface_name: str
+    virtual_desktops_property_name: str
+    dbus_properties_interface_name: str
     kwin_desktop_count_command: tuple[str, ...]
     kwin_desktop_create_command: tuple[str, ...]
     kwin_desktop_remove_command: tuple[str, ...]
