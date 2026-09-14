@@ -166,7 +166,17 @@ The layout of this repository as the version tool sees it: the paths of the
 files the tool rewrites and the prefix of the README title it searches for. The
 tool runs from a git hook on a developer machine and never on a target machine,
 and the files it names are the repository itself, so these values are not values
-of the machine the config describes (decision of the user, 2026-09-13).
+of the machine the config describes (decision of the user, 2026-09-13).  
+The syntax of a foreign format the run reads or edits, as distinct from a name
+or a value inside it: the brackets of a kconfig group header and the equals sign
+that joins a key and its value in that file, the hash that marks a comment, and
+the equals sign, the colon, the semicolon and the comma that separate the fields
+of an answer the country reader parses (src/pyntara/tasks/kde_settings.py,
+src/pyntara/location.py). The characters carry the structure of the file, like
+the dot of a file name or the slash between path segments: a service answering
+in another format would need another reader and not another key, and a key per
+character would describe the syntax of foreign files in the machine config
+(decision of the user, 2026-09-13).
 
 ## A doubtful value goes into the config
 
