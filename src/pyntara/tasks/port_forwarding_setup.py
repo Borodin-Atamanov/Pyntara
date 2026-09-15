@@ -13,9 +13,8 @@ install log instead of surfacing at the first reboot; on a vault
 without the port-forwarding data the service exits cleanly right after
 the start, which is the intended no-op state, not a failure. The task is
 idempotent: it skips when the unit file matches its source and the
-service is enabled; force mode rewrites the unit, removes the
-port-forwarding state file so the service re-derives the desired remote
-port from the hostname, and restarts the service.
+service is enabled; force mode rewrites the unit and restarts the
+service, which makes the service walk its port chain again.
 """
 
 from __future__ import annotations
@@ -143,9 +142,10 @@ def task(ctx: Context) -> TaskResult:
     depends on the machine vault content and is verified after a start.
     Otherwise the task writes the unit, reloads systemd, enables the
     service and starts it, and verifies that the started service is not
-    in the failed state. Force mode also removes the port-forwarding
-    state file before the restart, so the service re-derives the desired
-    remote port from the hostname and re-forwards. Every step that cannot
+    the failed state. Force mode rewrites the unit and restarts the
+    service, so the tunnel walks its port chain again; the task never
+    touches the port-forwarding state file, which the service writes and
+    the telemetry reads. Every step that cannot
     run is a warning of a completed task: a missing template skips the
     unit write alone, a failed write, reload or enable leaves the other
     steps, and a service that entered the failed state is reported while
@@ -240,18 +240,11 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if force:
-        state_path = pf.state_file_path
-        if state_path.exists():
-            try:
-                state_path.unlink()
-            except OSError as exc:
-                warnings.append(
-                    "cannot remove the port-forwarding state "
-                    f"{state_path}: {exc}"
-                )
-            else:
-                _log(f"port-forwarding state {state_path} removed for a fresh port")
-                changed = True
+        # The forced action of this task is the restart below: the tunnel
+        # then walks its port chain again. The port-forwarding state file
+        # belongs to the service, which writes the port it accepted, so the
+        # task never touches it.
+        changed = True
 
     restart_argv = substituted_command(
         pf.systemctl_restart_command, {"service_unit_name": service_name}
