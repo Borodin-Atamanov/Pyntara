@@ -120,13 +120,18 @@ def main(argv: list[str]) -> int:
         return 1
     timeout = cfg.engine.command_timeout_seconds
     command = section.upnp_client_command
-    router_address = upnp.router_external_address(cfg.engine, command, timeout)
+    # The document on stdout is what the collector keeps as records, so the
+    # client runs without its command echo: a progress line would turn the
+    # document into text and the report would lose the fields.
+    router_address = upnp.router_external_address(
+        cfg.engine, command, timeout, log_command=False
+    )
     if router_address is None:
         return 0
     records = mapping_records(
         cfg,
         router_address,
-        upnp.list_mappings(cfg.engine, command, timeout),
+        upnp.list_mappings(cfg.engine, command, timeout, log_command=False),
     )
     if not records:
         return 0

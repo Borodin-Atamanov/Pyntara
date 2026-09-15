@@ -143,12 +143,19 @@ def mapping_for(
 
 
 def router_external_address(
-    engine: EngineConfig, command: str, timeout: float
+    engine: EngineConfig,
+    command: str,
+    timeout: float,
+    log_command: bool = True,
 ) -> str | None:
     """The address the router reports for its internet side, or None.
 
     None means the router does not answer UPnP at all, which is the
-    normal situation on a network with UPnP switched off.
+    normal situation on a network with UPnP switched off. log_command=False
+    keeps the call out of the log, which a caller that prints a document on
+    stdout needs: the progress line of a logged command would otherwise
+    mix into the document and the collector would keep it as text instead
+    of the records it carries.
     """
 
     try:
@@ -159,6 +166,7 @@ def router_external_address(
             check=False,
             capture=True,
             timeout=timeout,
+            log_command=log_command,
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
@@ -166,9 +174,16 @@ def router_external_address(
 
 
 def list_mappings(
-    engine: EngineConfig, command: str, timeout: float
+    engine: EngineConfig,
+    command: str,
+    timeout: float,
+    log_command: bool = True,
 ) -> str:
-    """The raw upnpc mapping list, empty when the router stays silent."""
+    """The raw upnpc mapping list, empty when the router stays silent.
+
+    log_command=False keeps the call out of the log, for the reason given
+    on router_external_address.
+    """
 
     try:
         result = run_command(
@@ -178,6 +193,7 @@ def list_mappings(
             check=False,
             capture=True,
             timeout=timeout,
+            log_command=log_command,
         )
     except (subprocess.TimeoutExpired, OSError):
         return ""

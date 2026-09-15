@@ -6,6 +6,7 @@ fixtures (docs/guides/developer-guide.md).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -126,6 +127,10 @@ class TestMain:
         printed = capsys.readouterr().out
         assert f'"{keys["port"]}": 39222' in printed
         assert f'"{keys["channel"]}": "upnp"' in printed
+        # The collector keeps a document printed on stdout as records, so
+        # nothing but the document may travel there.
+        document = json.loads(printed)
+        assert document[0][keys["scope"]] == "global"
 
     def test_prints_nothing_without_a_router(
         self,

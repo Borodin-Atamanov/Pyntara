@@ -18,6 +18,7 @@ from pyntara.upnp import (
     PortMapping,
     ensure_port_forwarding,
     forward_inbound_port,
+    list_mappings,
     mapping_for,
     parse_external_address,
     parse_port_mappings,
@@ -331,6 +332,26 @@ class TestEnsurePortForwarding:
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
         assert router_external_address(ENGINE, "upnpc", 30.0) is None
+
+    def test_a_caller_that_prints_a_document_can_keep_the_log_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The collector keeps a document printed on stdout as records, so a
+        # report command runs the client without the command echo; the
+        # progress line would turn the document into text.
+        seen: list[object] = []
+
+        def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+            seen.append(kwargs.get("log_command"))
+            return _FakeProc(0, STATUS_OUTPUT)
+
+        monkeypatch.setattr(upnp_module, "run_command", fake_run)
+        assert (
+            router_external_address(ENGINE, "upnpc", 30.0, log_command=False)
+            == "190.55.165.52"
+        )
+        assert list_mappings(ENGINE, "upnpc", 30.0, log_command=False) != ""
+        assert seen == [False, False]
 
 
 class TestForwardInboundPort:
