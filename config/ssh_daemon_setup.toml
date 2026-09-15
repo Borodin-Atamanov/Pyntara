@@ -158,13 +158,21 @@ value = "yes"
 name = "Compression"
 value = "yes"
 
+# How long the daemon keeps a session whose peer went silent: it probes
+# every ClientAliveInterval seconds and drops the session after
+# ClientAliveCountMax probes without an answer. The window decides how long
+# the port of a reverse tunnel stays bound here after the tunnel died with
+# its path, so a shorter window makes the port reusable sooner; the
+# interval stays well above the tens of seconds a poor link may need to
+# answer and still leaves three probes of room, which is about three
+# minutes in total (docs/spec/port-forwarding-setup.md).
 [[ssh_daemon_setup.directives]]
 name = "ClientAliveInterval"
-value = "157"
+value = "60"
 
 [[ssh_daemon_setup.directives]]
 name = "ClientAliveCountMax"
-value = "17"
+value = "3"
 
 [[ssh_daemon_setup.directives]]
 name = "AllowTcpForwarding"

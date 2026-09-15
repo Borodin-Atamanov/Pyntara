@@ -15,6 +15,7 @@ The task never rewrites sshd_config itself. The main configuration is patched th
 The task checks that sshd_config has an Include directive that pulls the drop-in directory in. The check matches every Include pattern against the drop-in path with glob semantics, resolving relative patterns against the directory of sshd_config. A missing Include is a warning of a completed task and the drop-in is written anyway: the configured directives are the part of the machine the task owns, and they start to work the moment the directive appears, so the work is not thrown away by a line missing from a file the task does not own.  
 The directives are written through augeas (augtool from the augeas-tools package, which the task installs itself when augtool is missing, so it never waits for another task to provide the tool). augeas parses the real syntax and updates only what differs: a directive that is already present with the same value is left untouched, a directive with a different value is updated, a directive that is no longer configured is removed, and the ownership comment is guaranteed. The drop-in is owned by the task: a manual edit is reverted on the next run.  
 An empty directives list removes the drop-in, so the task can revoke its own settings.  
+The keepalive pair inside the list serves another feature: ClientAliveInterval and ClientAliveCountMax decide how long the daemon keeps a session whose peer went silent, and with it how long the port of a reverse tunnel stays bound on this machine when the tunnel died without its FIN ever arriving, which is what a broken path or a power loss leaves behind. The configured pair, 60 seconds and 3 probes, ends such a session after about three minutes: a port is reusable soon after a drop, and a link whose answers take tens of seconds still answers a probe within the interval ([Port forwarding](port-forwarding-setup.md)).  
 After a change the effective configuration is verified with sshd -T, which prints the result of the whole Include chain. A directive that a later file overrides, or a keyword the daemon does not know, is a warning of a completed task instead of being silently accepted: the verification is independent of the OpenSSH version and of other files in the drop-in directory.
 
 ## Listen port and the systemd socket
@@ -76,7 +77,7 @@ authorized_keys_file_mode - the file mode of authorized_keys, as an octal string
 ssh_dir_mode - the mode of the deployed .ssh directories, as an octal string
 root_ssh_dir - the root account .ssh directory
 users - the accounts that receive the key pair
-directives - the sshd_config keywords the task guarantees, each with its value
+directives - the sshd_config keywords the task guarantees, each with its value; the keepalive pair among them is the window described under Configuration ownership
 port_forwarding_private_key_file_name - the repository name of the port-forwarding private key
 port_forwarding_public_key_file_name - the repository name of the port-forwarding public key
 port_forwarding_authorized_keys_options - the restriction prefix of the port-forwarding key line in authorized_keys

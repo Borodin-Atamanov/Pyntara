@@ -58,8 +58,8 @@ DEFAULT_DIRECTIVES = (
     SshDirective(name="LoginGraceTime", value="360"),
     SshDirective(name="GatewayPorts", value="yes"),
     SshDirective(name="Compression", value="yes"),
-    SshDirective(name="ClientAliveInterval", value="157"),
-    SshDirective(name="ClientAliveCountMax", value="17"),
+    SshDirective(name="ClientAliveInterval", value="60"),
+    SshDirective(name="ClientAliveCountMax", value="3"),
     SshDirective(name="AllowTcpForwarding", value="yes"),
     SshDirective(name="AddressFamily", value="any"),
 )
