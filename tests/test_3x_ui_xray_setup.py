@@ -32,6 +32,7 @@ from pyntara.location import CountryReport
 from pyntara.models import TaskResult
 from pyntara.public_address import PublicAddresses
 from pyntara.tasks.three_x_ui_xray_setup import _RunFacts as RunFacts
+from pyntara.upnp import ForwardedAddress
 from pyntara.utils import curl_flags
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
@@ -2957,9 +2958,9 @@ class TestForwardUpnpPorts:
         # read for this run, so the router is never asked twice.
         calls: list[tuple[object, ...]] = []
 
-        def fake_forward(*args: object, **kwargs: object) -> str:
+        def fake_forward(*args: object, **kwargs: object) -> ForwardedAddress:
             calls.append(args)
-            return "190.55.165.52"
+            return ForwardedAddress("190.55.165.52", True)
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config().three_x_ui_xray_setup
@@ -2987,15 +2988,29 @@ class TestForwardUpnpPorts:
     ) -> None:
         calls: list[tuple[object, ...]] = []
 
-        def fake_forward(*args: object, **kwargs: object) -> str:
+        def fake_forward(*args: object, **kwargs: object) -> ForwardedAddress:
             calls.append(args)
-            return "190.55.165.52"
+            return ForwardedAddress("190.55.165.52", True)
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config(three_x_ui_ssl_enabled=False).three_x_ui_xray_setup
         facts = _facts(router="190.55.165.52")
         xui._forward_upnp_ports(make_config().engine, cfg, facts, 30.0)
         assert [call[3] for call in calls] == [cfg.inbound_port]
+
+    def test_returns_no_client_address_behind_a_provider_nat(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The port is forwarded, but the address belongs to the provider
+        # network: a client outside it cannot connect, so the task keeps
+        # its own address order and the journal carries the forwarded one.
+        def fake_forward(*args: object, **kwargs: object) -> ForwardedAddress:
+            return ForwardedAddress("100.64.0.7", False)
+
+        monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
+        cfg = make_config().three_x_ui_xray_setup
+        facts = _facts(public=("190.55.165.52",), router="100.64.0.7")
+        assert xui._forward_upnp_ports(make_config().engine, cfg, facts, 30.0) is None
 
     def test_does_nothing_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch

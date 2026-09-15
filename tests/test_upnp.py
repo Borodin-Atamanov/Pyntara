@@ -14,9 +14,12 @@ from support import make_config
 
 from pyntara import upnp as upnp_module
 from pyntara.upnp import (
+    ForwardedAddress,
+    PortMapping,
     ensure_port_forwarding,
     forward_inbound_port,
     mapping_exists,
+    mapping_for,
     parse_external_address,
     parse_port_mappings,
     router_external_address,
@@ -90,9 +93,37 @@ class TestParsePortMappings:
         assert parse_port_mappings(
             LIST_OUTPUT, ENGINE.upnpc_protocol_names, ENGINE.upnpc_mapping_arrow
         ) == [
-            ("TCP", 443, "192.168.1.5", 443),
-            ("UDP", 6881, "192.168.1.5", 6881),
+            PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray"),
+            PortMapping("UDP", 6881, "192.168.1.5", 6881, "other"),
         ]
+
+    def test_reads_the_line_a_router_prints_with_spaces(self) -> None:
+        # The list of a real router carries an index column, an empty
+        # remote host and a lease column, and the description may hold
+        # spaces; the description is read as the quoted field.
+        text = " 2 TCP 39222->192.168.1.52:30222 'pyntara upnp ssh' '' 0\n"
+        assert parse_port_mappings(
+            text, ENGINE.upnpc_protocol_names, ENGINE.upnpc_mapping_arrow
+        ) == [PortMapping("TCP", 39222, "192.168.1.52", 30222, "pyntara upnp ssh")]
+
+    def test_finds_the_mapping_of_a_port(self) -> None:
+        assert mapping_for(
+            LIST_OUTPUT,
+            443,
+            "tcp",
+            ENGINE.upnpc_protocol_names,
+            ENGINE.upnpc_mapping_arrow,
+        ) == PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")
+        assert (
+            mapping_for(
+                LIST_OUTPUT,
+                8443,
+                "TCP",
+                ENGINE.upnpc_protocol_names,
+                ENGINE.upnpc_mapping_arrow,
+            )
+            is None
+        )
 
     def test_ignores_headers_and_notices(self) -> None:
         assert (
@@ -107,12 +138,9 @@ class TestParsePortMappings:
     def test_ignores_a_protocol_outside_the_configured_vocabulary(self) -> None:
         # The protocol of a mapping line comes from the config, so a line
         # of a protocol this client version names differently is skipped.
-        assert (
-            parse_port_mappings(
-                LIST_OUTPUT, ("tcp",), ENGINE.upnpc_mapping_arrow
-            )
-            == [("TCP", 443, "192.168.1.5", 443)]
-        )
+        assert parse_port_mappings(
+            LIST_OUTPUT, ("tcp",), ENGINE.upnpc_mapping_arrow
+        ) == [PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")]
 
     def test_finds_a_mapping_for_the_port(self) -> None:
         assert (
@@ -245,18 +273,15 @@ class TestForwardInboundPort:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._requirements(monkeypatch)
-        assert (
-            forward_inbound_port(
-                ENGINE,
-                "upnpc",
-                "pyntara xray",
-                443,
-                "TCP",
-                ("190.55.165.52",),
-                30.0,
-            )
-            == "190.55.165.52"
-        )
+        assert forward_inbound_port(
+            ENGINE,
+            "upnpc",
+            "pyntara xray",
+            443,
+            "TCP",
+            ("190.55.165.52",),
+            30.0,
+        ) == ForwardedAddress("190.55.165.52", True)
 
     def test_returns_the_router_address_without_observations(
         self, monkeypatch: pytest.MonkeyPatch
@@ -264,27 +289,27 @@ class TestForwardInboundPort:
         # Without an observed address there is nothing to compare, so the
         # router answer is the only available source.
         self._requirements(monkeypatch)
-        assert (
-            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0)
-            == "190.55.165.52"
+        assert forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) == (
+            ForwardedAddress("190.55.165.52", True)
         )
 
-    def test_refuses_the_router_address_behind_a_provider_nat(
+    def test_keeps_the_router_address_behind_a_provider_nat(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # The provider runs another NAT above the router: the internet
+        # cannot reach the address, but the port was really forwarded, so
+        # the address is returned with the scope that says how far it
+        # reaches instead of being dropped.
         self._requirements(monkeypatch, router="100.64.0.7")
-        assert (
-            forward_inbound_port(
-                ENGINE,
-                "upnpc",
-                "d",
-                443,
-                "TCP",
-                ("190.55.165.52",),
-                30.0,
-            )
-            is None
-        )
+        assert forward_inbound_port(
+            ENGINE,
+            "upnpc",
+            "d",
+            443,
+            "TCP",
+            ("190.55.165.52",),
+            30.0,
+        ) == ForwardedAddress("100.64.0.7", False)
 
     def test_returns_nothing_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch

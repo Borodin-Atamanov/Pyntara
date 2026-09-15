@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ipaddress
 import subprocess
+from dataclasses import dataclass
 
 from pyntara.config import EngineConfig
 from pyntara.logger import log_progress
@@ -50,20 +51,54 @@ def parse_external_address(
     return None
 
 
+@dataclass(frozen=True)
+class PortMapping:
+    """One rule of the router mapping table.
+
+    The description is what tells the rules this project created from the
+    rules of another program on the same router: the router keeps the text
+    and prints it back, so it is the ownership mark of a rule. An empty
+    description means the client that added the rule named none.
+    """
+
+    protocol: str
+    external_port: int
+    internal_address: str
+    internal_port: int
+    description: str
+
+
+@dataclass(frozen=True)
+class ForwardedAddress:
+    """The router address that carries a forwarded port and its scope.
+
+    globally_reachable is False when the address the router reports is not
+    one of the addresses the internet sees: the provider runs another NAT
+    above the router, so the mapping is reachable only from the networks
+    that can route to that address. The address itself is returned in both
+    cases, because it names the port that was really forwarded and a reader
+    of the availability records must see it instead of nothing.
+    """
+
+    address: str
+    globally_reachable: bool
+
+
 def parse_port_mappings(
     text: str, protocol_names: tuple[str, ...], arrow: str
-) -> list[tuple[str, int, str, int]]:
+) -> list[PortMapping]:
     """The active mappings of the upnpc list output.
 
     Every mapping line looks like ` 1 TCP   443->192.168.1.2:443  'desc'`,
     so a line whose second field is one of the configured protocols and
     whose third field holds the configured arrow describes one mapping;
-    anything else (headers, notices) is skipped. Returns tuples of
-    (protocol, external port, internal address, internal port).
+    anything else (headers, notices) is skipped. The description is the
+    first quoted field of the line, so a description that carries spaces
+    arrives whole.
     """
 
     protocols = {name.upper() for name in protocol_names}
-    mappings: list[tuple[str, int, str, int]] = []
+    mappings: list[PortMapping] = []
     for line in text.splitlines():
         fields = line.split()
         if len(fields) < 3:
@@ -78,10 +113,33 @@ def parse_port_mappings(
         internal_address, _, internal_port = internal.partition(":")
         if not external.isdigit() or not internal_port.isdigit():
             continue
+        quoted = line.split("'")
         mappings.append(
-            (protocol, int(external), internal_address, int(internal_port))
+            PortMapping(
+                protocol=protocol,
+                external_port=int(external),
+                internal_address=internal_address,
+                internal_port=int(internal_port),
+                description=quoted[1] if len(quoted) >= 3 else "",
+            )
         )
     return mappings
+
+
+def mapping_for(
+    text: str,
+    port: int,
+    protocol: str,
+    protocol_names: tuple[str, ...],
+    arrow: str,
+) -> PortMapping | None:
+    """The mapping that carries the external port, or None when it is free."""
+
+    wanted = protocol.upper()
+    for mapping in parse_port_mappings(text, protocol_names, arrow):
+        if mapping.protocol == wanted and mapping.external_port == port:
+            return mapping
+    return None
 
 
 def mapping_exists(
@@ -93,13 +151,7 @@ def mapping_exists(
 ) -> bool:
     """True when the list output already carries a mapping for the port."""
 
-    wanted = protocol.upper()
-    return any(
-        mapping_protocol == wanted and external_port == port
-        for mapping_protocol, external_port, _, _ in parse_port_mappings(
-            text, protocol_names, arrow
-        )
-    )
+    return mapping_for(text, port, protocol, protocol_names, arrow) is not None
 
 
 def router_external_address(
@@ -153,8 +205,8 @@ def forward_inbound_port(
     observed_addresses: tuple[str, ...],
     timeout: float,
     router_address: str | None = None,
-) -> str | None:
-    """Forward the port through the router and return its usable address.
+) -> ForwardedAddress | None:
+    """Forward the port through the router and return its address and scope.
 
     Every task that must be reachable from the internet needs the same
     steps, so they live here: ask the router for its internet address,
@@ -164,13 +216,15 @@ def forward_inbound_port(
     package simply gets no address here. router_address carries an
     address the caller already read from the router, so a caller that
     forwards several ports reads the router once instead of once per
-    port; None makes the call read it here. The router address is
-    returned only when it can work, because a router that reports an
-    address different from the addresses the caller observed sits behind
-    another NAT and its mapping forwards nothing. None means the utility
-    is missing, no UPnP router answered, the router refused the mapping,
-    or another NAT sits above it; all four are normal situations reported
-    as progress lines, never as failures.
+    port; None makes the call read it here.
+
+    The router address is returned whenever the mapping is in place. A
+    router that reports an address different from the addresses the
+    caller observed sits behind another NAT: the caller learns that from
+    globally_reachable and keeps the address instead of losing it. None
+    means the utility is missing, no UPnP router answered, or the router
+    refused the mapping; all three are normal situations reported as
+    progress lines, never as failures.
     """
 
     if router_address is None:
@@ -193,13 +247,18 @@ def forward_inbound_port(
         f"router forwards port {port} to {internal_address} "
         f"(router address {router_address})"
     )
-    if observed_addresses and router_address not in observed_addresses:
+    globally_reachable = (
+        not observed_addresses or router_address in observed_addresses
+    )
+    if not globally_reachable:
         log_progress(
             "router address differs from the observed address: the provider "
-            "runs another NAT above the router"
+            "runs another NAT above the router, so the mapping is reachable "
+            "only inside the provider network"
         )
-        return None
-    return router_address
+    return ForwardedAddress(
+        address=router_address, globally_reachable=globally_reachable
+    )
 
 
 def ensure_port_forwarding(

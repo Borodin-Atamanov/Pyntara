@@ -889,15 +889,18 @@ def _forward_upnp_ports(
     The inbound port makes the node reachable for its clients; the ACME
     port makes a trusted certificate possible. Both use the router
     address already read for this run, so the router is asked once. The
-    returned address is the one a client link may use, or None when the
-    mapping is not in place or another NAT sits above the router.
+    returned address is the one a client link may use, so it is returned
+    only when the internet really reaches it; an address that belongs to
+    the provider network is reported in the journal instead, because a
+    client outside that network cannot reach it, while a client inside it
+    can read the address there.
     """
 
     if facts.router_address is None:
         return None
     observed = (*facts.public_addresses.ipv4, *facts.public_addresses.ipv6)
     _log(f"asking the router to forward port {cfg.inbound_port} for clients")
-    client_address = upnp.forward_inbound_port(
+    forwarded = upnp.forward_inbound_port(
         engine,
         cfg.upnp_client_command,
         cfg.upnp_mapping_description,
@@ -922,7 +925,15 @@ def _forward_upnp_ports(
             timeout,
             facts.router_address,
         )
-    return client_address
+    if forwarded is None:
+        return None
+    if not forwarded.globally_reachable:
+        _log(
+            f"the router forwards port {cfg.inbound_port} at "
+            f"{forwarded.address}, reachable only inside the provider network"
+        )
+        return None
+    return forwarded.address
 
 
 def _detect_server_ip(facts: _RunFacts) -> str | None:
