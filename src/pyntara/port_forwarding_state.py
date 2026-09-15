@@ -5,13 +5,13 @@ network module, so every network report carries the current forwarding
 state and the ssh command that reaches this machine through each server.
 The command reads the root-only state file written by the
 auto_port_forwarding service and prints one JSON record per server and
-forwarded local port: the server host, the local port, the granted
-remote port and the ssh command that connects to the server on that
-port, where the reverse tunnel delivers the connection to the local SSH
-daemon. A missing state file means no port forwarding is configured and
-prints nothing with exit code 0, so a machine without the vault data
-shows an empty module instead of an error. A corrupt state file is
-reported as an error, never silently dropped.
+forwarded local port: the server host, the local port, the remote port
+the machine holds there and the ssh command that connects to the server
+on that port, where the reverse tunnel delivers the connection to the
+local SSH daemon. A missing state file means no port forwarding is
+configured and prints nothing with exit code 0, so a machine without the
+vault data shows an empty module instead of an error. A corrupt state
+file is reported as an error, never silently dropped.
 
 The state file path comes from the single system config the command is
 given, which is the same value the service writes and the task deploys,

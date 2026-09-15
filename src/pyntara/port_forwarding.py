@@ -421,11 +421,14 @@ def start_forward(
 
 
 def load_state(path: Path) -> dict[str, dict[str, int]]:
-    """The recorded granted ports from the state file, or an empty dict.
+    """The recorded remote ports from the state file, or an empty dict.
 
-    The state maps every server address to its per-local-port granted
-    remote ports; a missing or unreadable file starts from an empty
-    state, so a fresh service restart re-asks for the desired ports.
+    The state maps every server address to the remote port the machine
+    currently holds for each local port. It is what the telemetry reads,
+    not what the next attempt asks for: every attempt walks the chain
+    from its first candidate again. A missing or unreadable file starts
+    from an empty state, so the first accepted port of a run is reported
+    as a change.
     """
 
     try:
