@@ -1,0 +1,7 @@
+# The build version carrier is a single line that every commit rewrites.
+# Union lets a merge, a rebase or a cherry-pick of two branches that both
+# grew the number finish without a conflict; the version tool reads the
+# highest number of the file and normalizes it back to one line, so the
+# attribute only ever trades a stopped merge for a file that holds two
+# numbers for a moment (docs/guides/developer-guide.md, Version bumping).
+src/pyntara/_version.py merge=union

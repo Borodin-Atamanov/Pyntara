@@ -17,7 +17,9 @@ The helpers fit files where one setting is one line and the line order does not 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
 config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.  
-hooks/land_version_commit.sh — Landing step: bumps the patch version once and records it as one commit on the branch tip before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).  
+hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
+hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
+.gitattributes — Marks src/pyntara/_version.py merge=union, so a version conflict resolves into two lines the version tool normalizes instead of a stopped merge (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).  
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
 ## docs/
@@ -35,8 +37,9 @@ secrets/read_google_script_credentials.py — Prints the script ID, the deployme
 
 ## src/pyntara/
 
-src/pyntara/__init__.py — Package version and public exports.  
-src/pyntara/bump_version.py — Version bumping: reads the version from __init__.py, computes the next patch version and writes it into __init__.py, inst.sh and the README title through config_edit.replace_line_by_string. Consumed by the landing step hooks/land_version_commit.sh, which commits the carrier list this module reports.  
+src/pyntara/__init__.py — Package docstring and the version re-export from pyntara._version.  
+src/pyntara/_version.py — Build version carrier: the single line __version__, rewritten by the pre-commit hook on every commit and marked merge=union in .gitattributes, so the number grows per commit without a merge conflict.
+src/pyntara/bump_version.py — Version bumping: reads the build carrier, computes the next patch version and writes the carrier, the PYNTARA_VERSION line of inst.sh and the README title through config_edit.replace_line_by_string, then verifies that every carrier carries the new number and raises ValueError naming the ones that do not. Consumed by hooks/pre-commit (--build-only) and by the landing step hooks/land_version_commit.sh, which commits the carrier list this module reports.  
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
 src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the install mode vocabulary in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks and the vocabularies they validate against live in tests/config_checks.py.  
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  

@@ -53,10 +53,11 @@ build-backend = "hatchling.build"
 packages = ["src/pyntara"]
 
 [tool.hatch.version]
-# Single version source: src/pyntara/__init__.py holds __version__; the
-# landing step raises it once per landing, from hooks/land_version_commit.sh,
-# and never on every commit.
-path = "src/pyntara/__init__.py"
+# Single version source: src/pyntara/_version.py holds the one line
+# __version__, rewritten by the pre-commit hook on every commit and marked
+# merge=union in .gitattributes, so the number grows per commit without a
+# conflict; the landing step mirrors it into inst.sh and README.md.
+path = "src/pyntara/_version.py"
 
 [tool.mypy]
 # The developer guide's gate stays `mypy --strict src`; the bare `mypy`

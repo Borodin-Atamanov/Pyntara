@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Bump the build version before every commit.
+# The only carrier is src/pyntara/_version.py, a single line marked
+# merge=union in .gitattributes, so every branch grows the number and no
+# merge or rebase collides on it. README.md and inst.sh are written by the
+# landing step alone (docs/guides/developer-guide.md, Version bumping).
+# Best-effort by design: any failure prints a warning to stderr and the
+# hook still exits 0, so a broken bump never blocks a commit.
+set -u
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$repo_root" ]]; then
+    echo "pyntara pre-commit: not a git repository, skipping version bump" >&2
+    exit 0
+fi
+
+run_bump() {
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_root/src" \
+        python3 -m pyntara.bump_version --root "$repo_root" "$@"
+}
+
+if ! build_carrier="$(run_bump --print-build-carrier)"; then
+    echo "pyntara pre-commit: cannot reach the version tool, committing without a bump" >&2
+    exit 0
+fi
+if ! run_bump --build-only >/dev/null; then
+    echo "pyntara pre-commit: version bump failed, committing without it" >&2
+    exit 0
+fi
+git add "$repo_root/$build_carrier"
+exit 0

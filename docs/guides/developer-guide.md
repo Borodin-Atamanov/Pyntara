@@ -40,17 +40,23 @@ Any change that breaks architecture guarantees must update docs/contracts/archit
 
 ## Version bumping
 
-The version grows once per landing, not once per commit. The carriers are src/pyntara/__init__.py (the single source, read by pyproject.toml through hatchling), the PYNTARA_VERSION line of inst.sh and the title line of README.md; src/pyntara/bump_version.py raises the patch step in all three through config_edit.replace_line_by_string and reports the carriers it writes, so the step that commits them never keeps a second copy of that list.
+The version grows with every commit and is written into three files, one writer per carrier, so two branches never fight over the same line.
+
+The build carrier is src/pyntara/_version.py, a file whose whole content is the single line __version__; pyproject.toml reads it through hatchling and src/pyntara/__init__.py re-exports it as pyntara.__version__. The pre-commit hook (hooks/pre-commit) bumps it before every commit on every branch, and it is the only writer of that file.
+
+.gitattributes marks the build carrier merge=union. Two branches that both grew the number therefore merge, rebase or cherry-pick without a conflict: git keeps both lines, the version tool reads the highest number of the file and rewrites it as a single line on its next run. The artifact of a union merge is a carrier that holds two numbers for a moment, never a stopped merge.
+
+The installed face of the version is two whole line machine owned carriers that only the landing step writes: the PYNTARA_VERSION line of inst.sh and the title line of README.md. The installer line is a literal because inst.sh prints it as the very first line on a bare machine, where there is no clone, no python and no git to derive it from, and it must name the revision the installer is about to fetch. The README title keeps the number in the form it always had, and the landing step replaces that whole line.
 
 The landing step (hooks/land_version_commit.sh) runs on the branch tip right before the push to main:
 
 hooks/land_version_commit.sh
 
-It bumps the version and records it as one commit with the subject version: bump to VERSION, built from the three carriers alone, so work staged by another agent in the same clone is never swept in. The step is deliberate where the pre-commit hook it replaced was best-effort: a bump or a commit that fails stops with a message and leaves the bumped files in the working tree, because a landing without a version is a defect and a stopped landing is not. It works on the repository of the current directory, so a linked worktree lands its own branch, and it needs no environment of its own.
+It bumps the build carrier, mirrors the number into inst.sh and README.md, and records all three as one commit with the subject version: bump to VERSION, so work staged by another agent in the same clone is never swept in. It stops loudly where the pre-commit hook is best-effort: it refuses to run while a carrier has uncommitted changes, it fails when a carrier does not carry the new number after the bump (a version line rewritten by hand), and a failed commit leaves the bumped files in the working tree. The commit skips the hook, because the hook would bump the build carrier a second time and the three carriers must land on one number. The step works on the repository of the current directory, so a linked worktree lands its own branch.
 
-A clone that set core.hooksPath hooks for the removed hook can drop the setting with git config --unset core.hooksPath; the directory holds no git hook anymore.
+The hook is local to a clone; enable it once with git config core.hooksPath hooks.
 
-The bash test suite tests/test_land_version_commit.sh covers the step on a temporary git repository; run it with bash tests/test_land_version_commit.sh alongside bash tests/test_inst.sh.
+The bash suites cover both halves on temporary git repositories: bash tests/test_pre_commit_hook.sh for the per-commit bump and bash tests/test_land_version_commit.sh for the landing step, alongside bash tests/test_inst.sh.
 
 ## Adding a new task
 

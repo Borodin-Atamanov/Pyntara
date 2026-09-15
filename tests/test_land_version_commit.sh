@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LANDING_STEP="$SCRIPT_DIR/../hooks/land_version_commit.sh"
+CARRIER="src/pyntara/_version.py"
 
 pass_count=0
 fail_count=0
@@ -33,10 +34,10 @@ run_test() {
     fi
 }
 
-# Create a temporary git repository with a versioned package, installer and
-# README and one baseline commit at 0.1.0. The real src/pyntara package is
-# copied so the step can import the bump module and its config_edit
-# dependency from the temporary source.
+# Create a temporary git repository with a versioned build carrier,
+# installer and README and one baseline commit at 0.1.0. The real
+# src/pyntara package is copied so the step can import the bump module and
+# its config_edit dependency from the temporary source.
 make_versioned_repo() {
     local tmp="$1"
     git -C "$tmp" init -q
@@ -45,11 +46,7 @@ make_versioned_repo() {
     mkdir -p "$tmp/src"
     cp -r "$SCRIPT_DIR/../src/pyntara" "$tmp/src/"
     rm -rf "$tmp/src/pyntara/__pycache__"
-    cat > "$tmp/src/pyntara/__init__.py" <<'EOF'
-"""Pyntara package."""
-
-__version__ = "0.1.0"
-EOF
+    printf '__version__ = "0.1.0"\n' > "$tmp/$CARRIER"
     cat > "$tmp/inst.sh" <<'EOF'
 #!/usr/bin/env bash
 
@@ -79,8 +76,8 @@ test_landing_step_is_executable() {
 }
 
 test_landing_step_commits_all_carriers_in_one_commit() {
-    # One run must raise the patch version in the package, the installer
-    # and the README and record them in a single commit.
+    # One run must raise the patch version in the build carrier, the
+    # installer and the README and record them in a single commit.
     local tmp output
     tmp="$(mktemp -d)"
     make_versioned_repo "$tmp"
@@ -104,8 +101,8 @@ test_landing_step_commits_all_carriers_in_one_commit() {
         rm -rf "$tmp"
         return 1
     fi
-    if ! git -C "$tmp" show HEAD:src/pyntara/__init__.py | grep -q '__version__ = "0.1.1"'; then
-        echo "package version not in the commit" >&2
+    if ! git -C "$tmp" show HEAD:"$CARRIER" | grep -q '__version__ = "0.1.1"'; then
+        echo "carrier version not in the commit" >&2
         rm -rf "$tmp"
         return 1
     fi
@@ -119,7 +116,7 @@ test_landing_step_commits_all_carriers_in_one_commit() {
         rm -rf "$tmp"
         return 1
     fi
-    if [[ -n "$(git -C "$tmp" status --porcelain -- src/pyntara/__init__.py inst.sh README.md)" ]]; then
+    if [[ -n "$(git -C "$tmp" status --porcelain -- "$CARRIER" inst.sh README.md)" ]]; then
         echo "carriers left dirty after the landing commit" >&2
         git -C "$tmp" status --porcelain >&2
         rm -rf "$tmp"
@@ -142,7 +139,7 @@ test_landing_step_carries_no_foreign_staged_work() {
         return 1
     fi
     changed="$(git -C "$tmp" show --name-only --pretty=format: HEAD | LC_ALL=C sort | tr '\n' ' ')"
-    if [[ "$changed" != "README.md inst.sh src/pyntara/__init__.py " ]]; then
+    if [[ "$changed" != "README.md inst.sh src/pyntara/_version.py " ]]; then
         echo "unexpected files in the landing commit: [$changed]" >&2
         rm -rf "$tmp"
         return 1
@@ -164,9 +161,9 @@ test_landing_step_grows_the_version_on_each_run() {
     make_versioned_repo "$tmp"
     run_landing_step "$tmp" >/dev/null 2>&1
     run_landing_step "$tmp" >/dev/null 2>&1
-    if ! git -C "$tmp" show HEAD:src/pyntara/__init__.py | grep -q '__version__ = "0.1.2"'; then
+    if ! git -C "$tmp" show HEAD:"$CARRIER" | grep -q '__version__ = "0.1.2"'; then
         echo "the second landing did not reach 0.1.2" >&2
-        git -C "$tmp" show HEAD:src/pyntara/__init__.py >&2
+        git -C "$tmp" show HEAD:"$CARRIER" >&2
         rm -rf "$tmp"
         return 1
     fi
@@ -184,7 +181,7 @@ test_landing_step_fails_loudly_without_a_version_line() {
     local tmp output rc
     tmp="$(mktemp -d)"
     make_versioned_repo "$tmp"
-    printf 'no version here\n' > "$tmp/src/pyntara/__init__.py"
+    printf 'no version here\n' > "$tmp/$CARRIER"
     git -C "$tmp" commit -q -am "drop the version line"
     set +e
     output="$(run_landing_step "$tmp" 2>&1)"
@@ -208,11 +205,69 @@ test_landing_step_fails_loudly_without_a_version_line() {
     rm -rf "$tmp"
 }
 
+test_landing_step_refuses_a_dirty_carrier() {
+    # An uncommitted change in a carrier is work in progress, possibly of
+    # another agent: the step stops instead of committing it with the
+    # version.
+    local tmp output rc
+    tmp="$(mktemp -d)"
+    make_versioned_repo "$tmp"
+    printf '\nHalf written note.\n' >> "$tmp/README.md"
+    set +e
+    output="$(run_landing_step "$tmp" 2>&1)"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then
+        echo "the landing step landed with a dirty carrier" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$output" != *"uncommitted"* ]]; then
+        echo "the refusal does not name the reason: $output" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$(git -C "$tmp" rev-list --count HEAD)" != "1" ]]; then
+        echo "a commit was recorded while a carrier was dirty" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
+test_landing_step_fails_when_a_carrier_lost_its_line() {
+    # A README title rewritten by hand stops the landing with a message
+    # naming the carrier, instead of mirroring nothing and keeping the old
+    # number without a word.
+    local tmp output rc
+    tmp="$(mktemp -d)"
+    make_versioned_repo "$tmp"
+    printf '# Pyntara\n' > "$tmp/README.md"
+    git -C "$tmp" commit -q -am "docs: reword the title"
+    set +e
+    output="$(run_landing_step "$tmp" 2>&1)"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then
+        echo "the landing step landed with a carrier that has no version line" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$output" != *"README.md"* ]]; then
+        echo "the failure does not name the carrier: $output" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 run_test test_landing_step_is_executable
 run_test test_landing_step_commits_all_carriers_in_one_commit
 run_test test_landing_step_carries_no_foreign_staged_work
 run_test test_landing_step_grows_the_version_on_each_run
 run_test test_landing_step_fails_loudly_without_a_version_line
+run_test test_landing_step_refuses_a_dirty_carrier
+run_test test_landing_step_fails_when_a_carrier_lost_its_line
 
 echo "Tests passed: $pass_count, failed: $fail_count"
 if [[ "$fail_count" -gt 0 ]]; then

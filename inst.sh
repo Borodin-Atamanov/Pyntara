@@ -226,8 +226,10 @@ REPO_URL="${PYNTARA_REPO_URL:-https://github.com/Borodin-Atamanov/Pyntara.git}"
 REPO_BRANCH="${PYNTARA_REPO_BRANCH:-main}"
 SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
-# Installer version, bumped together with src/pyntara/__init__.py by the
-# landing step (hooks/land_version_commit.sh). The value is informational.
+# Installer version, mirrored from src/pyntara/_version.py by the landing
+# step (hooks/land_version_commit.sh). The value is informational, and it
+# is a literal because this line is printed before anything exists on the
+# machine: no clone, no python, no git to derive it from.
 PYNTARA_VERSION="0.3.503"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).

@@ -1,3 +1,3 @@
 """Pyntara package."""
 
-__version__ = "0.3.503"
+from pyntara._version import __version__ as __version__

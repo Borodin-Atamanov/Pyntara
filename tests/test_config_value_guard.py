@@ -67,14 +67,18 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             '_VERSION_PATTERN = re.compile(r\'__version__ = "([^"]+)"\')',
             # An exception of the spec: the paths of the files the version
             # tool rewrites and the prefix of the README title describe the
-            # layout of this repository, and the tool runs from the landing
-            # step on a developer machine and never on a target machine, so
-            # they are not values of the machine the config describes
-            # (decision of the user, 2026-09-13).
-            '_PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")',
+            # layout of this repository, and the tool runs from the
+            # pre-commit hook and from the landing step of a developer
+            # machine, never on a target machine, so they are not values of
+            # the machine the config describes (decision of the user,
+            # 2026-09-13).
+            '_BUILD_VERSION_FILE = Path("src/pyntara/_version.py")',
             '_INSTALLER_VERSION_FILE = Path("inst.sh")',
             '_README_VERSION_FILE = Path("README.md")',
             '_README_TITLE_PREFIX = "# Pyntara "',
+            # The line prefix the version tool rewrites in inst.sh, the same
+            # kind of exception as the README title prefix above.
+            '_INSTALLER_VERSION_PREFIX = \'PYNTARA_VERSION="\'',
         }
     ),
     "src/pyntara/augeas.py": frozenset(
