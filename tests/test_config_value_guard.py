@@ -100,7 +100,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/nextdns.py": frozenset({'PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")'}),
     "src/pyntara/port_forwarding.py": frozenset(
         {
-            'ALLOCATED_RE = re.compile(r"Allocated port (\\d+) for remote forward")',
             'FAILED_RE = re.compile(r"remote port forwarding failed for listen port")',
             'SUCCESS_RE = re.compile(r"remote forward success for: listen (\\d+)")',
         }

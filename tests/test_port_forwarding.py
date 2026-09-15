@@ -13,6 +13,7 @@ import json
 import os
 import stat
 from dataclasses import replace
+from itertools import islice
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,10 +22,12 @@ from pykeepass import PyKeePass, create_database
 from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
+from pyntara.config import Config
 from pyntara.config.engine import EngineConfig
-from pyntara.forwarding_ports import desired_port
+from pyntara.forwarding_ports import candidate_ports, desired_port
 from pyntara.port_forwarding import (
     _normalize_host,
+    _open_tunnel,
     filter_own_servers,
     own_addresses,
     read_passphrase,
@@ -37,7 +40,7 @@ from pyntara.port_forwarding import (
 VAULT_PASSWORD = "vault-secret"
 FAKE_BIN = (
     "#!/usr/bin/env bash\n"
-    "# Fake ssh for the tests: parse the -R argument and behave per env.\n"
+    "# Fake ssh for the tests: read the -R argument and answer per script.\n"
     "# Every status message goes to stderr, exactly like the real ssh.\n"
     'R_SPEC=""\n'
     'prev=""\n'
@@ -46,19 +49,23 @@ FAKE_BIN = (
     '  prev="$arg"\n'
     "done\n"
     'PORT="${R_SPEC%%:*}"\n'
-    'if [[ "$PORT" == "0" ]]; then\n'
-    '  if [[ -n "${FAKE_SSH_GRANT_FILE:-}" ]]; then\n'
-    '    n=$(cat "$FAKE_SSH_GRANT_FILE")\n'
-    '    echo "Allocated port $n for remote forward to localhost:30222" >&2\n'
-    "    echo $((n + 1)) > \"$FAKE_SSH_GRANT_FILE\"\n"
-    '  else\n'
-    '    echo "Allocated port ${FAKE_SSH_GRANT_PORT:-45678} for remote forward to localhost:30222" >&2\n'
-    "  fi\n"
-    '  sleep "${FAKE_SSH_LIFETIME:-100}"\n'
-    "  exit 0\n"
+    'if [[ -n "${FAKE_SSH_ARGV_LOG:-}" ]]; then echo "$R_SPEC" >> "$FAKE_SSH_ARGV_LOG"; fi\n'
+    '# The busy script holds one line per attempt: the ports the server\n'
+    '# refuses for that attempt, space separated. A consumed line is\n'
+    '# dropped, and the last line repeats, so a script with one line\n'
+    '# describes a port that stays taken.\n'
+    'BUSY=""\n'
+    'if [[ -n "${FAKE_SSH_BUSY_SCRIPT:-}" && -r "${FAKE_SSH_BUSY_SCRIPT}" ]]; then\n'
+    '  BUSY="$(head -n 1 "$FAKE_SSH_BUSY_SCRIPT")"\n'
+    '  REST="$(tail -n +2 "$FAKE_SSH_BUSY_SCRIPT")"\n'
+    '  if [[ -n "$REST" ]]; then printf "%s\\n" "$REST" > "$FAKE_SSH_BUSY_SCRIPT"; fi\n'
     "fi\n"
-    'if [[ -n "${FAKE_SSH_BUSY:-}" ]]; then\n'
+    'if [[ " $BUSY " == *" $PORT "* ]]; then\n'
     '  echo "Error: remote port forwarding failed for listen port $PORT" >&2\n'
+    "  exit 255\n"
+    "fi\n"
+    'if [[ -n "${FAKE_SSH_FAIL_CONNECT:-}" ]]; then\n'
+    '  echo "ssh: connect to host server port 30222: Connection refused" >&2\n'
     "  exit 255\n"
     "fi\n"
     'echo "remote forward success for: listen $PORT, connect localhost:30222" >&2\n'
@@ -127,23 +134,6 @@ def _make_vault(tmp_path: Path) -> PyKeePass:
     )
     kp.save()
     return kp
-
-
-class TestDesiredPort:
-    def test_deterministic_and_in_range(self) -> None:
-        config = make_config()
-        first = desired_port(config, "dozor-gunid")
-        second = desired_port(config, "dozor-gunid")
-        assert first == second
-        assert config.port_forwarding_setup.desired_port_min <= first
-        assert first <= config.port_forwarding_setup.desired_port_max
-
-    def test_differs_across_hostnames(self) -> None:
-        config = make_config()
-        ports = {
-            desired_port(config, hostname) for hostname in ("aaa-babab", "bbb-babab")
-        }
-        assert len(ports) == 2
 
 
 class TestOwnServers:
@@ -270,6 +260,7 @@ class TestStartForward:
         self.config = make_config(
             port_forwarding_connect_timeout_seconds=1,
         )
+        self.tmp = tmp_path
         self.bindir = _fake_bin(tmp_path)
         self.key = tmp_path / "key"
         # The pause between the stderr polls is pacing, not behaviour:
@@ -277,38 +268,42 @@ class TestStartForward:
         # pause only slows the test down.
         monkeypatch.setattr(pf.time, "sleep", lambda _seconds: None)
 
-    def test_grants_random_port(self) -> None:
-        env = _agent_env(self.bindir, FAKE_SSH_GRANT_PORT="45678")
-        proc, granted, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", "0", 30222, 5
-        )
-        assert granted == 45678
-        assert busy is False
-        assert error is None
-        assert proc.poll() is None
-        proc.terminate()
-        proc.wait(timeout=5)
-
-    def test_fixed_port_success(self) -> None:
+    def test_accepts_the_requested_port(self) -> None:
         env = _agent_env(self.bindir)
-        proc, granted, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", "41000", 30222, 5
+        proc, busy, error = start_forward(
+            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
         )
-        assert granted is None
         assert busy is False
         assert error is None
         assert proc.poll() is None
         proc.terminate()
         proc.wait(timeout=5)
 
-    def test_fixed_port_busy(self) -> None:
-        env = _agent_env(self.bindir, FAKE_SSH_BUSY="1")
-        proc, granted, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", "41000", 30222, 5
+    def test_reports_a_taken_port_as_busy(self) -> None:
+        # The server refuses the port, so the caller walks on: busy is the
+        # reason, and the error text carries the line of the server.
+        script = self.tmp / "busy.txt"
+        script.write_text("41000\n", encoding="utf-8")
+        env = _agent_env(self.bindir, FAKE_SSH_BUSY_SCRIPT=str(script))
+        proc, busy, error = start_forward(
+            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
         )
-        assert granted is None
         assert busy is True
         assert error is not None
+        assert "failed for listen port" in error
+        proc.wait(timeout=5)
+
+    def test_reports_a_connection_failure_as_an_error(self) -> None:
+        # A port that cannot be reached at all is not a busy port: busy
+        # stays False and the message names the failure, so the caller
+        # backs off instead of walking the whole chain.
+        env = _agent_env(self.bindir, FAKE_SSH_FAIL_CONNECT="1")
+        proc, busy, error = start_forward(
+            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
+        )
+        assert busy is False
+        assert error is not None
+        assert "Connection refused" in error
         proc.wait(timeout=5)
 
 
@@ -458,6 +453,158 @@ def test_a_failed_state_write_leaves_no_temporary_file(
     ).exists()
 
 
+class TestOpenTunnel:
+    """Tests for the walk over the candidate chain of the machine."""
+
+    @pytest.fixture(autouse=True)
+    def _env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self.tmp = tmp_path
+        self.bindir = _fake_bin(tmp_path)
+        self.key = tmp_path / "key"
+        self.argv_log = tmp_path / "argv.txt"
+        self.config = make_config(
+            port_forwarding_connect_timeout_seconds=1,
+        )
+        monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
+        # The pause between two attempts is the behaviour under test, so
+        # every pause of the loop is recorded; the 0.2s stderr poll is
+        # pacing only and is dropped, so the tests stay fast.
+        self.pauses: list[float] = []
+
+        def fake_sleep(seconds: float) -> None:
+            if seconds >= 1:
+                self.pauses.append(seconds)
+
+        monkeypatch.setattr(pf.time, "sleep", fake_sleep)
+
+    def _agent_env(
+        self, busy_script: Path | None = None, **extra: str
+    ) -> dict[str, str]:
+        if busy_script is not None:
+            extra["FAKE_SSH_BUSY_SCRIPT"] = str(busy_script)
+        return _agent_env(
+            self.bindir,
+            lifetime=0.05,
+            FAKE_SSH_ARGV_LOG=str(self.argv_log),
+            **extra,
+        )
+
+    def _attempts(self) -> list[str]:
+        """The -R argument of every attempt, in the order they ran."""
+
+        if not self.argv_log.exists():
+            return []
+        return self.argv_log.read_text(encoding="utf-8").split()
+
+    def _busy_script(self, *lines: object) -> Path:
+        """A busy script with one line per attempt, in the given order."""
+
+        script = self.tmp / "busy.txt"
+        script.write_text(
+            "".join(f"{line}\n" for line in lines), encoding="utf-8"
+        )
+        return script
+
+    def _second_candidate(self) -> int:
+        """The candidate the walk asks for after the first one."""
+
+        return list(islice(candidate_ports(self.config, "testhost"), 2))[1]
+
+    def _tiny_range_config(self) -> Config:
+        """A config whose port range holds exactly three ports."""
+
+        return replace(
+            self.config,
+            port_forwarding_setup=replace(
+                self.config.port_forwarding_setup,
+                desired_port_min=1000,
+                desired_port_max=1002,
+            ),
+        )
+
+    def _open(self, env: dict[str, str], config: Config | None = None):
+        return _open_tunnel(
+            config if config is not None else self.config,
+            "server",
+            30222,
+            30222,
+            self.key,
+            env,
+        )
+
+    def test_the_first_candidate_is_accepted_when_it_is_free(self) -> None:
+        # Nothing is taken on the server, so the machine gets its
+        # predictable number on the first try, without a pause.
+        first = desired_port(self.config, "testhost")
+        opened = self._open(self._agent_env())
+        assert opened is not None
+        proc, port = opened
+        assert port == first
+        assert self._attempts() == [f"{first}:localhost:30222"]
+        assert self.pauses == []
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    def test_a_taken_candidate_moves_to_the_next_one(self) -> None:
+        # The server refuses the first candidate, so the walk asks for the
+        # second one after the configured base pause. Every request is a
+        # candidate of the machine: no port is ever asked from the server.
+        first = desired_port(self.config, "testhost")
+        second = self._second_candidate()
+        env = self._agent_env(self._busy_script(first))
+        opened = self._open(env)
+        assert opened is not None
+        proc, port = opened
+        assert port == second
+        assert self._attempts() == [
+            f"{first}:localhost:30222",
+            f"{second}:localhost:30222",
+        ]
+        assert self.pauses == [
+            float(self.config.port_forwarding_setup.backoff_base_seconds)
+        ]
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    def test_a_failed_connection_ends_the_walk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A port that cannot be reached at all is not a busy port, so the
+        # walk stops instead of asking every candidate of the range.
+        messages: list[str] = []
+        monkeypatch.setattr(
+            pf, "_log", lambda message, **kwargs: messages.append(str(message))
+        )
+        opened = self._open(self._agent_env(FAKE_SSH_FAIL_CONNECT="1"))
+        assert opened is None
+        assert len(self._attempts()) == 1
+        assert any("cannot connect" in message for message in messages)
+
+    def test_a_full_range_of_taken_ports_ends_the_walk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The walk is bounded by the range itself: with a three port range
+        # every port of it is offered once, in the order of the chain, and
+        # then the walk stops, because the next candidate could only
+        # repeat one of them.
+        messages: list[str] = []
+        monkeypatch.setattr(
+            pf, "_log", lambda message, **kwargs: messages.append(str(message))
+        )
+        config = self._tiny_range_config()
+        env = self._agent_env(self._busy_script("1000 1001 1002"))
+        opened = self._open(env, config)
+        assert opened is None
+        attempted = sorted(
+            int(attempt.split(":", 1)[0]) for attempt in self._attempts()
+        )
+        assert attempted == [1000, 1001, 1002]
+        assert len(self.pauses) == len(attempted)
+        assert any("every port of the range" in message for message in messages)
+
+
 class TestRunForwardLoop:
     @pytest.fixture(autouse=True)
     def _env(
@@ -467,11 +614,13 @@ class TestRunForwardLoop:
         self.bindir = _fake_bin(tmp_path)
         self.state_path = tmp_path / "state.json"
         self.key = tmp_path / "key"
+        self.argv_log = tmp_path / "argv.txt"
         self.config = make_config(
             task_data_root=tmp_path,
             port_forwarding_connect_timeout_seconds=1,
             port_forwarding_state_file_path=self.state_path,
         )
+        self.monkeypatch = monkeypatch
         monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
 
         # A port change triggers the metrics collector instead of sending
@@ -481,24 +630,49 @@ class TestRunForwardLoop:
             pf, "trigger_collection", lambda cfg: self.triggers.append(cfg)
         )
 
-        # Distinguish the reconnect pauses (>= 1s) from the stderr-watch
-        # sleeps (0.2s): each pause is recorded and the second one stops
-        # the loop, so every test observes one full reconnect cycle.
-        pauses: list[int] = []
-        self.pauses = pauses
+        # Distinguish the pauses of the loop (>= 1s) from the stderr-watch
+        # sleeps (0.2s): each pause is recorded, and the pause that
+        # reaches stop_after stops the loop, so every test observes whole
+        # connection cycles.
+        self.pauses: list[int] = []
+        self.stop_after = 2
 
         def fake_sleep(seconds: float) -> None:
             if seconds >= 1:
-                pauses.append(int(seconds))
-                if len(pauses) >= 2:
+                self.pauses.append(int(seconds))
+                if len(self.pauses) >= self.stop_after:
                     raise KeyboardInterrupt
 
         monkeypatch.setattr(pf.time, "sleep", fake_sleep)
 
-    def _agent_env(self, **extra: str) -> dict[str, str]:
+    def _agent_env(
+        self, busy_script: Path | None = None, **extra: str
+    ) -> dict[str, str]:
         """Env for the reconnect loop: the fake ssh drops the tunnel at once."""
 
-        return _agent_env(self.bindir, lifetime=0.05, **extra)
+        if busy_script is not None:
+            extra["FAKE_SSH_BUSY_SCRIPT"] = str(busy_script)
+        return _agent_env(
+            self.bindir,
+            lifetime=0.05,
+            FAKE_SSH_ARGV_LOG=str(self.argv_log),
+            **extra,
+        )
+
+    def _attempts(self) -> list[str]:
+        if not self.argv_log.exists():
+            return []
+        return self.argv_log.read_text(encoding="utf-8").split()
+
+    def _busy_script(self, *lines: object) -> Path:
+        script = self.tmp / "busy.txt"
+        script.write_text(
+            "".join(f"{line}\n" for line in lines), encoding="utf-8"
+        )
+        return script
+
+    def _second_candidate(self) -> int:
+        return list(islice(candidate_ports(self.config, "testhost"), 2))[1]
 
     def _run(self, state: dict[str, dict[str, int]], env: dict[str, str]) -> None:
         lock = pf.threading.Lock()
@@ -520,9 +694,9 @@ class TestRunForwardLoop:
         )
 
     def test_connects_records_and_triggers_collector(self) -> None:
-        # A free desired port: the loop records it, saves the state and
-        # triggers one collector run, then waits the first backoff pause
-        # after the fake connection drops.
+        # A free first candidate: the loop records it, saves the state and
+        # triggers one collector run, then waits the backoff pause after
+        # the fake connection drops.
         state: dict[str, dict[str, int]] = {}
         self._run(state, self._agent_env())
         recorded = state["server"]["30222"]
@@ -532,39 +706,58 @@ class TestRunForwardLoop:
         ] == recorded
         assert len(self.triggers) == 1
 
-    def test_busy_desired_port_falls_back_to_random(self) -> None:
-        # A busy desired port makes the loop ask for a random port and
-        # record the granted one instead.
+    def test_the_port_returns_to_the_first_candidate_on_reconnect(self) -> None:
+        # Every walk starts at the first candidate, so a reconnect keeps
+        # the machine on its predictable number and sends no fresh report.
         state: dict[str, dict[str, int]] = {}
-        env = self._agent_env(FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_PORT="45678")
-        self._run(state, env)
-        assert state["server"]["30222"] == 45678
+        self._run(state, self._agent_env())
+        first = desired_port(self.config, "testhost")
+        assert state["server"]["30222"] == first
         assert len(self.triggers) == 1
+        attempts = self._attempts()
+        assert len(attempts) >= 2
+        assert set(attempts) == {f"{first}:localhost:30222"}
 
-    def test_reconnect_with_new_port_triggers_again(self) -> None:
-        # A reconnect that lands on a new random port updates the state
-        # and triggers a fresh collection, so the network report always
-        # carries the current port.
-        grant_file = self.tmp / "grant.txt"
-        grant_file.write_text("10000\n", encoding="utf-8")
-        env = self._agent_env(
-            FAKE_SSH_BUSY="1", FAKE_SSH_GRANT_FILE=str(grant_file)
-        )
+    def test_a_taken_candidate_moves_the_machine_to_the_next_one(self) -> None:
+        # The server takes the first candidate, so the machine moves to
+        # the second one: the port stays deterministic and no port is
+        # asked from the server.
+        first = desired_port(self.config, "testhost")
+        second = self._second_candidate()
         state: dict[str, dict[str, int]] = {}
-        self._run(state, env)
-        assert state["server"]["30222"] == 10001
+        self._run(state, self._agent_env(self._busy_script(first)))
+        assert state["server"]["30222"] == second
+        assert self._attempts() == [
+            f"{first}:localhost:30222",
+            f"{second}:localhost:30222",
+        ]
+
+    def test_a_change_of_port_triggers_a_fresh_report(self) -> None:
+        # The session that just died keeps the port on the server, so the
+        # walk after the drop moves to the next candidate; the state and
+        # the report follow the machine.
+        first = desired_port(self.config, "testhost")
+        second = self._second_candidate()
+        self.stop_after = 3
+        state: dict[str, dict[str, int]] = {}
+        self._run(state, self._agent_env(self._busy_script("", first, "")))
+        assert state["server"]["30222"] == second
         assert len(self.triggers) == 2
 
-    def test_keeps_recorded_port_stable_across_reconnects(self) -> None:
-        # A reconnect with a free recorded port keeps it, so the operator
-        # address does not change; no collection is triggered.
-        grant_file = self.tmp / "grant.txt"
-        grant_file.write_text("20000\n", encoding="utf-8")
-        env = self._agent_env(FAKE_SSH_GRANT_FILE=str(grant_file))
-        state: dict[str, dict[str, int]] = {"server": {"30222": 20000}}
-        self._run(state, env)
-        assert state["server"]["30222"] == 20000
-        assert len(self.triggers) == 0
+    def test_a_taken_candidate_is_named_in_the_journal(self) -> None:
+        # The journal says which port was taken and that the walk moved on,
+        # so a machine whose number changed explains itself.
+        first = desired_port(self.config, "testhost")
+        messages: list[str] = []
+        self.monkeypatch.setattr(
+            pf, "_log", lambda message, **kwargs: messages.append(str(message))
+        )
+        state: dict[str, dict[str, int]] = {}
+        self._run(state, self._agent_env(self._busy_script(first)))
+        assert (
+            f"server: remote port {first} is taken there, "
+            "trying the next candidate" in messages
+        )
 
 
 class TestMain:

@@ -27,7 +27,9 @@ class PortForwardingSetupConfig:
     entry that carries the passphrase of the deployed port-forwarding
     private key. remote_ssh_user is the user the service connects as on
     every server. desired_port_min and desired_port_max bound the
-    deterministic desired remote port derived from the hostname.
+    deterministic port chain of the machine, whose candidates the service
+    requests in order until the server accepts one and whose size is the
+    bound of a single walk.
     server_alive_interval_seconds, server_alive_count_max and
     connect_timeout_seconds tune the ssh connection;
     own_addresses_timeout_seconds bounds the ip call that lists this
@@ -38,9 +40,9 @@ class PortForwardingSetupConfig:
     the display ssh-add hands to the askpass helper of the key unlock.
     backoff_base_seconds,
     backoff_multiplier and backoff_max_seconds drive the reconnect pauses.
-    state_file_path is the root-only JSON file that records the assigned
-    remote ports; the System Metrics collector reads it into the network
-    report. service_unit_name and service_restart_seconds configure the
+    state_file_path is the root-only JSON file that records the ports the
+    service currently forwards; the System Metrics collector reads it into
+    the network report. service_unit_name and service_restart_seconds configure the
     deployed service unit, whose template and module the task reads from
     service_template_file_name and service_module_name; the four
     systemctl_* commands drive that unit, each carrying the unit name as

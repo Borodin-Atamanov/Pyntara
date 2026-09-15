@@ -7,14 +7,16 @@ the runtime secret vault through the shared vault opener, reads the
 server addresses and the passphrase of the port-forwarding key, unlocks
 the key in a dedicated ssh-agent and starts one supervisor thread per
 server. Every thread keeps one ssh -R tunnel alive that forwards the
-local SSH daemon port to a remote port on the server: the desired remote
-port is derived deterministically from the hostname, and when the server
-cannot grant it the thread asks for a random port and records the granted
-one, so the port stays stable across reconnects. A dropped connection is
-re-established after the geometric backoff, and every granted-port change
-is saved to the state file and triggers a fresh System Metrics
-collection, so the network report carries the current remote port of the
-machine (docs/spec/port-forwarding-setup.md). A server whose address is
+local SSH daemon port to a remote port on the server: the remote port is
+the first candidate of the machine's deterministic port chain that the
+server accepts, and a candidate the server refuses is left behind for the
+next one, so no port is ever chosen at random. A dropped connection is
+re-established after the geometric backoff and starts the chain again at
+its first candidate, so a reboot or a drop returns the machine to its
+predictable number as soon as that port is free. Every port change is
+saved to the state file and triggers a fresh System Metrics collection,
+so the network report carries the current remote port of the machine
+(docs/spec/port-forwarding-setup.md). A server whose address is
 a local address of the machine itself, taken from ip -o addr, is
 skipped, so the machine never tunnels onto itself. A vault without the
 server group or the passphrase entry makes the service exit cleanly and
@@ -40,7 +42,7 @@ from pykeepass import PyKeePass
 
 from pyntara import metrics
 from pyntara.config import Config, load_config
-from pyntara.forwarding_ports import desired_port
+from pyntara.forwarding_ports import candidate_ports
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_collect import trigger_collection
@@ -48,16 +50,13 @@ from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
 from pyntara.utils import backoff_delay, substituted_command
 
-# The server prints the granted random port to the client stderr; the
-# pattern is the only source of the granted port, so the service reads it
-# through the shared regex instead of guessing the port.
-ALLOCATED_RE = re.compile(r"Allocated port (\d+) for remote forward")
 # With -v the client prints a positive confirmation when the server
-# accepted a fixed remote port, so a fixed-port forward is confirmed by
-# its own success line instead of by waiting out a silence window.
+# accepted the requested remote port, so a forward is confirmed by its own
+# success line instead of by waiting out a silence window.
 SUCCESS_RE = re.compile(r"remote forward success for: listen (\d+)")
-# A requested fixed port that is taken on the server makes ssh exit with
-# this error line; the service then asks for a random port instead.
+# A requested port that the server cannot bind makes ssh print this line
+# and exit; the service reads it as taken there and walks to the next
+# candidate of the chain instead of asking for a port of its own.
 FAILED_RE = re.compile(r"remote port forwarding failed for listen port")
 
 
@@ -328,6 +327,18 @@ def _build_ssh_command(
     )
 
 
+def _last_line(text: str) -> str:
+    """The last non-empty line of ssh output, or an empty string.
+
+    The line is what a person reads in the journal: ssh names the reason
+    there (a refused host key, an unreachable host, a denied key), which
+    is more useful than the exit code alone.
+    """
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
 def start_forward(
     env: dict[str, str],
     cfg: Config,
@@ -335,23 +346,22 @@ def start_forward(
     ssh_port: int,
     server: str,
     user: str,
-    remote_port: str,
+    remote_port: int,
     local_port: int,
     timeout_seconds: int,
-) -> tuple[subprocess.Popen[str], int | None, bool, str | None]:
+) -> tuple[subprocess.Popen[str], bool, str | None]:
     """Start one -R ssh process and read stderr until the outcome is known.
 
-    Returns (process, granted, busy, error): granted is the allocated
-    port when the server granted a random port (remote_port "0"); busy is
-    True when the requested fixed port is taken on the server; error is
-    None on success and a message otherwise. A fixed-port forward is
-    confirmed by its own success line, so the caller knows the tunnel is
-    up without waiting out a silence window; the reconnect loop repairs
-    any later drop.
+    Returns (process, busy, error): busy is True when the server refused
+    the requested port because it is taken there; error is None on
+    success and a message otherwise. A forward is confirmed by its own
+    success line, so the caller knows the tunnel is up without waiting
+    out a silence window; the caller walks to the next candidate of the
+    chain after a refusal and repairs any later drop.
     """
 
     command = _build_ssh_command(
-        cfg, key_path, ssh_port, server, user, remote_port, local_port
+        cfg, key_path, ssh_port, server, user, str(remote_port), local_port
     )
     poll_seconds = cfg.port_forwarding_setup.forward_outcome_poll_seconds
     proc = subprocess.Popen(
@@ -366,25 +376,19 @@ def start_forward(
     os.set_blocking(proc.stderr.fileno(), False)
     deadline = time.monotonic() + timeout_seconds
     buffer = ""
-    granted: int | None = None
     busy = False
     error: str | None = None
 
     def _scan() -> bool:
         """Scan the buffer for an outcome; True when the wait is settled."""
 
-        nonlocal granted, busy, error
-        match = ALLOCATED_RE.search(buffer)
-        if match:
-            granted = int(match.group(1))
-            return True
+        nonlocal busy, error
         if SUCCESS_RE.search(buffer):
             return True
-        if FAILED_RE.search(buffer):
+        match = FAILED_RE.search(buffer)
+        if match is not None:
             busy = True
-            error = (
-                buffer.strip().splitlines()[-1] if buffer.strip() else "port busy"
-            )
+            error = match.group(0)
             return True
         return False
 
@@ -402,7 +406,7 @@ def start_forward(
         else:
             time.sleep(poll_seconds)
     # The process may have exited with output still buffered in the pipe;
-    # drain it so a just-printed error or grant is not lost.
+    # drain it so a just-printed error is not lost.
     while True:
         try:
             chunk = proc.stderr.read()
@@ -412,8 +416,8 @@ def start_forward(
             break
         buffer += chunk
     if not _scan() and proc.poll() is not None:
-        error = f"ssh exited {proc.returncode}"
-    return proc, granted, busy, error
+        error = _last_line(buffer) or f"ssh exited {proc.returncode}"
+    return proc, busy, error
 
 
 def load_state(path: Path) -> dict[str, dict[str, int]]:
@@ -475,6 +479,58 @@ def save_state(
             _log(f"cannot remove the temporary state file {temp}: {exc}")
 
 
+def _open_tunnel(
+    cfg: Config,
+    server: str,
+    ssh_port: int,
+    local_port: int,
+    key_path: Path,
+    env: dict[str, str],
+) -> tuple[subprocess.Popen[str], int] | None:
+    """Walk the candidate chain until the server accepts a port.
+
+    The walk starts at the first candidate of the machine on every call,
+    so a reboot or a dropped connection starts the machine at its
+    predictable number again. A candidate the server refuses is taken as
+    busy there: the base pause of the table passes and the next candidate
+    is tried, which keeps the server from a burst of attempts. A
+    candidate that cannot be reached at all ends the walk, because a
+    connection problem is not a busy port. Returns the live process with
+    the accepted port, or None when no tunnel could be opened.
+    """
+
+    pf = cfg.port_forwarding_setup
+    for port in candidate_ports(cfg, socket.gethostname()):
+        proc, busy, error = start_forward(
+            env,
+            cfg,
+            key_path,
+            ssh_port,
+            server,
+            pf.remote_ssh_user,
+            port,
+            local_port,
+            pf.connect_timeout_seconds,
+        )
+        if busy:
+            _log(
+                f"{server}: remote port {port} is taken there, "
+                "trying the next candidate"
+            )
+            time.sleep(pf.backoff_base_seconds)
+            continue
+        if error is not None:
+            _log(f"{server}: cannot connect for local {local_port}: {error}")
+            return None
+        return proc, port
+    _log(
+        f"{server}: every port of the range is taken, "
+        "no tunnel for this attempt",
+        priority=pf.error_priority,
+    )
+    return None
+
+
 def run_forward_loop(
     cfg: Config,
     state: dict[str, dict[str, int]],
@@ -487,64 +543,25 @@ def run_forward_loop(
 ) -> None:
     """Keep one reverse tunnel to a server alive; run in one thread.
 
-    The loop tries the recorded port first, then the deterministic
-    desired port; when the requested port is taken on the server it asks
-    for a random port and records the granted one. Every granted-port
-    change is saved to the state file and reported through telemetry. A
-    dropped connection is re-established after the geometric backoff; the
-    escalation resets after a connection that stayed up for at least the
-    maximum backoff, so a single drop after a long uptime waits only the
-    base pause.
+    Every connection attempt walks the machine's port chain from its
+    first candidate, so the port of the tunnel is the first candidate the
+    server accepts and never a port chosen at random. The accepted port
+    is written into the state file, the record the telemetry and the
+    System Metrics report read. A dropped connection or a walk that
+    opened nothing is followed by the geometric backoff; the escalation
+    resets after a connection that stayed up for at least the maximum
+    backoff, so a single drop after a long uptime waits only the base
+    pause.
     """
 
     pf = cfg.port_forwarding_setup
-    hostname = socket.gethostname()
     reconnect = 0
     while True:
         try:
-            with lock:
-                recorded = state.get(server, {}).get(str(local_port))
-            remote_port = recorded if recorded is not None else desired_port(cfg, hostname)
-            proc, granted, busy, error = start_forward(
-                env,
-                cfg,
-                key_path,
-                ssh_port,
-                server,
-                pf.remote_ssh_user,
-                str(remote_port),
-                local_port,
-                pf.connect_timeout_seconds,
+            opened = _open_tunnel(
+                cfg, server, ssh_port, local_port, key_path, env
             )
-            if busy:
-                proc, granted, _, error = start_forward(
-                    env,
-                    cfg,
-                    key_path,
-                    ssh_port,
-                    server,
-                    pf.remote_ssh_user,
-                    "0",
-                    local_port,
-                    pf.connect_timeout_seconds,
-                )
-                if granted is None:
-                    _log(
-                        f"{server}: no free remote port for local {local_port}: {error}",
-                        priority=pf.error_priority,
-                    )
-                    reconnect += 1
-                    time.sleep(
-                        backoff_delay(
-                            reconnect,
-                            pf.backoff_base_seconds,
-                            pf.backoff_multiplier,
-                            pf.backoff_max_seconds,
-                        )
-                    )
-                    continue
-            elif error is not None:
-                _log(f"{server}: cannot connect for local {local_port}: {error}")
+            if opened is None:
                 reconnect += 1
                 time.sleep(
                     backoff_delay(
@@ -555,7 +572,7 @@ def run_forward_loop(
                     )
                 )
                 continue
-            port = granted if granted is not None else remote_port
+            proc, port = opened
             changed_port = False
             with lock:
                 if state.get(server, {}).get(str(local_port)) != port:

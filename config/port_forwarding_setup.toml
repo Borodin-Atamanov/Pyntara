@@ -24,13 +24,14 @@ vault_group_title = "port_forwarding_servers"
 passphrase_entry_title = "ssh_passphase_for_port_forwarding"
 # User the service connects as on every port-forwarding server.
 remote_ssh_user = "i"
-# Lower and upper bound of the deterministic desired remote port, derived
-# as a function of the machine hostname. The defaults are the Linux kernel
-# ephemeral port range, so a desired port that is free on the server falls
-# in the same zone the kernel assigns random ports from. When the desired
-# port is busy on the server, the service asks for a random port instead
-# and records it; the server may grant any port, the bounds do not
-# constrain the granted one.
+# Lower and upper bound of the machine's deterministic port chain, derived
+# as a function of the machine hostname. Every candidate of the chain is a
+# port inside these bounds, and the size of the range is also the bound of
+# a walk: once every port of the range has been offered, the next candidate
+# could only repeat one of them, so the walk ends and the service pauses
+# before starting it anew. The defaults are the Linux kernel ephemeral port
+# range, so a candidate that is free on the server falls in the same zone
+# the kernel assigns random ports from.
 desired_port_min = 32768
 desired_port_max = 60999
 # ssh keepalive: seconds between alive probes and the number of missed
