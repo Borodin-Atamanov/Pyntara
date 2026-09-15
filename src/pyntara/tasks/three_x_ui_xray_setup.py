@@ -2336,26 +2336,31 @@ def _check_egress_address(
     Russia the same name is sent directly on purpose, so the answer must be
     an address of this machine: expecting the remote server there is what
     made an earlier version of this check report a working proxy as broken.
-    The request is attempted twice, because the path to the remote server
-    can stall once and answer on the next attempt, which is a fact of the
-    network rather than a reason to raise an alarm.
+    The request is attempted the configured number of times, because the
+    path to the remote server can stall once and answer on the next
+    attempt, which is a fact of the network rather than a reason to raise
+    an alarm.
     """
 
     _log(f"checking where a request through {proxy} leaves")
     answer = ""
     code = 0
     http_code = cfg.tunnel_probe_no_answer_code
-    for attempt in (1, 2):
+    attempts = cfg.proxy_check_attempts
+    for attempt in range(1, attempts + 1):
         answer, http_code, code = _proxy_request(cfg, proxy, cfg.proxy_check_url)
         if code == 0 and answer:
             break
-        if attempt == 1:
-            _log(f"the first attempt answered nothing (curl exit {code}), trying again")
+        if attempt < attempts:
+            _log(
+                f"attempt {attempt} of {attempts} answered nothing "
+                f"(curl exit {code}), trying again"
+            )
     if code != 0 or not answer:
         return (
             (
                 f"the local proxy answered nothing for {cfg.proxy_check_url} "
-                f"in two attempts (curl exit {code}, HTTP {http_code})"
+                f"in {attempts} attempts (curl exit {code}, HTTP {http_code})"
             ),
         )
     expected = (
@@ -2410,21 +2415,25 @@ def _check_remote_path(
     or a service that refuses to serve it. Such a service does not report
     the address of its client, so an HTTP answer is the evidence: no answer
     means the tunnel does not carry that class, which is exactly what the
-    machine needs to hear. The request is attempted twice for the same
-    reason as the egress check.
+    machine needs to hear. The request is attempted the configured number
+    of times for the same reason as the egress check.
     """
 
     url = cfg.proxy_check_blocked_url
     _log(f"checking the remote path through {proxy} with {url}")
     http_code = cfg.tunnel_probe_no_answer_code
     code = 0
-    for attempt in (1, 2):
+    attempts = cfg.proxy_check_attempts
+    for attempt in range(1, attempts + 1):
         _, http_code, code = _proxy_request(cfg, proxy, url)
         if code == 0 and http_code not in (cfg.tunnel_probe_no_answer_code, ""):
             _log(f"the remote path works: {url} answered HTTP {http_code}")
             return ()
-        if attempt == 1:
-            _log(f"the first attempt answered nothing (curl exit {code}), trying again")
+        if attempt < attempts:
+            _log(
+                f"attempt {attempt} of {attempts} answered nothing "
+                f"(curl exit {code}), trying again"
+            )
     reason = (
         f"curl exit {code}, HTTP {http_code}"
         if code != 0
@@ -2432,7 +2441,8 @@ def _check_remote_path(
     )
     return (
         (
-            f"the local proxy answered nothing for {url} in two attempts ({reason}): "
+            f"the local proxy answered nothing for {url} in {attempts} "
+            f"attempts ({reason}): "
             "a destination that must use the remote server does not reach it"
         ),
     )

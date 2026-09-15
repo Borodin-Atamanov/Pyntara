@@ -5208,6 +5208,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("proxy_check_timeout_seconds"),
         "three_x_ui_xray_setup.proxy_check_timeout_seconds",
     )
+    proxy_check_attempts = _positive_int_field(
+        raw.get("proxy_check_attempts"),
+        "three_x_ui_xray_setup.proxy_check_attempts",
+    )
     panel_root_path = _nonempty_string_field(
         raw.get("panel_root_path"), "three_x_ui_xray_setup.panel_root_path"
     )
@@ -5578,6 +5582,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         proxy_check_url=proxy_check_url,
         proxy_check_blocked_url=proxy_check_blocked_url,
         proxy_check_timeout_seconds=proxy_check_timeout_seconds,
+        proxy_check_attempts=proxy_check_attempts,
         proxy_check_command_timeout_seconds=_positive_int_field(
             raw.get("proxy_check_command_timeout_seconds"),
             "three_x_ui_xray_setup.proxy_check_command_timeout_seconds",

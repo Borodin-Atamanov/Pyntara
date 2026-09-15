@@ -63,7 +63,9 @@ class ThreeXuiXraySetupConfig:
     proxy_check_url is the URL queried once through the local proxy to
     prove the whole path, proxy_check_blocked_url is the URL of a class
     the policy sends through the remote server, queried on a machine in
-    Russia, and proxy_check_timeout_seconds bounds one such request.
+    Russia, proxy_check_timeout_seconds bounds one such request and
+    proxy_check_attempts is how many times each check repeats it before
+    it reports no answer.
     route_test_port is the port the routing check knocks on for every
     destination class, route_test_network and route_test_protocol are the
     transport and the security the check declares for the destination it
@@ -248,6 +250,7 @@ class ThreeXuiXraySetupConfig:
     proxy_check_url: str
     proxy_check_blocked_url: str
     proxy_check_timeout_seconds: int
+    proxy_check_attempts: int
     proxy_check_command_timeout_seconds: int
 
 

@@ -476,7 +476,16 @@ proxy_check_blocked_url = "https://api.openai.com/v1/models"
 # Timeout in seconds of one request of the two path checks above. It
 # bounds the connection phase and the whole transfer, so a stalling
 # tunnel is reported after a predictable wait instead of holding the run.
-proxy_check_timeout_seconds = 20
+# A slow link needs room for the whole chain of one request, the local
+# proxy, the handshake with the remote server and the answer of the
+# destination, so the value lets that chain finish.
+proxy_check_timeout_seconds = 30
+# How many times each path check repeats its request before it reports no
+# answer. The path can stall once and answer on the next attempt, which
+# is a fact of the network and not a broken tunnel, so more than one
+# attempt keeps a slow link from being reported as a failure; every
+# attempt costs at most proxy_check_timeout_seconds.
+proxy_check_attempts = 3
 # Outer timeout in seconds of one tunnel check call: it stays above the
 # probe timeout, so curl reports its own give-up with a clear message
 # before the run kills the process.

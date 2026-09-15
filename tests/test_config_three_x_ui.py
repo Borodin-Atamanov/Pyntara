@@ -127,6 +127,12 @@ from config_helpers import assert_config_error, base_config
             'tunnel_probe_no_answer_code = "000"',
             "tunnel_probe_no_answer_code = 0",
         ),
+        # proxy_check_attempts is zero
+        base_config().replace("proxy_check_attempts = 3", "proxy_check_attempts = 0"),
+        # proxy_check_attempts is a string, not an integer
+        base_config().replace(
+            "proxy_check_attempts = 3", 'proxy_check_attempts = "3"'
+        ),
     ],
 )
 def test_three_x_ui_invalid_values_raise(

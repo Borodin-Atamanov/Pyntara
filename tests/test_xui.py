@@ -279,6 +279,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "proxy_check_url": "https://api4.ipify.org",
         "proxy_check_blocked_url": "https://api.openai.com/v1/models",
         "proxy_check_timeout_seconds": 20,
+        "proxy_check_attempts": 3,
         "proxy_check_command_timeout_seconds": 50,
         "port_forward_probe_command": (
             "curl",

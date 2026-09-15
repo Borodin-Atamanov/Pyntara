@@ -3921,6 +3921,35 @@ class TestRoutingPolicyStage:
         assert result is not None
         assert not [w for w in result.warnings or () if "proxy" in w or "remote path" in w]
 
+    def test_the_proxy_check_attempts_come_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # How many times a path check repeats its request before it reports
+        # no answer is a config value: a slow link may need more than one
+        # attempt, and every attempt is a real request through the tunnel.
+        self._prepare(monkeypatch, tmp_path)
+        calls: list[str] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            del kwargs
+            calls.append(command[-1])
+            return _FakeProc(7, "")
+
+        monkeypatch.setattr(xui, "run_command", fake_run)
+        cfg = replace(self._cfg(tmp_path), proxy_check_attempts=4)
+        policy = cast(
+            "routing_policy.LocalProxyPolicy",
+            SimpleNamespace(in_russia=False),
+        )
+        profile = cast(
+            "routing_policy.VlessProfile",
+            SimpleNamespace(address="203.0.113.9"),
+        )
+        warnings = xui._check_proxy_path(cfg, policy, profile, _facts())
+        assert calls == [cfg.proxy_check_url] * 4
+        assert warnings
+        assert "in 4 attempts" in warnings[0]
+
     def test_reports_a_machine_in_russia_that_uses_the_server_for_the_plain_url(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
