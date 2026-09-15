@@ -194,7 +194,7 @@ google_script_answer_excerpt_chars = 200
 # next to the report and commits it through the same command, so a failure
 # of the PDF never stops the report (docs/spec/system-metrics.md, section
 # Telemetry PDF).
-telemetry_pdf_report_file_name = "network-{hostname}.pdf"
+telemetry_pdf_report_file_name = "{hostname}.pdf"
 # Title of the runtime vault entry whose password encrypts the telemetry
 # PDF (docs/spec/secrets-model.md). The value must name an entry of the
 # [vault_structure] table.
