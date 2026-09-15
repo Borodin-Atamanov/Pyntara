@@ -1,4 +1,4 @@
-# Pyntara 0.3.475
+# Pyntara 0.3.476
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -49,10 +49,12 @@ add_extra_repos and cli_tools run before package operations. The answers that me
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
-The developer run resolves the production vault password inside one sudo invocation, so
-every step runs as root: a non-empty PYNTARA_VAULT_PASSWORD already in the environment
-wins, then a local password file is used when present (the code comment marks the path as
-an example source), and only otherwise does the run ask interactively.
+The developer run asks for the production vault password once and keeps it in a root-only
+file under /dev/shm, so repeated runs on the same machine do not ask again until the next
+reboot clears the shared memory. A non-empty PYNTARA_VAULT_PASSWORD already in the
+environment wins; otherwise the run reads the cached password, and only when the cache is
+empty does it ask interactively and write the answer to the cache. To force a new prompt
+after a password change, delete /dev/shm/pyntara/temp_pass or reboot.
 PYNTARA_SKIP_APT_UPDATE=1 sits in the script invocation prefix, so it reaches the
 installer and the engine; a flag joined with && would only set a shell variable and never
 reach the installer:
@@ -60,11 +62,15 @@ reach the installer:
 ```bash
 sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE bash -c '
 if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
-    if [[ -r /etc/pyntara/pass ]]; then # just example of the file with password
-        PYNTARA_VAULT_PASSWORD="$(cat /etc/pyntara/pass)"
+    pass_file=/dev/shm/pyntara/temp_pass
+    if [[ -s "$pass_file" ]]; then
+        PYNTARA_VAULT_PASSWORD="$(cat "$pass_file")"
     else
         read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD
         echo
+        install -d -m 0700 "$(dirname "$pass_file")"
+        printf "%s" "$PYNTARA_VAULT_PASSWORD" > "$pass_file"
+        chmod 0600 "$pass_file"
     fi
     export PYNTARA_VAULT_PASSWORD
 fi
