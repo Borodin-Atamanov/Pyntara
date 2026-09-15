@@ -31,6 +31,7 @@ from pyntara.config import (
     SystemMetricsSetupConfig,
     ThreeXuiXraySetupConfig,
     TorSetupConfig,
+    UpnpForwardingSetupConfig,
     YggdrasilServiceSetupConfig,
 )
 from pyntara.config.loader import render_config_source
@@ -120,6 +121,18 @@ COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
         "pyntara.config.yggdrasil_service_setup",
         "YGGDRASIL_ADDRESS_CONFIG_KEYS",
         YggdrasilServiceSetupConfig,
+    ),
+    (
+        "pyntara.upnp_forwarding",
+        "pyntara.config.upnp_forwarding_setup",
+        "UPNP_FORWARDING_CONFIG_KEYS",
+        UpnpForwardingSetupConfig,
+    ),
+    (
+        "pyntara.upnp_forwarding_state",
+        "pyntara.config.upnp_forwarding_setup",
+        "UPNP_FORWARDING_CONFIG_KEYS",
+        UpnpForwardingSetupConfig,
     ),
 )
 

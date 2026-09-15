@@ -553,6 +553,24 @@ def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
     )
 
 
+def test_upnp_module_path_matches_upnp_forwarding_config() -> None:
+    # The upnp collector module reads the router rules through the UPnP
+    # client the forwarding service uses, so the argument of the module
+    # command must be the single system config the collector deploys and
+    # not a copy of anything: the command of the client and the protocol
+    # come from that config at collection time.
+    repo_root = Path(__file__).resolve().parents[1]
+    config = load_checked_config(repo_root / "config")
+    modules = config.system_metrics_setup.collector.network_modules
+    upnp_module = next(module for module in modules if module.name == "upnp")
+    assert upnp_module.command == (
+        "/usr/local/lib/pyntara/venv/bin/python",
+        "-m",
+        "pyntara.upnp_forwarding_state",
+        str(config.system_metrics_setup.system_config_path),
+    )
+
+
 def test_repository_collector_network_module_names() -> None:
     # The shipped module list is what the target machine collects; a
     # module dropped by accident would silently remove a fact from every
@@ -570,6 +588,7 @@ def test_repository_collector_network_module_names() -> None:
         "tor_onion",
         "nextdns",
         "port_forwarding",
+        "upnp",
         "rustdesk",
     ]
 

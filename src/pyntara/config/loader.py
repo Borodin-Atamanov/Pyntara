@@ -42,6 +42,7 @@ from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
+from .upnp_forwarding_setup import UpnpForwardingSetupConfig
 from .vault import LocalVaultSetupConfig, VaultStructureConfig
 from .vocalinux_setup import VocalinuxSetupConfig
 from .yggdrasil_service_setup import YggdrasilServiceSetupConfig
@@ -82,6 +83,7 @@ class Config:
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     playwright_setup: PlaywrightSetupConfig
     port_forwarding_setup: PortForwardingSetupConfig
+    upnp_forwarding_setup: UpnpForwardingSetupConfig
     rustdesk_setup: RustdeskSetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig

@@ -142,18 +142,6 @@ def mapping_for(
     return None
 
 
-def mapping_exists(
-    text: str,
-    port: int,
-    protocol: str,
-    protocol_names: tuple[str, ...],
-    arrow: str,
-) -> bool:
-    """True when the list output already carries a mapping for the port."""
-
-    return mapping_for(text, port, protocol, protocol_names, arrow) is not None
-
-
 def router_external_address(
     engine: EngineConfig, command: str, timeout: float
 ) -> str | None:
@@ -269,24 +257,42 @@ def ensure_port_forwarding(
     port: int,
     protocol: str,
     timeout: float,
+    internal_port: int | None = None,
 ) -> bool:
-    """Ensure the router forwards the external port to this machine.
+    """Ensure the router delivers the external port to this machine.
 
-    An existing mapping for the port is kept, so a rerun never adds a
-    second rule. Otherwise the mapping is requested and the result is
-    read back from the router: upnpc reports its own success in text, and
-    the mapping list is the honest answer to whether the rule exists.
-    Returns whether the mapping is in place after the call.
+    A rule that already delivers that port to the address and the internal
+    port given here is kept as it is, so a rerun never adds a second rule.
+    A rule of another program at that port is never touched: this router
+    replaces a rule silently, so taking a port is the decision of the
+    caller, and False lets the caller try another port. A rule of this
+    project whose target moved (the address of the machine changed) is
+    replaced by adding it again, which the router does without complaint.
+    The list is always read back, because the success text of the client is
+    not trusted on its own; returns whether the rule is in place after the
+    call. internal_port defaults to the external port, which is the rule of
+    a service that is published on the number it listens on.
     """
 
-    if mapping_exists(
+    target = (internal_address, port if internal_port is None else internal_port)
+    protocols = engine.upnpc_protocol_names
+    arrow = engine.upnpc_mapping_arrow
+    existing = mapping_for(
         list_mappings(engine, command, timeout),
         port,
         protocol,
-        engine.upnpc_protocol_names,
-        engine.upnpc_mapping_arrow,
-    ):
-        return True
+        protocols,
+        arrow,
+    )
+    if existing is not None:
+        if (existing.internal_address, existing.internal_port) == target:
+            return True
+        if existing.description != description:
+            log_progress(
+                f"port {port} carries the rule of another program, "
+                "it is left alone"
+            )
+            return False
     try:
         run_command(
             substituted_command(
@@ -295,7 +301,8 @@ def ensure_port_forwarding(
                     "command": command,
                     "description": description,
                     "internal_address": internal_address,
-                    "port": str(port),
+                    "internal_port": str(target[1]),
+                    "external_port": str(port),
                     "protocol": protocol,
                 },
             ),
@@ -305,10 +312,14 @@ def ensure_port_forwarding(
         )
     except (subprocess.TimeoutExpired, OSError):
         return False
-    return mapping_exists(
+    existing = mapping_for(
         list_mappings(engine, command, timeout),
         port,
         protocol,
-        engine.upnpc_protocol_names,
-        engine.upnpc_mapping_arrow,
+        protocols,
+        arrow,
     )
+    return existing is not None and (
+        existing.internal_address,
+        existing.internal_port,
+    ) == target

@@ -369,6 +369,16 @@ command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 name = "port_forwarding"
 command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]
 
+# The upnp module reads the rules of the home router through the UPnP
+# client and reports the one this machine owns, so every network report
+# carries the address and the port the internet reaches this machine on,
+# with the ssh command that uses them. The rules are read live from the
+# router, which is the source of truth, and a machine without UPnP or
+# without a rule of its own reports an empty module instead of an error.
+[[system_metrics_setup.collector.network_modules]]
+name = "upnp"
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.upnp_forwarding_state", "/etc/pyntara/config.toml"]
+
 # The rustdesk module prints the machine RustDesk ID from the file the
 # rustdesk_setup task writes after a successful install, so the network
 # report carries the ID the operator uses to connect. The path must match

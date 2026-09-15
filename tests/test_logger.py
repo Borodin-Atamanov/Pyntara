@@ -436,9 +436,12 @@ def test_a_service_entry_point_keeps_the_journal_off(
     # the fixture of conftest.py a test that calls main() would write into the
     # system journal under a production identifier. The fixture turns that
     # configuration into a no-op, and the untouched module state is the proof:
-    # the logger never received an engine table.
+    # the logger never received an engine table. The state is cleared first,
+    # because the journal tests of this file configure the logger themselves
+    # and the order of the suite must not decide what this test proves.
     from pyntara import metrics
 
+    logger.configure_journal(None)
     config = make_config(task_data_root=tmp_path)
 
     def fake_sleep(seconds: float) -> None:

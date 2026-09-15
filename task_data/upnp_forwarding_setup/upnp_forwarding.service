@@ -1,0 +1,9 @@
+[Unit]
+Description=Router port forwarding
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+StandardOutput=null
+$exec_lines

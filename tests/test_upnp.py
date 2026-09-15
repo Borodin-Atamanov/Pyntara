@@ -18,7 +18,6 @@ from pyntara.upnp import (
     PortMapping,
     ensure_port_forwarding,
     forward_inbound_port,
-    mapping_exists,
     mapping_for,
     parse_external_address,
     parse_port_mappings,
@@ -143,37 +142,33 @@ class TestParsePortMappings:
         ) == [PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")]
 
     def test_finds_a_mapping_for_the_port(self) -> None:
+        assert mapping_for(
+            LIST_OUTPUT,
+            443,
+            "tcp",
+            ENGINE.upnpc_protocol_names,
+            ENGINE.upnpc_mapping_arrow,
+        ) == PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")
         assert (
-            mapping_exists(
-                LIST_OUTPUT,
-                443,
-                "TCP",
-                ENGINE.upnpc_protocol_names,
-                ENGINE.upnpc_mapping_arrow,
-            )
-            is True
-        )
-
-    def test_reports_a_missing_mapping(self) -> None:
-        assert (
-            mapping_exists(
+            mapping_for(
                 LIST_OUTPUT,
                 8443,
                 "TCP",
                 ENGINE.upnpc_protocol_names,
                 ENGINE.upnpc_mapping_arrow,
             )
-            is False
+            is None
         )
+        # The same port of another protocol is a different rule.
         assert (
-            mapping_exists(
+            mapping_for(
                 LIST_OUTPUT,
                 443,
                 "UDP",
                 ENGINE.upnpc_protocol_names,
                 ENGINE.upnpc_mapping_arrow,
             )
-            is False
+            is None
         )
 
 
@@ -234,6 +229,100 @@ class TestEnsurePortForwarding:
             )
             is False
         )
+
+    def test_leaves_the_rule_of_another_program_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # This router replaces a rule silently, so a port another program
+        # holds for another host is refused instead of taken; the caller
+        # then tries another port.
+        other_host = " 0 TCP   443->192.168.1.9:443  'pyntara xray'  ''\n"
+        commands: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+            commands.append(command)
+            return _FakeProc(0, other_host)
+
+        monkeypatch.setattr(upnp_module, "run_command", fake_run)
+        assert (
+            ensure_port_forwarding(
+                ENGINE, "upnpc", "pyntara ssh", "192.168.1.5", 443, "TCP", 30.0
+            )
+            is False
+        )
+        assert all("-a" not in command for command in commands)
+
+    def test_replaces_the_rule_of_this_project_that_moved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The machine took another address: its own rule now points at the
+        # old one, and the router takes the new rule over the old one.
+        moved = " 0 TCP   443->192.168.1.9:8443  'pyntara ssh'  ''\n"
+        commands: list[list[str]] = []
+        listing_calls = 0
+
+        def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+            nonlocal listing_calls
+            commands.append(command)
+            if command[1] != "-l":
+                return _FakeProc(0, "")
+            listing_calls += 1
+            return _FakeProc(0, moved if listing_calls == 1 else LIST_OUTPUT)
+
+        monkeypatch.setattr(upnp_module, "run_command", fake_run)
+        assert ensure_port_forwarding(
+            ENGINE,
+            "upnpc",
+            "pyntara ssh",
+            "192.168.1.5",
+            443,
+            "TCP",
+            30.0,
+        )
+        add = next(command for command in commands if "-a" in command)
+        assert add[add.index("-a") + 1 :] == ["192.168.1.5", "443", "443", "TCP"]
+
+    def test_publishes_a_service_on_another_port_than_it_listens_on(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A rule may deliver the external port to another port on this
+        # machine, which is what the router forwarding of the SSH daemon
+        # needs: the SSH port is not the number the router publishes.
+        free = " 0 TCP   443->192.168.1.5:443  'other'  ''\n"
+        commands: list[list[str]] = []
+        listing_calls = 0
+
+        def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+            nonlocal listing_calls
+            commands.append(command)
+            if command[1] != "-l":
+                return _FakeProc(0, "")
+            listing_calls += 1
+            return _FakeProc(
+                0,
+                free
+                if listing_calls == 1
+                else " 0 TCP   39222->192.168.1.5:30222  'pyntara ssh'  ''\n",
+            )
+
+        monkeypatch.setattr(upnp_module, "run_command", fake_run)
+        assert ensure_port_forwarding(
+            ENGINE,
+            "upnpc",
+            "pyntara ssh",
+            "192.168.1.5",
+            39222,
+            "TCP",
+            30.0,
+            30222,
+        )
+        add = next(command for command in commands if "-a" in command)
+        assert add[add.index("-a") + 1 :] == [
+            "192.168.1.5",
+            "30222",
+            "39222",
+            "TCP",
+        ]
 
     def test_reports_no_address_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch

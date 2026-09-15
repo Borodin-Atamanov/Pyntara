@@ -39,7 +39,14 @@ import pykeepass as _pykeepass
 import pytest
 from pykeepass.exceptions import CredentialsError
 
-from pyntara import logger, metrics, metrics_collect, metrics_ingest, port_forwarding
+from pyntara import (
+    logger,
+    metrics,
+    metrics_collect,
+    metrics_ingest,
+    port_forwarding,
+    upnp_forwarding,
+)
 
 logger.configure_journal(None)
 
@@ -51,7 +58,13 @@ logger.configure_journal(None)
 # is replaced with a no-op for the length of the test, and a test that
 # exercises the configuration itself patches the same module name with its own
 # recorder, which wins because it is applied later.
-_SERVICE_MODULES = (metrics, metrics_collect, metrics_ingest, port_forwarding)
+_SERVICE_MODULES = (
+    metrics,
+    metrics_collect,
+    metrics_ingest,
+    port_forwarding,
+    upnp_forwarding,
+)
 
 
 @pytest.fixture(autouse=True)

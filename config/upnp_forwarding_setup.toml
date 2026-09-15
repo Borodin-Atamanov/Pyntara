@@ -1,0 +1,65 @@
+[upnp_forwarding_setup]
+# Router port forwarding parameters (docs/spec/upnp-forwarding-setup.md).
+# The task deploys the oneshot service upnp_forwarding.service and the timer
+# that runs it: the service asks the home router through UPnP to forward the
+# SSH port of this machine, so the machine stays reachable from the internet
+# without a manual rule, and the timer re-asserts the rule after a network
+# change. The external port comes from the same function that derives the
+# remote port of the port_forwarding task, so one machine carries one
+# predictable number in both schemes. A network without UPnP, a missing
+# client and a router that refuses are normal situations: they are reported
+# and never fail the run.
+# Package that provides the UPnP client.
+upnp_package = "miniupnpc"
+# Name of the upnpc binary the deployed service runs.
+upnp_client_command = "upnpc"
+# Protocol of the forwarding rules this section owns; the client sends it as
+# the protocol of the rule.
+upnp_protocol = "TCP"
+# Description of the created rule, shown in the router interface and read
+# back from the router, where it marks a rule as this project's: a rule that
+# carries another description is never touched.
+upnp_mapping_description = "pyntara ssh"
+# Number of external ports the service tries before it gives up. The first
+# candidate is the desired port of the machine; every further one hashes the
+# hostname with the attempt number appended, so a port another rule already
+# holds moves the attempt to a different part of the range instead of
+# walking the neighbours of the first one.
+mapping_attempts = 11
+# Name of the deployed oneshot service unit file and of the timer unit file
+# that runs it.
+service_unit_name = "upnp_forwarding.service"
+timer_unit_name = "upnp_forwarding.timer"
+# Names of the unit templates under task_data/upnp_forwarding_setup/ of the
+# clone; the run fills their placeholders.
+service_template_file_name = "upnp_forwarding.service"
+timer_template_file_name = "upnp_forwarding.timer"
+# Python module the deployed service unit runs from the shared deployment
+# venv of system_metrics_setup.
+service_module_name = "pyntara.upnp_forwarding"
+# Command the deployed unit runs: the interpreter of the deployed venv with
+# the module above and the system config path as its placeholders.
+module_run_command = ["{python}", "-m", "{module}", "{config_path}"]
+# The systemctl calls of the task, each carrying the unit name as its
+# {unit_name} placeholder except the daemon reload.
+systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]
+systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]
+systemctl_start_command = ["systemctl", "start", "--no-block", "{unit_name}"]
+systemctl_is_failed_command = ["systemctl", "is-failed", "{unit_name}"]
+# Delay after boot before the first run and the pause between two runs. The
+# first run waits for the network to come up; every later run re-asserts the
+# rule, so a changed address of the machine or of the router heals by
+# itself.
+timer_boot_delay_seconds = 90
+timer_interval_seconds = 900
+# Journal identifier of the service and the syslog priority of a serious
+# failure, 0 to 7.
+journal_identifier = "upnp_forwarding"
+error_priority = 3
+# Name the channel carries in the network report, and the two scopes of the
+# forwarded address: the internet reaches a global address, while an address
+# of the provider network is reachable only from the networks that route to
+# it.
+report_channel_name = "upnp"
+global_scope_name = "global"
+nat_scope_name = "nat"
