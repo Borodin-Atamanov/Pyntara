@@ -87,6 +87,12 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             'route_test_protocol = "tls"', 'route_test_protocol = ""'
         ),
+        # upnp_mapping_description lost the machine name, so the rules of two
+        # machines of this project could not be told apart
+        base_config().replace(
+            'upnp_mapping_description = "pyntara xray {hostname}"',
+            'upnp_mapping_description = "pyntara xray"',
+        ),
         # tunnel_probe_no_answer_code is an empty string
         base_config().replace(
             'tunnel_probe_no_answer_code = "000"',

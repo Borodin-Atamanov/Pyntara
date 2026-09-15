@@ -3744,11 +3744,12 @@ def _placeholder_command_field(
 def _placeholder_text_field(
     raw: object, name: str, placeholders: tuple[str, ...]
 ) -> str:
-    """Validate a line template and demand the placeholders it is filled with.
+    """Validate a text the run fills and demand the placeholders it uses.
 
-    A line of a file the run writes is a config value with placeholders,
-    so a mistyped one would raise on the target machine; the checks refuse
-    it here instead.
+    A text the run fills placeholders into, be it a line of a file it
+    writes or the description of a rule it creates, is a config value, so a
+    mistyped placeholder would raise on the target machine; the checks
+    refuse it here instead.
     """
 
     text = _nonempty_string_field(raw, name)
