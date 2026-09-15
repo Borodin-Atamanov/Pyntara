@@ -138,8 +138,8 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
-    check_attempts: int = 2,
-    retry_delay: int = 0,
+    service_wait_seconds: int = 0,
+    readiness_delay: int = 0,
 ) -> Context:
     """Context with a small safe config; the real file is never touched."""
 
@@ -155,9 +155,9 @@ def _ctx(
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
-            three_x_ui_start_check_attempts=check_attempts,
-            three_x_ui_start_check_retry_delay_seconds=retry_delay,
-            three_x_ui_readiness_check_delay_seconds=0,
+            three_x_ui_service_start_wait_seconds=service_wait_seconds,
+            three_x_ui_panel_listener_wait_seconds=service_wait_seconds,
+            three_x_ui_readiness_check_delay_seconds=readiness_delay,
             three_x_ui_install_result_env_path=tmp_path / "etc" / "x-ui" / "install-result.env",
             three_x_ui_cert_dir=tmp_path / "cert",
             three_x_ui_self_signed_cert_dir=tmp_path / "selfsigned",
@@ -506,10 +506,10 @@ def test_service_never_active_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The installer ran but the service never becomes active within the
-    # readiness loop: the reason is a warning and the panel stages still
+    # readiness budget: the reason is a warning and the panel stages still
     # report their own result.
     _stage2_fake(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, check_attempts=1)
+    ctx = _ctx(tmp_path)
     calls = _install_fake(
         monkeypatch,
         install_dir=tmp_path / "usr" / "local" / "x-ui",
@@ -806,10 +806,6 @@ class TestProquintCredentials:
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
                 ),
-                # The readiness loop sleeps the configured retry delay
-                # before every check; the service reports active at once,
-                # so the production second only slows the test down.
-                three_x_ui_start_check_retry_delay_seconds=0,
                 three_x_ui_ssl_enabled=False,
             ),
         )
@@ -983,10 +979,6 @@ class TestProquintCredentials:
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
                 ),
-                # The readiness loop sleeps the configured retry delay
-                # before every check; the service reports active at once,
-                # so the production second only slows the test down.
-                three_x_ui_start_check_retry_delay_seconds=0,
                 three_x_ui_ssl_enabled=False,
             ),
         )
@@ -1408,42 +1400,65 @@ class TestPanelPortConvergence:
     def test_wait_panel_http_retries_then_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The panel never answers: the wait retries and reports False.
+        # The panel never answers: the wait asks again until its budget is
+        # spent and then reports False. The clock is faked, so the budget
+        # is spent by the pause and not by real time.
+        clock = {"now": 0.0}
+
+        def fake_sleep(seconds: int) -> None:
+            clock["now"] += seconds
+
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.run_command",
             lambda *a, **k: _FakeProc(7, ""),
         )
-        monkeypatch.setattr(xui.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(xui.time, "sleep", fake_sleep)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
-        assert xui._wait_panel_http(self._cfg(tmp_path), 30) is False
+        cfg = replace(
+            self._cfg(tmp_path),
+            panel_listener_wait_seconds=1,
+            readiness_check_delay_seconds=1,
+        )
+        assert xui._wait_panel_http(cfg, 30) is False
 
-    def test_wait_panel_http_uses_the_configured_attempts_and_timeout(
+    def test_the_panel_listener_budget_and_pause_come_from_the_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The probe timeout, the attempts and the pause come from the
-        # config, so a slow link is not reported as an unreachable panel.
+        # The probe timeout, the budget in seconds and the pause come from
+        # the config, so a slow link is not reported as an unreachable
+        # panel; the clock is faked, so the pause is what moves it.
         commands: list[list[str]] = []
         sleeps: list[int] = []
+        clock = {"now": 0.0}
 
         def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
             commands.append(command)
             return _FakeProc(7, "")
 
+        def fake_sleep(seconds: int) -> None:
+            sleeps.append(seconds)
+            clock["now"] += seconds
+
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
         )
-        monkeypatch.setattr(xui.time, "sleep", lambda seconds: sleeps.append(seconds))
+        monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(xui.time, "sleep", fake_sleep)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         config = make_config(
             task_data_root=tmp_path,
             three_x_ui_install_result_env_path=tmp_path / "missing.env",
             three_x_ui_probe_timeout_seconds=90,
-            three_x_ui_start_check_attempts=3,
-            three_x_ui_start_check_retry_delay_seconds=2,
+            three_x_ui_panel_listener_wait_seconds=5,
+            three_x_ui_readiness_check_delay_seconds=2,
         )
         cfg = config.three_x_ui_xray_setup
         assert xui._wait_panel_http(cfg, 30) is False
-        assert len(commands) == 3
+        # A budget of five seconds with a pause of two asks at 0, 2, 4 and
+        # 6 seconds and stops after the fourth answer: the budget is what
+        # ends the wait, not a count of checks.
+        assert len(commands) == 4
         assert sleeps == [2, 2, 2]
         assert commands[0][commands[0].index("--max-time") + 1] == "90"
 

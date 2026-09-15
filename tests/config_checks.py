@@ -4735,21 +4735,22 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("service_unit_name"),
         "three_x_ui_xray_setup.service_unit_name",
     )
-    start_check_attempts = _int_field(
-        raw.get("start_check_attempts"),
-        "three_x_ui_xray_setup.start_check_attempts",
+    service_start_wait_seconds = _int_field(
+        raw.get("service_start_wait_seconds"),
+        "three_x_ui_xray_setup.service_start_wait_seconds",
     )
-    if start_check_attempts < 1:
+    if service_start_wait_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.start_check_attempts must be positive"
+            "three_x_ui_xray_setup.service_start_wait_seconds "
+            "must not be negative"
         )
-    start_check_retry_delay_seconds = _int_field(
-        raw.get("start_check_retry_delay_seconds"),
-        "three_x_ui_xray_setup.start_check_retry_delay_seconds",
+    panel_listener_wait_seconds = _int_field(
+        raw.get("panel_listener_wait_seconds"),
+        "three_x_ui_xray_setup.panel_listener_wait_seconds",
     )
-    if start_check_retry_delay_seconds < 0:
+    if panel_listener_wait_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.start_check_retry_delay_seconds "
+            "three_x_ui_xray_setup.panel_listener_wait_seconds "
             "must not be negative"
         )
     readiness_check_delay_seconds = _int_field(
@@ -5400,8 +5401,8 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             ("{service_unit_name}",),
         ),
         service_unit_name=service_unit_name,
-        start_check_attempts=start_check_attempts,
-        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        service_start_wait_seconds=service_start_wait_seconds,
+        panel_listener_wait_seconds=panel_listener_wait_seconds,
         readiness_check_delay_seconds=readiness_check_delay_seconds,
         core_ready_wait_seconds=core_ready_wait_seconds,
         install_result_env_path=install_result_env_path,

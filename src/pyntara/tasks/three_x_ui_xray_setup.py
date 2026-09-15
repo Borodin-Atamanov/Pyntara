@@ -298,21 +298,26 @@ def _run_installer(
 def _wait_active(
     engine: EngineConfig,
     service_name: str,
-    attempts: int,
-    retry_delay_seconds: int,
+    wait_seconds: int,
+    check_delay_seconds: int,
     timeout: float,
 ) -> bool:
-    """True when the service reports active within the readiness loop.
+    """True when the service reports active within the readiness budget.
 
     The service may report activating for a moment after start, so the
-    check is repeated with a pause until attempts run out.
+    check is repeated with a pause until the budget runs out. The budget
+    is a number of seconds and not a count of checks, because a count with
+    a fixed pause is a hidden fixed sleep that reports a slow machine as a
+    service that never became active.
     """
 
-    for _ in range(attempts):
-        time.sleep(retry_delay_seconds)
+    started = time.monotonic()
+    while True:
         if service_is_active(engine, service_name, timeout):
             return True
-    return False
+        if time.monotonic() - started >= wait_seconds:
+            return False
+        time.sleep(check_delay_seconds)
 
 
 def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
@@ -1294,16 +1299,16 @@ def _wait_panel_http(
     false login failure. The scheme follows the configured certificate
     and TLS is not verified, mirroring the API client. An unreadable
     install-result.env leaves the web base path empty, which still
-    detects the listener. The number of attempts, the pause between them
-    and the probe timeout come from the config: a slow link must not be
-    reported as an unreachable panel.
+    detects the listener. The budget in seconds, the pause between two
+    checks and the probe timeout come from the config: a slow link must
+    not be reported as an unreachable panel.
     """
 
-    attempts = cfg.start_check_attempts
-    retry_delay_seconds = cfg.start_check_retry_delay_seconds
+    budget = cfg.panel_listener_wait_seconds
+    delay = cfg.readiness_check_delay_seconds
     _log(
         f"waiting for the panel HTTP listener on port {cfg.panel_port} "
-        f"(up to {attempts} checks)"
+        f"(up to {budget} s)"
     )
     web_path = ""
     try:
@@ -1321,7 +1326,8 @@ def _wait_panel_http(
     base_url = xui_client.build_panel_url(
         cfg.panel_http_address, str(cfg.panel_port), web_path, scheme=scheme
     )
-    for _ in range(attempts):
+    started = time.monotonic()
+    while True:
         try:
             result = run_command(
                 substituted_command(
@@ -1337,8 +1343,9 @@ def _wait_panel_http(
             return False
         if result.returncode == 0:
             return True
-        time.sleep(retry_delay_seconds)
-    return False
+        if time.monotonic() - started >= budget:
+            return False
+        time.sleep(delay)
 
 
 def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
@@ -2837,13 +2844,13 @@ def task(ctx: Context) -> TaskResult:
 
                 _log(
                     f"waiting for service to become active (up to "
-                    f"{cfg.start_check_attempts} checks)"
+                    f"{cfg.service_start_wait_seconds} s)"
                 )
                 if not _wait_active(
                     ctx.config.engine,
                     cfg.service_unit_name,
-                    cfg.start_check_attempts,
-                    cfg.start_check_retry_delay_seconds,
+                    cfg.service_start_wait_seconds,
+                    cfg.readiness_check_delay_seconds,
                     timeout,
                 ):
                     install_warnings.append(

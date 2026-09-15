@@ -490,9 +490,9 @@ def base_config() -> str:
         'openssl_subject_template = "/CN={subject}"\n'
         'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
         'service_unit_name = "x-ui.service"\n'
-        "start_check_attempts = 10\n"
-        "start_check_retry_delay_seconds = 1\n"
         "readiness_check_delay_seconds = 1\n"
+        "service_start_wait_seconds = 60\n"
+        "panel_listener_wait_seconds = 60\n"
         "core_ready_wait_seconds = 120\n"
         'install_result_env_path = "/etc/x-ui/install-result.env"\n'
         "random_username_bytes = 4\n"

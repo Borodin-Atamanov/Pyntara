@@ -86,16 +86,21 @@ tunnel_probe_write_out = "\n%{http_code}"
 # is a word of the tool and not a status of the peer, so a check compares
 # against it instead of a number written in the code.
 tunnel_probe_no_answer_code = "000"
-# Readiness loop after the installer runs: attempts and pause between
-# two is-active checks.
-start_check_attempts = 10
-# Pause in seconds between two readiness checks.
-start_check_retry_delay_seconds = 1
 # Pause in seconds between two readiness checks of this task: the service
 # after the installer, the panel HTTP listener after the panel restarted,
 # and the panel core after a template write. A check is one cheap call, so
 # a short pause keeps a machine that answers at once responsive.
 readiness_check_delay_seconds = 1
+# Seconds the service unit may take to report active after the installer
+# ran. The unit can report activating for a moment, and a slow machine
+# needs a longer budget: the wait is seconds and not a count of checks,
+# because a count of checks with a fixed pause is a hidden fixed sleep.
+service_start_wait_seconds = 60
+# Seconds the panel HTTP listener may take to answer after the panel
+# restarted, which a port change, a certificate or an install causes. The
+# listener trails the systemd active state, and a slow machine takes
+# longer to bind it.
+panel_listener_wait_seconds = 60
 # Seconds the panel core may take to answer a routing question after a
 # template write. Writing the template reconciles the running core: the
 # panel applies the change through the core API when the change allows it

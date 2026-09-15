@@ -79,6 +79,30 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             "server_ip_timeout_seconds = 60", "server_ip_timeout_seconds = -1"
         ),
+        # readiness_check_delay_seconds is a string, not an integer
+        base_config().replace(
+            "readiness_check_delay_seconds = 1",
+            'readiness_check_delay_seconds = "1"',
+        ),
+        # readiness_check_delay_seconds is negative
+        base_config().replace(
+            "readiness_check_delay_seconds = 1",
+            "readiness_check_delay_seconds = -1",
+        ),
+        # service_start_wait_seconds is negative
+        base_config().replace(
+            "service_start_wait_seconds = 60",
+            "service_start_wait_seconds = -1",
+        ),
+        # panel_listener_wait_seconds is a string, not an integer
+        base_config().replace(
+            "panel_listener_wait_seconds = 60",
+            'panel_listener_wait_seconds = "60"',
+        ),
+        # core_ready_wait_seconds is negative
+        base_config().replace(
+            "core_ready_wait_seconds = 120", "core_ready_wait_seconds = -1"
+        ),
         # route_test_network is an empty string
         base_config().replace(
             'route_test_network = "tcp"', 'route_test_network = ""'
