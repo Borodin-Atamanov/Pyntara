@@ -227,7 +227,7 @@ REPO_BRANCH="${PYNTARA_REPO_BRANCH:-main}"
 SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
-# pre-commit hook (hooks/pre-commit). The value is informational.
+# landing step (hooks/land_version_commit.sh). The value is informational.
 PYNTARA_VERSION="0.3.502"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).

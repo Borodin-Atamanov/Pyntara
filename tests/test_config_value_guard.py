@@ -67,10 +67,10 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             '_VERSION_PATTERN = re.compile(r\'__version__ = "([^"]+)"\')',
             # An exception of the spec: the paths of the files the version
             # tool rewrites and the prefix of the README title describe the
-            # layout of this repository, and the tool runs from a git hook
-            # on a developer machine and never on a target machine, so they
-            # are not values of the machine the config describes (decision
-            # of the user, 2026-09-13).
+            # layout of this repository, and the tool runs from the landing
+            # step on a developer machine and never on a target machine, so
+            # they are not values of the machine the config describes
+            # (decision of the user, 2026-09-13).
             '_PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")',
             '_INSTALLER_VERSION_FILE = Path("inst.sh")',
             '_README_VERSION_FILE = Path("README.md")',

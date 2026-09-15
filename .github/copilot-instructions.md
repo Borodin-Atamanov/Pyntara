@@ -35,7 +35,7 @@ tests/test_config_*.py when that literal is built by hand.
 behaviour, and a missing tool or a failed step must never stop the run.
 6. Run the full gate: uv run pytest -q -n auto -m 'not live', uv run ruff check
 src tests, uv run mypy, uv run mypy --strict src/, bash tests/test_inst.sh, bash
-tests/test_pre_commit_hook.sh, bash tests/test_commit_script.sh.
+tests/test_land_version_commit.sh, bash tests/test_commit_script.sh.
 7. Prove a deployed artifact live on the target machine when the block touches
 a unit, a service, a path or a command. A green suite never proves the machine.
 8. push to main, and check that HEAD equals origin/main.

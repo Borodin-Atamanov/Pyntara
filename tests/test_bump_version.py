@@ -12,10 +12,12 @@ import pytest
 
 from pyntara.bump_version import (
     bump_version_in_repo,
+    existing_carrier_paths,
     main,
     next_patch_version,
     read_current_version,
     set_version_in_file,
+    version_carrier_paths,
 )
 
 
@@ -137,3 +139,39 @@ def test_main_bumps_and_prints(
     assert main(["--root", str(root)]) == 0
     assert capsys.readouterr().out.strip() == "0.1.1"
     assert read_current_version(package_file) == "0.1.1"
+
+
+def test_version_carrier_paths_are_package_installer_and_readme() -> None:
+    assert version_carrier_paths() == (
+        Path("src/pyntara/__init__.py"),
+        Path("inst.sh"),
+        Path("README.md"),
+    )
+
+
+def test_existing_carrier_paths_drop_a_missing_readme(tmp_path: Path) -> None:
+    _, _, _, readme_file = make_repo(tmp_path, "0.1.0")
+    readme_file.unlink()
+    assert existing_carrier_paths(tmp_path) == (
+        Path("src/pyntara/__init__.py"),
+        Path("inst.sh"),
+    )
+
+
+def test_main_print_carrier_paths_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, package_file, _, _ = make_repo(tmp_path, "0.1.0")
+    assert main(["--root", str(root), "--print-carrier-paths"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "src/pyntara/__init__.py",
+        "inst.sh",
+        "README.md",
+    ]
+    assert read_current_version(package_file) == "0.1.0"
+
+
+def test_main_rejects_two_print_actions(tmp_path: Path) -> None:
+    root, _, _, _ = make_repo(tmp_path, "0.1.0")
+    with pytest.raises(SystemExit):
+        main(["--root", str(root), "--print-only", "--print-carrier-paths"])

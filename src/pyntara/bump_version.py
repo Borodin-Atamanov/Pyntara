@@ -1,13 +1,16 @@
 """Version bumping for the repository.
 
-The pre-commit hook (hooks/pre-commit) runs this module before every
-commit so the version grows with each commit. The single version source
-is src/pyntara/__init__.py (pyproject.toml reads it through hatchling);
-the hook keeps the PYNTARA_VERSION line of inst.sh and the README title
+The landing step (hooks/land_version_commit.sh) runs this module once on
+the branch tip, right before the push to main, so the version grows once
+per landing instead of once per commit. The single version source is
+src/pyntara/__init__.py (pyproject.toml reads it through hatchling); the
+same run keeps the PYNTARA_VERSION line of inst.sh and the README title
 line in sync through the shared line editor replace_line_by_string
 (config_edit.py), never a copy of the edit logic. A missing version line
-is left untouched and a missing README is skipped: the hook must never
-invent content.
+is left untouched and a missing README is skipped: the step must never
+invent content. The carrier list is reported to the landing step
+(--print-carrier-paths), so the shell part commits exactly the files this
+module writes.
 """
 
 from __future__ import annotations
@@ -23,6 +26,18 @@ _PACKAGE_VERSION_FILE = Path("src/pyntara/__init__.py")
 _INSTALLER_VERSION_FILE = Path("inst.sh")
 _README_VERSION_FILE = Path("README.md")
 _README_TITLE_PREFIX = "# Pyntara "
+
+
+def version_carrier_paths() -> tuple[Path, ...]:
+    """The files that carry the version, relative to the repository root."""
+
+    return (_PACKAGE_VERSION_FILE, _INSTALLER_VERSION_FILE, _README_VERSION_FILE)
+
+
+def existing_carrier_paths(root: Path) -> tuple[Path, ...]:
+    """The carriers present in root; a repository without README is normal."""
+
+    return tuple(path for path in version_carrier_paths() if (root / path).exists())
 
 
 def read_current_version(version_file: Path) -> str:
@@ -71,9 +86,10 @@ def bump_version_in_repo(root: Path) -> str:
     skipped, and none of that ever fails the bump.
     """
 
-    version_file = root / _PACKAGE_VERSION_FILE
-    installer_file = root / _INSTALLER_VERSION_FILE
-    readme_file = root / _README_VERSION_FILE
+    package_path, installer_path, readme_path = version_carrier_paths()
+    version_file = root / package_path
+    installer_file = root / installer_path
+    readme_file = root / readme_path
     new_version = next_patch_version(read_current_version(version_file))
     set_version_in_file(
         version_file, '__version__ = "', f'__version__ = "{new_version}"'
@@ -89,7 +105,7 @@ def bump_version_in_repo(root: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Bump the version in the repository and print the new version."""
+    """Bump the version and print it, or print what a print flag asks for."""
 
     parser = argparse.ArgumentParser(
         description="Bump the pyntara patch version in the repository."
@@ -100,12 +116,22 @@ def main(argv: list[str] | None = None) -> int:
         default=Path.cwd(),
         help="repository root (default: current directory)",
     )
-    parser.add_argument(
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument(
         "--print-only",
         action="store_true",
         help="print the next version without writing any file",
     )
+    output.add_argument(
+        "--print-carrier-paths",
+        action="store_true",
+        help="print the carrier files present, one per line, without writing",
+    )
     args = parser.parse_args(argv)
+    if args.print_carrier_paths:
+        for carrier in existing_carrier_paths(args.root):
+            print(carrier)
+        return 0
     if args.print_only:
         version_file = args.root / _PACKAGE_VERSION_FILE
         new_version = next_patch_version(read_current_version(version_file))

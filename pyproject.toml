@@ -54,7 +54,8 @@ packages = ["src/pyntara"]
 
 [tool.hatch.version]
 # Single version source: src/pyntara/__init__.py holds __version__; the
-# bump_version module and the pre-commit hook update it before commits.
+# landing step raises it once per landing, from hooks/land_version_commit.sh,
+# and never on every commit.
 path = "src/pyntara/__init__.py"
 
 [tool.mypy]
