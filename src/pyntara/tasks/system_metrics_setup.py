@@ -45,7 +45,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara import __version__
+from pyntara import __version__, deployment
 from pyntara.config import SystemMetricsSetupConfig
 from pyntara.config.loader import render_config_source
 from pyntara.context import Context
@@ -58,7 +58,6 @@ from pyntara.utils import (
     service_is_enabled,
     substituted_command,
     task_data_dir,
-    trim_whitespace,
 )
 
 # Module-level path constants are monkeypatched by the tests, which run
@@ -67,36 +66,6 @@ from pyntara.utils import (
 # task_data/system_metrics_setup in the clone and are read from the context;
 # the unit file names, the deployment paths of the venv and the system config
 # live in config.toml through Context.
-
-
-def _venv_package_version(
-    cfg: SystemMetricsSetupConfig, venv_python: Path, timeout: float
-) -> str | None:
-    """The pyntara version installed in the venv, or None.
-
-    The import is the proof that the package is installed in the venv;
-    the version proves that the installed code matches the repository
-    clone. The check runs with capture so a broken import stays quiet;
-    the printed version ends with a newline, so the output is trimmed
-    through the shared helper.
-    """
-
-    if not venv_python.is_file():
-        return None
-    try:
-        result = run_command(
-            substituted_command(
-                cfg.venv_version_command, {"python": str(venv_python)}
-            ),
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    if result.returncode != 0:
-        return None
-    return trim_whitespace(result.stdout) or None
 
 
 def _uv_path() -> str | None:
@@ -492,7 +461,9 @@ def task(ctx: Context) -> TaskResult:
     )
 
     venv_python = venv_dir / metrics.venv_python_relative_path
-    venv_version = _venv_package_version(metrics, venv_python, timeout)
+    venv_version = deployment.venv_package_version(
+        metrics.venv_version_command, venv_python, timeout
+    )
     venv_ok = venv_version == __version__
     _log(
         f"checking venv {venv_python}: "
