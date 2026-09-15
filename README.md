@@ -1,4 +1,4 @@
-# Pyntara 0.3.476
+# Pyntara 0.3.477
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -55,6 +55,8 @@ reboot clears the shared memory. A non-empty PYNTARA_VAULT_PASSWORD already in t
 environment wins; otherwise the run reads the cached password, and only when the cache is
 empty does it ask interactively and write the answer to the cache. To force a new prompt
 after a password change, delete /dev/shm/pyntara/temp_pass or reboot.
+A commented PYNTARA_TASKS line inside the command names a single task for quick reruns;
+uncomment it to run only that task instead of the whole default set.
 PYNTARA_SKIP_APT_UPDATE=1 sits in the script invocation prefix, so it reaches the
 installer and the engine; a flag joined with && would only set a shell variable and never
 reach the installer:
@@ -77,6 +79,8 @@ fi
 inst="$(mktemp /tmp/pyntara.XXXXXXXXX)"
 curl --fail --location --connect-timeout 60 --retry 17 --retry-delay 3 --retry-all-errors --retry-max-time 7777 --retry-connrefused \
 -o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh
+# Uncomment to run one task instead of the whole default set, for example:
+# export PYNTARA_TASKS="system_metrics_setup"
 PYNTARA_SKIP_APT_UPDATE=1 bash "$inst"
 '
 ```
