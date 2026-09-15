@@ -43,6 +43,7 @@ from pyntara import metrics
 from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
+from pyntara.metrics_collect import trigger_collection
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
 from pyntara.utils import backoff_delay, substituted_command
@@ -490,45 +491,6 @@ def save_state(
             _log(f"cannot remove the temporary state file {temp}: {exc}")
 
 
-def trigger_collector(cfg: Config) -> None:
-    """Trigger a fresh System Metrics collection after a port change.
-
-    The assigned ports live in the state file read by the collector's
-    port_forwarding module, so a port change only needs the collector to
-    re-run: systemctl start --no-block returns immediately, the
-    collector collects, commits and sends the network report on its own,
-    and its non-blocking flock skips the trigger when a collection is
-    already running. A failed trigger is logged; the next daily
-    collection still carries the current ports.
-    """
-
-    collector_service = cfg.system_metrics_setup.collector.service_unit_name
-    try:
-        result = subprocess.run(
-            substituted_command(
-                cfg.port_forwarding_setup.collector_trigger_command,
-                {"service_unit_name": collector_service},
-            ),
-            capture_output=True,
-            text=True,
-            timeout=cfg.port_forwarding_setup.collector_trigger_timeout_seconds,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        _log(
-            f"cannot trigger the metrics collector: {exc}",
-            priority=cfg.port_forwarding_setup.error_priority,
-        )
-        return
-    if result.returncode != 0:
-        _log(
-            f"cannot trigger the metrics collector: exited {result.returncode}",
-            priority=cfg.port_forwarding_setup.error_priority,
-        )
-        return
-    _log("metrics collector triggered for a fresh network report")
-
-
 def run_forward_loop(
     cfg: Config,
     state: dict[str, dict[str, int]],
@@ -617,7 +579,7 @@ def run_forward_loop(
                     save_state(cfg, state)
                     changed_port = True
             if changed_port:
-                trigger_collector(cfg)
+                trigger_collection(cfg)
             _log(f"{server}: forwarding local port {local_port} to remote port {port}")
             connected_at = time.monotonic()
             proc.wait()

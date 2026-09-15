@@ -764,3 +764,40 @@ def test_commit_report_json_content(
     assert len(written_content) == 1
     assert json.loads(written_content[0]) == report
     assert not (tmp_path / report_name).exists()
+
+
+class TestTriggerCollection:
+    """Tests for the call that wakes the collector after a network change."""
+
+    def test_starts_the_collector_service(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The collector is started without waiting for it, so a producer of
+        # a positive availability change never blocks on the collection.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+            calls.append(list(command))
+            return _FakeProc(0, "")
+
+        monkeypatch.setattr(metrics_collect, "run_command", fake_run)
+        cfg = _config(tmp_path)
+        assert metrics_collect.trigger_collection(cfg) is True
+        assert calls == [
+            [
+                "systemctl",
+                "start",
+                "--no-block",
+                cfg.system_metrics_setup.collector.service_unit_name,
+            ]
+        ]
+
+    def test_a_failed_call_is_reported_and_not_raised(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A failed wake-up is journaled; the next scheduled collection still
+        # carries the current state, so nothing else has to happen.
+        monkeypatch.setattr(
+            metrics_collect, "run_command", lambda *a, **k: _FakeProc(1, "")
+        )
+        assert metrics_collect.trigger_collection(_config(tmp_path)) is False

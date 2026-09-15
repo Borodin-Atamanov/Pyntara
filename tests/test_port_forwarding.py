@@ -32,7 +32,6 @@ from pyntara.port_forwarding import (
     run_forward_loop,
     save_state,
     start_forward,
-    trigger_collector,
 )
 
 VAULT_PASSWORD = "vault-secret"
@@ -479,7 +478,7 @@ class TestRunForwardLoop:
         # a separate report; the trigger is recorded by a fake.
         self.triggers: list[object] = []
         monkeypatch.setattr(
-            pf, "trigger_collector", lambda cfg: self.triggers.append(cfg)
+            pf, "trigger_collection", lambda cfg: self.triggers.append(cfg)
         )
 
         # Distinguish the reconnect pauses (>= 1s) from the stderr-watch
@@ -566,42 +565,6 @@ class TestRunForwardLoop:
         self._run(state, env)
         assert state["server"]["30222"] == 20000
         assert len(self.triggers) == 0
-
-
-class TestTriggerCollector:
-    def test_starts_collector_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # The trigger starts the collector service without blocking, so
-        # the supervisor thread keeps monitoring the tunnel.
-        calls: list[list[str]] = []
-
-        def fake_run(command: list[str], **kwargs: object) -> object:
-            calls.append(list(command))
-            return FakeProc(0)
-
-        monkeypatch.setattr(pf.subprocess, "run", fake_run)
-        config = make_config()
-        trigger_collector(config)
-        assert calls == [
-            [
-                "systemctl",
-                "start",
-                "--no-block",
-                "system_metrics_collector.service",
-            ]
-        ]
-
-    def test_failed_trigger_is_logged_not_raised(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # A failed trigger is journaled, never raised, so the supervisor
-        # thread keeps running; the next daily collection still carries
-        # the current ports.
-        def fake_run(command: list[str], **kwargs: object) -> object:
-            return FakeProc(1)
-
-        monkeypatch.setattr(pf.subprocess, "run", fake_run)
-        config = make_config()
-        trigger_collector(config)
 
 
 class TestMain:

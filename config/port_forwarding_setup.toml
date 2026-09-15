@@ -97,13 +97,12 @@ error_priority = 3
 # The commands the deployed service runs itself. The own addresses come
 # from the ip call below; the port-forwarding key is loaded into a
 # dedicated agent, started by agent_start_command and filled by
-# key_add_command; the collector is woken by collector_trigger_command,
-# and collector_trigger_timeout_seconds bounds that call.
+# key_add_command. The collector is woken through the shared call of
+# pyntara.metrics_collect, which reads its command from the collector
+# table of [system_metrics_setup], so the command exists once.
 own_addresses_command = ["ip", "-o", "addr", "show"]
 agent_start_command = ["ssh-agent", "-s"]
 key_add_command = ["ssh-add", "{key_path}"]
-collector_trigger_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]
-collector_trigger_timeout_seconds = 31
 # The ssh call that holds one reverse tunnel open, with every argument
 # that is ours to choose: the port, the options that keep the client from
 # prompting or offering another identity, the keepalive and connect

@@ -50,7 +50,12 @@ from pyntara.config import (
 )
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
-from pyntara.utils import backoff_delay, substituted_command, trim_whitespace
+from pyntara.utils import (
+    backoff_delay,
+    run_command,
+    substituted_command,
+    trim_whitespace,
+)
 
 
 def _structured_document(output: str) -> object | None:
@@ -383,6 +388,49 @@ def _acquire_lock(path: Path, error_priority: int) -> TextIO | None:
         handle.close()
         return None
     return handle
+
+
+def trigger_collection(cfg: Config) -> bool:
+    """Start the report collector once; report whether the call went through.
+
+    A producer of a positive availability change wakes the collector
+    through this one call, so the network report and the encrypted PDF are
+    rebuilt as soon as a new address or a new port appears, and the
+    running System Metrics service sends them. The collector is a oneshot
+    unit and the configured command returns without waiting, so the caller
+    never waits for the collection; the collector's own non-blocking lock
+    skips a duplicate start while a collection is already running. A
+    failed call is journaled and never raised, because the next scheduled
+    collection still carries the current state. The command, the unit name
+    and the priority are config values of the collector table.
+    """
+
+    collector = cfg.system_metrics_setup.collector
+    command = substituted_command(
+        collector.start_command,
+        {"service_unit_name": collector.service_unit_name},
+    )
+    try:
+        result = run_command(
+            command,
+            check=False,
+            capture=True,
+            timeout=cfg.engine.command_timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _log(
+            f"cannot trigger the metrics collector: {exc}",
+            priority=cfg.system_metrics_setup.error_priority,
+        )
+        return False
+    if result.returncode != 0:
+        _log(
+            f"cannot trigger the metrics collector: exited {result.returncode}",
+            priority=cfg.system_metrics_setup.error_priority,
+        )
+        return False
+    _log("metrics collector triggered for a fresh network report")
+    return True
 
 
 def main() -> None:

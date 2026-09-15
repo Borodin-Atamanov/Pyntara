@@ -2953,7 +2953,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         ("own_addresses_command", ()),
         ("agent_start_command", ()),
         ("key_add_command", ("{key_path}",)),
-        ("collector_trigger_command", ("{service_unit_name}",)),
         (
             "ssh_forward_command",
             (
@@ -2981,10 +2980,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
                     f"{placeholder} placeholder"
                 )
         service_commands[key] = command
-    collector_trigger_timeout_seconds = _positive_int_field(
-        raw.get("collector_trigger_timeout_seconds"),
-        section + "collector_trigger_timeout_seconds",
-    )
     remote_bind_address = _nonempty_string_field(
         raw.get("remote_bind_address"), section + "remote_bind_address"
     )
@@ -3084,8 +3079,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         own_addresses_command=service_commands["own_addresses_command"],
         agent_start_command=service_commands["agent_start_command"],
         key_add_command=service_commands["key_add_command"],
-        collector_trigger_command=service_commands["collector_trigger_command"],
-        collector_trigger_timeout_seconds=collector_trigger_timeout_seconds,
         ssh_forward_command=service_commands["ssh_forward_command"],
         remote_bind_address=remote_bind_address,
         agent_socket_env_key=agent_socket_env_key,

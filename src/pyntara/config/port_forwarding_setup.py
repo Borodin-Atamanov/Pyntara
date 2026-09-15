@@ -50,8 +50,7 @@ class PortForwardingSetupConfig:
     service reads its own commands from the table as well:
     own_addresses_command lists this machine's addresses, agent_start_command
     starts the dedicated agent and key_add_command loads the key into it,
-    collector_trigger_command wakes the System Metrics collector with
-    collector_trigger_timeout_seconds as its bound, and ssh_forward_command
+    and ssh_forward_command
     is the whole ssh call that holds one reverse tunnel open, with
     {ssh_port}, {key_path}, {remote_port}, {local_port}, {user}, {host},
     {remote_bind_address} and the keepalive and connect bounds
@@ -102,8 +101,6 @@ class PortForwardingSetupConfig:
     own_addresses_command: tuple[str, ...]
     agent_start_command: tuple[str, ...]
     key_add_command: tuple[str, ...]
-    collector_trigger_command: tuple[str, ...]
-    collector_trigger_timeout_seconds: int
     ssh_forward_command: tuple[str, ...]
     remote_bind_address: str
     agent_socket_env_key: str
