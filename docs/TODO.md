@@ -490,3 +490,4 @@ Done 2026-09-13, the hundred-and-fourteenth block, the last files the audit had 
 Live check of that block on the target machine: the installed desktop entry carries X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1, the C source of the deployed clone binds exactly that name, and the capture binary is the one the task built at /usr/local/bin/pyntara-wayrecord, so the two copies agree on the machine and not only in the repository.
 
 
+config: commit_final_system_metrics now commits the telemetry PDF from the latest report in the queue next to the runtime vault backup. Both documents are best effort: a failure of one never stops the other. The task reads the latest network-<hostname>.json from main_sent or main_outbox, builds the connection card through telemetry_pdf.build and commits it under telemetry_pdf_report_file_name. Commit 408680f.
