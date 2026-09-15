@@ -23,7 +23,6 @@ connect to nothing.
 
 from __future__ import annotations
 
-import hashlib
 import ipaddress
 import json
 import os
@@ -41,6 +40,7 @@ from pykeepass import PyKeePass
 
 from pyntara import metrics
 from pyntara.config import Config, load_config
+from pyntara.forwarding_ports import desired_port
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_collect import trigger_collection
@@ -59,22 +59,6 @@ SUCCESS_RE = re.compile(r"remote forward success for: listen (\d+)")
 # A requested fixed port that is taken on the server makes ssh exit with
 # this error line; the service then asks for a random port instead.
 FAILED_RE = re.compile(r"remote port forwarding failed for listen port")
-
-
-def desired_port(cfg: Config, hostname: str) -> int:
-    """The deterministic desired remote port for a machine hostname.
-
-    The port is a stable function of the hostname only: the same machine
-    asks for the same port on every server, so the operator can predict
-    the port in advance. sha256 of the hostname is mapped into the
-    configured range; a collision on a busy server falls back to a
-    random granted port.
-    """
-
-    pf = cfg.port_forwarding_setup
-    value = int.from_bytes(hashlib.sha256(hostname.encode("utf-8")).digest()[:4], "big")
-    span = pf.desired_port_max - pf.desired_port_min + 1
-    return pf.desired_port_min + value % span
 
 
 def read_server_addresses(kp: PyKeePass, group_title: str) -> list[str]:

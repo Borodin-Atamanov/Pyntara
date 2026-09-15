@@ -36,9 +36,10 @@ from __future__ import annotations
 import socket
 import sys
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
-from pyntara import upnp
+from pyntara import forwarding_ports, upnp
 from pyntara.config import (
     UPNP_FORWARDING_CONFIG_KEYS,
     Config,
@@ -48,7 +49,6 @@ from pyntara.config import (
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_collect import trigger_collection
-from pyntara.port_forwarding import desired_port
 from pyntara.public_address import default_route_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.utils import install_package_once, package_is_installed
@@ -71,25 +71,20 @@ class Forwarding:
 
 
 def candidate_ports(cfg: Config, hostname: str) -> tuple[int, ...]:
-    """The external ports to try, in the order they are tried.
+    """The external ports the router service tries, in the order they are tried.
 
-    The first candidate is the desired port of the machine, the same number
-    the reverse tunnel of the port_forwarding task asks a server for. Every
-    further attempt hashes the hostname with its number appended, so a port
-    that another rule holds moves the attempt to another part of the range
-    instead of walking the neighbours of the first one. A hash that repeats
-    an earlier candidate is dropped, so no attempt is spent twice on the
-    same port.
+    The list is the shared deterministic chain of the machine, bounded by
+    the configured number of attempts: the router of the oldest standard
+    has no call that asks it for a free port, so the service offers a
+    limited and predictable set instead of walking the whole range. The
+    first candidate is the desired port of the machine, the same number
+    the reverse tunnel of the port_forwarding task asks a server for.
     """
 
     attempts = cfg.upnp_forwarding_setup.mapping_attempts
-    ports: list[int] = []
-    for attempt in range(1, attempts + 1):
-        salt = "" if attempt == 1 else str(attempt)
-        port = desired_port(cfg, hostname + salt)
-        if port not in ports:
-            ports.append(port)
-    return tuple(ports)
+    return tuple(
+        islice(forwarding_ports.candidate_ports(cfg, hostname), attempts)
+    )
 
 
 def ensure_client_package(cfg: Config) -> bool:

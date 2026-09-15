@@ -17,7 +17,7 @@ from support import FakeProc, make_config
 
 import pyntara.upnp_forwarding as forwarding
 from pyntara.config import Config
-from pyntara.port_forwarding import desired_port
+from pyntara.forwarding_ports import desired_port
 
 CONFIG_PATH = "/etc/pyntara/config.toml"
 ROUTER_ADDRESS = "191.83.167.128"

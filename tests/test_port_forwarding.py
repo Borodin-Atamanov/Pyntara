@@ -22,9 +22,9 @@ from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
 from pyntara.config.engine import EngineConfig
+from pyntara.forwarding_ports import desired_port
 from pyntara.port_forwarding import (
     _normalize_host,
-    desired_port,
     filter_own_servers,
     own_addresses,
     read_passphrase,
