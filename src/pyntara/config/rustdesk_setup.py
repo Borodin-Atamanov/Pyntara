@@ -46,9 +46,10 @@ class RustdeskSetupConfig:
     inside the readiness loop. install_timeout_seconds,
     apt_update_timeout_seconds and install_retries bound the deb install;
     start_check_attempts and start_check_retry_delay_seconds are the
-    readiness loop after the service start; options are the client
-    options applied through rustdesk --option
-    (docs/spec/rustdesk-setup.md).
+    readiness loop after the service start; service_settle_delay_seconds
+    is the pause before the final check that the service still runs, a
+    check a dying service cannot pass; options are the client options
+    applied through rustdesk --option (docs/spec/rustdesk-setup.md).
     """
 
     github_repo: str
@@ -76,4 +77,5 @@ class RustdeskSetupConfig:
     install_retries: int
     start_check_attempts: int
     start_check_retry_delay_seconds: float
+    service_settle_delay_seconds: float
     options: tuple[RustdeskOptionConfig, ...]

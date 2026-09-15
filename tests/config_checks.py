@@ -3083,9 +3083,12 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
 def _rustdesk_options(raw: object) -> tuple[RustdeskOptionConfig, ...]:
     """Validate the [rustdesk_setup.options] array of tables.
 
-    Every option is a table with a non-empty key and a non-empty value; a
-    missing array means no options. Duplicate keys are a config error, so
-    the task never applies the same option twice with different values.
+    Every option is a table with a non-empty key and a value; a missing
+    array means no options. The value may be empty, which is the value
+    that clears the option: RustDesk writes an option that carries
+    nothing as the empty string, and the task applies such a value like
+    any other. Duplicate keys are a config error, so the task never
+    applies the same option twice with different values.
     """
 
     if raw is None:
@@ -3101,8 +3104,8 @@ def _rustdesk_options(raw: object) -> tuple[RustdeskOptionConfig, ...]:
         value = entry.get("value")
         if not isinstance(key, str) or not key:
             raise ConfigError("[rustdesk_setup] option key must be a non-empty string")
-        if not isinstance(value, str) or not value:
-            raise ConfigError("[rustdesk_setup] option value must be a non-empty string")
+        if not isinstance(value, str):
+            raise ConfigError("[rustdesk_setup] option value must be a string")
         if key in seen:
             raise ConfigError(f"[rustdesk_setup] duplicate option key: {key}")
         seen.add(key)
@@ -3186,6 +3189,14 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
         raise ConfigError(
             "rustdesk_setup.password_separator must be a non-empty string"
         )
+    service_settle_delay_seconds = _float_field(
+        raw.get("service_settle_delay_seconds"),
+        "rustdesk_setup.service_settle_delay_seconds",
+    )
+    if service_settle_delay_seconds <= 0:
+        raise ConfigError(
+            "rustdesk_setup.service_settle_delay_seconds must be positive"
+        )
     return RustdeskSetupConfig(
         github_repo=github_repo,
         asset_name_template=asset_name_template,
@@ -3230,6 +3241,7 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
             raw.get("start_check_retry_delay_seconds"),
             "rustdesk_setup.start_check_retry_delay_seconds",
         ),
+        service_settle_delay_seconds=service_settle_delay_seconds,
         options=_rustdesk_options(raw.get("options")),
     )
 

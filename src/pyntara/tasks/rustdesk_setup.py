@@ -418,6 +418,49 @@ def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
     return False
 
 
+def _start_service_again(
+    cfg: RustdeskSetupConfig, timeout: float
+) -> tuple[bool, str]:
+    """Start the unit again; return (success, error_text).
+
+    RustDesk stops and disables its own unit at the start while the
+    stop-service option carries its stopped value, so a unit that the
+    cleared option left down is started once more through the configured
+    start command. A start that cannot run returns its reason, which the
+    caller reports as a warning.
+    """
+
+    try:
+        run_command(
+            substituted_command(
+                cfg.service_start_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
+            check=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    return True, ""
+
+
+def _service_stays_active(
+    cfg: RustdeskSetupConfig, engine: EngineConfig, timeout: float
+) -> bool:
+    """True when the unit is still active after the configured settle.
+
+    A start is not a working service: while the stop-service option
+    carries its stopped value RustDesk disables and stops the unit a
+    moment after the start, and the machine ID probe still answers over
+    the IPC of the dying daemon. The pause before the final state check
+    comes from the config, so the check sees the state the machine keeps
+    and not the one it had for a second.
+    """
+
+    time.sleep(cfg.service_settle_delay_seconds)
+    return service_is_active(engine, cfg.service_unit_name, timeout)
+
+
 def task(ctx: Context) -> TaskResult:
     """Install and configure rustdesk; done when the newest release runs.
 
@@ -429,9 +472,15 @@ def task(ctx: Context) -> TaskResult:
     changed=False. A missing version, a version mismatch or force mode
     downloads and installs the newest deb; force mode additionally
     regenerates the password and the machine identity.
-    Every step is reported to stdout with its result; a step that cannot
-    run is a warning of a completed task and the missing mechanism skips
-    that step alone, so the runner continues with the remaining tasks.
+    Every step is reported to stdout with its result. The service is
+    checked once more after the options and the password, because
+    RustDesk stops its own unit at the start while the stop-service
+    option carries its stopped value: a unit the cleared option left
+    down is started again, the service is given service_settle_delay_seconds
+    to show that it stays up, and a run that ends with the unit down
+    reports that plainly instead of readiness. A step that cannot run is
+    a warning of a completed task and the missing mechanism skips that
+    step alone, so the runner continues with the remaining tasks.
     """
 
     cfg = ctx.config.rustdesk_setup
@@ -582,6 +631,28 @@ def task(ctx: Context) -> TaskResult:
         else:
             warnings.append(f"cannot set rustdesk password: {password_error}")
 
+    # The state is checked again here: the options are applied after the
+    # start, so a unit that RustDesk stopped and disabled at its start is
+    # started once more through the same configured command.
+    if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
+        _log(
+            f"service {cfg.service_unit_name} is not active after the "
+            "configuration steps; starting it again"
+        )
+        restarted, restart_error = _start_service_again(cfg, timeout)
+        if not restarted:
+            warnings.append(
+                f"cannot start {cfg.service_unit_name} again: {restart_error}"
+            )
+        else:
+            changed = True
+            if not _wait_ready(cfg, timeout):
+                warnings.append(
+                    "rustdesk daemon did not answer after the service restart"
+                )
+            if machine_id is None:
+                machine_id = _machine_id(cfg, timeout)
+
     if machine_id is None:
         warnings.append("cannot read the rustdesk machine ID")
     else:
@@ -589,7 +660,26 @@ def task(ctx: Context) -> TaskResult:
         if _write_id_file(cfg, machine_id, force, owner_uid, owner_gid):
             changed = True
 
-    message = f"rustdesk ready, ID {machine_id}" if changed else "already configured"
+    # The settled check is the one the run reports: a service that stopped
+    # itself is not a machine an operator can reach, whatever the state
+    # right after the start was.
+    service_running = _service_stays_active(cfg, ctx.config.engine, timeout)
+    if not service_running:
+        warnings.append(
+            f"service {cfg.service_unit_name} is not running after the "
+            "configuration steps: the machine is not reachable by RustDesk ID"
+        )
+    if service_running and machine_id is not None:
+        message = (
+            f"rustdesk ready, ID {machine_id}" if changed else "already configured"
+        )
+    else:
+        reason = (
+            f"service {cfg.service_unit_name} is not running"
+            if not service_running
+            else "the machine ID is unknown"
+        )
+        message = f"rustdesk not reachable: {reason}"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(

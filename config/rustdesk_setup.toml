@@ -66,11 +66,29 @@ install_retries = 2
 # owns the IPC and the machine ID appears a moment later.
 start_check_attempts = 10
 start_check_retry_delay_seconds = 1.0
+# Seconds the service is given to stay up before the final state check.
+# RustDesk disables and stops its own unit a moment after the start while
+# the stop-service option below carries its stopped value, so a state
+# check taken right after the start cannot see that failure: the pause
+# comes from this key and the unit is queried after it.
+service_settle_delay_seconds = 3.0
 
 # Client options applied through rustdesk --option. Each entry is a
 # key/value pair of the rustdesk options table; the task reads the
 # current value and sets the option only when it differs, so the options
-# are idempotent.
+# are idempotent. An empty value is a value like any other: it clears
+# the option, which is how RustDesk itself writes an option that carries
+# nothing.
+#
+# The service-stopped flag comes first: RustDesk sets stop-service to Y
+# when the service is stopped on purpose, and its own root service then
+# disables and stops the unit at every start, so a machine left with the
+# flag set is unreachable however often the service is enabled. Clearing
+# the flag is the running value of the option.
+[[rustdesk_setup.options]]
+key = "stop-service"
+value = ""
+
 [[rustdesk_setup.options]]
 key = "enable-udp-punch"
 value = "Y"

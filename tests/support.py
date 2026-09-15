@@ -405,6 +405,7 @@ def make_config(
     rustdesk_download_dir: Path = Path("/var/cache/pyntara/rustdesk"),
     rustdesk_id_file_path: Path = Path("/var/lib/pyntara/rustdesk_id"),
     rustdesk_config_dir: Path = Path("/home/i/.config/rustdesk"),
+    rustdesk_service_settle_delay_seconds: float = 0.0,
     rustdesk_options: tuple[RustdeskOptionConfig, ...] = (
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
     ),
@@ -898,6 +899,7 @@ def make_config(
             download_dir=rustdesk_download_dir,
             id_file_path=rustdesk_id_file_path,
             config_dir=rustdesk_config_dir,
+            service_settle_delay_seconds=rustdesk_service_settle_delay_seconds,
             options=rustdesk_options,
         ),
         telegram_setup=replace(

@@ -38,8 +38,7 @@ src tests, uv run mypy, uv run mypy --strict src/, bash tests/test_inst.sh, bash
 tests/test_pre_commit_hook.sh, bash tests/test_commit_script.sh.
 7. Prove a deployed artifact live on the target machine when the block touches
 a unit, a service, a path or a command. A green suite never proves the machine.
-8. Record the block in docs/TODO.md, commit with a "config: ..." message, push
-to main, and check that HEAD equals origin/main.
+8. push to main, and check that HEAD equals origin/main.
 
 ## Where the progress lives
 

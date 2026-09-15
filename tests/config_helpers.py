@@ -849,6 +849,9 @@ def base_config() -> str:
         "install_retries = 2\n"
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1.0\n"
+        "service_settle_delay_seconds = 3.0\n"
+        '[[rustdesk_setup.options]]\n'
+        'key = "stop-service"\nvalue = ""\n'
         '[[rustdesk_setup.options]]\n'
         'key = "enable-udp-punch"\nvalue = "Y"\n'
         "[telegram_setup]\n"

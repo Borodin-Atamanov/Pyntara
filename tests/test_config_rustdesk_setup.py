@@ -104,6 +104,21 @@ from pyntara.config import RustdeskOptionConfig
         base_config().replace(
             'password_separator = " "\n', 'password_separator = ""\n'
         ),
+        # service_settle_delay_seconds is a string, not a number
+        base_config().replace(
+            "service_settle_delay_seconds = 3.0",
+            'service_settle_delay_seconds = "3"',
+        ),
+        # service_settle_delay_seconds is zero
+        base_config().replace(
+            "service_settle_delay_seconds = 3.0",
+            "service_settle_delay_seconds = 0",
+        ),
+        # an option value is a number, not a string
+        base_config().replace(
+            'key = "stop-service"\nvalue = ""\n',
+            'key = "stop-service"\nvalue = 0\n',
+        ),
         # config_dir is a number, not a string
         base_config().replace(
             'config_dir = "/home/i/.config/rustdesk"\n',
@@ -162,14 +177,31 @@ def test_load_config_rustdesk_values(tmp_path: Path) -> None:
     assert rustdesk.install_retries == 2
     assert rustdesk.start_check_attempts == 10
     assert rustdesk.start_check_retry_delay_seconds == 1.0
+    assert rustdesk.service_settle_delay_seconds == 3.0
     assert rustdesk.options == (
+        RustdeskOptionConfig(key="stop-service", value=""),
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
     )
+
+
+def test_load_config_option_value_may_be_empty(tmp_path: Path) -> None:
+    # An empty value is a value like any other: it clears the option, and
+    # RustDesk writes the stopped service as stop-service = "". The loader
+    # keeps that value instead of refusing the document, so the task can
+    # carry the running value of the flag in the config.
+    config = load_checked_config(write_config(tmp_path, base_config()))
+    flag = [
+        option
+        for option in config.rustdesk_setup.options
+        if option.key == "stop-service"
+    ]
+    assert flag == [RustdeskOptionConfig(key="stop-service", value="")]
 
 
 def test_load_config_empty_options(tmp_path: Path) -> None:
     # A missing options array is valid: the task then applies no options.
     content = base_config().replace(
+        '[[rustdesk_setup.options]]\nkey = "stop-service"\nvalue = ""\n'
         '[[rustdesk_setup.options]]\nkey = "enable-udp-punch"\nvalue = "Y"\n',
         "",
     )

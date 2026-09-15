@@ -108,6 +108,16 @@ def _vault(
     return fake
 
 
+class _RecordingClock:
+    """A stand-in for the time module that records the pauses asked for."""
+
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+
+
 def _fake_run(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -118,6 +128,7 @@ def _fake_run(
     option_values: dict[str, str] | None = None,
     service_enabled: bool = True,
     service_active: bool = True,
+    service_active_sequence: list[bool] | None = None,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -125,13 +136,17 @@ def _fake_run(
     downloads; rustdesk --version, --get-id and the --option get/set
     paths answer from the given values; dpkg prints the architecture;
     systemctl reports the given service states; apt-get and every other
-    command succeed. A nonzero return with check=True raises exactly
-    like the real subprocess.run.
+    command succeed. service_active_sequence answers the successive
+    is-active queries in order, so a test can describe a service that
+    stops itself between two checks; the last state of the sequence
+    answers every remaining query. A nonzero return with check=True
+    raises exactly like the real subprocess.run.
     """
 
     calls: list[list[str]] = []
     values = dict(option_values or {})
     current_installed = installed_version
+    active_states = list(service_active_sequence or [service_active])
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         nonlocal current_installed
@@ -161,8 +176,13 @@ def _fake_run(
             stdout = "enabled\n" if service_enabled else "disabled\n"
             rc = 0 if service_enabled else 1
         elif cmd[0] == "systemctl" and cmd[1] == "is-active":
-            stdout = "active\n" if service_active else "inactive\n"
-            rc = 0 if service_active else 1
+            state = (
+                active_states.pop(0)
+                if len(active_states) > 1
+                else active_states[0]
+            )
+            stdout = "active\n" if state else "inactive\n"
+            rc = 0 if state else 1
         elif cmd[0] == "systemctl":
             pass  # enable, start, stop succeed
         elif cmd[0] == "apt-get":
@@ -504,3 +524,101 @@ def test_vault_unavailable_warns_without_changing_password(
     assert not any(
         call[0] == "rustdesk" and call[1] == "--password" for call in calls
     )
+
+
+def test_real_config_clears_the_service_stopped_flag() -> None:
+    # RustDesk disables and stops its own unit while the stop-service flag
+    # is set, so the repository config carries the running value of the
+    # flag: without it a provisioned machine is registered with the public
+    # server and still unreachable.
+    config = load_config(REPO_ROOT / "config")
+    values = {
+        option.key: option.value for option in config.rustdesk_setup.options
+    }
+    assert values.get("stop-service") == ""
+
+
+def test_clears_the_stopped_service_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The running value of the flag comes from the config and reaches the
+    # client as one argv element of its own, the empty value included.
+    flag = RustdeskOptionConfig(key="stop-service", value="")
+    config = _config(tmp_path=tmp_path, options=(flag,))
+    calls = _fake_run(monkeypatch, option_values={"stop-service": "Y"})
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert result.changed is True
+    assert ["rustdesk", "--option", "stop-service", ""] in calls
+
+
+def test_restarts_the_service_the_stopped_flag_left_down(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The flag made RustDesk stop the unit after the start: the run starts
+    # it once more once the flag is cleared and reports the machine ready,
+    # because the settled check sees the service active.
+    flag = RustdeskOptionConfig(key="stop-service", value="")
+    config = _config(tmp_path=tmp_path, options=(flag,))
+    calls = _fake_run(
+        monkeypatch,
+        option_values={"stop-service": "Y"},
+        service_active_sequence=[True, False, True],
+    )
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings == ()
+    assert [
+        "systemctl",
+        "start",
+        config.rustdesk_setup.service_unit_name,
+    ] in calls
+    assert result.message is not None
+    assert result.message.startswith("rustdesk ready, ID")
+
+
+def test_reports_a_service_that_does_not_stay_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The unit stays down even after the restart: the run says the machine
+    # is not reachable instead of claiming readiness, and reports the
+    # finding as a warning of a completed task.
+    config = _config(tmp_path=tmp_path)
+    _fake_run(monkeypatch, service_active_sequence=[True, False, False])
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert result.message is not None
+    assert "rustdesk not reachable" in result.message
+    assert "ready" not in result.message
+    assert any(
+        "is not running after the configuration steps" in warning
+        for warning in result.warnings
+    )
+
+
+def test_settle_delay_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The pause before the final state check is a config value: another
+    # value in the config is another pause, so a machine that needs longer
+    # to show its state is tuned without touching the code.
+    clock = _RecordingClock()
+    monkeypatch.setattr(rustdesk_setup, "time", clock)
+    for configured in (2.5, 7.0):
+        config = _config(tmp_path=tmp_path)
+        config = replace(
+            config,
+            rustdesk_setup=replace(
+                config.rustdesk_setup,
+                service_settle_delay_seconds=configured,
+            ),
+        )
+        _fake_run(monkeypatch)
+        _vault(monkeypatch)
+        result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+        assert result.success is True
+    assert clock.sleeps == [2.5, 7.0]
