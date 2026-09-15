@@ -102,13 +102,12 @@ class TelemetryPdfConfig:
     """Layout of the encrypted telemetry PDF from [system_metrics_setup.telemetry_pdf].
 
     font and font_size are the printed font, line_width_chars is the
-    line length in characters, margin is the page margin in points and
-    format_version is the version the document carries, so a future
-    change of the format bumps it instead of breaking old files.
-    section_ssh, section_network, section_system, section_secrets and
-    section_json are the section headings in the order the document
-    carries them, and field_order is the order of the KeePass entry
-    fields printed under every secret
+    line length in characters and margin is the page margin in points.
+    section_ssh, section_secrets and section_json are the section
+    headings in the order the document carries them, nextdns_module_name
+    names the collector module whose output the PDF shows next to the
+    hostname, and field_order is the order of the KeePass entry fields
+    printed under every secret
     (docs/spec/system-metrics.md, section Telemetry PDF).
     """
 
@@ -116,12 +115,10 @@ class TelemetryPdfConfig:
     font_size: int
     line_width_chars: int
     margin: int
-    format_version: int
     section_ssh: str
-    section_network: str
-    section_system: str
     section_secrets: str
     section_json: str
+    nextdns_module_name: str
     field_order: tuple[str, ...]
 
 

@@ -293,11 +293,13 @@ augeas_container_remove_line = "rm {node}/{container}/{name}"
 # iproute2 query in JSON form, the mapping of the command line family flag
 # to the family the report uses, the mapping of that family to the family
 # name iproute2 prints, which is also the word the plain address query
-# prints, and the scope value iproute2 reports for a link scope address.
+# prints, and the scope values iproute2 reports for a link scope and a
+# host scope address, the two scopes a reader never connects through.
 interface_addresses_command = ["ip", "-j", "addr", "show"]
 address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }
 iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }
 link_scope_name = "link"
+host_scope_name = "host"
 # The debian package tools every task that installs a package uses: the
 # architecture query and the package status query. Their arguments are
 # the flags of the tools, so they live here once and no task spells them.

@@ -1,9 +1,12 @@
 """Unit tests for the encrypted telemetry PDF.
 
-The tests cover the behavior that must hold and nothing about the exact
-layout: the PDF encrypts with AES-256 and opens only with the right
-password, the ssh commands of the report reach the PDF text, and the
-collector commits the report even when the PDF cannot be built.
+The tests cover the behavior that must hold: the PDF encrypts with
+AES-256 and opens only with the right password, the ssh commands of the
+report reach the PDF including single-object channel records, host and
+link scope addresses are dropped, a long command is joined with
+backslashes so a copy rebuilds it exactly, the document title names the
+machine, and the collector commits the report even when the PDF cannot
+be built.
 """
 
 from __future__ import annotations
@@ -51,7 +54,7 @@ def test_encrypt_opens_with_password_and_rejects_wrong() -> None:
     """The PDF is AES-256 and opens only with the right password."""
 
     raw = telemetry_pdf.render(
-        "hello", make_config().system_metrics_setup.telemetry_pdf
+        "hello", make_config().system_metrics_setup.telemetry_pdf, "title"
     )
     encrypted = telemetry_pdf.encrypt(raw, "secretpw")
     opened = pikepdf.open(io.BytesIO(encrypted), password="secretpw")
@@ -60,12 +63,83 @@ def test_encrypt_opens_with_password_and_rejects_wrong() -> None:
         pikepdf.open(io.BytesIO(encrypted), password="wrong")
 
 
-def test_build_text_carries_the_ssh_commands() -> None:
-    """Every ssh command of the report reaches the PDF text."""
+def test_render_sets_the_document_title() -> None:
+    """The document title names the machine, not untitled."""
+
+    raw = telemetry_pdf.render(
+        "hello", make_config().system_metrics_setup.telemetry_pdf, "host 2026-09-14"
+    )
+    pdf = pikepdf.open(io.BytesIO(raw))
+    assert str(pdf.docinfo["/Title"]) == "host 2026-09-14"
+
+
+def test_ssh_commands_keep_working_addresses_and_drop_host_and_link() -> None:
+    """Working commands are kept; loopback, link and single objects behave."""
 
     cfg = make_config()
-    text = telemetry_pdf.build_text(cfg, _report(), [], "testhost")
-    assert "ssh -v -p 30222 192.168.1.5" in text
+    keys = REPORT_KEYS
+    report = {
+        keys["generated_at"]: "2026-09-14-12-00-00",
+        keys["ready_percent"]: 100,
+        keys["network"]: [
+            {
+                keys["name"]: "ipv4",
+                keys["status"]: "ok",
+                keys["output"]: [
+                    {
+                        "address": "127.0.0.1",
+                        "scope": "host",
+                        "ssh": "ssh -v -p 30222 127.0.0.1",
+                    },
+                    {
+                        "address": "192.168.1.5",
+                        "scope": "global",
+                        "ssh": "ssh -v -p 30222 192.168.1.5",
+                    },
+                ],
+            },
+            {
+                keys["name"]: "ipv6",
+                keys["status"]: "ok",
+                keys["output"]: [
+                    {
+                        "address": "fe80::1",
+                        "scope": "link",
+                        "ssh": "ssh -v -p 30222 fe80::1%eth0",
+                    },
+                ],
+            },
+            {
+                keys["name"]: "i2pd",
+                keys["status"]: "ok",
+                keys["output"]: {
+                    "channel": "i2p",
+                    "ssh": 'ssh -v -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:4447 %h %p" hgo5.b32.i2p',
+                },
+            },
+        ],
+        keys["system"]: [],
+    }
+    text = telemetry_pdf.build_text(cfg, report, [], "testhost")
+    card = text.split(cfg.system_metrics_setup.telemetry_pdf.section_json)[0]
+    assert "ssh -v -p 30222 192.168.1.5" in card
+    assert "hgo5.b32.i2p" in card
+    assert "ssh -v -p 30222 127.0.0.1" not in card
+    assert "ssh -v -p 30222 fe80::1%eth0" not in card
+
+
+def test_wrap_command_joins_long_commands_with_backslashes() -> None:
+    """A long command copies as one command thanks to backslash joins."""
+
+    command = (
+        'ssh -v -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" '
+        "5zmnq.onion"
+    )
+    lines = telemetry_pdf._wrap_command(command, 72)
+    assert len(lines) == 2
+    assert lines[0].endswith(" \\")
+    reconstructed = lines[0][:-2] + " " + lines[1]
+    assert reconstructed == command
 
 
 def test_commit_telemetry_pdf_never_raises_when_build_fails(

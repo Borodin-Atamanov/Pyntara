@@ -407,12 +407,13 @@ font = "Courier"
 font_size = 12
 line_width_chars = 72
 margin = 36
-format_version = 1
 section_ssh = "SSH"
-section_network = "NETWORK"
-section_system = "SYSTEM"
 section_secrets = "SECRETS"
 section_json = "NETWORK.JSON"
+# Name of the collector module that prints the applied NextDNS profile ID.
+# The PDF shows the profile next to the hostname, so the operator sees
+# which profile filters the machine DNS.
+nextdns_module_name = "nextdns"
 # Order of the runtime vault entry fields the PDF prints under every
 # secret; the names are the KeePass entry field names of the
 # [vault_structure] table.

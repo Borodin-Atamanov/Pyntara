@@ -18,15 +18,15 @@ Google Drive queue
 
 ## Telemetry PDF
 
-The report collector builds an encrypted PDF next to the report and commits it through the same queue. The PDF is an addition: the report is committed first, so a failure to build or encrypt the PDF never stops the report from being sent.
+The report collector builds an encrypted PDF next to the report and commits it through the same queue. The PDF is an addition: the report is committed first, so a failure to build or encrypt the PDF never stops the report from being sent. The PDF is the connection card of the machine: the operator opens it and sees, at a glance, how to reach and control the machine, with the whole report as the raw appendix at the bottom.
 
-The PDF carries, in order: the machine hostname, the collection moment and the format version; every ssh command of the report, one per line; the network and system module results; the machine secrets of the runtime vault; and the whole report as JSON at the bottom, exactly as it travels in the report file.
+The PDF carries, in order: the first line and the document title with the machine hostname and the collection moment; the applied NextDNS profile ID, read from the collector module named by telemetry_pdf.nextdns_module_name; every ssh command of the report, one per line, a module that printed a single record object contributing it the same as an array; the machine secrets of the runtime vault; and the whole report as JSON at the bottom, exactly as it travels in the report file.
 
-The secret entries the PDF carries come from telemetry_pdf_vault_entry_titles of [system_metrics_setup], which names the entries the operator cannot read from the source vault and needs to connect to the machine. An entry absent from the runtime vault is skipped, so a machine without one of them simply omits it.
+An ssh command whose record carries a scope equal to engine.host_scope_name or engine.link_scope_name is dropped: the loopback and a link-local address can never connect, so they never reach the card. A command longer than the line width is split at a top-level space, outside the quoted proxy command, and every split line except the last ends with a backslash, so the lines pasted into a shell rebuild the exact command.
+
+The secret entries the PDF carries come from telemetry_pdf_vault_entry_titles of [system_metrics_setup], which names the entries the operator cannot read from the source vault and needs to connect to the machine; their values are printed without labels in the order of telemetry_pdf.field_order. An entry absent from the runtime vault is skipped, so a machine without one of them simply omits it.
 
 Encryption is AES-256, the PDF standard encryption (revision 6), with the password of the telemetry_password_entry_title entry of the runtime vault. The password never appears in any command line, file or log. The unencrypted PDF exists only in memory; only the encrypted bytes are written to the temporary file for the commit.
-
-The layout is plain monospace text with large font and narrow lines, readable on a phone, and one ssh command per line so a connection command is copied with a single selection. The format line the PDF carries versions the layout: a future change of the format bumps that line instead of breaking old files.
 
 ## Schedule and retry
 

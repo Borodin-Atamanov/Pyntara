@@ -1559,6 +1559,9 @@ def _engine_table(raw: object) -> EngineConfig:
         link_scope_name=_nonempty_string_field(
             raw.get("link_scope_name"), "engine.link_scope_name"
         ),
+        host_scope_name=_nonempty_string_field(
+            raw.get("host_scope_name"), "engine.host_scope_name"
+        ),
         dpkg_architecture_command=_placeholder_command_field(
             raw.get("dpkg_architecture_command"),
             "engine.dpkg_architecture_command",
@@ -3909,9 +3912,9 @@ def _system_metrics_collector_table(raw: object) -> SystemMetricsCollectorConfig
 def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
     """Validate the [system_metrics_setup.telemetry_pdf] table.
 
-    font and every section heading are non-empty strings; font_size,
-    line_width_chars and format_version are positive integers; margin is
-    a non-negative integer; field_order is a list of non-empty strings.
+    font, every section heading and nextdns_module_name are non-empty
+    strings; font_size and line_width_chars are positive integers; margin
+    is a non-negative integer; field_order is a list of non-empty strings.
     """
 
     if not isinstance(raw, dict):
@@ -3936,20 +3939,8 @@ def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
         raise ConfigError(
             "system_metrics_setup.telemetry_pdf.margin must not be negative"
         )
-    format_version = _positive_int_field(
-        raw.get("format_version"),
-        "system_metrics_setup.telemetry_pdf.format_version",
-    )
     section_ssh = _nonempty_string_field(
         raw.get("section_ssh"), "system_metrics_setup.telemetry_pdf.section_ssh"
-    )
-    section_network = _nonempty_string_field(
-        raw.get("section_network"),
-        "system_metrics_setup.telemetry_pdf.section_network",
-    )
-    section_system = _nonempty_string_field(
-        raw.get("section_system"),
-        "system_metrics_setup.telemetry_pdf.section_system",
     )
     section_secrets = _nonempty_string_field(
         raw.get("section_secrets"),
@@ -3957,6 +3948,10 @@ def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
     )
     section_json = _nonempty_string_field(
         raw.get("section_json"), "system_metrics_setup.telemetry_pdf.section_json"
+    )
+    nextdns_module_name = _nonempty_string_field(
+        raw.get("nextdns_module_name"),
+        "system_metrics_setup.telemetry_pdf.nextdns_module_name",
     )
     field_order = _string_list(
         raw.get("field_order"), "system_metrics_setup.telemetry_pdf.field_order"
@@ -3971,12 +3966,10 @@ def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
         font_size=font_size,
         line_width_chars=line_width_chars,
         margin=margin,
-        format_version=format_version,
         section_ssh=section_ssh,
-        section_network=section_network,
-        section_system=section_system,
         section_secrets=section_secrets,
         section_json=section_json,
+        nextdns_module_name=nextdns_module_name,
         field_order=field_order,
     )
 
