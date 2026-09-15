@@ -32,7 +32,7 @@ from pathlib import Path
 from string import Template
 
 from pyntara.config import ThreeXuiXraySetupConfig
-from pyntara.utils import run_command, substituted_command
+from pyntara.utils import run_command, substituted_command, trim_whitespace
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -1006,6 +1006,96 @@ def _decoded_json_object(value: object) -> dict[str, object] | None:
     except json.JSONDecodeError:
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _payload_text(body: str, answers: dict[str, str]) -> str:
+    """The text a panel answer carries in its payload, or "".
+
+    The status answer carries an object and the answer of the last core
+    output carries a plain string; this reads the string form, so a caller
+    that wants the text does not decode the envelope twice.
+    """
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict) or not data.get(answers["success"]):
+        return ""
+    payload = data.get(answers["payload"])
+    return payload if isinstance(payload, str) else ""
+
+
+def _last_line(text: str) -> str:
+    """The last non-empty line of a text, with its edges trimmed.
+
+    A core process prints its history and ends with the line that says why
+    it stopped, so the last line is the part a warning needs.
+    """
+
+    lines = [trim_whitespace(line) for line in text.splitlines()]
+    return next((line for line in reversed(lines) if line), "")
+
+
+def core_diagnostics(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> str:
+    """What the panel says about its core, for a warning.
+
+    Reads the panel status and the last line the core printed, so a core
+    that never answered is reported with the state the panel sees and with
+    the text of the core itself instead of with a guess of ours. Every
+    failure to read is reported as its own short reason and never raises:
+    this runs while a warning of a completed task is composed.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    headers = _bearer_headers(cfg, env)
+    method = cfg.panel_http_methods["get"]
+    answers = cfg.panel_answer_keys
+    keys = cfg.panel_status_keys
+    parts: list[str] = []
+    status_code, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}{cfg.panel_status_path}",
+        headers=headers,
+        method=method,
+        timeout=timeout,
+    )
+    if status_code == 0:
+        parts.append("the panel did not answer")
+    else:
+        data = _decoded_json_object(body)
+        obj = data.get(answers["payload"]) if data is not None else None
+        xray = obj.get(keys["xray"]) if isinstance(obj, dict) else None
+        if isinstance(xray, dict):
+            state = xray.get(keys["state"])
+            error = xray.get(keys["error_msg"])
+            parts.append(
+                f"the panel reports its core {state}"
+                if isinstance(state, str) and state
+                else "the panel reports no core state"
+            )
+            if isinstance(error, str) and error:
+                parts.append(f"with the error {error}")
+        else:
+            parts.append("the panel reported no core state")
+    result_code, result_body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}{cfg.panel_xray_result_path}",
+        headers=headers,
+        method=method,
+        timeout=timeout,
+    )
+    if result_code != 0:
+        last_line = _last_line(_payload_text(result_body, answers))
+        if last_line:
+            parts.append(f"and the core printed {last_line!r}")
+    return ", ".join(parts)
 
 
 def write_xray_template(

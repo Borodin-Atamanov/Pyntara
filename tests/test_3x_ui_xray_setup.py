@@ -3506,6 +3506,10 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(xui.time, "sleep", sleeps.append)
         monkeypatch.setattr(
+            "pyntara.xui.core_diagnostics",
+            lambda _c, _e, _t: "the panel reports its core stopped",
+        )
+        monkeypatch.setattr(
             xui,
             "run_command",
             lambda *a, **k: (_ for _ in ()).throw(
@@ -3521,6 +3525,7 @@ class TestRoutingPolicyStage:
         assert len(result.warnings) == 1
         assert "did not answer within 0 s" in result.warnings[0]
         assert "the panel was unreachable" in result.warnings[0]
+        assert "the panel reports its core stopped" in result.warnings[0]
 
     def test_the_core_wait_pause_comes_from_the_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3544,6 +3549,10 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
         monkeypatch.setattr(xui.time, "sleep", fake_sleep)
+        monkeypatch.setattr(
+            "pyntara.xui.core_diagnostics",
+            lambda _c, _e, _t: "the panel reports its core stopped",
+        )
         cfg = replace(
             self._cfg(tmp_path),
             core_ready_wait_seconds=1,

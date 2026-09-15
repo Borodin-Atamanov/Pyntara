@@ -2242,10 +2242,12 @@ def _route_failures_after_wait(
     therefore ends the round and starts it again after a pause, until the
     core answers or the budget runs out; the budget and the pause are
     config values, because a slow machine needs a longer budget and not a
-    false warning. Returns (warnings, decided): decided is False when the
-    core never answered, and the warning then names that instead of a
-    disagreement, because a core that is still starting or has died is not
-    a policy the core refused.
+    false warning. When the budget runs out, the warning carries the state
+    the panel reports about its core and the last line the core printed,
+    so an operator reads the reason instead of a number. Returns
+    (warnings, decided): decided is False when the core never answered, and
+    the warning then names that instead of a disagreement, because a core
+    that is still starting or has died is not a policy the core refused.
     """
 
     budget = cfg.core_ready_wait_seconds
@@ -2259,11 +2261,12 @@ def _route_failures_after_wait(
         )
     while undecided is not None:
         if time.monotonic() - started >= budget:
+            diagnostics = xui_client.core_diagnostics(cfg, env, timeout)
             return (
                 (
                     f"the panel core did not answer within {budget} s "
-                    f"({undecided}), so the routing policy and the proxy path "
-                    "were not verified"
+                    f"({undecided}; {diagnostics}), so the routing policy and "
+                    "the proxy path were not verified"
                 ),
             ), False
         time.sleep(delay)

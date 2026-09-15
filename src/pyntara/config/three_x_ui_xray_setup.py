@@ -87,9 +87,10 @@ class ThreeXuiXraySetupConfig:
     the client sends, panel_http_methods the methods of its calls,
     panel_url_schemes the two schemes of the panel URL,
     panel_environment_keys the names of the install-result.env file the
-    panel writes, panel_answer_keys the fields of its JSON answers and
-    panel_field_keys the field names of the request bodies the client
-    sends and reads back.
+    panel writes, panel_answer_keys the fields of its JSON answers,
+    panel_status_keys the fields of its status answer that carry the core
+    (the block, the state and the error), and panel_field_keys the field
+    names of the request bodies the client sends and reads back.
     """
 
     github_repo: str
@@ -148,6 +149,9 @@ class ThreeXuiXraySetupConfig:
     panel_xray_update_path: str
     panel_xray_geodata_validate_path: str
     panel_xray_route_test_path: str
+    panel_status_path: str
+    panel_xray_result_path: str
+    panel_status_keys: dict[str, str]
     panel_inbound_protocol: str
     panel_blocked_rule_protocols: tuple[str, ...]
     panel_private_block_category: str

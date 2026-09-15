@@ -5278,6 +5278,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("panel_xray_route_test_path"),
         "three_x_ui_xray_setup.panel_xray_route_test_path",
     )
+    panel_status_path = _nonempty_string_field(
+        raw.get("panel_status_path"),
+        "three_x_ui_xray_setup.panel_status_path",
+    )
+    panel_xray_result_path = _nonempty_string_field(
+        raw.get("panel_xray_result_path"),
+        "three_x_ui_xray_setup.panel_xray_result_path",
+    )
     panel_inbound_protocol = _nonempty_string_field(
         raw.get("panel_inbound_protocol"),
         "three_x_ui_xray_setup.panel_inbound_protocol",
@@ -5443,6 +5451,12 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_xray_update_path=panel_xray_update_path,
         panel_xray_geodata_validate_path=panel_xray_geodata_validate_path,
         panel_xray_route_test_path=panel_xray_route_test_path,
+        panel_status_path=panel_status_path,
+        panel_xray_result_path=panel_xray_result_path,
+        panel_status_keys=_string_map(
+            raw.get("panel_status_keys"),
+            "three_x_ui_xray_setup.panel_status_keys",
+        ),
         panel_inbound_protocol=panel_inbound_protocol,
         panel_blocked_rule_protocols=panel_blocked_rule_protocols,
         panel_private_block_category=panel_private_block_category,

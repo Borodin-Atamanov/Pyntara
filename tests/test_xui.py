@@ -176,6 +176,13 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_xray_update_path": "/panel/api/xray/update",
         "panel_xray_geodata_validate_path": "/panel/api/xray/geodata/validate",
         "panel_xray_route_test_path": "/panel/api/xray/routeTest",
+        "panel_status_path": "/panel/api/server/status",
+        "panel_xray_result_path": "/panel/api/xray/getXrayResult",
+        "panel_status_keys": {
+            "xray": "xray",
+            "state": "state",
+            "error_msg": "errorMsg",
+        },
         "vault_entry_title": "three_x_ui_credentials",
         "connection_vault_entry_title": "xray_connection",
         "share_addr_strategy": "custom",
@@ -335,7 +342,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             "xml_http_request": "XMLHttpRequest",
             "bearer_prefix": "Bearer ",
         },
-        "panel_http_methods": {"post": "POST"},
+        "panel_http_methods": {"post": "POST", "get": "GET"},
         "panel_url_schemes": {"http": "http", "https": "https"},
         "panel_environment_keys": {
             "username": "XUI_USERNAME",
@@ -1859,6 +1866,58 @@ class TestRouteTest:
             )
 
 
+class TestCoreDiagnostics:
+    """Tests for core_diagnostics."""
+
+    def test_names_the_core_state_and_the_last_core_line(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A warning about a core that never answered quotes the panel
+        # itself: the state it reports about the core and the last line
+        # the core printed.
+        _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": {
+                            "xray": {
+                                "state": "stopped",
+                                "errorMsg": "process exited",
+                            }
+                        },
+                    }
+                ),
+            ),
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": "starting\nfailed to load geodata\n",
+                    }
+                ),
+            ),
+        )
+        text = xui_client.core_diagnostics(_cfg(), _ENV, 5)
+        assert "the panel reports its core stopped" in text
+        assert "with the error process exited" in text
+        assert "'failed to load geodata'" in text
+
+    def test_reports_a_panel_that_does_not_answer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A panel that does not answer is named as such and the call never
+        # raises: this runs while a warning is composed.
+        _record_requests(monkeypatch, (0, ""), (0, ""))
+        assert (
+            xui_client.core_diagnostics(_cfg(), _ENV, 5)
+            == "the panel did not answer"
+        )
+
+
 def test_the_panel_vocabulary_comes_from_the_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1921,7 +1980,7 @@ def test_the_http_vocabulary_comes_from_the_config(
             "xml_http_request": "my-wanted",
             "bearer_prefix": "Token ",
         },
-        panel_http_methods={"post": "PUT"},
+        panel_http_methods={"post": "PUT", "get": "GET"},
         panel_answer_keys={
             "success": "ok",
             "payload": "data",
