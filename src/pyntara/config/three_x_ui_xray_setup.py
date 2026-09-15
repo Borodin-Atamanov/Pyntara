@@ -19,7 +19,12 @@ class ThreeXuiXraySetupConfig:
     service_unit_name is the systemd unit the official installer creates
     and the task checks for enabled and active; start_check_attempts and
     start_check_retry_delay_seconds form the readiness loop that waits
-    for the service to become active after an install. panel_port is the
+    for the service to become active after an install, and
+    readiness_check_delay_seconds is the pause between two readiness
+    checks. core_ready_wait_seconds is the budget the running core gets
+    to answer a routing question after a template write, which is what
+    separates a core that is still loading its geodata from a policy the
+    core refused. panel_port is the
     fixed panel port passed to the installer via XUI_PANEL_PORT; the
     installer applies it on first deployment and preserves the current
     port on an existing panel with custom credentials. ssl_enabled turns
@@ -111,6 +116,8 @@ class ThreeXuiXraySetupConfig:
     service_unit_name: str
     start_check_attempts: int
     start_check_retry_delay_seconds: int
+    readiness_check_delay_seconds: int
+    core_ready_wait_seconds: int
     install_result_env_path: Path
     inbound_payload_template_file_name: str
     random_username_bytes: int

@@ -492,6 +492,8 @@ def base_config() -> str:
         'service_unit_name = "x-ui.service"\n'
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1\n"
+        "readiness_check_delay_seconds = 1\n"
+        "core_ready_wait_seconds = 120\n"
         'install_result_env_path = "/etc/x-ui/install-result.env"\n'
         "random_username_bytes = 4\n"
         "random_secret_bytes = 8\n"

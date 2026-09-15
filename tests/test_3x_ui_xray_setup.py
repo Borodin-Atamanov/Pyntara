@@ -157,6 +157,7 @@ def _ctx(
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_start_check_attempts=check_attempts,
             three_x_ui_start_check_retry_delay_seconds=retry_delay,
+            three_x_ui_readiness_check_delay_seconds=0,
             three_x_ui_install_result_env_path=tmp_path / "etc" / "x-ui" / "install-result.env",
             three_x_ui_cert_dir=tmp_path / "cert",
             three_x_ui_self_signed_cert_dir=tmp_path / "selfsigned",
@@ -3384,7 +3385,7 @@ class TestRoutingPolicyStage:
             SimpleNamespace(inbound_tag="pyntara-local-proxy"),
         )
         failures = xui._verify_routes(cfg, {}, 30.0, policy)
-        assert failures == ()
+        assert failures == ((), None)
         assert ports == [8443, 8443]
 
     def test_route_test_words_come_from_the_config(
@@ -3419,8 +3420,155 @@ class TestRoutingPolicyStage:
             "routing_policy.LocalProxyPolicy",
             SimpleNamespace(inbound_tag="pyntara-local-proxy"),
         )
-        assert xui._verify_routes(cfg, {}, 30.0, policy) == ()
+        assert xui._verify_routes(cfg, {}, 30.0, policy) == ((), None)
         assert words == [("my-tcp", "my-tls"), ("my-tcp", "my-tls")]
+
+    def _expected_outbounds(self) -> dict[str, str]:
+        """The decision every destination class of this test machine gets."""
+
+        return {
+            "pyntara-check.onion": "pyntara-tor",
+            "pyntara-check.i2p": "pyntara-i2p",
+            "doubleclick.net": "blocked",
+            "localhost": "direct",
+            "10.10.0.0": "direct",
+            "example.com": "pyntara-remote",
+        }
+
+    def test_waits_for_a_core_that_has_not_finished_starting(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A written template is reconciled with the running core, and the
+        # panel answers the write before a restart it triggered has
+        # finished. The first round of questions therefore lands in that
+        # window and gets no decision; the stage asks again instead of
+        # reading the boot as a wrong policy, and it does not write the
+        # template a second time for it.
+        writes = self._prepare(monkeypatch, tmp_path)
+        expected = self._expected_outbounds()
+        answers = {"count": 0}
+
+        def fake_route(
+            _cfg: object, _env: object, **kwargs: object
+        ) -> tuple[bool | None, str]:
+            answers["count"] += 1
+            if answers["count"] <= len(expected):
+                return None, (
+                    "rpc error: dial tcp 127.0.0.1:62789: connect: "
+                    "connection refused"
+                )
+            destination = kwargs.get("domain") or kwargs.get("address")
+            return True, expected[cast(str, destination)]
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert not result.warnings
+        assert len(writes) == 1
+        assert answers["count"] == 2 * len(expected)
+
+    def test_the_core_wait_budget_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The budget the core gets to answer is a config value: zero means
+        # one round and no pause, so a machine that wants an immediate
+        # answer configures it and gets a warning instead of a wait.
+        self._prepare(monkeypatch, tmp_path)
+        rounds = {"count": 0}
+
+        def fake_route(
+            _cfg: object, _env: object, **_kwargs: object
+        ) -> tuple[bool | None, str]:
+            rounds["count"] += 1
+            return None, "the panel was unreachable"
+
+        sleeps: list[float] = []
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(xui.time, "sleep", sleeps.append)
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("the proxy path must not be asked")
+            ),
+        )
+        cfg = replace(self._cfg(tmp_path), core_ready_wait_seconds=0)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert rounds["count"] == 1
+        assert sleeps == []
+        assert result.warnings is not None
+        assert len(result.warnings) == 1
+        assert "did not answer within 0 s" in result.warnings[0]
+        assert "the panel was unreachable" in result.warnings[0]
+
+    def test_the_core_wait_pause_comes_from_the_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The pause between two rounds is a config value: another value in
+        # the section is the pause the stage waits, and the clock is faked
+        # so the pause is the only thing that moves it.
+        self._prepare(monkeypatch, tmp_path)
+        clock = {"now": 0.0}
+        sleeps: list[float] = []
+
+        def fake_route(
+            _cfg: object, _env: object, **_kwargs: object
+        ) -> tuple[bool | None, str]:
+            return None, "the panel was unreachable"
+
+        def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            clock["now"] += seconds
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(xui.time, "sleep", fake_sleep)
+        cfg = replace(
+            self._cfg(tmp_path),
+            core_ready_wait_seconds=1,
+            readiness_check_delay_seconds=7,
+        )
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert sleeps == [7]
+        assert "did not answer within 1 s" in cast(tuple[str, ...], result.warnings)[0]
+
+    def test_a_disagreement_writes_the_template_again(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The running core can hold a rule set the stored template no
+        # longer matches, so a decision that disagrees is answered by
+        # writing the same template once more and asking again; the
+        # disagreement that survives the second write is reported.
+        writes = self._prepare(monkeypatch, tmp_path)
+        wrong = dict.fromkeys(self._expected_outbounds(), "direct")
+
+        def fake_route(
+            _cfg: object, _env: object, **kwargs: object
+        ) -> tuple[bool | None, str]:
+            destination = kwargs.get("domain") or kwargs.get("address")
+            return True, wrong[cast(str, destination)]
+
+        monkeypatch.setattr("pyntara.xui.route_test", fake_route)
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert len(writes) == 2
+        assert result.warnings is not None
+        assert any(
+            "pyntara-check.onion: expected pyntara-tor, got direct" in warning
+            for warning in result.warnings
+        )
 
     def test_applies_the_policy_of_a_machine_outside_russia(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -1074,7 +1074,7 @@ def route_test(
     address: str = "",
     port: int = 0,
     timeout: float,
-) -> tuple[bool, str]:
+) -> tuple[bool | None, str]:
     """Ask the running core which outbound it picks for a destination.
 
     Exactly one of domain and address is given. The network and the
@@ -1082,10 +1082,15 @@ def route_test(
     are the vocabulary of the core and a value of the config. The answer
     comes from the core's own routing engine, so it is the only honest
     check that a written policy reached the traffic; a stored template can
-    disagree with the core. Returns (matched, answer): on success matched
-    is True and answer is the tag of the chosen outbound, otherwise matched
-    is False and answer says why (the panel was unreachable, the panel
-    reported an error, or no rule matched the destination).
+    disagree with the core. Returns (decision, answer) with three states,
+    because the caller must never read a core that has not finished
+    starting as a disclosure about its routing: True means the core
+    answered and answer is the tag it chose, False means the core answered
+    and no rule matched the destination, and None means no decision was
+    obtained at all, with answer naming why (the panel was unreachable,
+    the panel reported an error, or its answer carried no decision). The
+    task writes a template by reconciling the running core, which the
+    panel may do by restarting it, so None is the state a caller waits on.
     """
 
     base_url, opener = _bearer_opener(cfg, env)
@@ -1116,20 +1121,20 @@ def route_test(
         timeout=timeout,
     )
     if status == 0:
-        return False, "panel unreachable"
+        return None, "panel unreachable"
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
-        return False, f"unexpected response (HTTP {status})"
+        return None, f"unexpected response (HTTP {status})"
     if not isinstance(data, dict):
-        return False, f"unexpected response (HTTP {status})"
+        return None, f"unexpected response (HTTP {status})"
     answers = cfg.panel_answer_keys
     if not data.get(answers["success"]):
         message = data.get(answers["message"])
-        return False, message if isinstance(message, str) and message else "route test failed"
+        return None, message if isinstance(message, str) and message else "route test failed"
     obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
-        return False, "the panel answered no routing decision"
+        return None, "the panel answered no routing decision"
     outbound_tag = obj.get(fields["outbound_tag"])
     if (
         not obj.get(fields["matched"])

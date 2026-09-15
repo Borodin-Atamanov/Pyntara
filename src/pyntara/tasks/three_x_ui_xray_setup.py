@@ -2147,12 +2147,44 @@ def _route_expectations(
     return tuple(checks)
 
 
+def _ask_core(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+    *,
+    inbound_tag: str,
+    kind: str,
+    destination: str,
+) -> tuple[bool | None, str]:
+    """One routing question to the running core: (decision, answer).
+
+    kind selects the field the panel accepts for the destination, a
+    domain or an address, so one call shape serves every destination
+    class of the policy and the readiness wait. The decision is True with
+    the chosen outbound tag, False when the core answered without a
+    matching rule, and None when no decision was obtained, because the
+    panel or the core did not answer.
+    """
+
+    question = {"domain": destination} if kind == "domain" else {"address": destination}
+    return xui_client.route_test(
+        cfg,
+        env,
+        inbound_tag=inbound_tag,
+        network=cfg.route_test_network,
+        protocol=cfg.route_test_protocol,
+        port=cfg.route_test_port,
+        timeout=timeout,
+        **question,
+    )
+
+
 def _verify_routes(
     cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     policy: routing_policy.LocalProxyPolicy,
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], str | None]:
     """Ask the running core about every destination class, and report.
 
     The routing engine of the running core answers, so this is the only
@@ -2160,32 +2192,23 @@ def _verify_routes(
     has already been seen to disagree with the core. A check that matches
     is logged with the outbound it took; every disagreement is returned as
     a warning naming the destination, the expected outbound and the answer.
+    Returns (failures, undecided): undecided is the reason the panel gave
+    when a question got no decision at all, and the failures of that round
+    are dropped, because a round that answered nothing proves nothing.
     """
 
     failures: list[str] = []
     for destination, kind, expected in _route_expectations(cfg, policy):
-        if kind == "domain":
-            matched, answer = xui_client.route_test(
-                cfg,
-                env,
-                inbound_tag=policy.inbound_tag,
-                network=cfg.route_test_network,
-                protocol=cfg.route_test_protocol,
-                domain=destination,
-                port=cfg.route_test_port,
-                timeout=timeout,
-            )
-        else:
-            matched, answer = xui_client.route_test(
-                cfg,
-                env,
-                inbound_tag=policy.inbound_tag,
-                network=cfg.route_test_network,
-                protocol=cfg.route_test_protocol,
-                address=destination,
-                port=cfg.route_test_port,
-                timeout=timeout,
-            )
+        matched, answer = _ask_core(
+            cfg,
+            env,
+            timeout,
+            inbound_tag=policy.inbound_tag,
+            kind=kind,
+            destination=destination,
+        )
+        if matched is None:
+            return (), answer
         if matched and answer == expected:
             _log(f"routing check {destination}: {answer}")
             continue
@@ -2193,7 +2216,57 @@ def _verify_routes(
         failures.append(
             f"routing check {destination}: expected {expected}, got {observed}"
         )
-    return tuple(failures)
+    return tuple(failures), None
+
+
+def _route_failures_after_wait(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+    policy: routing_policy.LocalProxyPolicy,
+) -> tuple[tuple[str, ...], bool]:
+    """Ask the core about every class, waiting for its first answer.
+
+    The round is its own readiness probe: a written template reconciles the
+    running core, and the panel answers the write before a restart it
+    triggered has finished, so the first questions can land while the core
+    is still loading its geodata files and binding its listeners (nine
+    seconds on an eight-core machine). A question that gets no decision
+    therefore ends the round and starts it again after a pause, until the
+    core answers or the budget runs out; the budget and the pause are
+    config values, because a slow machine needs a longer budget and not a
+    false warning. Returns (warnings, decided): decided is False when the
+    core never answered, and the warning then names that instead of a
+    disagreement, because a core that is still starting or has died is not
+    a policy the core refused.
+    """
+
+    budget = cfg.core_ready_wait_seconds
+    delay = cfg.readiness_check_delay_seconds
+    started = time.monotonic()
+    failures, undecided = _verify_routes(cfg, env, timeout, policy)
+    if undecided is not None:
+        _log(
+            f"the panel core did not answer yet ({undecided}), waiting up to "
+            f"{budget} s"
+        )
+    while undecided is not None:
+        if time.monotonic() - started >= budget:
+            return (
+                (
+                    f"the panel core did not answer within {budget} s "
+                    f"({undecided}), so the routing policy and the proxy path "
+                    "were not verified"
+                ),
+            ), False
+        time.sleep(delay)
+        failures, undecided = _verify_routes(cfg, env, timeout, policy)
+        if undecided is None:
+            _log(
+                f"the panel core answered after "
+                f"{time.monotonic() - started:.1f}s"
+            )
+    return failures, True
 
 
 def _proxy_request(
@@ -2404,8 +2477,12 @@ def _stage_routing_policy(
     really differs, the categories are checked against the installed
     geodata first, and every class of destination is then verified against
     the running core, because the core can keep a rule set the stored
-    template no longer matches. Returns None when the policy is already in
-    place, and a TaskResult with the change and the warnings otherwise.
+    template no longer matches. Writing the template reconciles the core,
+    and the panel may do that by restarting it, so the verification waits
+    for the core to answer before it asks, and a core that never answers
+    is reported as such instead of as a wrong policy (see
+    _wait_core_ready). Returns None when the policy is already in place,
+    and a TaskResult with the change and the warnings otherwise.
     """
 
     profile, reason = _remote_profile(cfg, ctx)
@@ -2514,8 +2591,8 @@ def _stage_routing_policy(
         applied = True
         _log(f"routing policy applied: {message}")
 
-    failures = _verify_routes(cfg, env, timeout, policy)
-    if failures:
+    failures, decided = _route_failures_after_wait(cfg, env, timeout, policy)
+    if failures and decided:
         # The running core can hold a rule set the stored template no longer
         # matches, a state the panel reaches on its own after an inbound is
         # renamed. Writing the same template again is what brings the core
@@ -2524,11 +2601,14 @@ def _stage_routing_policy(
         if ok:
             applied = True
             _log(f"routing policy written again: {message}")
-            failures = _verify_routes(cfg, env, timeout, policy)
+            failures, decided = _route_failures_after_wait(cfg, env, timeout, policy)
     warnings.extend(failures)
 
-    path_warnings = _check_proxy_path(cfg, policy, profile, facts)
-    warnings.extend(path_warnings)
+    # The path through the local proxy is proven only when the core decided
+    # every class: a core that is not answering carries no traffic, and that
+    # silence is already reported above.
+    if decided:
+        warnings.extend(_check_proxy_path(cfg, policy, profile, facts))
 
     if applied:
         return TaskResult(

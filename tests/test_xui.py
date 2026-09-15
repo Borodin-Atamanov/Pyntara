@@ -147,6 +147,8 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "service_unit_name": "x-ui.service",
         "start_check_attempts": 10,
         "start_check_retry_delay_seconds": 1,
+        "readiness_check_delay_seconds": 1,
+        "core_ready_wait_seconds": 120,
         "install_result_env_path": Path("/etc/x-ui/install-result.env"),
         "inbound_payload_template_file_name": "vless_reality_inbound.json",
         "random_username_bytes": 4,
@@ -1798,7 +1800,10 @@ class TestRouteTest:
             domain="example.com",
             timeout=5,
         )
-        assert matched is False
+        # An answer of the panel that carries no decision is None and not
+        # False: the caller must be able to tell a refused question from a
+        # core that has not answered yet.
+        assert matched is None
         assert answer == "invalid inbound tag"
 
     def test_reports_an_unreachable_panel(
@@ -1815,7 +1820,7 @@ class TestRouteTest:
             domain="example.com",
             timeout=5,
         )
-        assert matched is False
+        assert matched is None
         assert answer == "panel unreachable"
 
     def test_refuses_a_request_without_a_destination(self) -> None:

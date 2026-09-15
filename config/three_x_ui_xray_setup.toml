@@ -91,6 +91,20 @@ tunnel_probe_no_answer_code = "000"
 start_check_attempts = 10
 # Pause in seconds between two readiness checks.
 start_check_retry_delay_seconds = 1
+# Pause in seconds between two readiness checks of this task: the service
+# after the installer, the panel HTTP listener after the panel restarted,
+# and the panel core after a template write. A check is one cheap call, so
+# a short pause keeps a machine that answers at once responsive.
+readiness_check_delay_seconds = 1
+# Seconds the panel core may take to answer a routing question after a
+# template write. Writing the template reconciles the running core: the
+# panel applies the change through the core API when the change allows it
+# and restarts the core otherwise, and it answers the write before a
+# restart has finished. The core then loads its geodata files and binds
+# its listeners, which took nine seconds on an eight-core machine, so a
+# slow machine raises this value; the wait is what keeps a booting core
+# from being read as a wrong routing policy.
+core_ready_wait_seconds = 120
 # Path to the install-result.env file the panel writes on first start.
 # Stage 2 reads the generated credentials from this file.
 install_result_env_path = "/etc/x-ui/install-result.env"

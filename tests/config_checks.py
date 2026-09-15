@@ -4752,6 +4752,24 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.start_check_retry_delay_seconds "
             "must not be negative"
         )
+    readiness_check_delay_seconds = _int_field(
+        raw.get("readiness_check_delay_seconds"),
+        "three_x_ui_xray_setup.readiness_check_delay_seconds",
+    )
+    if readiness_check_delay_seconds < 0:
+        raise ConfigError(
+            "three_x_ui_xray_setup.readiness_check_delay_seconds "
+            "must not be negative"
+        )
+    core_ready_wait_seconds = _int_field(
+        raw.get("core_ready_wait_seconds"),
+        "three_x_ui_xray_setup.core_ready_wait_seconds",
+    )
+    if core_ready_wait_seconds < 0:
+        raise ConfigError(
+            "three_x_ui_xray_setup.core_ready_wait_seconds "
+            "must not be negative"
+        )
     install_result_env_path = Path(
         _nonempty_string_field(
             raw.get("install_result_env_path"),
@@ -5384,6 +5402,8 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         service_unit_name=service_unit_name,
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
+        readiness_check_delay_seconds=readiness_check_delay_seconds,
+        core_ready_wait_seconds=core_ready_wait_seconds,
         install_result_env_path=install_result_env_path,
         random_username_bytes=random_username_bytes,
         random_secret_bytes=random_secret_bytes,
