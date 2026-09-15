@@ -174,12 +174,16 @@ def _render_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
+    version: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
     The service runs the venv python with the metrics module and the
     configured system config path as its only argument; the line is fully
     expanded here, so the template carries no shell variables of its own.
+    The version line names the deployed code the unit belongs to, so a
+    unit on the machine that names another version is written again and
+    the service restarted.
     """
 
     command = " ".join(
@@ -189,7 +193,9 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}")
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", version=version
+    )
 
 
 def _render_ingest_service_unit(
@@ -197,11 +203,13 @@ def _render_ingest_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
+    version: str,
 ) -> str:
     """Render the ingest service unit with the ExecStart line substituted.
 
     The oneshot service runs the venv python with the metrics_ingest
-    module and the configured system config path as its only argument.
+    module and the configured system config path as its only argument, and
+    it carries the same version line as the service beside it.
     """
 
     command = " ".join(
@@ -211,14 +219,22 @@ def _render_ingest_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}")
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", version=version
+    )
 
 
-def _render_ingest_path_unit(template_path: Path, spool_dir: Path) -> str:
-    """Render the path unit that watches the spool directory."""
+def _render_ingest_path_unit(
+    template_path: Path, spool_dir: Path, version: str
+) -> str:
+    """Render the path unit that watches the spool directory.
+
+    The unit itself starts the ingest service rather than running code, so
+    the version line is the mark of the deployment that wrote it.
+    """
 
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(spool_dir=spool_dir)
+    return template.substitute(spool_dir=spool_dir, version=version)
 
 
 def _render_collector_service_unit(
@@ -226,13 +242,15 @@ def _render_collector_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
+    version: str,
 ) -> str:
     """Render the collector oneshot unit with the ExecStart line substituted.
 
     The service runs the venv python with the metrics_collect module and
     the configured system config path as its only argument; the line is
     fully expanded here, so the template carries no shell variables of
-    its own.
+    its own. The version line is the mark of the deployed code it belongs
+    to, like the one of the service and the ingest units.
     """
 
     command = " ".join(
@@ -242,7 +260,9 @@ def _render_collector_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}")
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", version=version
+    )
 
 
 def _render_collector_timer_unit(
@@ -250,6 +270,7 @@ def _render_collector_timer_unit(
     boot_delay_seconds: int,
     daily_send_times: tuple[str, ...],
     service_unit_name: str,
+    version: str,
 ) -> str:
     """Render the timer unit that starts the collector after boot and daily.
 
@@ -257,7 +278,8 @@ def _render_collector_timer_unit(
     the start: OnBootSec comes from the config, and every configured time
     of day becomes one OnCalendar line, because systemd reads one line
     per calendar event (docs/spec/system-metrics.md, section Report
-    collector).
+    collector). The version line is the mark of the deployment that wrote
+    the timer.
     """
 
     calendar = "\n".join(
@@ -268,6 +290,7 @@ def _render_collector_timer_unit(
         boot_delay_seconds=boot_delay_seconds,
         daily_send_calendar=calendar,
         service_unit_name=service_unit_name,
+        version=version,
     )
 
 
@@ -425,33 +448,51 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_name = metrics.collector.timer_unit_name
     spool_dir = metrics.spool_dir
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
+    unit_version, version_warning = deployment.deployed_version(
+        metrics.venv_version_command, venv_python, timeout, __version__
+    )
+    venv_ok = version_warning is None and unit_version == __version__
+    _log(
+        f"checking venv {venv_python}: "
+        f"{'ok' if venv_ok else 'missing or stale'} "
+        f"(venv {'none' if version_warning else unit_version}, "
+        f"repository {__version__})"
+    )
+    if version_warning is not None:
+        warnings.append(version_warning)
 
     service_unit = _render_service_unit(
         metrics,
         template_dir / metrics.unit_template_file_name,
         venv_python,
         system_config_path,
+        unit_version,
     )
     ingest_service_unit = _render_ingest_service_unit(
         metrics,
         template_dir / metrics.ingest_unit_template_file_name,
         venv_python,
         system_config_path,
+        unit_version,
     )
     ingest_path_unit = _render_ingest_path_unit(
-        template_dir / metrics.ingest_path_template_file_name, spool_dir
+        template_dir / metrics.ingest_path_template_file_name,
+        spool_dir,
+        unit_version,
     )
     collector_service_unit = _render_collector_service_unit(
         metrics,
         template_dir / metrics.collector_unit_template_file_name,
         venv_python,
         system_config_path,
+        unit_version,
     )
     collector_timer_unit = _render_collector_timer_unit(
         template_dir / metrics.collector_timer_template_file_name,
         metrics.collector.boot_delay_seconds,
         metrics.collector.daily_send_times,
         collector_service_name,
+        unit_version,
     )
     command_content = _render_commit_command(
         template_dir / metrics.commit_command_template_file_name,
@@ -460,16 +501,6 @@ def task(ctx: Context) -> TaskResult:
         metrics.spool_temp_prefix,
     )
 
-    venv_python = venv_dir / metrics.venv_python_relative_path
-    venv_version = deployment.venv_package_version(
-        metrics.venv_version_command, venv_python, timeout
-    )
-    venv_ok = venv_version == __version__
-    _log(
-        f"checking venv {venv_python}: "
-        f"{'ok' if venv_ok else 'missing or stale'} "
-        f"(venv {venv_version or 'none'}, repository {__version__})"
-    )
     config_ok = _system_config_matches(
         system_config_path, ctx.repo_root / "config"
     )

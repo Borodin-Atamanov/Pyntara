@@ -29,6 +29,7 @@ from pyntara.utils import substituted_command
 UNIT_TEMPLATE = """\
 [Unit]
 Description=System Metrics service
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Service]
@@ -44,6 +45,7 @@ WantedBy=multi-user.target
 INGEST_SERVICE_TEMPLATE = """\
 [Unit]
 Description=System Metrics spool ingest
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Service]
@@ -54,6 +56,7 @@ $exec_lines
 INGEST_PATH_TEMPLATE = """\
 [Unit]
 Description=Watch the System Metrics spool directory
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Path]
@@ -66,6 +69,7 @@ WantedBy=multi-user.target
 COLLECTOR_SERVICE_TEMPLATE = """\
 [Unit]
 Description=System Metrics report collector
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Service]
@@ -77,6 +81,7 @@ $exec_lines
 COLLECTOR_TIMER_TEMPLATE = """\
 [Unit]
 Description=System Metrics report collector timer
+# Deployed by Pyntara $version
 
 [Timer]
 OnBootSec=$boot_delay_seconds
@@ -203,7 +208,9 @@ def _install_fixtures(
     }
 
 
-def _expected_service_unit(fixtures: SystemMetricsFixtures) -> str:
+def _expected_service_unit(
+    fixtures: SystemMetricsFixtures, version: str = __version__
+) -> str:
     """The service unit the task must render for the given fixtures."""
 
     command = " ".join(
@@ -216,10 +223,13 @@ def _expected_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
+        version=version,
     )
 
 
-def _expected_ingest_service_unit(fixtures: SystemMetricsFixtures) -> str:
+def _expected_ingest_service_unit(
+    fixtures: SystemMetricsFixtures, version: str = __version__
+) -> str:
     """The ingest service unit the task must render for the fixtures."""
 
     command = " ".join(
@@ -232,16 +242,23 @@ def _expected_ingest_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(INGEST_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
+        version=version,
     )
 
 
-def _expected_ingest_path_unit(fixtures: SystemMetricsFixtures) -> str:
+def _expected_ingest_path_unit(
+    fixtures: SystemMetricsFixtures, version: str = __version__
+) -> str:
     """The path unit the task must render for the given fixtures."""
 
-    return Template(INGEST_PATH_TEMPLATE).substitute(spool_dir=fixtures["spool_dir"])
+    return Template(INGEST_PATH_TEMPLATE).substitute(
+        spool_dir=fixtures["spool_dir"], version=version
+    )
 
 
-def _expected_collector_service_unit(fixtures: SystemMetricsFixtures) -> str:
+def _expected_collector_service_unit(
+    fixtures: SystemMetricsFixtures, version: str = __version__
+) -> str:
     """The collector service unit the task must render for the fixtures."""
 
     command = " ".join(
@@ -254,10 +271,13 @@ def _expected_collector_service_unit(fixtures: SystemMetricsFixtures) -> str:
     )
     return Template(COLLECTOR_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
+        version=version,
     )
 
 
-def _expected_collector_timer_unit(fixtures: SystemMetricsFixtures) -> str:
+def _expected_collector_timer_unit(
+    fixtures: SystemMetricsFixtures, version: str = __version__
+) -> str:
     """The collector timer unit the task must render for the fixtures."""
 
     collector = fixtures["config"].system_metrics_setup.collector
@@ -269,6 +289,7 @@ def _expected_collector_timer_unit(fixtures: SystemMetricsFixtures) -> str:
         boot_delay_seconds=collector.boot_delay_seconds,
         daily_send_calendar=calendar,
         service_unit_name=collector.service_unit_name,
+        version=version,
     )
 
 
@@ -518,6 +539,46 @@ def test_deploys_service_ingest_and_command(
     assert "System Metrics service deployed" in (result.message or "")
     captured = capsys.readouterr()
     assert "creating venv" in captured.out
+
+
+def test_the_units_carry_the_version_of_the_deployed_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The version in every unit is the one the deployed interpreter
+    # reports, so a unit on the machine that names another version is
+    # stale and the task writes it again.
+    fixtures, _calls = _deploy_fixture(
+        monkeypatch, tmp_path, import_ok=True, venv_version="0.3.999"
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success
+    for unit_name in (
+        "system_metrics.service",
+        "system_metrics-ingest.service",
+        "system_metrics-ingest.path",
+        "system_metrics_collector.service",
+        "system_metrics_collector.timer",
+    ):
+        unit = (fixtures["systemd_dir"] / unit_name).read_text(encoding="utf-8")
+        assert "# Deployed by Pyntara 0.3.999" in unit
+
+
+def test_a_deployment_that_cannot_be_asked_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A venv that cannot be asked leaves the repository version in the
+    # units and names the gap, so the missing refresh is visible in the
+    # install log instead of being passed off as the new code.
+    fixtures, _calls = _deploy_fixture(monkeypatch, tmp_path)
+    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    assert result.success
+    unit = (fixtures["systemd_dir"] / "system_metrics.service").read_text(
+        encoding="utf-8"
+    )
+    assert f"# Deployed by Pyntara {__version__}" in unit
+    assert any(
+        "cannot read the version" in warning for warning in result.warnings
+    )
 
 
 def test_skips_when_already_configured(
@@ -887,6 +948,7 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
         template,
         Path("/venv/bin/python"),
         Path("/etc/pyntara/config.toml"),
+        "0.3.516",
     )
     assert "ExecStart=myrun -m mymod /etc/pyntara/config.toml" in unit
     assert "Restart=on-failure" in unit
@@ -906,6 +968,7 @@ def test_collector_calendar_comes_from_the_config(tmp_path: Path) -> None:
         boot_delay_seconds=30,
         daily_send_times=("06:30:00", "18:15:00"),
         service_unit_name="collector.service",
+        version="0.3.516",
     )
     assert "OnCalendar=*-*-* 06:30:00" in unit
     assert "OnCalendar=*-*-* 18:15:00" in unit

@@ -1,5 +1,6 @@
 [Unit]
 Description=System Metrics service
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Service]

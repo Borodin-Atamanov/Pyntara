@@ -1,5 +1,6 @@
 [Unit]
 Description=System Metrics spool ingest
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Service]

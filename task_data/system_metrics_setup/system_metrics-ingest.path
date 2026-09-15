@@ -1,5 +1,6 @@
 [Unit]
 Description=Watch the System Metrics spool directory
+# Deployed by Pyntara $version
 After=local-fs.target
 
 [Path]
