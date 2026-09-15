@@ -42,7 +42,7 @@ Do not withhold implementation details: state which decisions you are making bef
 
 Work on a separate branch. Create a branch when you start a new feature, and keep every commit of that work on the branch, so main stays clean and working while the change is unfinished. When the change is finished and all tests pass, merge the branch into main, push main, and delete the branch: a merged branch is finished work, and the repository keeps only the branches that are still being written.
 
-Ты должна объяснять понятно, что ты делаешь и зачем - до действий и во время, а не после.
+Ты должна объяснять понятно, что ты делаешь и зачем - до действий и во время, а не после. Если находишь новый факт - ёмко о нём пишешь в процессе.
 
 Ты должна формулировать цель планов и действий, сверять её с целью более высокого уровня, убеждаться что твои действия ведут к цели более высокого уровня.
 
