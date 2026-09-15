@@ -42,7 +42,7 @@ The service reads the config once per run and re-derives everything from it: the
 
 ## Idempotency
 
-The task is idempotent: it is done when both unit files match their templates and the timer is enabled and active. Otherwise it writes the units, reloads systemd, enables and starts the timer and runs the service once, so the rule exists at the end of a provisioning run and a broken deployment shows in the install log instead of surfacing at the first network change. Force mode rewrites the units and runs the service again.
+The task is idempotent: it is done when both unit files match their templates and the timer is enabled and active. Both rendered units carry the version of the deployed code in a comment line, taken from the deployed interpreter, so a unit that names another version is stale and the task writes it again, reloads systemd and runs the service: the code of the service lives in the shared venv and not in the unit, and that is how an update of it reaches the machine. An interpreter that cannot be asked is reported as a warning and the units then carry the version of the run. Otherwise it writes the units, reloads systemd, enables and starts the timer and runs the service once, so the rule exists at the end of a provisioning run and a broken deployment shows in the install log instead of surfacing at the first network change. Force mode rewrites the units and runs the service again.
 
 The service itself is idempotent in the same sense: a run that finds the rule already right writes nothing to the router and wakes nobody.
 

@@ -15,6 +15,7 @@ from string import Template
 import pytest
 from support import FakeProc, make_config, make_context
 
+from pyntara import __version__
 from pyntara.config import UpnpForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import upnp_forwarding_setup
@@ -22,6 +23,7 @@ from pyntara.tasks import upnp_forwarding_setup
 SERVICE_TEMPLATE = """\
 [Unit]
 Description=Router port forwarding
+# Deployed by Pyntara $version
 After=network-online.target local-fs.target
 Wants=network-online.target
 
@@ -34,6 +36,7 @@ $exec_lines
 TIMER_TEMPLATE = """\
 [Unit]
 Description=Router port forwarding timer
+# Deployed by Pyntara $version
 
 [Timer]
 OnBootSec=$boot_delay_seconds
@@ -61,6 +64,8 @@ def _install_fixtures(
     )
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
     venv_python = venv_dir / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
     config = make_config(
@@ -85,8 +90,13 @@ def _install_fake(
     active: bool = False,
     failed: bool = False,
     start_ok: bool = True,
+    venv_version: str | None = __version__,
 ) -> list[list[str]]:
-    """Install the systemctl fake; return the recorded command calls."""
+    """Install the systemctl fake; return the recorded command calls.
+
+    venv_version is the pyntara version the deployed interpreter reports;
+    None makes that call fail, which is a deployment the task cannot read.
+    """
 
     calls: list[list[str]] = []
 
@@ -101,6 +111,10 @@ def _install_fake(
             return FakeProc(0, "failed\n") if failed else FakeProc(1, "inactive")
         if command[0] == "systemctl" and command[1] == "start" and not start_ok:
             raise OSError("systemd is not running")
+        if command[0].endswith("/python") and command[1] == "-c":
+            if venv_version is None:
+                return FakeProc(1)
+            return FakeProc(0, f"{venv_version}\n")
         return FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -108,21 +122,27 @@ def _install_fake(
 
 
 def _expected_service_unit(
-    venv_python: Path, system_config: Path, cfg: UpnpForwardingSetupConfig
+    venv_python: Path,
+    system_config: Path,
+    cfg: UpnpForwardingSetupConfig,
+    version: str = __version__,
 ) -> str:
     command = " ".join(
         [str(venv_python), "-m", cfg.service_module_name, str(system_config)]
     )
     return Template(SERVICE_TEMPLATE).substitute(
-        exec_lines=f"ExecStart={command}"
+        exec_lines=f"ExecStart={command}", version=version
     )
 
 
-def _expected_timer_unit(cfg: UpnpForwardingSetupConfig) -> str:
+def _expected_timer_unit(
+    cfg: UpnpForwardingSetupConfig, version: str = __version__
+) -> str:
     return Template(TIMER_TEMPLATE).substitute(
         boot_delay_seconds=cfg.timer_boot_delay_seconds,
         interval_seconds=cfg.timer_interval_seconds,
         service_unit_name=cfg.service_unit_name,
+        version=version,
     )
 
 
@@ -181,6 +201,67 @@ def test_skips_when_the_units_and_the_timer_are_in_place(
     assert not result.warnings
     assert ["systemctl", "daemon-reload"] not in calls
     assert ["systemctl", "start", "--no-block", ctx.config.upnp_forwarding_setup.service_unit_name] not in calls
+
+
+def test_the_units_carry_the_version_of_the_deployed_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The version in both units is the one the deployed interpreter
+    # reports, not the version of the running installer: the units name the
+    # code they will run.
+    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, active=True, venv_version="0.3.999")
+    result = upnp_forwarding_setup.task(ctx)
+    assert result.success
+    assert not result.warnings
+    cfg = ctx.config.upnp_forwarding_setup
+    service = (systemd_dir / cfg.service_unit_name).read_text(encoding="utf-8")
+    timer = (systemd_dir / cfg.timer_unit_name).read_text(encoding="utf-8")
+    assert "# Deployed by Pyntara 0.3.999" in service
+    assert "# Deployed by Pyntara 0.3.999" in timer
+
+
+def test_units_of_another_version_are_rewritten(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A unit that names another version is stale even when everything else
+    # matches, so it is written again and systemd is reloaded: that is what
+    # carries an update of the code to the machine.
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
+    cfg = ctx.config.upnp_forwarding_setup
+    systemd_dir.mkdir(parents=True)
+    (systemd_dir / cfg.service_unit_name).write_text(
+        _expected_service_unit(venv_python, system_config, cfg, version="0.0.1"),
+        encoding="utf-8",
+    )
+    (systemd_dir / cfg.timer_unit_name).write_text(
+        _expected_timer_unit(cfg, version="0.0.1"), encoding="utf-8"
+    )
+    calls = _install_fake(monkeypatch, enabled=True, active=True)
+    result = upnp_forwarding_setup.task(ctx)
+    assert result.changed
+    assert ["systemctl", "daemon-reload"] in calls
+    assert (systemd_dir / cfg.service_unit_name).read_text(
+        encoding="utf-8"
+    ) == _expected_service_unit(venv_python, system_config, cfg)
+
+
+def test_a_deployment_that_cannot_be_asked_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A venv that cannot be asked leaves the repository version in the
+    # units and names the gap instead of passing the deployment off as the
+    # new code.
+    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, active=True, venv_version=None)
+    result = upnp_forwarding_setup.task(ctx)
+    assert result.success
+    cfg = ctx.config.upnp_forwarding_setup
+    service = (systemd_dir / cfg.service_unit_name).read_text(encoding="utf-8")
+    assert f"# Deployed by Pyntara {__version__}" in service
+    assert any("cannot read the version" in warning for warning in result.warnings)
 
 
 def test_force_runs_the_service_again(

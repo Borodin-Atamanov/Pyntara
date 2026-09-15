@@ -10,7 +10,10 @@ machine or of the router (docs/spec/upnp-forwarding-setup.md). The timer
 is enabled and started immediately and the service is run once as well, so
 the forwarded rule exists at the end of a provisioning run and a broken
 deployment shows in the install log instead of surfacing at the first
-network change. The task is idempotent: it is done when both unit files
+network change. Both rendered units carry the version of the deployed
+code, taken from the deployed interpreter, so an update of that code
+makes them differ from the units on the machine and the task writes them
+again. The task is idempotent: it is done when both unit files
 match their templates and the timer is enabled and active; force mode
 rewrites the units and runs the service again.
 """
@@ -21,6 +24,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara import __version__, deployment
 from pyntara.config import UpnpForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -42,13 +46,16 @@ def _render_service_unit(
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
+    version: str,
 ) -> str:
     """Render the oneshot unit with its ExecStart line substituted.
 
     The service runs the deployment venv interpreter with the configured
     module and the configured system config path as its only argument; the
     line is fully expanded here, so the template carries no shell variables
-    of its own.
+    of its own. The version line names the deployed code this unit belongs
+    to, so a unit on the machine that names another version is written
+    again by the task below.
     """
 
     command = " ".join(
@@ -62,17 +69,21 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}")
+    return template.substitute(
+        exec_lines=f"ExecStart={command}", version=version
+    )
 
 
 def _render_timer_unit(
-    cfg: UpnpForwardingSetupConfig, template_path: Path
+    cfg: UpnpForwardingSetupConfig, template_path: Path, version: str
 ) -> str:
     """Render the timer unit with its bounds and its unit substituted.
 
     The first run happens after the boot delay, and every later run follows
     the previous one by the configured interval, so a network change is
-    healed without a reboot and without a polling loop in the service.
+    healed without a reboot and without a polling loop in the service. The
+    version line is the mark of the deployment that wrote the timer, like
+    the one of the service unit beside it.
     """
 
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -80,6 +91,7 @@ def _render_timer_unit(
         boot_delay_seconds=cfg.timer_boot_delay_seconds,
         interval_seconds=cfg.timer_interval_seconds,
         service_unit_name=cfg.service_unit_name,
+        version=version,
     )
 
 
@@ -121,7 +133,9 @@ def task(ctx: Context) -> TaskResult:
 
     The goal is reached when both unit files match their rendered templates
     and the timer is enabled and active, because the timer is what keeps the
-    rule on the router alive. Otherwise the units are written, systemd is
+    rule on the router alive. The rendered units carry the version of the
+    deployed code, so an update of that code makes them stale and the
+    rewrite below happens. Otherwise the units are written, systemd is
     reloaded, the timer is enabled and started, and the service runs once so
     the rule exists at the end of the run. Every step that cannot run is a
     warning of a completed task: a missing template skips the write of that
@@ -139,6 +153,11 @@ def task(ctx: Context) -> TaskResult:
     unit_dir = engine.systemd_unit_dir
     data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
+    version, version_warning = deployment.deployed_version(
+        metrics.venv_version_command, venv_python, timeout, __version__
+    )
+    if version_warning is not None:
+        warnings.append(version_warning)
 
     rendered: dict[str, str] = {}
     try:
@@ -147,12 +166,13 @@ def task(ctx: Context) -> TaskResult:
             data_dir / cfg.service_template_file_name,
             venv_python,
             metrics.system_config_path,
+            version,
         )
     except OSError as exc:
         warnings.append(f"cannot read the service template: {exc}")
     try:
         rendered[cfg.timer_unit_name] = _render_timer_unit(
-            cfg, data_dir / cfg.timer_template_file_name
+            cfg, data_dir / cfg.timer_template_file_name, version
         )
     except OSError as exc:
         warnings.append(f"cannot read the timer template: {exc}")
