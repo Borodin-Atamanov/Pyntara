@@ -13,10 +13,10 @@ contract, Configuration). The source vault is not fixed: the production vault
 is tried first, then the default vault, both with the password from
 Context; when neither opens, the task journals a serious error at syslog
 level 3 and fails without stopping the run. The task is idempotent:
-without force it leaves an existing runtime vault and only copies the
-source vault root entries that are missing from it, so a vault created
-by an older run gains the entries the structure gained later (the
-telemetry password); force mode rewrites the vault and the password
+without force it leaves an existing runtime vault and copies every
+source entry missing from it, in the root group and in the subgroups, so
+a vault created by an older run gains the entries and groups the
+structure gained later; force mode rewrites the vault and the password
 file. Passwords are written to files
 trimmed of surrounding whitespace and strictly without a trailing newline.
 """
@@ -167,18 +167,67 @@ def _copy_missing_root_entries(
     return changed
 
 
+def _copy_missing_groups(
+    source_kp: PyKeePass, runtime_kp: PyKeePass
+) -> bool:
+    """Copy the source subgroups and their entries missing from the runtime.
+
+    A runtime vault created by an older run may lack a data subgroup the
+    structure gained later, like port_forwarding_servers; the source vault
+    is the structure, so every subgroup it carries and the runtime vault
+    does not is created with its notes, and every entry of that subgroup
+    missing from the runtime copy is copied. Existing groups and entries
+    are never touched, so data the operator maintains in the source vault
+    reaches the runtime vault without duplication or loss. Returns True
+    when at least one group was created or one entry was copied.
+    """
+
+    existing_groups = {
+        group.name: group for group in runtime_kp.root_group.subgroups
+    }
+    changed = False
+    for source_group in source_kp.root_group.subgroups:
+        runtime_group = existing_groups.get(source_group.name)
+        if runtime_group is None:
+            runtime_group = runtime_kp.add_group(
+                runtime_kp.root_group,
+                source_group.name,
+                notes=source_group.notes or "",
+            )
+            _log(f"adding group {source_group.name!r} to the runtime vault")
+            changed = True
+        existing_titles = {entry.title for entry in runtime_group.entries}
+        for entry in source_group.entries:
+            if entry.title in existing_titles:
+                continue
+            runtime_kp.add_entry(
+                runtime_group,
+                entry.title,
+                entry.username or "",
+                entry.password or "",
+                url=entry.url or "",
+                notes=entry.notes or "",
+            )
+            _log(
+                f"adding entry {entry.title!r} to group "
+                f"{source_group.name!r} in the runtime vault"
+            )
+            changed = True
+    return changed
+
+
 def _sync_existing_runtime_vault(
     cfg: LocalVaultSetupConfig,
     production_path: Path,
     default_path: Path,
     source_password: str | None,
 ) -> bool | None:
-    """Sync the source structure entries into the existing runtime vault.
+    """Sync the source structure entries and groups into the runtime vault.
 
-    True means an entry was copied and the vault saved, False means the
-    runtime vault already carried every source root entry, and None means
-    the sync could not run: no source vault opens, the password file is
-    missing or the runtime vault does not open with the local password.
+    True means an entry or a group was copied and the vault saved, False
+    means the runtime vault already carried every source entry, and None
+    means the sync could not run: no source vault opens, the password file
+    is missing or the runtime vault does not open with the local password.
     A failed sync leaves the runtime vault exactly as it was.
     """
 
@@ -201,7 +250,9 @@ def _sync_existing_runtime_vault(
     except Exception as exc:  # noqa: BLE001 - a broken vault stays as it is
         _log(f"leaving the runtime vault as is: cannot open: {exc}")
         return None
-    if not _copy_missing_root_entries(source_kp, runtime_kp):
+    changed = _copy_missing_root_entries(source_kp, runtime_kp)
+    changed = _copy_missing_groups(source_kp, runtime_kp) or changed
+    if not changed:
         return False
     runtime_kp.save(filename=str(cfg.local_vault_path))
     return True

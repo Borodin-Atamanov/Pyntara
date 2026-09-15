@@ -172,6 +172,82 @@ def test_syncs_missing_source_entries_into_existing_runtime_vault(
     assert entry.password == "tele-secret"
 
 
+def test_syncs_missing_source_group_into_existing_runtime_vault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A runtime vault created before the port_forwarding_servers group
+    # existed gains the whole group from the source vault on a normal run,
+    # with its entries, and a second run then changes nothing.
+    source = tmp_path / "production.vault"
+    _create_source_vault(source, "prod-pass")
+    source_kp = PyKeePass(str(source), password="prod-pass")
+    group = source_kp.add_group(
+        source_kp.root_group, "port_forwarding_servers", notes="servers"
+    )
+    source_kp.add_entry(
+        group, "Server 001", "", "", url="169.58.51.98", notes=""
+    )
+    source_kp.save()
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    pass_file = tmp_path / "etc" / "pass"
+    local_vault.parent.mkdir(parents=True)
+    pass_file.parent.mkdir(parents=True)
+    create_database(str(local_vault), password="local-pass")
+    kp = PyKeePass(str(local_vault), password="local-pass")
+    kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", "local-pass")
+    kp.save()
+    pass_file.write_text("local-pass", encoding="utf-8")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    reopened = PyKeePass(str(local_vault), password="local-pass")
+    synced = reopened.find_groups(name="port_forwarding_servers", first=True)
+    assert synced is not None
+    assert [entry.title for entry in synced.entries] == ["Server 001"]
+    assert synced.entries[0].url == "169.58.51.98"
+    again = local_vault_setup.task(
+        _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    )
+    assert again.changed is False
+
+
+def test_syncs_missing_group_entry_into_existing_runtime_group(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A runtime vault that already carries the group but lacks one of its
+    # entries gains the missing entry from the source vault on a normal run.
+    source = tmp_path / "production.vault"
+    _create_source_vault(source, "prod-pass")
+    source_kp = PyKeePass(str(source), password="prod-pass")
+    group = source_kp.add_group(
+        source_kp.root_group, "port_forwarding_servers", notes="servers"
+    )
+    source_kp.add_entry(
+        group, "Server 001", "", "", url="169.58.51.98", notes=""
+    )
+    source_kp.save()
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    pass_file = tmp_path / "etc" / "pass"
+    local_vault.parent.mkdir(parents=True)
+    pass_file.parent.mkdir(parents=True)
+    create_database(str(local_vault), password="local-pass")
+    kp = PyKeePass(str(local_vault), password="local-pass")
+    kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", "local-pass")
+    kp.add_group(kp.root_group, "port_forwarding_servers", notes="servers")
+    kp.save()
+    pass_file.write_text("local-pass", encoding="utf-8")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    reopened = PyKeePass(str(local_vault), password="local-pass")
+    synced = reopened.find_groups(name="port_forwarding_servers", first=True)
+    assert synced is not None
+    assert [entry.title for entry in synced.entries] == ["Server 001"]
+    assert synced.entries[0].url == "169.58.51.98"
+
+
 def test_force_rewrites_runtime_vault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
