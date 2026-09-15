@@ -170,6 +170,38 @@ def build_panel_url(
     return base
 
 
+def _api_call(
+    cfg: ThreeXuiXraySetupConfig,
+    opener: urllib.request.OpenerDirector,
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    timeout: float,
+) -> tuple[int, str]:
+    """One panel API call, bounded by the API timeout of the section.
+
+    The caller passes the budget of its whole step, which is the engine
+    command budget in the thousands of seconds; the socket timeout of one
+    call is the smaller of that budget and panel_api_timeout_seconds,
+    because a panel that accepts the connection and never answers must be
+    reported as a failure of that call instead of stopping the run for
+    hours. The value is a budget of the panel and not of the step: the
+    longest legitimate answer of the panel is its own reconciliation of a
+    template write, which fits inside it.
+    """
+
+    return _request(
+        opener,
+        url,
+        data=data,
+        headers=headers,
+        method=method,
+        timeout=min(timeout, cfg.panel_api_timeout_seconds),
+    )
+
+
 def _request(
     opener: urllib.request.OpenerDirector,
     url: str,
@@ -179,10 +211,13 @@ def _request(
     method: str | None = None,
     timeout: float,
 ) -> tuple[int, str]:
-    """Send an HTTP request and return (status_code, body).
+    """Send one HTTP request and return (status_code, body).
 
     Uses the provided opener (which carries a cookie jar) so session
     cookies persist across calls. Returns (0, '') on connection errors.
+    Every panel call of this module goes through _api_call, which owns the
+    socket timeout of one call, so the timeout given here is the one the
+    caller decided on.
     """
 
     req = urllib.request.Request(
@@ -243,7 +278,8 @@ def login_and_verify(
     opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
 
     # Step 1: fetch CSRF token.
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_csrf_token_path}",
         headers={headers["requested_with"]: header_values["xml_http_request"]},
@@ -266,7 +302,8 @@ def login_and_verify(
             fields["password"]: env.get(keys["password"], ""),
         }
     ).encode("utf-8")
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_login_path}",
         data=login_data,
@@ -283,7 +320,8 @@ def login_and_verify(
         return False
 
     # Step 3: verify the session by calling a protected API.
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
         headers={headers["requested_with"]: header_values["xml_http_request"]},
@@ -316,7 +354,8 @@ def verify_bearer(
     )
     jar = http.cookiejar.CookieJar()
     opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
         headers={
@@ -378,7 +417,8 @@ def list_inbounds(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_list_path}",
         headers=_bearer_headers(cfg, env),
@@ -487,7 +527,8 @@ def create_inbound(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "json"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_add_path}",
         data=data,
@@ -509,7 +550,8 @@ def generate_reality_key(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_x25519_cert_path}",
         headers=_bearer_headers(cfg, env),
@@ -597,7 +639,8 @@ def panel_settings(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "json"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_setting_all_path}",
         data=b"{}",
@@ -641,7 +684,8 @@ def update_panel_settings(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "json"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_setting_update_path}",
         data=data,
@@ -708,7 +752,8 @@ def update_inbound(
         "json"
     ]
     inbound_id = inbound.get(fields["id"])
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_update_path.format(inbound_id=inbound_id)}",
         data=data,
@@ -756,7 +801,8 @@ def delete_inbound(
     """Delete one inbound by its id through the Bearer API."""
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_inbounds_delete_path.format(inbound_id=inbound_id)}",
         headers=_bearer_headers(cfg, env),
@@ -781,7 +827,8 @@ def find_client(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_client_get_path.format(email=urllib.parse.quote(email))}",
         headers=_bearer_headers(cfg, env),
@@ -837,7 +884,8 @@ def create_client(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "json"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_client_add_path}",
         data=data,
@@ -862,7 +910,8 @@ def client_links(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_client_links_path.format(email=urllib.parse.quote(email))}",
         headers=_bearer_headers(cfg, env),
@@ -913,7 +962,8 @@ def read_xray_template(
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_xray_status_path}",
         headers=_bearer_headers(cfg, env),
@@ -985,7 +1035,8 @@ def write_xray_template(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "form"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_xray_update_path}",
         data=form,
@@ -1031,7 +1082,8 @@ def validate_geodata_tokens(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "form"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_xray_geodata_validate_path}",
         data=form,
@@ -1112,7 +1164,8 @@ def route_test(
     headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
         "form"
     ]
-    status, body = _request(
+    status, body = _api_call(
+        cfg,
         opener,
         f"{base_url}{cfg.panel_xray_route_test_path}",
         data=form,

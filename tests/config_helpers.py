@@ -502,6 +502,7 @@ def base_config() -> str:
         "panel_port = 35353\n"
         "ssl_enabled = true\n"
         'panel_http_address = "127.0.0.1"\n'
+        "panel_api_timeout_seconds = 120\n"
         'panel_root_path = "/"\n'
         'panel_login_path = "/login"\n'
         'panel_csrf_token_path = "/csrf-token"\n'

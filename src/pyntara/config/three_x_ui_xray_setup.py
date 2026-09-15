@@ -34,7 +34,9 @@ class ThreeXuiXraySetupConfig:
     acme.sh when the panel has none. Stage 2 fields:
     install_result_env_path is the file the panel writes on first start
     with the generated credentials; panel_http_address is the host for
-    REST API calls and the panel_ fields that follow it are the paths of
+    REST API calls and panel_api_timeout_seconds the budget one such call
+    may take before it is reported as a failure of that call; the panel_
+    fields that follow are the paths of
     that API, relative to the host, each with {placeholders} for the
     values of one call; vault_entry_title names the runtime vault entry
     where the credentials are stored. random_username_bytes,
@@ -126,6 +128,7 @@ class ThreeXuiXraySetupConfig:
     panel_port: int
     ssl_enabled: bool
     panel_http_address: str
+    panel_api_timeout_seconds: int
     panel_root_path: str
     panel_login_path: str
     panel_csrf_token_path: str

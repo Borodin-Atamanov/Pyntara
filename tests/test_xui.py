@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -157,6 +158,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_port": 35353,
         "ssl_enabled": True,
         "panel_http_address": "127.0.0.1",
+        "panel_api_timeout_seconds": 120,
         "panel_root_path": "/",
         "panel_login_path": "/login",
         "panel_csrf_token_path": "/csrf-token",
@@ -637,6 +639,26 @@ class TestVerifyBearer:
 
 class TestListInbounds:
     """Tests for list_inbounds."""
+
+    def test_the_api_timeout_bounds_one_panel_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The budget of a step is the engine command budget, which is hours
+        # long, and the socket timeout of one call is the API timeout of
+        # the section: a panel that accepts the connection and never
+        # answers must be reported as a failure of that call instead of
+        # stopping the run for hours. The smaller of the two values is what
+        # the call gets.
+        cfg = replace(_cfg(), panel_api_timeout_seconds=7)
+        recorded = _record_requests(
+            monkeypatch, (200, json.dumps({"success": True, "obj": []}))
+        )
+        assert xui_client.list_inbounds(cfg, _ENV, 8000.0) == []
+        assert recorded[0].kwargs["timeout"] == 7
+
+        recorded.clear()
+        assert xui_client.list_inbounds(cfg, _ENV, 3.0) == []
+        assert recorded[0].kwargs["timeout"] == 3.0
 
     def _mock_request(
         self,

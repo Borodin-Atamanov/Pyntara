@@ -139,6 +139,13 @@ ssl_enabled = true
 # HTTP address of the panel for REST API calls. 127.0.0.1 is the local
 # machine; the panel listens on localhost and on the public interface.
 panel_http_address = "127.0.0.1"
+# Seconds one panel REST API call may take before it is reported as a
+# failure of that call. The budget of a step is the engine command budget,
+# which is hours, and a panel that accepts the connection and then never
+# answers must not spend it: the longest legitimate answer of the panel is
+# its own reconciliation of a template write, which took nine seconds on
+# an eight-core machine, so a slow machine raises this value.
+panel_api_timeout_seconds = 120
 # Paths of the panel REST API, relative to panel_http_address: the login
 # session, the inbound, client, server and settings endpoints, and the
 # xray endpoints the task uses. A path is written as the panel serves it,

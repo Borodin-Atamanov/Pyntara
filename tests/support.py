@@ -399,6 +399,7 @@ def make_config(
     three_x_ui_cert_dir: Path = Path("/root/cert/ip"),
     three_x_ui_self_signed_cert_dir: Path = Path("/root/cert/selfsigned"),
     three_x_ui_probe_timeout_seconds: int = 60,
+    three_x_ui_panel_api_timeout_seconds: int = 120,
     three_x_ui_probe_port_80_timeout_seconds: int = 10,
     three_x_ui_probe_listener_start_seconds: int = 1,
     three_x_ui_upnp_enabled: bool = True,
@@ -766,6 +767,7 @@ def make_config(
                 three_x_ui_self_signed_cert_dir / "privkey.pem"
             ),
             probe_timeout_seconds=three_x_ui_probe_timeout_seconds,
+            panel_api_timeout_seconds=three_x_ui_panel_api_timeout_seconds,
             probe_port_80_timeout_seconds=three_x_ui_probe_port_80_timeout_seconds,
             probe_listener_start_seconds=three_x_ui_probe_listener_start_seconds,
             upnp_enabled=three_x_ui_upnp_enabled,

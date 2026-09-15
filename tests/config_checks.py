@@ -4809,6 +4809,14 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("panel_http_address"),
         "three_x_ui_xray_setup.panel_http_address",
     )
+    panel_api_timeout_seconds = _int_field(
+        raw.get("panel_api_timeout_seconds"),
+        "three_x_ui_xray_setup.panel_api_timeout_seconds",
+    )
+    if panel_api_timeout_seconds < 1:
+        raise ConfigError(
+            "three_x_ui_xray_setup.panel_api_timeout_seconds must be positive"
+        )
     vault_entry_title = _nonempty_string_field(
         raw.get("vault_entry_title"),
         "three_x_ui_xray_setup.vault_entry_title",
@@ -5413,6 +5421,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_port=panel_port,
         ssl_enabled=ssl_enabled,
         panel_http_address=panel_http_address,
+        panel_api_timeout_seconds=panel_api_timeout_seconds,
         panel_root_path=panel_root_path,
         panel_login_path=panel_login_path,
         panel_csrf_token_path=panel_csrf_token_path,
