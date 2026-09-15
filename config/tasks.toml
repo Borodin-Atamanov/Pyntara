@@ -138,6 +138,12 @@ depends = ["add_extra_repos"]
 modes = ["minimal", "server", "desktop"]
 
 [[tasks]]
+name = "upnp_forwarding_setup"
+description = "Deploy the service and timer that ask the home router through UPnP to forward the SSH port of this machine."
+depends = ["ssh_daemon_setup", "system_metrics_setup", "hostname"]
+modes = ["minimal", "server", "desktop"]
+
+[[tasks]]
 name = "system_metrics_initial_collect"
 description = "Run the system metrics collector once to send the network report right after provisioning."
 depends = ["system_metrics_setup"]
