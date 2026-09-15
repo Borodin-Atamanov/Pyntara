@@ -418,16 +418,40 @@ def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
     return False
 
 
-def _start_service_again(
+def _enable_service(
     cfg: RustdeskSetupConfig, timeout: float
 ) -> tuple[bool, str]:
-    """Start the unit again; return (success, error_text).
+    """Enable the unit for boot; return (success, error_text).
+
+    The boot state is restored with the configured enable command, since
+    RustDesk disables the unit at a start it stops itself; a step that
+    cannot run returns its reason, which the caller reports as a warning.
+    """
+
+    try:
+        run_command(
+            substituted_command(
+                cfg.service_enable_command,
+                {"service_unit_name": cfg.service_unit_name},
+            ),
+            check=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    return True, ""
+
+
+def _start_service(
+    cfg: RustdeskSetupConfig, timeout: float
+) -> tuple[bool, str]:
+    """Start the unit; return (success, error_text).
 
     RustDesk stops and disables its own unit at the start while the
     stop-service option carries its stopped value, so a unit that the
-    cleared option left down is started once more through the configured
-    start command. A start that cannot run returns its reason, which the
-    caller reports as a warning.
+    cleared option left down is started through the configured start
+    command. A start that cannot run returns its reason, which the caller
+    reports as a warning.
     """
 
     try:
@@ -474,13 +498,15 @@ def task(ctx: Context) -> TaskResult:
     regenerates the password and the machine identity.
     Every step is reported to stdout with its result. The service is
     checked once more after the options and the password, because
-    RustDesk stops its own unit at the start while the stop-service
-    option carries its stopped value: a unit the cleared option left
-    down is started again, the service is given service_settle_delay_seconds
-    to show that it stays up, and a run that ends with the unit down
-    reports that plainly instead of readiness. A step that cannot run is
-    a warning of a completed task and the missing mechanism skips that
-    step alone, so the runner continues with the remaining tasks.
+    RustDesk stops and disables its own unit at the start while the
+    stop-service option carries its stopped value: a unit the cleared
+    option left down is enabled and started again, the service is given
+    service_settle_delay_seconds to show that it stays up, and the run
+    reports the machine as not reachable when the unit is down at the end
+    and the boot state as a finding when the unit runs without being
+    enabled. A step that cannot run is a warning of a completed task and
+    the missing mechanism skips that step alone, so the runner continues
+    with the remaining tasks.
     """
 
     cfg = ctx.config.rustdesk_setup
@@ -579,26 +605,22 @@ def task(ctx: Context) -> TaskResult:
     active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
     if not enabled:
         _log(f"enabling service {cfg.service_unit_name}")
-        run_command(
-            substituted_command(
-                cfg.service_enable_command,
-                {"service_unit_name": cfg.service_unit_name},
-            ),
-            check=True,
-            timeout=timeout,
-        )
-        changed = True
+        enabled_ok, enable_error = _enable_service(cfg, timeout)
+        if enabled_ok:
+            changed = True
+        else:
+            warnings.append(
+                f"cannot enable {cfg.service_unit_name}: {enable_error}"
+            )
     if not active:
         _log(f"starting service {cfg.service_unit_name}")
-        run_command(
-            substituted_command(
-                cfg.service_start_command,
-                {"service_unit_name": cfg.service_unit_name},
-            ),
-            check=True,
-            timeout=timeout,
-        )
-        changed = True
+        started, start_error = _start_service(cfg, timeout)
+        if started:
+            changed = True
+        else:
+            warnings.append(
+                f"cannot start {cfg.service_unit_name}: {start_error}"
+            )
 
     if not _wait_ready(cfg, timeout):
         warnings.append("rustdesk daemon did not answer after the service start")
@@ -637,9 +659,20 @@ def task(ctx: Context) -> TaskResult:
     if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
         _log(
             f"service {cfg.service_unit_name} is not active after the "
-            "configuration steps; starting it again"
+            "configuration steps; enabling and starting it again"
         )
-        restarted, restart_error = _start_service_again(cfg, timeout)
+        if not service_is_enabled(
+            ctx.config.engine, cfg.service_unit_name, timeout
+        ):
+            _log(f"enabling service {cfg.service_unit_name} again")
+            enabled_ok, enable_error = _enable_service(cfg, timeout)
+            if enabled_ok:
+                changed = True
+            else:
+                warnings.append(
+                    f"cannot enable {cfg.service_unit_name} again: {enable_error}"
+                )
+        restarted, restart_error = _start_service(cfg, timeout)
         if not restarted:
             warnings.append(
                 f"cannot start {cfg.service_unit_name} again: {restart_error}"
@@ -668,6 +701,11 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(
             f"service {cfg.service_unit_name} is not running after the "
             "configuration steps: the machine is not reachable by RustDesk ID"
+        )
+    elif not service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout):
+        warnings.append(
+            f"service {cfg.service_unit_name} is not enabled for boot: the "
+            "machine is reachable now and not after a reboot"
         )
     if service_running and machine_id is not None:
         message = (

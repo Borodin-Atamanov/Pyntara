@@ -128,6 +128,7 @@ def _fake_run(
     option_values: dict[str, str] | None = None,
     service_enabled: bool = True,
     service_active: bool = True,
+    service_enabled_sequence: list[bool] | None = None,
     service_active_sequence: list[bool] | None = None,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
@@ -136,17 +137,19 @@ def _fake_run(
     downloads; rustdesk --version, --get-id and the --option get/set
     paths answer from the given values; dpkg prints the architecture;
     systemctl reports the given service states; apt-get and every other
-    command succeed. service_active_sequence answers the successive
-    is-active queries in order, so a test can describe a service that
-    stops itself between two checks; the last state of the sequence
-    answers every remaining query. A nonzero return with check=True
-    raises exactly like the real subprocess.run.
+    command succeed. service_active_sequence and service_enabled_sequence
+    answer the successive is-active and is-enabled queries in order, so a
+    test can describe a service that RustDesk stops and disables between
+    two checks; the last state of a sequence answers every remaining
+    query. A nonzero return with check=True raises exactly like the real
+    subprocess.run.
     """
 
     calls: list[list[str]] = []
     values = dict(option_values or {})
     current_installed = installed_version
     active_states = list(service_active_sequence or [service_active])
+    enabled_states = list(service_enabled_sequence or [service_enabled])
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         nonlocal current_installed
@@ -173,8 +176,13 @@ def _fake_run(
         elif cmd[0] == "dpkg" and cmd[1] == "--print-architecture":
             stdout = f"{dpkg_arch}\n"
         elif cmd[0] == "systemctl" and cmd[1] == "is-enabled":
-            stdout = "enabled\n" if service_enabled else "disabled\n"
-            rc = 0 if service_enabled else 1
+            state = (
+                enabled_states.pop(0)
+                if len(enabled_states) > 1
+                else enabled_states[0]
+            )
+            stdout = "enabled\n" if state else "disabled\n"
+            rc = 0 if state else 1
         elif cmd[0] == "systemctl" and cmd[1] == "is-active":
             state = (
                 active_states.pop(0)
@@ -598,6 +606,50 @@ def test_reports_a_service_that_does_not_stay_up(
         "is not running after the configuration steps" in warning
         for warning in result.warnings
     )
+
+
+def test_repairs_a_service_the_armed_flag_left_disabled_and_down(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The state a live machine showed: the flag made RustDesk disable and
+    # stop the unit at its start, so the run finds a unit that is neither
+    # enabled nor running and leaves both the reachability and the boot
+    # state of the machine in place.
+    flag = RustdeskOptionConfig(key="stop-service", value="")
+    config = _config(tmp_path=tmp_path, options=(flag,))
+    calls = _fake_run(
+        monkeypatch,
+        option_values={"stop-service": "Y"},
+        service_enabled_sequence=[False, False, True],
+        service_active_sequence=[False, False, True],
+    )
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert result.warnings == ()
+    unit = config.rustdesk_setup.service_unit_name
+    assert calls.count(["systemctl", "enable", unit]) == 2
+    assert calls.count(["systemctl", "start", unit]) == 2
+    assert result.message is not None
+    assert result.message.startswith("rustdesk ready, ID")
+
+
+def test_reports_a_service_that_runs_without_being_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A unit that runs now and is disabled for boot is reachable today and
+    # not after a reboot: the run reports that as a finding instead of
+    # hiding it behind the readiness of the moment.
+    config = _config(tmp_path=tmp_path)
+    _fake_run(monkeypatch, service_enabled_sequence=[True, False])
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert any(
+        "is not enabled for boot" in warning for warning in result.warnings
+    )
+    assert result.message is not None
+    assert result.message.startswith("rustdesk ready, ID")
 
 
 def test_settle_delay_comes_from_the_config(
