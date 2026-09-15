@@ -215,11 +215,34 @@ def test_skips_when_already_configured(
     )
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
-    calls = _install_fake(monkeypatch, enabled=True)
+    calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = port_forwarding_setup.task(ctx)
     assert result.success
     assert not result.changed
     assert not any(command[1] == "restart" for command in calls)
+
+
+def test_restarts_when_deployed_but_inactive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A deployed and enabled unit whose service is not running is
+    # restarted: the service exits cleanly when the vault carries no
+    # port-forwarding data, and local_vault_setup may have synced the data
+    # since, so a restart lets it re-read the vault and establish tunnels.
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    service = ctx.config.port_forwarding_setup.service_unit_name
+    expected = _expected_unit(
+        venv_python,
+        system_config,
+        ctx.config.port_forwarding_setup,
+    )
+    systemd_dir.mkdir(parents=True)
+    (systemd_dir / service).write_text(expected, encoding="utf-8")
+    calls = _install_fake(monkeypatch, enabled=True, active=False)
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert result.changed
+    assert any(command[1] == "restart" for command in calls)
 
 
 def test_force_rewrites_and_restarts(

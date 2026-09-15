@@ -182,8 +182,10 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking unit {service_name}: {'ok' if unit_ok else 'missing or stale'}")
     enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
+    active = service_is_active(ctx.config.engine, service_name, timeout)
+    _log(f"checking activity {service_name}: {'active' if active else 'inactive'}")
 
-    if not force and unit_ok and enabled:
+    if not force and unit_ok and enabled and active:
         _log("target state already reached, skipping")
         return TaskResult(
             success=True,
@@ -193,6 +195,17 @@ def task(ctx: Context) -> TaskResult:
         )
 
     changed = False
+    if not force and unit_ok and enabled and not active:
+        # The service is deployed and enabled but not running: it exited
+        # cleanly on an earlier start because the vault carried no
+        # port-forwarding data. local_vault_setup runs before this task and
+        # may have synced the data since, so a restart lets the service
+        # re-read the vault and establish the tunnels.
+        _log(
+            f"service {service_name} deployed but inactive, "
+            "restarting to read the vault"
+        )
+        changed = True
     if unit is not None and (not unit_ok or force):
         unit_written = False
         try:
