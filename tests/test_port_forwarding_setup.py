@@ -354,6 +354,13 @@ def test_missing_template_is_a_warning(
             task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"
         ),
     )
+    calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = port_forwarding_setup.task(ctx)
     assert result.success
     assert any("template" in warning for warning in result.warnings)
+    service = ctx.config.port_forwarding_setup.service_unit_name
+    assert (
+        "systemctl",
+        "restart",
+        service,
+    ) in [tuple(command) for command in calls]

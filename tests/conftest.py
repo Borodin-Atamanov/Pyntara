@@ -31,9 +31,12 @@ format:
 """
 
 import atexit
+import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pykeepass as _pykeepass
 import pytest
@@ -73,6 +76,66 @@ def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for module in _SERVICE_MODULES:
         monkeypatch.setattr(module, "configure_journal", lambda engine: None)
+
+
+# A test replaces the subprocess of the module under test with a recorded fake
+# and never runs systemctl for real: a real call acts on the machine of the
+# developer, restarts a unit that is deployed there and, without root, opens
+# the polkit password dialog of the desktop session, which waits for an answer
+# no test can give. He who runs systemctl in a test is a test that says so;
+# the fake it installs wins over this guard, and the test that forgot is
+# failed here.
+_SYSTEMD_PROGRAMS = frozenset({"systemctl"})
+
+
+def _command_program_name(command: object) -> str:
+    """Return the base name of the program a subprocess call runs, or "".
+
+    A command is a sequence or a plain string, as subprocess accepts both,
+    and the base name lets a guard match a program that is called through a
+    path. Any other shape has no program name to check.
+    """
+
+    if isinstance(command, (str, os.PathLike)):
+        return os.path.basename(os.fspath(command))
+    if isinstance(command, (list, tuple)) and command:
+        first = command[0]
+        if isinstance(first, (str, os.PathLike)):
+            return os.path.basename(os.fspath(first))
+    return ""
+
+
+def _reject_systemctl(*args: Any, **kwargs: Any) -> None:
+    """Fail the test that would run the systemctl of the machine."""
+
+    command = args[0] if args else kwargs.get("args")
+    if _command_program_name(command) in _SYSTEMD_PROGRAMS:
+        pytest.fail(
+            "the test reached the real systemctl of the machine; replace "
+            "the subprocess of the module under test with a recorded fake "
+            f"({command!r})",
+            pytrace=False,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _systemd_stays_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test out of the systemd of the machine it runs on."""
+
+    real_run = subprocess.run
+    real_popen = subprocess.Popen
+
+    def guarded_run(*args: Any, **kwargs: Any) -> Any:
+        _reject_systemctl(*args, **kwargs)
+        return real_run(*args, **kwargs)
+
+    def guarded_popen(*args: Any, **kwargs: Any) -> Any:
+        _reject_systemctl(*args, **kwargs)
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
+    monkeypatch.setattr(subprocess, "Popen", guarded_popen)
+
 
 _original_create_database = _pykeepass.create_database
 
