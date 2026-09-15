@@ -228,7 +228,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 
 # Installer version, bumped together with src/pyntara/__init__.py by the
 # landing step (hooks/land_version_commit.sh). The value is informational.
-PYNTARA_VERSION="0.3.502"
+PYNTARA_VERSION="0.3.503"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then
