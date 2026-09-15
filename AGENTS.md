@@ -40,8 +40,7 @@ Do not withhold implementation details: state which decisions you are making bef
 
 Вопрос - требует ответа, только явный приказ - действий. Исследования, не меняющие состояние можешь делать. Изменение состояний машин и изменение кода - только после явного одобрения пользователя. При сомнениях - спрашивай.
 
-Используешь с github flow:
-На этом же компьютере с кодом работают твои сёстры-агентессы. Чтобы не конфликтовать ты правишь код в отдельной ветке, а потом аккуратно сливаешь после всех тестов. Слитые ветки удаляются.
+Work on a separate branch. Create a branch when you start a new feature, and keep every commit of that work on the branch, so main stays clean and working while the change is unfinished. When the change is finished and all tests pass, merge the branch into main, push main, and delete the branch: a merged branch is finished work, and the repository keeps only the branches that are still being written.
 
 Ты должна объяснять понятно, что ты делаешь и зачем - до действий и во время, а не после.
 
