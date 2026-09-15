@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import socket
 import sys
 from pathlib import Path
 
@@ -75,12 +76,15 @@ def mapping_records(
     scope = address_scope(
         router_address, section.global_scope_name, section.nat_scope_name
     )
+    ours = upnp.mapping_description(
+        section.upnp_mapping_description, socket.gethostname()
+    )
     host = host_from_address(router_address)
     records: list[dict[str, object]] = []
     for mapping in upnp.parse_port_mappings(
         listing, engine.upnpc_protocol_names, engine.upnpc_mapping_arrow
     ):
-        if mapping.description != section.upnp_mapping_description:
+        if mapping.description != ours:
             continue
         records.append(
             {

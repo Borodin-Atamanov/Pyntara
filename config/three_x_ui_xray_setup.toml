@@ -274,9 +274,12 @@ upnp_client_command = "upnpc"
 # Protocol of the forwarding mappings the task asks the router for; the
 # client sends it as the protocol of the rule.
 upnp_protocol = "TCP"
-# Description of the created mapping, shown in the router interface so
-# the user can tell which rule belongs to Pyntara.
-upnp_mapping_description = "pyntara xray"
+# Description of the created mapping, shown in the router interface so the
+# user can tell which rule belongs to Pyntara, and read back from the router
+# as the ownership mark of a rule. The {hostname} placeholder is replaced by
+# the machine hostname, so the rules of two machines of this project on one
+# router stay apart and a machine never takes the rule of its neighbour.
+upnp_mapping_description = "pyntara xray {hostname}"
 # Stage 6: make this machine a client of the remote server through its own
 # panel. The panel already runs Xray on the machine, so the client is an
 # inbound of that panel plus the outbounds and rules that tell its core

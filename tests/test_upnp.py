@@ -19,6 +19,7 @@ from pyntara.upnp import (
     ensure_port_forwarding,
     forward_inbound_port,
     list_mappings,
+    mapping_description,
     mapping_for,
     parse_external_address,
     parse_port_mappings,
@@ -84,6 +85,21 @@ class TestParseExternalAddress:
             parse_external_address("RouterAddress = 190.55.165.52\n", "RouterAddress")
             == "190.55.165.52"
         )
+
+
+class TestMappingDescription:
+    """Tests for the ownership mark a rule carries."""
+
+    def test_the_machine_name_replaces_the_placeholder(self) -> None:
+        assert (
+            mapping_description("pyntara ssh {hostname}", "dozor-gunid")
+            == "pyntara ssh dozor-gunid"
+        )
+
+    def test_a_description_without_a_placeholder_stays_as_it_is(self) -> None:
+        # A config without the placeholder marks every machine the same
+        # way; the helper is still the single place that renders the mark.
+        assert mapping_description("pyntara ssh", "dozor-gunid") == "pyntara ssh"
 
 
 class TestParsePortMappings:
@@ -179,7 +195,9 @@ class TestEnsurePortForwarding:
     def test_keeps_an_existing_mapping(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A rerun must not add a second rule for the same port.
+        # A rerun of the machine that owns the rule must not add a second
+        # rule for the same port: the mark of the rule and the target it
+        # delivers to are both already what the caller asks for.
         commands: list[list[str]] = []
 
         def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -188,7 +206,7 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE, "upnpc", "d", "192.168.1.5", 443, "TCP", 30.0
+            ENGINE, "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
         )
         assert all("-a" not in command for command in commands)
 
@@ -231,13 +249,15 @@ class TestEnsurePortForwarding:
             is False
         )
 
-    def test_leaves_the_rule_of_another_program_alone(
+    def test_leaves_the_rule_of_another_machine_alone(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # This router replaces a rule silently, so a port another program
+        # This router replaces a rule silently, so a port another machine
         # holds for another host is refused instead of taken; the caller
         # then tries another port.
-        other_host = " 0 TCP   443->192.168.1.9:443  'pyntara xray'  ''\n"
+        other_host = (
+            " 0 TCP   443->192.168.1.9:443  'pyntara xray testhost2'  ''\n"
+        )
         commands: list[list[str]] = []
 
         def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -247,11 +267,54 @@ class TestEnsurePortForwarding:
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert (
             ensure_port_forwarding(
-                ENGINE, "upnpc", "pyntara ssh", "192.168.1.5", 443, "TCP", 30.0
+                ENGINE,
+                "upnpc",
+                "pyntara xray testhost",
+                "192.168.1.5",
+                443,
+                "TCP",
+                30.0,
             )
             is False
         )
         assert all("-a" not in command for command in commands)
+
+    def test_writes_the_rule_again_when_the_mark_is_older(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The description is the ownership mark, so a rule that delivers the
+        # port to this machine under an older mark is written again with the
+        # current one: the two machines of this project that share a router
+        # are told apart by that name.
+        old_mark = " 0 TCP   443->192.168.1.5:443  'pyntara xray'  ''\n"
+        commands: list[list[str]] = []
+        listing_calls = 0
+
+        def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+            nonlocal listing_calls
+            commands.append(command)
+            if command[1] != "-l":
+                return _FakeProc(0, "")
+            listing_calls += 1
+            return _FakeProc(
+                0,
+                old_mark
+                if listing_calls == 1
+                else " 0 TCP 443->192.168.1.5:443  'pyntara xray testhost'  ''\n",
+            )
+
+        monkeypatch.setattr(upnp_module, "run_command", fake_run)
+        assert ensure_port_forwarding(
+            ENGINE,
+            "upnpc",
+            "pyntara xray testhost",
+            "192.168.1.5",
+            443,
+            "TCP",
+            30.0,
+        )
+        add = next(command for command in commands if "-a" in command)
+        assert add[add.index("-e") + 1] == "pyntara xray testhost"
 
     def test_replaces_the_rule_of_this_project_that_moved(
         self, monkeypatch: pytest.MonkeyPatch

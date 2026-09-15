@@ -25,6 +25,19 @@ from pyntara.public_address import default_route_address
 from pyntara.utils import run_command, substituted_command, trim_whitespace
 
 
+def mapping_description(template: str, hostname: str) -> str:
+    """The description of a rule of this machine, from its config template.
+
+    The configured template carries the {hostname} placeholder, so the rules
+    of two machines of this project on one router stay apart. The description
+    is the ownership mark of a rule: a machine reads it back from the router
+    and leaves a rule that carries another one alone, which is why the mark
+    names the machine and not only the purpose.
+    """
+
+    return template.format(hostname=hostname)
+
+
 def parse_external_address(
     text: str, address_key: str
 ) -> str | None:
@@ -277,17 +290,20 @@ def ensure_port_forwarding(
 ) -> bool:
     """Ensure the router delivers the external port to this machine.
 
-    A rule that already delivers that port to the address and the internal
+    The description given here is the ownership mark of the rule, so it
+    takes part in the comparison like the target does. A rule that carries
+    that mark and already delivers the port to the address and the internal
     port given here is kept as it is, so a rerun never adds a second rule.
-    A rule of another program at that port is never touched: this router
-    replaces a rule silently, so taking a port is the decision of the
-    caller, and False lets the caller try another port. A rule of this
-    project whose target moved (the address of the machine changed) is
-    replaced by adding it again, which the router does without complaint.
-    The list is always read back, because the success text of the client is
-    not trusted on its own; returns whether the rule is in place after the
-    call. internal_port defaults to the external port, which is the rule of
-    a service that is published on the number it listens on.
+    A rule that carries another mark and delivers the port to another
+    machine is never touched: this router replaces a rule silently, so
+    taking a port is the decision of the caller, and False lets the caller
+    try another port. A rule of this machine whose target moved (the address
+    of the machine changed) or whose mark is older than the one given here
+    is written again, which the router does by taking the new rule over the
+    old one. The list is always read back, because the success text of the
+    client is not trusted on its own; returns whether the rule is in place
+    after the call. internal_port defaults to the external port, which is
+    the rule of a service that is published on the number it listens on.
     """
 
     target = (internal_address, port if internal_port is None else internal_port)
@@ -302,10 +318,15 @@ def ensure_port_forwarding(
     )
     if existing is not None:
         if (existing.internal_address, existing.internal_port) == target:
-            return True
-        if existing.description != description:
+            if existing.description == description:
+                return True
             log_progress(
-                f"port {port} carries the rule of another program, "
+                f"port {port} reaches this machine under the mark "
+                f"'{existing.description}', the rule is written again"
+            )
+        elif existing.description != description:
+            log_progress(
+                f"port {port} carries the rule of another machine, "
                 "it is left alone"
             )
             return False

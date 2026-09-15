@@ -23,6 +23,12 @@ CONFIG_PATH = "/etc/pyntara/config.toml"
 ROUTER_ADDRESS = "191.83.167.128"
 INTERNAL_ADDRESS = "192.168.1.52"
 
+# The mark this machine gives its own rules, and the mark of the neighbour
+# machine that shares the router: the two never collide, so neither machine
+# can take the rule of the other one.
+OUR_DESCRIPTION = "pyntara ssh testhost"
+NEIGHBOUR_DESCRIPTION = "pyntara xray otherhost"
+
 
 class _FakeRouter:
     """The mapping table of a router, with the calls of the upnpc client.
@@ -152,26 +158,32 @@ class TestMain:
 
         assert _run_main() == 0
         assert router.rules == [
-            (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
+            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
         ]
         assert triggers == [config]
 
-    def test_the_rule_of_another_program_moves_to_the_next_candidate(
+    def test_the_rule_of_another_machine_moves_to_the_next_candidate(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # This router replaces a rule silently, so the port another program
-        # holds is left alone and the next candidate is tried; the rule of
-        # the other program is still there afterwards.
+        # A neighbour of this project holds the first candidate. This router
+        # replaces a rule silently, so the rule of the neighbour is left
+        # alone and the next candidate is tried; the machine name in the
+        # description is what tells the two apart.
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
-        foreign = (ports[0], "192.168.1.48", 443, "pyntara xray")
+        foreign = (ports[0], "192.168.1.48", 443, NEIGHBOUR_DESCRIPTION)
         router = _FakeRouter(rules=(foreign,))
         triggers: list[Config] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
         assert foreign in router.rules
-        assert (ports[1], INTERNAL_ADDRESS, 30222, "pyntara ssh") in router.rules
+        assert (
+            ports[1],
+            INTERNAL_ADDRESS,
+            30222,
+            OUR_DESCRIPTION,
+        ) in router.rules
         assert triggers == [config]
 
     def test_a_rule_that_is_already_right_wakes_nobody(
@@ -182,7 +194,7 @@ class TestMain:
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
         router = _FakeRouter(
-            rules=((ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh"),)
+            rules=((ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION),)
         )
         triggers: list[Config] = []
         _service(monkeypatch, router, config, triggers)
@@ -198,14 +210,33 @@ class TestMain:
         # old one: the router takes the same rule again with the new target.
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
-        stale = (ports[0], "192.168.1.9", 30222, "pyntara ssh")
+        stale = (ports[0], "192.168.1.9", 30222, OUR_DESCRIPTION)
         router = _FakeRouter(rules=(stale,))
         triggers: list[Config] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
         assert router.rules == [
-            (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
+            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
+        ]
+        assert triggers == [config]
+
+    def test_a_rule_that_carries_an_older_mark_is_written_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The description is the ownership mark, so a rule of this machine
+        # that delivers the port but carries an older mark is refreshed: the
+        # rule then names this machine like every other rule of the run.
+        config = make_config()
+        ports = forwarding.candidate_ports(config, "testhost")
+        old_mark = (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
+        router = _FakeRouter(rules=(old_mark,))
+        triggers: list[Config] = []
+        _service(monkeypatch, router, config, triggers)
+
+        assert _run_main() == 0
+        assert router.rules == [
+            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
         ]
         assert triggers == [config]
 

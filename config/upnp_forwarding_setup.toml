@@ -17,9 +17,11 @@ upnp_client_command = "upnpc"
 # the protocol of the rule.
 upnp_protocol = "TCP"
 # Description of the created rule, shown in the router interface and read
-# back from the router, where it marks a rule as this project's: a rule that
-# carries another description is never touched.
-upnp_mapping_description = "pyntara ssh"
+# back from the router, where it marks the rule as this machine's: a rule
+# that carries another description is never touched. The {hostname}
+# placeholder is replaced by the machine hostname, so two machines of this
+# project on one router never take each other's rule.
+upnp_mapping_description = "pyntara ssh {hostname}"
 # Number of external ports the service tries before it gives up. The first
 # candidate is the desired port of the machine; every further one hashes the
 # hostname with the attempt number appended, so a port another rule already

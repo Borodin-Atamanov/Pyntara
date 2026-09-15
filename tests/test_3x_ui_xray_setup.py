@@ -2963,13 +2963,17 @@ class TestForwardUpnpPorts:
             return ForwardedAddress("190.55.165.52", True)
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
+        monkeypatch.setattr(xui.socket, "gethostname", lambda: "testhost")
         cfg = make_config().three_x_ui_xray_setup
         engine = make_config().engine
         facts = _facts(public=("190.55.165.52",), router="190.55.165.52")
         assert xui._forward_upnp_ports(engine, cfg, facts, 30.0) == "190.55.165.52"
+        # The description is the ownership mark of the rule and carries the
+        # machine name, so a neighbour of this project on the same router
+        # keeps its own rule.
         assert calls[0][1:5] == (
             "upnpc",
-            "pyntara xray",
+            "pyntara xray testhost",
             cfg.inbound_port,
             cfg.upnp_protocol,
         )
@@ -2977,7 +2981,7 @@ class TestForwardUpnpPorts:
         assert calls[0][7] == "190.55.165.52"
         assert calls[1][1:5] == (
             "upnpc",
-            "pyntara xray",
+            "pyntara xray testhost",
             cfg.acme_port,
             cfg.upnp_protocol,
         )

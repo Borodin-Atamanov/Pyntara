@@ -18,13 +18,24 @@ from pyntara.ssh_access import ssh_command
 
 ROUTER_ADDRESS = "191.83.167.128"
 CONFIG_PATH = "/etc/pyntara/config.toml"
+THIS_MACHINE = "testhost"
 
-# The table of the router this machine shares with another one: only the
-# first rule carries the description this project gives its rules.
+# The table of the router this machine shares with a neighbour of this
+# project: only the first rule carries the mark of this machine, and the
+# mark names the machine, so the neighbour's rule is never read as ours.
 LISTING = (
-    " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh'  ''\n"
-    " 1 TCP    443->192.168.1.48:443    'pyntara xray'  ''\n"
+    " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh testhost'  ''\n"
+    " 1 TCP    443->192.168.1.48:443    'pyntara xray otherhost'  ''\n"
 )
+
+
+@pytest.fixture(autouse=True)
+def _this_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every case as the machine the router table names."""
+
+    monkeypatch.setattr(
+        upnp_forwarding_state.socket, "gethostname", lambda: THIS_MACHINE
+    )
 
 
 def _router(
@@ -100,12 +111,24 @@ class TestMappingRecords:
             }
         ]
 
-    def test_a_rule_of_another_program_stays_out_of_the_report(self) -> None:
+    def test_a_rule_of_another_machine_stays_out_of_the_report(self) -> None:
         config = make_config()
         assert upnp_forwarding_state.mapping_records(
             config,
             ROUTER_ADDRESS,
-            " 1 TCP    443->192.168.1.48:443    'pyntara xray'  ''\n",
+            " 1 TCP    443->192.168.1.48:443"
+            "    'pyntara xray otherhost'  ''\n",
+        ) == []
+
+    def test_a_rule_that_lost_the_machine_name_is_not_ours(self) -> None:
+        # A rule written before the mark carried the machine name belongs to
+        # no machine in particular: the report leaves it out, and the
+        # forwarding service writes its own rule again under the new mark.
+        config = make_config()
+        assert upnp_forwarding_state.mapping_records(
+            config,
+            ROUTER_ADDRESS,
+            " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh'  ''\n",
         ) == []
 
 

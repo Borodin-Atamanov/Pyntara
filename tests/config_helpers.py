@@ -569,7 +569,7 @@ def base_config() -> str:
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'
         'upnp_protocol = "TCP"\n'
-        'upnp_mapping_description = "pyntara xray"\n'
+        'upnp_mapping_description = "pyntara xray {hostname}"\n'
         'client_profile_entry_title = "xray_client_profile"\n'
         'local_proxy_tag = "pyntara-local-proxy"\n'
         'local_proxy_listen_address = "127.0.0.1"\n'
@@ -752,7 +752,7 @@ def base_config() -> str:
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'
         'upnp_protocol = "TCP"\n'
-        'upnp_mapping_description = "pyntara ssh"\n'
+        'upnp_mapping_description = "pyntara ssh {hostname}"\n'
         "mapping_attempts = 11\n"
         'service_unit_name = "upnp_forwarding.service"\n'
         'timer_unit_name = "upnp_forwarding.timer"\n'

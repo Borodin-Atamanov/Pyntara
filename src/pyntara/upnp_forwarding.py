@@ -125,10 +125,13 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
 
     Returns the rule that is in place and whether this run changed the
     router, or None when nothing can be forwarded here. The candidates are
-    tried in order: a rule that already delivers the port to this machine
-    ends the search without touching the router, a rule of another program
-    moves the search to the next candidate, and a rule of this project
-    whose target moved is replaced by the router itself.
+    tried in order, and the description rendered from its template is the
+    ownership mark of every rule: a rule that carries this mark and already
+    delivers the port to this machine ends the search without touching the
+    router, a rule that carries another mark and reaches another machine
+    moves the search to the next candidate, and a rule of this machine whose
+    target or mark is stale is written again, which the router does by
+    itself.
     """
 
     section = cfg.upnp_forwarding_setup
@@ -147,6 +150,9 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
         )
         return None
     internal_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+    description = upnp.mapping_description(
+        section.upnp_mapping_description, hostname
+    )
     listing = upnp.list_mappings(engine, command, timeout)
     for port in candidate_ports(cfg, hostname):
         existing = upnp.mapping_for(
@@ -161,24 +167,29 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
             existing.internal_address,
             existing.internal_port,
         ) == target:
+            if existing.description == description:
+                _log(
+                    f"the router already forwards port {port} to "
+                    f"{internal_address}:{internal_port}"
+                )
+                return Forwarding(port, internal_port, router_address, False)
             _log(
-                f"the router already forwards port {port} to "
-                f"{internal_address}:{internal_port}"
+                f"port {port} already reaches this machine under another "
+                "description, the rule is written again"
             )
-            return Forwarding(port, internal_port, router_address, False)
-        if (
+        elif (
             existing is not None
-            and existing.description != section.upnp_mapping_description
+            and existing.description != description
         ):
             _log(
-                f"port {port} carries the rule of another program, "
+                f"port {port} carries the rule of another machine, "
                 "trying the next port"
             )
             continue
         if upnp.ensure_port_forwarding(
             engine,
             command,
-            section.upnp_mapping_description,
+            description,
             internal_address,
             port,
             section.upnp_protocol,
@@ -192,7 +203,7 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
             )
             return Forwarding(port, internal_port, router_address, True)
         _log(f"the router refused port {port}, trying the next port")
-    _log("every candidate port is taken by the rule of another program")
+    _log("every candidate port is taken by the rule of another machine")
     return None
 
 

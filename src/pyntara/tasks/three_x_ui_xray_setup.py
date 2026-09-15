@@ -78,6 +78,7 @@ server itself skips both stages: it does not connect to itself.
 import ipaddress
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -899,11 +900,14 @@ def _forward_upnp_ports(
     if facts.router_address is None:
         return None
     observed = (*facts.public_addresses.ipv4, *facts.public_addresses.ipv6)
+    description = upnp.mapping_description(
+        cfg.upnp_mapping_description, socket.gethostname()
+    )
     _log(f"asking the router to forward port {cfg.inbound_port} for clients")
     forwarded = upnp.forward_inbound_port(
         engine,
         cfg.upnp_client_command,
-        cfg.upnp_mapping_description,
+        description,
         cfg.inbound_port,
         cfg.upnp_protocol,
         observed,
@@ -918,7 +922,7 @@ def _forward_upnp_ports(
         upnp.forward_inbound_port(
             engine,
             cfg.upnp_client_command,
-            cfg.upnp_mapping_description,
+            description,
             cfg.acme_port,
             cfg.upnp_protocol,
             (),

@@ -20,7 +20,7 @@ def test_load_config_upnp_forwarding_section_parses(tmp_path: Path) -> None:
     assert section.upnp_package == "miniupnpc"
     assert section.upnp_client_command == "upnpc"
     assert section.upnp_protocol == "TCP"
-    assert section.upnp_mapping_description == "pyntara ssh"
+    assert section.upnp_mapping_description == "pyntara ssh {hostname}"
     assert section.mapping_attempts == 11
     assert section.service_unit_name == "upnp_forwarding.service"
     assert section.timer_unit_name == "upnp_forwarding.timer"
@@ -55,6 +55,12 @@ def test_load_config_upnp_forwarding_section_parses(tmp_path: Path) -> None:
         lambda c: c.replace("[upnp_forwarding_setup]", "[upnp_forwarding]"),
         # mapping_attempts is zero
         lambda c: c.replace("mapping_attempts = 11", "mapping_attempts = 0"),
+        # the rule description lost the machine name, so the rules of two
+        # machines of this project could not be told apart
+        lambda c: c.replace(
+            'upnp_mapping_description = "pyntara ssh {hostname}"',
+            'upnp_mapping_description = "pyntara ssh"',
+        ),
         # the enable command lost the unit name placeholder
         lambda c: c.replace(
             'systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]',

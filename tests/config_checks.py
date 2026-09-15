@@ -3133,9 +3133,10 @@ def _upnp_forwarding_setup_table(raw: object) -> UpnpForwardingSetupConfig:
     upnp_protocol = _nonempty_string_field(
         raw.get("upnp_protocol"), section + "upnp_protocol"
     )
-    upnp_mapping_description = _nonempty_string_field(
+    upnp_mapping_description = _placeholder_text_field(
         raw.get("upnp_mapping_description"),
         section + "upnp_mapping_description",
+        ("{hostname}",),
     )
     mapping_attempts = _positive_int_field(
         raw.get("mapping_attempts"), section + "mapping_attempts"
@@ -4964,9 +4965,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("upnp_client_command"),
         "three_x_ui_xray_setup.upnp_client_command",
     )
-    upnp_mapping_description = _nonempty_string_field(
+    upnp_mapping_description = _placeholder_text_field(
         raw.get("upnp_mapping_description"),
         "three_x_ui_xray_setup.upnp_mapping_description",
+        ("{hostname}",),
     )
     client_profile_entry_title = _nonempty_string_field(
         raw.get("client_profile_entry_title"),
