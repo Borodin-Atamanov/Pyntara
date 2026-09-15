@@ -16,6 +16,7 @@ from string import Template
 import pytest
 from support import FakeProc, make_config, make_context
 
+from pyntara import __version__
 from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
@@ -23,6 +24,7 @@ from pyntara.tasks import port_forwarding_setup
 UNIT_TEMPLATE = """\
 [Unit]
 Description=Auto port forwarding
+# Deployed by Pyntara $version
 After=network-online.target local-fs.target
 Wants=network-online.target
 
@@ -51,6 +53,8 @@ def _install_fixtures(
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
     venv_python = venv_dir / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
@@ -76,8 +80,13 @@ def _install_fake(
     enabled: bool = False,
     active: bool = False,
     failed: bool = False,
+    venv_version: str | None = __version__,
 ) -> list[list[str]]:
-    """Install the systemctl fake; return the recorded command calls."""
+    """Install the systemctl fake; return the recorded command calls.
+
+    venv_version is the pyntara version the deployed interpreter reports;
+    None makes that call fail, which is a deployment the task cannot read.
+    """
 
     calls: list[list[str]] = []
 
@@ -90,6 +99,10 @@ def _install_fake(
             return FakeProc(0, "active\n") if active else FakeProc(1, "inactive")
         if command[0] == "systemctl" and command[1] == "is-failed":
             return FakeProc(0, "failed\n") if failed else FakeProc(1, "inactive")
+        if command[0].endswith("/python") and command[1] == "-c":
+            if venv_version is None:
+                return FakeProc(1)
+            return FakeProc(0, f"{venv_version}\n")
         return FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -97,7 +110,10 @@ def _install_fake(
 
 
 def _expected_unit(
-    venv_python: Path, system_config: Path, cfg: PortForwardingSetupConfig
+    venv_python: Path,
+    system_config: Path,
+    cfg: PortForwardingSetupConfig,
+    version: str = __version__,
 ) -> str:
     """The unit the task must render for the given fixtures."""
 
@@ -112,6 +128,7 @@ def _expected_unit(
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
         restart_seconds=cfg.service_restart_seconds,
+        version=version,
     )
 
 
@@ -156,12 +173,78 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
         cfg.service_module_name,
         Path("/etc/pyntara/config.toml"),
         cfg.service_restart_seconds,
+        "0.3.516",
     )
     assert (
         f"ExecStart=myrun -m {cfg.service_module_name} /etc/pyntara/config.toml"
         in unit
     )
     assert f"RestartSec={cfg.service_restart_seconds}" in unit
+
+
+def test_the_unit_carries_the_version_of_the_deployed_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The version in the unit is the one the deployed interpreter reports,
+    # not the version of the running installer: the unit names the code it
+    # will run, and that is the version a reader of the machine and the
+    # comparison of the next run both look at.
+    systemd_dir, _venv_python, _system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
+    _install_fake(monkeypatch, active=True, venv_version="0.3.999")
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    service = ctx.config.port_forwarding_setup.service_unit_name
+    unit = (systemd_dir / service).read_text(encoding="utf-8")
+    assert "# Deployed by Pyntara 0.3.999" in unit
+    assert not result.warnings
+
+
+def test_a_unit_of_another_version_is_rewritten_and_the_service_restarted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The defect this prevents: the code under the unit was updated while
+    # the unit stayed the same, so the task skipped the service and the
+    # machine kept running the old code. A unit that differs in its
+    # version line alone is stale, so it is written again and the service
+    # restarted.
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
+    cfg = ctx.config.port_forwarding_setup
+    service = cfg.service_unit_name
+    systemd_dir.mkdir(parents=True)
+    older = _expected_unit(venv_python, system_config, cfg).replace(
+        f"# Deployed by Pyntara {__version__}", "# Deployed by Pyntara 0.0.1"
+    )
+    (systemd_dir / service).write_text(older, encoding="utf-8")
+    calls = _install_fake(monkeypatch, enabled=True, active=True)
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert result.changed
+    assert (systemd_dir / service).read_text(encoding="utf-8") == _expected_unit(
+        venv_python, system_config, cfg
+    )
+    assert any(command[1] == "restart" for command in calls)
+
+
+def test_a_deployment_that_cannot_be_asked_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A venv that cannot be asked leaves the repository version in the
+    # unit and names the gap, so the missing refresh is visible in the
+    # install log instead of being passed off as the new code.
+    systemd_dir, _venv_python, _system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
+    _install_fake(monkeypatch, active=True, venv_version=None)
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    service = ctx.config.port_forwarding_setup.service_unit_name
+    unit = (systemd_dir / service).read_text(encoding="utf-8")
+    assert f"# Deployed by Pyntara {__version__}" in unit
+    assert any("cannot read the version" in warning for warning in result.warnings)
 
 
 def test_renders_the_configured_module_and_commands(

@@ -11,7 +11,11 @@ server group and the passphrase. The unit is enabled and started
 immediately, so a broken deployment fails the task and shows in the
 install log instead of surfacing at the first reboot; on a vault
 without the port-forwarding data the service exits cleanly right after
-the start, which is the intended no-op state, not a failure. The task is
+the start, which is the intended no-op state, not a failure. The unit
+carries the version of the deployed code, taken from the deployed
+interpreter, so an update of that code makes the unit differ from the
+one on the machine and the service is restarted with the new code. The
+task is
 idempotent: it skips when the unit file matches its source and the
 service is enabled; force mode rewrites the unit and restarts the
 service, which makes the service walk its port chain again.
@@ -24,6 +28,7 @@ import time
 from pathlib import Path
 from string import Template
 
+from pyntara import __version__, deployment
 from pyntara.config import EngineConfig, PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -47,13 +52,18 @@ def _render_service_unit(
     module_name: str,
     system_config_path: Path,
     restart_seconds: int,
+    version: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
     The service runs the venv python with the configured port_forwarding
     module and the configured system config path as its only argument; the
     line is fully expanded here, so the template carries no shell variables
-    of its own. The restart pause comes from the config.
+    of its own. The restart pause comes from the config, and the version
+    line names the deployed code this unit belongs to: a unit on the
+    machine that carries another version is a stale unit, so the task
+    writes it again and restarts the service, and the code that runs is
+    the code the unit was rendered for.
     """
 
     command = " ".join(
@@ -70,6 +80,7 @@ def _render_service_unit(
     return template.substitute(
         exec_lines=f"ExecStart={command}",
         restart_seconds=restart_seconds,
+        version=version,
     )
 
 
@@ -142,7 +153,10 @@ def task(ctx: Context) -> TaskResult:
     depends on the machine vault content and is verified after a start.
     Otherwise the task writes the unit, reloads systemd, enables the
     service and starts it, and verifies that the started service is not
-    the failed state. Force mode rewrites the unit and restarts the
+    in the failed state. The rendered unit names the version of the
+    deployed code, so an update of that code makes the unit stale and the
+    rewrite below restarts the service with the new code. Force mode
+    rewrites the unit and restarts the
     service, so the tunnel walks its port chain again; the task never
     touches the port-forwarding state file, which the service writes and
     the telemetry reads. Every step that cannot
@@ -160,6 +174,11 @@ def task(ctx: Context) -> TaskResult:
     system_config_path = metrics.system_config_path
     service_name = pf.service_unit_name
     warnings: list[str] = []
+    version, version_warning = deployment.deployed_version(
+        metrics.venv_version_command, venv_python, timeout, __version__
+    )
+    if version_warning is not None:
+        warnings.append(version_warning)
 
     try:
         unit: str | None = _render_service_unit(
@@ -170,6 +189,7 @@ def task(ctx: Context) -> TaskResult:
             pf.service_module_name,
             system_config_path,
             pf.service_restart_seconds,
+            version,
         )
     except OSError as exc:
         # Without the rendered unit the unit file cannot be written; the
