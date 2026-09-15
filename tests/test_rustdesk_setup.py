@@ -130,6 +130,7 @@ def _fake_run(
     service_active: bool = True,
     service_enabled_sequence: list[bool] | None = None,
     service_active_sequence: list[bool] | None = None,
+    service_command_failure: str = "",
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -141,7 +142,9 @@ def _fake_run(
     answer the successive is-active and is-enabled queries in order, so a
     test can describe a service that RustDesk stops and disables between
     two checks; the last state of a sequence answers every remaining
-    query. A nonzero return with check=True raises exactly like the real
+    query. A non-empty service_command_failure makes enable and start
+    fail with that text on stderr, the way systemctl reports a masked
+    unit. A nonzero return with check=True raises exactly like the real
     subprocess.run.
     """
 
@@ -157,6 +160,7 @@ def _fake_run(
         cmd = list(command)
         rc = 0
         stdout = ""
+        stderr = ""
         if cmd[0] == "curl" and "releases/latest" in " ".join(cmd):
             stdout = release_payload if release_payload is not None else _release_json()
         elif cmd[0] == "curl":
@@ -192,12 +196,14 @@ def _fake_run(
             stdout = "active\n" if state else "inactive\n"
             rc = 0 if state else 1
         elif cmd[0] == "systemctl":
-            pass  # enable, start, stop succeed
+            if service_command_failure and cmd[1] in ("enable", "start"):
+                stderr = service_command_failure
+                rc = 1
         elif cmd[0] == "apt-get":
             pass  # update and install succeed
         if rc != 0 and kwargs.get("check", False):
             raise subprocess.CalledProcessError(rc, command, stdout)
-        return _FakeProc(rc, stdout)
+        return _FakeProc(rc, stdout, stderr)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     return calls
@@ -632,6 +638,29 @@ def test_repairs_a_service_the_armed_flag_left_disabled_and_down(
     assert calls.count(["systemctl", "start", unit]) == 2
     assert result.message is not None
     assert result.message.startswith("rustdesk ready, ID")
+
+
+def test_reports_the_words_of_a_failed_service_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The reason a warned step gives is what systemd said, so the operator
+    # of a machine without a developer reads "Unit ... is masked" and not
+    # the repr of a Python exception.
+    config = _config(tmp_path=tmp_path)
+    _fake_run(
+        monkeypatch,
+        service_active_sequence=[True, False],
+        service_command_failure="Unit rustdesk.service is masked.",
+    )
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    assert result.success is True
+    assert any(
+        "Unit rustdesk.service is masked." in warning
+        for warning in result.warnings
+    )
+    assert result.message is not None
+    assert "rustdesk not reachable" in result.message
 
 
 def test_reports_a_service_that_runs_without_being_enabled(

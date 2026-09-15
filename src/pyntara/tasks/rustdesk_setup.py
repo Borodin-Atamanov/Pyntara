@@ -418,6 +418,32 @@ def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
     return False
 
 
+def _service_command_result(
+    command: tuple[str, ...], unit: str, timeout: float
+) -> tuple[bool, str]:
+    """Run a service command; return (success, the words of the tool).
+
+    The reason of a failure is the stdout and the stderr of the command,
+    so a warning tells the operator what systemd said, for example that
+    the unit is masked, instead of the repr of a Python exception; a
+    command that times out or has no executable reports its own text.
+    """
+
+    try:
+        result = run_command(
+            substituted_command(command, {"service_unit_name": unit}),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, str(exc)
+    if result.returncode != 0:
+        message = (result.stdout + result.stderr).strip()
+        return False, message or f"exit status {result.returncode}"
+    return True, ""
+
+
 def _enable_service(
     cfg: RustdeskSetupConfig, timeout: float
 ) -> tuple[bool, str]:
@@ -428,18 +454,9 @@ def _enable_service(
     cannot run returns its reason, which the caller reports as a warning.
     """
 
-    try:
-        run_command(
-            substituted_command(
-                cfg.service_enable_command,
-                {"service_unit_name": cfg.service_unit_name},
-            ),
-            check=True,
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
-    return True, ""
+    return _service_command_result(
+        cfg.service_enable_command, cfg.service_unit_name, timeout
+    )
 
 
 def _start_service(
@@ -454,18 +471,9 @@ def _start_service(
     reports as a warning.
     """
 
-    try:
-        run_command(
-            substituted_command(
-                cfg.service_start_command,
-                {"service_unit_name": cfg.service_unit_name},
-            ),
-            check=True,
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
-    return True, ""
+    return _service_command_result(
+        cfg.service_start_command, cfg.service_unit_name, timeout
+    )
 
 
 def _service_stays_active(
