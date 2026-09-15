@@ -20,11 +20,16 @@ applies only what differs. When automatic_look_and_feel is set, the task
 enables the native KDE day and night theme switch instead of applying a
 fixed theme, so a run never fights the switch. Missing packages (the
 provider of the plasma-apply tools and the KConfig tools) are installed
-first.
+first. The task also installs the KWin scripts of the section and owns
+their keyboard combinations: the combination is freed from whatever
+action holds it, given to the script action in the running KGlobalAccel
+daemon and read back, so each combination works whatever owned it before
+the run.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -1236,6 +1241,192 @@ def _free_script_hotkeys(
     return changed
 
 
+def _script_hotkey_pairs(
+    cfg: KdeSettingsConfig,
+) -> tuple[tuple[str, str, int], ...]:
+    """The script hotkeys as their action, combination and key code.
+
+    The configured action list and hotkey list describe one hotkey per
+    position, and kwin_script_hotkey_codes gives the combined Qt key code
+    the KGlobalAccel daemon takes for that combination. A combination
+    without a configured code is left out with a progress line, so a
+    partial config applies what it describes instead of guessing a code.
+    """
+
+    actions = cfg.kwin_script_actions or ()
+    hotkeys = cfg.kwin_script_hotkeys or ()
+    codes = cfg.kwin_script_hotkey_codes or {}
+    pairs: list[tuple[str, str, int]] = []
+    for action, hotkey in zip(actions, hotkeys):
+        code = codes.get(hotkey)
+        if code is None:
+            _log(f"no key code configured for {hotkey}, {action} keeps its key")
+            continue
+        pairs.append((action, hotkey, code))
+    return tuple(pairs)
+
+
+def _assign_script_hotkeys(
+    cfg: KdeSettingsConfig,
+    *,
+    client_path: Path,
+    timeout: float,
+    env: dict[str, str] | None,
+    system_python: str,
+    kglobalaccel_names: dict[str, str],
+    warnings: list[str] | None = None,
+) -> bool:
+    """Give every script hotkey to its action in the running daemon.
+
+    The combination the config names must belong to the action of the
+    script whatever owned it before the run, so the task does not leave
+    the outcome to the registration of the script: the client named by the
+    config frees the combination from its current owner, assigns it to the
+    action and prints the state before and after, which the task checks.
+    An action the daemon does not know yet, or a key it reports
+    differently, is reported as a warning of a completed task and never as
+    a failure, because the record in kglobalshortcutsrc carries the
+    combination to the next login. The call runs as the target user on the
+    session bus of the desktop with the system interpreter, so a missing
+    live session is a progress line and not an error.
+    """
+
+    pairs = _script_hotkey_pairs(cfg)
+    if not pairs:
+        return False
+    if env is None:
+        _log("no desktop session, the script hotkeys apply at the next login")
+        return False
+
+    def report(warning: str) -> bool:
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        return False
+
+    payload = json.dumps(
+        {
+            "component_unique": cfg.kwin_component_unique,
+            "component_friendly": cfg.kwin_component_friendly,
+            "assign": [[action, code] for action, _hotkey, code in pairs],
+        }
+    )
+    try:
+        client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
+            **kglobalaccel_names
+        )
+    except OSError as exc:
+        return report(f"cannot read the script hotkey client {client_path}: {exc}")
+    try:
+        result = run_command(
+            _as_user_command(
+                cfg,
+                [
+                    *substituted_command(
+                        cfg.python_script_command, {"python": system_python}
+                    ),
+                    client_text,
+                    payload,
+                ],
+            ),
+            extra_env=env,
+            timeout=timeout,
+            capture=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = trim_whitespace(exc.stderr or "")
+        suffix = f": {detail}" if detail else ""
+        return report(f"cannot assign the script hotkeys: {exc}{suffix}")
+    except subprocess.TimeoutExpired as exc:
+        return report(f"cannot assign the script hotkeys: {exc}")
+    try:
+        reply = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return report(f"cannot read the kglobalaccel reply: {result.stdout}")
+    before = reply.get("before", {})
+    after = reply.get("after", {})
+    changed = False
+    for action, hotkey, code in pairs:
+        if after.get(action) != [code]:
+            return report(
+                f"cannot give {hotkey} to {action}: the daemon reports"
+                f" {after.get(action)}"
+            )
+        if before.get(action) != after.get(action):
+            changed = True
+    _log(f"assigned {len(pairs)} script hotkeys in the running daemon")
+    return changed
+
+
+def _write_script_hotkey_records(
+    cfg: KdeSettingsConfig,
+    *,
+    timeout: float,
+    force: bool,
+    warnings: list[str] | None = None,
+) -> bool:
+    """Write the claimed combination into the record of each action.
+
+    A record whose key slot is empty, the state the daemon leaves behind
+    when it refuses a registration, wins over the combination the script
+    registers, so the hotkey would stay dead at every login. Every
+    existing record of a script action is therefore rewritten as
+    combination,none,description, the shape a granted hotkey has; an
+    action without a record is left alone, because the script writes its
+    own record when it registers at login. The rewrite runs as the target
+    user and a record that cannot be read or written is reported and the
+    remaining records still write.
+    """
+
+    changed = False
+    for action, hotkey, _code in _script_hotkey_pairs(cfg):
+        group = (cfg.kwin_component_unique,)
+        try:
+            current = _kreadconfig(
+                cfg, cfg.global_shortcuts_file_name, group, action, timeout
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot read the script hotkey record {action}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+            continue
+        if not current or "," not in current:
+            continue
+        fields = current.split(",")
+        description = fields[2] if len(fields) > 2 and fields[2] else action
+        target = f"{hotkey},none,{description}"
+        if not force and current == target:
+            continue
+        try:
+            _kwriteconfig(
+                cfg,
+                cfg.global_shortcuts_file_name,
+                group,
+                action,
+                target,
+                timeout=timeout,
+                bool_value=False,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot write the script hotkey record {action}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+            continue
+        _log(f"wrote the script hotkey record {action}: {target}")
+        changed = True
+    return changed
+
+
 def _places_prefix_addresses(
     cfg: KdeSettingsConfig,
 ) -> tuple[tuple[str, str], ...]:
@@ -1740,7 +1931,12 @@ def task(ctx: Context) -> TaskResult:
     apply the configured cursors, and the cursor theme last, so it wins
     over the theme default the switch writes. When automatic_look_and_feel
     is set, the theme is not applied directly: the task enables the native
-    day and night switch instead, so a run never fights the switch. Each
+    day and night switch instead, so a run never fights the switch. The
+    KWin scripts of the section are installed and enabled after the
+    combinations they claim are freed, then every combination is assigned
+    to the action of its script in the running daemon and read back, so a
+    key works whatever owned it before the run and a state an earlier run
+    left behind cannot keep it dead. Each
     settings step runs independently: a step that fails through an external
     tool error or an environment error is reported as a warning and the
     remaining independent steps still run, because one bad setting must
@@ -1875,6 +2071,25 @@ def task(ctx: Context) -> TaskResult:
             cfg, timeout=timeout, warnings=warnings
         ),
     )
+    settings_changed |= step(
+        "free the kwin script hotkeys",
+        lambda: _free_script_hotkeys(
+            cfg,
+            script_path=(
+                task_data_dir(ctx.repo_root, ctx.task_name)
+                / cfg.kglobalaccel_release_script_file_name
+            ),
+            env=apply_env,
+            timeout=timeout,
+            system_python=ctx.config.engine.system_python,
+            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+            warnings=warnings,
+        ),
+    )
+    # The combinations are freed before the scripts are enabled: enabling
+    # applies live and makes kwin register the combinations at once, so a
+    # script that registers while another action still owns the key would
+    # be refused and would keep the refused state in its record.
     kwin_scripts_changed = step(
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
@@ -1889,18 +2104,26 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= kwin_scripts_changed
     settings_changed |= step(
-        "free the kwin script hotkeys",
-        lambda: _free_script_hotkeys(
+        "assign the kwin script hotkeys",
+        lambda: _assign_script_hotkeys(
             cfg,
-            script_path=(
-                task_data_dir(ctx.repo_root, ctx.task_name)
-                / cfg.kglobalaccel_release_script_file_name
+            client_path=(
+                task_data_dir(
+                    ctx.repo_root, cfg.kglobalaccel_client_section_name
+                )
+                / cfg.kglobalaccel_client_file_name
             ),
-            env=apply_env,
             timeout=timeout,
+            env=apply_env,
             system_python=ctx.config.engine.system_python,
             kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
             warnings=warnings,
+        ),
+    )
+    settings_changed |= step(
+        "write the kwin script hotkey records",
+        lambda: _write_script_hotkey_records(
+            cfg, timeout=timeout, force=force, warnings=warnings
         ),
     )
     settings_changed |= step(

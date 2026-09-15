@@ -2191,6 +2191,27 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
 
     if not isinstance(raw, dict):
         raise ConfigError("[kde_settings] section is missing or not a table")
+    hotkeys = _string_list(
+        raw.get("kwin_script_hotkeys"), "kde_settings.kwin_script_hotkeys"
+    )
+    actions = _string_list(
+        raw.get("kwin_script_actions"), "kde_settings.kwin_script_actions"
+    )
+    hotkey_codes = _int_map(
+        raw.get("kwin_script_hotkey_codes"),
+        "kde_settings.kwin_script_hotkey_codes",
+    )
+    if len(actions) != len(hotkeys):
+        raise ConfigError(
+            "kde_settings.kwin_script_actions and"
+            " kde_settings.kwin_script_hotkeys must hold the same number of"
+            " entries"
+        )
+    if set(hotkey_codes) != set(hotkeys):
+        raise ConfigError(
+            "kde_settings.kwin_script_hotkey_codes must name every combination"
+            " of kde_settings.kwin_script_hotkeys and no other key"
+        )
     return KdeSettingsConfig(
         packages=_string_list(raw.get("packages"), "kde_settings.packages"),
         touchpad_group_root=_nonempty_string_field(
@@ -2349,12 +2370,16 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kwin_script_files=_string_list(
             raw.get("kwin_script_files"), "kde_settings.kwin_script_files"
         ),
-        kwin_script_hotkeys=_string_list(
-            raw.get("kwin_script_hotkeys"),
-            "kde_settings.kwin_script_hotkeys",
+        kwin_script_hotkeys=hotkeys,
+        kwin_script_actions=actions,
+        kwin_script_hotkey_codes=hotkey_codes,
+        kwin_component_unique=_nonempty_string_field(
+            raw.get("kwin_component_unique"),
+            "kde_settings.kwin_component_unique",
         ),
-        kwin_script_actions=_string_list(
-            raw.get("kwin_script_actions"), "kde_settings.kwin_script_actions"
+        kwin_component_friendly=_nonempty_string_field(
+            raw.get("kwin_component_friendly"),
+            "kde_settings.kwin_component_friendly",
         ),
         desktop_ids_script_file_name=_nonempty_string_field(
             raw.get("desktop_ids_script_file_name"),
@@ -2371,6 +2396,14 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         kglobalaccel_release_script_file_name=_nonempty_string_field(
             raw.get("kglobalaccel_release_script_file_name"),
             "kde_settings.kglobalaccel_release_script_file_name",
+        ),
+        kglobalaccel_client_section_name=_nonempty_string_field(
+            raw.get("kglobalaccel_client_section_name"),
+            "kde_settings.kglobalaccel_client_section_name",
+        ),
+        kglobalaccel_client_file_name=_nonempty_string_field(
+            raw.get("kglobalaccel_client_file_name"),
+            "kde_settings.kglobalaccel_client_file_name",
         ),
         runuser_command=_placeholder_command_field(
             raw.get("runuser_command"),

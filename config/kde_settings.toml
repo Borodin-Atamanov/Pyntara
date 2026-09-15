@@ -187,18 +187,44 @@ places_hidden_element = "IsHidden"
 places_hidden_value = "true"
 # The KWin scripts the task installs and enables, the files each script
 # carries inside its directory, the keyboard combinations the scripts
-# claim and the script actions that own those combinations.
+# claim and the script actions that own those combinations. A combination
+# is listed in the portable form KWin writes and its combined Qt key code
+# in kwin_script_hotkey_codes, so the daemon receives exactly the key the
+# config names.
 kwin_scripts = ["window-grow-shrink", "window-restore-tracker"]
 kwin_script_files = ["metadata.json", "contents/code/main.js"]
 kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
 kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
+# The combined Qt key code of each claimed combination, by the
+# combination as kwin_script_hotkeys spells it: the Qt modifier flags
+# (Meta 0x10000000, Ctrl 0x04000000, Shift 0x02000000, Alt 0x08000000)
+# or-ed with the key code (Up 0x01000013, Down 0x01000015). The daemon
+# takes these numbers, so every claimed combination is listed here and no
+# other key is.
+kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }
+# The component of the KGlobalAccel daemon that owns the script actions:
+# its unique name, which is also the group their records carry in
+# kglobalshortcutsrc, and its friendly name. With an action they form the
+# action id the daemon answers: component unique, action unique,
+# component friendly, action friendly.
+kwin_component_unique = "kwin"
+kwin_component_friendly = "KWin"
+# The python3-dbus client that frees a keyboard combination from its
+# current owner and gives it to a named action of the running KGlobalAccel
+# daemon, by the task data section that carries the client and its file
+# name. The client is the shared one of the keyboard layout hotkeys, so
+# the DBus encoding of a key list lives in one file only; the task
+# substitutes the daemon names of the [engine] table into its text.
+kglobalaccel_client_section_name = "kde_keyboard_setup"
+kglobalaccel_client_file_name = "apply_hotkeys.py"
 # The python client that prints the id of every virtual desktop, one per
 # line, in position order; the directory under task_data that holds one
 # directory per kwin script; the Konsole profile shipped as a task
-# data file; and the client that asks the running KGlobalAccel daemon to
-# release the hotkeys a script owns. All four are read from task_data/ of
-# the clone, and a body longer than five lines lives in a file like the
-# two clients rather than in the code.
+# data file; the client that asks the running KGlobalAccel daemon to
+# release the hotkeys a script owns; and the shared client named above.
+# All of them are read from task_data/ of the clone, and a body longer
+# than five lines lives in a file like the clients rather than in the
+# code.
 desktop_ids_script_file_name = "list_desktop_ids.py"
 kwin_scripts_dir_name = "kwin"
 konsole_profile_file_name = "Pyntara.profile"

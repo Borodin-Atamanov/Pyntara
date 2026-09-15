@@ -80,7 +80,15 @@ class KdeSettingsConfig:
     file; and kglobalaccel_release_script_file_name is the python client
     that asks the running KGlobalAccel daemon to release the hotkeys a
     script owns, a body longer than five lines and therefore a file rather
-    than a value of the code.
+    than a value of the code. kwin_script_hotkey_codes maps every
+    combination a script claims to the combined Qt key code the daemon
+    takes, and kwin_component_unique with kwin_component_friendly name the
+    KGlobalAccel component that owns the script actions, so the task forms
+    their action id itself. kglobalaccel_client_section_name and
+    kglobalaccel_client_file_name point at the shared python3-dbus client
+    that frees a combination from its current owner and gives it to an
+    action of that component, the same client the keyboard layout hotkeys
+    use.
     """
 
     packages: tuple[str, ...]
@@ -170,8 +178,13 @@ class KdeSettingsConfig:
     kwin_script_files: tuple[str, ...]
     kwin_script_hotkeys: tuple[str, ...]
     kwin_script_actions: tuple[str, ...]
+    kwin_script_hotkey_codes: dict[str, int]
+    kwin_component_unique: str
+    kwin_component_friendly: str
     desktop_ids_script_file_name: str
     kglobalaccel_release_script_file_name: str
+    kglobalaccel_client_section_name: str
+    kglobalaccel_client_file_name: str
     kwin_scripts_dir_name: str
     konsole_profile_file_name: str
     runuser_command: tuple[str, ...]

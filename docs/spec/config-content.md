@@ -74,7 +74,9 @@ File mode written as four octal digits: file_mode, private_key_file_mode,
 swapfile_mode, spool_dir_mode. About 33 values; the reader turns the text into
 the number chmod expects.  
 Parameter of an external tool whose value is ours to choose: bandwidth, share,
-if_mtu, num_introduction_points, cursor size, log rate limit burst.  
+if_mtu, num_introduction_points, cursor size, log rate limit burst, the combined
+Qt key code of a keyboard shortcut the run gives to an action of the KGlobalAccel
+daemon.  
 Number that describes the machine, the run or the output: fallback_cpu_count,
 ram_extra_mb, queue_file_suffix_length, the length of an excerpt of a command
 output.  

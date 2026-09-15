@@ -7,6 +7,7 @@ run_command inspects the command shape and answers per key.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -69,6 +70,57 @@ def _ctx(
     )
 
 
+def _is_assign_call(inner: list[str]) -> bool:
+    """True when a python client call carries the hotkey payload.
+
+    The task runs two python clients as the target user: the release
+    client of the script hotkeys and the shared client that assigns them.
+    The assignment is the call whose last argument is its JSON payload.
+    """
+
+    return inner[-1].startswith("{")
+
+
+def _assign_reply(
+    inner: list[str],
+    assign_calls: list[list[str]] | None,
+    assign_state: dict[str, list[int]] | None,
+    assign_after: dict[str, list[int]] | None,
+) -> _FakeProc:
+    """The answer of the hotkey client: the state before and after.
+
+    assign_state is what the daemon already holds, so a machine whose
+    hotkeys are granted reports the same state before and after the call
+    and nothing changes. Without an override the client reports the
+    requested combinations as the state after the call, which is what a
+    granted hotkey looks like; assign_after replaces that state, so a
+    test can make the daemon report another key or no key at all. The
+    call is recorded as it ran, so a test reads the payload and the
+    client text the task passed to the interpreter.
+    """
+
+    if assign_calls is not None:
+        assign_calls.append(list(inner))
+    request = json.loads(inner[-1])
+    held = assign_state or {}
+    before = {action: held.get(action, []) for action, _code in request["assign"]}
+    after = assign_after or {
+        action: [code] for action, code in request["assign"]
+    }
+    return _FakeProc(0, json.dumps({"before": before, "after": after}))
+
+
+def _granted_script_hotkeys(cfg: KdeSettingsConfig) -> dict[str, list[int]]:
+    """The daemon state of a machine whose script hotkeys are granted."""
+
+    return {
+        action: [cfg.kwin_script_hotkey_codes[hotkey]]
+        for action, hotkey in zip(
+            cfg.kwin_script_actions, cfg.kwin_script_hotkeys
+        )
+    }
+
+
 def _install_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -80,6 +132,9 @@ def _install_fakes(
     fail_on_write: bool = False,
     fail_on_write_keys: frozenset[str] | None = None,
     fail_on_reload: bool = False,
+    assign_calls: list[list[str]] | None = None,
+    assign_state: dict[str, list[int]] | None = None,
+    assign_after: dict[str, list[int]] | None = None,
 ):
     """Replace run_command, the session environment and package state.
 
@@ -87,7 +142,9 @@ def _install_fakes(
     value matches the target skips the write or apply. bus_pid empty
     disables the desktop session lookup. fail_on_write_keys fails only
     the writes of the named keys, so one bad value leaves the others
-    alone.
+    alone. assign_calls collects the calls of the hotkey client,
+    assign_state is the key state the daemon already holds and
+    assign_after overrides the key state the client reports back.
     """
 
     currents = currents or {}
@@ -136,6 +193,12 @@ def _install_fakes(
                 if fail_on_reload:
                     raise subprocess.CalledProcessError(1, command)
                 reloads.append(list(command))
+                return _FakeProc(0, "")
+            if inner[0] == "/usr/bin/python3":
+                if _is_assign_call(inner):
+                    return _assign_reply(
+                        inner, assign_calls, assign_state, assign_after
+                    )
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
             return _FakeProc(0, "")
@@ -221,7 +284,9 @@ def test_skip_when_already_configured(
     }
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
     themes, schemes, order, _, writes, reloads, _ = _install_fakes(
-        monkeypatch, currents=currents
+        monkeypatch,
+        currents=currents,
+        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
     )
     result = task_module.task(ctx)
     assert result.success is True
@@ -1161,12 +1226,18 @@ def _script_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
     session: bool = True,
+    assign_calls: list[list[str]] | None = None,
+    assign_state: dict[str, list[int]] | None = None,
+    assign_after: dict[str, list[int]] | None = None,
 ) -> tuple[list[list[str]], list[list[str]]]:
     """Replace run_command for the KWin script install helpers.
 
     The fake answers the mkdir, kreadconfig6, kwriteconfig6, the system
     python3 and chown/chmod commands the install and hotkey steps run;
-    writes and live releases are recorded.
+    writes and live releases are recorded. assign_calls collects the
+    calls of the hotkey client, assign_state is the key state the daemon
+    already holds and assign_after overrides the key state the client
+    reports back.
     """
 
     writes: list[list[str]] = []
@@ -1188,6 +1259,10 @@ def _script_fakes(
                     current_plugins[key] = "true"
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
+                if _is_assign_call(inner):
+                    return _assign_reply(
+                        inner, assign_calls, assign_state, assign_after
+                    )
                 releases.append(list(command))
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
@@ -1499,6 +1574,185 @@ def test_kwin_scripts_installed_and_hotkeys_freed(
         or "Switch One Desktop Down" in command
     ]
     assert len(cleared) == 2
+
+
+def test_free_script_hotkeys_run_before_the_scripts_are_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Enabling a script applies live and makes kwin register the
+    # combinations it claims at once, so the combinations are freed from
+    # the foreign actions first: a registration that finds its key taken
+    # is refused and keeps the refused state in the record of its action.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
+        encoding="utf-8",
+    )
+    ctx = _ctx(tmp_path)
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
+    result = task_module.task(ctx)
+    assert result.success is True
+    freed = next(
+        index
+        for index, command in enumerate(writes)
+        if "Switch One Desktop Up" in command
+    )
+    enabled = next(
+        index
+        for index, command in enumerate(writes)
+        if "window-grow-shrinkEnabled" in command
+    )
+    assert freed < enabled
+
+
+def test_script_hotkey_pairs_read_the_codes_from_the_config(
+    tmp_path: Path,
+) -> None:
+    # The key code of a combination is a config value and not a number of
+    # the code: another table in the config is what the daemon is told,
+    # and a combination the table does not name is left to the script.
+    cfg = make_config().kde_settings
+    changed_cfg = replace(
+        cfg,
+        kwin_script_hotkey_codes={"Meta+Ctrl+Up": 7},
+    )
+    assert task_module._script_hotkey_pairs(changed_cfg) == (
+        ("Grow Window by 5px", "Meta+Ctrl+Up", 7),
+    )
+
+
+def test_assign_script_hotkeys_runs_the_shared_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The task hands the combinations to the running daemon through the
+    # client the config names, so the hotkeys work without a session
+    # restart, and the call carries the component names and the codes of
+    # the config.
+    ctx = _ctx(tmp_path)
+    calls: list[list[str]] = []
+    _script_fakes(monkeypatch, session=True, assign_calls=calls)
+    cfg = replace(
+        ctx.config.kde_settings,
+        kwin_script_hotkey_codes={"Meta+Ctrl+Up": 11, "Meta+Ctrl+Down": 22},
+    )
+    client_path = (
+        _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
+    )
+    changed = task_module._assign_script_hotkeys(
+        cfg,
+        client_path=client_path,
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+    )
+    assert changed is True
+    assert calls
+    assert calls[0][0] == ctx.config.engine.system_python
+    text = next(part for part in calls[0] if "import dbus" in part)
+    assert ctx.config.engine.kglobalaccel_bus_name in text
+    assert "$kglobalaccel_bus_name" not in text
+    request = json.loads(calls[0][-1])
+    assert request["component_unique"] == cfg.kwin_component_unique
+    assert request["component_friendly"] == cfg.kwin_component_friendly
+    assert request["assign"] == [
+        ["Grow Window by 5px", 11],
+        ["Shrink Window by 5px", 22],
+    ]
+
+
+def test_assign_script_hotkeys_warns_when_the_daemon_reports_no_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action whose key the daemon does not report as the configured
+    # one is a warning of a completed task: the record in
+    # kglobalshortcutsrc still carries the combination to the next login.
+    ctx = _ctx(tmp_path)
+    warnings: list[str] = []
+    _script_fakes(
+        monkeypatch,
+        session=True,
+        assign_after={"Grow Window by 5px": []},
+    )
+    changed = task_module._assign_script_hotkeys(
+        ctx.config.kde_settings,
+        client_path=_REPO_ROOT
+        / "task_data"
+        / "kde_keyboard_setup"
+        / "apply_hotkeys.py",
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        warnings=warnings,
+    )
+    assert changed is False
+    assert len(warnings) == 1
+    assert "Grow Window by 5px" in warnings[0]
+
+
+def test_assign_script_hotkeys_without_session_skips_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without a live session there is nothing to apply: the task reports
+    # it and leaves the combinations to the next login.
+    ctx = _ctx(tmp_path)
+    calls: list[list[str]] = []
+    _script_fakes(monkeypatch, session=False, assign_calls=calls)
+    warnings: list[str] = []
+    changed = task_module._assign_script_hotkeys(
+        ctx.config.kde_settings,
+        client_path=_REPO_ROOT
+        / "task_data"
+        / "kde_keyboard_setup"
+        / "apply_hotkeys.py",
+        timeout=5,
+        env=None,
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        warnings=warnings,
+    )
+    assert changed is False
+    assert calls == []
+    assert warnings == []
+
+
+def test_write_script_hotkey_records_repairs_a_refused_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A record an earlier run left without an active key wins over the
+    # combination the script registers, so the task rewrites it in the
+    # shape of a granted hotkey and keeps its description.
+    ctx = _ctx(tmp_path)
+    description = "Grow the active window by 5 pixels on each side"
+    currents = {"Grow Window by 5px": f",none,{description}"}
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
+    changed = task_module._write_script_hotkey_records(
+        ctx.config.kde_settings, timeout=5, force=False, warnings=[]
+    )
+    assert changed is True
+    written = [
+        command for command in writes if "Grow Window by 5px" in command
+    ]
+    assert written
+    assert written[0][-1] == f"Meta+Ctrl+Up,none,{description}"
+
+
+def test_write_script_hotkey_records_leave_an_absent_record_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action without a record gets its record from the script when it
+    # registers at login, so the task writes nothing and changes nothing.
+    ctx = _ctx(tmp_path)
+    matched = {"Grow Window by 5px": "Meta+Ctrl+Up,none,Grow Window by 5px"}
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=matched)
+    changed = task_module._write_script_hotkey_records(
+        ctx.config.kde_settings, timeout=5, force=False, warnings=[]
+    )
+    assert changed is False
+    assert writes == []
 
 
 XBEL = """\
@@ -1911,7 +2165,11 @@ def test_kconfig_records_skip_when_matching(
     ctx = _kconfig_ctx(tmp_path, records)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
     _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch,
+        currents=currents,
+        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
+    )
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False

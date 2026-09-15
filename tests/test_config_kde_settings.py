@@ -114,6 +114,49 @@ from config_helpers import (
             'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]',
             "kwin_reload_command = []",
         ),
+        # kwin_script_hotkey_codes is an array, not a table
+        base_config().replace(
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
+            "kwin_script_hotkey_codes = [352321555]",
+        ),
+        # a key code is a string, not an integer
+        base_config().replace(
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = "352321555", "Meta+Ctrl+Down" = 352321557 }',
+        ),
+        # a claimed combination has no key code
+        base_config().replace(
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555 }',
+        ),
+        # the key codes name a combination the scripts do not claim
+        base_config().replace(
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
+            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557, "Meta+Q" = 268435537 }',
+        ),
+        # the script actions and the claimed combinations differ in length
+        base_config().replace(
+            'kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]',
+            'kwin_script_actions = ["Grow Window by 5px"]',
+        ),
+        # kwin_component_unique is an empty string
+        base_config().replace(
+            'kwin_component_unique = "kwin"', 'kwin_component_unique = ""'
+        ),
+        # kwin_component_friendly is a number, not a string
+        base_config().replace(
+            'kwin_component_friendly = "KWin"', "kwin_component_friendly = 42"
+        ),
+        # kglobalaccel_client_section_name is a number, not a string
+        base_config().replace(
+            'kglobalaccel_client_section_name = "kde_keyboard_setup"',
+            "kglobalaccel_client_section_name = 42",
+        ),
+        # kglobalaccel_client_file_name is an empty string
+        base_config().replace(
+            'kglobalaccel_client_file_name = "apply_hotkeys.py"',
+            'kglobalaccel_client_file_name = ""',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
