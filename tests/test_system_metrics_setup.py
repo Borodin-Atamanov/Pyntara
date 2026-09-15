@@ -24,6 +24,7 @@ from pyntara import __version__
 from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_setup
+from pyntara.utils import substituted_command
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -462,7 +463,18 @@ def test_deploys_service_ingest_and_command(
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
-    assert ["uv", "venv", str(fixtures["venv_dir"]), "--python", "3"] in calls
+    settings = fixtures["config"].system_metrics_setup
+    venv_create = list(
+        substituted_command(
+            settings.venv_create_command,
+            {
+                "uv": "uv",
+                "venv_dir": str(fixtures["venv_dir"]),
+                "python_version": settings.python_version,
+            },
+        )
+    )
+    assert venv_create in calls
     assert any(
         call[0] == "uv" and call[1] == "sync"
         and "--project" in call

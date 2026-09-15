@@ -2,7 +2,7 @@
 name = "pyntara"
 description = "Automated Kubuntu provisioning system"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dynamic = ["version"]
 dependencies = [
     "typer>=0.12",
@@ -22,6 +22,13 @@ dev = [
     "ruff>=0.5",
     "pytest-xdist>=3.8.0",
 ]
+
+[tool.uv]
+# By default uv prefers a CPython it downloaded itself over the interpreter of
+# the distribution, and that download would decide the version of every
+# environment on the machine. The fleet runs the interpreter of the Ubuntu
+# archive, which Kubuntu 26.04 ships as python3.14, so uv takes that one.
+python-preference = "system"
 
 [tool.pytest.ini_options]
 # The suite runs in parallel across worker processes; xdist distributes the

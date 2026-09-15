@@ -1001,7 +1001,7 @@ def base_config() -> str:
         "[system_metrics_setup]\n"
         "backoff_base_seconds = 2\nbackoff_multiplier = 2\n"
         "backoff_max_seconds = 14400\n"
-        'python_version = "3"\nerror_priority = 3\n'
+        'python_version = "3.14"\nerror_priority = 3\n'
         'venv_dir = "/usr/local/lib/pyntara/venv"\n'
         'venv_python_relative_path = "bin/python"\n'
         'system_config_path = "/etc/pyntara/config.toml"\n'
@@ -1040,7 +1040,8 @@ def base_config() -> str:
         'venv_version_command = '
         '["{python}", "-c", "import pyntara; print(pyntara.__version__)"]\n'
         'venv_create_command = '
-        '["{uv}", "venv", "{venv_dir}", "--python", "{python_version}"]\n'
+        '["{uv}", "venv", "{venv_dir}", "--python", "{python_version}", '
+        '"--no-managed-python"]\n'
         'venv_sync_command = '
         '["{uv}", "sync", "--project", "{repo_root}", "--active", "--locked", '
         '"--no-dev", "--no-editable"]\n'

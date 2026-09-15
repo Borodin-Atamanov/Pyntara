@@ -3,6 +3,7 @@
 ## Quick start
 
 Clone the repository.  
+Install the interpreter of the distribution: the project requires Python 3.14, which Kubuntu 26.04 ships as python3.14, and uv is configured to prefer it over a CPython it downloaded itself.  
 Run uv sync to set up the Python environment.  
 Run uv run pytest to execute the test suite.  
 Run uv run ruff check . for linting.  

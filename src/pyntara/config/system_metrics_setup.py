@@ -134,8 +134,10 @@ class SystemMetricsSetupConfig:
     the first failed cycle waits backoff_base_seconds, every further
     consecutive failure multiplies the pause by backoff_multiplier until
     backoff_max_seconds (docs/spec/system-metrics.md, section Schedule
-    and retry); python_version selects the interpreter for the deployed
-    venv; error_priority is the syslog level of a failed vault open by
+    and retry); python_version names the minor version of the
+    interpreter of the deployed venv, which comes from the distribution
+    archives because venv_create_command passes --no-managed-python;
+    error_priority is the syslog level of a failed vault open by
     the senders; venv_dir, system_config_path and
     command_path are the deployment locations on the target machine,
     venv_python_relative_path is the interpreter inside the venv, so every

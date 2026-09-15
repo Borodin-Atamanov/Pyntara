@@ -17,8 +17,11 @@
 backoff_base_seconds = 2
 backoff_multiplier = 2
 backoff_max_seconds = 14400
-# Python version selector for the dedicated venv created by the task.
-python_version = "3"
+# Python version of the interpreter of the dedicated venv the task creates,
+# written as the minor version the distribution carries (Kubuntu 26.04 ships
+# python3.14). A bare major version would leave the choice to uv, which
+# prefers a CPython it downloaded itself.
+python_version = "3.14"
 # Syslog priority of a failed vault open by the senders, 0 to 7.
 error_priority = 3
 # Directory of the dedicated venv the task creates for the deployed
@@ -131,8 +134,10 @@ collector_service_command = ["{python}", "-m", "pyntara.metrics_collect", "{conf
 # package and reports the repository version, the creation of the venv with
 # the configured interpreter, the sync from the repository lockfile and the
 # arguments that reinstall the local package when the venv is refreshed.
+# The creation takes the interpreter of the distribution: --no-managed-python
+# keeps uv from substituting a CPython it downloaded itself.
 venv_version_command = ["{python}", "-c", "import pyntara; print(pyntara.__version__)"]
-venv_create_command = ["{uv}", "venv", "{venv_dir}", "--python", "{python_version}"]
+venv_create_command = ["{uv}", "venv", "{venv_dir}", "--python", "{python_version}", "--no-managed-python"]
 venv_sync_command = ["{uv}", "sync", "--project", "{repo_root}", "--active", "--locked", "--no-dev", "--no-editable"]
 venv_reinstall_flags = ["--reinstall-package", "pyntara"]
 # Journal identifier of the System Metrics services.

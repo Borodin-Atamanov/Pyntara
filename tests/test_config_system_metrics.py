@@ -53,18 +53,26 @@ from config_helpers import (
             "backoff_max_seconds = 14400", "backoff_max_seconds = -5"
         ),
         # system_metrics_setup python_version is a number, not a string
-        base_config().replace('python_version = "3"', "python_version = 3"),
+        base_config().replace(
+            'python_version = "3.14"', "python_version = 3"
+        ),
         # system_metrics_setup python_version is an empty string
-        base_config().replace('python_version = "3"', 'python_version = ""'),
+        base_config().replace(
+            'python_version = "3.14"', 'python_version = ""'
+        ),
+        # system_metrics_setup python_version is a bare major version
+        base_config().replace(
+            'python_version = "3.14"', 'python_version = "3"'
+        ),
         # system_metrics_setup error_priority is a string, not an integer
         base_config().replace(
-            'python_version = "3"\nerror_priority = 3\n',
-            'python_version = "3"\nerror_priority = "3"\n',
+            'python_version = "3.14"\nerror_priority = 3\n',
+            'python_version = "3.14"\nerror_priority = "3"\n',
         ),
         # system_metrics_setup error_priority is above 7
         base_config().replace(
-            'python_version = "3"\nerror_priority = 3\n',
-            'python_version = "3"\nerror_priority = 8\n',
+            'python_version = "3.14"\nerror_priority = 3\n',
+            'python_version = "3.14"\nerror_priority = 8\n',
         ),
         # system_metrics_setup venv_dir is a number, not a string
         base_config().replace(

@@ -4155,8 +4155,9 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     backoff_base_seconds and backoff_max_seconds are positive integers
     and backoff_max_seconds is not below backoff_base_seconds;
     backoff_multiplier is an integer of at least 2, so the pause always
-    grows. python_version is a non-empty string; error_priority is a
-    syslog level between 0 and 7; venv_dir, system_config_path,
+    grows. python_version names a minor version, for example 3.14;
+    error_priority is a syslog level between 0 and 7; venv_dir,
+    system_config_path,
     command_path, vault_backup_file_name,
     system_metrics_dir, spool_dir and every unit name, journal
     identifier, queue directory name and spool temp prefix are non-empty
@@ -4201,9 +4202,12 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             "backoff_base_seconds"
         )
     python_version = raw.get("python_version")
-    if not isinstance(python_version, str) or not python_version:
+    if not isinstance(python_version, str) or not re.fullmatch(
+        r"\d+\.\d+", python_version
+    ):
         raise ConfigError(
-            "system_metrics_setup.python_version must be a non-empty string"
+            "system_metrics_setup.python_version must name a minor version, "
+            'for example "3.14"'
         )
     error_priority = _int_field(
         raw.get("error_priority"), "system_metrics_setup.error_priority"
