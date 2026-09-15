@@ -24,7 +24,10 @@ class TelegramSetupConfig:
     launcher entry template under task_data/telegram_setup/ of the clone,
     rendered with the binary and the icon paths. latest_url is the official
     download link that redirects to the newest tsetup archive and is the
-    single source of the latest release; icon_url is the official Telegram
+    single source of the latest release, and reachability_probe_command with
+    reachability_probe_timeout_seconds is the single-attempt probe that asks
+    whether the host behind that link answers at all before the retry budget
+    of latest_url_command is spent on it; icon_url is the official Telegram
     icon (docs/spec/telegram-setup.md).
     """
 
@@ -33,6 +36,8 @@ class TelegramSetupConfig:
     download_dir: Path
     latest_url: str
     latest_url_command: tuple[str, ...]
+    reachability_probe_command: tuple[str, ...]
+    reachability_probe_timeout_seconds: int
     icon_url: str
     install_dir_relative_path: str
     launcher_relative_path: str

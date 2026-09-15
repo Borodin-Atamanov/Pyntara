@@ -29,6 +29,21 @@ latest_url = "https://telegram.org/dl/desktop/linux"
 # the command output; the retry and timeout flags of the [engine] curl
 # settings are inserted before the URL.
 latest_url_command = ["curl", "--fail", "--silent", "--show-error", "--head", "--location", "--output", "/dev/null", "--write-out", "%{url_effective}"]
+# Single-attempt probe of the download host, run before the redirect is
+# resolved, with the url as its last argument. A host that is blocked never
+# answers, and the retry budget of the resolve above turns that silence
+# into one connect timeout per attempt, which is minutes on a machine whose
+# network drops the packets; the probe asks once with a short budget
+# instead. It carries no retry flag on purpose: an answer, however slow,
+# means the host is reachable, and the resolve then retries as usual, so a
+# slow link is never mistaken for a blocked one. The --head keeps the probe
+# from transferring the archive it is asking about.
+reachability_probe_command = ["curl", "--silent", "--show-error", "--head", "--location", "--output", "/dev/null", "--connect-timeout", "{timeout_seconds}", "--max-time", "{timeout_seconds}"]
+# Seconds that probe may spend on its single attempt: one connection and
+# one answer. A slow but working link answers a handshake in a few seconds,
+# so this value separates a slow host from a blocked one without calling
+# the slow one blocked.
+reachability_probe_timeout_seconds = 15
 # Official Telegram icon downloaded for the launcher entry.
 icon_url = "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/Telegram/Resources/art/icon512.png"
 # Relative path of the install directory under the home of the desktop

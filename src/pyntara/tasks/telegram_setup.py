@@ -20,6 +20,13 @@ the configured icon. Auto-update is enabled by default in the official
 build (docs/spec/telegram-setup.md); the user-writable install directory is
 what lets the built-in Updater apply releases on its own.
 
+Before the redirect is resolved, the download host is probed once with the
+short budget of reachability_probe_timeout_seconds: a host that does not
+answer within it is a blocked destination, which is reported as a warning
+at once instead of spending the retry budget of the resolve on silence,
+while a host that answers however slowly is resolved and downloaded with
+the retry settings of the engine table.
+
 Force mode bypasses the already-installed shortcut and reinstalls the
 release the redirect points to; it never touches the user chat data, which
 lives separately in the TelegramDesktop data directory.
@@ -123,6 +130,48 @@ def _resolve_latest_url(
     if not url:
         raise RuntimeError(f"cannot resolve {cfg.latest_url}: empty download url")
     return url
+
+
+def _probe_download_host(
+    engine: EngineConfig, cfg: TelegramSetupConfig
+) -> tuple[bool, str]:
+    """Ask the download host to answer within one short attempt.
+
+    A host that is blocked never answers, and the retry settings of the
+    resolve below turn that silence into one connect timeout per attempt,
+    which is minutes on a machine whose network drops the packets. The
+    probe is the configured reachability_probe_command without any retry
+    flag, so it costs its budget once, and it answers whether the host is
+    reachable at all: a slow but working link answers inside that budget
+    and the resolve then retries as usual (docs/spec/telegram-setup.md).
+    Returns (reachable, reason), and reason is empty when the host
+    answered.
+    """
+
+    command = substituted_command(
+        cfg.reachability_probe_command,
+        {"timeout_seconds": str(cfg.reachability_probe_timeout_seconds)},
+    )
+    try:
+        result = run_command(
+            [*command, cfg.latest_url],
+            check=False,
+            capture=True,
+            timeout=engine.command_timeout_seconds,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, (
+            f"cannot resolve {cfg.latest_url}: the reachability probe could "
+            f"not be run: {exc}"
+        )
+    if result.returncode != 0:
+        return False, (
+            f"cannot resolve {cfg.latest_url}: the host did not answer within "
+            f"{cfg.reachability_probe_timeout_seconds} s (curl exit "
+            f"{result.returncode}), so the download is skipped instead of "
+            f"retrying for up to {engine.curl_retry_max_time_seconds} s"
+        )
+    return True, ""
 
 
 def _download_archive(
@@ -300,15 +349,18 @@ def task(ctx: Context) -> TaskResult:
 
     The target state is reached when the archive the redirect points to is
     cached, the Telegram binary and the launcher entry are present; the
-    task then returns changed=False. Otherwise it resolves the latest
-    archive from the redirect, downloads it when not cached, installs the
+    task then returns changed=False. Otherwise it probes the download host
+    once with a short budget, resolves the latest archive from the redirect
+    when that host answered, downloads it when not cached, installs the
     Telegram and Updater files under the user home, removes stale cached
     archives, writes the launcher entry and downloads the icon. Force mode
     reinstalls the current release instead of trusting the cached archive.
-    A step that cannot run is reported as a warning of a completed task:
-    the download and the install are skipped when a release cannot be
-    resolved, and the launcher entry and the icon are still handled, so
-    the runner continues with the remaining tasks and never stops here.
+    A step that cannot run is reported as a warning of a completed task: a
+    host that does not answer within the probe budget is reported at once
+    and its retry budget is never spent, a release that cannot be resolved
+    and a failed download skip the install, and the launcher entry and the
+    icon are still handled, so the runner continues with the remaining
+    tasks and never stops here.
     """
 
     cfg = ctx.config.telegram_setup
@@ -324,10 +376,15 @@ def task(ctx: Context) -> TaskResult:
     paths = _install_paths(cfg)
 
     url: str | None = None
-    try:
-        url = _resolve_latest_url(engine, cfg)
-    except RuntimeError as exc:
-        warnings.append(str(exc))
+    reachable, probe_warning = _probe_download_host(engine, cfg)
+    if not reachable:
+        _log(probe_warning)
+        warnings.append(probe_warning)
+    else:
+        try:
+            url = _resolve_latest_url(engine, cfg)
+        except RuntimeError as exc:
+            warnings.append(str(exc))
     name = _cache_name(url) if url is not None else ""
     if url is not None:
         _log(f"checking the latest Telegram Desktop release: {name}")

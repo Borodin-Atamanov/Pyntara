@@ -4649,6 +4649,15 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
             raw.get("latest_url_command"),
             "telegram_setup.latest_url_command",
         ),
+        reachability_probe_command=_placeholder_command_field(
+            raw.get("reachability_probe_command"),
+            "telegram_setup.reachability_probe_command",
+            ("{timeout_seconds}",),
+        ),
+        reachability_probe_timeout_seconds=_positive_int_field(
+            raw.get("reachability_probe_timeout_seconds"),
+            "telegram_setup.reachability_probe_timeout_seconds",
+        ),
         icon_url=_nonempty_string_field(
             raw.get("icon_url"), "telegram_setup.icon_url"
         ),

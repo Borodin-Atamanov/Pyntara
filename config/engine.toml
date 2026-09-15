@@ -43,11 +43,14 @@ curl_retries = 17
 # to answer again without stalling the whole retry budget.
 curl_retry_delay_seconds = 3
 # Seconds curl may spend establishing a connection before an attempt is
-# abandoned. A host that drops packets instead of refusing fails fast, so
-# the retry budget serves short outages instead of one long silent stall
-# (the per-attempt --max-time still bounds the whole transfer). A simple
-# request to a server gets at least 60 seconds before it is called
-# unreachable.
+# abandoned. A host that refuses fails at once, while a host that drops the
+# packets spends this whole value on every attempt (measured on the target
+# machine: a blocked telegram.org costs 60 s per attempt of the retry
+# budget below). A task that may meet a blocked destination therefore probes
+# the host with a short budget of its own first
+# (telegram_setup, reachability_probe_timeout_seconds) instead of leaning on
+# this value, and a simple request to a server that answers gets at least
+# 60 seconds before it is called unreachable.
 curl_connect_timeout_seconds = 60
 # Total seconds curl may keep retrying before it gives up on its own. The
 # bound keeps a dead link from retrying until the outer command timeout

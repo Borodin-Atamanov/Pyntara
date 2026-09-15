@@ -104,6 +104,23 @@ from config_helpers import (
             'launcher_template_file_name = "telegramdesktop.desktop"',
             'launcher_template_file_name = ""',
         ),
+        # reachability_probe_timeout_seconds is a number, not a positive integer
+        base_config().replace(
+            "reachability_probe_timeout_seconds = 15",
+            "reachability_probe_timeout_seconds = 0",
+        ),
+        # reachability_probe_command is a string, not an array
+        base_config().replace(
+            'reachability_probe_command = ["curl", "--head", "--connect-timeout", '
+            '"{timeout_seconds}", "--max-time", "{timeout_seconds}"]',
+            'reachability_probe_command = "curl"',
+        ),
+        # reachability_probe_command lost the placeholder its call fills
+        base_config().replace(
+            'reachability_probe_command = ["curl", "--head", "--connect-timeout", '
+            '"{timeout_seconds}", "--max-time", "{timeout_seconds}"]',
+            'reachability_probe_command = ["curl", "--head", "--connect-timeout"]',
+        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -120,6 +137,9 @@ def test_load_config_missing_telegram_section_raises(tmp_path: Path) -> None:
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
         'latest_url_command = ["curl", "--fail", "--head", "--write-out", "%{url_effective}"]\n'
+        'reachability_probe_command = ["curl", "--head", "--connect-timeout", '
+        '"{timeout_seconds}", "--max-time", "{timeout_seconds}"]\n'
+        "reachability_probe_timeout_seconds = 15\n"
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
         'install_dir_relative_path = ".local/share/Telegram"\n'
         'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"\n'

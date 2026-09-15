@@ -108,17 +108,21 @@ def _fake_run_factory(
     settings: TelegramSetupConfig | None = None,
     resolved_url: str = FINAL_URL,
     head_rc: int = 0,
+    probe_rc: int = 0,
     download_rc: int = 0,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
-    A curl with --head answers the redirect resolution with resolved_url, a
-    curl with --output writes the sentinel bytes to its target (the icon or
-    the archive download) and tar creates the extracted binaries under its
-    --directory, in the configured archive directory and under the
-    configured names, so a test that renames them exercises the same layout
-    the task reads. A nonzero download_rc makes every non-head curl fail,
-    which stands for a failed archive or icon download.
+    The reachability probe is the only curl call of the task that carries
+    no retry flag, and the resolve is the engine curl call whose template
+    names the effective url: the probe answers probe_rc, the resolve answers
+    resolved_url (or fails with head_rc), and every other curl call writes
+    the sentinel bytes to its --output target (the icon or the archive
+    download). tar creates the extracted binaries under its --directory, in
+    the configured archive directory and under the configured names, so a
+    test that renames them exercises the same layout the task reads. A
+    nonzero download_rc makes every download fail, which stands for a failed
+    archive or icon download.
     """
 
     if settings is None:
@@ -127,9 +131,13 @@ def _fake_run_factory(
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
-        if "--head" in command:
-            return _FakeProc(head_rc, stdout=resolved_url if head_rc == 0 else "")
         if command[0] == "curl":
+            if "--retry" not in command:
+                return _FakeProc(probe_rc, "")
+            if any("%{url_effective}" in part for part in command):
+                return _FakeProc(
+                    head_rc, stdout=resolved_url if head_rc == 0 else ""
+                )
             if download_rc != 0 and kwargs.get("check", False):
                 raise subprocess.CalledProcessError(download_rc, command)
             out_index = command.index("--output") + 1
@@ -299,6 +307,63 @@ def test_resolve_failure_is_a_warning(
     assert result.success is True
     assert any("cannot resolve" in warning for warning in result.warnings)
     assert _deployed_paths(tmp_path)[2].is_file()
+
+
+def test_a_silent_host_is_reported_without_spending_the_retry_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A host that never answers is a blocked destination: the probe reports
+    # it once, the resolve never runs, and its retry budget is not spent on
+    # silence. The launcher entry is still written, because it does not
+    # depend on the release url.
+    calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
+    result = telegram_setup.task(_ctx(tmp_path))
+    assert result.success is True
+    assert any("did not answer within" in warning for warning in result.warnings)
+    assert not any(
+        any("%{url_effective}" in part for part in call) for call in calls
+    )
+    assert not any(call[0] == "tar" for call in calls)
+    assert _deployed_paths(tmp_path)[2].is_file()
+
+
+def test_the_probe_budget_comes_from_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The probe budget is a config value: it reaches the probe call and the
+    # warning, so a slow machine is answered in the config and not in code.
+    config = _test_config(tmp_path)
+    settings = replace(
+        config.telegram_setup, reachability_probe_timeout_seconds=45
+    )
+    context = make_context(
+        install_mode="desktop",
+        task_name="telegram_setup",
+        config=replace(config, telegram_setup=settings),
+    )
+    calls = _fake_run_factory(monkeypatch, tmp_path, settings=settings, probe_rc=28)
+    result = telegram_setup.task(context)
+    probes = [call for call in calls if call[0] == "curl" and "--retry" not in call]
+    assert len(probes) == 1
+    assert probes[0][probes[0].index("--connect-timeout") + 1] == "45"
+    assert any("within 45 s" in warning for warning in result.warnings)
+
+
+def test_a_slow_host_that_answers_is_still_resolved_and_downloaded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The probe separates a reachable host from a silent one only: an answer,
+    # however slow, leaves the resolve with the retry settings of the engine
+    # table, and the archive of the release is downloaded.
+    calls = _fake_run_factory(monkeypatch, tmp_path)
+    result = telegram_setup.task(_ctx(tmp_path))
+    resolves = [
+        call for call in calls if any("%{url_effective}" in part for part in call)
+    ]
+    assert len(resolves) == 1
+    assert "--retry" in resolves[0]
+    assert result.changed is True
+    assert (tmp_path / "cache" / ARCHIVE_NAME).is_file()
 
 
 def test_download_failure_is_a_warning(

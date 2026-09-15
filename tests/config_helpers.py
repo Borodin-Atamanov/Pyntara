@@ -893,6 +893,9 @@ def base_config() -> str:
         'download_dir = "/var/cache/pyntara/telegram"\n'
         'latest_url = "https://telegram.org/dl/desktop/linux"\n'
         'latest_url_command = ["curl", "--fail", "--head", "--write-out", "%{url_effective}"]\n'
+        'reachability_probe_command = ["curl", "--head", "--connect-timeout", '
+        '"{timeout_seconds}", "--max-time", "{timeout_seconds}"]\n'
+        "reachability_probe_timeout_seconds = 15\n"
         'icon_url = "https://example.invalid/telegram/icon512.png"\n'
         'install_dir_relative_path = ".local/share/Telegram"\n'
         'launcher_relative_path = ".local/share/applications/telegramdesktop.desktop"\n'
