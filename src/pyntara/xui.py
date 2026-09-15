@@ -1107,10 +1107,13 @@ def write_xray_template(
     """Write the Xray template back through the Bearer API.
 
     The panel takes the document and its test URL as form fields and
-    applies the result to the running core at once, by hot reload when the
-    change allows it. Returns (success, message); the caller verifies the
-    running core afterwards, because a stored template alone has already
-    been observed to disagree with what the core routes.
+    reconciles the running core with it: the change goes through the core
+    API when the diff allows that, and the core is stopped and started
+    again otherwise. The panel answers the write before a restart it
+    triggered has finished, so the core is not ready the moment this
+    returns. Returns (success, message); the caller waits for the core to
+    answer and then verifies it, because a stored template alone has
+    already been observed to disagree with what the core routes.
     """
 
     base_url, opener = _bearer_opener(cfg, env)
