@@ -1,52 +1,78 @@
 #!/usr/bin/env python3
-"""Read Google script credentials from the vault databases.
+"""Read the Google script credentials of both vaults and render the web app file.
 
 The deploy script for the System Metrics Google Drive web app needs the
 script ID of the Apps Script project, the deployment ID whose URL stays
-stable across redeploys and the shared auth key. All three live in the
-google_script_key entry of the vault databases, whose title and URL
-pattern come from system_metrics_setup.google_script_key_entry_title and
-system_metrics_setup.google_script_deployment_url_regex in the
+stable across redeploys and the auth keys the web app accepts. The values
+live in the google_script_key entry of the vault databases, whose title and
+URL pattern come from system_metrics_setup.google_script_key_entry_title
+and system_metrics_setup.google_script_deployment_url_regex in the
 repository config.toml, the same single source of truth the deployed
-service uses: the username field holds the script ID, the url field
-holds the web app endpoint from which the deployment ID is extracted
-with the configured URL pattern, the password field holds the auth key
-that the deploy script substitutes into the script template. This
-maintenance script prints the values as key=value lines for the deploy
-script to consume; it is a standalone script like
-secrets/regenerate_vault_by_config.py and is invoked with the project
-interpreter.
+service uses: the username field holds the script ID, the url field holds
+the web app endpoint from which the deployment ID is extracted with the
+configured URL pattern, the password field holds the auth key of that
+vault.
 
-The production vault is tried first, then the default vault, both with the
-vault password from the PYNTARA_VAULT_PASSWORD environment variable or the
-.password file next to the vault; PYNTARA_VAULT_SOURCE (production or
-default) forces one source. The first vault that opens is authoritative:
-a missing entry, an empty username or a url that is not a web app URL are
-errors, never a reason to fall back to the other vault. When no vault
-opens, the script exits 1 with an error on stderr and prints nothing on
-stdout, so a caller can never consume a half-filled value.
+The production vault supplies the script ID and the deployment ID, because
+its project owns the deployed URL. Every vault supplies one auth key: a
+machine provisioned from the default vault sends its telemetry with the
+default key, so a deployed web app that accepted one key would silently
+drop those machines. The script therefore renders the web app file from the
+repository template task_data/system_metrics_setup/google_drive_script.js,
+whose ALLOWED_KEYS assignment line becomes the JSON array of the keys, and
+prints the two IDs as key=value lines for the deploy script to
+consume. The keys never leave this process: they are written into the
+rendered file and never printed, so a caller cannot copy a secret by
+accident.
+
+One vault opens with the password of the PYNTARA_VAULT_PASSWORD environment
+variable when that value opens it, otherwise with the .password file next to
+it, so one environment value never has to match two vaults. Both vaults must
+open and both entries must carry a key. Every failure, a vault that does not
+exist, no password at all, a missing entry, an empty username, a url that is
+not a web app URL and a template without the placeholder, exits 1 with an
+error on stderr and prints nothing on stdout, so a caller can never consume
+a half-filled value. This is a standalone maintenance script, like
+secrets/regenerate_vault_by_config.py, invoked with the project interpreter.
+
+Usage:
+  read_google_script_credentials.py TEMPLATE_PATH OUTPUT_PATH
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 # The script lives in secrets/, so the repository root is one level up and
 # the project virtualenv interpreter sits at its well-known location.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
+# Placeholder of the web app template that the deploy step replaces with the
+# JSON array of the auth keys, the template being
+# task_data/system_metrics_setup/google_drive_script.js. The file does not work
+# without the substitution, because the placeholder is not a defined name in
+# Apps Script.
+PLACEHOLDER = "__GOOGLE_SCRIPT_KEYS__"
+
+# The whole line the render replaces, so the placeholder stays a name in the
+# prose of the template and the keys land in exactly one line of the rendered
+# file.
+ALLOWED_KEYS_LINE = f"const ALLOWED_KEYS = {PLACEHOLDER};"
+
 # pykeepass is installed into the project virtualenv, not into the system
 # python; when the script is invoked directly the kernel starts the system
 # python3 and the import fails, so the script re-executes itself with the
 # venv interpreter, the same pattern as regenerate_vault_by_config.py.
 try:
-    from pykeepass import PyKeePass
+    from pykeepass import Entry, PyKeePass
     from pykeepass.exceptions import CredentialsError
 except ModuleNotFoundError:
     if __name__ == "__main__":
@@ -135,33 +161,86 @@ def _google_script_config() -> tuple[str, re.Pattern[str]]:
     return title, compiled
 
 
-def resolve_vault_password(
+def get_password_candidates(
     vault_path: Path, environ: Mapping[str, str]
-) -> str | None:
-    """The vault password from the environment or the .password file.
+) -> tuple[str, ...]:
+    """The passwords to try for one vault, in the order they are tried.
 
-    The environment variable wins; otherwise the file next to the vault
-    with the same name and the .password extension is read and trimmed of
-    surrounding whitespace. No interactive prompt: the deploy script runs
-    non-interactively. An existing but unreadable password file is a fatal
-    error, so a broken setup fails loudly.
+    The value of the PYNTARA_VAULT_PASSWORD environment variable comes
+    first, then the content of the .password file next to the vault with
+    the same name and the .password extension, trimmed of surrounding
+    whitespace. Both are candidates and not one answer, so an environment
+    value meant for one vault never hides the password file of the other.
+    No interactive prompt: the deploy script runs non-interactively. An
+    existing but unreadable password file is a fatal error, so a broken
+    setup fails loudly.
     """
 
-    env_password = environ.get("PYNTARA_VAULT_PASSWORD")
-    if env_password is not None:
-        stripped = env_password.strip()
-        if stripped:
-            return stripped
+    candidates: list[str] = []
+    env_password = (environ.get("PYNTARA_VAULT_PASSWORD") or "").strip()
+    if env_password:
+        candidates.append(env_password)
     password_file = vault_path.with_suffix(".password")
-    if not password_file.exists():
-        return None
-    try:
-        file_password = password_file.read_text(encoding="utf-8").strip()
-    except OSError as exc:
+    if password_file.exists():
+        try:
+            file_password = password_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ScriptError(
+                f"cannot read password file {password_file}: {exc}"
+            ) from exc
+        if file_password and file_password not in candidates:
+            candidates.append(file_password)
+    return tuple(candidates)
+
+
+def open_vault(
+    name: str, vault_path: Path, environ: Mapping[str, str]
+) -> PyKeePass:
+    """Open one vault with the first password that opens it.
+
+    A wrong password is not an error of the vault, it is the turn of the
+    next candidate. A missing file, no candidate at all, a vault that no
+    candidate opens and any other open failure raise ScriptError, because
+    the deploy needs both vaults and never one of them.
+    """
+
+    if not vault_path.is_file():
+        raise ScriptError(f"the {name} vault does not exist: {vault_path}")
+    candidates = get_password_candidates(vault_path, environ)
+    if not candidates:
         raise ScriptError(
-            f"cannot read password file {password_file}: {exc}"
-        ) from exc
-    return file_password or None
+            f"no password for the {name} vault {vault_path}: set "
+            "PYNTARA_VAULT_PASSWORD or create "
+            f"{vault_path.with_suffix('.password')}"
+        )
+    for password in candidates:
+        try:
+            return PyKeePass(str(vault_path), password=password)
+        except CredentialsError:
+            continue
+        except Exception as exc:  # noqa: BLE001 - any open failure is fatal
+            raise ScriptError(
+                f"cannot open the {name} vault {vault_path}: {exc}"
+            ) from exc
+    raise ScriptError(
+        f"cannot open the {name} vault {vault_path} with the provided "
+        "passwords"
+    )
+
+
+def get_entry(
+    kp: PyKeePass, title: str, name: str, vault_path: Path
+) -> Entry:
+    """The entry under the configured title, or a ScriptError naming it."""
+
+    entry = kp.find_entries(
+        title=title, group=kp.root_group, recursive=False, first=True
+    )
+    if entry is None:
+        raise ScriptError(
+            f"entry {title!r} not found in the {name} vault {vault_path}"
+        )
+    return entry
 
 
 def deployment_id_from_url(url: str) -> str:
@@ -187,86 +266,127 @@ def _source_vault_paths() -> tuple[Path, Path]:
     return secrets_dir / "production.vault", secrets_dir / "default.vault"
 
 
-def read_credentials(environ: Mapping[str, str]) -> str:
-    """script_id, deployment_id and script_key lines from the first vault.
+class DeployCredentials(NamedTuple):
+    """What a deploy of the web app needs: the project and the auth keys."""
+
+    script_id: str
+    deployment_id: str
+    auth_keys: tuple[str, ...]
+
+
+def read_deploy_credentials(environ: Mapping[str, str]) -> DeployCredentials:
+    """The project identity and the auth key of every vault.
 
     The entry title and the deployment URL pattern come from the
-    system_metrics_setup table of the repository config.toml. Production
-    is tried first, then default; PYNTARA_VAULT_SOURCE (production or
-    default) forces one source. The first vault that opens is
-    authoritative: a missing entry, an empty username, an empty password
-    or a url that is not a web app URL are errors, not reasons to fall
-    back. When no vault opens, ScriptError is raised.
+    system_metrics_setup table of the repository config.toml. The production
+    vault supplies the script ID and the deployment ID, because its project
+    owns the deployed URL; every vault supplies one auth key, so the deployed
+    web app accepts the telemetry of the machines provisioned from either
+    vault. Both vaults must open and both entries must carry a key: a deploy
+    with one key would silently drop the machines of the other vault, so a
+    half-filled result is an error and never a fallback.
     """
 
     title, _ = _google_script_config()
     production_path, default_path = _source_vault_paths()
-    source = environ.get("PYNTARA_VAULT_SOURCE", "")
-    if source not in ("", "production", "default"):
-        raise ScriptError(
-            "PYNTARA_VAULT_SOURCE must be production or default, got "
-            f"{source!r}"
-        )
-    if source == "production":
-        candidates: list[tuple[str, Path]] = [("production", production_path)]
-    elif source == "default":
-        candidates = [("default", default_path)]
-    else:
-        candidates = [
-            ("production", production_path),
-            ("default", default_path),
-        ]
+    production = open_vault("production", production_path, environ)
+    default = open_vault("default", default_path, environ)
+    production_entry = get_entry(
+        production, title, "production", production_path
+    )
+    default_entry = get_entry(default, title, "default", default_path)
 
-    for name, path in candidates:
-        if not path.is_file():
-            continue
-        password = resolve_vault_password(path, environ)
-        if password is None:
-            continue
-        try:
-            kp = PyKeePass(str(path), password=password)
-        except CredentialsError:
-            continue
-        except Exception as exc:  # noqa: BLE001 - any open failure is fatal
-            raise ScriptError(
-                f"cannot open {name} vault {path}: {exc}"
-            ) from exc
-        entry = kp.find_entries(
-            title=title, group=kp.root_group, recursive=False, first=True
+    script_id = (production_entry.username or "").strip()
+    if not script_id:
+        raise ScriptError(
+            f"entry {title!r} in the production vault has an empty username; "
+            "fill the Apps Script project script ID there"
         )
-        if entry is None:
+    deployment_id = deployment_id_from_url(production_entry.url or "")
+
+    auth_keys: list[str] = []
+    for name, entry in (
+        ("production", production_entry),
+        ("default", default_entry),
+    ):
+        auth_key = (entry.password or "").strip()
+        if not auth_key:
             raise ScriptError(
-                f"entry {title!r} not found in the {name} vault {path}"
+                f"entry {title!r} in the {name} vault has an empty password; "
+                "fill the auth key there"
             )
-        script_id = (entry.username or "").strip()
-        if not script_id:
-            raise ScriptError(
-                f"entry {title!r} in the {name} vault has an empty "
-                "username; fill the Apps Script project script ID there"
-            )
-        script_key = (entry.password or "").strip()
-        if not script_key:
-            raise ScriptError(
-                f"entry {title!r} in the {name} vault has an empty "
-                "password; fill the shared auth key there"
-            )
-        deployment_id = deployment_id_from_url(entry.url or "")
-        return (
-            f"script_id={script_id}\n"
-            f"deployment_id={deployment_id}\n"
-            f"script_key={script_key}\n"
-        )
-    raise ScriptError(
-        "cannot open any vault: neither production nor default opened with "
-        "the provided password"
+        if auth_key not in auth_keys:
+            auth_keys.append(auth_key)
+    return DeployCredentials(
+        script_id=script_id,
+        deployment_id=deployment_id,
+        auth_keys=tuple(auth_keys),
     )
 
 
-def main() -> int:
-    """Script entry point; returns the process exit code."""
+def render_web_app_file(
+    template_path: Path, auth_keys: tuple[str, ...], output_path: Path
+) -> None:
+    """Write the deployable web app file with the assignment line replaced.
 
+    The line that assigns the placeholder becomes the assignment of the JSON
+    array of the keys, which is a valid JavaScript array literal, so the
+    rendered file carries every key the web app accepts and the prose of the
+    template keeps the placeholder as a name. A missing template, a template
+    without that line and an unwritable output are ScriptError.
+    """
+
+    if not auth_keys:
+        raise ScriptError(
+            "no auth keys to render: the web app would accept nothing"
+        )
     try:
-        sys.stdout.write(read_credentials(os.environ))
+        text = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ScriptError(
+            f"cannot read template {template_path}: {exc}"
+        ) from exc
+    if ALLOWED_KEYS_LINE not in text:
+        raise ScriptError(
+            f"the line {ALLOWED_KEYS_LINE!r} not found in {template_path}"
+        )
+    try:
+        output_path.write_text(
+            text.replace(
+                ALLOWED_KEYS_LINE,
+                f"const ALLOWED_KEYS = {json.dumps(list(auth_keys))};",
+            ),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise ScriptError(f"cannot write {output_path}: {exc}") from exc
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Script entry point; returns the process exit code.
+
+    Two arguments: the template of the web app file and the path it is
+    rendered into. The two IDs go to stdout for the deploy script to
+    consume, the auth keys go into the rendered file only.
+    """
+
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if len(arguments) != 2:
+        print(
+            "usage: read_google_script_credentials.py "
+            "TEMPLATE_PATH OUTPUT_PATH",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        credentials = read_deploy_credentials(os.environ)
+        render_web_app_file(
+            Path(arguments[0]), credentials.auth_keys, Path(arguments[1])
+        )
+        sys.stdout.write(
+            f"script_id={credentials.script_id}\n"
+            f"deployment_id={credentials.deployment_id}\n"
+        )
         return 0
     except ScriptError as exc:
         print(f"error: {exc}", file=sys.stderr)

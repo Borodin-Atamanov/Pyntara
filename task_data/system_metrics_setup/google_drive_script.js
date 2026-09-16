@@ -8,15 +8,18 @@
   unchanged. The file name is the filename parameter, the access key is the
   pass parameter. The response is the text OK <name> or ERROR: <reason>.
 
-  In the repository the script is stored as a template: the real access key
-  lives only in the KeePass database (the google_script_key entry, the
-  password field), and the deploy script deploy_google_script.sh
-  substitutes it into ALLOWED_KEYS in place of the __GOOGLE_SCRIPT_KEY__
-  placeholder during the build. Deploying the file as is leaves a
-  non-working placeholder: the script will not start.
+  In the repository the script is stored as a template: the real access keys
+  live only in the KeePass databases (the google_script_key entry, the
+  password field), and the render step of the deploy helper substitutes them
+  into ALLOWED_KEYS in place of the __GOOGLE_SCRIPT_KEYS__ placeholder
+  during the build. Both vaults contribute a key, because a machine
+  provisioned from the default vault sends its telemetry with the default
+  key, and the app must accept the machines of either vault. Deploying the
+  file as is leaves a non-working placeholder: the script will not start.
 
-  The deployment URL and the key are stored in the KeePass database (the
-  google_script_key entry): url is the web app URL, password is the key.
+  The deployment URL and the auth keys are stored in the KeePass
+  databases (the google_script_key entry): url is the web app URL, password
+  is the key of that vault.
   Call examples (substitute GOOGLE_DEPLOYMENT_ID and GOOGLE_SCRIPT_KEY from
   the entry; DATA_BASE64 is the Base64 of the file content):
 
@@ -40,13 +43,12 @@
 
  */
 
-// Access key placeholder: deploy_google_script.sh substitutes the password
-// value of the google_script_key KeePass entry here through json.dumps, so
-// quotes and special characters in the key are safe. The file does not
-// start without the substitution: the placeholder is undefined.
-const ALLOWED_KEYS = [
-  __GOOGLE_SCRIPT_KEY__,
-];
+// Auth keys the app accepts, one per vault: the deploy helper substitutes the
+// password values of the google_script_key entries, as the JSON array of the
+// keys, for the __GOOGLE_SCRIPT_KEYS__ placeholder through json.dumps, so
+// quotes and special characters in a key are safe. The file does not start
+// without the substitution: the placeholder is undefined.
+const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;
 
 // Extension -> MIME type of the saved file; without a match
 // application/octet-stream is used.

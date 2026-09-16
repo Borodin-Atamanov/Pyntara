@@ -1,18 +1,24 @@
-"""Tests for the Google script credentials reader.
+"""Tests for the Google script deploy helper.
 
 The standalone script secrets/read_google_script_credentials.py is loaded
 as a module through importlib.util (the secrets directory is not a package)
-and its functions are exercised against real KeePass databases in
-temporary directories. REPO_ROOT is monkeypatched so the repository vaults
-and the repository config are never touched; a config/ directory with the
-entry title and the deployment URL pattern is written into the temporary
-root, and the environment is injected explicitly through the function
-arguments.
+and its functions are exercised against real KeePass databases in temporary
+directories. REPO_ROOT is monkeypatched so the repository vaults and the
+repository config are never touched; a config/ directory with the entry
+title and the deployment URL pattern is written into the temporary root,
+and the environment is injected explicitly through the function arguments.
+
+Two rules carry most of the cases. The production vault alone supplies the
+script ID and the deployment ID, because its project owns the deployed URL.
+Every vault supplies an auth key, because the deployed web app must accept
+the telemetry of the machines provisioned from either vault, and a deploy
+that carried one key would silently drop the machines of the other.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 from types import ModuleType
@@ -25,21 +31,39 @@ SCRIPT_PATH = (
     / "secrets"
     / "read_google_script_credentials.py"
 )
+REPO_ROOT = SCRIPT_PATH.parents[1]
 
 PRODUCTION_PASSWORD = "production-secret"
 DEFAULT_PASSWORD = "default-secret"
 
 # The entry shape the deploy helper consumes; mirrors the real config entry.
-GOOGLE_ENTRY = {
+PRODUCTION_ENTRY = {
     "title": "google_script_key",
-    "username": "test-script-id",
+    "username": "production-script-id",
     "url": "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec",
-    "password": "test-key",
-    "notes": "Test credentials.",
+    "password": "production-key",
+    "notes": "Production credentials.",
+}
+
+DEFAULT_ENTRY = {
+    "title": "google_script_key",
+    "username": "default-script-id",
+    "url": "https://script.google.com/macros/s/AKfycbwDEFAUL/exec",
+    "password": "default-key",
+    "notes": "Default credentials.",
 }
 
 # The deployment URL pattern that mirrors the real config value.
-DEPLOYMENT_PATTERN = r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
+DEPLOYMENT_PATTERN = (
+    r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
+)
+
+TEMPLATE_TEXT = "const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;\n"
+
+IDENTIFIER_LINES = (
+    "script_id=production-script-id\n"
+    "deployment_id=AKfycbwEXAMPLE\n"
+)
 
 
 def _write_config(
@@ -100,15 +124,44 @@ def _make_vault(path: Path, password: str, entry: dict[str, str] | None) -> None
 
 
 def _point_at(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    gen: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    production_password_file: bool = True,
+    default_password_file: bool = True,
 ) -> tuple[Path, Path]:
-    """Point the script at temp vaults and config; return (production, default)."""
+    """Point the script at temp vaults and config; return (production, default).
+
+    The .password files next to the vaults are the normal way a deploy opens
+    both vaults without an environment value, so they exist unless a test
+    removes one on purpose to exercise the password candidates.
+    """
 
     production = tmp_path / "secrets" / "production.vault"
     default = tmp_path / "secrets" / "default.vault"
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
     _write_config(tmp_path)
+    # The password files are written before the vaults exist, so the
+    # directory has to be there first.
+    production.parent.mkdir(parents=True, exist_ok=True)
+    if production_password_file:
+        production.with_suffix(".password").write_text(
+            PRODUCTION_PASSWORD, encoding="utf-8"
+        )
+    if default_password_file:
+        default.with_suffix(".password").write_text(
+            DEFAULT_PASSWORD, encoding="utf-8"
+        )
     return production, default
+
+
+def _write_template(tmp_path: Path, text: str = TEMPLATE_TEXT) -> Path:
+    """A web app template whose only content is the placeholder line."""
+
+    template = tmp_path / "google_drive_script.js"
+    template.write_text(text, encoding="utf-8")
+    return template
 
 
 def test_deployment_id_from_url_valid(
@@ -152,131 +205,193 @@ def test_deployment_id_from_url_rejects_other_shapes(
         gen.deployment_id_from_url(url)
 
 
-def test_reads_production_when_password_matches(
+def test_production_supplies_the_identifiers_and_every_vault_supplies_a_key(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Production opens with the given password and carries the entry: the
-    # reader returns its values and never looks at the default vault.
+    # The script ID and the deployment ID come from the production vault
+    # alone, because its project owns the deployed URL; both vaults
+    # contribute their auth key, so the deployed web app accepts the
+    # machines provisioned from either vault.
     production, default = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
-    output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    credentials = gen.read_deploy_credentials({})
+    assert credentials.script_id == "production-script-id"
+    assert credentials.deployment_id == "AKfycbwEXAMPLE"
+    assert credentials.auth_keys == ("production-key", "default-key")
 
 
-def test_falls_back_to_default_when_production_does_not_open(
+def test_environment_password_opens_one_vault_and_the_file_opens_the_other(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Production does not open with the given password, so the default
-    # vault is tried and its values are returned.
-    production, default = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
-    output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": DEFAULT_PASSWORD})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
-
-
-def test_vault_source_forces_default(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # PYNTARA_VAULT_SOURCE=default selects the default vault even when
-    # production opens with the same password and would win by default.
-    production, default = _point_at(gen, tmp_path, monkeypatch)
-    production_entry = dict(GOOGLE_ENTRY)
-    production_entry["username"] = "production-script-id"
-    _make_vault(production, PRODUCTION_PASSWORD, production_entry)
-    _make_vault(default, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    output = gen.read_credentials(
-        {
-            "PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD,
-            "PYNTARA_VAULT_SOURCE": "default",
-        }
+    # One environment value serves the vault it opens and never hides the
+    # password file of the other vault, so a deploy needs no two-value
+    # dance around the environment.
+    production, default = _point_at(
+        gen, tmp_path, monkeypatch, production_password_file=False
     )
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    credentials = gen.read_deploy_credentials(
+        {"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD}
+    )
+    assert credentials.script_id == "production-script-id"
+    assert credentials.auth_keys == ("production-key", "default-key")
 
 
-def test_password_file_used_when_no_environment(
+def test_equal_keys_are_carried_once(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Without PYNTARA_VAULT_PASSWORD the .password file next to the vault
-    # supplies the password, trimmed of surrounding whitespace.
+    # A vault that carries the key of the other one must not put the same
+    # value into ALLOWED_KEYS twice.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    same_key_entry = dict(DEFAULT_ENTRY)
+    same_key_entry["password"] = PRODUCTION_ENTRY["password"]
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, same_key_entry)
+    credentials = gen.read_deploy_credentials({})
+    assert credentials.auth_keys == ("production-key",)
+
+
+def test_vault_source_is_not_a_deploy_switch(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The deploy always targets the production project, which owns the
+    # deployed URL, and always carries the keys of both vaults: the
+    # installer flag PYNTARA_VAULT_SOURCE selects a vault for a run and
+    # never redirects a deploy.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    credentials = gen.read_deploy_credentials(
+        {"PYNTARA_VAULT_SOURCE": "default"}
+    )
+    assert credentials.script_id == "production-script-id"
+    assert credentials.auth_keys == ("production-key", "default-key")
+
+
+def test_missing_production_vault_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without the production vault there is no project to deploy to: the
+    # helper fails instead of deploying with the default identity.
     _production, default = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
-    default.with_suffix(".password").write_text(
-        f"  {DEFAULT_PASSWORD}  \n", encoding="utf-8"
-    )
-    output = gen.read_credentials({})
-    assert output == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    with pytest.raises(gen.ScriptError, match="production vault does not exist"):
+        gen.read_deploy_credentials({})
 
 
-def test_empty_username_is_an_error_not_a_fallback(
+def test_missing_default_vault_is_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Production opens but its entry has no username: the reader fails
-    # loudly instead of silently reading the default vault.
+    # Without the default vault the deploy would accept one key and drop
+    # the telemetry of every machine provisioned from that vault.
+    production, _default = _point_at(gen, tmp_path, monkeypatch)
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    with pytest.raises(gen.ScriptError, match="default vault does not exist"):
+        gen.read_deploy_credentials({})
+
+
+def test_no_password_for_a_vault_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No environment value and no .password file means the vault cannot be
+    # opened at all, and the message names what to create.
+    production, default = _point_at(
+        gen,
+        tmp_path,
+        monkeypatch,
+        production_password_file=False,
+        default_password_file=False,
+    )
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    with pytest.raises(gen.ScriptError, match="no password for the production vault"):
+        gen.read_deploy_credentials({})
+
+
+def test_wrong_password_names_the_vault(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A password that opens no candidate of a vault is a loud error naming
+    # that vault, never a silent deploy of the other one.
+    production, default = _point_at(
+        gen, tmp_path, monkeypatch, production_password_file=False
+    )
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    with pytest.raises(gen.ScriptError, match="cannot open the production vault"):
+        gen.read_deploy_credentials({"PYNTARA_VAULT_PASSWORD": "wrong-password"})
+
+
+def test_empty_username_in_production_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The production entry carries the project the deploy pushes to, so an
+    # empty username is an error and never a reason to use the other vault.
     production, default = _point_at(gen, tmp_path, monkeypatch)
-    entry = dict(GOOGLE_ENTRY)
+    entry = dict(PRODUCTION_ENTRY)
     entry["username"] = ""
     _make_vault(production, PRODUCTION_PASSWORD, entry)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
     with pytest.raises(gen.ScriptError, match="empty username"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+        gen.read_deploy_credentials({})
 
 
-def test_empty_password_is_an_error_not_a_fallback(
+def test_empty_password_in_production_is_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Production opens but its entry has no password: the reader fails
-    # loudly instead of silently reading the default vault, because the
-    # deploy script must never substitute a missing auth key.
+    # A missing auth key must never reach a deploy: an entry without a key
+    # would leave the app refusing the machines of that vault.
     production, default = _point_at(gen, tmp_path, monkeypatch)
-    entry = dict(GOOGLE_ENTRY)
+    entry = dict(PRODUCTION_ENTRY)
     entry["password"] = ""
     _make_vault(production, PRODUCTION_PASSWORD, entry)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
-    with pytest.raises(gen.ScriptError, match="empty password"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    with pytest.raises(
+        gen.ScriptError, match="in the production vault has an empty password"
+    ):
+        gen.read_deploy_credentials({})
+
+
+def test_empty_password_in_default_is_an_error(
+    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same rule protects the default vault, whose key is the reason the
+    # deploy carries a second value at all.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    entry = dict(DEFAULT_ENTRY)
+    entry["password"] = ""
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, entry)
+    with pytest.raises(
+        gen.ScriptError, match="in the default vault has an empty password"
+    ):
+        gen.read_deploy_credentials({})
 
 
 def test_missing_entry_is_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Production opens but the google_script_key entry is absent: an error.
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, None)
-    with pytest.raises(gen.ScriptError, match="not found"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+    # A vault without the google_script_key entry cannot supply its key.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, None)
+    with pytest.raises(gen.ScriptError, match="not found in the default vault"):
+        gen.read_deploy_credentials({})
 
 
 def test_invalid_url_is_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A malformed url must never yield a guessed deployment ID.
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
-    entry = dict(GOOGLE_ENTRY)
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    entry = dict(PRODUCTION_ENTRY)
     entry["url"] = "https://script.google.com/macros/s/"
     _make_vault(production, PRODUCTION_PASSWORD, entry)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
     with pytest.raises(gen.ScriptError, match="not a web app URL"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
-
-
-def test_invalid_vault_source_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    production, default = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    _make_vault(default, DEFAULT_PASSWORD, GOOGLE_ENTRY)
-    with pytest.raises(gen.ScriptError, match="PYNTARA_VAULT_SOURCE"):
-        gen.read_credentials({"PYNTARA_VAULT_SOURCE": "bogus"})
-
-
-def test_no_vault_opens_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    with pytest.raises(gen.ScriptError, match="cannot open any vault"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": "wrong-password"})
+        gen.read_deploy_credentials({})
 
 
 def test_entry_title_comes_from_config(
@@ -284,16 +399,17 @@ def test_entry_title_comes_from_config(
 ) -> None:
     # A vault entry under a custom title configured in config.toml is
     # found: the title is not hardcoded in the script.
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
-    entry = dict(GOOGLE_ENTRY)
-    entry["title"] = "custom_key_title"
-    _make_vault(production, PRODUCTION_PASSWORD, entry)
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    production_entry = dict(PRODUCTION_ENTRY)
+    production_entry["title"] = "custom_key_title"
+    default_entry = dict(DEFAULT_ENTRY)
+    default_entry["title"] = "custom_key_title"
+    _make_vault(production, PRODUCTION_PASSWORD, production_entry)
+    _make_vault(default, DEFAULT_PASSWORD, default_entry)
     _write_config(tmp_path, title="custom_key_title")
-    output = gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
-    assert (
-        output
-        == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
-    )
+    credentials = gen.read_deploy_credentials({})
+    assert credentials.script_id == "production-script-id"
+    assert credentials.auth_keys == ("production-key", "default-key")
 
 
 def test_deployment_pattern_comes_from_config(
@@ -322,28 +438,149 @@ def test_missing_config_is_an_error(
 ) -> None:
     # Without config.toml the entry title is unknown: a loud error, never
     # a silent hardcoded fallback.
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
+    production, default = _point_at(gen, tmp_path, monkeypatch)
     shutil.rmtree(tmp_path / "config")
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
     with pytest.raises(gen.ScriptError, match="config file not found"):
-        gen.read_credentials({"PYNTARA_VAULT_PASSWORD": PRODUCTION_PASSWORD})
+        gen.read_deploy_credentials({})
 
 
-def test_main_prints_credentials_and_exits_zero(
+def test_renders_every_key_into_the_placeholder(
+    gen: ModuleType, tmp_path: Path
+) -> None:
+    # The placeholder becomes the JSON array of the keys, the array Apps
+    # Script loads as ALLOWED_KEYS; the rest of the template survives
+    # untouched.
+    template = _write_template(tmp_path)
+    output = tmp_path / "Code.gs"
+    gen.render_web_app_file(template, ("production-key", "default-key"), output)
+    text = output.read_text(encoding="utf-8")
+    assert text == 'const ALLOWED_KEYS = ["production-key", "default-key"];\n'
+    array = text.split("= ", 1)[1].rstrip(";\n")
+    assert json.loads(array) == ["production-key", "default-key"]
+
+
+def test_render_touches_only_the_assignment_line(
+    gen: ModuleType, tmp_path: Path
+) -> None:
+    # The placeholder is a name in the prose of the template as well, so the
+    # render replaces the assignment line alone: a key must not be spliced
+    # into a comment.
+    text = (
+        "// the placeholder __GOOGLE_SCRIPT_KEYS__ appears here as a name\n"
+        "const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;\n"
+    )
+    template = _write_template(tmp_path, text)
+    output = tmp_path / "Code.gs"
+    gen.render_web_app_file(template, ("production-key",), output)
+    assert output.read_text(encoding="utf-8") == (
+        "// the placeholder __GOOGLE_SCRIPT_KEYS__ appears here as a name\n"
+        'const ALLOWED_KEYS = ["production-key"];\n'
+    )
+
+
+def test_render_rejects_a_template_without_the_placeholder(
+    gen: ModuleType, tmp_path: Path
+) -> None:
+    # A template whose placeholder was renamed would deploy an app that
+    # does not start, so the render fails instead of copying it.
+    template = _write_template(tmp_path, "const ALLOWED_KEYS = [];\n")
+    output = tmp_path / "Code.gs"
+    with pytest.raises(gen.ScriptError, match="not found in"):
+        gen.render_web_app_file(template, ("production-key",), output)
+    assert not output.exists()
+
+
+def test_render_rejects_a_missing_template(
+    gen: ModuleType, tmp_path: Path
+) -> None:
+    with pytest.raises(gen.ScriptError, match="cannot read template"):
+        gen.render_web_app_file(
+            tmp_path / "absent.js", ("production-key",), tmp_path / "Code.gs"
+        )
+
+
+def test_render_rejects_an_empty_key_list(
+    gen: ModuleType, tmp_path: Path
+) -> None:
+    # An app that accepts nothing is never a deploy worth making.
+    template = _write_template(tmp_path)
+    with pytest.raises(gen.ScriptError, match="accept nothing"):
+        gen.render_web_app_file(template, (), tmp_path / "Code.gs")
+
+
+def test_repository_template_carries_the_helper_placeholder(
+    gen: ModuleType,
+) -> None:
+    # The shipped template and the helper must name the same placeholder: a
+    # rename on one side alone would deploy a file whose placeholder is an
+    # undefined name in Apps Script.
+    template = (
+        REPO_ROOT
+        / "task_data"
+        / "system_metrics_setup"
+        / "google_drive_script.js"
+    )
+    text = template.read_text(encoding="utf-8")
+    assert f"const ALLOWED_KEYS = {gen.PLACEHOLDER};" in text
+    assert "__GOOGLE_SCRIPT_KEY__" not in text
+
+
+def test_deploy_script_renders_through_the_helper(
+    gen: ModuleType,
+) -> None:
+    # The shell script holds no key and no placeholder of its own: it hands
+    # the template and the output path to the helper and consumes the two
+    # identifiers, so the keys never reach a command line.
+    script = (
+        REPO_ROOT
+        / "task_data"
+        / "system_metrics_setup"
+        / "deploy_google_script.sh"
+    ).read_text(encoding="utf-8")
+    assert "read_google_script_credentials.py" in script
+    assert '"$SCRIPT_FILE" "$workdir/Code.gs"' in script
+    assert gen.PLACEHOLDER not in script
+    assert "GOOGLE_SCRIPT_KEY_VALUE" not in script
+
+
+def test_main_renders_and_prints_the_identifiers(
     gen: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # main() reads the real environment and writes the key=value lines to
-    # stdout, the contract the deploy script parses.
-    production, _ = _point_at(gen, tmp_path, monkeypatch)
-    _make_vault(production, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
-    monkeypatch.setenv("PYNTARA_VAULT_PASSWORD", PRODUCTION_PASSWORD)
-    assert gen.main() == 0
+    # main() renders the web app file from the given template and writes
+    # the two identifiers to stdout, the contract the deploy script
+    # parses; no key ever appears on stdout.
+    production, default = _point_at(gen, tmp_path, monkeypatch)
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    template = _write_template(tmp_path)
+    output = tmp_path / "Code.gs"
+    assert gen.main([str(template), str(output)]) == 0
     captured = capsys.readouterr()
-    assert captured.out == "script_id=test-script-id\ndeployment_id=AKfycbwEXAMPLE\nscript_key=test-key\n"
+    assert captured.out == IDENTIFIER_LINES
     assert captured.err == ""
+    assert "production-key" not in captured.out
+    assert "default-key" not in captured.out
+    assert (
+        output.read_text(encoding="utf-8")
+        == 'const ALLOWED_KEYS = ["production-key", "default-key"];\n'
+    )
+
+
+def test_main_without_two_arguments_is_a_usage_error(
+    gen: ModuleType, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The deploy script always passes both paths; a caller that does not is
+    # told how to call the helper and nothing is written.
+    assert gen.main([]) == 2
+    assert gen.main(["only-template.js"]) == 2
+    captured = capsys.readouterr()
+    assert "usage:" in captured.err
+    assert captured.out == ""
 
 
 def test_main_error_exits_one_with_empty_stdout(
@@ -353,13 +590,20 @@ def test_main_error_exits_one_with_empty_stdout(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # A failing read prints nothing on stdout, so the deploy script can
-    # never consume a partial value; the error goes to stderr.
-    _point_at(gen, tmp_path, monkeypatch)
+    # never consume a partial value, and the rendered file is not created.
+    production, default = _point_at(
+        gen, tmp_path, monkeypatch, production_password_file=False
+    )
+    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
+    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
+    template = _write_template(tmp_path)
+    output = tmp_path / "Code.gs"
     monkeypatch.setenv("PYNTARA_VAULT_PASSWORD", "wrong-password")
-    assert gen.main() == 1
+    assert gen.main([str(template), str(output)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "error:" in captured.err
+    assert not output.exists()
 
 
 def test_opens_with_pykeepass() -> None:
@@ -369,7 +613,7 @@ def test_opens_with_pykeepass() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "vault.kdbx"
-        _make_vault(path, PRODUCTION_PASSWORD, GOOGLE_ENTRY)
+        _make_vault(path, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
         kp = PyKeePass(str(path), password=PRODUCTION_PASSWORD)
         entry = kp.find_entries(
             title="google_script_key",
@@ -378,6 +622,6 @@ def test_opens_with_pykeepass() -> None:
             first=True,
         )
         assert entry is not None
-        assert entry.username == "test-script-id"
+        assert entry.username == "production-script-id"
         assert entry.url == "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
-        assert entry.password == "test-key"
+        assert entry.password == "production-key"

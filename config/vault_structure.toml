@@ -26,7 +26,7 @@ notes = "Password that protects the runtime secret vault at /var/lib/pyntara/sec
 
 [[vault_structure.entries]]
 title = "google_script_key"
-notes = "Credentials of the System Metrics Google Drive web app. The username field carries the Apps Script project script ID, the url field carries the web app deployment endpoint (from which the deployment ID is derived), the password field carries the shared auth key that the deployed script mirrors into its ALLOWED_KEYS list. Consumed by the Google script deploy helper and by the System Metrics client. The default vault carries well-known test values mirroring its well-known vault password."
+notes = "Credentials of the System Metrics Google Drive web app. The username field carries the Apps Script project script ID, the url field carries the web app deployment endpoint (from which the deployment ID is derived), the password field carries the auth key of that vault, and the deployed script carries the keys of every vault in its ALLOWED_KEYS list, so the telemetry of the machines provisioned from either vault is accepted. Consumed by the Google script deploy helper and by the System Metrics client. The default vault carries well-known test values mirroring its well-known vault password."
 
 [[vault_structure.entries]]
 title = "telemetry_password"

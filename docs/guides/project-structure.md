@@ -33,7 +33,7 @@ guides/ — How to work with the project
 The four secret files (default/production vaults and their passwords) are listed in [Secrets files](../contracts/bootstrap.md#secrets-files); their structure is described in [Secrets model](../spec/secrets-model.md).
 
 secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).  
-secrets/read_google_script_credentials.py — Prints the script ID, the deployment ID and the shared auth key of the System Metrics Google Drive web app from the google_script_key entry of a vault (username, the deployment ID embedded in url, and the password field); consumed by task_data/system_metrics_setup/deploy_google_script.sh, which substitutes the key into the __GOOGLE_SCRIPT_KEY__ template placeholder of google_drive_script.js.
+secrets/read_google_script_credentials.py — Prepares the System Metrics Google Drive web app deploy: reads the google_script_key entry of both vaults (the production vault supplies the script ID in username and the deployment ID embedded in url, every vault supplies an auth key in password), renders task_data/system_metrics_setup/google_drive_script.js with the __GOOGLE_SCRIPT_KEYS__ placeholder replaced by the JSON array of those keys, and prints the two identifiers for task_data/system_metrics_setup/deploy_google_script.sh, which pushes the rendered file to the Apps Script project.
 
 ## src/pyntara/
 
