@@ -43,10 +43,9 @@ user_service_is_active_command = ["systemctl", "--machine", "{username}@.host", 
 # the value.
 user_install_relative_path = ".local/share/sotavpn-bridge"
 settings_file_name = "settings.py"
-# Names of the value lines of the bridge settings file: the version of the
-# program, which the task reports when it installs the bridge, and the
-# plain HTTP port it serves.
-settings_version_key = "PROGRAM_VERSION"
+# Name of the value line that carries the plain HTTP port the bridge
+# serves. The task reads the settings file of the installed bridge and
+# never writes it.
 settings_http_port_key = "HTTP_PORT"
 # Title of the source vault entry whose password carries the access key
 # of the Sota account. An absent entry or an empty password means the

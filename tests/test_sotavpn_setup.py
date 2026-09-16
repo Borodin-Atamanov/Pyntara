@@ -140,8 +140,12 @@ class _Commands:
             return FakeProc(0, "XDG_RUNTIME_DIR=/run/user/1000\n")
         return FakeProc(0, "")
 
+    def installer_runs(self) -> list[list[str]]:
+        return [c for c in self.commands if c and c[0] == "runuser"]
+
     def installer_run(self) -> list[str] | None:
-        return next((c for c in self.commands if c and c[0] == "runuser"), None)
+        runs = self.installer_runs()
+        return runs[0] if runs else None
 
 
 def _vault(monkeypatch: pytest.MonkeyPatch, *, key: str | None) -> None:
@@ -324,17 +328,16 @@ class TestInstallAndSubscription:
         tmp_path: Path,
         *,
         installed_port: int = 25080,
-        source_version: str = "1.0.9",
         active: bool = True,
         installer_ok: bool = True,
         panel: _Panel | None = None,
     ) -> tuple[Context, _Commands, _Panel, Path]:
         ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
-        # The version inside the installed settings decides nothing: the
-        # installer runs on every run of the task.
+        # The settings of the installed bridge decide nothing: the
+        # installer runs as it is on every run of the task.
         _write_installed(ctx, version="1.0.0", port=installed_port)
-        root = _fetched(monkeypatch, tmp_path, version=source_version)
+        root = _fetched(monkeypatch, tmp_path)
         commands = _Commands(active=active, installer_ok=installer_ok)
         monkeypatch.setattr(sotavpn, "run_command", commands)
         # The session environment of the desktop user is read through the
@@ -387,41 +390,40 @@ class TestInstallAndSubscription:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
-        ctx, _commands, panel, _root = self._prepare(
+        ctx, commands, panel, _root = self._prepare(
             monkeypatch, tmp_path, panel=panel
         )
         first = sotavpn.task(ctx)
         assert first.changed is True
         assert len(panel.upserts) == 1
-        # The real installer copies the archive settings onto the machine,
-        # and the fetch step removes its temporary tree, so the second run
-        # gets a fresh tree and the installed settings of that version.
+        # The fetch step removes its temporary tree and the machine keeps
+        # its own settings file, which is what the second run reads.
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
         second = sotavpn.task(ctx)
         assert second.success is True
-        # The bridge is installed even when nothing changed, so a machine
-        # always runs the code of the fetched branch.
+        # The installer runs as it is on every run, so a machine that
+        # changed nothing is installed again.
         assert second.changed is True
+        assert len(commands.installer_runs()) == 2
         assert not second.warnings
         assert len(panel.upserts) == 1
         assert panel.refreshed == [7, 7]
         assert "the panel lists 2 nodes" in (second.message or "")
 
-    def test_the_installer_runs_even_when_the_version_matches(
+    def test_the_installer_runs_as_it_is_without_looking_at_the_settings(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # A machine that is already up to date is reinstalled idempotently
-        # instead of being skipped, because the branch is the source of
-        # truth and a version number can stay the same across new code.
+        # The task compares nothing and reads no version: the installer of
+        # the archive runs as it is, whatever the settings carry.
         panel = _Panel()
         ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, source_version="1.0.0", panel=panel
+            monkeypatch, tmp_path, panel=panel
         )
         result = sotavpn.task(ctx)
         assert result.success is True
         assert result.changed is True
-        assert commands.installer_run() is not None
+        assert len(commands.installer_runs()) == 1
 
     def test_a_failed_installer_is_a_warning_and_the_rest_continues(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

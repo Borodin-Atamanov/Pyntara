@@ -37,10 +37,10 @@ from config_helpers import (
             'service_unit_name = "sotavpn-bridge.service"',
             'service_unit_name = ""',
         ),
-        # settings_version_key is empty
+        # settings_http_port_key is empty
         base_config().replace(
-            'settings_version_key = "PROGRAM_VERSION"',
-            'settings_version_key = ""',
+            'settings_http_port_key = "HTTP_PORT"',
+            'settings_http_port_key = ""',
         ),
         # subscription_update_interval_seconds is a string
         base_config().replace(

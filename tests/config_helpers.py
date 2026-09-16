@@ -645,7 +645,6 @@ def base_config() -> str:
         'user_service_is_active_command = ["systemctl", "--machine", "{username}@.host", "--user", "is-active", "{unit}"]\n'
         'user_install_relative_path = ".local/share/sotavpn-bridge"\n'
         'settings_file_name = "settings.py"\n'
-        'settings_version_key = "PROGRAM_VERSION"\n'
         'settings_http_port_key = "HTTP_PORT"\n'
         'key_entry_title = "sotavpn_uuid"\n'
         'subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"\n'

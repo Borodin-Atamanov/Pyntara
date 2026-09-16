@@ -3499,9 +3499,6 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
         settings_file_name=_nonempty_string_field(
             raw.get("settings_file_name"), "sotavpn_setup.settings_file_name"
         ),
-        settings_version_key=_nonempty_string_field(
-            raw.get("settings_version_key"), "sotavpn_setup.settings_version_key"
-        ),
         settings_http_port_key=_nonempty_string_field(
             raw.get("settings_http_port_key"),
             "sotavpn_setup.settings_http_port_key",

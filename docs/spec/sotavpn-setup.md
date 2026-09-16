@@ -28,12 +28,13 @@ account and it runs as a user service. The session environment the engine
 reads for that account goes into the environment of the installer, so the
 user manager is reachable from a run that has no session of its own.
 
-The installer runs on every run of the task, so the machine always runs the
-code of the fetched branch: the same version is rewritten idempotently, and
-the installer keeps the previous settings file beside the new ones and
-restarts the user service. After that the task waits until the user service
-is active and the port of the bridge settings has a listener, so the panel
-fetch of the same run finds the bridge up.
+The installer runs as it is, on every run of the task, so the machine always
+runs the code of the fetched branch; what it does with the settings file and
+the user service of the machine is its own business. The task reads the
+settings of the installed bridge for the plain HTTP port and never writes
+them. After that the task waits until the user service is active and the port
+of the bridge settings has a listener, so the panel fetch of the same run
+finds the bridge up.
 
 ## The panel side
 

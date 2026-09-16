@@ -18,10 +18,10 @@ Order of the work:
    this machine: the task says so and changes nothing.
 2. The bridge program of the Sotavpn repository is installed for the
    desktop user. Its branch archive is downloaded into a temporary
-   directory and the installer runs on every run: the branch is the
-   source of truth, an unchanged version is rewritten idempotently, and a
-   new one replaces the installed copy. The version of the archive
-   settings is read only to name what is being installed in the journal.
+   directory and the installer runs as it is, on every run, so the
+   machine always runs the code of the fetched branch. The task neither
+   looks at the settings of the archive nor decides whether the install
+   is needed.
 3. The panel subscribes to the subscription address of the bridge: the
    subscription is created or updated, refreshed, and the panel is given
    time to fetch the list, whose nodes join the pool of the local proxy
@@ -523,20 +523,11 @@ def task(ctx: Context) -> TaskResult:
     if fetched is not None:
         work_dir, root = fetched
         try:
-            source_version = _settings_value(
-                root / cfg.settings_file_name, cfg.settings_version_key
-            )
-            # The installer runs on every run instead of comparing versions:
-            # the branch is the source of truth, so the machine always runs
-            # the code that was just fetched. An unchanged version is
-            # rewritten idempotently, because the installer keeps the
-            # previous settings beside the new ones and restarts the
-            # service, and a new version replaces the installed copy.
-            _log(
-                f"installing the bridge of version "
-                f"{source_version if source_version is not None else 'unknown'} "
-                f"for the account {cfg.username}"
-            )
+            # The installer runs as it is, on every run: the task neither
+            # looks at the settings of the archive nor decides whether the
+            # install is needed, and what the installer does with the
+            # settings on the machine is its own business.
+            _log(f"installing the bridge for the account {cfg.username}")
             installed, message = _run_the_installer(
                 cfg, engine, root / cfg.installer_file_name, timeout
             )
