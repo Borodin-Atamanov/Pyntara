@@ -369,35 +369,7 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
             "token": "token",
             "reason": "reason",
         },
-        "panel_field_keys": {
-            "username": "username",
-            "password": "password",
-            "id": "id",
-            "email": "email",
-            "enable": "enable",
-            "sub_id": "subId",
-            "inbound_ids": "inboundIds",
-            "client": "client",
-            "tag": "tag",
-            "port": "port",
-            "protocol": "protocol",
-            "network": "network",
-            "inbound_tag": "inboundTag",
-            "outbound_tag": "outboundTag",
-            "matched": "matched",
-            "domain": "domain",
-            "ip": "ip",
-            "kind": "kind",
-            "tokens": "tokens",
-            "token": "token",
-            "private_key": "privateKey",
-            "public_key": "publicKey",
-            "sub_path": "subPath",
-            "sub_json_path": "subJsonPath",
-            "sub_clash_path": "subClashPath",
-            "xray_setting": "xraySetting",
-            "outbound_test_url": "outboundTestUrl",
-        },
+        "panel_field_keys": make_config().three_x_ui_xray_setup.panel_field_keys,
         "xray_field_keys": make_config().three_x_ui_xray_setup.xray_field_keys,
         "xray_values": make_config().three_x_ui_xray_setup.xray_values,
         "vless_link_query_keys": (
@@ -1199,6 +1171,43 @@ class TestPanelPathsComeFromConfig:
             "http://127.0.0.1:3579/custom/xray",
         ]
 
+    def test_subscription_calls_use_the_configured_paths(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[str] = []
+
+        def fake_request(
+            opener: object, url: str, **kwargs: object
+        ) -> tuple[int, str]:
+            del opener, kwargs
+            seen.append(url)
+            return (200, json.dumps({"success": True, "obj": []}))
+
+        monkeypatch.setattr("pyntara.xui._request", fake_request)
+        cfg = _cfg(
+            panel_outbound_subs_path="/custom/subs",
+            panel_outbound_subs_item_path="/custom/subs/{subscription_id}",
+            panel_outbound_subs_refresh_path="/custom/subs/{subscription_id}/refresh",
+            panel_balancer_status_path="/custom/balancers",
+        )
+        env = {"XUI_PANEL_PORT": "3579"}
+        xui_client.list_outbound_subscriptions(cfg, env, 5)
+        assert (
+            xui_client.upsert_outbound_subscription(
+                cfg, env, {"remark": "sota-bridge"}, 5
+            )[0]
+            is True
+        )
+        xui_client.refresh_outbound_subscription(cfg, env, 4, 5)
+        xui_client.list_balancer_status(cfg, env, ("pyntara-fastest",), 5)
+        assert seen == [
+            "http://127.0.0.1:3579/custom/subs",
+            "http://127.0.0.1:3579/custom/subs",
+            "http://127.0.0.1:3579/custom/subs",
+            "http://127.0.0.1:3579/custom/subs/4/refresh",
+            "http://127.0.0.1:3579/custom/balancers?tags=pyntara-fastest",
+        ]
+
 
 class TestFindClient:
     """Tests for find_client."""
@@ -1570,6 +1579,214 @@ class TestDeleteInbound:
         ok, message = xui_client.delete_inbound(_cfg(), _ENV, 3, 5)
         assert ok is False
         assert message == "panel unreachable"
+
+
+class TestOutboundSubscriptions:
+    """Tests for the outbound subscription helpers."""
+
+    def test_lists_the_subscriptions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [{"id": 4, "remark": "sota-bridge"}],
+                    }
+                ),
+            ),
+        )
+        subscriptions = xui_client.list_outbound_subscriptions(_cfg(), _ENV, 5)
+        assert subscriptions == [{"id": 4, "remark": "sota-bridge"}]
+        assert recorded[0].url.endswith("/panel/api/xray/outbound-subs")
+        assert recorded[0].header("Authorization") == "Bearer tok123"
+
+    def test_an_unreachable_panel_answers_no_subscriptions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        assert xui_client.list_outbound_subscriptions(_cfg(), _ENV, 5) == []
+
+    def test_finds_the_subscription_by_remark(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {"id": 1, "remark": "another"},
+                            {"id": 4, "remark": "sota-bridge"},
+                        ],
+                    }
+                ),
+            ),
+        )
+        found = xui_client.find_outbound_subscription_by_remark(
+            _cfg(), _ENV, "sota-bridge", 5
+        )
+        assert found is not None
+        assert found["id"] == 4
+
+    def test_finds_nothing_when_the_remark_is_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": [{"id": 1}]})),
+        )
+        assert (
+            xui_client.find_outbound_subscription_by_remark(
+                _cfg(), _ENV, "sota-bridge", 5
+            )
+            is None
+        )
+
+    def test_creates_the_subscription_when_the_remark_is_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": []})),
+            (200, json.dumps({"success": True, "msg": "subscription added"})),
+        )
+        ok, message = xui_client.upsert_outbound_subscription(
+            _cfg(),
+            _ENV,
+            {"remark": "sota-bridge", "tagPrefix": "sota-"},
+            5,
+        )
+        assert ok is True
+        assert message == "subscription added"
+        assert recorded[1].url.endswith("/panel/api/xray/outbound-subs")
+        assert recorded[1].json_body()["tagPrefix"] == "sota-"
+
+    def test_replaces_the_subscription_that_carries_the_remark(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {"id": 4, "remark": "sota-bridge", "url": "http://old"}
+                        ],
+                    }
+                ),
+            ),
+            (200, json.dumps({"success": True, "msg": "subscription updated"})),
+        )
+        ok, message = xui_client.upsert_outbound_subscription(
+            _cfg(),
+            _ENV,
+            {"remark": "sota-bridge", "url": "http://new"},
+            5,
+        )
+        assert ok is True
+        assert message == "subscription sota-bridge updated: subscription updated"
+        assert recorded[1].url.endswith("/panel/api/xray/outbound-subs/4")
+        assert recorded[1].json_body()["url"] == "http://new"
+
+    def test_refuses_a_payload_without_a_remark(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(monkeypatch, (200, "{}"))
+        ok, message = xui_client.upsert_outbound_subscription(
+            _cfg(), _ENV, {"url": "http://new"}, 5
+        )
+        assert ok is False
+        assert "remark" in message
+        assert recorded == []
+
+    def test_reports_a_failed_write(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": []})),
+            (200, json.dumps({"success": False, "msg": "url not allowed"})),
+        )
+        ok, message = xui_client.upsert_outbound_subscription(
+            _cfg(), _ENV, {"remark": "sota-bridge"}, 5
+        )
+        assert ok is False
+        assert message == "url not allowed"
+
+    def test_refreshes_the_subscription_by_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "msg": "refreshed"})),
+        )
+        ok, message = xui_client.refresh_outbound_subscription(_cfg(), _ENV, 4, 5)
+        assert ok is True
+        assert message == "refreshed"
+        assert recorded[0].url.endswith("/panel/api/xray/outbound-subs/4/refresh")
+        assert recorded[0].header("Authorization") == "Bearer tok123"
+
+
+class TestBalancerStatus:
+    """Tests for list_balancer_status."""
+
+    def test_asks_every_tag_in_one_query(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {
+                                "tag": "pyntara-fastest",
+                                "running": True,
+                                "override": "",
+                                "selected": "sota-node-1",
+                            }
+                        ],
+                    }
+                ),
+            ),
+        )
+        entries = xui_client.list_balancer_status(
+            _cfg(), _ENV, ("pyntara-fastest",), 5
+        )
+        assert entries[0]["selected"] == "sota-node-1"
+        assert recorded[0].url.endswith(
+            "/panel/api/xray/balancerStatus?tags=pyntara-fastest"
+        )
+
+    def test_an_unreachable_panel_answers_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(monkeypatch, (0, ""))
+        assert (
+            xui_client.list_balancer_status(_cfg(), _ENV, ("pyntara-fastest",), 5)
+            == []
+        )
+
+    def test_drops_entries_that_are_not_objects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": ["nonsense", {"tag": "x"}]})),
+        )
+        assert xui_client.list_balancer_status(_cfg(), _ENV, ("x",), 5) == [
+            {"tag": "x"}
+        ]
 
 
 class TestReadXrayTemplate:

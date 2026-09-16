@@ -13,7 +13,11 @@ inbound management. Stage 6 and 7 use the Xray template helpers
 (upsert_inbound, delete_inbound), the category check
 (validate_geodata_tokens) and the routing check (route_test) to turn the
 panel into the client of a remote server and to verify that the running
-core routes what the policy intends. The functions are stateless and take
+core routes what the policy intends. The outbound subscription helpers
+(list_outbound_subscriptions, upsert_outbound_subscription,
+refresh_outbound_subscription) let a task feed the panel from a URL that
+serves a live server list, and list_balancer_status asks the panel which
+member a load balancer currently picks. The functions are stateless and take
 the config and timeout as parameters, so they are testable without a
 running panel.
 """
@@ -425,6 +429,28 @@ def _bearer_headers(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> dict[s
     }
 
 
+def _payload_of(
+    cfg: ThreeXuiXraySetupConfig, status: int, body: str
+) -> object | None:
+    """The obj field of a successful panel answer, or None.
+
+    A successful answer is status 200 with a JSON document whose success
+    field is set. Shared by the list calls, so they parse an answer the
+    same way and differ only in what they do with the payload.
+    """
+
+    if status != 200:
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    answers = cfg.panel_answer_keys
+    if not isinstance(data, dict) or not data.get(answers["success"]):
+        return None
+    return data.get(answers["payload"])
+
+
 def list_inbounds(
     cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
@@ -444,16 +470,7 @@ def list_inbounds(
         headers=_bearer_headers(cfg, env),
         timeout=timeout,
     )
-    if status != 200:
-        return []
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        return []
-    answers = cfg.panel_answer_keys
-    if not isinstance(data, dict) or not data.get(answers["success"]):
-        return []
-    obj = data.get(answers["payload"])
+    obj = _payload_of(cfg, status, body)
     if not isinstance(obj, list):
         return []
     return obj
@@ -830,6 +847,208 @@ def delete_inbound(
         timeout=timeout,
     )
     return _message_result(cfg, status, body, "inbound deleted")
+
+
+def list_outbound_subscriptions(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> list[dict[str, object]]:
+    """List the panel subscriptions that build outbounds from a URL.
+
+    A subscription is an address the panel fetches on a schedule and turns
+    into outbounds whose tags carry its tag prefix; the Sotavpn bridge
+    serves such an address on the loopback interface. Returns the obj array
+    from the response and an empty list on failure, the same contract as
+    list_inbounds.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}{cfg.panel_outbound_subs_path}",
+        headers=_bearer_headers(cfg, env),
+        timeout=timeout,
+    )
+    obj = _payload_of(cfg, status, body)
+    if not isinstance(obj, list):
+        return []
+    return obj
+
+
+def find_outbound_subscription_by_remark(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    remark: str,
+    timeout: float,
+) -> dict[str, object] | None:
+    """Find one outbound subscription by the remark the panel shows.
+
+    The remark is the human label of a subscription, and the task writes
+    the configured remark, so the lookup stays stable across runs. Returns
+    the subscription object or None when no subscription carries it.
+    """
+
+    key = cfg.panel_field_keys["subscription_remark"]
+    for subscription in list_outbound_subscriptions(cfg, env, timeout):
+        if isinstance(subscription, dict) and subscription.get(key) == remark:
+            return subscription
+    return None
+
+
+def create_outbound_subscription(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    payload: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Create an outbound subscription through the panel API."""
+
+    base_url, opener = _bearer_opener(cfg, env)
+    data = json.dumps(payload).encode("utf-8")
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
+    status, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}{cfg.panel_outbound_subs_path}",
+        data=data,
+        headers=headers,
+        method=cfg.panel_http_methods["post"],
+        timeout=timeout,
+    )
+    return _message_result(cfg, status, body, "subscription created")
+
+
+def update_outbound_subscription(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    subscription: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Replace one outbound subscription, identified by its own id.
+
+    The panel persists the whole object, so the caller reads it, changes
+    the wanted keys and sends it back, the same contract as update_inbound.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    data = json.dumps(subscription).encode("utf-8")
+    fields = cfg.panel_field_keys
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
+    subscription_id = subscription.get(fields["id"])
+    status, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}"
+        + cfg.panel_outbound_subs_item_path.format(
+            subscription_id=subscription_id
+        ),
+        data=data,
+        headers=headers,
+        method=cfg.panel_http_methods["post"],
+        timeout=timeout,
+    )
+    return _message_result(cfg, status, body, "subscription updated")
+
+
+def upsert_outbound_subscription(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    payload: dict[str, object],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Create the subscription or replace the one with the same remark.
+
+    A machine that already carries the subscription gets its definition
+    replaced, so a rerun with a new address, a new tag prefix or a new
+    update interval converges instead of failing on a duplicate; a machine
+    without it gets the subscription created. The remark field of the
+    payload is the identity, as the tag is for upsert_inbound.
+    """
+
+    fields = cfg.panel_field_keys
+    remark = payload.get(fields["subscription_remark"])
+    if not isinstance(remark, str) or not remark:
+        return False, "subscription payload has no remark to identify it by"
+    existing = find_outbound_subscription_by_remark(cfg, env, remark, timeout)
+    if existing is None:
+        return create_outbound_subscription(cfg, env, payload, timeout)
+    replacement = dict(payload)
+    replacement[fields["id"]] = existing.get(fields["id"])
+    ok, message = update_outbound_subscription(cfg, env, replacement, timeout)
+    return ok, message if not ok else f"subscription {remark} updated: {message}"
+
+
+def refresh_outbound_subscription(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    subscription_id: object,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Ask the panel to fetch the subscription and rebuild its outbounds.
+
+    The panel also fetches on its own schedule; this call makes a fresh
+    outbound list appear right away, which is what the routing checks of
+    the same run need.
+    """
+
+    base_url, opener = _bearer_opener(cfg, env)
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "json"
+    ]
+    status, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}"
+        + cfg.panel_outbound_subs_refresh_path.format(
+            subscription_id=subscription_id
+        ),
+        data=b"{}",
+        headers=headers,
+        method=cfg.panel_http_methods["post"],
+        timeout=timeout,
+    )
+    return _message_result(cfg, status, body, "subscription refreshed")
+
+
+def list_balancer_status(
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    tags: tuple[str, ...],
+    timeout: float,
+) -> list[dict[str, object]]:
+    """Ask the panel which member each load balancer currently picks.
+
+    The panel answers one entry per requested tag with the member it
+    selected, and whether the operator pinned one by hand, so the caller
+    can prove that the pool has a live member. The query parameter name
+    and the entry field names come from the config. Returns the entries it
+    parsed and an empty list when the panel does not answer.
+    """
+
+    query = urllib.parse.urlencode(
+        {cfg.panel_field_keys["balancer_status_query"]: ",".join(tags)}
+    )
+    base_url, opener = _bearer_opener(cfg, env)
+    status, body = _api_call(
+        cfg,
+        opener,
+        f"{base_url}{cfg.panel_balancer_status_path}?{query}",
+        headers=_bearer_headers(cfg, env),
+        timeout=timeout,
+    )
+    obj = _payload_of(cfg, status, body)
+    if not isinstance(obj, list):
+        return []
+    return [entry for entry in obj if isinstance(entry, dict)]
 
 
 def find_client(
