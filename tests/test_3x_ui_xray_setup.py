@@ -621,7 +621,10 @@ class TestStage3:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # An inbound on the configured port already exists: stage 3 does
-        # nothing.
+        # nothing. The client half is stubbed here: its own tests cover it,
+        # and this one is about stage 3.
+        monkeypatch.setattr(xui, "_stage_local_proxy", lambda *_a, **_k: None)
+        monkeypatch.setattr(xui, "_stage_routing_policy", lambda *_a, **_k: None)
         _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -1210,6 +1213,8 @@ class TestProquintCredentials:
                 success=True, changed=True, message="connection profile stored"
             ),
         )
+        monkeypatch.setattr(xui, "_stage_local_proxy", lambda *_a, **_k: None)
+        monkeypatch.setattr(xui, "_stage_routing_policy", lambda *_a, **_k: None)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -3176,7 +3181,7 @@ class TestLocalProxyStage:
 
         monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
         cfg = self._cfg(tmp_path)
-        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
+        result = xui._stage_local_proxy(cfg, 30.0)
         assert result is not None
         assert result.changed is True
         assert created[0]["tag"] == "pyntara-local-proxy"
@@ -3227,7 +3232,7 @@ class TestLocalProxyStage:
 
         monkeypatch.setattr("pyntara.xui.upsert_inbound", fail_upsert)
         cfg = self._cfg(tmp_path)
-        assert xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
+        assert xui._stage_local_proxy(cfg, 30.0) is None
 
     def test_replaces_the_inbound_when_the_definition_differs(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3255,38 +3260,66 @@ class TestLocalProxyStage:
 
         monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
         cfg = self._cfg(tmp_path)
-        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
+        result = xui._stage_local_proxy(cfg, 30.0)
         assert result is not None
         assert result.changed is True
         assert written[0]["port"] == 10800
         assert written[0]["listen"] == "127.0.0.1"
 
-    def test_warns_without_a_client_profile(
+    def test_the_local_proxy_needs_no_profile(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # The client half is built on every machine, so a vault without a
+        # client profile is not a reason to leave the machine without its
+        # local proxy: the pool of that proxy is filled elsewhere.
         monkeypatch.setattr(
             "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
             lambda _repo_root, _cfg, _password: None,
         )
-        cfg = self._cfg(tmp_path)
-        result = xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, _facts())
-        assert result is not None
-        assert result.success is True
-        assert result.changed is False
-        assert any("not configured" in w for w in result.warnings or ())
+        _panel_env_fake(monkeypatch)
+        created: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None
+        )
 
-    def test_skips_the_machine_that_is_the_remote_server(
+        def fake_upsert(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            created.append(payload)
+            return True, "inbound added"
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_local_proxy(cfg, 30.0)
+        assert result is not None
+        assert result.changed is True
+        assert created
+
+    def test_the_remote_server_gets_its_local_proxy_too(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # The machine other clients connect to is not left without its own
+        # client half: only the connection to itself is left out, which is
+        # the business of stage 7.
         _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        created: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None
+        )
 
-        def fail_upsert(*args: object, **kwargs: object) -> object:
-            raise AssertionError("the server must not become its own client")
+        def fake_upsert(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            created.append(payload)
+            return True, "inbound added"
 
-        monkeypatch.setattr("pyntara.xui.upsert_inbound", fail_upsert)
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", fake_upsert)
         cfg = self._cfg(tmp_path)
-        facts = _facts(local=("203.0.113.9",))
-        assert xui._stage_local_proxy(cfg, _ctx(tmp_path), 30.0, facts) is None
+        result = xui._stage_local_proxy(cfg, 30.0)
+        assert result is not None
+        assert result.changed is True
+        assert created
 
 
 class TestRoutingPolicyStage:
@@ -3643,7 +3676,7 @@ class TestRoutingPolicyStage:
         assert rules[-1] == {
             "type": "field",
             "inboundTag": ["pyntara-local-proxy"],
-            "outboundTag": "pyntara-remote",
+            "balancerTag": cfg.pool_balancer_tag,
         }
         outbounds = cast("list[dict[str, object]]", writes[0]["outbounds"])
         assert [outbound["tag"] for outbound in outbounds] == [
@@ -3656,6 +3689,23 @@ class TestRoutingPolicyStage:
         routing = writes[0]["routing"]
         assert isinstance(routing, dict)
         assert routing["domainStrategy"] == "AsIs"
+        assert routing["balancers"] == [
+            {
+                "tag": cfg.pool_balancer_tag,
+                "selector": [cfg.pool_member_prefix, cfg.remote_outbound_tag],
+                "strategy": {"type": "leastPing"},
+                "fallbackTag": cfg.remote_outbound_tag,
+            }
+        ]
+        assert writes[0]["observatory"] == {
+            "subjectSelector": [
+                cfg.pool_member_prefix,
+                cfg.remote_outbound_tag,
+            ],
+            "probeUrl": cfg.pool_probe_url,
+            "probeInterval": cfg.pool_probe_interval,
+            "enableConcurrency": cfg.pool_enable_concurrency,
+        }
 
     def test_applies_the_policy_of_a_machine_in_russia(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3698,7 +3748,7 @@ class TestRoutingPolicyStage:
         blocked = [
             rule
             for rule in rules
-            if rule.get("outboundTag") == "pyntara-remote"
+            if rule.get("balancerTag") == cfg.pool_balancer_tag
             and rule.get("domain")
         ]
         assert len(blocked) == 2
@@ -3828,47 +3878,46 @@ class TestRoutingPolicyStage:
         facts = _facts(local=("190.55.165.52",))
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
         assert result is not None
-        assert any("did not leave by the remote server" in w for w in result.warnings or ())
+        assert any("did not leave by the remote path" in w for w in result.warnings or ())
 
-    def test_does_nothing_when_the_policy_is_already_in_place(
+    def test_a_second_run_writes_nothing(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The stored template already carries the policy: nothing is
-        # written and the checks pass, so the stage reports no change.
-        base = _template_settings()
-        policy_cfg = self._cfg(tmp_path)
-        seeded, _ = routing_policy.apply_routing_policy(
-            base,
-            self._policy(policy_cfg),
-            remote_outbound=routing_policy.build_remote_outbound(
-                "pyntara-remote",
-                self._profile(),
-                policy_cfg.xray_field_keys,
-                policy_cfg.xray_values,
-            ),
-            remove_panel_restrictions=True,
-        )
-        writes = self._prepare(monkeypatch, tmp_path, settings=seeded)
+        # The stage owns the policy and the pool, so a rerun finds both in
+        # place: nothing is written and the stage reports no change.
+        writes = self._prepare(monkeypatch, tmp_path)
+        answer = {
+            "pyntara-check.onion": "pyntara-tor",
+            "pyntara-check.i2p": "pyntara-i2p",
+            "doubleclick.net": "blocked",
+            "localhost": "direct",
+            "10.10.0.0": "direct",
+            "example.com": "sota-sota-us-nyc-01",
+        }
         seen: list[str] = []
         monkeypatch.setattr(
-            "pyntara.xui.route_test",
-            self._route_fake(
-                {
-                    "pyntara-check.onion": "pyntara-tor",
-                    "pyntara-check.i2p": "pyntara-i2p",
-                    "doubleclick.net": "blocked",
-                    "localhost": "direct",
-                    "10.10.0.0": "direct",
-                    "example.com": "pyntara-remote",
-                },
-                seen,
-            ),
+            "pyntara.xui.route_test", self._route_fake(answer, seen)
         )
         monkeypatch.setattr(
             xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
-        assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
+        first = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert first is not None
+        assert first.changed is True
+        assert writes
+        seeded = writes[0]
+        writes.clear()
+        self._prepare(monkeypatch, tmp_path, settings=seeded)
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", self._route_fake(answer, [])
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+        )
+        assert (
+            xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
+        )
         assert writes == []
 
     def _pool_settings(self, tmp_path: Path) -> dict[str, object]:
@@ -3896,15 +3945,14 @@ class TestRoutingPolicyStage:
         )
         return updated
 
-    def test_a_stored_pool_survives_and_serves_the_remote_classes(
+    def test_a_pool_of_an_earlier_run_is_kept_and_members_are_accepted(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The sotavpn task leaves a balancer whose selector covers the
-        # remote outbound, and a rerun of this stage comes after it. The
-        # remote classes must keep naming that balancer, and the core
-        # answers such a class with the member it picked, so the check
-        # accepts a member the selector covers instead of demanding the
-        # balancer tag itself.
+        # A stored template may carry the pool of an earlier run with the
+        # Sota nodes a subscription brought in. The remote classes must
+        # keep naming that pool, and the core answers such a class with the
+        # member it picked, so the check accepts a member the selector
+        # covers instead of demanding the balancer tag itself.
         writes = self._prepare(
             monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
         )
@@ -3927,12 +3975,16 @@ class TestRoutingPolicyStage:
         assert result.changed is True
         assert not result.warnings
         assert len(writes) == 1
-        assert (
-            routing_policy.find_pool_balancer(
-                writes[0], cfg.xray_field_keys, cfg.remote_outbound_tag
-            )
-            == "pyntara-fastest"
-        )
+        routing = writes[0]["routing"]
+        assert isinstance(routing, dict)
+        assert routing["balancers"] == [
+            {
+                "tag": cfg.pool_balancer_tag,
+                "selector": [cfg.pool_member_prefix, cfg.remote_outbound_tag],
+                "strategy": {"type": "leastPing"},
+                "fallbackTag": cfg.remote_outbound_tag,
+            }
+        ]
         rules = self._rules(writes[0])
         assert not [
             rule
@@ -3942,7 +3994,7 @@ class TestRoutingPolicyStage:
         assert [
             rule
             for rule in rules
-            if rule.get("balancerTag") == "pyntara-fastest"
+            if rule.get("balancerTag") == cfg.pool_balancer_tag
         ]
 
     def test_a_remote_answer_outside_the_pool_is_reported_with_the_pool(
@@ -3993,7 +4045,7 @@ class TestRoutingPolicyStage:
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
         assert result is not None
         assert any(
-            "did not leave by the remote server" in warning
+            "did not leave by the remote path" in warning
             for warning in result.warnings or ()
         )
 
@@ -4237,15 +4289,54 @@ class TestRoutingPolicyStage:
             values=cfg.xray_values,
         )
 
-    def test_skips_the_machine_that_is_the_remote_server(
+    def test_the_machine_that_is_the_remote_server_gets_the_pool_without_itself(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # The machine other clients connect to builds the same client half,
+        # minus the connection to itself: its remote classes leave through
+        # the pool of the subscriptions, the pool falls back to the direct
+        # outbound, and no request through the local proxy is checked
+        # against a remote path that does not exist there.
         _profile_source(monkeypatch)
-
-        def fail_read(*args: object, **kwargs: object) -> object:
-            raise AssertionError("the server must not route through itself")
-
-        monkeypatch.setattr("pyntara.xui.read_xray_template", fail_read)
+        writes = self._prepare(monkeypatch, tmp_path)
+        expected = self._expected_outbounds()
+        expected["example.com"] = "direct"
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", self._route_fake(expected, seen)
+        )
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("the proxy path must not be checked here")
+            ),
+        )
         cfg = self._cfg(tmp_path)
         facts = _facts(public=("203.0.113.9",))
-        assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts) is None
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
+        assert result is not None
+        assert result.changed is True
+        assert not result.warnings
+        outbounds = cast("list[dict[str, object]]", writes[0]["outbounds"])
+        assert [outbound["tag"] for outbound in outbounds] == [
+            "direct",
+            "blocked",
+            "pyntara-tor",
+            "pyntara-i2p",
+        ]
+        routing = writes[0]["routing"]
+        assert isinstance(routing, dict)
+        assert routing["balancers"] == [
+            {
+                "tag": cfg.pool_balancer_tag,
+                "selector": [cfg.pool_member_prefix],
+                "strategy": {"type": "leastPing"},
+                "fallbackTag": cfg.direct_outbound_tag,
+            }
+        ]
+        assert [
+            rule
+            for rule in self._rules(writes[0])
+            if rule.get("balancerTag") == cfg.pool_balancer_tag
+        ]

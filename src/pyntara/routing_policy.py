@@ -619,75 +619,6 @@ def build_balancer(
     return balancer
 
 
-def find_pool_balancer(
-    settings: dict[str, object],
-    fields: dict[str, str],
-    remote_outbound_tag: str,
-) -> str:
-    """The tag of a balancer whose selector covers the remote outbound.
-
-    A template that carries such a balancer routes its remote classes
-    through it: the three_x_ui_xray_setup task detects that balancer and
-    keeps its own rules pointed at the pool instead of at the outbound.
-    An empty answer means no balancer fronts the remote outbound, so the
-    rules name the outbound itself. Every malformed shape answers empty
-    instead of raising: the caller reads a document it does not own.
-    """
-
-    routing = settings.get(fields["routing"])
-    if not isinstance(routing, dict):
-        return ""
-    balancers = routing.get(fields["balancers"])
-    if not isinstance(balancers, list):
-        return ""
-    for balancer in balancers:
-        if not isinstance(balancer, dict):
-            continue
-        selector = balancer.get(fields["selector"])
-        if not isinstance(selector, list):
-            continue
-        entries = [entry for entry in selector if isinstance(entry, str)]
-        tag = balancer.get(fields["tag"])
-        if (
-            isinstance(tag, str)
-            and tag
-            and tag_matches_selector(remote_outbound_tag, entries)
-        ):
-            return tag
-    return ""
-
-
-def pool_selector_of(
-    settings: dict[str, object],
-    fields: dict[str, str],
-    balancer_tag: str,
-) -> tuple[str, ...]:
-    """The selector entries of a balancer by its tag; empty when absent.
-
-    The routing check of a machine whose remote classes leave through the
-    pool accepts any answer the selector covers, so the caller reads the
-    entries back from the template it read. Every malformed shape answers
-    an empty tuple instead of raising.
-    """
-
-    routing = settings.get(fields["routing"])
-    if not isinstance(routing, dict):
-        return ()
-    balancers = routing.get(fields["balancers"])
-    if not isinstance(balancers, list):
-        return ()
-    for balancer in balancers:
-        if not isinstance(balancer, dict):
-            continue
-        if balancer.get(fields["tag"]) != balancer_tag:
-            continue
-        selector = balancer.get(fields["selector"])
-        if not isinstance(selector, list):
-            continue
-        return tuple(entry for entry in selector if isinstance(entry, str))
-    return ()
-
-
 def apply_fastest_pool(
     template: dict[str, object],
     fields: dict[str, str],
@@ -723,47 +654,6 @@ def apply_fastest_pool(
     changed = json.dumps(updated, sort_keys=True) != json.dumps(
         template, sort_keys=True
     )
-    return updated, changed
-
-
-def point_remote_rules_at_balancer(
-    template: dict[str, object],
-    fields: dict[str, str],
-    *,
-    inbound_tag: str,
-    remote_outbound_tag: str,
-    balancer_tag: str,
-) -> tuple[dict[str, object], bool]:
-    """Send the remote classes of one inbound through a pool; report change.
-
-    Only the rules of the given inbound that name the remote outbound are
-    rewritten: their target becomes the load balancer and their match
-    stays as it is, so the classes the policy decided keep their decision
-    and the pool picks the member. Every other rule, outbound and section
-    is kept. The rewrite is idempotent: a rewritten rule names the
-    balancer, so it no longer matches the remote outbound and a second run
-    changes nothing. This is what lets a task that creates the pool after
-    the policy was applied leave the policy itself alone.
-    """
-
-    updated = json.loads(json.dumps(template))
-    routing = updated.get(fields["routing"])
-    if not isinstance(routing, dict):
-        return updated, False
-    rules = routing.get(fields["rules"])
-    if not isinstance(rules, list):
-        return updated, False
-    changed = False
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
-        if rule.get(fields["inbound_tag"]) != [inbound_tag]:
-            continue
-        if rule.get(fields["outbound_tag"]) != remote_outbound_tag:
-            continue
-        rule.pop(fields["outbound_tag"], None)
-        rule[fields["balancer_tag"]] = balancer_tag
-        changed = True
     return updated, changed
 
 

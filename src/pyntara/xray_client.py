@@ -383,19 +383,24 @@ def _answer_matches(
     answer: str,
     remote_balancer_tag: str,
     balancer_selector: tuple[str, ...],
+    pool_fallback_tag: str,
 ) -> bool:
     """Whether one core answer satisfies an expectation.
 
     A remote class whose traffic leaves through the pool is answered with
-    the member the balancer picked, so the balancer tag itself and any tag
-    its selector covers satisfy the expectation; every other class is
-    answered with the outbound the policy names for it.
+    the member the balancer picked, so the balancer tag itself, any tag its
+    selector covers and the fallback of the pool satisfy the expectation:
+    the core answers the fallback when no member is available, which is the
+    normal state of a pool whose subscription has not arrived yet. Every
+    other class is answered with the outbound the policy names for it.
     """
 
     if answer == expected:
         return True
     if remote_balancer_tag and expected == remote_balancer_tag:
-        return routing_policy.tag_matches_selector(answer, balancer_selector)
+        if routing_policy.tag_matches_selector(answer, balancer_selector):
+            return True
+        return bool(pool_fallback_tag) and answer == pool_fallback_tag
     return False
 
 
@@ -407,6 +412,7 @@ def _verify_routes(
     *,
     remote_balancer_tag: str = "",
     balancer_selector: tuple[str, ...] = (),
+    pool_fallback_tag: str = "",
 ) -> tuple[tuple[str, ...], str | None]:
     """Ask the running core about every destination class, and report.
 
@@ -416,10 +422,10 @@ def _verify_routes(
     is logged with the outbound it took; every disagreement is returned as
     a warning naming the destination, the expected outbound and the answer.
     A remote class that leaves through a pool accepts every member the
-    balancer selector covers. Returns (failures, undecided): undecided is
-    the reason the panel gave when a question got no decision at all, and
-    the failures of that round are dropped, because a round that answered
-    nothing proves nothing.
+    balancer selector covers and the fallback of the pool. Returns
+    (failures, undecided): undecided is the reason the panel gave when a
+    question got no decision at all, and the failures of that round are
+    dropped, because a round that answered nothing proves nothing.
     """
 
     failures: list[str] = []
@@ -437,14 +443,23 @@ def _verify_routes(
         if matched is None:
             return (), answer
         if matched and _answer_matches(
-            expected, answer, remote_balancer_tag, balancer_selector
+            expected,
+            answer,
+            remote_balancer_tag,
+            balancer_selector,
+            pool_fallback_tag,
         ):
             _log(f"routing check {destination}: {answer}")
             continue
         observed = answer if matched else f"no decision ({answer})"
+        alternatives = []
+        if remote_balancer_tag and expected == remote_balancer_tag:
+            alternatives.append("a member of its pool")
+            if pool_fallback_tag:
+                alternatives.append(f"its fallback {pool_fallback_tag}")
         expected_text = (
-            f"{expected} or a member of its pool"
-            if remote_balancer_tag and expected == remote_balancer_tag
+            f"{expected} or " + " or ".join(alternatives)
+            if alternatives
             else expected
         )
         failures.append(
@@ -462,6 +477,7 @@ def route_test_failures(
     *,
     remote_balancer_tag: str = "",
     balancer_selector: tuple[str, ...] = (),
+    pool_fallback_tag: str = "",
 ) -> tuple[tuple[str, ...], bool]:
     """Ask the core about every class, waiting for its first answer.
 
@@ -491,6 +507,7 @@ def route_test_failures(
         policy,
         remote_balancer_tag=remote_balancer_tag,
         balancer_selector=balancer_selector,
+        pool_fallback_tag=pool_fallback_tag,
     )
     if undecided is not None:
         _log(
@@ -515,6 +532,7 @@ def route_test_failures(
             policy,
             remote_balancer_tag=remote_balancer_tag,
             balancer_selector=balancer_selector,
+            pool_fallback_tag=pool_fallback_tag,
         )
         if undecided is None:
             _log(

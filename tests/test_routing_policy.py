@@ -23,9 +23,7 @@ from pyntara.routing_policy import (
     build_remote_outbound,
     build_routing_rules,
     build_tor_outbound,
-    find_pool_balancer,
     parse_vless_link,
-    pool_selector_of,
     tag_matches_selector,
 )
 
@@ -696,56 +694,6 @@ class TestFastestPool:
     def test_balancer_without_fallback_omits_the_field(self) -> None:
         assert "fallbackTag" not in self.pool_balancer(fallback_tag="")
 
-    def test_find_pool_balancer_sees_a_selector_covering_the_remote(self) -> None:
-        assert (
-            find_pool_balancer(
-                self.prepared_template(), _FIELDS, "pyntara-remote"
-            )
-            == "pyntara-fastest"
-        )
-
-    def test_find_pool_balancer_ignores_balancers_without_the_remote(self) -> None:
-        template = make_template()
-        routing = template["routing"]
-        assert isinstance(routing, dict)
-        routing["balancers"] = [
-            {"tag": "manual", "selector": ["sota-"], "strategy": {}}
-        ]
-        assert find_pool_balancer(template, _FIELDS, "pyntara-remote") == ""
-
-    def test_find_pool_balancer_survives_a_foreign_shape(self) -> None:
-        assert (
-            find_pool_balancer({"routing": "nonsense"}, _FIELDS, "pyntara-remote")
-            == ""
-        )
-        settings: dict[str, object] = {
-            "routing": {"balancers": ["nonsense", {"tag": 1}, {"tag": "x"}]}
-        }
-        assert find_pool_balancer(settings, _FIELDS, "pyntara-remote") == ""
-
-    def test_pool_selector_of_reads_the_entries_back(self) -> None:
-        # The routing check of a machine behind the pool asks the balancer
-        # about its members, so the selector is read back from the template
-        # that was just read, not guessed from the settings.
-        assert pool_selector_of(
-            self.prepared_template(), _FIELDS, "pyntara-fastest"
-        ) == ("sota-", "pyntara-remote")
-
-    def test_pool_selector_of_answers_empty_for_a_foreign_tag(self) -> None:
-        assert pool_selector_of(make_template(), _FIELDS, "pyntara-fastest") == ()
-        assert pool_selector_of({"routing": "nonsense"}, _FIELDS, "x") == ()
-        assert pool_selector_of({"routing": {"balancers": []}}, _FIELDS, "x") == ()
-        settings: dict[str, object] = {
-            "routing": {
-                "balancers": [
-                    "nonsense",
-                    {"tag": "x"},
-                    {"tag": "y", "selector": "nonsense"},
-                ]
-            }
-        }
-        assert pool_selector_of(settings, _FIELDS, "y") == ()
-
     def test_apply_fastest_pool_writes_both_objects(self) -> None:
         updated, changed = apply_fastest_pool(
             make_template(),
@@ -889,23 +837,22 @@ class TestFastestPool:
             first, sort_keys=True
         )
 
-    def test_the_pool_balancer_is_found_in_a_template_the_policy_wrote(self) -> None:
-        # The three_x_ui_xray_setup task detects the pool through exactly
-        # this question, so the objects of both tasks must agree.
-        prepared = self.prepared_template()
+    def test_the_pool_balancer_tag_is_written_into_the_rules(self) -> None:
+        # The panel task writes the pool and its rules in one document, so
+        # the objects of both tasks agree by construction: a template the
+        # policy wrote carries the tag the pool was built with.
         updated, _ = apply_routing_policy(
-            prepared,
+            make_template(),
             make_policy(),
             remote_outbound=remote_outbound(),
             remove_panel_restrictions=True,
-            remote_balancer_tag=find_pool_balancer(
-                prepared, _FIELDS, "pyntara-remote"
-            ),
+            remote_balancer_tag="pyntara-fastest",
         )
-        assert (
-            find_pool_balancer(updated, _FIELDS, "pyntara-remote")
-            == "pyntara-fastest"
-        )
+        assert [
+            rule.get("balancerTag")
+            for rule in rules_of(updated)
+            if rule.get("balancerTag")
+        ] == ["pyntara-fastest"]
 
 
 def test_the_panel_vocabulary_comes_from_the_config() -> None:
