@@ -1,12 +1,13 @@
-# Sotavpn pool of the local proxy
+# Sotavpn subscription of the panel
 
 This spec covers the sotavpn_setup task: the paid Sota Connect account of
-the source vault becomes a pool of remote exits of the 3x-ui panel, and the
-fastest member of the pool carries the traffic of the machine. The task is
-the second source of remote exits. It runs after three_x_ui_xray_setup,
-which makes this machine a client of one remote server ([3x-ui](3x-ui.md)),
-and it adds the pool to the policy of that client without rebuilding the
-policy.
+the source vault becomes a source of remote exits for the local proxy of
+this machine. The pool the traffic leaves through belongs to
+three_x_ui_xray_setup ([3x-ui](3x-ui.md)), which builds the local proxy
+and its pool on every machine; this task feeds that pool. It installs the
+bridge that serves the server list and subscribes the panel to it, so the
+nodes of the account appear among the outbounds the pool covers, and it
+neither reads nor writes the routing policy.
 
 ## The account and the bridge
 
@@ -14,8 +15,8 @@ The access key of the account is the password of the source vault entry
 named by key_entry_title. The source vaults of the fresh clone are the only
 source, opened with the run password the way local_vault_setup opens them;
 an unavailable vault, a missing entry and an empty password all mean the
-pool is not configured for this run, and the task reports that and changes
-nothing.
+subscription is not configured for this run, and the task reports that and
+changes nothing.
 
 The server list is served by the bridge program of the Sotavpn repository
 (https://github.com/Borodin-Atamanov/sotavpn-subscription-for-any-client).
@@ -37,45 +38,33 @@ the panel fetch of the same run finds the bridge up.
 
 The panel subscribes to the subscription address of the bridge, which
 carries the access key and asks for the raw answer: the list of vless links
-the panel turns into outbounds whose tags begin with the configured tag
-prefix. The subscription is created or updated by its remark, so a rerun
-with a new port, a new prefix or a new interval converges instead of
-failing on a duplicate, and a subscription that already carries the wanted
-values is left alone. Every run refreshes the subscription, so the node
-list is fetched from the bridge right away; the task then reads how many
-nodes the subscription carries and names the fetch error of the panel when
-one is recorded. allow_private of the subscription is what lets the panel
-fetch from the loopback address of the bridge.
+the panel turns into outbounds whose tags begin with the tag prefix, which
+is pool_member_prefix of the [three_x_ui_xray_setup] table: the pool of the
+local proxy covers every outbound whose tag begins with that prefix, so the
+nodes of the account join the pool. The subscription is created or updated
+by its remark, so a rerun with a new port, a new prefix or a new interval
+converges instead of failing on a duplicate, and a subscription that
+already carries the wanted values is left alone. Every run refreshes the
+subscription, so the node list is fetched from the bridge right away; the
+task then gives the panel the budget of subscription_fetch_wait_seconds to
+turn that list into outbounds, reads how many nodes the panel reports for
+the subscription, and names the fetch error of the panel when one is
+recorded. A panel that reports no node yet is not an error: the task says
+it in plain words, because the pool lives with or without members.
+allow_private of the subscription is what lets the panel fetch from the
+loopback address of the bridge.
 
-## The pool
+## Where the nodes end up
 
-The task writes two objects into the stored Xray template: one observatory
-that measures the members with the configured probe and one least-ping load
-balancer named by balancer_tag. The selector of both covers the tag prefix
-of the subscription and the remote outbound tag of the
-[three_x_ui_xray_setup] table, so the Sota nodes and the remote server of
-this machine compete in one pool. The core matches a selector entry by
-prefix and excludes from a balanced strategy every member its observatory
-does not observe, so the two selectors are kept equal. The balancer keeps
-the remote outbound as its fallback, so a pool without an available member
-still leaves the connection with the server of the client setup.
-
-The rules that send the remote classes of the policy to the remote outbound
-are repointed to the balancer while their match is left as it is: the
-classes the policy decided keep their decision, and the pool picks the
-member. The rewrite is a pure function of pyntara.routing_policy and is
-idempotent, so a later run of three_x_ui_xray_setup finds the pool and
-points its own rules at the balancer as well (the routing check of that
-task accepts any member the balancer selector covers).
-
-## A machine without the remote outbound
-
-The remote server itself carries no remote outbound: three_x_ui_xray_setup
-leaves the client half of that machine unconfigured. Such a machine gets
-the pool over the subscription nodes only, without the fallback, and no
-rule is rewritten. The client half of that machine is owned by
-three_x_ui_xray_setup and this task never builds it: here the pool is
-added, the policy is not.
+The panel merges the outbounds of a subscription into the configuration it
+builds on the next reconciliation, and its stored template never lists
+them, so nothing here writes a template. The tag prefix is the only joint:
+the pool of the local proxy covers the members by that prefix, its
+observatory begins to measure them after that reconciliation, and the
+remote classes then compete for the fastest member ([3x-ui](3x-ui.md),
+The pool of the remote classes). The pool, its fallback and the machine
+that is the remote server itself are the business of that task, not of
+this one.
 
 ## Secrets
 
@@ -86,12 +75,13 @@ the key before the message reaches the log or the terminal.
 
 ## Idempotency and warnings
 
-A run whose pool is already in place installs nothing, writes no
-subscription and writes no template, and reports done with no changes.
-Every step that could not be reached is a warning of a completed task, so
-one dead step leaves the rest of the machine configured: a bridge that does
-not answer, an installer that failed, a panel that could not fetch the
-list, a running core that does not report the balancer yet. The task
-belongs to the default sets of the server and desktop modes, so the check
-of the key runs on every installation and a machine without the entry
-simply reports the pool as not configured.
+A run whose bridge is installed and whose subscription already carries the
+wanted values installs nothing and writes no subscription, and reports done
+with no changes. Every step
+that could not be reached is a warning of a completed task, so one dead
+step leaves the rest of the machine configured: a bridge that does not
+answer, an installer that failed, a panel that could not fetch the list, a
+panel that reports no node yet. The task belongs to the default sets of
+the server and desktop modes, so the check of the key runs on every
+installation and a machine without the entry simply reports the
+subscription as not configured.
