@@ -39,6 +39,7 @@ xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
 xray_facts = importlib.import_module("pyntara.xray_facts")
 xray_panel = importlib.import_module("pyntara.xray_panel")
 xray_certificate = importlib.import_module("pyntara.xray_certificate")
+xray_inbound = importlib.import_module("pyntara.xray_inbound")
 
 TAG = "3.7.0"
 
@@ -717,7 +718,7 @@ class TestProquintCredentials:
         assert len(env["XUI_USERNAME"]) == 5
         assert len(env["XUI_PASSWORD"]) == 10
         assert len(env["XUI_WEB_BASE_PATH"]) == 11
-        email, client_id, sub_id = xui._client_identity(cfg, {})
+        email, client_id, sub_id = xray_inbound._client_identity(cfg, {})
         assert len(email) == 5
         assert len(client_id) == 11
         assert len(sub_id) == 11
@@ -729,7 +730,7 @@ class TestProquintCredentials:
         # client the panel already knows.
         cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
         stored = {"CLIENT_EMAIL": "a", "CLIENT_ID": "b", "SUB_ID": "c"}
-        assert xui._client_identity(cfg, stored) == ("a", "b", "c")
+        assert xray_inbound._client_identity(cfg, stored) == ("a", "b", "c")
 
     def test_installer_receives_credential_env(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -2663,7 +2664,7 @@ class TestConnectionStage:
             "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
         )
         monkeypatch.setattr(
-            xui, "_server_share_address", lambda _c, _f, _i, _t: "203.0.113.5"
+            xray_inbound, "_server_share_address", lambda _c, _f, _i, _t: "203.0.113.5"
         )
         monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
         ctx = _ctx(tmp_path)
@@ -2704,7 +2705,7 @@ class TestConnectionStage:
             "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
         )
         monkeypatch.setattr(
-            xui, "_server_share_address", lambda _c, _f, _i, _t: "203.0.113.5"
+            xray_inbound, "_server_share_address", lambda _c, _f, _i, _t: "203.0.113.5"
         )
         monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: None)
         ctx = _ctx(tmp_path)
