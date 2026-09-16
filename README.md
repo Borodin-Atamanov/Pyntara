@@ -114,6 +114,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/i2pd-service.md](docs/spec/i2pd-service.md) — i2pd service install from GitHub releases, version and asset selection, download trust  
 [docs/spec/yggdrasil-service.md](docs/spec/yggdrasil-service.md) — yggdrasil service install from GitHub releases, version and asset selection, download trust  
 [docs/spec/3x-ui.md](docs/spec/3x-ui.md) — 3x-ui Xray panel install via the official installer, version gate, credential boundary, server inbound and the local proxy client with its routing policy  
+[docs/spec/sotavpn-setup.md](docs/spec/sotavpn-setup.md) — Sotavpn bridge for the paid account, the panel outbound subscription and the least-ping pool of the Sota nodes and the remote server  
 [docs/spec/tor-service.md](docs/spec/tor-service.md) — Tor install from the Ubuntu archive, SSH onion service, address file and client side  
 [docs/spec/ssh-daemon-setup.md](docs/spec/ssh-daemon-setup.md) — SSH server install, drop-in configuration, pre-generated key deployment  
 [docs/spec/ssh-client-setup.md](docs/spec/ssh-client-setup.md) — system-wide SSH client defaults, drop-in configuration  

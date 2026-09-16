@@ -98,6 +98,7 @@ dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_se
 i2pd_service_setup -> config/i2pd_service_setup.py -> I2pdServiceSetupConfig -> i2pd_service_setup  
 yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup  
 three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupConfig -> three_x_ui_xray_setup  
+sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
 tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup  
 ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup  
 ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  

@@ -120,6 +120,12 @@ depends = ["yggdrasil_service_setup", "tor_setup", "i2pd_service_setup"]
 modes = ["server", "desktop"]
 
 [[tasks]]
+name = "sotavpn_setup"
+description = "Install the Sotavpn bridge for the desktop user, subscribe the panel to the server list of the paid account, and point the remote classes of the local proxy at the least-ping pool of the Sota nodes and the remote server."
+depends = ["three_x_ui_xray_setup"]
+modes = ["server", "desktop"]
+
+[[tasks]]
 name = "rustdesk_setup"
 description = "Install and configure the RustDesk remote desktop client with a per-machine password."
 depends = ["local_vault_setup"]
