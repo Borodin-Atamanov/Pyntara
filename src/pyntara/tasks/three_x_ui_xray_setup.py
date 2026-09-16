@@ -85,6 +85,7 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.github_release import fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -99,6 +100,7 @@ from pyntara.xray_certificate import _ssl_reachable, _stage_ssl
 from pyntara.xray_facts import (
     _collect_run_facts,
     _forward_upnp_ports,
+    _RunFacts,
 )
 from pyntara.xray_inbound import (
     _read_inbound_payload_template,
@@ -127,58 +129,34 @@ from pyntara.xray_panel import (
 IPV4_PATTERN = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
 
 
-def task(ctx: Context) -> TaskResult:
-    """Wrap the official 3x-ui installer; done when the same version runs.
+def _install_or_reuse(
+    ctx: Context,
+    cfg: ThreeXuiXraySetupConfig,
+    engine: EngineConfig,
+    timeout: float,
+    force: bool,
+    facts: _RunFacts,
+) -> tuple[TaskResult, list[str]]:
+    """Reach the target state of the panel, or leave the panel that is there.
 
     The goal is reached when the installed version equals the newest
     release tag and the service is enabled and active; the task then
-    returns changed=False without invoking the installer, because the
-    official installer always tears the panel down and rebuilds it. A
-    missing version, a version mismatch, a disabled or inactive service,
-    or force mode runs the official install.sh non-interactively and
-    waits for the service to become active. After the installer finishes
-    (or when the target state is already reached), stage 2 reads the
-    panel credentials, verifies the session through the REST API and
-    stores them in the runtime vault. Stage 3 creates a VLESS+REALITY
-    inbound on the configured port through the panel API; on a rerun it
-    finds the existing inbound by port and returns done. Stage 5 ensures
-    the panel client and stores the connection profile. Stages 6 and 7
-    give this machine a local proxy and route what enters it through the
-    same panel: stage 6 serves the inbound, stage 7 writes the routing
-    policy together with the pool of remote exits and verifies both
-    against the running core. Both stages run on every machine; the
-    machine that IS the remote server never creates the outbound that
-    would connect it to itself, so its pool carries the subscription
-    nodes only and falls back to the direct outbound. Every step is
-    reported to stdout:
-    measurements and decisions as single lines that include their result,
-    long-running commands as a line before and a line after. A step that
-    cannot run is a warning of a completed task: a release that cannot be
-    read, a busy panel or ACME port, a failed installer download, a failed
-    installer run and a panel that does not become active skip the install
-    alone, while the port convergence and every panel stage still run on
-    the panel that is there. The runner continues with the remaining tasks
-    and never stops here.
+    changes nothing, because the official installer always tears the panel
+    down and rebuilds it. Otherwise the fixed panel port and, when the
+    HTTP-01 challenge can reach this machine, the ACME port are freed, the
+    official install.sh runs non-interactively with the proquint
+    credentials, the service is awaited, and force mode applies the fresh
+    credentials and webBasePath to an existing panel. Returns the result
+    of this part and the warnings it collected: a release that cannot be
+    read, a busy port, a failed download, a failed run and a service that
+    does not become active are warnings of a completed task, and the panel
+    stages still run afterwards on the panel that is there.
     """
 
-    cfg = ctx.config.three_x_ui_xray_setup
-    engine = ctx.config.engine
-    timeout = ctx.config.engine.command_timeout_seconds
-    force = ctx.task_name in ctx.force_tasks
-
-    # Addresses and the UPnP router are read once per run: the stages below
-    # reuse them, so a machine without UPnP is not asked about its router
-    # for every port and the echo services are queried once.
-    facts = _collect_run_facts(engine, cfg, timeout)
-    facts = replace(
-        facts,
-        client_address=_forward_upnp_ports(engine, cfg, facts, timeout),
-    )
-
+    install_warnings: list[str] = []
     _log(f"querying the latest release of {cfg.github_repo}")
     tag = ""
     release: dict[str, object] = {}
-    install_warnings: list[str] = []
     try:
         release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
         tag = release_tag(release)
@@ -358,6 +336,30 @@ def task(ctx: Context) -> TaskResult:
                     warnings=tuple(install_warnings),
                 )
 
+    return result, install_warnings
+
+
+def _run_panel_stages(
+    ctx: Context,
+    cfg: ThreeXuiXraySetupConfig,
+    engine: EngineConfig,
+    timeout: float,
+    facts: _RunFacts,
+    result: TaskResult,
+    install_warnings: list[str],
+) -> TaskResult:
+    """Run every panel stage and merge their results into one answer.
+
+    The panel port is brought to the configured value and install-result.env
+    is synced with reality, the HTTPS stage runs, then stage 2 stores the
+    panel credentials, the subscription paths are moved off the defaults,
+    stage 3 creates the universal inbound, stage 5 ensures the client and
+    the connection profile, and stages 6 and 7 give the machine its local
+    proxy with the routing policy and the pool of remote exits. Every stage
+    reports its own warnings instead of failing, so one dead step leaves
+    the rest of the machine configured. Returns the merged result.
+    """
+
     # Bring the panel to the configured port and sync install-result.env
     # so its port and scheme match reality. Runs in both paths: a rerun
     # can find a panel on a port left by an earlier install, and the
@@ -520,3 +522,36 @@ def task(ctx: Context) -> TaskResult:
             warnings=all_warnings or (),
         )
     return result
+
+
+def task(ctx: Context) -> TaskResult:
+    """Set up the 3x-ui panel of this machine and report what changed.
+
+    The run facts are collected once, the panel is installed or left as it
+    is, and every panel stage then runs on the panel that is there. The
+    subjects themselves live in the pyntara.xray_* modules: the panel as a
+    service, the facts about this machine, the HTTPS, the server half and
+    the client half with its pool (docs/spec/3x-ui.md). A step that cannot
+    run is a warning of a completed task, so the runner continues with the
+    remaining tasks and never stops here.
+    """
+
+    cfg = ctx.config.three_x_ui_xray_setup
+    engine = ctx.config.engine
+    timeout = ctx.config.engine.command_timeout_seconds
+    force = ctx.task_name in ctx.force_tasks
+
+    # Addresses and the UPnP router are read once per run: the stages reuse
+    # them, so a machine without UPnP is not asked about its router for
+    # every port and the echo services are queried once.
+    facts = _collect_run_facts(engine, cfg, timeout)
+    facts = replace(
+        facts,
+        client_address=_forward_upnp_ports(engine, cfg, facts, timeout),
+    )
+    result, install_warnings = _install_or_reuse(
+        ctx, cfg, engine, timeout, force, facts
+    )
+    return _run_panel_stages(
+        ctx, cfg, engine, timeout, facts, result, install_warnings
+    )
