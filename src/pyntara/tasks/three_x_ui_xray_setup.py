@@ -91,12 +91,10 @@ from pyntara import xui as xui_client
 from pyntara.config import Config, EngineConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.github_release import fetch_latest_release, release_tag
-from pyntara.location import describe_answers, detect_country
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.public_address import (
     PublicAddresses,
-    directly_connected_networks,
     fetch_public_addresses,
     local_addresses,
 )
@@ -2259,37 +2257,8 @@ def _stage_routing_policy(
             "the fastest member of it carries them"
         )
 
-    lists, category_warnings = xray_client.checked_category_lists(
-        cfg, env, timeout
-    )
-    warnings = list(category_warnings)
-    own_networks = directly_connected_networks(ctx.config.engine, timeout)
-    report = detect_country(
-        ctx.config.engine,
-        cfg.country_services,
-        cfg.country_word,
-        cfg.country_query_timeout_seconds,
-        cfg.country_command_timeout_seconds,
-    )
-    for line in describe_answers(report):
-        _log(f"country check {line}")
-    if report.in_country:
-        _log(
-            f"country check: an answer named {cfg.country_word}, the machine "
-            "is treated as inside it"
-        )
-    else:
-        _log(
-            f"country check: no answer named {cfg.country_word}, the machine "
-            "is treated as outside it"
-        )
-
-    policy = xray_client.build_local_proxy_policy(
-        cfg,
-        lists=lists,
-        in_russia=report.in_country,
-        own_networks=own_networks,
-    )
+    warnings: list[str] = []
+    policy = xray_client.machine_policy(cfg, ctx, env, timeout, warnings)
     wanted, differs = xray_client.apply_policy_to_template(
         policy,
         template,

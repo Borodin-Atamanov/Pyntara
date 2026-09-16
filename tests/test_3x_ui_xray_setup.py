@@ -3309,12 +3309,12 @@ class TestRoutingPolicyStage:
         _profile_source(monkeypatch)
         _panel_env_fake(monkeypatch)
         monkeypatch.setattr(
-            xui,
+            xray_client,
             "directly_connected_networks",
             lambda _e, _t: ("10.10.0.0/24",),
         )
         monkeypatch.setattr(
-            xui,
+            xray_client,
             "detect_country",
             lambda *_args, **_kwargs: CountryReport(
                 answers=(),

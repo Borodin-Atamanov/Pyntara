@@ -23,7 +23,58 @@ import time
 from pyntara import routing_policy
 from pyntara import xui as xui_client
 from pyntara.config import ThreeXuiXraySetupConfig
+from pyntara.context import Context
+from pyntara.location import describe_answers, detect_country
 from pyntara.logger import log_progress as _log
+from pyntara.public_address import directly_connected_networks
+
+
+def machine_policy(
+    cfg: ThreeXuiXraySetupConfig,
+    ctx: Context,
+    env: dict[str, str],
+    timeout: float,
+    warnings: list[str],
+) -> routing_policy.LocalProxyPolicy:
+    """The routing policy of this machine, built from its own answers.
+
+    The category lists are first checked against the geodata files of the
+    panel, the networks of the machine are read from its interfaces and the
+    country is detected from the configured services, with the same lines
+    in the log every caller wants to see; the policy is then built from
+    those answers. Tokens the panel refused are appended to warnings, so
+    the calling task reports them with its own result, and the log lines
+    name the country answer the decision came from.
+    """
+
+    lists, category_warnings = checked_category_lists(cfg, env, timeout)
+    warnings.extend(category_warnings)
+    own_networks = directly_connected_networks(ctx.config.engine, timeout)
+    report = detect_country(
+        ctx.config.engine,
+        cfg.country_services,
+        cfg.country_word,
+        cfg.country_query_timeout_seconds,
+        cfg.country_command_timeout_seconds,
+    )
+    for line in describe_answers(report):
+        _log(f"country check {line}")
+    if report.in_country:
+        _log(
+            f"country check: an answer named {cfg.country_word}, the machine "
+            "is treated as inside it"
+        )
+    else:
+        _log(
+            f"country check: no answer named {cfg.country_word}, the machine "
+            "is treated as outside it"
+        )
+    return build_local_proxy_policy(
+        cfg,
+        lists=lists,
+        in_russia=report.in_country,
+        own_networks=own_networks,
+    )
 
 
 def checked_category_lists(
