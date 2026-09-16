@@ -40,6 +40,7 @@ xray_facts = importlib.import_module("pyntara.xray_facts")
 xray_panel = importlib.import_module("pyntara.xray_panel")
 xray_certificate = importlib.import_module("pyntara.xray_certificate")
 xray_inbound = importlib.import_module("pyntara.xray_inbound")
+xray_local_proxy = importlib.import_module("pyntara.xray_local_proxy")
 
 TAG = "3.7.0"
 
@@ -3123,7 +3124,7 @@ def _profile_source(monkeypatch: pytest.MonkeyPatch, link: str = PROFILE_LINK) -
     """Make the source vault helper answer with a vault holding the link."""
 
     monkeypatch.setattr(
-        "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
+        "pyntara.xray_local_proxy.open_source_vault",
         lambda _repo_root, _cfg, _password: (
             _source_vault(link),
             Path("/repo/secrets/production.vault"),
@@ -3323,7 +3324,7 @@ class TestLocalProxyStage:
         # client profile is not a reason to leave the machine without its
         # local proxy: the pool of that proxy is filled elsewhere.
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.open_source_vault",
+            "pyntara.xray_local_proxy.open_source_vault",
             lambda _repo_root, _cfg, _password: None,
         )
         _panel_env_fake(monkeypatch)
@@ -3559,7 +3560,7 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3592,7 +3593,7 @@ class TestRoutingPolicyStage:
             lambda _c, _e, _t: "the panel reports its core stopped",
         )
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             lambda *a, **k: (_ for _ in ()).throw(
                 AssertionError("the proxy path must not be asked")
@@ -3663,7 +3664,7 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3696,7 +3697,7 @@ class TestRoutingPolicyStage:
             ),
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3779,7 +3780,7 @@ class TestRoutingPolicyStage:
         )
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {
@@ -3843,7 +3844,7 @@ class TestRoutingPolicyStage:
             lambda _c, _e, **kwargs: (True, "pyntara-remote"),
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3877,7 +3878,7 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3894,7 +3895,7 @@ class TestRoutingPolicyStage:
             lambda _c, _e, **kwargs: (True, "direct"),
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3922,7 +3923,7 @@ class TestRoutingPolicyStage:
             ),
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n")
         )
         cfg = self._cfg(tmp_path)
         facts = _facts(local=("190.55.165.52",))
@@ -3949,7 +3950,7 @@ class TestRoutingPolicyStage:
             "pyntara.xui.route_test", self._route_fake(answer, seen)
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         cfg = self._cfg(tmp_path)
         first = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3963,7 +3964,7 @@ class TestRoutingPolicyStage:
             "pyntara.xui.route_test", self._route_fake(answer, [])
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
         )
         assert (
             xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
@@ -4014,7 +4015,7 @@ class TestRoutingPolicyStage:
         )
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {cfg.proxy_check_url: [(0, "198.51.100.20\n200")]}
@@ -4062,7 +4063,7 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr(
             "pyntara.xui.route_test", self._route_fake(expected, seen)
         )
-        monkeypatch.setattr(xui, "run_command", lambda *a, **k: _FakeProc(7, ""))
+        monkeypatch.setattr(xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(7, ""))
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
         assert result is not None
@@ -4088,7 +4089,7 @@ class TestRoutingPolicyStage:
             "pyntara.xui.route_test", self._route_fake(expected, seen)
         )
         monkeypatch.setattr(
-            xui, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n200")
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n200")
         )
         cfg = self._cfg(tmp_path)
         facts = _facts(local=("190.55.165.52",))
@@ -4142,7 +4143,7 @@ class TestRoutingPolicyStage:
         )
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {
@@ -4171,7 +4172,7 @@ class TestRoutingPolicyStage:
             calls.append(command[-1])
             return _FakeProc(7, "")
 
-        monkeypatch.setattr(xui, "run_command", fake_run)
+        monkeypatch.setattr(xray_local_proxy, "run_command", fake_run)
         cfg = replace(self._cfg(tmp_path), proxy_check_attempts=4)
         policy = cast(
             "routing_policy.LocalProxyPolicy",
@@ -4181,7 +4182,7 @@ class TestRoutingPolicyStage:
             "routing_policy.VlessProfile",
             SimpleNamespace(address="203.0.113.9"),
         )
-        warnings = xui._check_proxy_path(cfg, policy, profile, _facts())
+        warnings = xray_local_proxy._check_proxy_path(cfg, policy, profile, _facts())
         assert calls == [cfg.proxy_check_url] * 4
         assert warnings
         assert "in 4 attempts" in warnings[0]
@@ -4197,7 +4198,7 @@ class TestRoutingPolicyStage:
         )
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {
@@ -4221,7 +4222,7 @@ class TestRoutingPolicyStage:
         )
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {
@@ -4251,7 +4252,7 @@ class TestRoutingPolicyStage:
         cfg = self._cfg(tmp_path)
         renamed = replace(cfg, tunnel_probe_no_answer_code="NONE")
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             self._answers_by_url(
                 {
@@ -4301,7 +4302,7 @@ class TestRoutingPolicyStage:
                 return _FakeProc(0, "203.0.113.9\n200")
             raise AssertionError(f"unexpected request for {url}")
 
-        monkeypatch.setattr(xui, "run_command", fake)
+        monkeypatch.setattr(xray_local_proxy, "run_command", fake)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
         assert result is not None
         assert len(attempts) == 2
@@ -4356,7 +4357,7 @@ class TestRoutingPolicyStage:
             "pyntara.xui.route_test", self._route_fake(expected, seen)
         )
         monkeypatch.setattr(
-            xui,
+            xray_local_proxy,
             "run_command",
             lambda *a, **k: (_ for _ in ()).throw(
                 AssertionError("the proxy path must not be checked here")
