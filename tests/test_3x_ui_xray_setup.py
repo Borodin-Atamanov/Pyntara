@@ -37,6 +37,7 @@ from pyntara.xray_facts import _RunFacts as RunFacts
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
 xray_facts = importlib.import_module("pyntara.xray_facts")
+xray_panel = importlib.import_module("pyntara.xray_panel")
 
 TAG = "3.7.0"
 
@@ -687,7 +688,7 @@ class TestProquintCredentials:
         # with three dash separators, panel port from config.
         config = make_config(task_data_root=tmp_path)
         cfg = config.three_x_ui_xray_setup
-        env = xui._credential_env(cfg)
+        env = xray_panel._credential_env(cfg)
         proquint_letters = frozenset("bdfghjklmnprstvzaiou")
         assert env["XUI_PANEL_PORT"] == str(cfg.panel_port)
         assert len(env["XUI_USERNAME"]) == 10
@@ -711,7 +712,7 @@ class TestProquintCredentials:
             three_x_ui_random_sub_id_bytes=3,
         )
         cfg = config.three_x_ui_xray_setup
-        env = xui._credential_env(cfg)
+        env = xray_panel._credential_env(cfg)
         assert len(env["XUI_USERNAME"]) == 5
         assert len(env["XUI_PASSWORD"]) == 10
         assert len(env["XUI_WEB_BASE_PATH"]) == 11
@@ -847,6 +848,7 @@ class TestProquintCredentials:
             )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -881,8 +883,8 @@ class TestProquintCredentials:
             probed.append(list(command))
             return _FakeProc(0, "3.7.0\n")
 
-        monkeypatch.setattr(xui, "run_command", fake_run)
-        assert xui._installed_version(configured, 30.0) == "3.7.0"
+        monkeypatch.setattr(xray_panel, "run_command", fake_run)
+        assert xray_panel._installed_version(configured, 30.0) == "3.7.0"
         assert probed == [
             [str(configured.install_dir / "my-x-ui"), "--version"]
         ]
@@ -903,7 +905,7 @@ class TestProquintCredentials:
                 "--quiet",
             ),
         )
-        assert xui._panel_command(
+        assert xray_panel._panel_command(
             configured, configured.panel_port_command, port="1234"
         ) == [
             str(configured.install_dir / configured.binary_file_name),
@@ -930,6 +932,7 @@ class TestProquintCredentials:
             captured.append(cast(str | None, kwargs.get("service_process_name")))
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         configured = replace(
@@ -971,6 +974,7 @@ class TestProquintCredentials:
             )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = make_context(
             install_mode="server",
@@ -1008,6 +1012,7 @@ class TestProquintCredentials:
             raise RuntimeError("still occupied")
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         ctx = _ctx(tmp_path)
         calls = _install_fake(
             monkeypatch,
@@ -1037,6 +1042,7 @@ class TestProquintCredentials:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _t, _facts: False)
         monkeypatch.setattr(
             xui,
@@ -1088,6 +1094,7 @@ class TestProquintCredentials:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", fake_ensure_port_free)
         monkeypatch.setattr(xui, "_ssl_reachable", lambda _cfg, _t, _facts: True)
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
@@ -1261,11 +1268,13 @@ class TestPanelPortConvergence:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
-        monkeypatch.setattr(xui, "ensure_port_free", lambda *a, **k: None)
+        monkeypatch.setattr(xray_panel, "ensure_port_free", lambda *a, **k: None)
         cfg = self._cfg(tmp_path)
-        changed, message = xui._converge_panel_port(make_config().engine, cfg, 30)
+        changed, message = xray_panel._converge_panel_port(
+            make_config().engine, cfg, 30
+        )
         assert changed is True
         assert message == "panel port moved to 35353"
         assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
@@ -1285,10 +1294,12 @@ class TestPanelPortConvergence:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
         cfg = self._cfg(tmp_path)
-        changed, message = xui._converge_panel_port(make_config().engine, cfg, 30)
+        changed, message = xray_panel._converge_panel_port(
+            make_config().engine, cfg, 30
+        )
         assert changed is False
         assert message is None
         assert not any(c[1:3] == ["setting", "-port"] for c in calls)
@@ -1304,16 +1315,16 @@ class TestPanelPortConvergence:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
         monkeypatch.setattr(
-            xui,
+            xray_panel,
             "ensure_port_free",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("still occupied")),
         )
         cfg = self._cfg(tmp_path)
         with pytest.raises(RuntimeError):
-            xui._converge_panel_port(make_config().engine, cfg, 30)
+            xray_panel._converge_panel_port(make_config().engine, cfg, 30)
 
     def test_converges_panel_port_after_install(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1367,7 +1378,7 @@ class TestPanelPortConvergence:
             three_x_ui_install_result_env_path=env_path,
         )
         cfg = config.three_x_ui_xray_setup
-        assert xui._sync_install_result_env(cfg, 30) is True
+        assert xray_panel._sync_install_result_env(cfg, 30) is True
         text = env_path.read_text(encoding="utf-8")
         assert "XUI_PANEL_PORT=35353" in text
         assert "XUI_ACCESS_URL=https://203.0.113.5:35353/xui" in text
@@ -1390,18 +1401,18 @@ class TestPanelPortConvergence:
             three_x_ui_install_result_env_path=env_path,
         )
         cfg = config.three_x_ui_xray_setup
-        assert xui._sync_install_result_env(cfg, 30) is False
+        assert xray_panel._sync_install_result_env(cfg, 30) is False
 
     def test_wait_panel_http_returns_when_ready(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The panel answers on the first poll: the wait returns True.
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            "pyntara.xray_panel.run_command",
             lambda *a, **k: _FakeProc(0, ""),
         )
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
-        assert xui._wait_panel_http(self._cfg(tmp_path), 30) is True
+        assert xray_panel._wait_panel_http(self._cfg(tmp_path), 30) is True
 
     def test_wait_panel_http_retries_then_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1415,18 +1426,18 @@ class TestPanelPortConvergence:
             clock["now"] += seconds
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command",
+            "pyntara.xray_panel.run_command",
             lambda *a, **k: _FakeProc(7, ""),
         )
-        monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
-        monkeypatch.setattr(xui.time, "sleep", fake_sleep)
+        monkeypatch.setattr(xray_panel.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(xray_panel.time, "sleep", fake_sleep)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         cfg = replace(
             self._cfg(tmp_path),
             panel_listener_wait_seconds=1,
             readiness_check_delay_seconds=1,
         )
-        assert xui._wait_panel_http(cfg, 30) is False
+        assert xray_panel._wait_panel_http(cfg, 30) is False
 
     def test_the_panel_listener_budget_and_pause_come_from_the_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1447,10 +1458,10 @@ class TestPanelPortConvergence:
             clock["now"] += seconds
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
-        monkeypatch.setattr(xui.time, "monotonic", lambda: clock["now"])
-        monkeypatch.setattr(xui.time, "sleep", fake_sleep)
+        monkeypatch.setattr(xray_panel.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(xray_panel.time, "sleep", fake_sleep)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         config = make_config(
             task_data_root=tmp_path,
@@ -1460,7 +1471,7 @@ class TestPanelPortConvergence:
             three_x_ui_readiness_check_delay_seconds=2,
         )
         cfg = config.three_x_ui_xray_setup
-        assert xui._wait_panel_http(cfg, 30) is False
+        assert xray_panel._wait_panel_http(cfg, 30) is False
         # A budget of five seconds with a pause of two asks at 0, 2, 4 and
         # 6 seconds and stops after the fourth answer: the budget is what
         # ends the wait, not a count of checks.
@@ -1872,11 +1883,11 @@ class TestStageSsl:
             calls.append(list(command))
             return _FakeProc(0, "")
 
-        monkeypatch.setattr(xui, "run_command", fake_run)
-        monkeypatch.setattr(xui, "_actual_panel_port", lambda _cfg, _t: "1111")
-        monkeypatch.setattr(xui, "ensure_port_free", lambda *_a, **_k: None)
-        monkeypatch.setattr(xui, "_wait_panel_http", lambda *_a, **_k: True)
-        xui._converge_panel_port(make_config().engine, cfg, 30.0)
+        monkeypatch.setattr(xray_panel, "run_command", fake_run)
+        monkeypatch.setattr(xray_panel, "_actual_panel_port", lambda _cfg, _t: "1111")
+        monkeypatch.setattr(xray_panel, "ensure_port_free", lambda *_a, **_k: None)
+        monkeypatch.setattr(xray_panel, "_wait_panel_http", lambda *_a, **_k: True)
+        xray_panel._converge_panel_port(make_config().engine, cfg, 30.0)
         assert [
             "systemctl",
             "restart",
@@ -2239,17 +2250,17 @@ class TestRewriteEnv:
     def test_updates_values_preserving_order(self, tmp_path: Path) -> None:
         path = tmp_path / "env"
         path.write_text("A=1\nB=2\nC=3\n", encoding="utf-8")
-        assert xui._rewrite_env(path, {"B": "9", "D": "4"}) is True
+        assert xray_panel._rewrite_env(path, {"B": "9", "D": "4"}) is True
         assert path.read_text(encoding="utf-8") == "A=1\nB=9\nC=3\nD=4\n"
 
     def test_noop_when_unchanged(self, tmp_path: Path) -> None:
         path = tmp_path / "env"
         path.write_text("A=1\n", encoding="utf-8")
-        assert xui._rewrite_env(path, {"A": "1"}) is False
+        assert xray_panel._rewrite_env(path, {"A": "1"}) is False
         assert path.read_text(encoding="utf-8") == "A=1\n"
 
     def test_missing_file_returns_false(self, tmp_path: Path) -> None:
-        assert xui._rewrite_env(tmp_path / "nope", {"A": "1"}) is False
+        assert xray_panel._rewrite_env(tmp_path / "nope", {"A": "1"}) is False
 
 
 class TestTakeoverCredentials:
@@ -2284,15 +2295,16 @@ class TestTakeoverCredentials:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
+        monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         cfg = self._cfg(tmp_path)
         creds = {
             "XUI_USERNAME": "newuser",
             "XUI_PASSWORD": "newpass",
             "XUI_WEB_BASE_PATH": "new-path-here",
         }
-        ok, message = xui._takeover_credentials(cfg, 30, creds)
+        ok, message = xray_panel._takeover_credentials(cfg, 30, creds)
         assert ok is True
         assert "new-path-here" in message
         assert any(
@@ -2320,10 +2332,10 @@ class TestTakeoverCredentials:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
         cfg = self._cfg(tmp_path)
-        ok, message = xui._takeover_credentials(
+        ok, message = xray_panel._takeover_credentials(
             cfg,
             30,
             {"XUI_USERNAME": "u", "XUI_PASSWORD": "p", "XUI_WEB_BASE_PATH": "w"},
@@ -2341,10 +2353,10 @@ class TestTakeoverCredentials:
             return _FakeProc(0)
 
         monkeypatch.setattr(
-            "pyntara.tasks.three_x_ui_xray_setup.run_command", fake_run
+            "pyntara.xray_panel.run_command", fake_run
         )
         cfg = self._cfg(tmp_path)
-        ok, message = xui._takeover_credentials(
+        ok, message = xray_panel._takeover_credentials(
             cfg,
             30,
             {"XUI_USERNAME": "u", "XUI_PASSWORD": "p", "XUI_WEB_BASE_PATH": "w"},
