@@ -64,15 +64,20 @@ installed. Stage 7 routes what enters that inbound: advertising is
 dropped, .onion goes to the local tor proxy and .i2p to the local i2pd
 proxy, the machine's own names and networks go directly, and the rest
 depends on the country the configured services report. A machine outside
-Russia sends everything else to the remote server; a machine in Russia
-sends the resources blocked there and the services that refuse to serve
-Russia through the remote server, reaches what only answers inside Russia
-directly, and sends everything else directly as well. Every category
+Russia sends everything else to the pool of the remote classes, which
+carries the remote server and the nodes the panel builds from its
+outbound subscriptions; a machine in Russia sends the resources blocked
+there and the services that refuse to serve Russia to that pool, reaches
+what only answers inside Russia directly, and sends everything else
+directly as well. Every category
 token is checked against the geodata the panel installed before it is
 applied, and every class of destination is then verified against the
 running core with its routing test, because the core can hold a rule set
-the stored template no longer matches. The machine that is the remote
-server itself skips both stages: it does not connect to itself.
+the stored template no longer matches. The client half, the pool of
+remote exits included, is built on every machine: the machine that is
+the remote server itself never creates the outbound that would connect
+it to itself, so its pool carries the subscription nodes only and falls
+back to the direct outbound.
 """
 
 import ipaddress
@@ -2386,11 +2391,14 @@ def task(ctx: Context) -> TaskResult:
     inbound on the configured port through the panel API; on a rerun it
     finds the existing inbound by port and returns done. Stage 5 ensures
     the panel client and stores the connection profile. Stages 6 and 7
-    make this machine a client of the remote server named by that profile
-    through the same panel: stage 6 serves a local proxy inbound, stage 7
-    applies the routing policy of that proxy and verifies it against the
-    running core. A machine that IS the remote server skips stages 6 and
-    7. Every step is reported to stdout:
+    give this machine a local proxy and route what enters it through the
+    same panel: stage 6 serves the inbound, stage 7 writes the routing
+    policy together with the pool of remote exits and verifies both
+    against the running core. Both stages run on every machine; the
+    machine that IS the remote server never creates the outbound that
+    would connect it to itself, so its pool carries the subscription
+    nodes only and falls back to the direct outbound. Every step is
+    reported to stdout:
     measurements and decisions as single lines that include their result,
     long-running commands as a line before and a line after. A step that
     cannot run is a warning of a completed task: a release that cannot be
@@ -2699,8 +2707,10 @@ def task(ctx: Context) -> TaskResult:
             )
 
     # Stage 6: serve the local proxy of this machine through the panel,
-    # and stage 7: route what enters it. Both stages skip a machine that is
-    # the remote server itself, because it does not connect to itself.
+    # and stage 7: write the routing policy and the pool of remote exits
+    # and verify them. Both run on every machine; the machine that is the
+    # remote server itself gets no outbound to itself, so its pool falls
+    # back to the direct outbound.
     proxy_result = _stage_local_proxy(cfg, timeout)
     proxy_warnings: tuple[str, ...] = ()
     proxy_changed = False
