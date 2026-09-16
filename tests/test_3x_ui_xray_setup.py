@@ -25,6 +25,7 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import routing_policy
+from pyntara import xray_client
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
@@ -2193,7 +2194,7 @@ class TestSelfSignedCert:
             task_data_root=tmp_path,
             three_x_ui_install_result_env_path=env_path,
         )
-        env = xui._panel_env(config.three_x_ui_xray_setup, 30)
+        env = xui_client.panel_environment(config.three_x_ui_xray_setup, 30)
         assert env["XUI_SCHEME"] == "https"
         assert env["XUI_PANEL_PORT"] == "35353"
 
@@ -3080,8 +3081,7 @@ def _panel_env_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     """Answer the panel environment read without a panel on the machine."""
 
     monkeypatch.setattr(
-        xui,
-        "_panel_env",
+        "pyntara.xui.panel_environment",
         lambda _cfg, _timeout: {
             "XUI_API_TOKEN": "tok123",
             "XUI_PANEL_PORT": "3579",
@@ -3141,7 +3141,7 @@ class TestLocalProxyStage:
             },
         )
         assert (
-            xui._inbound_matches(
+            xray_client._inbound_matches(
                 renamed,
                 {"tag": "t", "upload": 0, "download": 0},
                 {"tag": "t", "upload": 10, "download": 20},
@@ -3149,13 +3149,13 @@ class TestLocalProxyStage:
             is True
         )
         assert (
-            xui._inbound_matches(
+            xray_client._inbound_matches(
                 renamed, {"tag": "t", "up": 0}, {"tag": "t", "up": 10}
             )
             is False
         )
         assert (
-            xui._inbound_matches(
+            xray_client._inbound_matches(
                 cfg, {"tag": "t", "up": 0}, {"tag": "t", "up": 10}
             )
             is True
@@ -3387,7 +3387,7 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xui,
+            xray_client,
             "_route_expectations",
             lambda _cfg, _policy: (
                 ("example.com", "domain", "direct"),
@@ -3399,7 +3399,7 @@ class TestRoutingPolicyStage:
             "routing_policy.LocalProxyPolicy",
             SimpleNamespace(inbound_tag="pyntara-local-proxy"),
         )
-        failures = xui._verify_routes(cfg, {}, 30.0, policy)
+        failures = xray_client._verify_routes(cfg, {}, 30.0, policy)
         assert failures == ((), None)
         assert ports == [8443, 8443]
 
@@ -3420,7 +3420,7 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xui,
+            xray_client,
             "_route_expectations",
             lambda _cfg, _policy: (
                 ("example.com", "domain", "direct"),
@@ -3435,7 +3435,7 @@ class TestRoutingPolicyStage:
             "routing_policy.LocalProxyPolicy",
             SimpleNamespace(inbound_tag="pyntara-local-proxy"),
         )
-        assert xui._verify_routes(cfg, {}, 30.0, policy) == ((), None)
+        assert xray_client._verify_routes(cfg, {}, 30.0, policy) == ((), None)
         assert words == [("my-tcp", "my-tls"), ("my-tcp", "my-tls")]
 
     def _expected_outbounds(self) -> dict[str, str]:

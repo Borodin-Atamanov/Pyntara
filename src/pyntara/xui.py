@@ -108,6 +108,26 @@ def panel_scheme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str:
     return schemes["http"]
 
 
+def panel_environment(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> dict[str, str]:
+    """The install-result.env pairs plus the panel URL scheme.
+
+    XUI_SCHEME carries https when the panel serves TLS and http
+    otherwise; the base URL builder reads it, so a caller works on both a
+    plain HTTP panel and one with a certificate. A missing or unreadable
+    file raises the error of the reader, and the caller reports it as the
+    reason its step could not run.
+    """
+
+    env = parse_install_result_env(
+        cfg.install_result_env_path,
+        panel_required_environment_keys(cfg),
+    )
+    env[cfg.panel_environment_keys["scheme"]] = panel_scheme(cfg, timeout)
+    return env
+
+
 def parse_install_result_env(
     path: Path, required_keys: tuple[str, ...]
 ) -> dict[str, str]:
