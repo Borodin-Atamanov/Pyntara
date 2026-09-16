@@ -28,11 +28,12 @@ account and it runs as a user service. The session environment the engine
 reads for that account goes into the environment of the installer, so the
 user manager is reachable from a run that has no session of its own.
 
-The installer runs only when the version of the archive settings differs
-from the version of the installed settings or the user service is not
-active; force mode runs it anyway. After that the task waits until the user
-service is active and the port of the bridge settings has a listener, so
-the panel fetch of the same run finds the bridge up.
+The installer runs on every run of the task, so the machine always runs the
+code of the fetched branch: the same version is rewritten idempotently, and
+the installer keeps the previous settings file beside the new ones and
+restarts the user service. After that the task waits until the user service
+is active and the port of the bridge settings has a listener, so the panel
+fetch of the same run finds the bridge up.
 
 ## The panel side
 

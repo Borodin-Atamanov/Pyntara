@@ -18,9 +18,10 @@ Order of the work:
    this machine: the task says so and changes nothing.
 2. The bridge program of the Sotavpn repository is installed for the
    desktop user. Its branch archive is downloaded into a temporary
-   directory, the version of the archive settings is compared with the
-   version of the installed settings, and the installer runs only when
-   they differ or the user service is not active.
+   directory and the installer runs on every run: the branch is the
+   source of truth, an unchanged version is rewritten idempotently, and a
+   new one replaces the installed copy. The version of the archive
+   settings is read only to name what is being installed in the journal.
 3. The panel subscribes to the subscription address of the bridge: the
    subscription is created or updated, refreshed, and the panel is given
    time to fetch the list, whose nodes join the pool of the local proxy
@@ -150,8 +151,8 @@ def _installed_settings_path(cfg: SotavpnSetupConfig) -> Path:
     """Path of the settings file of the installed bridge.
 
     The installation lives in the home directory of the desktop user, the
-    same layout the installer of the bridge builds, so the version and the
-    HTTP port are read from the installed file and never held here.
+    same layout the installer of the bridge builds, so the HTTP port is
+    read from the installed file and never held here.
     """
 
     return Path(cfg.home_dir) / cfg.user_install_relative_path / cfg.settings_file_name
@@ -485,14 +486,17 @@ def task(ctx: Context) -> TaskResult:
 
     The task is the source of remote exits of the panel: it installs the
     bridge that serves the Sota server list and subscribes the panel to
-    it. The pool that carries the remote classes, with its observatory and
-    its load balancer, was built by three_x_ui_xray_setup and is not
-    touched here: the nodes of this subscription join it because the panel
-    names them with the prefix that pool covers. Every step that could not
-    be reached is a warning of a completed task, so one dead step (a
-    bridge that does not answer, a panel that cannot fetch) leaves the
-    machine with the rest configured and the warning names what to look
-    at. A run whose subscription already matches writes nothing.
+    it. The bridge is installed on every run, so the machine always runs
+    the code of the fetched branch. The pool that carries the remote
+    classes, with its observatory and its load balancer, was built by
+    three_x_ui_xray_setup and is not touched here: the nodes of this
+    subscription join it because the panel names them with the prefix that
+    pool covers. Every step that could not be reached is a warning of a
+    completed task, so one dead step (a bridge that does not answer, a
+    panel that cannot fetch) leaves the machine with the rest configured
+    and the warning names what to look at. A run whose subscription
+    already matches writes no subscription, but it still installs the
+    bridge again.
     """
 
     cfg = ctx.config.sotavpn_setup
@@ -522,33 +526,25 @@ def task(ctx: Context) -> TaskResult:
             source_version = _settings_value(
                 root / cfg.settings_file_name, cfg.settings_version_key
             )
-            installed_version = _settings_value(
-                settings_path, cfg.settings_version_key
+            # The installer runs on every run instead of comparing versions:
+            # the branch is the source of truth, so the machine always runs
+            # the code that was just fetched. An unchanged version is
+            # rewritten idempotently, because the installer keeps the
+            # previous settings beside the new ones and restarts the
+            # service, and a new version replaces the installed copy.
+            _log(
+                f"installing the bridge of version "
+                f"{source_version if source_version is not None else 'unknown'} "
+                f"for the account {cfg.username}"
             )
-            if (
-                ctx.task_name not in ctx.force_tasks
-                and isinstance(source_version, str)
-                and source_version == installed_version
-                and _service_is_active(cfg, timeout)
-            ):
-                _log(
-                    f"the bridge {installed_version} is installed and its "
-                    "service is active"
-                )
+            installed, message = _run_the_installer(
+                cfg, engine, root / cfg.installer_file_name, timeout
+            )
+            _log(message)
+            if installed:
+                changed = True
             else:
-                _log(
-                    f"installing the bridge of version "
-                    f"{source_version if source_version is not None else 'unknown'} "
-                    f"for the account {cfg.username}"
-                )
-                installed, message = _run_the_installer(
-                    cfg, engine, root / cfg.installer_file_name, timeout
-                )
-                _log(message)
-                if installed:
-                    changed = True
-                else:
-                    warnings.append(message)
+                warnings.append(message)
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
 

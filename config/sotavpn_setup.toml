@@ -39,12 +39,13 @@ service_unit_name = "sotavpn-bridge.service"
 user_service_is_active_command = ["systemctl", "--machine", "{username}@.host", "--user", "is-active", "{unit}"]
 # Directory of the user-mode installation, relative to home_dir, and the
 # settings file inside it. Both mirror the USER_INSTALL set of the bridge
-# settings; the task reads the version and the HTTP port from that file
-# instead of holding either value.
+# settings; the task reads the HTTP port from that file instead of holding
+# the value.
 user_install_relative_path = ".local/share/sotavpn-bridge"
 settings_file_name = "settings.py"
-# Names of the value lines the task reads from the bridge settings file:
-# the version of the program and the plain HTTP port it serves.
+# Names of the value lines of the bridge settings file: the version of the
+# program, which the task reports when it installs the bridge, and the
+# plain HTTP port it serves.
 settings_version_key = "PROGRAM_VERSION"
 settings_http_port_key = "HTTP_PORT"
 # Title of the source vault entry whose password carries the access key

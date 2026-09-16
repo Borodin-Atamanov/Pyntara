@@ -323,7 +323,6 @@ class TestInstallAndSubscription:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
         *,
-        installed_version: str = "1.0.0",
         installed_port: int = 25080,
         source_version: str = "1.0.9",
         active: bool = True,
@@ -332,7 +331,9 @@ class TestInstallAndSubscription:
     ) -> tuple[Context, _Commands, _Panel, Path]:
         ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
-        _write_installed(ctx, version=installed_version, port=installed_port)
+        # The version inside the installed settings decides nothing: the
+        # installer runs on every run of the task.
+        _write_installed(ctx, version="1.0.0", port=installed_port)
         root = _fetched(monkeypatch, tmp_path, version=source_version)
         commands = _Commands(active=active, installer_ok=installer_ok)
         monkeypatch.setattr(sotavpn, "run_command", commands)
@@ -382,7 +383,7 @@ class TestInstallAndSubscription:
         assert panel.status_tags == [(sub_cfg.pool_balancer_tag,)]
         assert "the panel lists 2 nodes" in (result.message or "")
 
-    def test_a_second_run_writes_nothing(
+    def test_a_second_run_installs_again_and_writes_no_subscription(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
@@ -399,41 +400,27 @@ class TestInstallAndSubscription:
         _fetched(monkeypatch, tmp_path)
         second = sotavpn.task(ctx)
         assert second.success is True
-        assert second.changed is False
+        # The bridge is installed even when nothing changed, so a machine
+        # always runs the code of the fetched branch.
+        assert second.changed is True
         assert not second.warnings
         assert len(panel.upserts) == 1
         assert panel.refreshed == [7, 7]
         assert "the panel lists 2 nodes" in (second.message or "")
 
-    def test_the_same_version_with_an_active_service_is_not_reinstalled(
+    def test_the_installer_runs_even_when_the_version_matches(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # A machine that is already up to date is reinstalled idempotently
+        # instead of being skipped, because the branch is the source of
+        # truth and a version number can stay the same across new code.
         panel = _Panel()
         ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, installed_version="1.0.9", panel=panel
+            monkeypatch, tmp_path, source_version="1.0.0", panel=panel
         )
         result = sotavpn.task(ctx)
         assert result.success is True
-        assert commands.installer_run() is None
-
-    def test_force_mode_runs_the_installer_again(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        panel = _Panel()
-        ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, installed_version="1.0.9", panel=panel
-        )
-        forced = make_context(
-            task_name="sotavpn_setup",
-            install_mode="server",
-            repo_root=tmp_path,
-            task_data_root=tmp_path,
-            vault_password="run-pass",
-            force_tasks=frozenset({"sotavpn_setup"}),
-            config=ctx.config,
-        )
-        result = sotavpn.task(forced)
-        assert result.success is True
+        assert result.changed is True
         assert commands.installer_run() is not None
 
     def test_a_failed_installer_is_a_warning_and_the_rest_continues(
@@ -587,6 +574,15 @@ class TestReadinessAndSettings:
         _fetched(monkeypatch, tmp_path)
         commands = _Commands(active=True)
         monkeypatch.setattr(sotavpn, "run_command", commands)
+        # The installer runs on every run of the task and reads the session
+        # environment of the desktop user through the user manager, which
+        # is a real systemctl call: the stand-in keeps it off the machine.
+        monkeypatch.setattr(
+            sotavpn,
+            "user_session_environment",
+            lambda *_a, **_k: {"XDG_RUNTIME_DIR": "/run/user/1000"},
+        )
+        monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: 4321)
         panel.install(monkeypatch)
         return ctx
 
@@ -599,6 +595,11 @@ class TestReadinessAndSettings:
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
         monkeypatch.setattr(sotavpn, "run_command", _Commands(active=True))
+        monkeypatch.setattr(
+            sotavpn,
+            "user_session_environment",
+            lambda *_a, **_k: {"XDG_RUNTIME_DIR": "/run/user/1000"},
+        )
         monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: None)
         panel.install(monkeypatch)
         result = sotavpn.task(ctx)
@@ -618,6 +619,11 @@ class TestReadinessAndSettings:
         _fetched(monkeypatch, tmp_path)
         commands = _Commands(active=True)
         monkeypatch.setattr(sotavpn, "run_command", commands)
+        monkeypatch.setattr(
+            sotavpn,
+            "user_session_environment",
+            lambda *_a, **_k: {"XDG_RUNTIME_DIR": "/run/user/1000"},
+        )
         answers = {"count": 0}
 
         def fake_listener(*_args: object, **_kwargs: object) -> int | None:
@@ -670,7 +676,9 @@ class TestReadinessAndSettings:
         )
         result = sotavpn.task(ctx)
         assert result.success is True
-        assert result.changed is False
+        # The bridge is installed on every run, so the run counts as a
+        # change even when the panel could not be reached afterwards.
+        assert result.changed is True
         assert any("panel unreachable" in warning for warning in result.warnings)
 
 

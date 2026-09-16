@@ -33,12 +33,13 @@ class SotavpnSetupConfig:
     user_service_is_active_command reads its state through the user
     manager of the account. user_install_relative_path and
     settings_file_name locate the installed settings file, from which
-    settings_version_key and settings_http_port_key name the lines the
-    task reads (the program version and the plain HTTP port), so neither
-    value is held in this config. The installer runs with the session
-    environment the engine reads for the desktop user, so the user manager
-    of that account is reachable from a run that has no session of its
-    own.
+    settings_http_port_key names the line the task reads (the plain HTTP
+    port), so the port is not held in this config;
+    settings_version_key names the version line of the archive settings,
+    which the task only reports when it installs the bridge. The installer
+    runs with the session environment the engine reads for the desktop
+    user, so the user manager of that account is reachable from a run that
+    has no session of its own.
 
     The panel side: subscription_url_template is the address the panel
     subscribes to ({port} and {key} are filled in), and the subscription_
