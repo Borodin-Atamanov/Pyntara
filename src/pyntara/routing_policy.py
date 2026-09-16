@@ -39,6 +39,13 @@ the address decided.
 
 A machine that is the remote server itself has no remote outbound, so the
 rules that point at it are not built at all: nothing connects to itself.
+
+Besides the rules the module builds the objects of the Sotavpn pool:
+build_observatory, build_balancer and apply_fastest_pool write the
+observatory and the load balancer into the same template, and a policy
+applied with remote_balancer_tag points the rules of its remote classes
+at that balancer, which picks the fastest member among the pool (the
+Sota nodes of the subscription and the machine own remote server).
 """
 
 from __future__ import annotations
@@ -345,20 +352,34 @@ def _field_rule(
     outbound_tag: str,
     fields: dict[str, str],
     values: dict[str, str],
+    balancer_tag: str = "",
     **criteria: object,
 ) -> dict[str, object]:
-    """One field rule scoped to the local proxy inbound."""
+    """One field rule scoped to the local proxy inbound.
 
+    A rule names either an outbound (outbound_tag) or a load balancer
+    (balancer_tag): the core reads the two fields as alternatives, and a
+    balancer picks its own member from the pool.
+    """
+
+    target = (
+        {fields["balancer_tag"]: balancer_tag}
+        if balancer_tag
+        else {fields["outbound_tag"]: outbound_tag}
+    )
     return {
         fields["type"]: values["field"],
         fields["inbound_tag"]: [inbound_tag],
         **criteria,
-        fields["outbound_tag"]: outbound_tag,
+        **target,
     }
 
 
 def build_routing_rules(
-    policy: LocalProxyPolicy, *, remote_outbound_available: bool
+    policy: LocalProxyPolicy,
+    *,
+    remote_outbound_available: bool,
+    remote_balancer_tag: str = "",
 ) -> list[dict[str, object]]:
     """The rules the policy owns, in their fixed order.
 
@@ -372,7 +393,11 @@ def build_routing_rules(
     With remote_outbound_available=False the machine is the remote server
     itself: the rules that would send traffic to it are left out, so
     nothing connects to its own address and no rule points at an outbound
-    that does not exist.
+    that does not exist. remote_outbound_available means a remote path
+    exists at all: an outbound the policy owns or a pool balancer named by
+    remote_balancer_tag. When remote_balancer_tag is set, every remote
+    class names that load balancer instead of the remote outbound, so the
+    pool picks the fastest member of its own list.
     """
 
     rules: list[dict[str, object]] = []
@@ -438,6 +463,7 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
+                    balancer_tag=remote_balancer_tag,
                     **{
                         fields["domain"]: list(
                             policy.geo_restricted_domain_categories
@@ -452,6 +478,7 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
+                    balancer_tag=remote_balancer_tag,
                     **{
                         fields["domain"]: list(
                             policy.russia_blocked_domain_categories
@@ -494,6 +521,7 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
+                    balancer_tag=remote_balancer_tag,
                     **{
                         fields["ip"]: list(
                             policy.russia_blocked_ip_categories
@@ -516,9 +544,152 @@ def build_routing_rules(
             policy.remote_outbound_tag,
             fields,
             values,
+            balancer_tag=remote_balancer_tag,
         )
     )
     return rules
+
+
+def tag_matches_selector(
+    outbound_tag: str, selector: tuple[str, ...] | list[str]
+) -> bool:
+    """Whether a balancer selector covers an outbound tag.
+
+    The core matches a selector entry against an outbound tag by prefix
+    (documented: with the tags a, ab, c and ba the selector a matches a
+    and ab), so a tag is covered when it starts with any entry.
+    """
+
+    return any(
+        outbound_tag.startswith(entry) for entry in selector if entry
+    )
+
+
+def build_observatory(
+    fields: dict[str, str],
+    *,
+    subject_selector: tuple[str, ...],
+    probe_url: str,
+    probe_interval: str,
+    enable_concurrency: bool,
+) -> dict[str, object]:
+    """The observatory that measures the members of the pool.
+
+    The balanced strategies pick by its probe results, and an outbound the
+    observatory does not observe is excluded from the choice, so the
+    caller passes a subject selector that covers every member of the pool.
+    enable_concurrency probes every member at once instead of one after
+    another.
+    """
+
+    return {
+        fields["subject_selector"]: list(subject_selector),
+        fields["probe_url"]: probe_url,
+        fields["probe_interval"]: probe_interval,
+        fields["enable_concurrency"]: enable_concurrency,
+    }
+
+
+def build_balancer(
+    fields: dict[str, str],
+    *,
+    tag: str,
+    selector: tuple[str, ...],
+    strategy: str,
+    fallback_tag: str = "",
+) -> dict[str, object]:
+    """The load balancer that picks the fastest member of the pool.
+
+    strategy is the configured strategy word of the core (leastPing ships
+    as the default); fallback_tag names the outbound that carries the
+    traffic when every member is observed unavailable, and an empty value
+    leaves the fallback to the core (its first outbound).
+    """
+
+    balancer: dict[str, object] = {
+        fields["tag"]: tag,
+        fields["selector"]: list(selector),
+        fields["strategy"]: {fields["type"]: strategy},
+    }
+    if fallback_tag:
+        balancer[fields["fallback_tag"]] = fallback_tag
+    return balancer
+
+
+def find_pool_balancer(
+    settings: dict[str, object],
+    fields: dict[str, str],
+    remote_outbound_tag: str,
+) -> str:
+    """The tag of a balancer whose selector covers the remote outbound.
+
+    A template that carries such a balancer routes its remote classes
+    through it: the three_x_ui_xray_setup task detects that balancer and
+    keeps its own rules pointed at the pool instead of at the outbound.
+    An empty answer means no balancer fronts the remote outbound, so the
+    rules name the outbound itself. Every malformed shape answers empty
+    instead of raising: the caller reads a document it does not own.
+    """
+
+    routing = settings.get(fields["routing"])
+    if not isinstance(routing, dict):
+        return ""
+    balancers = routing.get(fields["balancers"])
+    if not isinstance(balancers, list):
+        return ""
+    for balancer in balancers:
+        if not isinstance(balancer, dict):
+            continue
+        selector = balancer.get(fields["selector"])
+        if not isinstance(selector, list):
+            continue
+        entries = [entry for entry in selector if isinstance(entry, str)]
+        tag = balancer.get(fields["tag"])
+        if (
+            isinstance(tag, str)
+            and tag
+            and tag_matches_selector(remote_outbound_tag, entries)
+        ):
+            return tag
+    return ""
+
+
+def apply_fastest_pool(
+    template: dict[str, object],
+    fields: dict[str, str],
+    *,
+    balancer: dict[str, object],
+    observatory: dict[str, object],
+) -> tuple[dict[str, object], bool]:
+    """Write the pool objects into the template; report whether it changed.
+
+    Only the balancer with the given tag and the single observatory object
+    of the document are written: a balancer with another tag and every
+    other section of the template stay as they are. The document carries
+    one observatory, so the object the pool needs replaces whatever is
+    there; the function is pure, so the caller compares the result with
+    the template it read and writes only when something really differs.
+    """
+
+    updated = json.loads(json.dumps(template))
+    updated[fields["observatory"]] = observatory
+    routing = updated.get(fields["routing"])
+    if not isinstance(routing, dict):
+        routing = {}
+        updated[fields["routing"]] = routing
+    existing = routing.get(fields["balancers"])
+    if not isinstance(existing, list):
+        existing = []
+    wanted = balancer.get(fields["tag"])
+    routing[fields["balancers"]] = [
+        entry
+        for entry in existing
+        if not (isinstance(entry, dict) and entry.get(fields["tag"]) == wanted)
+    ] + [balancer]
+    changed = json.dumps(updated, sort_keys=True) != json.dumps(
+        template, sort_keys=True
+    )
+    return updated, changed
 
 
 def _is_own_rule(rule: object, policy: LocalProxyPolicy) -> bool:
@@ -570,6 +741,7 @@ def apply_routing_policy(
     *,
     remote_outbound: dict[str, object] | None,
     remove_panel_restrictions: bool,
+    remote_balancer_tag: str = "",
 ) -> tuple[dict[str, object], bool]:
     """Bring the Xray template to the wanted state; report whether it changed.
 
@@ -579,6 +751,12 @@ def apply_routing_policy(
     an operator who edits the template by hand never loses work. The
     function is pure, so a caller compares the result with the template it
     read and writes only when something really differs.
+
+    remote_balancer_tag, when set, points the rules of the remote classes
+    at that load balancer instead of the remote outbound: the pool picks
+    the fastest member of its list, and a machine whose pool carries the
+    remote path (the machine that is the remote server itself) passes
+    None for remote_outbound and still gets the remote rules.
     """
 
     updated = json.loads(json.dumps(template))
@@ -652,7 +830,11 @@ def apply_routing_policy(
     )
     rest = [rule for rule in kept_rules if rule is not api_rule]
     our_rules = build_routing_rules(
-        policy, remote_outbound_available=remote_outbound is not None
+        policy,
+        remote_outbound_available=(
+            remote_outbound is not None or bool(remote_balancer_tag)
+        ),
+        remote_balancer_tag=remote_balancer_tag,
     )
     routing[fields["rules"]] = (
         ([api_rule] if api_rule is not None else []) + our_rules + rest

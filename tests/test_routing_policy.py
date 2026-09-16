@@ -14,13 +14,18 @@ from support import make_config
 from pyntara.routing_policy import (
     LocalProxyPolicy,
     VlessProfile,
+    apply_fastest_pool,
     apply_routing_policy,
+    build_balancer,
     build_i2p_outbound,
     build_local_proxy_inbound,
+    build_observatory,
     build_remote_outbound,
     build_routing_rules,
     build_tor_outbound,
+    find_pool_balancer,
     parse_vless_link,
+    tag_matches_selector,
 )
 
 DEFAULT_PORT = 443
@@ -630,6 +635,253 @@ class TestApplyRoutingPolicy:
         )
         tags = [outbound["tag"] for outbound in outbounds_of(updated)]
         assert tags.count("pyntara-tor") == 1
+
+
+class TestFastestPool:
+    """Tests for the pool builders of the Sotavpn task."""
+
+    def pool_balancer(self, **overrides: Any) -> dict[str, object]:
+        arguments: dict[str, Any] = {
+            "tag": "pyntara-fastest",
+            "selector": ("sota-", "pyntara-remote"),
+            "strategy": _VALUES["least_ping"],
+            "fallback_tag": "pyntara-remote",
+        }
+        arguments.update(overrides)
+        return build_balancer(_FIELDS, **arguments)
+
+    def pool_observatory(self) -> dict[str, object]:
+        return build_observatory(
+            _FIELDS,
+            subject_selector=("sota-", "pyntara-remote"),
+            probe_url="https://www.google.com/generate_204",
+            probe_interval="30s",
+            enable_concurrency=True,
+        )
+
+    def prepared_template(self) -> dict[str, object]:
+        updated, _ = apply_fastest_pool(
+            make_template(),
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        return updated
+
+    def test_selector_entries_match_by_prefix(self) -> None:
+        selector = ("sota-", "pyntara-remote")
+        assert tag_matches_selector("sota-sota-us-nyc-01", selector) is True
+        assert tag_matches_selector("pyntara-remote", selector) is True
+        assert tag_matches_selector("sota-", selector) is True
+        assert tag_matches_selector("direct", selector) is False
+        assert tag_matches_selector("pyntara-remot", ("pyntara-remote",)) is False
+
+    def test_observatory_carries_the_probe_settings(self) -> None:
+        assert self.pool_observatory() == {
+            "subjectSelector": ["sota-", "pyntara-remote"],
+            "probeUrl": "https://www.google.com/generate_204",
+            "probeInterval": "30s",
+            "enableConcurrency": True,
+        }
+
+    def test_balancer_carries_the_strategy_and_the_fallback(self) -> None:
+        assert self.pool_balancer() == {
+            "tag": "pyntara-fastest",
+            "selector": ["sota-", "pyntara-remote"],
+            "strategy": {"type": "leastPing"},
+            "fallbackTag": "pyntara-remote",
+        }
+
+    def test_balancer_without_fallback_omits_the_field(self) -> None:
+        assert "fallbackTag" not in self.pool_balancer(fallback_tag="")
+
+    def test_find_pool_balancer_sees_a_selector_covering_the_remote(self) -> None:
+        assert (
+            find_pool_balancer(
+                self.prepared_template(), _FIELDS, "pyntara-remote"
+            )
+            == "pyntara-fastest"
+        )
+
+    def test_find_pool_balancer_ignores_balancers_without_the_remote(self) -> None:
+        template = make_template()
+        routing = template["routing"]
+        assert isinstance(routing, dict)
+        routing["balancers"] = [
+            {"tag": "manual", "selector": ["sota-"], "strategy": {}}
+        ]
+        assert find_pool_balancer(template, _FIELDS, "pyntara-remote") == ""
+
+    def test_find_pool_balancer_survives_a_foreign_shape(self) -> None:
+        assert (
+            find_pool_balancer({"routing": "nonsense"}, _FIELDS, "pyntara-remote")
+            == ""
+        )
+        settings: dict[str, object] = {
+            "routing": {"balancers": ["nonsense", {"tag": 1}, {"tag": "x"}]}
+        }
+        assert find_pool_balancer(settings, _FIELDS, "pyntara-remote") == ""
+
+    def test_apply_fastest_pool_writes_both_objects(self) -> None:
+        updated, changed = apply_fastest_pool(
+            make_template(),
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        assert changed is True
+        assert updated["observatory"] == self.pool_observatory()
+        routing = updated["routing"]
+        assert isinstance(routing, dict)
+        assert routing["balancers"] == [self.pool_balancer()]
+
+    def test_apply_fastest_pool_keeps_foreign_balancers(self) -> None:
+        template = make_template()
+        routing = template["routing"]
+        assert isinstance(routing, dict)
+        routing["balancers"] = [
+            {"tag": "manual", "selector": ["x"], "strategy": {}}
+        ]
+        updated, _ = apply_fastest_pool(
+            template,
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        routing = updated["routing"]
+        assert isinstance(routing, dict)
+        balancers = routing["balancers"]
+        assert isinstance(balancers, list)
+        assert [entry["tag"] for entry in balancers] == [
+            "manual",
+            "pyntara-fastest",
+        ]
+
+    def test_apply_fastest_pool_replaces_its_own_and_is_idempotent(self) -> None:
+        first, changed_first = apply_fastest_pool(
+            make_template(),
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        second, changed_second = apply_fastest_pool(
+            first,
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        assert changed_first is True
+        assert changed_second is False
+        assert json.dumps(second, sort_keys=True) == json.dumps(
+            first, sort_keys=True
+        )
+
+    def test_apply_fastest_pool_does_not_modify_its_input(self) -> None:
+        template = make_template()
+        before = json.dumps(template, sort_keys=True)
+        apply_fastest_pool(
+            template,
+            _FIELDS,
+            balancer=self.pool_balancer(),
+            observatory=self.pool_observatory(),
+        )
+        assert json.dumps(template, sort_keys=True) == before
+
+    def test_the_remote_classes_name_the_balancer(self) -> None:
+        updated, changed = apply_routing_policy(
+            make_template(),
+            make_policy(in_russia=True),
+            remote_outbound=remote_outbound(),
+            remove_panel_restrictions=True,
+            remote_balancer_tag="pyntara-fastest",
+        )
+        assert changed is True
+        rules = rules_of(updated)
+        targets = [
+            rule.get("balancerTag") or rule.get("outboundTag")
+            for rule in rules
+            if rule.get("inboundTag") == ["pyntara-local-proxy"]
+        ]
+        assert targets == [
+            "blocked",
+            "pyntara-tor",
+            "pyntara-i2p",
+            "direct",
+            "direct",
+            "pyntara-fastest",
+            "pyntara-fastest",
+            "direct",
+            "direct",
+            "pyntara-fastest",
+            "direct",
+        ]
+        assert not any(
+            "balancerTag" in rule and "outboundTag" in rule for rule in rules
+        )
+
+    def test_the_server_machine_gets_its_remote_rules_from_the_pool(self) -> None:
+        # The machine that is the remote server itself has no remote
+        # outbound of its own; the balancer carries its remote classes.
+        updated, _ = apply_routing_policy(
+            make_template(),
+            make_policy(in_russia=False),
+            remote_outbound=None,
+            remove_panel_restrictions=True,
+            remote_balancer_tag="pyntara-fastest",
+        )
+        tags = [outbound["tag"] for outbound in outbounds_of(updated)]
+        assert "pyntara-remote" not in tags
+        targets = [
+            rule.get("balancerTag") or rule.get("outboundTag")
+            for rule in rules_of(updated)
+            if rule.get("inboundTag") == ["pyntara-local-proxy"]
+        ]
+        assert targets == [
+            "blocked",
+            "pyntara-tor",
+            "pyntara-i2p",
+            "direct",
+            "direct",
+            "pyntara-fastest",
+        ]
+
+    def test_the_pool_rules_are_stable_across_a_second_application(self) -> None:
+        first, _ = apply_routing_policy(
+            make_template(),
+            make_policy(),
+            remote_outbound=remote_outbound(),
+            remove_panel_restrictions=True,
+            remote_balancer_tag="pyntara-fastest",
+        )
+        second, changed = apply_routing_policy(
+            first,
+            make_policy(),
+            remote_outbound=remote_outbound(),
+            remove_panel_restrictions=True,
+            remote_balancer_tag="pyntara-fastest",
+        )
+        assert changed is False
+        assert json.dumps(second, sort_keys=True) == json.dumps(
+            first, sort_keys=True
+        )
+
+    def test_the_pool_balancer_is_found_in_a_template_the_policy_wrote(self) -> None:
+        # The three_x_ui_xray_setup task detects the pool through exactly
+        # this question, so the objects of both tasks must agree.
+        prepared = self.prepared_template()
+        updated, _ = apply_routing_policy(
+            prepared,
+            make_policy(),
+            remote_outbound=remote_outbound(),
+            remove_panel_restrictions=True,
+            remote_balancer_tag=find_pool_balancer(
+                prepared, _FIELDS, "pyntara-remote"
+            ),
+        )
+        assert (
+            find_pool_balancer(updated, _FIELDS, "pyntara-remote")
+            == "pyntara-fastest"
+        )
 
 
 def test_the_panel_vocabulary_comes_from_the_config() -> None:
