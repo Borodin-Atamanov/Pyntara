@@ -3503,18 +3503,8 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
             raw.get("settings_http_port_key"),
             "sotavpn_setup.settings_http_port_key",
         ),
-        runtime_dir_template=_nonempty_string_field(
-            raw.get("runtime_dir_template"), "sotavpn_setup.runtime_dir_template"
-        ),
-        session_bus_address_template=_nonempty_string_field(
-            raw.get("session_bus_address_template"),
-            "sotavpn_setup.session_bus_address_template",
-        ),
         key_entry_title=_nonempty_string_field(
             raw.get("key_entry_title"), "sotavpn_setup.key_entry_title"
-        ),
-        root_url_template=_nonempty_string_field(
-            raw.get("root_url_template"), "sotavpn_setup.root_url_template"
         ),
         subscription_url_template=_nonempty_string_field(
             raw.get("subscription_url_template"),

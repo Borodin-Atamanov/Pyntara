@@ -80,11 +80,6 @@ from config_helpers import (
             'observatory_probe_interval = "30s"',
             'observatory_probe_interval = ""',
         ),
-        # root_url_template is empty
-        base_config().replace(
-            'root_url_template = "http://127.0.0.1:{port}/"',
-            'root_url_template = ""',
-        ),
         # key_entry_title names no entry of the [vault_structure] table
         base_config().replace(
             'key_entry_title = "sotavpn_uuid"',

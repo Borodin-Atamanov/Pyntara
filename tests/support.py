@@ -251,6 +251,9 @@ def make_config(
 
     playwright_setup_home_dir: str = "/home/i",
 
+    sotavpn_setup_username: str = "i",
+    sotavpn_setup_home_dir: str = "/home/i",
+
     dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
     dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
     dnsproxy_service_unit_path: Path = Path("/etc/systemd/system/dnsproxy.service"),
@@ -941,6 +944,11 @@ def make_config(
             local_vault_path=local_vault_path,
             pass_file_path=local_vault_pass_file_path,
             local_vault_file_mode=local_vault_file_mode,
+        ),
+        sotavpn_setup=replace(
+            base.sotavpn_setup,
+            username=sotavpn_setup_username,
+            home_dir=sotavpn_setup_home_dir,
         ),
         tasks=tasks,
     )

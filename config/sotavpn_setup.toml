@@ -23,7 +23,7 @@ runuser_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}"
 archive_url = "https://codeload.github.com/Borodin-Atamanov/sotavpn-subscription-for-any-client/tar.gz/refs/heads/main"
 # Prefix and suffix of the downloaded archive file, so the file is
 # recognizable in the temporary directory the download uses.
-archive_temp_prefix = "sotavpn-bridge-"
+archive_temp_prefix = "sotavpn-bridge"
 archive_temp_suffix = ".tar.gz"
 # Installer of the bridge inside the archive and the command that runs
 # it as the desktop user: {python} is filled from the engine interpreter
@@ -47,24 +47,15 @@ settings_file_name = "settings.py"
 # the version of the program and the plain HTTP port it serves.
 settings_version_key = "PROGRAM_VERSION"
 settings_http_port_key = "HTTP_PORT"
-# Runtime directory of the user manager and its bus address, as
-# templates on the account id: the task hands them to the installer
-# environment when the run has no session environment of the desktop
-# user, so systemctl --user inside the installer reaches the user
-# manager of that account.
-runtime_dir_template = "/run/user/{uid}"
-session_bus_address_template = "unix:path=/run/user/{uid}/bus"
 # Title of the source vault entry whose password carries the access key
 # of the Sota account. An absent entry or an empty password means the
 # pool is not configured for this run: the task reports it and changes
 # nothing.
 key_entry_title = "sotavpn_uuid"
-# Addresses of the bridge on the loopback interface: the root page
-# answers while the program is up and is used as the readiness probe,
-# and the subscription address carries the access key and asks for the
-# raw answer, which is the list of vless links the panel turns into
-# outbounds.
-root_url_template = "http://127.0.0.1:{port}/"
+# Subscription address of the bridge on the loopback interface: it
+# carries the access key and asks for the raw answer, which is the list
+# of vless links the panel turns into outbounds. The port is read from
+# the installed settings file above, not held here.
 subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"
 # The outbound subscription the task creates in the panel: its label,
 # the prefix of the generated outbound tags, the refresh interval in
@@ -86,7 +77,7 @@ balancer_tag = "pyntara-fastest"
 # Observatory of that balancer: the balanced strategies pick by its
 # probe results, and an outbound it does not observe is excluded, so its
 # subject selector equals the balancer selector. The probe URL is the
-# tiny answer of Cloudflare that carries no body and is never cached.
+# tiny answer that carries no body and is never cached.
 observatory_probe_url = "https://www.google.com/generate_204"
 observatory_probe_interval = "30s"
 observatory_enable_concurrency = true

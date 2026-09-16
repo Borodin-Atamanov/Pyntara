@@ -726,6 +726,47 @@ def apply_fastest_pool(
     return updated, changed
 
 
+def point_remote_rules_at_balancer(
+    template: dict[str, object],
+    fields: dict[str, str],
+    *,
+    inbound_tag: str,
+    remote_outbound_tag: str,
+    balancer_tag: str,
+) -> tuple[dict[str, object], bool]:
+    """Send the remote classes of one inbound through a pool; report change.
+
+    Only the rules of the given inbound that name the remote outbound are
+    rewritten: their target becomes the load balancer and their match
+    stays as it is, so the classes the policy decided keep their decision
+    and the pool picks the member. Every other rule, outbound and section
+    is kept. The rewrite is idempotent: a rewritten rule names the
+    balancer, so it no longer matches the remote outbound and a second run
+    changes nothing. This is what lets a task that creates the pool after
+    the policy was applied leave the policy itself alone.
+    """
+
+    updated = json.loads(json.dumps(template))
+    routing = updated.get(fields["routing"])
+    if not isinstance(routing, dict):
+        return updated, False
+    rules = routing.get(fields["rules"])
+    if not isinstance(rules, list):
+        return updated, False
+    changed = False
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        if rule.get(fields["inbound_tag"]) != [inbound_tag]:
+            continue
+        if rule.get(fields["outbound_tag"]) != remote_outbound_tag:
+            continue
+        rule.pop(fields["outbound_tag"], None)
+        rule[fields["balancer_tag"]] = balancer_tag
+        changed = True
+    return updated, changed
+
+
 def _is_own_rule(rule: object, policy: LocalProxyPolicy) -> bool:
     """True when the rule was written by this policy.
 
