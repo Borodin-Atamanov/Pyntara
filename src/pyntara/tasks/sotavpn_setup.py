@@ -39,6 +39,7 @@ Order of the work:
 from __future__ import annotations
 
 import ast
+import pwd
 import shutil
 import subprocess
 import tarfile
@@ -59,6 +60,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import (
+    apply_owner,
     download_command,
     port_listener_pid,
     run_command,
@@ -191,6 +193,32 @@ def _service_is_active(cfg: SotavpnSetupConfig, timeout: float) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "active"
 
 
+def _hand_the_work_directory_to_the_user(
+    cfg: SotavpnSetupConfig, work_dir: Path
+) -> None:
+    """Make the temporary directory reachable by the account of the bridge.
+
+    The archive is downloaded and extracted by the root run, while the
+    installer runs as the desktop user and reads the extracted tree. The
+    directory keeps the private mode of the temporary directory and gets
+    the account as its owner, which is what lets that account traverse it
+    without opening it to anyone else; the extracted files keep the modes
+    of the archive and are readable. An unknown account leaves the
+    directory as it is and says so, and the shared ownership helper skips
+    the change outside a root run.
+    """
+
+    try:
+        record = pwd.getpwnam(cfg.username)
+    except KeyError:
+        _log(
+            f"the account {cfg.username} is unknown: the installer may not "
+            "read the extracted archive"
+        )
+        return
+    apply_owner(work_dir, record.pw_uid, record.pw_gid)
+
+
 def _fetch_the_bridge(
     cfg: SotavpnSetupConfig,
     engine: EngineConfig,
@@ -207,6 +235,7 @@ def _fetch_the_bridge(
     """
 
     work_dir = Path(tempfile.mkdtemp(prefix=cfg.archive_temp_prefix))
+    _hand_the_work_directory_to_the_user(cfg, work_dir)
     archive = work_dir / f"{cfg.archive_temp_prefix}{cfg.archive_temp_suffix}"
     try:
         run_command(
@@ -534,6 +563,10 @@ def task(ctx: Context) -> TaskResult:
         current = xui_client.find_outbound_subscription_by_remark(
             sub_cfg, env, cfg.subscription_remark, timeout
         )
+    current = xui_client.find_outbound_subscription_by_remark(
+        sub_cfg, env, cfg.subscription_remark, timeout
+    )
+    nodes: int | None = None
     if current is not None:
         last_error = current.get(fields["subscription_last_error"])
         if last_error:
@@ -543,6 +576,7 @@ def task(ctx: Context) -> TaskResult:
             )
         count = current.get(fields["subscription_outbound_count"])
         if isinstance(count, int) and count > 0:
+            nodes = count
             _log(f"the subscription carries {count} nodes")
 
     template = xui_client.read_xray_template(sub_cfg, env, timeout)
@@ -557,9 +591,6 @@ def task(ctx: Context) -> TaskResult:
 
     xray_fields = sub_cfg.xray_field_keys
     tags = _outbound_tags(template.settings, xray_fields)
-    members = tuple(
-        tag for tag in tags if tag.startswith(cfg.subscription_tag_prefix)
-    )
     remote_here = sub_cfg.remote_outbound_tag in tags
     selector = (
         (cfg.subscription_tag_prefix, sub_cfg.remote_outbound_tag)
@@ -625,16 +656,19 @@ def task(ctx: Context) -> TaskResult:
             f"selected={entry.get(fields['balancer_selected'])}"
         )
 
+    if nodes is None:
+        subscription_part = "the nodes of the subscription"
+    else:
+        subscription_part = f"{nodes} nodes of the subscription"
     if remote_here:
         message = (
-            f"the pool {cfg.balancer_tag} is in place: {len(members)} nodes of "
-            "the subscription and the remote server compete for the fastest "
-            "answer"
+            f"the pool {cfg.balancer_tag} is in place: {subscription_part} and "
+            "the remote server compete for the fastest answer"
         )
     else:
         message = (
-            f"the pool {cfg.balancer_tag} is in place: {len(members)} nodes of "
-            "the subscription compete for the fastest answer"
+            f"the pool {cfg.balancer_tag} is in place: {subscription_part} "
+            "compete for the fastest answer"
         )
     return TaskResult(
         success=True, changed=changed, message=message, warnings=tuple(warnings)

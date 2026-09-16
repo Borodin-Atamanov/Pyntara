@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import shutil
+import stat
 import subprocess
 import tarfile
 from dataclasses import replace
@@ -229,15 +230,17 @@ def _template_settings(
     with_remote: bool = True,
     with_remote_rule: bool = False,
     with_pool: bool = False,
+    with_subscription_nodes: bool = True,
 ) -> dict[str, object]:
     """A stored Xray document as three_x_ui_xray_setup leaves it."""
 
     fields, _values = _xray()
     outbounds: list[dict[str, object]] = [
         {"tag": "direct", "protocol": "freedom", "settings": {}},
-        {"tag": "sota-node-1", "protocol": "vless", "settings": {}},
-        {"tag": "sota-node-2", "protocol": "vless", "settings": {}},
     ]
+    if with_subscription_nodes:
+        outbounds.append({"tag": "sota-node-1", "protocol": "vless", "settings": {}})
+        outbounds.append({"tag": "sota-node-2", "protocol": "vless", "settings": {}})
     rules: list[dict[str, object]] = []
     if with_remote:
         outbounds.append({"tag": "pyntara-remote", "protocol": "vless", "settings": {}})
@@ -474,6 +477,42 @@ class TestInstallAndPool:
         assert all(KEY not in warning for warning in result.warnings)
         assert KEY not in (result.message or "")
 
+    def test_the_message_counts_the_nodes_of_the_subscription(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel merges the outbounds of a subscription into the built
+        # configuration and never stores them in the template, so the count
+        # of the message comes from the subscription itself.
+        panel = _Panel(
+            _template_settings(with_remote_rule=True, with_subscription_nodes=False),
+            outbound_count=198,
+        )
+        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
+        result = sotavpn.task(ctx)
+        assert result.success is True
+        assert "198 nodes of the subscription and the remote server compete" in (
+            result.message or ""
+        )
+        written = panel.writes[0]
+        routing = written["routing"]
+        assert isinstance(routing, dict)
+        balancers = routing["balancers"]
+        assert isinstance(balancers, list)
+        assert balancers[0]["selector"] == ["sota-", "pyntara-remote"]
+
+    def test_the_message_without_a_known_count(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        panel = _Panel(
+            _template_settings(with_remote_rule=True, with_subscription_nodes=False),
+            outbound_count=0,
+        )
+        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
+        result = sotavpn.task(ctx)
+        assert "the nodes of the subscription and the remote server compete" in (
+            result.message or ""
+        )
+
     def test_the_balancer_status_is_named_when_the_core_reports_it(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -626,6 +665,52 @@ class TestFetchTheBridge:
         assert (
             sotavpn._settings_value(root / SETTINGS_NAME, "PROGRAM_VERSION") == "1.0.9"
         )
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    def test_the_work_directory_stays_private_and_belongs_to_the_account(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The installer runs as the desktop user and reads the extracted
+        # tree, so the temporary directory keeps its private mode and gets
+        # that account as its owner instead of being opened to everyone.
+        prepared = self._archive(tmp_path)
+
+        def fake_run(command: object, **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]  # type: ignore[union-attr]
+            target = Path(next(part for part in argv if part.endswith(".tar.gz")))
+            shutil.copyfile(prepared, target)
+            return FakeProc(0, "")
+
+        monkeypatch.setattr(sotavpn, "run_command", fake_run)
+        cfg = _ctx(tmp_path).config
+        warnings: list[str] = []
+        fetched = sotavpn._fetch_the_bridge(
+            cfg.sotavpn_setup, cfg.engine, 30.0, warnings
+        )
+        assert fetched is not None
+        work_dir, root = fetched
+        assert stat.S_IMODE(work_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE((root / SETTINGS_NAME).stat().st_mode) & 0o444
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    def test_an_unknown_account_is_reported_and_the_fetch_continues(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        prepared = self._archive(tmp_path)
+
+        def fake_run(command: object, **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]  # type: ignore[union-attr]
+            target = Path(next(part for part in argv if part.endswith(".tar.gz")))
+            shutil.copyfile(prepared, target)
+            return FakeProc(0, "")
+
+        monkeypatch.setattr(sotavpn, "run_command", fake_run)
+        config = _ctx(tmp_path).config
+        cfg = replace(config.sotavpn_setup, username="no-such-account")
+        warnings: list[str] = []
+        fetched = sotavpn._fetch_the_bridge(cfg, config.engine, 30.0, warnings)
+        assert fetched is not None
+        work_dir, _root = fetched
         shutil.rmtree(work_dir, ignore_errors=True)
 
     def test_an_unusable_archive_is_a_warning(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
