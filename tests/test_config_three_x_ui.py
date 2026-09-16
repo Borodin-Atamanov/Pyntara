@@ -46,6 +46,31 @@ from config_helpers import assert_config_error, base_config
         base_config().replace(
             'reality_fingerprint = "chrome"', 'reality_fingerprint = ""'
         ),
+        # pool_balancer_tag is empty
+        base_config().replace(
+            'pool_balancer_tag = "pyntara-fastest"', 'pool_balancer_tag = ""'
+        ),
+        # pool_balancer_tag is the tag of an outbound
+        base_config().replace(
+            'pool_balancer_tag = "pyntara-fastest"', 'pool_balancer_tag = "direct"'
+        ),
+        # pool_member_prefix is empty
+        base_config().replace(
+            'pool_member_prefix = "sota-"', 'pool_member_prefix = ""'
+        ),
+        # pool_probe_url is empty
+        base_config().replace(
+            'pool_probe_url = "https://www.google.com/generate_204"',
+            'pool_probe_url = ""',
+        ),
+        # pool_probe_interval is empty
+        base_config().replace(
+            'pool_probe_interval = "30s"', 'pool_probe_interval = ""'
+        ),
+        # pool_enable_concurrency is a string, not a boolean
+        base_config().replace(
+            "pool_enable_concurrency = true", 'pool_enable_concurrency = "true"'
+        ),
         # subscription_path has no leading slash
         base_config().replace(
             'subscription_path = "/s/"', 'subscription_path = "s/"'

@@ -597,6 +597,11 @@ def base_config() -> str:
         'remote_outbound_tag = "pyntara-remote"\n'
         'tor_outbound_tag = "pyntara-tor"\n'
         'i2p_outbound_tag = "pyntara-i2p"\n'
+        'pool_balancer_tag = "pyntara-fastest"\n'
+        'pool_member_prefix = "sota-"\n'
+        'pool_probe_url = "https://www.google.com/generate_204"\n'
+        'pool_probe_interval = "30s"\n'
+        "pool_enable_concurrency = true\n"
         'direct_outbound_tag = "direct"\n'
         'blocked_outbound_tag = "blocked"\n'
         'tor_proxy_address = "127.0.0.1:9050"\n'
@@ -645,16 +650,12 @@ def base_config() -> str:
         'key_entry_title = "sotavpn_uuid"\n'
         'subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"\n'
         'subscription_remark = "sota-bridge"\n'
-        'subscription_tag_prefix = "sota-"\n'
         "subscription_update_interval_seconds = 300\n"
         "subscription_enabled = true\n"
         "subscription_allow_private = true\n"
         "subscription_allow_insecure = false\n"
         "subscription_prepend = false\n"
-        'balancer_tag = "pyntara-fastest"\n'
-        'observatory_probe_url = "https://www.google.com/generate_204"\n'
-        'observatory_probe_interval = "30s"\n'
-        "observatory_enable_concurrency = true\n"
+        "subscription_fetch_wait_seconds = 30\n"
         "bridge_ready_wait_seconds = 60\n"
         "readiness_check_delay_seconds = 2\n"
         "[tor_setup]\n"

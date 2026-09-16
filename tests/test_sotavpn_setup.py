@@ -1,10 +1,12 @@
-"""Tests for the sotavpn_setup task: the pool of the fastest remote exit.
+"""Tests for the sotavpn_setup task: the subscription of the fastest exit.
 
 The panel is always faked: the task talks to it through pyntara.xui, so
 patching those functions exercises the whole task logic without a panel.
-The bridge itself is faked at the shell boundary: the installer command and
-the state query are answered by one recording stand-in, and the extracted
-archive is built from a prepared tar.
+The fake refuses the template calls on purpose, because the task owns no
+part of the Xray document: the pool and the rules belong to the
+three_x_ui_xray_setup task. The bridge itself is faked at the shell
+boundary: the installer command and the state query are answered by one
+recording stand-in, and the extracted archive is built from a prepared tar.
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ from types import SimpleNamespace
 import pytest
 from support import FakeProc, make_config, make_context
 
-from pyntara import xui as xui_client
 from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import sotavpn_setup as sotavpn
@@ -32,17 +33,28 @@ INSTALLER_NAME = "install_sotavpn_bridge.py"
 SETTINGS_NAME = "settings.py"
 
 
-def _ctx(tmp_path: Path, **overrides: object) -> Context:
+def _ctx(
+    tmp_path: Path,
+    *,
+    sotavpn: dict[str, object] | None = None,
+    three_x_ui: dict[str, object] | None = None,
+) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
     config: Config = make_config(
         task_data_root=tmp_path,
         sotavpn_setup_home_dir=str(tmp_path / "home"),
     )
-    if overrides:
+    if sotavpn:
+        config = replace(
+            config, sotavpn_setup=replace(config.sotavpn_setup, **sotavpn)
+        )
+    if three_x_ui:
         config = replace(
             config,
-            sotavpn_setup=replace(config.sotavpn_setup, **overrides),
+            three_x_ui_xray_setup=replace(
+                config.three_x_ui_xray_setup, **three_x_ui
+            ),
         )
     return make_context(
         task_name="sotavpn_setup",
@@ -70,7 +82,9 @@ def _write_installed(ctx: Context, *, version: str, port: int) -> Path:
     return path
 
 
-def _bridge_tree(tmp_path: Path, *, version: str = "1.0.9", port: int = 25080) -> tuple[Path, Path]:
+def _bridge_tree(
+    tmp_path: Path, *, version: str = "1.0.9", port: int = 25080
+) -> tuple[Path, Path]:
     work_dir = tmp_path / "work"
     root = work_dir / "repo-main"
     root.mkdir(parents=True)
@@ -79,11 +93,19 @@ def _bridge_tree(tmp_path: Path, *, version: str = "1.0.9", port: int = 25080) -
     return work_dir, root
 
 
-def _fetched(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, version: str = "1.0.9", port: int = 25080) -> Path:
+def _fetched(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    version: str = "1.0.9",
+    port: int = 25080,
+) -> Path:
     """Patch the fetch step with a prepared tree and answer its root."""
 
     work_dir, root = _bridge_tree(tmp_path, version=version, port=port)
-    monkeypatch.setattr(sotavpn, "_fetch_the_bridge", lambda *_a, **_k: (work_dir, root))
+    monkeypatch.setattr(
+        sotavpn, "_fetch_the_bridge", lambda *_a, **_k: (work_dir, root)
+    )
     return root
 
 
@@ -142,49 +164,55 @@ def _no_vault(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _Panel:
-    """Stateful stand-in for the panel functions the task calls."""
+    """Stateful stand-in for the panel functions the task calls.
+
+    The template calls raise on purpose: the task must never touch the
+    Xray document, so a test that reaches one fails instead of passing on
+    an unread answer. counts, when set, is the queue of outbound counts
+    the subscription answers after the refresh, which is how a test makes
+    the wait for the node list take more than one read.
+    """
 
     def __init__(
         self,
-        settings: dict[str, object],
         *,
-        subscription: dict[str, object] | None = None,
         last_error: str = "",
         outbound_count: int = 2,
         status: list[dict[str, object]] | None = None,
+        counts: list[int] | None = None,
     ) -> None:
-        self.settings = json.loads(json.dumps(settings))
-        self.subscription = subscription
+        self.subscription: dict[str, object] | None = None
         self.last_error = last_error
         self.outbound_count = outbound_count
+        self.counts = counts
+        self.refreshed_once = False
+        self.pool_tag = make_config().three_x_ui_xray_setup.pool_balancer_tag
         self.status = (
             status
             if status is not None
             else [
                 {
-                    "tag": make_config().sotavpn_setup.balancer_tag,
+                    "tag": self.pool_tag,
                     "running": True,
                     "override": "",
-                    "selected": "sota-node-1",
+                    "selected": ["sota-node-1"],
                 }
             ]
         )
-        self.writes: list[dict[str, object]] = []
         self.upserts: list[dict[str, object]] = []
         self.refreshed: list[object] = []
+        self.status_tags: list[object] = []
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> _Panel:
         monkeypatch.setattr(
             "pyntara.xui.panel_environment", lambda _cfg, _timeout: {"port": "3579"}
         )
         monkeypatch.setattr(
-            "pyntara.xui.read_xray_template",
-            lambda _cfg, _env, _timeout: xui_client.XrayTemplate(
-                settings=json.loads(json.dumps(self.settings)),
-                outbound_test_url="",
-            ),
+            "pyntara.xui.read_xray_template", self._refuse_the_template
         )
-        monkeypatch.setattr("pyntara.xui.write_xray_template", self._write)
+        monkeypatch.setattr(
+            "pyntara.xui.write_xray_template", self._refuse_the_template
+        )
         monkeypatch.setattr(
             "pyntara.xui.find_outbound_subscription_by_remark", self._find
         )
@@ -197,105 +225,98 @@ class _Panel:
         monkeypatch.setattr("pyntara.xui.list_balancer_status", self._status)
         return self
 
-    def _write(self, _cfg: object, _env: object, wanted: object, _timeout: object) -> tuple[bool, str]:
-        self.writes.append(json.loads(json.dumps(wanted.settings)))  # type: ignore[attr-defined]
-        return True, "applied"
+    def _refuse_the_template(self, *_args: object, **_kwargs: object) -> object:
+        raise AssertionError("the task must not read or write the Xray template")
 
-    def _find(self, _cfg: object, _env: object, _remark: object, _timeout: object) -> dict[str, object] | None:
-        return None if self.subscription is None else dict(self.subscription)
+    def _find(
+        self, _cfg: object, _env: object, _remark: object, _timeout: object
+    ) -> dict[str, object] | None:
+        if self.subscription is None:
+            return None
+        if self.refreshed_once and self.counts:
+            self.subscription["outboundCount"] = self.counts.pop(0)
+        return dict(self.subscription)
 
-    def _upsert(self, _cfg: object, _env: object, payload: dict[str, object], _timeout: object) -> tuple[bool, str]:
+    def _upsert(
+        self,
+        _cfg: object,
+        _env: object,
+        payload: dict[str, object],
+        _timeout: object,
+    ) -> tuple[bool, str]:
         self.upserts.append(json.loads(json.dumps(payload)))
         self.subscription = {"id": 7, **payload}
         return True, "subscription created"
 
-    def _refresh(self, _cfg: object, _env: object, subscription_id: object, _timeout: object) -> tuple[bool, str]:
+    def _refresh(
+        self, _cfg: object, _env: object, subscription_id: object, _timeout: object
+    ) -> tuple[bool, str]:
         self.refreshed.append(subscription_id)
         assert self.subscription is not None
         self.subscription["lastError"] = self.last_error
         self.subscription["outboundCount"] = self.outbound_count
+        self.refreshed_once = True
         return True, "refreshed"
 
-    def _status(self, _cfg: object, _env: object, _tags: object, _timeout: object) -> list[dict[str, object]]:
+    def _status(
+        self, _cfg: object, _env: object, tags: object, _timeout: object
+    ) -> list[dict[str, object]]:
+        self.status_tags.append(tags)
         return [dict(item) for item in self.status]
-
-
-def _xray() -> tuple[dict[str, str], dict[str, str]]:
-    three_x_ui = make_config().three_x_ui_xray_setup
-    return dict(three_x_ui.xray_field_keys), dict(three_x_ui.xray_values)
-
-
-def _template_settings(
-    *,
-    with_remote: bool = True,
-    with_remote_rule: bool = False,
-    with_pool: bool = False,
-    with_subscription_nodes: bool = True,
-) -> dict[str, object]:
-    """A stored Xray document as three_x_ui_xray_setup leaves it."""
-
-    fields, _values = _xray()
-    outbounds: list[dict[str, object]] = [
-        {"tag": "direct", "protocol": "freedom", "settings": {}},
-    ]
-    if with_subscription_nodes:
-        outbounds.append({"tag": "sota-node-1", "protocol": "vless", "settings": {}})
-        outbounds.append({"tag": "sota-node-2", "protocol": "vless", "settings": {}})
-    rules: list[dict[str, object]] = []
-    if with_remote:
-        outbounds.append({"tag": "pyntara-remote", "protocol": "vless", "settings": {}})
-    if with_remote_rule:
-        rules.append(
-            {
-                fields["type"]: "field",
-                fields["inbound_tag"]: ["pyntara-local-proxy"],
-                fields["domain"]: ["geosite:openai"],
-                fields["outbound_tag"]: "pyntara-remote",
-            }
-        )
-    settings: dict[str, object] = {
-        "outbounds": outbounds,
-        "routing": {"rules": rules},
-    }
-    if with_pool:
-        settings["observatory"] = {"subjectSelector": ["sota-"]}
-    return settings
 
 
 class TestGate:
     """The task is off unless the source vault carries the key."""
 
-    def test_no_vault_means_no_change(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_no_vault_means_no_change(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         _no_vault(monkeypatch)
         monkeypatch.setattr(
-            sotavpn, "run_command", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no command may run"))
+            sotavpn,
+            "run_command",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                AssertionError("no command may run")
+            ),
         )
         result = sotavpn.task(_ctx(tmp_path))
         assert result.success is True
         assert result.changed is False
         assert "not configured" in (result.message or "")
 
-    def test_a_missing_entry_means_no_change(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_a_missing_entry_means_no_change(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         _vault(monkeypatch, key=None)
         monkeypatch.setattr(
-            sotavpn, "run_command", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no command may run"))
+            sotavpn,
+            "run_command",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                AssertionError("no command may run")
+            ),
         )
         result = sotavpn.task(_ctx(tmp_path))
         assert result.changed is False
         assert "not configured" in (result.message or "")
 
-    def test_an_empty_password_means_no_change(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_an_empty_password_means_no_change(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         _vault(monkeypatch, key="")
         monkeypatch.setattr(
-            sotavpn, "run_command", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no command may run"))
+            sotavpn,
+            "run_command",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                AssertionError("no command may run")
+            ),
         )
         result = sotavpn.task(_ctx(tmp_path))
         assert result.changed is False
         assert "not configured" in (result.message or "")
 
 
-class TestInstallAndPool:
-    """The installer, the subscription and the pool of a full run."""
+class TestInstallAndSubscription:
+    """The installer, the subscription and the wait of a full run."""
 
     def _prepare(
         self,
@@ -307,11 +328,9 @@ class TestInstallAndPool:
         source_version: str = "1.0.9",
         active: bool = True,
         installer_ok: bool = True,
-        settings: dict[str, object] | None = None,
         panel: _Panel | None = None,
-        **overrides: object,
     ) -> tuple[Context, _Commands, _Panel, Path]:
-        ctx = _ctx(tmp_path, **overrides)
+        ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version=installed_version, port=installed_port)
         root = _fetched(monkeypatch, tmp_path, version=source_version)
@@ -326,13 +345,17 @@ class TestInstallAndPool:
             lambda *_a, **_k: {"XDG_RUNTIME_DIR": "/run/user/1000"},
         )
         monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: 4321)
-        panel = (panel or _Panel(settings or _template_settings(with_remote_rule=True))).install(monkeypatch)
+        panel = panel or _Panel()
+        panel.install(monkeypatch)
         return ctx, commands, panel, root
 
-    def test_the_installer_runs_as_the_account_and_the_pool_is_written(
+    def test_the_installer_runs_as_the_account_and_the_subscription_is_written(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        ctx, commands, panel, root = self._prepare(monkeypatch, tmp_path)
+        panel = _Panel()
+        ctx, commands, panel, root = self._prepare(
+            monkeypatch, tmp_path, panel=panel
+        )
         result = sotavpn.task(ctx)
         assert result.success is True
         assert result.changed is True
@@ -346,66 +369,48 @@ class TestInstallAndPool:
         assert str(root / INSTALLER_NAME) in installer
         assert installer[-1] == "install"
 
+        sub_cfg = ctx.config.three_x_ui_xray_setup
         assert len(panel.upserts) == 1
         payload = panel.upserts[0]
         assert payload["remark"] == cfg.subscription_remark
-        assert payload["url"] == (
-            f"http://127.0.0.1:25080/sub/{KEY}/raw"
-        )
-        assert payload["tagPrefix"] == cfg.subscription_tag_prefix
+        assert payload["url"] == f"http://127.0.0.1:25080/sub/{KEY}/raw"
+        assert payload["tagPrefix"] == sub_cfg.pool_member_prefix
         assert payload["updateInterval"] == cfg.subscription_update_interval_seconds
         assert payload["allowPrivate"] is True
         assert payload["enabled"] is True
         assert panel.refreshed == [7]
+        assert panel.status_tags == [(sub_cfg.pool_balancer_tag,)]
+        assert "the panel lists 2 nodes" in (result.message or "")
 
-        assert len(panel.writes) == 1
-        written = panel.writes[0]
-        routing = written["routing"]
-        assert isinstance(routing, dict)
-        balancers = routing["balancers"]
-        assert isinstance(balancers, list)
-        assert balancers[0]["tag"] == cfg.balancer_tag
-        assert balancers[0]["selector"] == ["sota-", "pyntara-remote"]
-        assert balancers[0]["strategy"] == {"type": "leastPing"}
-        assert balancers[0]["fallbackTag"] == "pyntara-remote"
-        assert written["observatory"] == {
-            "subjectSelector": ["sota-", "pyntara-remote"],
-            "probeUrl": cfg.observatory_probe_url,
-            "probeInterval": cfg.observatory_probe_interval,
-            "enableConcurrency": cfg.observatory_enable_concurrency,
-        }
-        rules = routing["rules"]
-        assert isinstance(rules, list)
-        assert rules[0]["balancerTag"] == cfg.balancer_tag
-        assert "outboundTag" not in rules[0]
-        assert "2 nodes of the subscription" in (result.message or "")
-
-    def test_a_second_run_writes_nothing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        ctx, _commands, panel, _root = self._prepare(monkeypatch, tmp_path)
+    def test_a_second_run_writes_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        panel = _Panel()
+        ctx, _commands, panel, _root = self._prepare(
+            monkeypatch, tmp_path, panel=panel
+        )
         first = sotavpn.task(ctx)
         assert first.changed is True
+        assert len(panel.upserts) == 1
         # The real installer copies the archive settings onto the machine,
         # and the fetch step removes its temporary tree, so the second run
         # gets a fresh tree and the installed settings of that version.
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
-        panel.settings = json.loads(json.dumps(panel.writes[0]))
-        panel.upserts.clear()
-        panel.refreshed.clear()
-        panel.writes.clear()
         second = sotavpn.task(ctx)
         assert second.success is True
         assert second.changed is False
         assert not second.warnings
-        assert panel.writes == []
-        assert panel.upserts == []
-        assert panel.refreshed == [7]
+        assert len(panel.upserts) == 1
+        assert panel.refreshed == [7, 7]
+        assert "the panel lists 2 nodes" in (second.message or "")
 
     def test_the_same_version_with_an_active_service_is_not_reinstalled(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        panel = _Panel()
         ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, installed_version="1.0.9"
+            monkeypatch, tmp_path, installed_version="1.0.9", panel=panel
         )
         result = sotavpn.task(ctx)
         assert result.success is True
@@ -414,8 +419,9 @@ class TestInstallAndPool:
     def test_force_mode_runs_the_installer_again(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        panel = _Panel()
         ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, installed_version="1.0.9"
+            monkeypatch, tmp_path, installed_version="1.0.9", panel=panel
         )
         forced = make_context(
             task_name="sotavpn_setup",
@@ -433,135 +439,179 @@ class TestInstallAndPool:
     def test_a_failed_installer_is_a_warning_and_the_rest_continues(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        panel = _Panel()
         ctx, _commands, panel, _root = self._prepare(
-            monkeypatch, tmp_path, installer_ok=False
+            monkeypatch, tmp_path, installer_ok=False, panel=panel
         )
         result = sotavpn.task(ctx)
         assert result.success is True
         assert any("installer failed" in warning for warning in result.warnings)
-        assert panel.writes
+        assert panel.upserts
 
-    def test_a_machine_without_the_remote_server_gets_a_pool_without_it(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        panel = _Panel(_template_settings(with_remote=False, with_remote_rule=False))
-        ctx, _commands, panel, _root = self._prepare(
-            monkeypatch, tmp_path, panel=panel
+
+class TestSubscriptionState:
+    """What the task reports about the list and the pool."""
+
+    def _prepare(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        panel: _Panel,
+        **sections: dict[str, object] | None,
+    ) -> tuple[Context, _Panel]:
+        ctx = _ctx(
+            tmp_path,
+            sotavpn=sections.get("sotavpn"),
+            three_x_ui=sections.get("three_x_ui"),
         )
-        result = sotavpn.task(ctx)
-        assert result.success is True
-        written = panel.writes[0]
-        routing = written["routing"]
-        assert isinstance(routing, dict)
-        balancers = routing["balancers"]
-        assert isinstance(balancers, list)
-        assert balancers[0]["selector"] == ["sota-"]
-        assert "fallbackTag" not in balancers[0]
-        assert written["observatory"]["subjectSelector"] == ["sota-"]
-        assert routing["rules"] == []
-        assert "2 nodes of the subscription compete" in (result.message or "")
+        _vault(monkeypatch, key=KEY)
+        _write_installed(ctx, version="1.0.9", port=25080)
+        _fetched(monkeypatch, tmp_path)
+        commands = _Commands()
+        monkeypatch.setattr(sotavpn, "run_command", commands)
+        monkeypatch.setattr(
+            sotavpn,
+            "user_session_environment",
+            lambda *_a, **_k: {"XDG_RUNTIME_DIR": "/run/user/1000"},
+        )
+        monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: 4321)
+        panel.install(monkeypatch)
+        return ctx, panel
 
     def test_the_panel_fetch_error_is_reported_without_the_key(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         broken = f"cannot fetch http://127.0.0.1:25080/sub/{KEY}/raw"
-        panel = _Panel(
-            _template_settings(with_remote_rule=True),
-            last_error=broken,
-            outbound_count=0,
+        ctx, _panel = self._prepare(
+            monkeypatch,
+            tmp_path,
+            _Panel(last_error=broken, outbound_count=0),
         )
-        ctx, _commands, panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
         result = sotavpn.task(ctx)
         assert result.success is True
         assert any("[secret]" in warning for warning in result.warnings)
         assert all(KEY not in warning for warning in result.warnings)
         assert KEY not in (result.message or "")
+        assert "has no node list yet" in (result.message or "")
 
-    def test_the_message_counts_the_nodes_of_the_subscription(
+    def test_the_node_list_is_waited_for(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The panel merges the outbounds of a subscription into the built
-        # configuration and never stores them in the template, so the count
-        # of the message comes from the subscription itself.
-        panel = _Panel(
-            _template_settings(with_remote_rule=True, with_subscription_nodes=False),
-            outbound_count=198,
-        )
-        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
+        # The bridge answers from its cache and asks the vendor when that
+        # cache is cold, so the panel may answer the first question with an
+        # empty list. The task asks again instead of reporting a failure.
+        panel = _Panel(counts=[0, 2])
+        ctx, _panel = self._prepare(monkeypatch, tmp_path, panel)
+        sleeps: list[float] = []
+        monkeypatch.setattr(sotavpn.time, "sleep", sleeps.append)
         result = sotavpn.task(ctx)
-        assert result.success is True
-        assert "198 nodes of the subscription and the remote server compete" in (
-            result.message or ""
-        )
-        written = panel.writes[0]
-        routing = written["routing"]
-        assert isinstance(routing, dict)
-        balancers = routing["balancers"]
-        assert isinstance(balancers, list)
-        assert balancers[0]["selector"] == ["sota-", "pyntara-remote"]
+        cfg = ctx.config.sotavpn_setup
+        assert sleeps == [cfg.readiness_check_delay_seconds]
+        assert not [w for w in result.warnings if "node list" in w]
+        assert "the panel lists 2 nodes" in (result.message or "")
 
-    def test_the_message_without_a_known_count(
+    def test_a_missing_node_list_is_reported(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        panel = _Panel(
-            _template_settings(with_remote_rule=True, with_subscription_nodes=False),
-            outbound_count=0,
+        panel = _Panel(outbound_count=0)
+        ctx, _panel = self._prepare(
+            monkeypatch,
+            tmp_path,
+            panel,
+            sotavpn={"subscription_fetch_wait_seconds": 0},
         )
-        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
         result = sotavpn.task(ctx)
-        assert "the nodes of the subscription and the remote server compete" in (
-            result.message or ""
-        )
+        assert any("listed no node list" in warning for warning in result.warnings)
+        assert "has no node list yet" in (result.message or "")
 
-    def test_the_balancer_status_is_named_when_the_core_reports_it(
+    def test_the_pool_is_waited_for(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        panel = _Panel(
-            _template_settings(with_remote_rule=True),
-            status=[
+        # The panel rebuilds the core when the outbounds of a subscription
+        # arrive, so the first question about the pool can land before it
+        # answers again. The task waits for the configured budget.
+        panel = _Panel(status=[])
+        ctx, _panel = self._prepare(
+            monkeypatch,
+            tmp_path,
+            panel,
+            three_x_ui={"core_ready_wait_seconds": 5, "readiness_check_delay_seconds": 2},
+        )
+        calls = {"count": 0}
+
+        def answer_once(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return []
+            return [
                 {
-                    "tag": "pyntara-fastest",
+                    "tag": ctx.config.three_x_ui_xray_setup.pool_balancer_tag,
                     "running": True,
                     "override": "",
-                    "selected": "sota-node-1",
+                    "selected": ["sota-node-1"],
                 }
-            ],
-        )
-        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
-        result = sotavpn.task(ctx)
-        assert result.success is True
-        assert not result.warnings
+            ]
 
-    def test_a_core_that_lacks_the_balancer_is_reported(
+        monkeypatch.setattr("pyntara.xui.list_balancer_status", answer_once)
+        sleeps: list[float] = []
+        monkeypatch.setattr(sotavpn.time, "sleep", sleeps.append)
+        result = sotavpn.task(ctx)
+        assert sleeps == [2]
+        assert not [w for w in result.warnings if "pool" in w]
+
+    def test_a_core_that_lacks_the_pool_is_reported(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        panel = _Panel(_template_settings(with_remote_rule=True), status=[])
-        ctx, _commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
+        ctx, _panel = self._prepare(
+            monkeypatch,
+            tmp_path,
+            _Panel(status=[]),
+            three_x_ui={"core_ready_wait_seconds": 0},
+        )
         result = sotavpn.task(ctx)
-        assert any("does not report the balancer" in warning for warning in result.warnings)
+        assert any("does not report the pool" in warning for warning in result.warnings)
 
 
 class TestReadinessAndSettings:
     """The wait for the bridge and the values read from its settings."""
 
-    def test_the_wait_gives_up_and_reports(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        ctx = _ctx(tmp_path, bridge_ready_wait_seconds=0)
+    def _prepare(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        panel: _Panel,
+    ) -> Context:
+        ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
         commands = _Commands(active=True)
         monkeypatch.setattr(sotavpn, "run_command", commands)
+        panel.install(monkeypatch)
+        return ctx
+
+    def test_the_wait_gives_up_and_reports(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        panel = _Panel()
+        ctx = _ctx(tmp_path, sotavpn={"bridge_ready_wait_seconds": 0})
+        _vault(monkeypatch, key=KEY)
+        _write_installed(ctx, version="1.0.9", port=25080)
+        _fetched(monkeypatch, tmp_path)
+        monkeypatch.setattr(sotavpn, "run_command", _Commands(active=True))
         monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: None)
-        panel = _Panel(_template_settings(with_remote_rule=True)).install(monkeypatch)
+        panel.install(monkeypatch)
         result = sotavpn.task(ctx)
         assert any("within 0 s" in warning for warning in result.warnings)
-        assert panel.writes
+        assert panel.upserts
 
     def test_the_wait_pauses_and_succeeds_on_the_second_check(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        panel = _Panel()
         ctx = _ctx(
-            tmp_path, bridge_ready_wait_seconds=5, readiness_check_delay_seconds=2
+            tmp_path,
+            sotavpn={"bridge_ready_wait_seconds": 5, "readiness_check_delay_seconds": 2},
         )
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
@@ -577,11 +627,11 @@ class TestReadinessAndSettings:
         monkeypatch.setattr(sotavpn, "port_listener_pid", fake_listener)
         sleeps: list[float] = []
         monkeypatch.setattr(sotavpn.time, "sleep", sleeps.append)
-        panel = _Panel(_template_settings(with_remote_rule=True)).install(monkeypatch)
+        panel.install(monkeypatch)
         result = sotavpn.task(ctx)
         assert sleeps == [2]
         assert not [w for w in result.warnings if "did not answer" in w]
-        assert panel.writes
+        assert panel.upserts
 
     def test_settings_that_lack_the_port_stop_before_the_panel(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -594,7 +644,9 @@ class TestReadinessAndSettings:
         )
         monkeypatch.setattr(
             "pyntara.xui.panel_environment",
-            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("the panel must not be asked")),
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                AssertionError("the panel must not be asked")
+            ),
         )
         result = sotavpn.task(ctx)
         assert result.success is True
@@ -606,17 +658,15 @@ class TestReadinessAndSettings:
         assert sotavpn._settings_value(computed, "HTTP_PORT") is None
         assert sotavpn._settings_value(tmp_path / "missing.py", "HTTP_PORT") is None
 
-    def test_an_unreachable_panel_is_a_warning(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        ctx = _ctx(tmp_path)
-        _vault(monkeypatch, key=KEY)
-        _write_installed(ctx, version="1.0.9", port=25080)
-        _fetched(monkeypatch, tmp_path)
-        commands = _Commands(active=True)
-        monkeypatch.setattr(sotavpn, "run_command", commands)
-        monkeypatch.setattr(sotavpn, "port_listener_pid", lambda *_a, **_k: 4321)
+    def test_an_unreachable_panel_is_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        ctx = self._prepare(monkeypatch, tmp_path, _Panel())
         monkeypatch.setattr(
             "pyntara.xui.panel_environment",
-            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("panel unreachable")),
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                RuntimeError("panel unreachable")
+            ),
         )
         result = sotavpn.task(ctx)
         assert result.success is True
@@ -640,7 +690,9 @@ class TestFetchTheBridge:
                 package.addfile(info, io.BytesIO(data))
         return archive
 
-    def test_the_archive_is_downloaded_and_extracted(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_the_archive_is_downloaded_and_extracted(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         prepared = self._archive(tmp_path)
         seen: list[list[str]] = []
 
@@ -713,7 +765,9 @@ class TestFetchTheBridge:
         work_dir, _root = fetched
         shutil.rmtree(work_dir, ignore_errors=True)
 
-    def test_an_unusable_archive_is_a_warning(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_an_unusable_archive_is_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         def fake_run(command: object, **_kwargs: object) -> FakeProc:
             argv = [str(part) for part in command]  # type: ignore[union-attr]
             target = Path(next(part for part in argv if part.endswith(".tar.gz")))
@@ -729,7 +783,9 @@ class TestFetchTheBridge:
         )
         assert any("not extracted" in warning for warning in warnings)
 
-    def test_a_dead_address_is_a_warning(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_a_dead_address_is_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         monkeypatch.setattr(
             sotavpn,
             "run_command",

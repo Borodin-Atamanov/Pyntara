@@ -52,18 +52,15 @@ from config_helpers import (
             "subscription_update_interval_seconds = 300",
             "subscription_update_interval_seconds = 0",
         ),
+        # subscription_fetch_wait_seconds is zero
+        base_config().replace(
+            "subscription_fetch_wait_seconds = 30",
+            "subscription_fetch_wait_seconds = 0",
+        ),
         # subscription_allow_private is a string, not a boolean
         base_config().replace(
             "subscription_allow_private = true",
             'subscription_allow_private = "true"',
-        ),
-        # balancer_tag carries whitespace
-        base_config().replace(
-            'balancer_tag = "pyntara-fastest"', 'balancer_tag = "fastest pool"'
-        ),
-        # balancer_tag is empty
-        base_config().replace(
-            'balancer_tag = "pyntara-fastest"', 'balancer_tag = ""'
         ),
         # bridge_ready_wait_seconds is a string
         base_config().replace(
@@ -74,11 +71,6 @@ from config_helpers import (
         base_config().replace(
             "bridge_ready_wait_seconds = 60\nreadiness_check_delay_seconds = 2",
             "bridge_ready_wait_seconds = 60\nreadiness_check_delay_seconds = -1",
-        ),
-        # observatory_probe_interval is empty
-        base_config().replace(
-            'observatory_probe_interval = "30s"',
-            'observatory_probe_interval = ""',
         ),
         # key_entry_title names no entry of the [vault_structure] table
         base_config().replace(
@@ -99,10 +91,9 @@ def test_load_config_sotavpn_values(tmp_path: Path) -> None:
     assert config.sotavpn_setup.installer_file_name == "install_sotavpn_bridge.py"
     assert config.sotavpn_setup.service_unit_name == "sotavpn-bridge.service"
     assert config.sotavpn_setup.key_entry_title == "sotavpn_uuid"
-    assert config.sotavpn_setup.subscription_tag_prefix == "sota-"
+    assert config.sotavpn_setup.subscription_remark == "sota-bridge"
     assert config.sotavpn_setup.subscription_update_interval_seconds == 300
     assert config.sotavpn_setup.subscription_allow_private is True
-    assert config.sotavpn_setup.balancer_tag == "pyntara-fastest"
-    assert config.sotavpn_setup.observatory_probe_interval == "30s"
+    assert config.sotavpn_setup.subscription_fetch_wait_seconds == 30
     assert config.sotavpn_setup.bridge_ready_wait_seconds == 60
     assert config.sotavpn_setup.readiness_check_delay_seconds == 2

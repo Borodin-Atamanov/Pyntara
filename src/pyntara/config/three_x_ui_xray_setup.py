@@ -97,6 +97,17 @@ class ThreeXuiXraySetupConfig:
     panel_status_keys the fields of its status answer that carry the core
     (the block, the state and the error), and panel_field_keys the field
     names of the request bodies the client sends and reads back.
+
+    Stage 7 leaves the remote classes through a pool that exists on
+    every machine: pool_balancer_tag names the balancer they use,
+    pool_member_prefix the tag prefix of the subscription outbounds the
+    pool covers, and pool_probe_url, pool_probe_interval and
+    pool_enable_concurrency configure the observatory that measures the
+    members. The pool of a machine that is the remote server itself
+    starts empty and falls back to the direct outbound, because such a
+    machine never connects to itself; everywhere else the fallback is the
+    remote outbound. The subscription that fills the pool is created by
+    the sotavpn_setup task.
     """
 
     github_repo: str
@@ -236,6 +247,11 @@ class ThreeXuiXraySetupConfig:
     remote_outbound_tag: str
     tor_outbound_tag: str
     i2p_outbound_tag: str
+    pool_balancer_tag: str
+    pool_member_prefix: str
+    pool_probe_url: str
+    pool_probe_interval: str
+    pool_enable_concurrency: bool
     direct_outbound_tag: str
     blocked_outbound_tag: str
     tor_proxy_address: str

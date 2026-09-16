@@ -22,18 +22,14 @@ Order of the work:
    version of the installed settings, and the installer runs only when
    they differ or the user service is not active.
 3. The panel subscribes to the subscription address of the bridge: the
-   subscription is created or updated, refreshed, and the nodes it
-   produced are counted.
-4. The pool is written into the stored Xray template: one observatory that
-   measures the members and one least-ping load balancer that picks the
-   fastest of them. The selector covers the tag prefix of the subscription
-   and the remote outbound of the [three_x_ui_xray_setup] table, so the
-   Sota nodes and the remote server of this machine compete in one pool,
-   and the rules that send the remote classes to that server are
-   repointed to the balancer. A machine without the remote outbound (the
-   remote server itself) gets the pool without that member and without the
-   fallback, and no rule is rewritten: the client half of such a machine
-   belongs to three_x_ui_xray_setup and is never touched here.
+   subscription is created or updated, refreshed, and the panel is given
+   time to fetch the list, whose nodes join the pool of the local proxy
+   because the panel names them with the prefix that pool covers.
+
+The pool itself is not built here: the client half of the panel, the
+observatory and the load balancer included, belongs to the
+three_x_ui_xray_setup task and exists on every machine, so this task only
+feeds it (docs/spec/sotavpn-setup.md).
 """
 
 from __future__ import annotations
@@ -45,10 +41,8 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from dataclasses import replace
 from pathlib import Path
 
-from pyntara import routing_policy
 from pyntara import xui as xui_client
 from pyntara.config import (
     EngineConfig,
@@ -370,7 +364,7 @@ def _subscription_payload(
         fields["subscription_url"]: cfg.subscription_url_template.format(
             port=port, key=key
         ),
-        fields["subscription_tag_prefix"]: cfg.subscription_tag_prefix,
+        fields["subscription_tag_prefix"]: sub_cfg.pool_member_prefix,
         fields["subscription_update_interval"]: (
             cfg.subscription_update_interval_seconds
         ),
@@ -395,38 +389,110 @@ def _subscription_matches(
     return all(existing.get(name) == value for name, value in payload.items())
 
 
-def _outbound_tags(
-    settings: dict[str, object], fields: dict[str, str]
-) -> tuple[str, ...]:
-    """Tags of the outbounds of a stored Xray document."""
 
-    outbounds = settings.get(fields["outbounds"])
-    if not isinstance(outbounds, list):
-        return ()
-    tags: list[str] = []
-    for outbound in outbounds:
-        if not isinstance(outbound, dict):
-            continue
-        tag = outbound.get(fields["tag"])
-        if isinstance(tag, str) and tag:
-            tags.append(tag)
-    return tuple(tags)
+def _wait_for_the_nodes(
+    cfg: SotavpnSetupConfig,
+    sub_cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+) -> tuple[int | None, str | None]:
+    """Wait for the panel to fetch the list; (nodes, message).
+
+    The refresh call asks the panel to fetch the subscription address; the
+    bridge answers from its own cache and asks the vendor when that cache
+    is cold, which takes a few seconds. The panel is therefore asked for
+    its own count until a list arrives, until it records an error, or until
+    the configured budget is spent. Exactly one of the two answers is set:
+    the count of the nodes, or a sentence naming what stopped the fetch.
+    """
+
+    fields = sub_cfg.panel_field_keys
+    started = time.monotonic()
+    while True:
+        current = xui_client.find_outbound_subscription_by_remark(
+            sub_cfg, env, cfg.subscription_remark, timeout
+        )
+        if current is not None:
+            last_error = current.get(fields["subscription_last_error"])
+            if last_error:
+                return None, f"the panel could not fetch the node list: {last_error}"
+            count = current.get(fields["subscription_outbound_count"])
+            if isinstance(count, int) and count > 0:
+                return count, None
+        elapsed = time.monotonic() - started
+        if elapsed >= cfg.subscription_fetch_wait_seconds:
+            return None, (
+                f"the panel listed no node list after "
+                f"{cfg.subscription_fetch_wait_seconds} s: it fetches the "
+                "subscription again on its own schedule"
+            )
+        _log(
+            f"waiting for the node list, {elapsed:.0f}s of "
+            f"{cfg.subscription_fetch_wait_seconds}s"
+        )
+        time.sleep(cfg.readiness_check_delay_seconds)
+
+
+def _wait_for_the_pool(
+    sub_cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+    warnings: list[str],
+) -> None:
+    """Wait for the running core to report the pool, then log its pick.
+
+    The panel rebuilds the core wherever a written configuration changes,
+    and the outbounds the subscription brought in are such a change, so the
+    first question can land in that window. The budget and the pause are
+    the values of the three_x_ui table, the same ones its own stages wait
+    with. A core that never reports the pool is a warning naming it.
+    """
+
+    tag_key = sub_cfg.xray_field_keys["tag"]
+    fields = sub_cfg.panel_field_keys
+    started = time.monotonic()
+    while True:
+        entries = xui_client.list_balancer_status(
+            sub_cfg, env, (sub_cfg.pool_balancer_tag,), timeout
+        )
+        entry = next(
+            (
+                item
+                for item in entries
+                if item.get(tag_key) == sub_cfg.pool_balancer_tag
+            ),
+            None,
+        )
+        if entry is not None:
+            _log(
+                f"the pool {sub_cfg.pool_balancer_tag}: "
+                f"running={entry.get(fields['balancer_running'])}, "
+                f"selected={entry.get(fields['balancer_selected'])}"
+            )
+            return
+        if time.monotonic() - started >= sub_cfg.core_ready_wait_seconds:
+            warnings.append(
+                f"the running core does not report the pool "
+                f"{sub_cfg.pool_balancer_tag} yet: the pool of the panel "
+                "applies with its next start"
+            )
+            return
+        time.sleep(sub_cfg.readiness_check_delay_seconds)
 
 
 def task(ctx: Context) -> TaskResult:
-    """Build the pool of the fastest remote exit, or report why not.
+    """Feed the pool of the local proxy with the nodes of the account.
 
-    The task is the second source of remote exits of the panel: it
-    installs the bridge that serves the Sota server list, subscribes the
-    panel to it, and writes the observatory and the load balancer that
-    pick the fastest member of the enlarged pool. It runs after
-    three_x_ui_xray_setup, so the policy of the local proxy is already in
-    place and this task adds the pool to it without touching the rest of
-    the panel. Every step that could not be reached is a warning of a
-    completed task, so one dead step (a bridge that does not answer, a
-    panel that cannot fetch) leaves the machine with the rest configured
-    and the warning names what to look at. A run whose pool is already in
-    place writes nothing.
+    The task is the source of remote exits of the panel: it installs the
+    bridge that serves the Sota server list and subscribes the panel to
+    it. The pool that carries the remote classes, with its observatory and
+    its load balancer, was built by three_x_ui_xray_setup and is not
+    touched here: the nodes of this subscription join it because the panel
+    names them with the prefix that pool covers. Every step that could not
+    be reached is a warning of a completed task, so one dead step (a
+    bridge that does not answer, a panel that cannot fetch) leaves the
+    machine with the rest configured and the warning names what to look
+    at. A run whose subscription already matches writes nothing.
     """
 
     cfg = ctx.config.sotavpn_setup
@@ -505,7 +571,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         env = xui_client.panel_environment(sub_cfg, timeout)
     except (FileNotFoundError, RuntimeError) as exc:
-        warnings.append(f"the Sota pool was not written into the panel: {exc}")
+        warnings.append(f"the Sota subscription was not configured: {exc}")
         return TaskResult(
             success=True, changed=changed, warnings=tuple(warnings)
         )
@@ -542,6 +608,7 @@ def task(ctx: Context) -> TaskResult:
         sub_cfg, env, cfg.subscription_remark, timeout
     )
     subscription_id = None if current is None else current.get(fields["id"])
+    nodes: int | None = None
     if subscription_id is None:
         warnings.append(
             f"the panel does not list the subscription {cfg.subscription_remark} "
@@ -560,115 +627,23 @@ def task(ctx: Context) -> TaskResult:
                 "the panel did not fetch the node list: "
                 f"{_without_the_key(message, key)}"
             )
-        current = xui_client.find_outbound_subscription_by_remark(
-            sub_cfg, env, cfg.subscription_remark, timeout
-        )
-    current = xui_client.find_outbound_subscription_by_remark(
-        sub_cfg, env, cfg.subscription_remark, timeout
-    )
-    nodes: int | None = None
-    if current is not None:
-        last_error = current.get(fields["subscription_last_error"])
-        if last_error:
-            warnings.append(
-                "the panel could not fetch the node list: "
-                f"{_without_the_key(str(last_error), key)}"
-            )
-        count = current.get(fields["subscription_outbound_count"])
-        if isinstance(count, int) and count > 0:
-            nodes = count
-            _log(f"the subscription carries {count} nodes")
+        nodes, note = _wait_for_the_nodes(cfg, sub_cfg, env, timeout)
+        if note is not None:
+            warnings.append(_without_the_key(note, key))
+        elif nodes is not None:
+            _log(f"the subscription carries {nodes} nodes")
 
-    template = xui_client.read_xray_template(sub_cfg, env, timeout)
-    if template is None:
-        warnings.append(
-            "the panel did not return its Xray configuration: the pool was "
-            "not written"
-        )
-        return TaskResult(
-            success=True, changed=changed, warnings=tuple(warnings)
-        )
-
-    xray_fields = sub_cfg.xray_field_keys
-    tags = _outbound_tags(template.settings, xray_fields)
-    remote_here = sub_cfg.remote_outbound_tag in tags
-    selector = (
-        (cfg.subscription_tag_prefix, sub_cfg.remote_outbound_tag)
-        if remote_here
-        else (cfg.subscription_tag_prefix,)
-    )
-    balancer = routing_policy.build_balancer(
-        xray_fields,
-        tag=cfg.balancer_tag,
-        selector=selector,
-        strategy=sub_cfg.xray_values["least_ping"],
-        fallback_tag=sub_cfg.remote_outbound_tag if remote_here else "",
-    )
-    observatory = routing_policy.build_observatory(
-        xray_fields,
-        subject_selector=selector,
-        probe_url=cfg.observatory_probe_url,
-        probe_interval=cfg.observatory_probe_interval,
-        enable_concurrency=cfg.observatory_enable_concurrency,
-    )
-    updated, pool_changed = routing_policy.apply_fastest_pool(
-        template.settings, xray_fields, balancer=balancer, observatory=observatory
-    )
-    repointed = False
-    if remote_here:
-        updated, repointed = routing_policy.point_remote_rules_at_balancer(
-            updated,
-            xray_fields,
-            inbound_tag=sub_cfg.local_proxy_tag,
-            remote_outbound_tag=sub_cfg.remote_outbound_tag,
-            balancer_tag=cfg.balancer_tag,
-        )
-    if pool_changed or repointed:
-        ok, message = xui_client.write_xray_template(
-            sub_cfg, env, replace(template, settings=updated), timeout
-        )
-        if not ok:
-            warnings.append(f"the pool was not written: {message}")
-        else:
-            changed = True
-            _log(f"the pool {cfg.balancer_tag} was written: {message}")
-
-    entries = xui_client.list_balancer_status(
-        sub_cfg, env, (cfg.balancer_tag,), timeout
-    )
-    entry = next(
-        (
-            item
-            for item in entries
-            if item.get(xray_fields["tag"]) == cfg.balancer_tag
-        ),
-        None,
-    )
-    if entry is None:
-        warnings.append(
-            f"the running core does not report the balancer {cfg.balancer_tag} "
-            "yet: the pool applies with its next start"
-        )
-    else:
-        _log(
-            f"the balancer {cfg.balancer_tag}: "
-            f"running={entry.get(fields['balancer_running'])}, "
-            f"selected={entry.get(fields['balancer_selected'])}"
-        )
+    _wait_for_the_pool(sub_cfg, env, timeout, warnings)
 
     if nodes is None:
-        subscription_part = "the nodes of the subscription"
-    else:
-        subscription_part = f"{nodes} nodes of the subscription"
-    if remote_here:
         message = (
-            f"the pool {cfg.balancer_tag} is in place: {subscription_part} and "
-            "the remote server compete for the fastest answer"
+            f"the Sota subscription {cfg.subscription_remark} is in place: "
+            "the panel has no node list yet"
         )
     else:
         message = (
-            f"the pool {cfg.balancer_tag} is in place: {subscription_part} "
-            "compete for the fastest answer"
+            f"the Sota subscription {cfg.subscription_remark} is in place: "
+            f"the panel lists {nodes} nodes"
         )
     return TaskResult(
         success=True, changed=changed, message=message, warnings=tuple(warnings)

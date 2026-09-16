@@ -58,29 +58,23 @@ key_entry_title = "sotavpn_uuid"
 # the installed settings file above, not held here.
 subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"
 # The outbound subscription the task creates in the panel: its label,
-# the prefix of the generated outbound tags, the refresh interval in
-# seconds (five minutes is the floor of the panel refresh job) and the
-# flags of the call. allow_private is required, because without it the
-# panel refuses the loopback address of the bridge.
+# the refresh interval in seconds (five minutes is the floor of the
+# panel refresh job) and the flags of the call. allow_private is
+# required, because without it the panel refuses the loopback address of
+# the bridge. The panel names the outbounds of this subscription with the
+# prefix the pool of the [three_x_ui_xray_setup] table covers
+# (pool_member_prefix), so the nodes join that pool by themselves.
 subscription_remark = "sota-bridge"
-subscription_tag_prefix = "sota-"
 subscription_update_interval_seconds = 300
 subscription_enabled = true
 subscription_allow_private = true
 subscription_allow_insecure = false
 subscription_prepend = false
-# Tag of the load balancer the task owns. Its selector covers the tag
-# prefix above and the remote outbound tag of the
-# [three_x_ui_xray_setup] table, so the balancer chooses among every
-# Sota node and the machine own remote server.
-balancer_tag = "pyntara-fastest"
-# Observatory of that balancer: the balanced strategies pick by its
-# probe results, and an outbound it does not observe is excluded, so its
-# subject selector equals the balancer selector. The probe URL is the
-# tiny answer that carries no body and is never cached.
-observatory_probe_url = "https://www.google.com/generate_204"
-observatory_probe_interval = "30s"
-observatory_enable_concurrency = true
+# Seconds the task waits for the panel to fetch the node list after the
+# refresh call: the bridge answers from its own cache, and a cold cache
+# means the vendor is asked first, which takes a few seconds, usually
+# about twenty.
+subscription_fetch_wait_seconds = 30
 # Seconds the bridge HTTP listener may take to answer after the
 # installer ran, and the pause between two readiness probes.
 bridge_ready_wait_seconds = 60

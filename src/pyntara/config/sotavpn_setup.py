@@ -11,12 +11,12 @@ class SotavpnSetupConfig:
     """Sotavpn pool parameters for the sotavpn_setup task.
 
     The task turns the paid Sota Connect account of the source vault into
-    a pool of remote exits of the 3x-ui panel: the bridge of the Sotavpn
-    repository runs for the desktop user and serves the server list of
-    the account on a subscription address, the panel subscribes to that
-    address, and a load balancer picks the fastest member of the pool,
-    which includes the remote server the three_x_ui_xray_setup task
-    already configured (docs/spec/sotavpn-setup.md).
+    a source of remote exits of the 3x-ui panel: the bridge of the
+    Sotavpn repository runs for the desktop user and serves the server
+    list of the account on a subscription address, the panel subscribes
+    to that address, and the nodes the panel fetches join the pool of the
+    local proxy that the three_x_ui_xray_setup task built
+    (docs/spec/sotavpn-setup.md).
 
     The account side: username and home_dir name the desktop user the
     bridge runs as, runuser_command is the wrapper that runs a command as
@@ -43,15 +43,15 @@ class SotavpnSetupConfig:
     The panel side: subscription_url_template is the address the panel
     subscribes to ({port} and {key} are filled in), and the subscription_
     fields are the outbound subscription the task creates: its label, the
-    prefix of the generated outbound tags, the refresh interval in
-    seconds and the flags of the call, of which allow_private is what
-    lets the panel fetch from the loopback address. balancer_tag names
-    the load balancer the task owns; its selector covers the tag prefix
-    and the remote outbound tag of the [three_x_ui_xray_setup] table, so
-    the Sota nodes and the machine own remote server compete as one pool.
-    observatory_probe_url, observatory_probe_interval and
-    observatory_enable_concurrency configure the observatory that
-    measures the pool. bridge_ready_wait_seconds and
+    refresh interval in seconds and the flags of the call, of which
+    allow_private is what lets the panel fetch from the loopback address.
+    The task owns no pool: the client half of the panel, the pool that
+    carries the remote classes included, is built by the
+    three_x_ui_xray_setup task, and the nodes of this subscription join
+    that pool because the panel names them with the prefix the pool
+    covers (pool_member_prefix of that section).
+    subscription_fetch_wait_seconds bounds the wait for the panel to
+    fetch the list after the refresh call. bridge_ready_wait_seconds and
     readiness_check_delay_seconds bound the wait for the bridge listener
     after an installation.
     """
@@ -73,15 +73,11 @@ class SotavpnSetupConfig:
     key_entry_title: str
     subscription_url_template: str
     subscription_remark: str
-    subscription_tag_prefix: str
     subscription_update_interval_seconds: int
     subscription_enabled: bool
     subscription_allow_private: bool
     subscription_allow_insecure: bool
     subscription_prepend: bool
-    balancer_tag: str
-    observatory_probe_url: str
-    observatory_probe_interval: str
-    observatory_enable_concurrency: bool
+    subscription_fetch_wait_seconds: int
     bridge_ready_wait_seconds: int
     readiness_check_delay_seconds: int

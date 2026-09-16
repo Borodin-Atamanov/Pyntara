@@ -3429,14 +3429,13 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
 def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
     """Validate the [sotavpn_setup] table and build SotavpnSetupConfig.
 
-    The account, the bridge installation and the pool objects are checked
-    like every other section: names, paths and templates are non-empty
-    strings, command arrays are non-empty arrays of strings, the tag of
-    the balancer and the tag prefix carry no whitespace, the refresh
-    interval and the readiness budget are positive, and the pause between
-    two readiness probes is not negative. The entry title of the account
-    is cross-checked against the [vault_structure] table in
-    strict_config_from_document.
+    The account and the bridge installation are checked like every other
+    section: names, paths and templates are non-empty strings, command
+    arrays are non-empty arrays of strings, the refresh interval, the
+    budget for the panel fetch and the readiness budget are positive, and
+    the pause between two readiness probes is not negative. The entry
+    title of the account is cross-checked against the [vault_structure]
+    table in strict_config_from_document.
     """
 
     if not isinstance(raw, dict):
@@ -3444,6 +3443,10 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
     subscription_update_interval_seconds = _positive_int_field(
         raw.get("subscription_update_interval_seconds"),
         "sotavpn_setup.subscription_update_interval_seconds",
+    )
+    subscription_fetch_wait_seconds = _positive_int_field(
+        raw.get("subscription_fetch_wait_seconds"),
+        "sotavpn_setup.subscription_fetch_wait_seconds",
     )
     bridge_ready_wait_seconds = _positive_int_field(
         raw.get("bridge_ready_wait_seconds"),
@@ -3513,10 +3516,6 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
         subscription_remark=_nonempty_string_field(
             raw.get("subscription_remark"), "sotavpn_setup.subscription_remark"
         ),
-        subscription_tag_prefix=_tag_field(
-            raw.get("subscription_tag_prefix"),
-            "sotavpn_setup.subscription_tag_prefix",
-        ),
         subscription_update_interval_seconds=subscription_update_interval_seconds,
         subscription_enabled=_bool_field(
             raw.get("subscription_enabled"), "sotavpn_setup.subscription_enabled"
@@ -3532,21 +3531,7 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
         subscription_prepend=_bool_field(
             raw.get("subscription_prepend"), "sotavpn_setup.subscription_prepend"
         ),
-        balancer_tag=_tag_field(
-            raw.get("balancer_tag"), "sotavpn_setup.balancer_tag"
-        ),
-        observatory_probe_url=_nonempty_string_field(
-            raw.get("observatory_probe_url"),
-            "sotavpn_setup.observatory_probe_url",
-        ),
-        observatory_probe_interval=_nonempty_string_field(
-            raw.get("observatory_probe_interval"),
-            "sotavpn_setup.observatory_probe_interval",
-        ),
-        observatory_enable_concurrency=_bool_field(
-            raw.get("observatory_enable_concurrency"),
-            "sotavpn_setup.observatory_enable_concurrency",
-        ),
+        subscription_fetch_wait_seconds=subscription_fetch_wait_seconds,
         bridge_ready_wait_seconds=bridge_ready_wait_seconds,
         readiness_check_delay_seconds=readiness_check_delay_seconds,
     )
@@ -5243,6 +5228,31 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
             "three_x_ui_xray_setup.local_proxy_tag must differ from the "
             "outbound tags"
         )
+    pool_balancer_tag = _tag_field(
+        raw.get("pool_balancer_tag"), "three_x_ui_xray_setup.pool_balancer_tag"
+    )
+    if pool_balancer_tag in set(outbound_tags.values()) or (
+        pool_balancer_tag == local_proxy_tag
+    ):
+        raise ConfigError(
+            "three_x_ui_xray_setup.pool_balancer_tag must differ from the "
+            "outbound tags and from local_proxy_tag"
+        )
+    pool_member_prefix = _nonempty_string_field(
+        raw.get("pool_member_prefix"),
+        "three_x_ui_xray_setup.pool_member_prefix",
+    )
+    pool_probe_url = _nonempty_string_field(
+        raw.get("pool_probe_url"), "three_x_ui_xray_setup.pool_probe_url"
+    )
+    pool_probe_interval = _nonempty_string_field(
+        raw.get("pool_probe_interval"),
+        "three_x_ui_xray_setup.pool_probe_interval",
+    )
+    pool_enable_concurrency = _bool_field(
+        raw.get("pool_enable_concurrency"),
+        "three_x_ui_xray_setup.pool_enable_concurrency",
+    )
     tor_proxy_address = _address_port_field(
         raw.get("tor_proxy_address"),
         "three_x_ui_xray_setup.tor_proxy_address",
@@ -5738,6 +5748,11 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         remote_outbound_tag=outbound_tags["remote_outbound_tag"],
         tor_outbound_tag=outbound_tags["tor_outbound_tag"],
         i2p_outbound_tag=outbound_tags["i2p_outbound_tag"],
+        pool_balancer_tag=pool_balancer_tag,
+        pool_member_prefix=pool_member_prefix,
+        pool_probe_url=pool_probe_url,
+        pool_probe_interval=pool_probe_interval,
+        pool_enable_concurrency=pool_enable_concurrency,
         direct_outbound_tag=outbound_tags["direct_outbound_tag"],
         blocked_outbound_tag=outbound_tags["blocked_outbound_tag"],
         tor_proxy_address=tor_proxy_address,

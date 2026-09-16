@@ -382,6 +382,24 @@ local_proxy_expiry_time = 0
 remote_outbound_tag = "pyntara-remote"
 tor_outbound_tag = "pyntara-tor"
 i2p_outbound_tag = "pyntara-i2p"
+# The pool the remote classes leave through: the balancer covers every
+# outbound whose tag begins with pool_member_prefix (the outbounds the
+# panel builds from its outbound subscriptions) and the remote outbound,
+# so the fastest member of all of them carries the traffic. Its fallback
+# is the remote outbound; on a machine without one, which is the remote
+# server itself, the fallback is the direct outbound, so an empty or dead
+# pool never blackholes the classes. The pool exists on every machine,
+# and the subscription that fills it is the business of the sotavpn_setup
+# task.
+pool_balancer_tag = "pyntara-fastest"
+pool_member_prefix = "sota-"
+# Observatory of the pool: the balanced strategy picks by its probe
+# results, and an outbound it does not observe is excluded, so its
+# subject selector equals the balancer selector. The probe URL is the
+# tiny answer that carries no body and is never cached.
+pool_probe_url = "https://www.google.com/generate_204"
+pool_probe_interval = "30s"
+pool_enable_concurrency = true
 # Tags of the panel's own outbounds, used as jump targets: direct is the
 # freedom outbound, blocked is the panel blackhole.
 direct_outbound_tag = "direct"
