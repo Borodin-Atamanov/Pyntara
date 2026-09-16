@@ -520,6 +520,10 @@ def base_config() -> str:
         'panel_xray_update_path = "/panel/api/xray/update"\n'
         'panel_xray_geodata_validate_path = "/panel/api/xray/geodata/validate"\n'
         'panel_xray_route_test_path = "/panel/api/xray/routeTest"\n'
+        'panel_outbound_subs_path = "/panel/api/xray/outbound-subs"\n'
+        'panel_outbound_subs_item_path = "/panel/api/xray/outbound-subs/{subscription_id}"\n'
+        'panel_outbound_subs_refresh_path = "/panel/api/xray/outbound-subs/{subscription_id}/refresh"\n'
+        'panel_balancer_status_path = "/panel/api/xray/balancerStatus"\n'
         'panel_status_path = "/panel/api/server/status"\n'
         'panel_xray_result_path = "/panel/api/xray/getXrayResult"\n'
         'panel_status_keys = { xray = "xray", state = "state", error_msg = "errorMsg" }\n'
@@ -535,9 +539,9 @@ def base_config() -> str:
         'panel_url_schemes = { http = "http", https = "https" }\n'
         'panel_environment_keys = { username = "XUI_USERNAME", password = "XUI_PASSWORD", panel_port = "XUI_PANEL_PORT", web_base_path = "XUI_WEB_BASE_PATH", scheme = "XUI_SCHEME", api_token = "XUI_API_TOKEN", db_type = "XUI_DB_TYPE", noninteractive = "XUI_NONINTERACTIVE" }\n'
         'panel_answer_keys = { success = "success", payload = "obj", message = "msg", token = "token", reason = "reason" }\n'
-        'panel_field_keys = { username = "username", password = "password", id = "id", email = "email", enable = "enable", sub_id = "subId", inbound_ids = "inboundIds", client = "client", tag = "tag", port = "port", protocol = "protocol", network = "network", inbound_tag = "inboundTag", outbound_tag = "outboundTag", matched = "matched", domain = "domain", ip = "ip", kind = "kind", tokens = "tokens", token = "token", private_key = "privateKey", public_key = "publicKey", sub_path = "subPath", sub_json_path = "subJsonPath", sub_clash_path = "subClashPath", xray_setting = "xraySetting", outbound_test_url = "outboundTestUrl" }\n'
-        'xray_field_keys = { tag = "tag", protocol = "protocol", settings = "settings", stream_settings = "streamSettings", network = "network", security = "security", reality_settings = "realitySettings", server_name = "serverName", fingerprint = "fingerprint", public_key = "publicKey", short_id = "shortId", private_key = "privateKey", spider_x = "spiderX", vnext = "vnext", address = "address", port = "port", users = "users", id = "id", encryption = "encryption", flow = "flow", servers = "servers", remark = "remark", listen = "listen", enable = "enable", expiry_time = "expiryTime", total = "total", up = "up", down = "down", auth = "auth", udp = "udp", ip = "ip", sniffing = "sniffing", enabled = "enabled", dest_override = "destOverride", metadata_only = "metadataOnly", route_only = "routeOnly", type = "type", inbound_tag = "inboundTag", outbound_tag = "outboundTag", domain = "domain", outbounds = "outbounds", routing = "routing", rules = "rules", domain_strategy = "domainStrategy", final_rules = "finalRules" }\n'
-        'xray_values = { vless = "vless", reality = "reality", none = "none", tcp = "tcp", socks = "socks", http = "http", noauth = "noauth", field = "field", api_tag = "api", onion_domain = "domain:.onion", i2p_domain = "domain:.i2p" }\n'
+        'panel_field_keys = { username = "username", password = "password", id = "id", email = "email", enable = "enable", sub_id = "subId", inbound_ids = "inboundIds", client = "client", tag = "tag", port = "port", protocol = "protocol", network = "network", inbound_tag = "inboundTag", outbound_tag = "outboundTag", matched = "matched", domain = "domain", ip = "ip", kind = "kind", tokens = "tokens", token = "token", private_key = "privateKey", public_key = "publicKey", sub_path = "subPath", sub_json_path = "subJsonPath", sub_clash_path = "subClashPath", xray_setting = "xraySetting", outbound_test_url = "outboundTestUrl", subscription_remark = "remark", subscription_url = "url", subscription_tag_prefix = "tagPrefix", subscription_enabled = "enabled", subscription_update_interval = "updateInterval", subscription_allow_private = "allowPrivate", subscription_allow_insecure = "allowInsecure", subscription_prepend = "prepend", subscription_outbound_count = "outboundCount", subscription_last_error = "lastError", balancer_status_query = "tags", balancer_running = "running", balancer_override = "override", balancer_selected = "selected" }\n'
+        'xray_field_keys = { tag = "tag", protocol = "protocol", settings = "settings", stream_settings = "streamSettings", network = "network", security = "security", reality_settings = "realitySettings", server_name = "serverName", fingerprint = "fingerprint", public_key = "publicKey", short_id = "shortId", private_key = "privateKey", spider_x = "spiderX", vnext = "vnext", address = "address", port = "port", users = "users", id = "id", encryption = "encryption", flow = "flow", servers = "servers", remark = "remark", listen = "listen", enable = "enable", expiry_time = "expiryTime", total = "total", up = "up", down = "down", auth = "auth", udp = "udp", ip = "ip", sniffing = "sniffing", enabled = "enabled", dest_override = "destOverride", metadata_only = "metadataOnly", route_only = "routeOnly", type = "type", inbound_tag = "inboundTag", outbound_tag = "outboundTag", domain = "domain", outbounds = "outbounds", routing = "routing", rules = "rules", domain_strategy = "domainStrategy", final_rules = "finalRules", observatory = "observatory", balancers = "balancers", subject_selector = "subjectSelector", probe_url = "probeUrl", probe_interval = "probeInterval", enable_concurrency = "enableConcurrency", strategy = "strategy", selector = "selector", fallback_tag = "fallbackTag", balancer_tag = "balancerTag" }\n'
+        'xray_values = { vless = "vless", reality = "reality", none = "none", tcp = "tcp", socks = "socks", http = "http", noauth = "noauth", field = "field", api_tag = "api", onion_domain = "domain:.onion", i2p_domain = "domain:.i2p", least_ping = "leastPing" }\n'
         'vless_link_query_keys = { security = "security", public_key = "pbk", fingerprint = "fp", short_id = "sid", server_name = "sni", spider_x = "spx", flow = "flow", network = "type" }\n'
         'vault_entry_title = "three_x_ui_credentials"\n'
         'connection_vault_entry_title = "xray_connection"\n'
@@ -623,6 +627,39 @@ def base_config() -> str:
         "proxy_check_timeout_seconds = 30\n"
         "proxy_check_attempts = 3\n"
         "proxy_check_command_timeout_seconds = 50\n"
+        "[sotavpn_setup]\n"
+        'username = "i"\n'
+        'home_dir = "/home/i"\n'
+        'runuser_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}"]\n'
+        'archive_url = "https://codeload.github.com/Borodin-Atamanov/sotavpn-subscription-for-any-client/tar.gz/refs/heads/main"\n'
+        'archive_temp_prefix = "sotavpn-bridge-"\n'
+        'archive_temp_suffix = ".tar.gz"\n'
+        'installer_file_name = "install_sotavpn_bridge.py"\n'
+        'installer_command = ["{python}", "{installer_path}", "install"]\n'
+        'service_unit_name = "sotavpn-bridge.service"\n'
+        'user_service_is_active_command = ["systemctl", "--machine", "{username}@.host", "--user", "is-active", "{unit}"]\n'
+        'user_install_relative_path = ".local/share/sotavpn-bridge"\n'
+        'settings_file_name = "settings.py"\n'
+        'settings_version_key = "PROGRAM_VERSION"\n'
+        'settings_http_port_key = "HTTP_PORT"\n'
+        'runtime_dir_template = "/run/user/{uid}"\n'
+        'session_bus_address_template = "unix:path=/run/user/{uid}/bus"\n'
+        'key_entry_title = "sotavpn_uuid"\n'
+        'root_url_template = "http://127.0.0.1:{port}/"\n'
+        'subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"\n'
+        'subscription_remark = "sota-bridge"\n'
+        'subscription_tag_prefix = "sota-"\n'
+        "subscription_update_interval_seconds = 300\n"
+        "subscription_enabled = true\n"
+        "subscription_allow_private = true\n"
+        "subscription_allow_insecure = false\n"
+        "subscription_prepend = false\n"
+        'balancer_tag = "pyntara-fastest"\n'
+        'observatory_probe_url = "https://www.google.com/generate_204"\n'
+        'observatory_probe_interval = "30s"\n'
+        "observatory_enable_concurrency = true\n"
+        "bridge_ready_wait_seconds = 60\n"
+        "readiness_check_delay_seconds = 2\n"
         "[tor_setup]\n"
         'package_name = "tor"\n'
         'service_unit_name = "tor@default.service"\n'
@@ -1116,6 +1153,8 @@ def base_config() -> str:
         'notes = "3x-ui panel credentials."\n'
         '[[vault_structure.entries]]\ntitle = "xray_connection"\n'
         'notes = "Xray server connection profile."\n'
+        '[[vault_structure.entries]]\ntitle = "sotavpn_uuid"\n'
+        'notes = "Sotavpn access key."\n'
         '[[vault_structure.entries]]\ntitle = "ssh_passphase_for_port_forwarding"\n'
         'generated_password = "proquint-7"\nnotes = "Port forwarding key passphrase."\n'
         '[[vault_structure.entries]]\ntitle = "rustdesk_password"\n'

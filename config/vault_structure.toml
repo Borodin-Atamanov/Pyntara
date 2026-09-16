@@ -46,6 +46,10 @@ title = "xray_client_profile"
 notes = "Connection profile of the remote Xray server that a machine connects to as a client. The url field carries the canonical vless share link of that server and is the single source of truth the client reads; the username field repeats the server address for the operator. Filled by the operator from the connection profile that three_x_ui_xray_setup writes on the server machine, so one server profile serves every machine. Read by the future xray_client_setup task from the vault the run opened: an absent entry or an empty url means no profile is configured, and the task then configures no proxy and reports a warning."
 
 [[vault_structure.entries]]
+title = "sotavpn_uuid"
+notes = "Access key of the paid Sota Connect account, a UUID, filled by the operator by hand from the account page or the Sota bot. The sotavpn_setup task reads it from the source vault, production first, and configures the Sotavpn pool only when the password is present and not empty; an absent entry or an empty password means the pool is off for this run. The password of a freshly regenerated default vault stays empty, so a runtime vault built from it mirrors the structure while the pool stays off."
+
+[[vault_structure.entries]]
 title = "ssh_passphase_for_port_forwarding"
 generated_password = "proquint-7"
 notes = "Passphrase of the port-forwarding private key id_ed25519_pf deployed by the ssh_daemon_setup task. Read by the auto_port_forwarding service from the runtime vault to unlock the key in a dedicated ssh-agent. The entry exists in every vault: the regeneration tooling generates a fresh password of 7 proquint words joined by dashes on creation, so the production secret is never copied and the default vault carries a passphrase that unlocks no deployed key."

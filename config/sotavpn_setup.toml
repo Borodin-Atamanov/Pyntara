@@ -1,0 +1,96 @@
+[sotavpn_setup]
+# Sotavpn pool of the sotavpn_setup task (docs/spec/sotavpn-setup.md).
+# The task turns the paid Sota Connect account of the source vault into a
+# pool of remote exits of the 3x-ui panel: the bridge program of the
+# Sotavpn repository runs for the desktop user and serves the server list
+# of the account on a subscription address, the panel subscribes to that
+# address, and a load balancer picks the fastest member of the pool. The
+# pool includes the remote server the three_x_ui_xray_setup task already
+# configured, so the fastest of all of them carries the traffic. The
+# values here describe the account side, the bridge installation and the
+# pool objects the task writes into the panel.
+username = "i"
+home_dir = "/home/i"
+# Command that runs another command as the desktop user; {username} and
+# {home_dir} are replaced with the account and the home directory above.
+# The session environment of the run passes through this wrapper, and the
+# task adds the user manager variables when the run has none.
+runuser_command = ["runuser", "-u", "{username}", "--", "env", "HOME={home_dir}"]
+# Archive of the bridge repository the task downloads each run. The
+# repository publishes no releases, so the branch archive is the source
+# of the latest code and of the version the task compares with the
+# installed one.
+archive_url = "https://codeload.github.com/Borodin-Atamanov/sotavpn-subscription-for-any-client/tar.gz/refs/heads/main"
+# Prefix and suffix of the downloaded archive file, so the file is
+# recognizable in the temporary directory the download uses.
+archive_temp_prefix = "sotavpn-bridge-"
+archive_temp_suffix = ".tar.gz"
+# Installer of the bridge inside the archive and the command that runs
+# it as the desktop user: {python} is filled from the engine interpreter
+# (system_python) and {installer_path} with the path of the extracted
+# installer.
+installer_file_name = "install_sotavpn_bridge.py"
+installer_command = ["{python}", "{installer_path}", "install"]
+# Name of the user service the installer creates and the command that
+# reads its state. The unit name mirrors INSTALL_NAME of the bridge
+# settings; the state is read as root through the user manager of the
+# account, which needs no live session.
+service_unit_name = "sotavpn-bridge.service"
+user_service_is_active_command = ["systemctl", "--machine", "{username}@.host", "--user", "is-active", "{unit}"]
+# Directory of the user-mode installation, relative to home_dir, and the
+# settings file inside it. Both mirror the USER_INSTALL set of the bridge
+# settings; the task reads the version and the HTTP port from that file
+# instead of holding either value.
+user_install_relative_path = ".local/share/sotavpn-bridge"
+settings_file_name = "settings.py"
+# Names of the value lines the task reads from the bridge settings file:
+# the version of the program and the plain HTTP port it serves.
+settings_version_key = "PROGRAM_VERSION"
+settings_http_port_key = "HTTP_PORT"
+# Runtime directory of the user manager and its bus address, as
+# templates on the account id: the task hands them to the installer
+# environment when the run has no session environment of the desktop
+# user, so systemctl --user inside the installer reaches the user
+# manager of that account.
+runtime_dir_template = "/run/user/{uid}"
+session_bus_address_template = "unix:path=/run/user/{uid}/bus"
+# Title of the source vault entry whose password carries the access key
+# of the Sota account. An absent entry or an empty password means the
+# pool is not configured for this run: the task reports it and changes
+# nothing.
+key_entry_title = "sotavpn_uuid"
+# Addresses of the bridge on the loopback interface: the root page
+# answers while the program is up and is used as the readiness probe,
+# and the subscription address carries the access key and asks for the
+# raw answer, which is the list of vless links the panel turns into
+# outbounds.
+root_url_template = "http://127.0.0.1:{port}/"
+subscription_url_template = "http://127.0.0.1:{port}/sub/{key}/raw"
+# The outbound subscription the task creates in the panel: its label,
+# the prefix of the generated outbound tags, the refresh interval in
+# seconds (five minutes is the floor of the panel refresh job) and the
+# flags of the call. allow_private is required, because without it the
+# panel refuses the loopback address of the bridge.
+subscription_remark = "sota-bridge"
+subscription_tag_prefix = "sota-"
+subscription_update_interval_seconds = 300
+subscription_enabled = true
+subscription_allow_private = true
+subscription_allow_insecure = false
+subscription_prepend = false
+# Tag of the load balancer the task owns. Its selector covers the tag
+# prefix above and the remote outbound tag of the
+# [three_x_ui_xray_setup] table, so the balancer chooses among every
+# Sota node and the machine own remote server.
+balancer_tag = "pyntara-fastest"
+# Observatory of that balancer: the balanced strategies pick by its
+# probe results, and an outbound it does not observe is excluded, so its
+# subject selector equals the balancer selector. The probe URL is the
+# tiny answer of Cloudflare that carries no body and is never cached.
+observatory_probe_url = "https://www.google.com/generate_204"
+observatory_probe_interval = "30s"
+observatory_enable_concurrency = true
+# Seconds the bridge HTTP listener may take to answer after the
+# installer ran, and the pause between two readiness probes.
+bridge_ready_wait_seconds = 60
+readiness_check_delay_seconds = 1

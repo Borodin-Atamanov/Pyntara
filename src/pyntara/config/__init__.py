@@ -48,6 +48,7 @@ from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
+from .sotavpn_setup import SotavpnSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
@@ -129,6 +130,7 @@ __all__ = [
     "PortForwardingSetupConfig",
     "RustdeskOptionConfig",
     "RustdeskSetupConfig",
+    "SotavpnSetupConfig",
     "SshClientSetupConfig",
     "SshDaemonSetupConfig",
     "SshDirective",

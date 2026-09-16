@@ -314,6 +314,9 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
         "three_x_ui_xray_setup.connection_vault_entry_title": (
             factory.three_x_ui_xray_setup.connection_vault_entry_title
         ),
+        "sotavpn_setup.key_entry_title": (
+            factory.sotavpn_setup.key_entry_title
+        ),
     }
     missing = sorted(
         name for name, title in referenced.items() if title not in titles

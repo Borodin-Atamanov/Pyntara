@@ -81,7 +81,13 @@ class ThreeXuiXraySetupConfig:
     policy removes, panel_geodata_domain_kind and panel_geodata_ip_kind
     are the kinds the panel accepts in its geodata validation request, and
     inbound_sniffing_protocols are the protocols the panel is asked to
-    detect on the universal inbound. The HTTP interface of the panel is
+    detect on the universal inbound. The outbound subscription of the
+    Sotavpn pool and its load balancer are answered by the same table:
+    panel_outbound_subs_path, panel_outbound_subs_item_path,
+    panel_outbound_subs_refresh_path and panel_balancer_status_path are
+    their endpoints, and the names of the subscription and balancer
+    fields live in panel_field_keys and xray_field_keys. The HTTP
+    interface of the panel is
     configured the same way: panel_http_headers and
     panel_http_header_values are the names and the values of the headers
     the client sends, panel_http_methods the methods of its calls,
@@ -149,6 +155,10 @@ class ThreeXuiXraySetupConfig:
     panel_xray_update_path: str
     panel_xray_geodata_validate_path: str
     panel_xray_route_test_path: str
+    panel_outbound_subs_path: str
+    panel_outbound_subs_item_path: str
+    panel_outbound_subs_refresh_path: str
+    panel_balancer_status_path: str
     panel_status_path: str
     panel_xray_result_path: str
     panel_status_keys: dict[str, str]

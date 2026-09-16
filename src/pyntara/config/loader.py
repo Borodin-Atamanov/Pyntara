@@ -35,6 +35,7 @@ from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskSetupConfig
+from .sotavpn_setup import SotavpnSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import SystemMetricsSetupConfig
@@ -76,6 +77,7 @@ class Config:
     i2pd_service_setup: I2pdServiceSetupConfig
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
+    sotavpn_setup: SotavpnSetupConfig
     tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig

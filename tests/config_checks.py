@@ -39,6 +39,7 @@ from pyntara.config import (
     PortForwardingSetupConfig,
     RustdeskOptionConfig,
     RustdeskSetupConfig,
+    SotavpnSetupConfig,
     SshClientSetupConfig,
     SshDaemonSetupConfig,
     SshDirective,
@@ -253,6 +254,16 @@ XRAY_FIELD_KEY_MEANINGS = (
     "rules",
     "domain_strategy",
     "final_rules",
+    "observatory",
+    "balancers",
+    "subject_selector",
+    "probe_url",
+    "probe_interval",
+    "enable_concurrency",
+    "strategy",
+    "selector",
+    "fallback_tag",
+    "balancer_tag",
 )
 
 XRAY_VALUE_MEANINGS = (
@@ -267,6 +278,7 @@ XRAY_VALUE_MEANINGS = (
     "api_tag",
     "onion_domain",
     "i2p_domain",
+    "least_ping",
 )
 
 VLESS_LINK_QUERY_KEY_MEANINGS = (
@@ -3411,6 +3423,145 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
 
 
 
+# from sotavpn_setup.py
+
+
+def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
+    """Validate the [sotavpn_setup] table and build SotavpnSetupConfig.
+
+    The account, the bridge installation and the pool objects are checked
+    like every other section: names, paths and templates are non-empty
+    strings, command arrays are non-empty arrays of strings, the tag of
+    the balancer and the tag prefix carry no whitespace, the refresh
+    interval and the readiness budget are positive, and the pause between
+    two readiness probes is not negative. The entry title of the account
+    is cross-checked against the [vault_structure] table in
+    strict_config_from_document.
+    """
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[sotavpn_setup] section is missing or not a table")
+    subscription_update_interval_seconds = _positive_int_field(
+        raw.get("subscription_update_interval_seconds"),
+        "sotavpn_setup.subscription_update_interval_seconds",
+    )
+    bridge_ready_wait_seconds = _positive_int_field(
+        raw.get("bridge_ready_wait_seconds"),
+        "sotavpn_setup.bridge_ready_wait_seconds",
+    )
+    readiness_check_delay_seconds = _int_field(
+        raw.get("readiness_check_delay_seconds"),
+        "sotavpn_setup.readiness_check_delay_seconds",
+    )
+    if readiness_check_delay_seconds < 0:
+        raise ConfigError(
+            "sotavpn_setup.readiness_check_delay_seconds must not be negative"
+        )
+    return SotavpnSetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "sotavpn_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "sotavpn_setup.home_dir"
+        ),
+        runuser_command=_string_list(
+            raw.get("runuser_command"), "sotavpn_setup.runuser_command"
+        ),
+        archive_url=_nonempty_string_field(
+            raw.get("archive_url"), "sotavpn_setup.archive_url"
+        ),
+        archive_temp_prefix=_nonempty_string_field(
+            raw.get("archive_temp_prefix"), "sotavpn_setup.archive_temp_prefix"
+        ),
+        archive_temp_suffix=_nonempty_string_field(
+            raw.get("archive_temp_suffix"), "sotavpn_setup.archive_temp_suffix"
+        ),
+        installer_file_name=_nonempty_string_field(
+            raw.get("installer_file_name"), "sotavpn_setup.installer_file_name"
+        ),
+        installer_command=_string_list(
+            raw.get("installer_command"), "sotavpn_setup.installer_command"
+        ),
+        service_unit_name=_nonempty_string_field(
+            raw.get("service_unit_name"), "sotavpn_setup.service_unit_name"
+        ),
+        user_service_is_active_command=_string_list(
+            raw.get("user_service_is_active_command"),
+            "sotavpn_setup.user_service_is_active_command",
+        ),
+        user_install_relative_path=_nonempty_string_field(
+            raw.get("user_install_relative_path"),
+            "sotavpn_setup.user_install_relative_path",
+        ),
+        settings_file_name=_nonempty_string_field(
+            raw.get("settings_file_name"), "sotavpn_setup.settings_file_name"
+        ),
+        settings_version_key=_nonempty_string_field(
+            raw.get("settings_version_key"), "sotavpn_setup.settings_version_key"
+        ),
+        settings_http_port_key=_nonempty_string_field(
+            raw.get("settings_http_port_key"),
+            "sotavpn_setup.settings_http_port_key",
+        ),
+        runtime_dir_template=_nonempty_string_field(
+            raw.get("runtime_dir_template"), "sotavpn_setup.runtime_dir_template"
+        ),
+        session_bus_address_template=_nonempty_string_field(
+            raw.get("session_bus_address_template"),
+            "sotavpn_setup.session_bus_address_template",
+        ),
+        key_entry_title=_nonempty_string_field(
+            raw.get("key_entry_title"), "sotavpn_setup.key_entry_title"
+        ),
+        root_url_template=_nonempty_string_field(
+            raw.get("root_url_template"), "sotavpn_setup.root_url_template"
+        ),
+        subscription_url_template=_nonempty_string_field(
+            raw.get("subscription_url_template"),
+            "sotavpn_setup.subscription_url_template",
+        ),
+        subscription_remark=_nonempty_string_field(
+            raw.get("subscription_remark"), "sotavpn_setup.subscription_remark"
+        ),
+        subscription_tag_prefix=_tag_field(
+            raw.get("subscription_tag_prefix"),
+            "sotavpn_setup.subscription_tag_prefix",
+        ),
+        subscription_update_interval_seconds=subscription_update_interval_seconds,
+        subscription_enabled=_bool_field(
+            raw.get("subscription_enabled"), "sotavpn_setup.subscription_enabled"
+        ),
+        subscription_allow_private=_bool_field(
+            raw.get("subscription_allow_private"),
+            "sotavpn_setup.subscription_allow_private",
+        ),
+        subscription_allow_insecure=_bool_field(
+            raw.get("subscription_allow_insecure"),
+            "sotavpn_setup.subscription_allow_insecure",
+        ),
+        subscription_prepend=_bool_field(
+            raw.get("subscription_prepend"), "sotavpn_setup.subscription_prepend"
+        ),
+        balancer_tag=_tag_field(
+            raw.get("balancer_tag"), "sotavpn_setup.balancer_tag"
+        ),
+        observatory_probe_url=_nonempty_string_field(
+            raw.get("observatory_probe_url"),
+            "sotavpn_setup.observatory_probe_url",
+        ),
+        observatory_probe_interval=_nonempty_string_field(
+            raw.get("observatory_probe_interval"),
+            "sotavpn_setup.observatory_probe_interval",
+        ),
+        observatory_enable_concurrency=_bool_field(
+            raw.get("observatory_enable_concurrency"),
+            "sotavpn_setup.observatory_enable_concurrency",
+        ),
+        bridge_ready_wait_seconds=bridge_ready_wait_seconds,
+        readiness_check_delay_seconds=readiness_check_delay_seconds,
+    )
+
+
 # from ssh.py
 
 
@@ -5287,6 +5438,22 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         raw.get("panel_xray_route_test_path"),
         "three_x_ui_xray_setup.panel_xray_route_test_path",
     )
+    panel_outbound_subs_path = _nonempty_string_field(
+        raw.get("panel_outbound_subs_path"),
+        "three_x_ui_xray_setup.panel_outbound_subs_path",
+    )
+    panel_outbound_subs_item_path = _nonempty_string_field(
+        raw.get("panel_outbound_subs_item_path"),
+        "three_x_ui_xray_setup.panel_outbound_subs_item_path",
+    )
+    panel_outbound_subs_refresh_path = _nonempty_string_field(
+        raw.get("panel_outbound_subs_refresh_path"),
+        "three_x_ui_xray_setup.panel_outbound_subs_refresh_path",
+    )
+    panel_balancer_status_path = _nonempty_string_field(
+        raw.get("panel_balancer_status_path"),
+        "three_x_ui_xray_setup.panel_balancer_status_path",
+    )
     panel_status_path = _nonempty_string_field(
         raw.get("panel_status_path"),
         "three_x_ui_xray_setup.panel_status_path",
@@ -5460,6 +5627,10 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         panel_xray_update_path=panel_xray_update_path,
         panel_xray_geodata_validate_path=panel_xray_geodata_validate_path,
         panel_xray_route_test_path=panel_xray_route_test_path,
+        panel_outbound_subs_path=panel_outbound_subs_path,
+        panel_outbound_subs_item_path=panel_outbound_subs_item_path,
+        panel_outbound_subs_refresh_path=panel_outbound_subs_refresh_path,
+        panel_balancer_status_path=panel_balancer_status_path,
         panel_status_path=panel_status_path,
         panel_xray_result_path=panel_xray_result_path,
         panel_status_keys=_string_map(
@@ -7034,6 +7205,15 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             "rustdesk_setup.vault_entry_title must name an entry of the "
             "[vault_structure] table"
         )
+    sotavpn_setup = _sotavpn_setup_table(document.get("sotavpn_setup"))
+    if not any(
+        entry.title == sotavpn_setup.key_entry_title
+        for entry in vault_structure.entries
+    ):
+        raise ConfigError(
+            "sotavpn_setup.key_entry_title must name an entry of the "
+            "[vault_structure] table"
+        )
     config = Config(
         engine=_engine_table(document.get("engine")),
         cli_tools=_cli_tools_table(document.get("cli_tools")),
@@ -7075,6 +7255,7 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
         port_forwarding_setup=port_forwarding_setup,
         upnp_forwarding_setup=upnp_forwarding_setup,
         rustdesk_setup=rustdesk_setup,
+        sotavpn_setup=sotavpn_setup,
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,
         local_vault_setup=local_vault_setup,

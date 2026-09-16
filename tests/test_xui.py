@@ -176,6 +176,14 @@ def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
         "panel_xray_update_path": "/panel/api/xray/update",
         "panel_xray_geodata_validate_path": "/panel/api/xray/geodata/validate",
         "panel_xray_route_test_path": "/panel/api/xray/routeTest",
+        "panel_outbound_subs_path": "/panel/api/xray/outbound-subs",
+        "panel_outbound_subs_item_path": (
+            "/panel/api/xray/outbound-subs/{subscription_id}"
+        ),
+        "panel_outbound_subs_refresh_path": (
+            "/panel/api/xray/outbound-subs/{subscription_id}/refresh"
+        ),
+        "panel_balancer_status_path": "/panel/api/xray/balancerStatus",
         "panel_status_path": "/panel/api/server/status",
         "panel_xray_result_path": "/panel/api/xray/getXrayResult",
         "panel_status_keys": {
