@@ -31,11 +31,12 @@ from pyntara.context import Context
 from pyntara.location import CountryReport
 from pyntara.models import TaskResult
 from pyntara.public_address import PublicAddresses
-from pyntara.tasks.three_x_ui_xray_setup import _RunFacts as RunFacts
 from pyntara.upnp import ForwardedAddress
 from pyntara.utils import curl_flags
+from pyntara.xray_facts import _RunFacts as RunFacts
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
+xray_facts = importlib.import_module("pyntara.xray_facts")
 
 TAG = "3.7.0"
 
@@ -2681,13 +2682,13 @@ class TestDetectServerIp:
         # The addresses are collected once per run, so the helper only
         # picks the first public IPv4: no further query is made.
         facts = _facts(public=("203.0.113.7", "203.0.113.8"))
-        assert xui._detect_server_ip(facts) == "203.0.113.7"
+        assert xray_facts._detect_server_ip(facts) == "203.0.113.7"
 
     def test_returns_none_when_only_ipv6_is_reported(self) -> None:
         # A Let's Encrypt IP certificate needs IPv4: an IPv6-only machine
         # reports no IPv4 address and keeps its self-signed certificate.
         facts = _facts(public_ipv6=("2001:db8::1",))
-        assert xui._detect_server_ip(facts) is None
+        assert xray_facts._detect_server_ip(facts) is None
 
 
 class TestServerShareAddress:
@@ -2715,7 +2716,7 @@ class TestServerShareAddress:
         facts = _facts(public=("203.0.113.5",), local=("203.0.113.5", "10.0.0.1"))
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "203.0.113.5"
@@ -2732,7 +2733,7 @@ class TestServerShareAddress:
         cfg = make_config().three_x_ui_xray_setup
         full_config = make_config(yggdrasil_address_file_path=address_file)
         assert (
-            xui._server_share_address(cfg, full_config, self._inbound(), facts)
+            xray_facts._server_share_address(cfg, full_config, self._inbound(), facts)
             == "[2001:db8::9]"
         )
 
@@ -2749,7 +2750,7 @@ class TestServerShareAddress:
         )
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "190.55.165.52"
@@ -2763,7 +2764,7 @@ class TestServerShareAddress:
         facts = _facts(public=("190.55.165.52",), local=("192.168.1.5",))
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "192.168.1.5"
@@ -2777,7 +2778,7 @@ class TestServerShareAddress:
         facts = _facts(local=("192.168.1.5",))
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound(), facts
             )
             == "192.168.1.5"
@@ -2788,7 +2789,7 @@ class TestServerShareAddress:
     ) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound("198.51.100.9"), _facts()
             )
             == "198.51.100.9"
@@ -2797,7 +2798,7 @@ class TestServerShareAddress:
     def test_returns_none_without_any_source(self, tmp_path: Path) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
-            xui._server_share_address(
+            xray_facts._server_share_address(
                 cfg, self._full_config(tmp_path), self._inbound(), _facts()
             )
             is None
@@ -2807,7 +2808,7 @@ class TestServerShareAddress:
         # The reported address that also sits on an interface belongs to
         # this machine: the machine is reachable without a forward.
         assert (
-            xui._machine_public_address(
+            xray_facts._machine_public_address(
                 _addresses(ipv4=("190.55.165.52",), ipv6=("2001:db8::1",)),
                 ("192.168.1.5", "2001:db8::1"),
             )
@@ -2818,7 +2819,7 @@ class TestServerShareAddress:
         # Every reported address belongs to a provider or a router: a NAT
         # sits in front and a forward is needed.
         assert (
-            xui._machine_public_address(
+            xray_facts._machine_public_address(
                 _addresses(ipv4=("190.55.165.52",)), ("192.168.1.5",)
             )
             is None
@@ -2836,10 +2837,10 @@ class TestUpnpClientPackage:
         ) -> tuple[bool, str]:
             raise AssertionError("apt must not run for an installed package")
 
-        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: True)
-        monkeypatch.setattr(xui, "install_package_once", fail_install)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: True)
+        monkeypatch.setattr(xray_facts, "install_package_once", fail_install)
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
+        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
 
     def test_installs_the_configured_package_through_the_shared_helper(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2852,21 +2853,23 @@ class TestUpnpClientPackage:
             installed.append(package)
             return (True, "")
 
-        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: False)
-        monkeypatch.setattr(xui, "install_package_once", fake_install)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: False)
+        monkeypatch.setattr(xray_facts, "install_package_once", fake_install)
         cfg = make_config(three_x_ui_upnp_package="miniupnpc").three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
+        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
         assert installed == ["miniupnpc"]
 
     def test_reports_failure_without_raising(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xui, "package_is_installed", lambda _e, _p, _t: False)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: False)
         monkeypatch.setattr(
-            xui, "install_package_once", lambda _e, _p, _t: (False, "no candidate")
+            xray_facts,
+            "install_package_once",
+            lambda _e, _p, _t: (False, "no candidate"),
         )
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._ensure_upnp_client(make_config().engine, cfg, 30.0) is False
+        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is False
 
 
 class TestCollectRunFacts:
@@ -2879,12 +2882,12 @@ class TestCollectRunFacts:
         # asking again, which keeps a run short.
         router_calls: list[float] = []
         monkeypatch.setattr(
-            xui,
+            xray_facts,
             "_public_addresses",
             lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ("10.0.0.1",))
-        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _e, _c, _t: True)
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ("10.0.0.1",))
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _e, _c, _t: True)
 
         def fake_router(engine: object, command: str, timeout: float) -> str:
             del engine, command
@@ -2892,7 +2895,7 @@ class TestCollectRunFacts:
             return "190.55.165.52"
 
         monkeypatch.setattr("pyntara.upnp.router_external_address", fake_router)
-        facts = xui._collect_run_facts(
+        facts = xray_facts._collect_run_facts(
             make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
@@ -2917,22 +2920,22 @@ class TestCollectRunFacts:
             raise AssertionError("the router must not be asked")
 
         monkeypatch.setattr(
-            xui, "_public_addresses", lambda _e, _c, _t: _addresses()
+            xray_facts, "_public_addresses", lambda _e, _c, _t: _addresses()
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ())
-        monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ())
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        facts = xui._collect_run_facts(make_config().engine, cfg, 30.0)
+        facts = xray_facts._collect_run_facts(make_config().engine, cfg, 30.0)
         assert facts.router_address is None
 
     def test_reports_no_router_when_the_client_cannot_be_installed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xui, "_public_addresses", lambda _e, _c, _t: _addresses())
-        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ())
-        monkeypatch.setattr(xui, "_ensure_upnp_client", lambda _e, _c, _t: False)
-        facts = xui._collect_run_facts(
+        monkeypatch.setattr(xray_facts, "_public_addresses", lambda _e, _c, _t: _addresses())
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ())
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _e, _c, _t: False)
+        facts = xray_facts._collect_run_facts(
             make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
@@ -2954,14 +2957,14 @@ class TestCollectRunFacts:
             raise AssertionError("the router must not be asked")
 
         monkeypatch.setattr(
-            xui,
+            xray_facts,
             "_public_addresses",
             lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xui, "local_addresses", lambda _e, _t: ("203.0.113.5",))
-        monkeypatch.setattr(xui, "_ensure_upnp_client", fail_install)
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ("203.0.113.5",))
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
-        facts = xui._collect_run_facts(
+        facts = xray_facts._collect_run_facts(
             make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
@@ -2984,11 +2987,11 @@ class TestForwardUpnpPorts:
             return ForwardedAddress("190.55.165.52", True)
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
-        monkeypatch.setattr(xui.socket, "gethostname", lambda: "testhost")
+        monkeypatch.setattr(xray_facts.socket, "gethostname", lambda: "testhost")
         cfg = make_config().three_x_ui_xray_setup
         engine = make_config().engine
         facts = _facts(public=("190.55.165.52",), router="190.55.165.52")
-        assert xui._forward_upnp_ports(engine, cfg, facts, 30.0) == "190.55.165.52"
+        assert xray_facts._forward_upnp_ports(engine, cfg, facts, 30.0) == "190.55.165.52"
         # The description is the ownership mark of the rule and carries the
         # machine name, so a neighbour of this project on the same router
         # keeps its own rule.
@@ -3020,7 +3023,7 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config(three_x_ui_ssl_enabled=False).three_x_ui_xray_setup
         facts = _facts(router="190.55.165.52")
-        xui._forward_upnp_ports(make_config().engine, cfg, facts, 30.0)
+        xray_facts._forward_upnp_ports(make_config().engine, cfg, facts, 30.0)
         assert [call[3] for call in calls] == [cfg.inbound_port]
 
     def test_returns_no_client_address_behind_a_provider_nat(
@@ -3035,7 +3038,7 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config().three_x_ui_xray_setup
         facts = _facts(public=("190.55.165.52",), router="100.64.0.7")
-        assert xui._forward_upnp_ports(make_config().engine, cfg, facts, 30.0) is None
+        assert xray_facts._forward_upnp_ports(make_config().engine, cfg, facts, 30.0) is None
 
     def test_does_nothing_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3046,7 +3049,7 @@ class TestForwardUpnpPorts:
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
         cfg = make_config().three_x_ui_xray_setup
-        assert xui._forward_upnp_ports(make_config().engine, cfg, _facts(), 30.0) is None
+        assert xray_facts._forward_upnp_ports(make_config().engine, cfg, _facts(), 30.0) is None
 
 
 # The vless link a test machine is a client of; the address is a
