@@ -352,14 +352,17 @@ def _field_rule(
     outbound_tag: str,
     fields: dict[str, str],
     values: dict[str, str],
+    criteria: dict[str, object] | None = None,
+    *,
     balancer_tag: str = "",
-    **criteria: object,
 ) -> dict[str, object]:
     """One field rule scoped to the local proxy inbound.
 
-    A rule names either an outbound (outbound_tag) or a load balancer
-    (balancer_tag): the core reads the two fields as alternatives, and a
-    balancer picks its own member from the pool.
+    criteria is the match of the rule (a domain list or an address list)
+    and stays empty for the rule that is the default of its branch, which
+    matches by inbound alone. A rule names either an outbound (outbound_tag)
+    or a load balancer (balancer_tag): the core reads the two fields as
+    alternatives, and a balancer picks its own member from the pool.
     """
 
     target = (
@@ -370,7 +373,7 @@ def _field_rule(
     return {
         fields["type"]: values["field"],
         fields["inbound_tag"]: [inbound_tag],
-        **criteria,
+        **(criteria or {}),
         **target,
     }
 
@@ -410,7 +413,7 @@ def build_routing_rules(
                 policy.blocked_outbound_tag,
                 fields,
                 values,
-                **{fields["domain"]: list(policy.ad_block_domain_categories)},
+                {fields["domain"]: list(policy.ad_block_domain_categories)},
             )
         )
     rules.append(
@@ -419,7 +422,7 @@ def build_routing_rules(
             policy.tor_outbound_tag,
             fields,
             values,
-            **{fields["domain"]: [values["onion_domain"]]},
+            {fields["domain"]: [values["onion_domain"]]},
         )
     )
     rules.append(
@@ -428,7 +431,7 @@ def build_routing_rules(
             policy.i2p_outbound_tag,
             fields,
             values,
-            **{fields["domain"]: [values["i2p_domain"]]},
+            {fields["domain"]: [values["i2p_domain"]]},
         )
     )
     if policy.direct_domains:
@@ -438,7 +441,7 @@ def build_routing_rules(
                 policy.direct_outbound_tag,
                 fields,
                 values,
-                **{fields["domain"]: list(policy.direct_domains)},
+                {fields["domain"]: list(policy.direct_domains)},
             )
         )
     if remote_outbound_available and policy.in_russia:
@@ -449,7 +452,7 @@ def build_routing_rules(
                     policy.direct_outbound_tag,
                     fields,
                     values,
-                    **{
+                    {
                         fields["domain"]: list(
                             policy.russia_direct_domain_categories
                         )
@@ -463,12 +466,12 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
-                    balancer_tag=remote_balancer_tag,
-                    **{
+                    {
                         fields["domain"]: list(
                             policy.geo_restricted_domain_categories
                         )
                     },
+                    balancer_tag=remote_balancer_tag,
                 )
             )
         if policy.russia_blocked_domain_categories:
@@ -478,12 +481,12 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
-                    balancer_tag=remote_balancer_tag,
-                    **{
+                    {
                         fields["domain"]: list(
                             policy.russia_blocked_domain_categories
                         )
                     },
+                    balancer_tag=remote_balancer_tag,
                 )
             )
     direct_ips = policy.direct_ip_values()
@@ -494,7 +497,7 @@ def build_routing_rules(
                 policy.direct_outbound_tag,
                 fields,
                 values,
-                **{fields["ip"]: direct_ips},
+                {fields["ip"]: direct_ips},
             )
         )
     if not remote_outbound_available:
@@ -507,7 +510,7 @@ def build_routing_rules(
                     policy.direct_outbound_tag,
                     fields,
                     values,
-                    **{
+                    {
                         fields["ip"]: list(
                             policy.russia_direct_ip_categories
                         )
@@ -521,12 +524,12 @@ def build_routing_rules(
                     policy.remote_outbound_tag,
                     fields,
                     values,
-                    balancer_tag=remote_balancer_tag,
-                    **{
+                    {
                         fields["ip"]: list(
                             policy.russia_blocked_ip_categories
                         )
                     },
+                    balancer_tag=remote_balancer_tag,
                 )
             )
         rules.append(
@@ -652,6 +655,37 @@ def find_pool_balancer(
         ):
             return tag
     return ""
+
+
+def pool_selector_of(
+    settings: dict[str, object],
+    fields: dict[str, str],
+    balancer_tag: str,
+) -> tuple[str, ...]:
+    """The selector entries of a balancer by its tag; empty when absent.
+
+    The routing check of a machine whose remote classes leave through the
+    pool accepts any answer the selector covers, so the caller reads the
+    entries back from the template it read. Every malformed shape answers
+    an empty tuple instead of raising.
+    """
+
+    routing = settings.get(fields["routing"])
+    if not isinstance(routing, dict):
+        return ()
+    balancers = routing.get(fields["balancers"])
+    if not isinstance(balancers, list):
+        return ()
+    for balancer in balancers:
+        if not isinstance(balancer, dict):
+            continue
+        if balancer.get(fields["tag"]) != balancer_tag:
+            continue
+        selector = balancer.get(fields["selector"])
+        if not isinstance(selector, list):
+            continue
+        return tuple(entry for entry in selector if isinstance(entry, str))
+    return ()
 
 
 def apply_fastest_pool(

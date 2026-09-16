@@ -246,7 +246,10 @@ def _own_network_address(own_networks: tuple[str, ...]) -> str | None:
 
 
 def _route_expectations(
-    cfg: ThreeXuiXraySetupConfig, policy: routing_policy.LocalProxyPolicy
+    cfg: ThreeXuiXraySetupConfig,
+    policy: routing_policy.LocalProxyPolicy,
+    *,
+    remote_balancer_tag: str = "",
 ) -> tuple[tuple[str, str, str], ...]:
     """The destinations to ask the core about and the outbound each must take.
 
@@ -255,9 +258,14 @@ def _route_expectations(
     from the policy itself, so a disagreement means the running core did
     not take the policy: the two hidden services are local, the direct
     domain and the machine's own subnet go directly, the advertising
-    domain is dropped, and the country decides the rest.
+    domain is dropped, and the country decides the rest. When
+    remote_balancer_tag is set, the remote classes leave through that
+    balancer and the expected answer is the member the balancer picked (or
+    the balancer tag itself), which the caller accepts through the
+    balancer selector.
     """
 
+    remote_target = remote_balancer_tag or policy.remote_outbound_tag
     checks: list[tuple[str, str, str]] = [
         (cfg.route_check_onion_domain, "domain", policy.tor_outbound_tag),
         (cfg.route_check_i2p_domain, "domain", policy.i2p_outbound_tag),
@@ -275,12 +283,12 @@ def _route_expectations(
             (
                 cfg.route_check_russia_blocked_domain,
                 "domain",
-                policy.remote_outbound_tag,
+                remote_target,
             )
         )
     else:
         checks.append(
-            (cfg.route_check_foreign_domain, "domain", policy.remote_outbound_tag)
+            (cfg.route_check_foreign_domain, "domain", remote_target)
         )
     return tuple(checks)
 
@@ -319,11 +327,35 @@ def _ask_core(
     )
 
 
+def _answer_matches(
+    expected: str,
+    answer: str,
+    remote_balancer_tag: str,
+    balancer_selector: tuple[str, ...],
+) -> bool:
+    """Whether one core answer satisfies an expectation.
+
+    A remote class whose traffic leaves through the pool is answered with
+    the member the balancer picked, so the balancer tag itself and any tag
+    its selector covers satisfy the expectation; every other class is
+    answered with the outbound the policy names for it.
+    """
+
+    if answer == expected:
+        return True
+    if remote_balancer_tag and expected == remote_balancer_tag:
+        return routing_policy.tag_matches_selector(answer, balancer_selector)
+    return False
+
+
 def _verify_routes(
     cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     policy: routing_policy.LocalProxyPolicy,
+    *,
+    remote_balancer_tag: str = "",
+    balancer_selector: tuple[str, ...] = (),
 ) -> tuple[tuple[str, ...], str | None]:
     """Ask the running core about every destination class, and report.
 
@@ -332,13 +364,17 @@ def _verify_routes(
     has already been seen to disagree with the core. A check that matches
     is logged with the outbound it took; every disagreement is returned as
     a warning naming the destination, the expected outbound and the answer.
-    Returns (failures, undecided): undecided is the reason the panel gave
-    when a question got no decision at all, and the failures of that round
-    are dropped, because a round that answered nothing proves nothing.
+    A remote class that leaves through a pool accepts every member the
+    balancer selector covers. Returns (failures, undecided): undecided is
+    the reason the panel gave when a question got no decision at all, and
+    the failures of that round are dropped, because a round that answered
+    nothing proves nothing.
     """
 
     failures: list[str] = []
-    for destination, kind, expected in _route_expectations(cfg, policy):
+    for destination, kind, expected in _route_expectations(
+        cfg, policy, remote_balancer_tag=remote_balancer_tag
+    ):
         matched, answer = _ask_core(
             cfg,
             env,
@@ -349,12 +385,20 @@ def _verify_routes(
         )
         if matched is None:
             return (), answer
-        if matched and answer == expected:
+        if matched and _answer_matches(
+            expected, answer, remote_balancer_tag, balancer_selector
+        ):
             _log(f"routing check {destination}: {answer}")
             continue
         observed = answer if matched else f"no decision ({answer})"
+        expected_text = (
+            f"{expected} or a member of its pool"
+            if remote_balancer_tag and expected == remote_balancer_tag
+            else expected
+        )
         failures.append(
-            f"routing check {destination}: expected {expected}, got {observed}"
+            f"routing check {destination}: expected {expected_text}, got "
+            f"{observed}"
         )
     return tuple(failures), None
 
@@ -364,6 +408,9 @@ def route_test_failures(
     env: dict[str, str],
     timeout: float,
     policy: routing_policy.LocalProxyPolicy,
+    *,
+    remote_balancer_tag: str = "",
+    balancer_selector: tuple[str, ...] = (),
 ) -> tuple[tuple[str, ...], bool]:
     """Ask the core about every class, waiting for its first answer.
 
@@ -386,7 +433,14 @@ def route_test_failures(
     budget = cfg.core_ready_wait_seconds
     delay = cfg.readiness_check_delay_seconds
     started = time.monotonic()
-    failures, undecided = _verify_routes(cfg, env, timeout, policy)
+    failures, undecided = _verify_routes(
+        cfg,
+        env,
+        timeout,
+        policy,
+        remote_balancer_tag=remote_balancer_tag,
+        balancer_selector=balancer_selector,
+    )
     if undecided is not None:
         _log(
             f"the panel core did not answer yet ({undecided}), waiting up to "
@@ -403,7 +457,14 @@ def route_test_failures(
                 ),
             ), False
         time.sleep(delay)
-        failures, undecided = _verify_routes(cfg, env, timeout, policy)
+        failures, undecided = _verify_routes(
+            cfg,
+            env,
+            timeout,
+            policy,
+            remote_balancer_tag=remote_balancer_tag,
+            balancer_selector=balancer_selector,
+        )
         if undecided is None:
             _log(
                 f"the panel core answered after "

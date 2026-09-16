@@ -25,6 +25,7 @@ from pyntara.routing_policy import (
     build_tor_outbound,
     find_pool_balancer,
     parse_vless_link,
+    pool_selector_of,
     tag_matches_selector,
 )
 
@@ -721,6 +722,29 @@ class TestFastestPool:
             "routing": {"balancers": ["nonsense", {"tag": 1}, {"tag": "x"}]}
         }
         assert find_pool_balancer(settings, _FIELDS, "pyntara-remote") == ""
+
+    def test_pool_selector_of_reads_the_entries_back(self) -> None:
+        # The routing check of a machine behind the pool asks the balancer
+        # about its members, so the selector is read back from the template
+        # that was just read, not guessed from the settings.
+        assert pool_selector_of(
+            self.prepared_template(), _FIELDS, "pyntara-fastest"
+        ) == ("sota-", "pyntara-remote")
+
+    def test_pool_selector_of_answers_empty_for_a_foreign_tag(self) -> None:
+        assert pool_selector_of(make_template(), _FIELDS, "pyntara-fastest") == ()
+        assert pool_selector_of({"routing": "nonsense"}, _FIELDS, "x") == ()
+        assert pool_selector_of({"routing": {"balancers": []}}, _FIELDS, "x") == ()
+        settings: dict[str, object] = {
+            "routing": {
+                "balancers": [
+                    "nonsense",
+                    {"tag": "x"},
+                    {"tag": "y", "selector": "nonsense"},
+                ]
+            }
+        }
+        assert pool_selector_of(settings, _FIELDS, "y") == ()
 
     def test_apply_fastest_pool_writes_both_objects(self) -> None:
         updated, changed = apply_fastest_pool(

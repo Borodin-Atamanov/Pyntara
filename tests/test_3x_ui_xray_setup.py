@@ -24,8 +24,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara import routing_policy
-from pyntara import xray_client
+from pyntara import routing_policy, xray_client
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
@@ -3389,7 +3388,7 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr(
             xray_client,
             "_route_expectations",
-            lambda _cfg, _policy: (
+            lambda _cfg, _policy, **_kwargs: (
                 ("example.com", "domain", "direct"),
                 ("10.10.0.0", "address", "direct"),
             ),
@@ -3422,7 +3421,7 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr(
             xray_client,
             "_route_expectations",
-            lambda _cfg, _policy: (
+            lambda _cfg, _policy, **_kwargs: (
                 ("example.com", "domain", "direct"),
                 ("10.10.0.0", "address", "direct"),
             ),
@@ -3871,6 +3870,132 @@ class TestRoutingPolicyStage:
         cfg = self._cfg(tmp_path)
         assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
         assert writes == []
+
+    def _pool_settings(self, tmp_path: Path) -> dict[str, object]:
+        """A stored template as the sotavpn task leaves it: the pool is in."""
+
+        fields = self._cfg(tmp_path).xray_field_keys
+        values = self._cfg(tmp_path).xray_values
+        updated, _ = routing_policy.apply_fastest_pool(
+            _template_settings(),
+            fields,
+            balancer=routing_policy.build_balancer(
+                fields,
+                tag="pyntara-fastest",
+                selector=("sota-", "pyntara-remote"),
+                strategy=values["least_ping"],
+                fallback_tag="pyntara-remote",
+            ),
+            observatory=routing_policy.build_observatory(
+                fields,
+                subject_selector=("sota-", "pyntara-remote"),
+                probe_url="https://www.google.com/generate_204",
+                probe_interval="30s",
+                enable_concurrency=True,
+            ),
+        )
+        return updated
+
+    def test_a_stored_pool_survives_and_serves_the_remote_classes(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The sotavpn task leaves a balancer whose selector covers the
+        # remote outbound, and a rerun of this stage comes after it. The
+        # remote classes must keep naming that balancer, and the core
+        # answers such a class with the member it picked, so the check
+        # accepts a member the selector covers instead of demanding the
+        # balancer tag itself.
+        writes = self._prepare(
+            monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
+        )
+        expected = self._expected_outbounds()
+        expected["example.com"] = "sota-sota-us-nyc-01"
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", self._route_fake(expected, seen)
+        )
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            xui,
+            "run_command",
+            self._answers_by_url(
+                {cfg.proxy_check_url: [(0, "198.51.100.20\n200")]}
+            ),
+        )
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert result.changed is True
+        assert not result.warnings
+        assert len(writes) == 1
+        assert (
+            routing_policy.find_pool_balancer(
+                writes[0], cfg.xray_field_keys, cfg.remote_outbound_tag
+            )
+            == "pyntara-fastest"
+        )
+        rules = self._rules(writes[0])
+        assert not [
+            rule
+            for rule in rules
+            if rule.get("outboundTag") == cfg.remote_outbound_tag
+        ]
+        assert [
+            rule
+            for rule in rules
+            if rule.get("balancerTag") == "pyntara-fastest"
+        ]
+
+    def test_a_remote_answer_outside_the_pool_is_reported_with_the_pool(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A pool accepts the members its selector covers and nothing else:
+        # an answer from outside it is still a disagreement, and the
+        # warning names the pool so the operator knows what was expected.
+        self._prepare(
+            monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
+        )
+        expected = self._expected_outbounds()
+        expected["example.com"] = "direct"
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", self._route_fake(expected, seen)
+        )
+        monkeypatch.setattr(xui, "run_command", lambda *a, **k: _FakeProc(7, ""))
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert any(
+            "expected pyntara-fastest or a member of its pool" in warning
+            for warning in result.warnings or ()
+        )
+
+    def test_a_direct_answer_is_still_reported_when_a_pool_carries_the_traffic(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The pool accepts any exit that is not this machine, because the
+        # member the balancer picks is not known in advance, but an answer
+        # that is an address of this machine is the silent direct path the
+        # check exists to catch.
+        self._prepare(
+            monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
+        )
+        expected = self._expected_outbounds()
+        expected["example.com"] = "sota-sota-us-nyc-01"
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test", self._route_fake(expected, seen)
+        )
+        monkeypatch.setattr(
+            xui, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n200")
+        )
+        cfg = self._cfg(tmp_path)
+        facts = _facts(local=("190.55.165.52",))
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
+        assert result is not None
+        assert any(
+            "did not leave by the remote server" in warning
+            for warning in result.warnings or ()
+        )
 
     def _profile(self) -> routing_policy.VlessProfile:
         settings = make_config().three_x_ui_xray_setup

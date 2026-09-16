@@ -2027,6 +2027,7 @@ def _check_egress_address(
     profile: routing_policy.VlessProfile,
     facts: _RunFacts,
     proxy: str,
+    remote_balancer_tag: str = "",
 ) -> tuple[str, ...]:
     """Check where a request through the local proxy leaves, per country.
 
@@ -2035,10 +2036,14 @@ def _check_egress_address(
     Russia the same name is sent directly on purpose, so the answer must be
     an address of this machine: expecting the remote server there is what
     made an earlier version of this check report a working proxy as broken.
-    The request is attempted the configured number of times, because the
-    path to the remote server can stall once and answer on the next
-    attempt, which is a fact of the network rather than a reason to raise
-    an alarm.
+    A machine whose remote classes leave through a pool gets any exit that
+    is not one of its own addresses accepted, because the member the
+    balancer picks is not known in advance; an answer that is an address
+    of this machine stays the failure the check exists to catch, because
+    it is the silent direct path. The request is attempted the configured
+    number of times, because the path to the remote server can stall once
+    and answer on the next attempt, which is a fact of the network rather
+    than a reason to raise an alarm.
     """
 
     _log(f"checking where a request through {proxy} leaves")
@@ -2085,9 +2090,6 @@ def _check_egress_address(
                 "the request left somewhere unexpected"
             ),
         )
-    if answer == profile.address:
-        _log(f"the local proxy works: the request left by {answer}")
-        return ()
     if answer in _own_addresses(facts):
         return (
             (
@@ -2095,6 +2097,15 @@ def _check_egress_address(
                 "the connection did not leave by the remote server"
             ),
         )
+    if answer == profile.address:
+        _log(f"the local proxy works: the request left by {answer}")
+        return ()
+    if remote_balancer_tag:
+        _log(
+            f"the local proxy works: the request left by {answer} through "
+            f"the pool {remote_balancer_tag}"
+        )
+        return ()
     return (
         (
             f"the local proxy answered {answer}, while {expected} was expected: "
@@ -2152,13 +2163,15 @@ def _check_proxy_path(
     policy: routing_policy.LocalProxyPolicy,
     profile: routing_policy.VlessProfile,
     facts: _RunFacts,
+    remote_balancer_tag: str = "",
 ) -> tuple[str, ...]:
     """Prove the path of the local proxy: where it leaves and what it carries.
 
     The routing checks prove the decision of the core; these two prove the
     path. The first request asks an address-reporting service where the
     traffic left, and its expected answer follows from the policy: the
-    remote server outside Russia, this machine in Russia, because the
+    remote server outside Russia (any exit that is not this machine when a
+    pool carries the remote classes), this machine in Russia, because the
     policy sends an ordinary foreign name directly there. The second
     request, on a machine in Russia only, asks a destination that the
     policy sends through the remote server whether it answers at all, so a
@@ -2168,7 +2181,11 @@ def _check_proxy_path(
     """
 
     proxy = f"socks5h://{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}"
-    warnings = list(_check_egress_address(cfg, policy, profile, facts, proxy))
+    warnings = list(
+        _check_egress_address(
+            cfg, policy, profile, facts, proxy, remote_balancer_tag
+        )
+    )
     if policy.in_russia:
         warnings.extend(_check_remote_path(cfg, proxy))
     return tuple(warnings)
@@ -2229,6 +2246,19 @@ def _stage_routing_policy(
             ),
         )
 
+    front_balancer_tag = routing_policy.find_pool_balancer(
+        template.settings, cfg.xray_field_keys, cfg.remote_outbound_tag
+    )
+    balancer_selector: tuple[str, ...] = ()
+    if front_balancer_tag:
+        balancer_selector = routing_policy.pool_selector_of(
+            template.settings, cfg.xray_field_keys, front_balancer_tag
+        )
+        _log(
+            f"the remote classes follow the pool {front_balancer_tag}: "
+            "the fastest member of it carries them"
+        )
+
     lists, category_warnings = xray_client.checked_category_lists(
         cfg, env, timeout
     )
@@ -2269,6 +2299,7 @@ def _stage_routing_policy(
             cfg.xray_field_keys,
             cfg.xray_values,
         ),
+        remote_balancer_tag=front_balancer_tag,
     )
     applied = False
     if differs:
@@ -2282,7 +2313,14 @@ def _stage_routing_policy(
         applied = True
         _log(f"routing policy applied: {message}")
 
-    failures, decided = xray_client.route_test_failures(cfg, env, timeout, policy)
+    failures, decided = xray_client.route_test_failures(
+        cfg,
+        env,
+        timeout,
+        policy,
+        remote_balancer_tag=front_balancer_tag,
+        balancer_selector=balancer_selector,
+    )
     if failures and decided:
         # The running core can hold a rule set the stored template no longer
         # matches, a state the panel reaches on its own after an inbound is
@@ -2293,7 +2331,12 @@ def _stage_routing_policy(
             applied = True
             _log(f"routing policy written again: {message}")
             failures, decided = xray_client.route_test_failures(
-                cfg, env, timeout, policy
+                cfg,
+                env,
+                timeout,
+                policy,
+                remote_balancer_tag=front_balancer_tag,
+                balancer_selector=balancer_selector,
             )
     warnings.extend(failures)
 
@@ -2301,7 +2344,9 @@ def _stage_routing_policy(
     # every class: a core that is not answering carries no traffic, and that
     # silence is already reported above.
     if decided:
-        warnings.extend(_check_proxy_path(cfg, policy, profile, facts))
+        warnings.extend(
+            _check_proxy_path(cfg, policy, profile, facts, front_balancer_tag)
+        )
 
     if applied:
         return TaskResult(
