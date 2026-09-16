@@ -1027,28 +1027,40 @@ def list_balancer_status(
 ) -> list[dict[str, object]]:
     """Ask the panel which member each load balancer currently picks.
 
-    The panel answers one entry per requested tag with the member it
-    selected, and whether the operator pinned one by hand, so the caller
-    can prove that the pool has a live member. The query parameter name
-    and the entry field names come from the config. Returns the entries it
-    parsed and an empty list when the panel does not answer.
+    The panel answers this endpoint only to a form call, and it answers an
+    object keyed by the balancer tag with one entry per requested tag: the
+    member it selected, whether the operator pinned one by hand and
+    whether the balancer is running. The caller can therefore prove that
+    the pool has a live member. A list of entries is accepted as well,
+    because a panel version may serve that shape; the query field name and
+    the entry field names come from the config. An unreachable panel and
+    an unexpected shape answer an empty list.
     """
 
-    query = urllib.parse.urlencode(
-        {cfg.panel_field_keys["balancer_status_query"]: ",".join(tags)}
-    )
+    fields = cfg.panel_field_keys
+    form = urllib.parse.urlencode(
+        {fields["balancer_status_query"]: ",".join(tags)}
+    ).encode("utf-8")
     base_url, opener = _bearer_opener(cfg, env)
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "form"
+    ]
     status, body = _api_call(
         cfg,
         opener,
-        f"{base_url}{cfg.panel_balancer_status_path}?{query}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{cfg.panel_balancer_status_path}",
+        data=form,
+        headers=headers,
+        method=cfg.panel_http_methods["post"],
         timeout=timeout,
     )
     obj = _payload_of(cfg, status, body)
-    if not isinstance(obj, list):
-        return []
-    return [entry for entry in obj if isinstance(entry, dict)]
+    if isinstance(obj, dict):
+        return [entry for entry in obj.values() if isinstance(entry, dict)]
+    if isinstance(obj, list):
+        return [entry for entry in obj if isinstance(entry, dict)]
+    return []
 
 
 def find_client(

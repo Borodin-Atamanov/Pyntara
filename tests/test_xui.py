@@ -1199,14 +1199,15 @@ class TestPanelPathsComeFromConfig:
             is True
         )
         xui_client.refresh_outbound_subscription(cfg, env, 4, 5)
-        xui_client.list_balancer_status(cfg, env, ("pyntara-fastest",), 5)
+        monitored = xui_client.list_balancer_status(cfg, env, ("pyntara-fastest",), 5)
         assert seen == [
             "http://127.0.0.1:3579/custom/subs",
             "http://127.0.0.1:3579/custom/subs",
             "http://127.0.0.1:3579/custom/subs",
             "http://127.0.0.1:3579/custom/subs/4/refresh",
-            "http://127.0.0.1:3579/custom/balancers?tags=pyntara-fastest",
+            "http://127.0.0.1:3579/custom/balancers",
         ]
+        assert monitored == []
 
 
 class TestFindClient:
@@ -1738,9 +1739,11 @@ class TestOutboundSubscriptions:
 class TestBalancerStatus:
     """Tests for list_balancer_status."""
 
-    def test_asks_every_tag_in_one_query(
+    def test_asks_every_tag_in_one_form_field(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # The panel answers this endpoint only to a form call, and its obj
+        # is an object keyed by the balancer tag, not a list.
         recorded = _record_requests(
             monkeypatch,
             (
@@ -1748,14 +1751,14 @@ class TestBalancerStatus:
                 json.dumps(
                     {
                         "success": True,
-                        "obj": [
-                            {
+                        "obj": {
+                            "pyntara-fastest": {
                                 "tag": "pyntara-fastest",
                                 "running": True,
                                 "override": "",
-                                "selected": "sota-node-1",
+                                "selected": ["sota-node-1"],
                             }
-                        ],
+                        },
                     }
                 ),
             ),
@@ -1763,10 +1766,38 @@ class TestBalancerStatus:
         entries = xui_client.list_balancer_status(
             _cfg(), _ENV, ("pyntara-fastest",), 5
         )
-        assert entries[0]["selected"] == "sota-node-1"
-        assert recorded[0].url.endswith(
-            "/panel/api/xray/balancerStatus?tags=pyntara-fastest"
+        assert entries == [
+            {
+                "tag": "pyntara-fastest",
+                "running": True,
+                "override": "",
+                "selected": ["sota-node-1"],
+            }
+        ]
+        assert recorded[0].url.endswith("/panel/api/xray/balancerStatus")
+        assert recorded[0].form() == {"tags": "pyntara-fastest"}
+        assert recorded[0].header("Content-Type") == "application/x-www-form-urlencoded"
+
+    def test_accepts_a_list_of_entries(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _record_requests(
+            monkeypatch,
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": [
+                            {"tag": "pyntara-fastest", "selected": "sota-node-1"}
+                        ],
+                    }
+                ),
+            ),
         )
+        assert xui_client.list_balancer_status(
+            _cfg(), _ENV, ("pyntara-fastest",), 5
+        ) == [{"tag": "pyntara-fastest", "selected": "sota-node-1"}]
 
     def test_an_unreachable_panel_answers_nothing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1782,10 +1813,18 @@ class TestBalancerStatus:
     ) -> None:
         _record_requests(
             monkeypatch,
-            (200, json.dumps({"success": True, "obj": ["nonsense", {"tag": "x"}]})),
+            (
+                200,
+                json.dumps(
+                    {
+                        "success": True,
+                        "obj": {"good": {"tag": "good"}, "bad": "nonsense"},
+                    }
+                ),
+            ),
         )
         assert xui_client.list_balancer_status(_cfg(), _ENV, ("x",), 5) == [
-            {"tag": "x"}
+            {"tag": "good"}
         ]
 
 
