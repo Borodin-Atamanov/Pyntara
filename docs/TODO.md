@@ -85,7 +85,7 @@ done.
    collector, the ingest, the sender, the deployment and the two telemetry pdf
    values
 10. zswap_service, done, 12 / 253 / 19
-11. ssh_client_setup, 37 / 185 / 26
+11. ssh_client_setup, done, 37 / 185 / 26
 12. three_x_ui_xray_setup, 162 / 535 / 32
 13. local_vault_setup and vault_structure, 11 / 467 / 33
 14. upnp_forwarding_setup, 22 / 293 / 35

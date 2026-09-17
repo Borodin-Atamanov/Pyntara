@@ -44,6 +44,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "imagemagick_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
+    "ssh_client_setup",
     "zswap_service",
 )
 
@@ -61,6 +62,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("cli_tools", "PACKAGES", check_real_package_names),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
     ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
+    ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
 )
 
 

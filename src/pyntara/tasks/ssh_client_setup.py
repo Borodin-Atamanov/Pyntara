@@ -1,12 +1,11 @@
 """Task ssh_client_setup: configure the system-wide SSH client.
 
-The task patches the client configuration through a drop-in file at the
-configured ssh_config_dropin_path, never through ssh_config itself:
-ssh_config is only checked for an Include directive that pulls the
-drop-in directory in, because a missing Include means the drop-in
-would be silently ignored. Directives are written through augeas under
-the container block the config names, which applies them to every
-connection; augeas parses
+The task patches the client configuration through the drop-in file at the
+configured path, never through ssh_config itself: ssh_config is only checked for
+an Include directive that pulls the drop-in directory in, because a missing
+Include means the drop-in would be silently ignored. Directives are written
+through augeas under the container block the values module names, which applies
+them to every connection; augeas parses
 the real syntax and updates only what differs: a directive that is
 already present with the same value is left untouched, a directive with
 a different value is updated, a directive that is no longer configured
@@ -26,15 +25,17 @@ from __future__ import annotations
 import subprocess
 
 from pyntara.augeas import ensure_augtool, include_covers_dropin, sync_dropin
-from pyntara.config import SshClientSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import ssh_client_setup as values
+from pyntara.values.common import SshDirective
 
 
 def _verify_effective_config(
-    cfg: SshClientSetupConfig,
     directives: tuple[SshDirective, ...],
     timeout: float,
 ) -> str | None:
@@ -50,7 +51,7 @@ def _verify_effective_config(
 
     try:
         result = run_command(
-            list(cfg.effective_config_command),
+            list(values.EFFECTIVE_CONFIG_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -89,7 +90,25 @@ def task(ctx: Context) -> TaskResult:
     written without it.
     """
 
-    cfg = ctx.config.ssh_client_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read, so no value is
+        # touched before the names are known.
+        return TaskResult(
+            success=True,
+            message=(
+                "the ssh_client_setup values are not declared, nothing was "
+                "changed"
+            ),
+            warnings=(
+                "the ssh_client_setup values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
     owner_uid = ctx.config.engine.root_owner_uid
@@ -98,28 +117,28 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     include_ok = include_covers_dropin(
-        cfg.ssh_config_path,
-        cfg.ssh_config_dropin_path,
-        cfg.dropin_comment_sign,
-        cfg.include_directive,
+        values.SSH_CONFIG_PATH,
+        values.SSH_CONFIG_DROPIN_PATH,
+        values.DROPIN_COMMENT_SIGN,
+        values.INCLUDE_DIRECTIVE,
     )
     _log(
-        f"checking Include directive in {cfg.ssh_config_path}: "
+        f"checking Include directive in {values.SSH_CONFIG_PATH}: "
         f"{'found' if include_ok else 'missing'}"
     )
     if not include_ok:
         warnings.append(
-            f"{cfg.ssh_config_path} has no Include directive covering "
-            f"{cfg.ssh_config_dropin_path.parent}: the drop-in applies only "
+            f"{values.SSH_CONFIG_PATH} has no Include directive covering "
+            f"{values.SSH_CONFIG_DROPIN_PATH.parent}: the drop-in applies only "
             "after the directive is added"
         )
 
     augtool_error = ensure_augtool(
         ctx.config.engine,
-        cfg.augeas_tools_package_name,
-        status_timeout=cfg.package_status_timeout_seconds,
+        values.AUGEAS_TOOLS_PACKAGE_NAME,
+        status_timeout=common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
         install_timeout=timeout,
-        retries=cfg.install_retries,
+        retries=common_values.PACKAGE_INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
     if augtool_error is not None:
@@ -131,23 +150,25 @@ def task(ctx: Context) -> TaskResult:
             warnings=tuple(warnings),
         )
 
-    directives = tuple(
-        (directive.name, directive.value) for directive in cfg.directives
+    # The augeas helper takes plain pairs, so the records are unwrapped at that
+    # boundary only; everywhere else the values stay as they are declared.
+    directive_pairs = tuple(
+        (directive.name, directive.value) for directive in values.DIRECTIVES
     )
     try:
         changed, _ = sync_dropin(
             ctx.config.engine,
-            cfg.ssh_config_dropin_path,
-            directives,
-            cfg.dropin_file_mode,
+            values.SSH_CONFIG_DROPIN_PATH,
+            directive_pairs,
+            values.DROPIN_FILE_MODE,
             force,
-            cfg.augeas_lens,
-            cfg.dropin_header,
+            values.AUGEAS_LENS,
+            values.DROPIN_HEADER,
             timeout,
-            cfg.dropin_comment_sign,
+            values.DROPIN_COMMENT_SIGN,
             owner_uid=owner_uid,
             owner_gid=owner_gid,
-            container=(cfg.augeas_container, cfg.augeas_container_value),
+            container=(values.AUGEAS_CONTAINER, values.AUGEAS_CONTAINER_VALUE),
         )
     except RuntimeError as exc:
         warnings.append(f"drop-in not written: {exc}")
@@ -155,8 +176,8 @@ def task(ctx: Context) -> TaskResult:
         if changed:
             _log("drop-in synced through augeas")
 
-    if (changed or force) and cfg.directives:
-        verify = _verify_effective_config(cfg, cfg.directives, timeout)
+    if (changed or force) and values.DIRECTIVES:
+        verify = _verify_effective_config(values.DIRECTIVES, timeout)
         if verify is not None:
             warnings.append(verify)
         else:

@@ -10,32 +10,20 @@ ssh -G with a fixed effective-config output.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import augtool_fake_run, make_config, make_context
+from support import augtool_fake_run, make_context
 
-from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import ssh_client_setup
+from pyntara.values import ssh_client_setup as values
 
-DEFAULT_DIRECTIVES = (
-    SshDirective(name="AddressFamily", value="any"),
-    SshDirective(name="CheckHostIP", value="no"),
-    SshDirective(name="Compression", value="yes"),
-    SshDirective(name="ConnectionAttempts", value="17"),
-    SshDirective(name="ConnectTimeout", value="31"),
-    SshDirective(name="NumberOfPasswordPrompts", value="5"),
-    SshDirective(name="PasswordAuthentication", value="yes"),
-    SshDirective(name="TCPKeepAlive", value="yes"),
-    SshDirective(name="ServerAliveInterval", value="61"),
-    SshDirective(name="ServerAliveCountMax", value="17"),
-    SshDirective(name="PreferredAuthentications", value="publickey,password"),
-    SshDirective(name="StrictHostKeyChecking", value="accept-new"),
-)
+# The directives the task writes are the shipped ones, so every expectation of
+# this file follows a real machine.
+DEFAULT_DIRECTIVES = values.DIRECTIVES
 
 SSH_G_LINES = "".join(
     f"{directive.name.lower()} {directive.value.lower()}\n"
@@ -43,14 +31,34 @@ SSH_G_LINES = "".join(
 )
 
 
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own ssh_config and drop-in path.
+
+    The two paths are values of the task, so the fixture points them at the
+    temporary directory of the test and the shipped values come back
+    afterwards.
+    """
+
+    monkeypatch.setattr(
+        values, "SSH_CONFIG_PATH", tmp_path / "etc" / "ssh" / "ssh_config"
+    )
+    monkeypatch.setattr(
+        values,
+        "SSH_CONFIG_DROPIN_PATH",
+        tmp_path / "etc" / "ssh" / "ssh_config.d" / "pyntara.conf",
+    )
+
+
 def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
     skip_apt_update: bool = True,
-    directives: tuple[SshDirective, ...] = DEFAULT_DIRECTIVES,
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context safe for unit tests; the real files are never touched."""
 
     return make_context(
         task_name="ssh_client_setup",
@@ -58,41 +66,36 @@ def _ctx(
         force_tasks=frozenset({"ssh_client_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
-        config=make_config(
-            task_data_root=tmp_path,
-            ssh_client_ssh_config_path=tmp_path / "etc" / "ssh" / "ssh_config",
-            ssh_client_ssh_config_dropin_path=(
-                tmp_path / "etc" / "ssh" / "ssh_config.d" / "pyntara.conf"
-            ),
-            ssh_client_directives=directives,
-        ),
     )
 
 
 def _write_ssh_config(ctx: Context, *, include: bool = True) -> None:
-    """Write the fixture ssh_config with an optional Include directive."""
+    """Write the fixture ssh_config with an optional Include directive.
 
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_path.parent.mkdir(parents=True, exist_ok=True)
+    The context argument is not read: the path comes from the values module.
+    It stays in the signature so every call site of this file reads the same.
+    """
+
+    del ctx
+    values.SSH_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     content = "Host *\n"
     if include:
-        content += f"Include {cfg.ssh_config_dropin_path.parent}/*.conf\n"
-    cfg.ssh_config_path.write_text(content, encoding="utf-8")
+        content += f"Include {values.SSH_CONFIG_DROPIN_PATH.parent}/*.conf\n"
+    values.SSH_CONFIG_PATH.write_text(content, encoding="utf-8")
 
 
 def _expected_dropin_content(*, overrides: dict[str, str] | None = None) -> str:
-    """The drop-in exactly as the task renders the default directives.
+    """The drop-in exactly as the task renders the shipped directives.
 
     A directive in overrides replaces the default value, which lets a
     test describe a single drift without restating the whole file. The
-    header and the container line come from the test document, so the
-    expectation follows the config instead of repeating its values.
+    header and the container line come from the values module, so the
+    expectation follows the shipped values instead of repeating them.
     """
 
-    cfg = make_config().ssh_client_setup
     lines = [
-        f"# {cfg.dropin_header}",
-        f"{cfg.augeas_container} {cfg.augeas_container_value}",
+        f"# {values.DROPIN_HEADER}",
+        f"{values.AUGEAS_CONTAINER} {values.AUGEAS_CONTAINER_VALUE}",
     ]
     for directive in DEFAULT_DIRECTIVES:
         value = (overrides or {}).get(directive.name, directive.value)
@@ -147,39 +150,27 @@ def test_syncs_dropin_when_missing(
     result = ssh_client_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    cfg = ctx.config.ssh_client_setup
-    assert cfg.ssh_config_dropin_path.read_text(encoding="utf-8") == (
+    assert values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
-    assert (cfg.ssh_config_dropin_path.stat().st_mode & 0o777) == 0o644
+    mode = values.SSH_CONFIG_DROPIN_PATH.stat().st_mode & 0o777
+    assert mode == values.DROPIN_FILE_MODE
     assert ["ssh", "-G", "example.com"] in calls
 
 
-def test_header_and_container_come_from_the_config(
+def test_header_and_container_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another header and another container value in the config are what
-    # the rendered drop-in carries, so neither is a value of the module.
+    # Another header and another container value in the values module are
+    # what the rendered drop-in carries, so neither is written in the task.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(
-            config,
-            ssh_client_setup=replace(
-                config.ssh_client_setup,
-                dropin_header="Owned by the test",
-                augeas_container_value="*.example.test",
-            ),
-        ),
-    )
+    monkeypatch.setattr(values, "DROPIN_HEADER", "Owned by the test")
+    monkeypatch.setattr(values, "AUGEAS_CONTAINER_VALUE", "*.example.test")
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
     assert result.success is True
-    content = ctx.config.ssh_client_setup.ssh_config_dropin_path.read_text(
-        encoding="utf-8"
-    )
+    content = values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8")
     assert content.startswith("# Owned by the test\nHost *.example.test\n")
 
 
@@ -190,9 +181,8 @@ def test_already_configured_skips(
     # never runs ssh -G.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.ssh_config_dropin_path.write_text(
+    values.SSH_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.SSH_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(), encoding="utf-8"
     )
     calls = _install_fake(monkeypatch)
@@ -210,9 +200,8 @@ def test_force_rewrites_and_verifies(
     # everything matches.
     ctx = _ctx(tmp_path, force=True)
     _write_ssh_config(ctx)
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.ssh_config_dropin_path.write_text(
+    values.SSH_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.SSH_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(), encoding="utf-8"
     )
     calls = _install_fake(monkeypatch)
@@ -229,16 +218,15 @@ def test_removes_stale_directive(
     # drop-in by augeas; the remaining file keeps the desired state.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.ssh_config_dropin_path.write_text(
+    values.SSH_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.SSH_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content() + "\tBanner /etc/issue.net\n",
         encoding="utf-8",
     )
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
     assert result.success is True
-    content = cfg.ssh_config_dropin_path.read_text(encoding="utf-8")
+    content = values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8")
     assert "Banner" not in content
     assert content == _expected_dropin_content()
 
@@ -250,16 +238,15 @@ def test_updates_changed_value(
     # block is not duplicated.
     ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.ssh_config_dropin_path.write_text(
+    values.SSH_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.SSH_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(overrides={"ConnectTimeout": "10"}),
         encoding="utf-8",
     )
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
     assert result.success is True
-    content = cfg.ssh_config_dropin_path.read_text(encoding="utf-8")
+    content = values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8")
     assert content == _expected_dropin_content()
     assert content.count("Host *") == 1
 
@@ -275,9 +262,8 @@ def test_installs_augtool_when_missing(
     result = ssh_client_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["apt-get", "install", "-y", "augeas-tools"] in calls
-    cfg = ctx.config.ssh_client_setup
-    assert cfg.ssh_config_dropin_path.read_text(encoding="utf-8") == (
+    assert ["apt-get", "install", "-y", values.AUGEAS_TOOLS_PACKAGE_NAME] in calls
+    assert values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
 
@@ -333,17 +319,17 @@ def test_empty_directives_removes_dropin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # An empty directives list removes the owned drop-in.
-    ctx = _ctx(tmp_path, directives=())
+    monkeypatch.setattr(values, "DIRECTIVES", ())
+    ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
-    cfg = ctx.config.ssh_client_setup
-    cfg.ssh_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.ssh_config_dropin_path.write_text(
+    values.SSH_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.SSH_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(), encoding="utf-8"
     )
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
     assert result.success is True
-    assert not cfg.ssh_config_dropin_path.exists()
+    assert not values.SSH_CONFIG_DROPIN_PATH.exists()
 
 
 def test_missing_include_is_a_warning(
@@ -384,30 +370,15 @@ def test_verify_reports_drift(
     )
 
 
-def test_probe_command_comes_from_the_config(
+def test_probe_command_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The command that prints the effective client configuration is a config
-    # value: another probe command is the argv the task runs to verify the
-    # drop-in.
-    ctx = make_context(
-        task_name="ssh_client_setup",
-        install_mode="server",
-        task_data_root=tmp_path,
-        repo_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            ssh_client_ssh_config_path=tmp_path / "etc" / "ssh" / "ssh_config",
-            ssh_client_ssh_config_dropin_path=(
-                tmp_path / "etc" / "ssh" / "ssh_config.d" / "pyntara.conf"
-            ),
-            ssh_client_effective_config_command=(
-                "ssh",
-                "-G",
-                "probe.example",
-            ),
-        ),
+    # The command that prints the effective client configuration is a value:
+    # another probe command is the argv the task runs to verify the drop-in.
+    monkeypatch.setattr(
+        values, "EFFECTIVE_CONFIG_COMMAND", ("ssh", "-G", "probe.example")
     )
+    ctx = _ctx(tmp_path)
     _write_ssh_config(ctx)
     calls = _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)

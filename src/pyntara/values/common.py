@@ -7,11 +7,27 @@ like any other. If a task ever needs another number than the shared one, it
 declares its own value in its own module, and that is a decision, not a
 convenience.
 
-A file mode, a path or a command shared by several tasks belongs here by the
-same rule.
+A file mode, a path, a command or a record type shared by several tasks belongs
+here by the same rule.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SshDirective:
+    """One directive of an ssh configuration file: a keyword and its value.
+
+    Both ssh tasks keep their directive lists as tuples of these records, so
+    the type lives here rather than in the values module of one of them, which
+    would make the other section read a neighbour's module.
+    """
+
+    name: str
+    value: str
+
 
 # Seconds the dpkg status query may take while a task checks whether a package
 # is installed.
