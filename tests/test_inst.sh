@@ -92,6 +92,13 @@ inst_check_root_accepts_root_with_success_message() {
         output="$(bash -c 'source "$1"; check_root' _ "$INSTALLER" 2>&1)"
     else
         if command -v unshare >/dev/null 2>&1; then
+            # A sandbox can forbid an unprivileged user namespace, so root
+            # cannot be faked this way there (a continuous integration
+            # runner does); probe the capability before asserting.
+            if ! unshare -r true >/dev/null 2>&1; then
+                echo "SKIP: unshare cannot create a user namespace here"
+                return 0
+            fi
             output="$(unshare -r bash -c 'source "$1"; check_root' _ "$INSTALLER" 2>&1)"
         else
             echo "SKIP: unshare unavailable to simulate root"
