@@ -70,7 +70,7 @@ probed again on 2026-09-17 with grep -rln load_config src/pyntara/*.py, which
 answers fourteen modules, and the coupled sections are these: port_forwarding_
 setup (port_forwarding.py, port_forwarding_state.py, network_addresses.py),
 system_metrics_setup (metrics.py, metrics_collect.py, metrics_ingest.py,
-public_address_report.py, country_report.py, telemetry_pdf.py),
+public_address_report.py, country_report.py),
 i2pd_service_setup (i2pd_address.py), tor_setup (tor_address.py),
 upnp_forwarding_setup (upnp_forwarding.py, upnp_forwarding_state.py),
 yggdrasil_service_setup (yggdrasil_address.py) and the engine itself
@@ -362,6 +362,184 @@ decisions so no earlier number moves.
     argument.
 72. Stage G, removal: the old point 30. Stage H, documents: the old point 31.
     Stage I, live proof on a target machine: the old point 32.
+
+Remainder plan refined on 2026-09-17 with the planning procedure, after the
+telegram_setup section landed. The stage letters of points 69 to 72 keep their
+meaning; the points below say what each stage contains and what was measured for
+it. Every figure was measured on this machine today, and the probe that produced
+it is named with the figure.
+
+73. Measured facts the remainder rests on. config/ holds 32 TOML files with 6470
+    lines, and the sections already migrated are dead data in it (point 61).
+    src/pyntara/config/ holds 33 modules with 3250 lines: the loader (224), the
+    field types (160), the engine dataclass (191), one module per section, and
+    the large ones are system_metrics_setup (323), three_x_ui_xray_setup (307),
+    kde_settings (207) and engine (191). Fourteen modules take the config path as
+    a command line argument, measured with grep -rl "load_config(" src/pyntara:
+    country_report, i2pd_address, metrics, metrics_collect, metrics_ingest,
+    network_addresses, port_forwarding, port_forwarding_state,
+    public_address_report, tor_address, upnp_forwarding, upnp_forwarding_state,
+    yggdrasil_address and pyntara.py itself, which holds CONFIG_PATH =
+    Path("config") relative to the clone root because inst.sh runs the engine
+    there. A fifteenth owner is the task, not a module: the metrics task renders
+    the repository config into system_config_path through render_config_source.
+    src/pyntara/telemetry_pdf.py does NOT read the config, so the coupled
+    paragraph above was corrected in that one name. Twelve engine value names are
+    read by task modules today, counted with grep over src/pyntara/tasks:
+    command_timeout_seconds (21 reads), root_owner_uid (10), root_owner_gid (10),
+    systemd_unit_dir (6), system_python (2), bytes_per_mib (2), bytes_per_kib
+    (2), and one read each for release_asset_architectures, progress_priority,
+    percent_scale, os_release_family_keys and error_priority. engine.toml holds
+    97 values, so the rest are read by the engine or by the runtime modules and
+    are counted at the start of stage E. Deployment: inst.sh clones the
+    repository into $CACHE_DIR/repo and runs uv sync there, so the values travel
+    inside the wheel with no deployment change (point 67); the deployed metrics
+    service runs /usr/local/lib/pyntara/venv/bin/python, a venv the task creates
+    with uv venv and syncs with uv sync --project {repo_root} --active --locked
+    --no-dev --no-editable, refreshed with the flag --reinstall-package pyntara.
+    Tests: 28 test_config_*.py files, tests/config_checks.py 7388 lines imported
+    by 9 files, tests/config_helpers.py 1243 lines, tests/test_config_coverage.py
+    346 lines, the make_config factory used by 142 test files in 344 calls, and
+    the whole tests tree 55996 lines. Documents: docs/guides/project-structure.md
+    names config/ 37 times, docs/contracts/architecture.md 6,
+    docs/simplified-architecture.md 5, docs/spec/config-content.md 5,
+    docs/spec/system-metrics.md 3, README.md once, and fourteen section specs
+    once each.
+74. Shared values still standing in more than one section, found with a probe
+    over config/*.toml today. Each pair moves to values/common.py in the commit
+    of the section that arrives second, and that commit drops the copy of the
+    section that is already migrated; a copy is never left behind silently. The
+    pairs: desktop user name and home directory in chrome_setup,
+    kde_keyboard_setup, kde_settings, scrcpy_setup, sotavpn_setup and
+    vocalinux_setup; compressor "zstd" in zram_service and zswap_service (the
+    second is migrated and holds its copy); dropin_file_mode 0644 in
+    ssh_client_setup (migrated), ssh_daemon_setup and tor_setup;
+    address_file_mode 0644 in i2pd_service_setup, tor_setup and
+    yggdrasil_service_setup; executable_file_mode 0755 in telegram_setup
+    (migrated), scrcpy_setup and vocalinux_setup; private_key_file_mode 0600 in
+    ssh_daemon_setup and yggdrasil_service_setup; profile_id_file_path and
+    profile_id_file_mode in nextdns_setup_system_wide (migrated) and
+    dnsproxy_setup; meminfo_total_key in swapfile_service_install and
+    zram_service; augeas_tools_package_name in ssh_client_setup (migrated) and
+    ssh_daemon_setup; shortcuts_file_name in kde_keyboard_setup and
+    vocalinux_setup; kconfig_true_value and kconfig_false_value in
+    kde_keyboard_setup and kde_settings.
+75. Stage D remainder, the plain sections in ascending read count, one commit
+    each, with the telegram_setup pattern: the values module, the guard above
+    every read, the tests moved to the values, the section registered in
+    tests/test_values.py and tests/test_values_softness.py, the plan updated, the
+    full gate, the merge into main and the branch deleted. The order:
+    three_x_ui_xray_setup (162 values / 34 reads / 535 task lines),
+    scrcpy_setup (29 / 48 / 725), swapfile_service_install (17 / 51 / 380),
+    kde_keyboard_setup (41 / 52 / 631), rustdesk_setup (42 / 62 / 733),
+    zram_service (27 / 66 / 679, its commit moves compressor to common and drops
+    the copy of zswap_service), sotavpn_setup (24 / 67 / 663), vocalinux_setup
+    (38 / 71 / 680), chrome_setup (49 / 87 / 973), ssh_daemon_setup (64 / 90 /
+    659), dnsproxy_setup (78 / 117 / 1051, its commit moves the nextdns profile
+    id pair to common) and kde_settings (1607 / 177 / 2244, a list of kconfig
+    records, so a named record type and the tuple of those records per point 58).
+    three_x_ui_xray_setup is next: its table is one header with flat entries, so
+    the shape probe at the start decides only whether parts of it are lists of
+    records.
+76. Stage E, the engine and the task catalog, one commit. values/engine.py
+    carries the values of the run itself and stays the only fatal read (point
+    37); values/tasks.py carries the catalog as a tuple of the named record type
+    TaskSpec with name, description, depends and modes, because the catalog is a
+    list of records (point 58); MODES leaves config/_fields.py for the engine
+    values; src/pyntara/task_catalog.py keeps its public functions and reads the
+    value instead of the loader. The stage comes before the coupled ones (point
+    70) because a runtime module that stops reading the config takes the engine
+    values from the package, so those values must exist first. The stage opens
+    with a probe that lists every engine.toml name with its readers, because 97
+    names against the twelve counted here need the truth rather than a guess.
+    Tests: tests/test_config_engine.py, tests/test_config_tasks.py and
+    tests/test_config_coverage.py are rewritten for the values, a check proves
+    that a catalog which is not declared stops the run with one plain sentence
+    and a nonzero exit code, and the values guards cover both new modules.
+77. Stage F, the coupled services, one commit per service, in this order:
+    port_forwarding_setup (port_forwarding.py, port_forwarding_state.py and
+    network_addresses.py, plus the two check commands of the metrics table that
+    hand the config path to network_addresses), i2pd_service_setup
+    (i2pd_address.py), tor_setup (tor_address.py), upnp_forwarding_setup
+    (upnp_forwarding.py, upnp_forwarding_state.py), yggdrasil_service_setup
+    (yggdrasil_address.py) and system_metrics_setup last (metrics.py,
+    metrics_collect.py, metrics_ingest.py, public_address_report.py,
+    country_report.py and the task). In each the module imports the values
+    package, the argv path parameter and the usage line that names CONFIG_PATH
+    go, and the proof is a run of that module with no argument. The trap: the
+    config_path parameter of src/pyntara/augeas.py is a file path for augeas and
+    has nothing to do with the engine config, so it stays.
+78. Stage F, the metrics service in detail, because it is the only deployed
+    reader. The task stops rendering the repository config into
+    system_config_path, so render_config_source, the config copy and the
+    directory argument of the check go; {config_path} leaves the three commands
+    send_service_command, ingest_service_command and collector_service_command;
+    the module check table loses the path argument of its ten commands, which
+    leaves the family argument of network_addresses intact; and the deployed
+    service then reads exactly the values of the wheel the venv carries. The
+    order inside the task is checked, not assumed: the venv is synced and the
+    package reinstalled before the units are restarted, otherwise the service
+    runs the values of the previous installation. system_config_path and the
+    config copy belong to the same commit as the five modules, and stage G then
+    finds no config copy left.
+79. Stage G, removal, one commit: delete config/ (32 files, 6470 lines),
+    src/pyntara/config/ (33 modules, 3250 lines), tests/config_checks.py (7388
+    lines), tests/config_helpers.py (1243 lines), tests/test_config_coverage.py
+    (346 lines) and the test files that existed only for the config layer;
+    replace the make_config factory in the 142 test files that still use it with
+    the values of the section under test; and drop the config layer from
+    VALUE_DIRECTORIES of tests/test_config_value_guard.py so the values package
+    becomes the single place a value may be declared (point 30). A test whose
+    intent outlives the TOML (the catalog, the engine, the ban on a mode literal)
+    moves to a values test with a written reason, and the rest go, as the vault
+    section already did. The deletion goes through git and keeps the content in
+    the history (point 62).
+80. Stage H, documents, one commit: docs/guides/project-structure.md loses the
+    config section map and names the values package with the one value one place
+    rule, docs/spec/config-content.md becomes the rule for a values file with the
+    type lists rewritten, docs/contracts/architecture.md and
+    docs/simplified-architecture.md lose the Configuration paragraph,
+    docs/spec/system-metrics.md loses the config path of the deployed services,
+    README.md and docs/guides/developer-guide.md follow, and the fourteen section
+    specs get their one line corrected.
+81. Stage I, live proof on a target machine: a full provisioning run from
+    inst.sh, then the deployed metrics service, its ingest and collector units
+    and the check commands running with no /etc/pyntara/config.toml on the
+    machine. The user has not named the machine, so this stage carries one
+    assumption and waits for that word. It is the implied goal of the whole
+    migration: a target machine that configures itself from the package with no
+    TOML anywhere.
+82. Test coverage of the remainder. Every stage keeps the existing guards: the
+    read guard, the READ_VALUE_NAMES equality, every-value-read, the literal ban
+    and the softness proof, each of which runs over the package, so a new section
+    is covered the moment it joins them. Beyond that, stage E adds the fatal
+    catalog check, stage F adds a check per module that it answers with no argv
+    argument and a check that the task syncs the venv before it restarts the
+    units, and stage G must show the gate green with the values guards unchanged
+    after 8977 lines of config checks leave. Stage I is the only stage a machine
+    can prove and no test replaces it.
+83. Risks and weak points, with a mitigation each. The order rule assumes the
+    read count measures the work, while three_x_ui_xray_setup has 34 reads and a
+    4770 line test file (tests/test_3x_ui_xray_setup.py), so its commit may be
+    larger than the number suggests: the test file is measured at the start and
+    the commit stays one section, not one file. kde_settings is by far the
+    largest section with 1607 values and a 2420 line test file, and its record
+    shape decides the commit size: the shape is one named record type and the
+    landing order puts it last among the plain sections. Stage G deletes
+    18697 lines of sources and tests (9720 of config sources, 8977 of config
+    checks) in one commit: no section is deleted before its values are green and
+    its tests have moved. Another agent session shares this clone: every change
+    takes a fresh branch from main, the tree is clean before and after every
+    commit, and its files are never staged. The metrics venv can carry stale
+    values on a machine where the task does not run again: the values travel with
+    the package and the task reinstalls it, which is the same exposure as the
+    copied config today. Stage I needs a machine the user must name, so it waits
+    while every earlier stage is provable in the clone. The softness rule is the
+    one mypy cannot check: every new section joins
+    tests/test_values_softness.py in the same commit as its values module.
+84. First stage: point 75 begins with three_x_ui_xray_setup, and that is the
+    work to start with. The plan waits for the user's approval before it starts
+    (stage 12 of the planning procedure).
 
 
 
