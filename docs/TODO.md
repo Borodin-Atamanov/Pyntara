@@ -48,15 +48,19 @@ The pattern, set by the hostname pilot and now the only one in the tree:
 9. A section is one commit: the gate of scripts/check_gates.sh green, then a
    fast-forward merge into main and a push.
 
-Sections, one commit each. Renumber this list while it shrinks:
+Sections, one commit each. The number names the section and does not change, so
+reports stay unambiguous; git log holds the commit of each finished section:
 
 1. hostname, done, commit 4b9076b
 2. imagemagick_setup, done, commit 6cbeacc
 3. ffmpeg_setup, done, commit 736bcab
-4. playwright_setup, done
-5. rustdesk_setup
+4. playwright_setup, done, commit 99b3e8f
+5. rustdesk_setup; deferred on purpose: 13 helpers take the config record, about
+   60 value reads and a 705 line test, so it needs a turn of its own. It is
+   migrated after the small sections of the batch, because a half-migrated
+   section would leave the clone worse than it was.
 6. vocalinux_setup
-7. cli_tools
+7. cli_tools, done
 8. add_extra_repos
 9. telegram_setup
 10. chrome_setup

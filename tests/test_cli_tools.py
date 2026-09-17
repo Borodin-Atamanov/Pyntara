@@ -15,13 +15,15 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, Config, load_config
+from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
+from pyntara.values import cli_tools as cli_tools_values
+from pyntara.values import common as common_values
 
-# Package set used by the tests; mirrors the real config but stays small.
-# Four packages keep the 70 percent threshold math clean: one failure gives
-# 75 percent, above the threshold.
+# Package set used by the tests; the real set stays in the values module.
+# Four packages keep the threshold math clean: one failure gives 75 percent,
+# above the shipped 70 percent threshold.
 TEST_PACKAGES = ("mc", "htop", "hollywood", "wget")
 
 # The real catalog from the repository config; the mode-membership and
@@ -30,18 +32,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
 
-def _test_config(
-    packages: tuple[str, ...] = TEST_PACKAGES,
-    *,
-    threshold: int = 70,
-) -> Config:
-    """Config with values safe for unit tests; the real file is never touched."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_test_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Give every test of this file the small test package set.
 
-    return make_config(cli_tools_packages=packages, cli_tools_threshold=threshold)
+    The package set and the threshold are values of the task, so the fixture
+    patches them for the run of one test and the shipped values come back
+    afterwards. A test that needs another set or another threshold patches
+    the same names itself.
+    """
+
+    monkeypatch.setattr(cli_tools_values, "PACKAGES", TEST_PACKAGES)
+    monkeypatch.setattr(
+        cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 70
+    )
 
 
 def _ctx() -> Context:
-    return make_context(config=_test_config())
+    return make_context()
 
 
 def _install_fake(
@@ -78,16 +88,6 @@ def test_cli_tools_depends_on_add_extra_repos() -> None:
     task_def = task_catalog.by_name("cli_tools", REAL_TASKS)
     assert task_def is not None
     assert task_def.depends == ("add_extra_repos",)
-
-
-def test_real_config_names_exiftool_by_its_real_package() -> None:
-    # exiftool is a virtual name provided by libimage-exiftool-perl.
-    # dpkg-query cannot see virtual names, so listing exiftool would make
-    # the task consider it missing forever and reinstall it on every run.
-    # The real config must name the real package.
-    config = load_config(REPO_ROOT / "config")
-    assert "libimage-exiftool-perl" in config.cli_tools.packages
-    assert "exiftool" not in config.cli_tools.packages
 
 
 def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,7 +236,7 @@ def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
         repo_root=REPO_ROOT,
         task_data_root=Path("/tmp"),
         skip_apt_update=False,
-        config=_test_config(),
+        config=make_config(),
     )
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(ctx)
@@ -387,9 +387,9 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
 def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # retries=0 means a single attempt per package: a failing package is
     # attempted once and reported without a retry.
-    ctx = make_context(
-        config=make_config(cli_tools_packages=("mc",), cli_tools_retries=0)
-    )
+    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
+    monkeypatch.setattr(common_values, "PACKAGE_INSTALL_RETRIES", 0)
+    ctx = make_context()
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -415,7 +415,7 @@ def test_skip_apt_update_skips_index_refresh(
 ) -> None:
     # skip_apt_update=True disables the index refresh entirely: only
     # installs run, so a test run never waits for apt-get update.
-    ctx = make_context(skip_apt_update=True, config=_test_config())
+    ctx = make_context(skip_apt_update=True)
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
     result = cli_tools.task(ctx)
     assert result.success is True
@@ -432,10 +432,8 @@ def test_skip_apt_update_still_retries_installs(
 ) -> None:
     # With the refresh skipped, a transient install failure still succeeds
     # on a retry without any apt-get update call.
-    ctx = make_context(
-        skip_apt_update=True,
-        config=make_config(cli_tools_packages=("mc",), cli_tools_retries=3),
-    )
+    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
+    ctx = make_context(skip_apt_update=True)
     calls: list[list[str]] = []
     mc_attempts = 0
 
@@ -516,6 +514,10 @@ def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # One of two packages installs: exactly 50 percent, at the 50 percent
     # threshold, so the task succeeds (failure only below the threshold).
+    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc", "htop"))
+    monkeypatch.setattr(
+        cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50
+    )
     ctx = Context(
         install_mode="minimal",
         vault_password=None,
@@ -524,7 +526,7 @@ def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
         repo_root=REPO_ROOT,
         task_data_root=Path("/tmp"),
         skip_apt_update=True,
-        config=_test_config(packages=("mc", "htop"), threshold=50),
+        config=make_config(),
     )
     calls: list[list[str]] = []
 
@@ -548,6 +550,8 @@ def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     # A zero threshold means the task never fails on missing packages.
+    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
+    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 0)
     ctx = Context(
         install_mode="minimal",
         vault_password=None,
@@ -556,7 +560,7 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
         repo_root=REPO_ROOT,
         task_data_root=Path("/tmp"),
         skip_apt_update=True,
-        config=_test_config(packages=("mc",), threshold=0),
+        config=make_config(),
     )
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:

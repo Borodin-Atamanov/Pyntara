@@ -95,6 +95,39 @@ def check_file_mode(value: object, name: str) -> int:
     return value
 
 
+# A virtual package name is a name dpkg-query cannot see, so the real package
+# that provides the tool must stand in the list instead. One pair per trap: the
+# virtual name and the real package that provides it.
+VIRTUAL_PACKAGE_NAMES: tuple[tuple[str, str], ...] = (
+    ("exiftool", "libimage-exiftool-perl"),
+)
+
+
+def check_real_package_names(value: object, name: str) -> tuple[str, ...]:
+    """Package names dpkg-query can see, and the real package of each trap.
+
+    A virtual name looks missing on every run, so the task would reinstall it
+    forever and never reach its goal; the real package that provides the tool
+    must stand in the list instead, and the tool must still be in the list
+    under that real name.
+    """
+
+    packages = check_nonempty_text_tuple(value, name)
+    for virtual_name, real_name in VIRTUAL_PACKAGE_NAMES:
+        if virtual_name in packages:
+            raise ValueRuleError(
+                f"{name} names the virtual package {virtual_name}, which "
+                f"dpkg-query cannot see, so the task would reinstall it on "
+                f"every run; name its real package {real_name}"
+            )
+        if real_name not in packages:
+            raise ValueRuleError(
+                f"{name} does not name {real_name}, the real package that "
+                f"provides {virtual_name}"
+            )
+    return packages
+
+
 def check_shipped_value(value: object, annotation: object, name: str) -> None:
     """Apply the rule the annotation of a value asks for.
 

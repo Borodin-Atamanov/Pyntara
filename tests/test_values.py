@@ -28,6 +28,7 @@ from value_checks import (
     check_nonempty_text,
     check_nonempty_text_tuple,
     check_not_negative_int,
+    check_real_package_names,
     check_shipped_value,
 )
 
@@ -35,6 +36,7 @@ import pyntara
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
+    "cli_tools",
     "common",
     "ffmpeg_setup",
     "hostname",
@@ -49,8 +51,11 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 # The rules an annotation cannot express, one line per value: its module, its
 # name and the rule. A file mode is a whole number, so the generic pass sees
 # only an int, while a mode of zero would leave the file unusable without a
-# word; that is the kind of value that belongs here.
+# word; that is the kind of value that belongs here. A package list is a tuple
+# of texts for the generic pass, while a virtual package name in it would make
+# the task reinstall that package on every run without ever reaching its goal.
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
+    ("cli_tools", "PACKAGES", check_real_package_names),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
 )
 
@@ -239,6 +244,18 @@ def test_the_text_tuple_rule_refuses_a_value_that_is_no_command(
 ) -> None:
     with pytest.raises(ValueRuleError):
         check_nonempty_text_tuple(value, "section.NAME")
+
+
+def test_the_real_package_rule_refuses_a_virtual_package_name() -> None:
+    # A virtual name in the list is invisible to dpkg-query, so the package
+    # would be installed on every run and never reach the installed state.
+    with pytest.raises(ValueRuleError):
+        check_real_package_names(("mc", "exiftool"), "cli_tools.PACKAGES")
+    with pytest.raises(ValueRuleError):
+        check_real_package_names(("mc",), "cli_tools.PACKAGES")
+    assert check_real_package_names(
+        ("mc", "libimage-exiftool-perl"), "cli_tools.PACKAGES"
+    ) == ("mc", "libimage-exiftool-perl")
 
 
 def test_the_read_list_names_exactly_the_declared_values() -> None:
