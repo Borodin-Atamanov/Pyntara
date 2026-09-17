@@ -65,13 +65,20 @@ cannot be migrated alone: its values would live twice, in the values package for
 the task and in the TOML for the running service. A coupled section is migrated
 together with its runtime module, which then imports the values package and
 loses the config path argument, and the unit command loses {config_path}; the
-values package lives inside the wheel for exactly this (point 33). Coupled are
-port_forwarding_setup (port_forwarding.py, port_forwarding_state.py,
-network_addresses.py), system_metrics_setup (metrics.py, metrics_collect.py,
-metrics_ingest.py, public_address_report.py, country_report.py),
-i2pd_service_setup (i2pd_address.py) and the engine itself (pyntara.py). Each is
-a turn of its own, and the order rule skips them until the plain sections are
-done.
+values package lives inside the wheel for exactly this (point 33). The list was
+probed again on 2026-09-17 with grep -rln load_config src/pyntara/*.py, which
+answers fourteen modules, and the coupled sections are these: port_forwarding_
+setup (port_forwarding.py, port_forwarding_state.py, network_addresses.py),
+system_metrics_setup (metrics.py, metrics_collect.py, metrics_ingest.py,
+public_address_report.py, country_report.py, telemetry_pdf.py),
+i2pd_service_setup (i2pd_address.py), tor_setup (tor_address.py),
+upnp_forwarding_setup (upnp_forwarding.py, upnp_forwarding_state.py),
+yggdrasil_service_setup (yggdrasil_address.py) and the engine itself
+(pyntara.py). Each is a turn of its own, and the order rule skips them until the
+plain sections are done. The earlier text of this paragraph was wrong for three
+sections (tor_setup, upnp_forwarding_setup, yggdrasil_service_setup): it was
+read off a truncated command output, the defect is reported, and the probe above
+is the correction.
 
 1. cli_tools, done, 4 / 120 / 3
 2. imagemagick_setup, done, 6 / 142 / 1
@@ -101,8 +108,15 @@ done.
     config file, the seed shapes that are not records) are gone with this
     reason: the record type of the values module carries the field set and the
     text types, and mypy refuses the rest at the module.
-14. upnp_forwarding_setup, 22 / 293 / 35
-15. telegram_setup, 20 / 449 / 37
+14. upnp_forwarding_setup, 22 / 293 / 35, COUPLED, waits for its own turn
+15. telegram_setup, done, 20 / 449 / 37, and it landed the shared pair: the
+    desktop user name and his home directory stood in eight TOML sections
+    (chrome_setup, kde_keyboard_setup, kde_settings, playwright_setup,
+    scrcpy_setup, sotavpn_setup, telegram_setup, vocalinux_setup), so both
+    moved to values/common.py as DESKTOP_USERNAME and DESKTOP_HOME_DIR
+    (point 57) and the telegram task reads them there; playwright_setup was
+    switched in the same commit, and each of the remaining six sections drops
+    its own copy when its turn comes
 16. scrcpy_setup, 29 / 725 / 48, added to this list 2026-09-17: the section and
     the module were added to the repository after the list was written
 17. swapfile_service_install, 17 / 380 / 51

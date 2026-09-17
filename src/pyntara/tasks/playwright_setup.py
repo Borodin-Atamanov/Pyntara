@@ -40,7 +40,7 @@ from pyntara.values import playwright_setup as playwright_values
 def _user_prefix() -> Path:
     """The npm prefix under the desktop user home."""
 
-    return Path(playwright_values.HOME_DIR) / (
+    return Path(common_values.DESKTOP_HOME_DIR) / (
         playwright_values.USER_PREFIX_RELATIVE_PATH
     )
 
@@ -57,8 +57,8 @@ def _runuser_command() -> list[str]:
     return substituted_command(
         playwright_values.RUNUSER_COMMAND,
         {
-            "username": playwright_values.USERNAME,
-            "home_dir": playwright_values.HOME_DIR,
+            "username": common_values.DESKTOP_USERNAME,
+            "home_dir": common_values.DESKTOP_HOME_DIR,
         },
     )
 
@@ -169,7 +169,7 @@ def task(ctx: Context) -> TaskResult:
     if installed_version:
         _log("reinstalling playwright-cli")
     else:
-        _log(f"installing playwright-cli for {playwright_values.USERNAME}")
+        _log(f"installing playwright-cli for {common_values.DESKTOP_USERNAME}")
     try:
         run_command(
             _runuser_command()
@@ -187,11 +187,11 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             changed=changed,
-            message=f"playwright-cli not installed for {playwright_values.USERNAME}",
+            message=f"playwright-cli not installed for {common_values.DESKTOP_USERNAME}",
             warnings=tuple(warnings),
         )
     changed = True
-    messages.append(f"installed playwright-cli for {playwright_values.USERNAME}")
+    messages.append(f"installed playwright-cli for {common_values.DESKTOP_USERNAME}")
 
     after_version = _cli_version(timeout=timeout)
     if not after_version:

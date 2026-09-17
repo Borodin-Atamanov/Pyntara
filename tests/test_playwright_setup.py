@@ -18,6 +18,7 @@ from pyntara import task_catalog
 from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import playwright_setup
+from pyntara.values import common as common_values
 from pyntara.values import playwright_setup as playwright_values
 
 # The version the fake playwright-cli --version probe reports.
@@ -39,7 +40,7 @@ def _use_playwright_values(
     afterwards, whether the test passed or failed.
     """
 
-    monkeypatch.setattr(playwright_values, "HOME_DIR", str(tmp_path / "home"))
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
 def _ctx(
@@ -59,7 +60,7 @@ def _cli_bin() -> Path:
     """The playwright-cli binary path the values module names."""
 
     return (
-        Path(playwright_values.HOME_DIR)
+        Path(common_values.DESKTOP_HOME_DIR)
         / playwright_values.USER_PREFIX_RELATIVE_PATH
         / playwright_values.CLI_BIN_RELATIVE_PATH
     )
@@ -121,8 +122,8 @@ def test_playwright_setup_depends_on_browser_and_universe() -> None:
 
 
 def test_the_shipped_values_name_the_desktop_user_and_the_cli_package() -> None:
-    assert playwright_values.USERNAME == "i"
-    assert playwright_values.HOME_DIR == "/home/i"
+    assert common_values.DESKTOP_USERNAME == "i"
+    assert common_values.DESKTOP_HOME_DIR == "/home/i"
     assert playwright_values.CLI_PACKAGE == "@playwright/cli"
     assert "nodejs" in playwright_values.PACKAGES
 
@@ -160,14 +161,14 @@ def test_installs_playwright_cli_when_missing(
     assert result.success is True
     assert result.changed is True
     assert VERSION in (result.message or "")
-    home = Path(playwright_values.HOME_DIR)
+    home = Path(common_values.DESKTOP_HOME_DIR)
     npm_call = [
         "runuser",
         "-u",
-        playwright_values.USERNAME,
+        common_values.DESKTOP_USERNAME,
         "--",
         "env",
-        f"HOME={playwright_values.HOME_DIR}",
+        f"HOME={common_values.DESKTOP_HOME_DIR}",
         "npm",
         "install",
         "-g",

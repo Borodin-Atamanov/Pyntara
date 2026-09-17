@@ -43,6 +43,14 @@ PACKAGE_INSTALL_RETRIES: int = 3
 SOURCE_VAULT_PRODUCTION: str = "secrets/production.vault"
 SOURCE_VAULT_DEFAULT: str = "secrets/default.vault"
 
+# The desktop user of the machine and the home directory of that account. Eight
+# sections carry an install under that home or run a command as that user
+# (chrome_setup, kde_keyboard_setup, kde_settings, playwright_setup,
+# scrcpy_setup, sotavpn_setup, telegram_setup, vocalinux_setup), so the pair is
+# written once here.
+DESKTOP_USERNAME: str = "i"
+DESKTOP_HOME_DIR: str = "/home/i"
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -50,4 +58,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_INSTALL_RETRIES",
     "SOURCE_VAULT_PRODUCTION",
     "SOURCE_VAULT_DEFAULT",
+    "DESKTOP_USERNAME",
+    "DESKTOP_HOME_DIR",
 )

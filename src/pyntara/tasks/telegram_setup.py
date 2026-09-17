@@ -43,7 +43,7 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import EngineConfig, TelegramSetupConfig
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -54,6 +54,9 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import telegram_setup as values
 
 
 class _InstallPaths(NamedTuple):
@@ -66,22 +69,22 @@ class _InstallPaths(NamedTuple):
     icon: Path
 
 
-def _install_paths(cfg: TelegramSetupConfig) -> _InstallPaths:
-    """Compose the deployed paths from the configured home and names.
+def _install_paths() -> _InstallPaths:
+    """Compose the deployed paths from the home and the names of this section.
 
-    One place derives the five paths from the relative paths and file
-    names of the section, so the files the task writes and the paths the
-    launcher entry names can never disagree.
+    One place derives the five paths from the relative paths and file names of
+    the values module, so the files the task writes and the paths the launcher
+    entry names can never disagree.
     """
 
-    home = Path(cfg.home_dir)
-    install_dir = home / cfg.install_dir_relative_path
+    home = Path(common_values.DESKTOP_HOME_DIR)
+    install_dir = home / values.INSTALL_DIR_RELATIVE_PATH
     return _InstallPaths(
         install_dir=install_dir,
-        binary=install_dir / cfg.binary_file_name,
-        updater=install_dir / cfg.updater_file_name,
-        launcher=home / cfg.launcher_relative_path,
-        icon=home / cfg.icon_relative_path,
+        binary=install_dir / values.BINARY_FILE_NAME,
+        updater=install_dir / values.UPDATER_FILE_NAME,
+        launcher=home / values.LAUNCHER_RELATIVE_PATH,
+        icon=home / values.ICON_RELATIVE_PATH,
     )
 
 
@@ -98,24 +101,21 @@ def _cache_name(url: str) -> str:
     return url.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _resolve_latest_url(
-    engine: EngineConfig, cfg: TelegramSetupConfig
-) -> str:
-    """The download url the latest_url redirect resolves to.
+def _resolve_latest_url(engine: EngineConfig) -> str:
+    """The download url the latest url redirect resolves to.
 
     A HEAD request follows the redirect chain and reports the final url
     through --write-out, so the newest release is discovered without
-    downloading the archive. The command is the configured
-    latest_url_command and the retry bounds come from the engine table,
-    so the request settings live in the config. Raises RuntimeError when
-    the request fails.
+    downloading the archive. The command is the value of this section and the
+    retry bounds come from the engine table, so the request settings live in
+    the values. Raises RuntimeError when the request fails.
     """
 
     result = run_command(
         curl_command(
             engine,
-            cfg.latest_url_command,
-            cfg.latest_url,
+            values.LATEST_URL_COMMAND,
+            values.LATEST_URL,
             timeout_seconds=engine.curl_timeout_seconds,
         ),
         check=False,
@@ -124,17 +124,17 @@ def _resolve_latest_url(
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"cannot resolve {cfg.latest_url}: curl exit {result.returncode}"
+            f"cannot resolve {values.LATEST_URL}: curl exit {result.returncode}"
         )
     url = result.stdout.strip()
     if not url:
-        raise RuntimeError(f"cannot resolve {cfg.latest_url}: empty download url")
+        raise RuntimeError(
+            f"cannot resolve {values.LATEST_URL}: empty download url"
+        )
     return url
 
 
-def _probe_download_host(
-    engine: EngineConfig, cfg: TelegramSetupConfig
-) -> tuple[bool, str]:
+def _probe_download_host(engine: EngineConfig) -> tuple[bool, str]:
     """Ask the download host to answer within one short attempt.
 
     A host that is blocked never answers, and the retry settings of the
@@ -149,25 +149,29 @@ def _probe_download_host(
     """
 
     command = substituted_command(
-        cfg.reachability_probe_command,
-        {"timeout_seconds": str(cfg.reachability_probe_timeout_seconds)},
+        values.REACHABILITY_PROBE_COMMAND,
+        {
+            "timeout_seconds": str(
+                values.REACHABILITY_PROBE_TIMEOUT_SECONDS
+            )
+        },
     )
     try:
         result = run_command(
-            [*command, cfg.latest_url],
+            [*command, values.LATEST_URL],
             check=False,
             capture=True,
             timeout=engine.command_timeout_seconds,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return False, (
-            f"cannot resolve {cfg.latest_url}: the reachability probe could "
+            f"cannot resolve {values.LATEST_URL}: the reachability probe could "
             f"not be run: {exc}"
         )
     if result.returncode != 0:
         return False, (
-            f"cannot resolve {cfg.latest_url}: the host did not answer within "
-            f"{cfg.reachability_probe_timeout_seconds} s (curl exit "
+            f"cannot resolve {values.LATEST_URL}: the host did not answer "
+            f"within {values.REACHABILITY_PROBE_TIMEOUT_SECONDS} s (curl exit "
             f"{result.returncode}), so the download is skipped instead of "
             f"retrying for up to {engine.curl_retry_max_time_seconds} s"
         )
@@ -176,19 +180,18 @@ def _probe_download_host(
 
 def _download_archive(
     engine: EngineConfig,
-    cfg: TelegramSetupConfig,
     url: str,
     name: str,
 ) -> None:
-    """Download the archive into download_dir under its final name.
+    """Download the archive into the cache directory under its final name.
 
     The download goes to a sibling file with the engine suffix first and
     is renamed only after a successful transfer, so a cached archive name
     always means a complete archive. Raises RuntimeError on failure.
     """
 
-    cfg.download_dir.mkdir(parents=True, exist_ok=True)
-    partial = cfg.download_dir / (name + engine.partial_download_file_suffix)
+    values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    partial = values.DOWNLOAD_DIR / (name + engine.partial_download_file_suffix)
     try:
         run_command(
             download_command(engine, partial, url),
@@ -197,7 +200,7 @@ def _download_archive(
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"cannot download {url}: {exc}") from None
-    partial.replace(cfg.download_dir / name)
+    partial.replace(values.DOWNLOAD_DIR / name)
 
 
 def _own_to_user(username: str, path: Path) -> None:
@@ -220,23 +223,22 @@ def _own_to_user(username: str, path: Path) -> None:
     os.chown(path, entry.pw_uid, entry.pw_gid)
 
 
-def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) -> None:
+def _install_archive(archive: Path, timeout: float) -> None:
     """Install the Telegram and Updater files from the archive.
 
-    The archive is extracted to a temporary directory named by the
-    configured prefix, then each configured binary is copied from the
-    configured directory of the archive into the install directory under
-    the user home when it differs from what is already there, and the
-    install directory and its files are owned by the desktop user. Raises
-    RuntimeError on any failure.
+    The archive is extracted to a temporary directory named by the value of
+    this section, then each configured binary is copied from the directory of
+    the archive into the install directory under the user home when it differs
+    from what is already there, and the install directory and its files are
+    owned by the desktop user. Raises RuntimeError on any failure.
     """
 
-    paths = _install_paths(cfg)
-    extract_dir = Path(tempfile.mkdtemp(prefix=cfg.extract_dir_prefix))
+    paths = _install_paths()
+    extract_dir = Path(tempfile.mkdtemp(prefix=values.EXTRACT_DIR_PREFIX))
     try:
         run_command(
             substituted_command(
-                cfg.tar_extract_command,
+                values.TAR_EXTRACT_COMMAND,
                 {"archive": str(archive), "extract_dir": str(extract_dir)},
             ),
             timeout=timeout,
@@ -246,9 +248,9 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
         raise RuntimeError(f"cannot extract {archive.name}: {exc}") from None
     try:
         paths.install_dir.mkdir(parents=True, exist_ok=True)
-        _own_to_user(cfg.username, paths.install_dir)
+        _own_to_user(common_values.DESKTOP_USERNAME, paths.install_dir)
         for target in (paths.binary, paths.updater):
-            source = extract_dir / cfg.archive_directory_name / target.name
+            source = extract_dir / values.ARCHIVE_DIRECTORY_NAME / target.name
             if not source.is_file():
                 raise RuntimeError(
                     f"archive {archive.name} contains no {target.name}"
@@ -258,8 +260,8 @@ def _install_archive(cfg: TelegramSetupConfig, archive: Path, timeout: float) ->
                 and filecmp.cmp(source, target, shallow=False)
             ):
                 shutil.copyfile(source, target)
-            target.chmod(cfg.executable_file_mode)
-            _own_to_user(cfg.username, target)
+            target.chmod(values.EXECUTABLE_FILE_MODE)
+            _own_to_user(common_values.DESKTOP_USERNAME, target)
     except OSError as exc:
         raise RuntimeError(
             f"cannot install Telegram into {paths.install_dir}: {exc}"
@@ -281,35 +283,33 @@ def _cleanup_old_archives(download_dir: Path, current_name: str) -> None:
             stale.unlink(missing_ok=True)
 
 
-def _desktop_content(cfg: TelegramSetupConfig, template_path: Path) -> str:
+def _desktop_content(template_path: Path) -> str:
     """The launcher entry that starts Telegram from the application menu.
 
-    The body of the entry lives in the template under task_data/ and the
-    two paths are substituted from the configured home, so the entry text
-    stays with the template and the paths cannot drift from the files the
-    task writes.
+    The body of the entry lives in the template under task_data/ and the two
+    paths are substituted from the home of the desktop user, so the entry text
+    stays with the template and the paths cannot drift from the files the task
+    writes.
     """
 
-    paths = _install_paths(cfg)
+    paths = _install_paths()
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(binary=paths.binary, icon=paths.icon)
 
 
-def _ensure_launcher(
-    cfg: TelegramSetupConfig, template_path: Path
-) -> tuple[bool, str | None]:
+def _ensure_launcher(template_path: Path) -> tuple[bool, str | None]:
     """Write the launcher entry; return (changed, error)."""
 
-    launcher = _install_paths(cfg).launcher
-    content = _desktop_content(cfg, template_path)
+    launcher = _install_paths().launcher
+    content = _desktop_content(template_path)
     try:
         if launcher.is_file() and launcher.read_text(encoding="utf-8") == content:
             return False, None
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_text(content, encoding="utf-8")
-        launcher.chmod(cfg.launcher_file_mode)
-        _own_to_user(cfg.username, launcher)
-        _own_to_user(cfg.username, launcher.parent)
+        launcher.chmod(values.LAUNCHER_FILE_MODE)
+        _own_to_user(common_values.DESKTOP_USERNAME, launcher)
+        _own_to_user(common_values.DESKTOP_USERNAME, launcher.parent)
     except OSError as exc:
         return False, f"cannot write the Telegram desktop entry: {exc}"
     return True, None
@@ -317,27 +317,26 @@ def _ensure_launcher(
 
 def _ensure_icon(
     engine: EngineConfig,
-    cfg: TelegramSetupConfig,
 ) -> tuple[bool, str | None]:
-    """Download the configured icon when missing; return (changed, error).
+    """Download the icon of this section when missing; return (changed, error).
 
     A failed icon download is a warning, never a fatal error: the launcher
     entry still starts Telegram and only the icon stays generic until the
     next run retries.
     """
 
-    path = _install_paths(cfg).icon
+    path = _install_paths().icon
     if path.is_file() and path.stat().st_size > 0:
         return False, None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         run_command(
-            download_command(engine, path, cfg.icon_url),
+            download_command(engine, path, values.ICON_URL),
             timeout=engine.command_timeout_seconds,
         )
-        path.chmod(cfg.icon_file_mode)
-        _own_to_user(cfg.username, path)
-        _own_to_user(cfg.username, path.parent)
+        path.chmod(values.ICON_FILE_MODE)
+        _own_to_user(common_values.DESKTOP_USERNAME, path)
+        _own_to_user(common_values.DESKTOP_USERNAME, path.parent)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         path.unlink(missing_ok=True)
         return False, f"cannot download the Telegram icon: {exc}"
@@ -363,7 +362,20 @@ def task(ctx: Context) -> TaskResult:
     tasks and never stops here.
     """
 
-    cfg = ctx.config.telegram_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the telegram_setup values are not declared, nothing was changed",
+            warnings=(
+                "the telegram_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     force = ctx.task_name in ctx.force_tasks
     changed = False
@@ -371,25 +383,25 @@ def task(ctx: Context) -> TaskResult:
     messages: list[str] = []
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / cfg.launcher_template_file_name
+        / values.LAUNCHER_TEMPLATE_FILE_NAME
     )
-    paths = _install_paths(cfg)
+    paths = _install_paths()
 
     url: str | None = None
-    reachable, probe_warning = _probe_download_host(engine, cfg)
+    reachable, probe_warning = _probe_download_host(engine)
     if not reachable:
         _log(probe_warning)
         warnings.append(probe_warning)
     else:
         try:
-            url = _resolve_latest_url(engine, cfg)
+            url = _resolve_latest_url(engine)
         except RuntimeError as exc:
             warnings.append(str(exc))
     name = _cache_name(url) if url is not None else ""
     if url is not None:
         _log(f"checking the latest Telegram Desktop release: {name}")
 
-    archive = cfg.download_dir / name if name else None
+    archive = values.DOWNLOAD_DIR / name if name else None
     already_latest = (
         not force
         and archive is not None
@@ -407,7 +419,7 @@ def task(ctx: Context) -> TaskResult:
         if not installed:
             _log(f"downloading Telegram Desktop release {name}")
             try:
-                _download_archive(engine, cfg, url, name)
+                _download_archive(engine, url, name)
             except RuntimeError as exc:
                 warnings.append(str(exc))
             else:
@@ -415,15 +427,15 @@ def task(ctx: Context) -> TaskResult:
         if installed and archive is not None:
             _log(f"installing Telegram Desktop release {name}")
             try:
-                _install_archive(cfg, archive, engine.command_timeout_seconds)
+                _install_archive(archive, engine.command_timeout_seconds)
             except RuntimeError as exc:
                 warnings.append(str(exc))
             else:
-                _cleanup_old_archives(cfg.download_dir, name)
+                _cleanup_old_archives(values.DOWNLOAD_DIR, name)
                 messages.append(f"installed Telegram Desktop {name}")
                 changed = True
 
-    launcher_changed, launcher_error = _ensure_launcher(cfg, template_path)
+    launcher_changed, launcher_error = _ensure_launcher(template_path)
     if launcher_error:
         warnings.append(launcher_error)
     if launcher_changed:
@@ -432,7 +444,7 @@ def task(ctx: Context) -> TaskResult:
         )
         changed = True
 
-    icon_changed, icon_error = _ensure_icon(engine, cfg)
+    icon_changed, icon_error = _ensure_icon(engine)
     if icon_error:
         warnings.append(icon_error)
     if icon_changed:

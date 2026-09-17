@@ -4,21 +4,15 @@ playwright-cli is installed for the desktop user, so an agent can drive the
 visible Google Chrome that chrome_setup installs with the Chrome DevTools
 Protocol listener on the loopback address. nodejs and npm come from the Ubuntu
 archive, and the npm package CLI_PACKAGE goes into the user prefix
-HOME_DIR/USER_PREFIX_RELATIVE_PATH through NPM_INSTALL_COMMAND, run as the
-desktop user through RUNUSER_COMMAND, so the binary lands at
+DESKTOP_HOME_DIR/USER_PREFIX_RELATIVE_PATH through NPM_INSTALL_COMMAND, run as
+the desktop user through RUNUSER_COMMAND, so the binary lands at
 CLI_BIN_RELATIVE_PATH inside that prefix and no root owned npm prefix is ever
-used. The version is not chased: npm installs the latest release, and a rerun
-whose packages are installed and whose binary answers CLI_VERSION_COMMAND
-changes nothing.
+used. The desktop user pair comes from the shared module common. The version is
+not chased: npm installs the latest release, and a rerun whose packages are
+installed and whose binary answers CLI_VERSION_COMMAND changes nothing.
 """
 
 from __future__ import annotations
-
-# The desktop user the tool is installed for.
-USERNAME: str = "i"
-
-# The home directory of that user.
-HOME_DIR: str = "/home/i"
 
 # The apt packages that provide the npm runtime on the target.
 PACKAGES: tuple[str, ...] = ("nodejs", "npm")
@@ -61,12 +55,9 @@ NPM_INSTALL_COMMAND: tuple[str, ...] = (
 # Seconds a single npm install command may run before it is killed.
 NPM_INSTALL_TIMEOUT_SECONDS: int = 900
 
-# The names the task reads. The list lives next to the values it names, the
-# task reads it from here and reports the names this module does not declare,
-# instead of stopping on a Python error.
+# The names the task reads. The desktop user pair comes from the shared module
+# common, because eight sections carry an install under that home.
 READ_VALUE_NAMES: tuple[str, ...] = (
-    "USERNAME",
-    "HOME_DIR",
     "PACKAGES",
     "CLI_PACKAGE",
     "USER_PREFIX_RELATIVE_PATH",
