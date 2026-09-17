@@ -3,10 +3,9 @@
 The task picks one NextDNS profile per machine, deterministically from
 the hostname, and records its ID in a file for dnsproxy_setup and the
 System Metrics collector (docs/spec/nextdns-profile.md). The profile
-comes from the vault group named by
-nextdns_setup_system_wide.vault_group_title, the ID is sha256(hostname)
-modulo the pool size, so the same hostname always resolves through the
-same account. The vaults are the source vaults of the fresh clone,
+comes from the vault group named by VAULT_GROUP_TITLE, the ID is
+sha256(hostname) modulo the pool size, so the same hostname always resolves
+through the same account. The vaults are the source vaults of the fresh clone,
 opened with the run password the way local_vault_setup opens them; the
 runtime vault is only a fallback, because the copy may be stale and
 predate the profile group. The task is idempotent: when the profile ID
@@ -22,13 +21,14 @@ import os
 from pykeepass import PyKeePass
 
 from pyntara import metrics
-from pyntara.config import NextdnsSetupSystemWideConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import apply_owner
+from pyntara.values import missing_value_names
+from pyntara.values import nextdns_setup_system_wide as values
 
 # The module reads no repository path of its own: the source vault paths of
 # local_vault_setup are resolved against the clone root the context carries,
@@ -36,7 +36,6 @@ from pyntara.utils import apply_owner
 
 
 def _write_profile_id_file(
-    cfg: NextdnsSetupSystemWideConfig,
     profile_id: str,
     owner_uid: int,
     owner_gid: int,
@@ -44,22 +43,22 @@ def _write_profile_id_file(
     """Record the selected profile ID for the System Metrics collector.
 
     The mode and the root ownership are applied through the shared
-    apply_owner helper, so the owner is the configured pair and no
+    apply_owner helper, so the owner is the pair the caller passes and no
     literal lives here. A failed write is journaled and reported, so the
     task fails loudly instead of silently losing the telemetry source.
     """
 
-    path = cfg.profile_id_file_path
+    path = values.PROFILE_ID_FILE_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{profile_id}\n", encoding="utf-8")
-        os.chmod(path, cfg.profile_id_file_mode)
+        os.chmod(path, values.PROFILE_ID_FILE_MODE)
         apply_owner(path, owner_uid, owner_gid)
         return True
     except OSError as exc:
         _log(
             f"cannot write the profile ID file {path}: {exc}",
-            priority=cfg.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         return False
 
@@ -98,7 +97,22 @@ def task(ctx: Context) -> TaskResult:
     profile it reports done with no changes; force mode rewrites the file.
     """
 
-    cfg = ctx.config.nextdns_setup_system_wide
+    absent = missing_value_names(values, values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks.
+        return TaskResult(
+            success=True,
+            message=(
+                "the nextdns_setup_system_wide values are not declared, "
+                "nothing was changed"
+            ),
+            warnings=(
+                "the nextdns_setup_system_wide values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
     kp = _open_profile_vault(ctx)
@@ -110,11 +124,11 @@ def task(ctx: Context) -> TaskResult:
             message=warning,
             warnings=(warning,),
         )
-    profile_id = select_profile_from_vault(kp, cfg.vault_group_title)
+    profile_id = select_profile_from_vault(kp, values.VAULT_GROUP_TITLE)
     if profile_id is None:
         warning = (
             f"cannot derive a NextDNS profile from vault group "
-            f"{cfg.vault_group_title!r} and hostname"
+            f"{values.VAULT_GROUP_TITLE!r} and hostname"
         )
         return TaskResult(
             success=True,
@@ -124,7 +138,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        existing = cfg.profile_id_file_path.read_text(encoding="utf-8").strip()
+        existing = values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         existing = ""
     if existing == profile_id and ctx.task_name not in ctx.force_tasks:
@@ -134,7 +148,7 @@ def task(ctx: Context) -> TaskResult:
             message="profile ID file already carries the selected profile",
         )
 
-    if not _write_profile_id_file(cfg, profile_id, owner_uid, owner_gid):
+    if not _write_profile_id_file(profile_id, owner_uid, owner_gid):
         warning = "cannot record the NextDNS profile ID"
         return TaskResult(
             success=True,

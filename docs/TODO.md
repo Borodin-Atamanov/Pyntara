@@ -65,7 +65,7 @@ module, and git log holds the commit of each finished one.
 4. ffmpeg_setup, done, 11 / 224 / 1
 5. hostname, done, 3 / 189 / 1
 6. add_extra_repos, done, 13 / 411 / 17
-7. nextdns_setup_system_wide, 4 / 152 / 10
+7. nextdns_setup_system_wide, done, 4 / 152 / 10
 8. port_forwarding_setup, 48 / 292 / 11
 9. system_metrics_setup, 117 / 759 / 18, the largest by values: the collector,
    the ingest, the sender, the deployment and the two telemetry pdf values

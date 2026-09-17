@@ -42,6 +42,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",
+    "nextdns_setup_system_wide",
     "playwright_setup",
 )
 
@@ -58,6 +59,7 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
     ("cli_tools", "PACKAGES", check_real_package_names),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
+    ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
 )
 
 

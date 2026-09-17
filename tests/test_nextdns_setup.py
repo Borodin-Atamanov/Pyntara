@@ -17,9 +17,28 @@ from support import make_config, make_context
 
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks import nextdns_setup_system_wide as task_module
+from pyntara.values import nextdns_setup_system_wide as values
 
 VAULT_PASSWORD = "local-vault-password"
 PROFILE_IDS = ("39284e", "938263", "a47276", "b2e82c", "cb3874")
+
+
+@pytest.fixture(autouse=True)
+def _point_the_profile_id_file_at_the_temporary_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own profile ID file path.
+
+    The path is a value of the task, so the fixture points it at the
+    temporary directory of the test and the shipped value comes back
+    afterwards.
+    """
+
+    monkeypatch.setattr(
+        values,
+        "PROFILE_ID_FILE_PATH",
+        tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id",
+    )
 
 
 def _ctx(
@@ -29,7 +48,7 @@ def _ctx(
     owner_uid: int = 0,
     owner_gid: int = 0,
 ):
-    """Context with the task config rooted in the temporary directory."""
+    """Context safe for unit tests; the real files are never touched."""
 
     return make_context(
         task_name="nextdns_setup_system_wide",
@@ -42,14 +61,6 @@ def _ctx(
             task_data_root=tmp_path,
             root_owner_uid=owner_uid,
             root_owner_gid=owner_gid,
-            nextdns_vault_group_title="NextDNS",
-            nextdns_profile_id_file_path=tmp_path
-            / "var"
-            / "lib"
-            / "pyntara"
-            / "nextdns_profile_id",
-            nextdns_profile_id_file_mode=0o644,
-            nextdns_error_priority=3,
             local_vault_source_production=Path("secrets/production.vault"),
             local_vault_source_default=Path("secrets/default.vault"),
         ),
@@ -71,14 +82,12 @@ def _install_source_vault(
     kp.save()
 
 
-def _selected_profile(tmp_path: Path, ctx) -> str:
+def _selected_profile(tmp_path: Path) -> str:
     """The profile the task derives for the pinned hostname."""
 
     vault_path = tmp_path / "secrets" / "production.vault"
     kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
-    selected = select_profile_from_vault(
-        kp, ctx.config.nextdns_setup_system_wide.vault_group_title
-    )
+    selected = select_profile_from_vault(kp, values.VAULT_GROUP_TITLE)
     assert selected is not None
     return selected
 
@@ -91,7 +100,7 @@ def test_records_profile_id_file(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    profile_file = values.PROFILE_ID_FILE_PATH
     assert profile_file.read_text(encoding="utf-8").strip() in PROFILE_IDS
     assert result.message is not None
     assert "NextDNS profile" in result.message
@@ -115,7 +124,7 @@ def test_profile_file_owner_comes_from_the_engine_config(
     ctx = _ctx(tmp_path, owner_uid=7, owner_gid=11)
     result = task_module.task(ctx)
     assert result.success is True
-    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    profile_file = values.PROFILE_ID_FILE_PATH
     assert (profile_file, 7, 11) in chowned
 
 
@@ -129,8 +138,8 @@ def test_already_done_when_file_matches(
     # The task has already fulfilled its mission, so it reports done with
     # no changes, never a skip.
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
-    selected = _selected_profile(tmp_path, ctx)
-    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    selected = _selected_profile(tmp_path)
+    profile_file = values.PROFILE_ID_FILE_PATH
     profile_file.parent.mkdir(parents=True, exist_ok=True)
     profile_file.write_text(f"{selected}\n", encoding="utf-8")
     result = task_module.task(ctx)
@@ -147,8 +156,8 @@ def test_force_rewrites_file(
     _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path, force=True)
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
-    selected = _selected_profile(tmp_path, ctx)
-    profile_file = ctx.config.nextdns_setup_system_wide.profile_id_file_path
+    selected = _selected_profile(tmp_path)
+    profile_file = values.PROFILE_ID_FILE_PATH
     profile_file.parent.mkdir(parents=True, exist_ok=True)
     profile_file.write_text(f"{selected}\n", encoding="utf-8")
     result = task_module.task(ctx)
@@ -169,7 +178,7 @@ def test_missing_group_warns_without_writing(
     result = task_module.task(ctx)
     assert result.success is True
     assert any("group" in warning for warning in result.warnings)
-    assert not ctx.config.nextdns_setup_system_wide.profile_id_file_path.exists()
+    assert not values.PROFILE_ID_FILE_PATH.exists()
 
 
 def test_empty_group_warns_without_writing(
@@ -185,4 +194,4 @@ def test_empty_group_warns_without_writing(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.warnings
-    assert not ctx.config.nextdns_setup_system_wide.profile_id_file_path.exists()
+    assert not values.PROFILE_ID_FILE_PATH.exists()
