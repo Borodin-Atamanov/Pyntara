@@ -30,12 +30,14 @@ import pyntara
 from pyntara.values import ffmpeg_setup as ffmpeg_values
 from pyntara.values import hostname as hostname_values
 from pyntara.values import imagemagick_setup as imagemagick_values
+from pyntara.values import playwright_setup as playwright_values
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",
+    "playwright_setup",
 )
 
 # The name of the list a values module declares next to its values, which
@@ -244,6 +246,85 @@ def test_shipped_ffmpeg_values_pass_every_rule() -> None:
             "ffmpeg_setup.PACKAGE_INSTALL_RETRIES",
         )
         == ffmpeg_values.PACKAGE_INSTALL_RETRIES
+    )
+
+
+def test_shipped_playwright_values_pass_every_rule() -> None:
+    assert (
+        check_nonempty_text(playwright_values.USERNAME, "playwright_setup.USERNAME")
+        == playwright_values.USERNAME
+    )
+    assert (
+        check_absolute_path(
+            playwright_values.HOME_DIR, "playwright_setup.HOME_DIR"
+        )
+        == playwright_values.HOME_DIR
+    )
+    assert (
+        check_text_tuple(playwright_values.PACKAGES, "playwright_setup.PACKAGES")
+        == playwright_values.PACKAGES
+    )
+    assert (
+        check_positive_int(
+            playwright_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
+            "playwright_setup.PACKAGE_STATUS_TIMEOUT_SECONDS",
+        )
+        == playwright_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    )
+    assert (
+        check_nonnegative_int(
+            playwright_values.PACKAGE_INSTALL_RETRIES,
+            "playwright_setup.PACKAGE_INSTALL_RETRIES",
+        )
+        == playwright_values.PACKAGE_INSTALL_RETRIES
+    )
+    assert (
+        check_nonempty_text(
+            playwright_values.CLI_PACKAGE, "playwright_setup.CLI_PACKAGE"
+        )
+        == playwright_values.CLI_PACKAGE
+    )
+    assert (
+        check_nonempty_text(
+            playwright_values.USER_PREFIX_RELATIVE_PATH,
+            "playwright_setup.USER_PREFIX_RELATIVE_PATH",
+        )
+        == playwright_values.USER_PREFIX_RELATIVE_PATH
+    )
+    assert (
+        check_nonempty_text(
+            playwright_values.CLI_BIN_RELATIVE_PATH,
+            "playwright_setup.CLI_BIN_RELATIVE_PATH",
+        )
+        == playwright_values.CLI_BIN_RELATIVE_PATH
+    )
+    assert (
+        check_text_tuple(
+            playwright_values.RUNUSER_COMMAND,
+            "playwright_setup.RUNUSER_COMMAND",
+        )
+        == playwright_values.RUNUSER_COMMAND
+    )
+    assert (
+        check_text_tuple(
+            playwright_values.CLI_VERSION_COMMAND,
+            "playwright_setup.CLI_VERSION_COMMAND",
+        )
+        == playwright_values.CLI_VERSION_COMMAND
+    )
+    assert (
+        check_text_tuple(
+            playwright_values.NPM_INSTALL_COMMAND,
+            "playwright_setup.NPM_INSTALL_COMMAND",
+        )
+        == playwright_values.NPM_INSTALL_COMMAND
+    )
+    assert (
+        check_positive_int(
+            playwright_values.NPM_INSTALL_TIMEOUT_SECONDS,
+            "playwright_setup.NPM_INSTALL_TIMEOUT_SECONDS",
+        )
+        == playwright_values.NPM_INSTALL_TIMEOUT_SECONDS
     )
 
 

@@ -47,7 +47,7 @@ Sections, one commit each. Renumber this list while it shrinks:
 1. hostname, done, commit 4b9076b
 2. imagemagick_setup, done, commit 6cbeacc
 3. ffmpeg_setup, done, commit 736bcab
-4. playwright_setup
+4. playwright_setup, done
 5. rustdesk_setup
 6. vocalinux_setup
 7. cli_tools

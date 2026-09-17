@@ -8,17 +8,17 @@ the real npm registry (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import Config, load_config
+from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import playwright_setup
+from pyntara.values import playwright_setup as playwright_values
 
 # The version the fake playwright-cli --version probe reports.
 VERSION = "1.2.3"
@@ -29,27 +29,39 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REAL_TASKS = load_config(REPO_ROOT / "config").tasks
 
 
-def _test_config(tmp_path: Path) -> Config:
-    """Config whose user home lives in the tmp tree."""
+def _use_playwright_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Point the task values at a home directory inside the tmp tree.
 
-    return make_config(playwright_setup_home_dir=str(tmp_path / "home"))
+    The values are module constants, so the helper patches the module for
+    the test that calls it; monkeypatch puts the shipped values back
+    afterwards, whether the test passed or failed.
+    """
+
+    monkeypatch.setattr(playwright_values, "HOME_DIR", str(tmp_path / "home"))
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+def _ctx(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, force: bool = False
+) -> Context:
+    """Context of the task with its values pointed at the tmp tree."""
+
+    _use_playwright_values(monkeypatch, tmp_path)
     return make_context(
         task_name="playwright_setup",
         install_mode="desktop",
-        config=_test_config(tmp_path),
         force_tasks=frozenset({"playwright_setup"}) if force else frozenset(),
     )
 
 
-def _cli_bin(cfg: Config) -> Path:
-    setup = cfg.playwright_setup
+def _cli_bin() -> Path:
+    """The playwright-cli binary path the values module names."""
+
     return (
-        Path(setup.home_dir)
-        / setup.user_prefix_relative_path
-        / setup.cli_bin_relative_path
+        Path(playwright_values.HOME_DIR)
+        / playwright_values.USER_PREFIX_RELATIVE_PATH
+        / playwright_values.CLI_BIN_RELATIVE_PATH
     )
 
 
@@ -68,7 +80,7 @@ def _fake_run_factory(
     npm_rc makes the install raise, which stands for a failed install.
     """
 
-    binary_rel = make_config().playwright_setup.cli_bin_relative_path
+    binary_rel = playwright_values.CLI_BIN_RELATIVE_PATH
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -108,29 +120,30 @@ def test_playwright_setup_depends_on_browser_and_universe() -> None:
     assert resolved.index("chrome_setup") < resolved.index("playwright_setup")
 
 
-def test_real_config_names_the_desktop_user_and_the_cli_package() -> None:
-    config = load_config(REPO_ROOT / "config")
-    assert config.playwright_setup.username == "i"
-    assert config.playwright_setup.home_dir == "/home/i"
-    assert config.playwright_setup.cli_package == "@playwright/cli"
-    assert "nodejs" in config.playwright_setup.packages
+def test_the_shipped_values_name_the_desktop_user_and_the_cli_package() -> None:
+    assert playwright_values.USERNAME == "i"
+    assert playwright_values.HOME_DIR == "/home/i"
+    assert playwright_values.CLI_PACKAGE == "@playwright/cli"
+    assert "nodejs" in playwright_values.PACKAGES
 
 
-def test_cli_version_is_empty_when_the_binary_is_missing(tmp_path: Path) -> None:
-    config = _test_config(tmp_path)
-    assert playwright_setup._cli_version(config.playwright_setup, timeout=5) == ""
+def test_cli_version_is_empty_when_the_binary_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _use_playwright_values(monkeypatch, tmp_path)
+    assert playwright_setup._cli_version(timeout=5) == ""
 
 
 def test_already_installed_changes_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _fake_run_factory(monkeypatch)
-    config = _test_config(tmp_path)
-    binary = _cli_bin(config)
+    ctx = _ctx(monkeypatch, tmp_path)
+    binary = _cli_bin()
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("#! /usr/bin/env node\n", encoding="utf-8")
     binary.chmod(0o755)
-    result = playwright_setup.task(_ctx(tmp_path))
+    result = playwright_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert VERSION in (result.message or "")
@@ -143,48 +156,40 @@ def test_installs_playwright_cli_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _fake_run_factory(monkeypatch)
-    config = _test_config(tmp_path)
-    result = playwright_setup.task(_ctx(tmp_path))
+    result = playwright_setup.task(_ctx(monkeypatch, tmp_path))
     assert result.success is True
     assert result.changed is True
     assert VERSION in (result.message or "")
-    home = Path(config.playwright_setup.home_dir)
-    setup = config.playwright_setup
+    home = Path(playwright_values.HOME_DIR)
     npm_call = [
         "runuser",
         "-u",
-        setup.username,
+        playwright_values.USERNAME,
         "--",
         "env",
-        f"HOME={setup.home_dir}",
+        f"HOME={playwright_values.HOME_DIR}",
         "npm",
         "install",
         "-g",
-        setup.cli_package,
+        playwright_values.CLI_PACKAGE,
         "--prefix",
-        str(home / setup.user_prefix_relative_path),
+        str(home / playwright_values.USER_PREFIX_RELATIVE_PATH),
     ]
     assert npm_call in calls
-    assert _cli_bin(config).is_file()
+    assert _cli_bin().is_file()
 
 
-def test_runuser_command_comes_from_the_config(
+def test_runuser_command_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another runuser template in the config is the prefix the task runs,
-    # so the command shape is not a value of the module.
+    # Another runuser template in the values is the prefix the task runs, so
+    # the command shape is not a value of the module.
     calls = _fake_run_factory(monkeypatch)
-    ctx = _ctx(tmp_path)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(
-            config,
-            playwright_setup=replace(
-                config.playwright_setup,
-                runuser_command=("sudo", "-u", "{username}", "env"),
-            ),
-        ),
+    ctx = _ctx(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        playwright_values,
+        "RUNUSER_COMMAND",
+        ("sudo", "-u", "{username}", "env"),
     )
     result = playwright_setup.task(ctx)
     assert result.success is True
@@ -195,12 +200,12 @@ def test_force_reinstalls_even_when_installed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _fake_run_factory(monkeypatch)
-    config = _test_config(tmp_path)
-    binary = _cli_bin(config)
+    ctx = _ctx(monkeypatch, tmp_path, force=True)
+    binary = _cli_bin()
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("#! /usr/bin/env node\n", encoding="utf-8")
     binary.chmod(0o755)
-    result = playwright_setup.task(_ctx(tmp_path, force=True))
+    result = playwright_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert any("install" in command and "--prefix" in command for command in calls)
@@ -213,7 +218,7 @@ def test_npm_install_failure_is_a_warning(
     # the remaining tasks of the run still do their work, and the reason
     # reaches the installer as a warning of this task.
     _fake_run_factory(monkeypatch, npm_rc=2)
-    result = playwright_setup.task(_ctx(tmp_path))
+    result = playwright_setup.task(_ctx(monkeypatch, tmp_path))
     assert result.success is True
     assert result.warnings
     assert any(
@@ -241,7 +246,7 @@ def test_missing_runtime_packages_stop_the_task_with_a_warning(
     monkeypatch.setattr(
         "pyntara.tasks.playwright_setup.install_packages", failing_install
     )
-    result = playwright_setup.task(_ctx(tmp_path))
+    result = playwright_setup.task(_ctx(monkeypatch, tmp_path))
     assert result.success is True
     assert result.changed is False
     assert result.warnings == ("cannot install nodejs and npm: nodejs: no candidate",)
