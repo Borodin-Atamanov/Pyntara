@@ -29,29 +29,41 @@ from support import FakeProc, make_config, make_context
 from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import sotavpn_setup as sotavpn
+from pyntara.values import common as common_values
+from pyntara.values import sotavpn_setup as values
 
 KEY = "11111111-2222-3333-4444-555555555555"
 INSTALLER_NAME = "install_sotavpn_bridge.py"
 SETTINGS_NAME = "settings.py"
 
 
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own home of the desktop user.
+
+    The home is a shared value and the installation of the bridge lives under
+    it, so the fixture points it at the temporary directory of the test: no test
+    touches the real home. The panel vocabulary of the three_x_ui_xray_setup
+    section stays in the config document until that section is migrated, so the
+    helper below still edits it there.
+    """
+
+    monkeypatch.setattr(
+        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
+    )
+
+
 def _ctx(
     tmp_path: Path,
     *,
-    sotavpn: dict[str, Any] | None = None,
     three_x_ui: dict[str, Any] | None = None,
     force: bool = False,
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
-    config: Config = make_config(
-        task_data_root=tmp_path,
-        sotavpn_setup_home_dir=str(tmp_path / "home"),
-    )
-    if sotavpn:
-        config = replace(
-            config, sotavpn_setup=replace(config.sotavpn_setup, **sotavpn)
-        )
+    config: Config = make_config(task_data_root=tmp_path)
     if three_x_ui:
         config = replace(
             config,
@@ -75,8 +87,11 @@ def _settings_text(version: str, port: int) -> str:
 
 
 def _installed_settings_path(ctx: Context) -> Path:
-    cfg = ctx.config.sotavpn_setup
-    return Path(cfg.home_dir) / cfg.user_install_relative_path / cfg.settings_file_name
+    return (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_INSTALL_RELATIVE_PATH
+        / values.SETTINGS_FILE_NAME
+    )
 
 
 def _write_installed(ctx: Context, *, version: str, port: int) -> Path:
@@ -371,19 +386,26 @@ class TestInstallAndSubscription:
 
         installer = commands.installer_run()
         assert installer is not None
-        cfg = ctx.config.sotavpn_setup
-        assert installer[:5] == ["runuser", "-u", cfg.username, "--", "env"]
-        assert f"HOME={cfg.home_dir}" in installer
+        assert installer[:5] == [
+            "runuser",
+            "-u",
+            common_values.DESKTOP_USERNAME,
+            "--",
+            "env",
+        ]
+        assert f"HOME={common_values.DESKTOP_HOME_DIR}" in installer
         assert str(root / INSTALLER_NAME) in installer
         assert installer[-1] == "install"
 
         sub_cfg = ctx.config.three_x_ui_xray_setup
         assert len(panel.upserts) == 1
         payload = panel.upserts[0]
-        assert payload["remark"] == cfg.subscription_remark
+        assert payload["remark"] == values.SUBSCRIPTION_REMARK
         assert payload["url"] == f"http://127.0.0.1:25080/sub/{KEY}/raw"
         assert payload["tagPrefix"] == sub_cfg.pool_member_prefix
-        assert payload["updateInterval"] == cfg.subscription_update_interval_seconds
+        assert payload["updateInterval"] == (
+            values.SUBSCRIPTION_UPDATE_INTERVAL_SECONDS
+        )
         assert payload["allowPrivate"] is True
         assert payload["enabled"] is True
         assert panel.refreshed == [7]
@@ -456,7 +478,6 @@ class TestSubscriptionState:
     ) -> tuple[Context, _Panel]:
         ctx = _ctx(
             tmp_path,
-            sotavpn=sections.get("sotavpn"),
             three_x_ui=sections.get("three_x_ui"),
             force=force,
         )
@@ -501,8 +522,7 @@ class TestSubscriptionState:
         sleeps: list[float] = []
         monkeypatch.setattr(sotavpn.time, "sleep", sleeps.append)
         result = sotavpn.task(ctx)
-        cfg = ctx.config.sotavpn_setup
-        assert sleeps == [cfg.readiness_check_delay_seconds]
+        assert sleeps == [values.READINESS_CHECK_DELAY_SECONDS]
         assert not [w for w in result.warnings if "node list" in w]
         assert "the panel lists 2 nodes" in (result.message or "")
 
@@ -513,12 +533,10 @@ class TestSubscriptionState:
         # subscription is already written and the panel fetches it again on
         # its own schedule, so the fact is reported without an alarm.
         panel = _Panel(outbound_count=0)
-        ctx, _panel = self._prepare(
-            monkeypatch,
-            tmp_path,
-            panel,
-            sotavpn={"subscription_fetch_wait_seconds": 0},
+        monkeypatch.setattr(
+            values, "SUBSCRIPTION_FETCH_WAIT_SECONDS", 0
         )
+        ctx, _panel = self._prepare(monkeypatch, tmp_path, panel)
         result = sotavpn.task(ctx)
         assert not [w for w in result.warnings if "node list" in w]
         assert "has no node list yet" in (result.message or "")
@@ -626,7 +644,8 @@ class TestReadinessAndSettings:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
-        ctx = _ctx(tmp_path, sotavpn={"bridge_ready_wait_seconds": 0})
+        monkeypatch.setattr(values, "BRIDGE_READY_WAIT_SECONDS", 0)
+        ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
@@ -646,10 +665,9 @@ class TestReadinessAndSettings:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
-        ctx = _ctx(
-            tmp_path,
-            sotavpn={"bridge_ready_wait_seconds": 5, "readiness_check_delay_seconds": 2},
-        )
+        monkeypatch.setattr(values, "BRIDGE_READY_WAIT_SECONDS", 5)
+        monkeypatch.setattr(values, "READINESS_CHECK_DELAY_SECONDS", 2)
+        ctx = _ctx(tmp_path)
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
@@ -748,11 +766,9 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        cfg = _ctx(tmp_path).config
+        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        fetched = sotavpn._fetch_the_bridge(
-            cfg.sotavpn_setup, cfg.engine, 30.0, warnings
-        )
+        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
         assert fetched is not None
         work_dir, root = fetched
         assert not warnings
@@ -778,11 +794,9 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        cfg = _ctx(tmp_path).config
+        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        fetched = sotavpn._fetch_the_bridge(
-            cfg.sotavpn_setup, cfg.engine, 30.0, warnings
-        )
+        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
         assert fetched is not None
         work_dir, root = fetched
         assert stat.S_IMODE(work_dir.stat().st_mode) == 0o700
@@ -802,9 +816,11 @@ class TestFetchTheBridge:
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
         config = _ctx(tmp_path).config
-        cfg = replace(config.sotavpn_setup, username="no-such-account")
         warnings: list[str] = []
-        fetched = sotavpn._fetch_the_bridge(cfg, config.engine, 30.0, warnings)
+        monkeypatch.setattr(
+            common_values, "DESKTOP_USERNAME", "no-such-account"
+        )
+        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
         assert fetched is not None
         work_dir, _root = fetched
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -819,10 +835,10 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        cfg = _ctx(tmp_path).config
+        config = _ctx(tmp_path).config
         warnings: list[str] = []
         assert (
-            sotavpn._fetch_the_bridge(cfg.sotavpn_setup, cfg.engine, 30.0, warnings)
+            sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
             is None
         )
         assert any("not extracted" in warning for warning in warnings)
@@ -835,10 +851,10 @@ class TestFetchTheBridge:
             "run_command",
             lambda *_a, **_k: (_ for _ in ()).throw(OSError("no route")),
         )
-        cfg = _ctx(tmp_path).config
+        config = _ctx(tmp_path).config
         warnings: list[str] = []
         assert (
-            sotavpn._fetch_the_bridge(cfg.sotavpn_setup, cfg.engine, 30.0, warnings)
+            sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
             is None
         )
         assert any("not downloaded" in warning for warning in warnings)

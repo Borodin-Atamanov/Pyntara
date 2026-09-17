@@ -45,11 +45,7 @@ import time
 from pathlib import Path
 
 from pyntara import xui as xui_client
-from pyntara.config import (
-    EngineConfig,
-    SotavpnSetupConfig,
-    ThreeXuiXraySetupConfig,
-)
+from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -62,9 +58,11 @@ from pyntara.utils import (
     user_session_environment,
 )
 from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import sotavpn_setup as values
 
 
-def _read_access_key(ctx: Context, cfg: SotavpnSetupConfig) -> str | None:
+def _read_access_key(ctx: Context) -> str | None:
     """The access key of the Sota account, or None when the pool is off.
 
     The source vaults of the fresh clone are the only source, opened the
@@ -87,26 +85,26 @@ def _read_access_key(ctx: Context, cfg: SotavpnSetupConfig) -> str | None:
         return None
     vault, vault_path = source
     entry = vault.find_entries(
-        title=cfg.key_entry_title,
+        title=values.KEY_ENTRY_TITLE,
         group=vault.root_group,
         recursive=False,
         first=True,
     )
     if entry is None:
         _log(
-            f"the source vault {vault_path} has no {cfg.key_entry_title} entry: "
-            "the Sota pool stays off"
+            f"the source vault {vault_path} has no {values.KEY_ENTRY_TITLE} "
+            "entry: the Sota pool stays off"
         )
         return None
     key: str | None = entry.password
     if not key:
         _log(
-            f"the {cfg.key_entry_title} entry of {vault_path} carries no key: "
+            f"the {values.KEY_ENTRY_TITLE} entry of {vault_path} carries no key: "
             "the Sota pool stays off"
         )
         return None
     _log(
-        f"the Sota access key is read from the {cfg.key_entry_title} entry of "
+        f"the Sota access key is read from the {values.KEY_ENTRY_TITLE} entry of "
         f"{vault_path}"
     )
     return key
@@ -152,50 +150,51 @@ def _settings_value(settings_path: Path, name: str) -> object | None:
     return None
 
 
-def _installed_settings_path(cfg: SotavpnSetupConfig) -> Path:
+def _installed_settings_path() -> Path:
     """Path of the settings file of the installed bridge.
 
-    The installation lives in the home directory of the desktop user, the
-    same layout the installer of the bridge builds, so the HTTP port is
-    read from the installed file and never held here.
+    The installation lives in the home directory of the desktop user, the same
+    layout the installer of the bridge builds, so the HTTP port is read from the
+    installed file and never held here.
     """
 
-    return Path(cfg.home_dir) / cfg.user_install_relative_path / cfg.settings_file_name
+    return (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_INSTALL_RELATIVE_PATH
+        / values.SETTINGS_FILE_NAME
+    )
 
 
-def _service_state_command(cfg: SotavpnSetupConfig) -> list[str]:
+def _service_state_command() -> list[str]:
     """The configured state query with the account and the unit filled in."""
 
     return [
-        part.replace("{username}", cfg.username).replace(
-            "{unit}", cfg.service_unit_name
+        part.replace("{username}", common_values.DESKTOP_USERNAME).replace(
+            "{unit}", values.SERVICE_UNIT_NAME
         )
-        for part in cfg.user_service_is_active_command
+        for part in values.USER_SERVICE_IS_ACTIVE_COMMAND
     ]
 
 
-def _service_is_active(cfg: SotavpnSetupConfig, timeout: float) -> bool:
+def _service_is_active(timeout: float) -> bool:
     """Whether the user service of the bridge reports itself active.
 
-    The state is read through the user manager of the account, which works
-    from a root run without a live session. A missing manager, a failed
-    query and every other state answer False, so the caller installs the
-    bridge or reports it.
+    The state is read through the user manager of the account, which works from a
+    root run without a live session. A missing manager, a failed query and every
+    other state answer False, so the caller installs the bridge or reports it.
     """
 
     try:
         result = run_command(
-            _service_state_command(cfg), check=False, capture=True, timeout=timeout
+            _service_state_command(), check=False, capture=True, timeout=timeout
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        _log(f"cannot read the state of {cfg.service_unit_name}: {exc}")
+        _log(f"cannot read the state of {values.SERVICE_UNIT_NAME}: {exc}")
         return False
     return result.returncode == 0 and result.stdout.strip() == "active"
 
 
-def _hand_the_work_directory_to_the_user(
-    cfg: SotavpnSetupConfig, work_dir: Path
-) -> None:
+def _hand_the_work_directory_to_the_user(work_dir: Path) -> None:
     """Make the temporary directory reachable by the account of the bridge.
 
     The archive is downloaded and extracted by the root run, while the
@@ -209,18 +208,17 @@ def _hand_the_work_directory_to_the_user(
     """
 
     try:
-        record = pwd.getpwnam(cfg.username)
+        record = pwd.getpwnam(common_values.DESKTOP_USERNAME)
     except KeyError:
         _log(
-            f"the account {cfg.username} is unknown: the installer may not "
-            "read the extracted archive"
+            f"the account {common_values.DESKTOP_USERNAME} is unknown: the "
+            "installer may not read the extracted archive"
         )
         return
     apply_owner(work_dir, record.pw_uid, record.pw_gid)
 
 
 def _fetch_the_bridge(
-    cfg: SotavpnSetupConfig,
     engine: EngineConfig,
     timeout: float,
     warnings: list[str],
@@ -234,12 +232,15 @@ def _fetch_the_bridge(
     installed bridge when one is there.
     """
 
-    work_dir = Path(tempfile.mkdtemp(prefix=cfg.archive_temp_prefix))
-    _hand_the_work_directory_to_the_user(cfg, work_dir)
-    archive = work_dir / f"{cfg.archive_temp_prefix}{cfg.archive_temp_suffix}"
+    work_dir = Path(tempfile.mkdtemp(prefix=values.ARCHIVE_TEMP_PREFIX))
+    _hand_the_work_directory_to_the_user(work_dir)
+    archive = (
+        work_dir
+        / f"{values.ARCHIVE_TEMP_PREFIX}{values.ARCHIVE_TEMP_SUFFIX}"
+    )
     try:
         run_command(
-            download_command(engine, archive, cfg.archive_url), timeout=timeout
+            download_command(engine, archive, values.ARCHIVE_URL), timeout=timeout
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         warnings.append(f"the bridge archive was not downloaded: {exc}")
@@ -254,20 +255,20 @@ def _fetch_the_bridge(
         return None
     roots = [
         path.parent
-        for path in work_dir.rglob(cfg.installer_file_name)
+        for path in work_dir.rglob(values.INSTALLER_FILE_NAME)
         if path.is_file()
     ]
     if len(roots) != 1:
         warnings.append(
-            f"the bridge archive carries no single {cfg.installer_file_name}"
+            f"the bridge archive carries no single {values.INSTALLER_FILE_NAME}"
         )
         shutil.rmtree(work_dir, ignore_errors=True)
         return None
     root = roots[0]
-    if not (root / cfg.settings_file_name).is_file():
+    if not (root / values.SETTINGS_FILE_NAME).is_file():
         warnings.append(
-            f"the bridge archive carries no {cfg.settings_file_name} next to "
-            f"the {cfg.installer_file_name}"
+            f"the bridge archive carries no {values.SETTINGS_FILE_NAME} next to "
+            f"the {values.INSTALLER_FILE_NAME}"
         )
         shutil.rmtree(work_dir, ignore_errors=True)
         return None
@@ -275,7 +276,6 @@ def _fetch_the_bridge(
 
 
 def _run_the_installer(
-    cfg: SotavpnSetupConfig,
     engine: EngineConfig,
     installer_path: Path,
     timeout: float,
@@ -292,18 +292,18 @@ def _run_the_installer(
     own.
     """
 
-    values = {
-        "username": cfg.username,
-        "home_dir": cfg.home_dir,
+    placeholders = {
+        "username": common_values.DESKTOP_USERNAME,
+        "home_dir": common_values.DESKTOP_HOME_DIR,
         "python": engine.system_python,
         "installer_path": str(installer_path),
     }
     command = [
-        part.format_map(values)
-        for part in (*cfg.runuser_command, *cfg.installer_command)
+        part.format_map(placeholders)
+        for part in (*values.RUNUSER_COMMAND, *values.INSTALLER_COMMAND)
     ]
     environment = user_session_environment(
-        cfg.username,
+        common_values.DESKTOP_USERNAME,
         command_template=engine.session_environment_command,
         keys=engine.session_environment_keys,
         timeout=timeout,
@@ -316,7 +316,6 @@ def _run_the_installer(
 
 
 def _wait_for_the_bridge(
-    cfg: SotavpnSetupConfig,
     engine: EngineConfig,
     *,
     port: int,
@@ -333,23 +332,22 @@ def _wait_for_the_bridge(
 
     started = time.monotonic()
     while True:
-        if _service_is_active(cfg, timeout) and (
+        if _service_is_active(timeout) and (
             port_listener_pid(engine, port, timeout) is not None
         ):
             _log(f"the bridge service is active and port {port} has a listener")
             return True
         elapsed = time.monotonic() - started
-        if elapsed >= cfg.bridge_ready_wait_seconds:
+        if elapsed >= values.BRIDGE_READY_WAIT_SECONDS:
             return False
         _log(
             f"waiting for the bridge on port {port}, {elapsed:.0f}s of "
-            f"{cfg.bridge_ready_wait_seconds}s"
+            f"{values.BRIDGE_READY_WAIT_SECONDS}s"
         )
-        time.sleep(cfg.readiness_check_delay_seconds)
+        time.sleep(values.READINESS_CHECK_DELAY_SECONDS)
 
 
 def _subscription_payload(
-    cfg: SotavpnSetupConfig,
     sub_cfg: ThreeXuiXraySetupConfig,
     *,
     port: int,
@@ -366,18 +364,20 @@ def _subscription_payload(
 
     fields = sub_cfg.panel_field_keys
     return {
-        fields["subscription_remark"]: cfg.subscription_remark,
-        fields["subscription_url"]: cfg.subscription_url_template.format(
+        fields["subscription_remark"]: values.SUBSCRIPTION_REMARK,
+        fields["subscription_url"]: values.SUBSCRIPTION_URL_TEMPLATE.format(
             port=port, key=key
         ),
         fields["subscription_tag_prefix"]: sub_cfg.pool_member_prefix,
         fields["subscription_update_interval"]: (
-            cfg.subscription_update_interval_seconds
+            values.SUBSCRIPTION_UPDATE_INTERVAL_SECONDS
         ),
-        fields["subscription_enabled"]: cfg.subscription_enabled,
-        fields["subscription_allow_private"]: cfg.subscription_allow_private,
-        fields["subscription_allow_insecure"]: cfg.subscription_allow_insecure,
-        fields["subscription_prepend"]: cfg.subscription_prepend,
+        fields["subscription_enabled"]: values.SUBSCRIPTION_ENABLED,
+        fields["subscription_allow_private"]: values.SUBSCRIPTION_ALLOW_PRIVATE,
+        fields["subscription_allow_insecure"]: (
+            values.SUBSCRIPTION_ALLOW_INSECURE
+        ),
+        fields["subscription_prepend"]: values.SUBSCRIPTION_PREPEND,
     }
 
 
@@ -397,7 +397,6 @@ def _subscription_matches(
 
 
 def _wait_for_the_nodes(
-    cfg: SotavpnSetupConfig,
     sub_cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
@@ -421,7 +420,7 @@ def _wait_for_the_nodes(
     started = time.monotonic()
     while True:
         current = xui_client.find_outbound_subscription_by_remark(
-            sub_cfg, env, cfg.subscription_remark, timeout
+            sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
         )
         if current is not None:
             last_error = current.get(fields["subscription_last_error"])
@@ -435,21 +434,21 @@ def _wait_for_the_nodes(
             if isinstance(count, int) and count > 0:
                 return count, None, False
         elapsed = time.monotonic() - started
-        if elapsed >= cfg.subscription_fetch_wait_seconds:
+        if elapsed >= values.SUBSCRIPTION_FETCH_WAIT_SECONDS:
             return (
                 None,
                 (
                     f"the panel listed no node list after "
-                    f"{cfg.subscription_fetch_wait_seconds} s: it fetches the "
-                    "subscription again on its own schedule"
+                    f"{values.SUBSCRIPTION_FETCH_WAIT_SECONDS} s: it fetches "
+                    "the subscription again on its own schedule"
                 ),
                 False,
             )
         _log(
             f"waiting for the node list, {elapsed:.0f}s of "
-            f"{cfg.subscription_fetch_wait_seconds}s"
+            f"{values.SUBSCRIPTION_FETCH_WAIT_SECONDS}s"
         )
-        time.sleep(cfg.readiness_check_delay_seconds)
+        time.sleep(values.READINESS_CHECK_DELAY_SECONDS)
 
 
 def _wait_for_the_pool(
@@ -517,28 +516,43 @@ def task(ctx: Context) -> TaskResult:
     bridge again.
     """
 
-    cfg = ctx.config.sotavpn_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the sotavpn_setup values are not declared, nothing was changed",
+            warnings=(
+                "the sotavpn_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
+    # The panel vocabulary belongs to another section, which is not migrated yet:
+    # this task reads it from the config document until that section's own turn.
     sub_cfg = ctx.config.three_x_ui_xray_setup
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
 
-    key = _read_access_key(ctx, cfg)
+    key = _read_access_key(ctx)
     if key is None:
         return TaskResult(
             success=True,
             changed=False,
             message=(
                 "the Sota pool is not configured: the source vault carries no "
-                f"{cfg.key_entry_title} entry with a key"
+                f"{values.KEY_ENTRY_TITLE} entry with a key"
             ),
         )
 
     warnings: list[str] = []
     changed = False
-    settings_path = _installed_settings_path(cfg)
+    settings_path = _installed_settings_path()
 
-    fetched = _fetch_the_bridge(cfg, engine, timeout, warnings)
+    fetched = _fetch_the_bridge(engine, timeout, warnings)
     if fetched is not None:
         work_dir, root = fetched
         try:
@@ -546,9 +560,12 @@ def task(ctx: Context) -> TaskResult:
             # looks at the settings of the archive nor decides whether the
             # install is needed, and what the installer does with the
             # settings on the machine is its own business.
-            _log(f"installing the bridge for the account {cfg.username}")
+            _log(
+                "installing the bridge for the account "
+                f"{common_values.DESKTOP_USERNAME}"
+            )
             installed, message = _run_the_installer(
-                cfg, engine, root / cfg.installer_file_name, timeout
+                engine, root / values.INSTALLER_FILE_NAME, timeout
             )
             _log(message)
             if installed:
@@ -558,20 +575,20 @@ def task(ctx: Context) -> TaskResult:
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
 
-    port = _settings_value(settings_path, cfg.settings_http_port_key)
+    port = _settings_value(settings_path, values.SETTINGS_HTTP_PORT_KEY)
     if not isinstance(port, int):
         warnings.append(
             f"the installed bridge settings {settings_path} carry no "
-            f"{cfg.settings_http_port_key}: the panel has no address to "
+            f"{values.SETTINGS_HTTP_PORT_KEY}: the panel has no address to "
             "subscribe to"
         )
         return TaskResult(
             success=True, changed=changed, warnings=tuple(warnings)
         )
-    if not _wait_for_the_bridge(cfg, engine, port=port, timeout=timeout):
+    if not _wait_for_the_bridge(engine, port=port, timeout=timeout):
         warnings.append(
             f"the bridge did not answer with an active service on port {port} "
-            f"within {cfg.bridge_ready_wait_seconds} s"
+            f"within {values.BRIDGE_READY_WAIT_SECONDS} s"
         )
 
     try:
@@ -582,9 +599,9 @@ def task(ctx: Context) -> TaskResult:
             success=True, changed=changed, warnings=tuple(warnings)
         )
 
-    payload = _subscription_payload(cfg, sub_cfg, port=port, key=key)
+    payload = _subscription_payload(sub_cfg, port=port, key=key)
     existing = xui_client.find_outbound_subscription_by_remark(
-        sub_cfg, env, cfg.subscription_remark, timeout
+        sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
     )
     fields = sub_cfg.panel_field_keys
     if (
@@ -593,7 +610,7 @@ def task(ctx: Context) -> TaskResult:
         and not force
     ):
         _log(
-            f"the panel subscription {cfg.subscription_remark} is configured "
+            f"the panel subscription {values.SUBSCRIPTION_REMARK} is configured "
             "already"
         )
     else:
@@ -610,19 +627,19 @@ def task(ctx: Context) -> TaskResult:
             )
         changed = True
         _log(
-            f"the panel subscription {cfg.subscription_remark}: "
+            f"the panel subscription {values.SUBSCRIPTION_REMARK}: "
             f"{_without_the_key(message, key)}"
         )
 
     current = xui_client.find_outbound_subscription_by_remark(
-        sub_cfg, env, cfg.subscription_remark, timeout
+        sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
     )
     subscription_id = None if current is None else current.get(fields["id"])
     nodes: int | None = None
     if subscription_id is None:
         warnings.append(
-            f"the panel does not list the subscription {cfg.subscription_remark} "
-            "after the write"
+            f"the panel does not list the subscription "
+            f"{values.SUBSCRIPTION_REMARK} after the write"
         )
     else:
         ok, message = xui_client.refresh_outbound_subscription(
@@ -637,7 +654,7 @@ def task(ctx: Context) -> TaskResult:
                 "the panel did not fetch the node list: "
                 f"{_without_the_key(message, key)}"
             )
-        nodes, note, failed = _wait_for_the_nodes(cfg, sub_cfg, env, timeout)
+        nodes, note, failed = _wait_for_the_nodes(sub_cfg, env, timeout)
         if note is not None:
             if failed:
                 warnings.append(_without_the_key(note, key))
@@ -650,12 +667,12 @@ def task(ctx: Context) -> TaskResult:
 
     if nodes is None:
         message = (
-            f"the Sota subscription {cfg.subscription_remark} is in place: "
+            f"the Sota subscription {values.SUBSCRIPTION_REMARK} is in place: "
             "the panel has no node list yet"
         )
     else:
         message = (
-            f"the Sota subscription {cfg.subscription_remark} is in place: "
+            f"the Sota subscription {values.SUBSCRIPTION_REMARK} is in place: "
             f"the panel lists {nodes} nodes"
         )
     return TaskResult(

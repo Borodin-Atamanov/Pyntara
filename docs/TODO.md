@@ -183,7 +183,19 @@ is the correction.
     The section reads the meminfo line name from the shared module, which point
     17 moved there, and the values module keeps 26 values including the mode bit
     of the hot_add interface, which joins the file-mode rule list
-21. sotavpn_setup, 24 / 659 / 67
+21. sotavpn_setup, done, 24 / 663 / 67, and it refined the switch rule of point 88
+    with the test that a real value produced: the four subscription flags
+    (enabled, allow_private, allow_insecure, prepend) are booleans and not the 1
+    and 0 of a switch setting, because they are fields of the JSON body the task
+    posts to the panel API. json.dumps writes a Python True as the JSON word
+    true and 1 as the number 1, and the panel field takes a boolean, so a 1 on
+    the wire would be a different value. The 1 and 0 rule therefore covers a
+    switch that a program of this repository reads, while a field of a foreign
+    protocol keeps the type that protocol has; the test that compares the payload
+    against True is what caught it. The section also keeps one live read of
+    another section: the panel vocabulary of three_x_ui_xray_setup stays in the
+    config document until that section lands in stage F, so the task still
+    receives that object while its own values come from the module
 22. tor_setup, 27 / 503 / 68
 23. vocalinux_setup, 38 / 680 / 71
 24. chrome_setup, 49 / 973 / 87
@@ -490,9 +502,8 @@ it is named with the figure.
     every read, the tests moved to the values, the section registered in
     tests/test_values.py and tests/test_values_softness.py, the plan updated, the
     full gate, the merge into main and the branch deleted. telegram_setup and
-    scrcpy_setup are done; the order that remains is sotavpn_setup
-    (24 / 67 / 663),
-    vocalinux_setup (38 / 71 / 680), chrome_setup (49 / 87 / 973),
+    scrcpy_setup are done; the order that remains is vocalinux_setup
+    (38 / 71 / 680), chrome_setup (49 / 87 / 973),
     ssh_daemon_setup (64 / 90 / 659), dnsproxy_setup (78 / 117 / 1051, its commit
     moves the nextdns profile id pair to common) and kde_settings (1607 / 177 /
     2244, a list of kconfig records, so a named record type and the tuple of
