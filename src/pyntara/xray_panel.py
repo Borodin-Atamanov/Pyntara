@@ -258,6 +258,37 @@ def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _panel_environment_or_warning(
+    cfg: ThreeXuiXraySetupConfig, timeout: float
+) -> tuple[dict[str, str] | None, TaskResult | None]:
+    """The panel environment, or the warning that says why it is missing.
+
+    Reading install-result.env is the first step of every stage that talks
+    to the panel, and a file the panel has not written yet and a file that
+    lacks a required key are both ordinary states of a machine whose panel
+    has not started: the caller reports the reason as a warning of a
+    completed task and never as a failure. Exactly one of the two answers
+    is set.
+    """
+
+    try:
+        return xui_client.panel_environment(cfg, timeout), None
+    except FileNotFoundError:
+        return None, TaskResult(
+            success=True,
+            changed=False,
+            warnings=(
+                "install-result.env not found: panel may not have started yet",
+            ),
+        )
+    except RuntimeError as exc:
+        return None, TaskResult(
+            success=True,
+            changed=False,
+            warnings=(str(exc),),
+        )
+
+
 def _stage2(
     cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
@@ -272,20 +303,9 @@ def _stage2(
     """
 
     # Read the credentials the panel generated on first start.
-    try:
-        env = xui_client.panel_environment(cfg, timeout)
-    except FileNotFoundError:
-        return TaskResult(
-            success=True,
-            changed=False,
-            warnings=("install-result.env not found: panel may not have started yet",),
-        )
-    except RuntimeError as exc:
-        return TaskResult(
-            success=True,
-            changed=False,
-            warnings=(str(exc),),
-        )
+    env, warning = _panel_environment_or_warning(cfg, timeout)
+    if env is None:
+        return warning
     _log("stage 2: read credentials from install-result.env")
 
     # Verify the session through the panel REST API.
@@ -500,6 +520,30 @@ def _wait_panel_http(
         time.sleep(delay)
 
 
+def _env_values(path: Path) -> tuple[dict[str, str], list[str]]:
+    """The key=value pairs of an env file and the order of its keys.
+
+    A file that cannot be read answers an empty mapping and an empty
+    order, so a caller reports that there is nothing to write instead of
+    raising on the machine that owns the file. The shared parse keeps the
+    shape of the file in one place, so the sync of install-result.env and
+    the credential takeover read it the same way.
+    """
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}, []
+    values: dict[str, str] = {}
+    order: list[str] = []
+    for line in text.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+            order.append(key.strip())
+    return values, order
+
+
 def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
     """Apply key=value updates to an env file, preserving line order.
 
@@ -512,17 +556,7 @@ def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
 
     if not path.is_file():
         return False
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    values: dict[str, str] = {}
-    order: list[str] = []
-    for line in text.splitlines():
-        if "=" in line:
-            key, _, value = line.partition("=")
-            values[key.strip()] = value.strip()
-            order.append(key.strip())
+    values, order = _env_values(path)
     changed = False
     for key, value in updates.items():
         if values.get(key) != value:
@@ -557,18 +591,11 @@ def _sync_install_result_env(
     env_path = Path(cfg.install_result_env_path)
     if not env_path.is_file():
         return False
-    try:
-        text = env_path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    values: dict[str, str] = {}
-    for line in text.splitlines():
-        if "=" in line:
-            key, _, value = line.partition("=")
-            values[key.strip()] = value.strip()
+    values, _ = _env_values(env_path)
+    keys = cfg.panel_environment_keys
     port = str(cfg.panel_port)
-    updates: dict[str, str] = {"XUI_PANEL_PORT": port}
-    url = values.get("XUI_ACCESS_URL")
+    updates: dict[str, str] = {keys["panel_port"]: port}
+    url = values.get(keys["access_url"])
     if url is not None:
         try:
             scheme = xui_client.panel_scheme(cfg, timeout)
@@ -581,11 +608,11 @@ def _sync_install_result_env(
             if ":" in host:
                 host = host.split(":", 1)[0]
         new_url = f"{scheme or old_scheme}://{host}:{port}"
-        web_path = values.get("XUI_WEB_BASE_PATH", "").strip("/")
+        web_path = values.get(keys["web_base_path"], "").strip("/")
         if web_path:
             new_url += f"/{web_path}"
         if url != new_url:
-            updates["XUI_ACCESS_URL"] = new_url
+            updates[keys["access_url"]] = new_url
     _log(f"syncing {env_path} with the real panel port and scheme")
     return _rewrite_env(env_path, updates)
 
@@ -605,9 +632,10 @@ def _takeover_credentials(
     Returns (changed, message); a failure returns (False, error).
     """
 
-    username = creds.get("XUI_USERNAME", "")
-    password = creds.get("XUI_PASSWORD", "")
-    web_base_path = creds.get("XUI_WEB_BASE_PATH", "")
+    keys = cfg.panel_environment_keys
+    username = creds.get(keys["username"], "")
+    password = creds.get(keys["password"], "")
+    web_base_path = creds.get(keys["web_base_path"], "")
     try:
         run_command(
             _panel_command(
@@ -624,9 +652,9 @@ def _takeover_credentials(
     _rewrite_env(
         Path(cfg.install_result_env_path),
         {
-            "XUI_USERNAME": username,
-            "XUI_PASSWORD": password,
-            "XUI_WEB_BASE_PATH": web_base_path,
+            keys["username"]: username,
+            keys["password"]: password,
+            keys["web_base_path"]: web_base_path,
         },
     )
     try:

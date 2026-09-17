@@ -396,15 +396,20 @@ def _wait_for_the_nodes(
     sub_cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
-) -> tuple[int | None, str | None]:
-    """Wait for the panel to fetch the list; (nodes, message).
+) -> tuple[int | None, str | None, bool]:
+    """Wait for the panel to fetch the list; (nodes, message, failed).
 
     The refresh call asks the panel to fetch the subscription address; the
     bridge answers from its own cache and asks the vendor when that cache
     is cold, which takes a few seconds. The panel is therefore asked for
     its own count until a list arrives, until it records an error, or until
-    the configured budget is spent. Exactly one of the two answers is set:
-    the count of the nodes, or a sentence naming what stopped the fetch.
+    the configured budget is spent. Exactly one of the first two answers is
+    set: the count of the nodes, or a sentence naming what stopped the
+    fetch. The third value says whether that sentence is a failure the
+    panel recorded, in which case the caller warns, or only the budget
+    running out while the panel is still fetching, which is a fact about
+    the machine and not a defect of the run: the subscription is already
+    written and the panel fetches it again on its own schedule.
     """
 
     fields = sub_cfg.panel_field_keys
@@ -416,16 +421,24 @@ def _wait_for_the_nodes(
         if current is not None:
             last_error = current.get(fields["subscription_last_error"])
             if last_error:
-                return None, f"the panel could not fetch the node list: {last_error}"
+                return (
+                    None,
+                    f"the panel could not fetch the node list: {last_error}",
+                    True,
+                )
             count = current.get(fields["subscription_outbound_count"])
             if isinstance(count, int) and count > 0:
-                return count, None
+                return count, None, False
         elapsed = time.monotonic() - started
         if elapsed >= cfg.subscription_fetch_wait_seconds:
-            return None, (
-                f"the panel listed no node list after "
-                f"{cfg.subscription_fetch_wait_seconds} s: it fetches the "
-                "subscription again on its own schedule"
+            return (
+                None,
+                (
+                    f"the panel listed no node list after "
+                    f"{cfg.subscription_fetch_wait_seconds} s: it fetches the "
+                    "subscription again on its own schedule"
+                ),
+                False,
             )
         _log(
             f"waiting for the node list, {elapsed:.0f}s of "
@@ -503,6 +516,7 @@ def task(ctx: Context) -> TaskResult:
     sub_cfg = ctx.config.three_x_ui_xray_setup
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
+    force = ctx.task_name in ctx.force_tasks
 
     key = _read_access_key(ctx, cfg)
     if key is None:
@@ -568,7 +582,11 @@ def task(ctx: Context) -> TaskResult:
         sub_cfg, env, cfg.subscription_remark, timeout
     )
     fields = sub_cfg.panel_field_keys
-    if existing is not None and _subscription_matches(existing, payload):
+    if (
+        existing is not None
+        and _subscription_matches(existing, payload)
+        and not force
+    ):
         _log(
             f"the panel subscription {cfg.subscription_remark} is configured "
             "already"
@@ -614,9 +632,12 @@ def task(ctx: Context) -> TaskResult:
                 "the panel did not fetch the node list: "
                 f"{_without_the_key(message, key)}"
             )
-        nodes, note = _wait_for_the_nodes(cfg, sub_cfg, env, timeout)
+        nodes, note, failed = _wait_for_the_nodes(cfg, sub_cfg, env, timeout)
         if note is not None:
-            warnings.append(_without_the_key(note, key))
+            if failed:
+                warnings.append(_without_the_key(note, key))
+            else:
+                _log(_without_the_key(note, key))
         elif nodes is not None:
             _log(f"the subscription carries {nodes} nodes")
 

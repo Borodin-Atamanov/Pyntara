@@ -81,21 +81,19 @@ def _is_remote_server(profile: routing_policy.VlessProfile, facts: _RunFacts) ->
     """True when the profile points at this machine itself.
 
     A machine that runs the remote server must not connect to itself, so
-    the address of the link is compared with the addresses of this
-    machine's interfaces and with the addresses the echo services
-    reported.
+    the address of the link is compared with every address this machine
+    answers to: the addresses of its interfaces and the addresses the
+    echo services reported.
     """
 
-    if profile.address in facts.local_addresses:
-        return True
-    return profile.address in (
-        facts.public_addresses.ipv4 + facts.public_addresses.ipv6
-    )
+    return profile.address in _own_addresses(facts)
 
 
 def _stage_local_proxy(
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
+    *,
+    force: bool = False,
 ) -> TaskResult | None:
     """Stage 6: serve a local proxy for this machine through the panel.
 
@@ -121,7 +119,7 @@ def _stage_local_proxy(
         )
     try:
         changed, message = xray_client.ensure_local_proxy_inbound(
-            cfg, env, timeout
+            cfg, env, timeout, force=force
         )
     except RuntimeError as exc:
         return TaskResult(
@@ -356,6 +354,8 @@ def _stage_routing_policy(
     ctx: Context,
     timeout: float,
     facts: _RunFacts,
+    *,
+    force: bool = False,
 ) -> TaskResult | None:
     """Stage 7: route the traffic of the local proxy.
 
@@ -459,8 +459,14 @@ def _stage_routing_policy(
     if pool_differs:
         wanted = replace(wanted, settings=settings)
         differs = True
+    # A run writes the template at most twice: once for the wanted state
+    # and once more as the documented cure for a core that kept an older
+    # rule set. force writes the wanted state even when the stored document
+    # already equals it, which is the lever an operator has when the
+    # disagreement is not visible in the document at all.
+    writes = 0
     applied = False
-    if differs:
+    if differs or force:
         ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
         if not ok:
             return TaskResult(
@@ -469,6 +475,7 @@ def _stage_routing_policy(
                 + (f"routing policy not applied: {message}",),
             )
         applied = True
+        writes += 1
         _log(f"routing policy applied: {message}")
 
     failures, decided = xray_client.route_test_failures(
@@ -488,6 +495,7 @@ def _stage_routing_policy(
         ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
         if ok:
             applied = True
+            writes += 1
             _log(f"routing policy written again: {message}")
             failures, decided = xray_client.route_test_failures(
                 cfg,
@@ -506,7 +514,35 @@ def _stage_routing_policy(
     # above. The machine that is the remote server has no remote path of its
     # own, so nothing is checked there.
     if decided and remote_outbound is not None and profile is not None:
-        warnings.extend(_check_proxy_path(cfg, policy, profile, facts))
+        path_warnings = _check_proxy_path(cfg, policy, profile, facts)
+        if path_warnings and writes < 2:
+            # The path is proved with real traffic, and the running core can
+            # hold a rule set the stored template no longer matches, which a
+            # rewrite repairs. One more write is tried before the failure is
+            # reported; the count above keeps a run from writing in a loop.
+            ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+            if ok:
+                applied = True
+                writes += 1
+                _log(
+                    "routing policy written again after the proxy path "
+                    f"failed: {message}"
+                )
+                retry_failures, retry_decided = xray_client.route_test_failures(
+                    cfg,
+                    env,
+                    timeout,
+                    policy,
+                    remote_balancer_tag=cfg.pool_balancer_tag,
+                    balancer_selector=selector,
+                    pool_fallback_tag=pool_fallback_tag,
+                )
+                if retry_decided:
+                    warnings.extend(retry_failures)
+                    path_warnings = _check_proxy_path(
+                        cfg, policy, profile, facts
+                    )
+        warnings.extend(path_warnings)
     elif decided:
         _log(
             "the path through the local proxy is not checked: this machine "

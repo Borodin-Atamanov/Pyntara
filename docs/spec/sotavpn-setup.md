@@ -79,11 +79,16 @@ the key before the message reaches the log or the terminal.
 
 A run whose bridge is installed and whose subscription already carries the
 wanted values installs nothing and writes no subscription, and reports done
-with no changes. Every step
+with no changes. Force mode writes the subscription again even when it
+already matches, which is the permission an operator needs when the panel
+and the machine disagree in a way the stored fields do not show. A list the
+panel has not fetched within subscription_fetch_wait_seconds is reported as
+a fact and not as a warning, because the subscription is already written
+and the panel fetches it again on its own schedule; a fetch error the panel
+records is a warning. Every other step
 that could not be reached is a warning of a completed task, so one dead
 step leaves the rest of the machine configured: a bridge that does not
-answer, an installer that failed, a panel that could not fetch the list, a
-panel that reports no node yet. The task belongs to the default sets of
+answer, an installer that failed. The task belongs to the default sets of
 the server and desktop modes, so the check of the key runs on every
 installation and a machine without the entry simply reports the
 subscription as not configured.

@@ -38,6 +38,7 @@ def _ctx(
     *,
     sotavpn: dict[str, object] | None = None,
     three_x_ui: dict[str, object] | None = None,
+    force: bool = False,
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
@@ -62,6 +63,7 @@ def _ctx(
         repo_root=tmp_path,
         task_data_root=tmp_path,
         vault_password="run-pass",
+        force_tasks=frozenset({"sotavpn_setup"}) if force else frozenset(),
         config=config,
     )
 
@@ -446,12 +448,15 @@ class TestSubscriptionState:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
         panel: _Panel,
+        *,
+        force: bool = False,
         **sections: dict[str, object] | None,
     ) -> tuple[Context, _Panel]:
         ctx = _ctx(
             tmp_path,
             sotavpn=sections.get("sotavpn"),
             three_x_ui=sections.get("three_x_ui"),
+            force=force,
         )
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
@@ -499,9 +504,12 @@ class TestSubscriptionState:
         assert not [w for w in result.warnings if "node list" in w]
         assert "the panel lists 2 nodes" in (result.message or "")
 
-    def test_a_missing_node_list_is_reported(
+    def test_a_missing_node_list_is_reported_not_failed(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # The budget runs out while the panel is still fetching: the
+        # subscription is already written and the panel fetches it again on
+        # its own schedule, so the fact is reported without an alarm.
         panel = _Panel(outbound_count=0)
         ctx, _panel = self._prepare(
             monkeypatch,
@@ -510,8 +518,32 @@ class TestSubscriptionState:
             sotavpn={"subscription_fetch_wait_seconds": 0},
         )
         result = sotavpn.task(ctx)
-        assert any("listed no node list" in warning for warning in result.warnings)
+        assert not [w for w in result.warnings if "node list" in w]
         assert "has no node list yet" in (result.message or "")
+
+    def test_force_writes_the_subscription_that_already_matches(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # A rerun whose subscription already carries the wanted values
+        # writes nothing; force writes it again, which is the lever an
+        # operator has when the panel and the machine disagree in a way the
+        # fields do not show.
+        panel = _Panel()
+        ctx, _panel = self._prepare(monkeypatch, tmp_path, panel)
+        first = sotavpn.task(ctx)
+        assert first.changed is True
+        assert len(panel.upserts) == 1
+        _write_installed(ctx, version="1.0.9", port=25080)
+        _fetched(monkeypatch, tmp_path)
+        plain = sotavpn.task(ctx)
+        assert plain.success is True
+        assert len(panel.upserts) == 1
+        forced_ctx, _panel = self._prepare(
+            monkeypatch, tmp_path, panel, force=True
+        )
+        forced = sotavpn.task(forced_ctx)
+        assert forced.success is True
+        assert len(panel.upserts) == 2
 
     def test_the_pool_is_waited_for(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

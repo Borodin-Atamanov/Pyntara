@@ -135,11 +135,6 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
     "src/pyntara/tasks/swapfile_service_install.py": frozenset(
         {'MEMINFO_PATH = Path("/proc/meminfo")'}
     ),
-    "src/pyntara/tasks/three_x_ui_xray_setup.py": frozenset(
-        {
-            'IPV4_PATTERN = re.compile(r"\\d{1,3}(?:\\.\\d{1,3}){3}")',
-        }
-    ),
     "src/pyntara/tasks/yggdrasil_service_setup.py": frozenset(
         {
             "CONNECTED_PATTERN = re.compile(",

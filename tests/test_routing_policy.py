@@ -534,6 +534,26 @@ class TestApplyRoutingPolicy:
         assert rules[0]["inboundTag"] == ["api"]
         assert {"type": "field", "domain": ["domain:example.test"], "outboundTag": "direct"} in rules
 
+    def test_keeps_a_foreign_rule_that_names_the_proxy_tag(self) -> None:
+        # A rule an operator wrote may scope itself to the local proxy among
+        # other inbounds. The policy owns only the rules it writes itself,
+        # which name the local proxy alone, so that rule is kept instead of
+        # being replaced.
+        template = make_template()
+        foreign: dict[str, object] = {
+            "type": "field",
+            "inboundTag": ["pyntara-local-proxy", "in-something-else"],
+            "outboundTag": "direct",
+        }
+        rules_of(template).append(foreign)
+        updated, _ = apply_routing_policy(
+            template,
+            make_policy(),
+            remote_outbound=None,
+            remove_panel_restrictions=True,
+        )
+        assert foreign in rules_of(updated)
+
     def test_removes_the_panel_restrictions_when_asked(self) -> None:
         updated, _ = apply_routing_policy(
             make_template(),

@@ -26,6 +26,8 @@ The target state is reached when the installed version equals the newest release
 
 When the version differs, the service is disabled or inactive, or the task is forced, the task downloads the official installer and runs it, then waits for the service to become active. A version mismatch is the normal-update path: the task updates the panel to the newest release without force mode, because updating a version does not destroy the configured system. Force mode reruns the installer even when the version matches and the service is enabled and active, which is the explicit permission to rebuild the panel.
 
+The client half has its own gates: the local proxy inbound is written only when its stored definition differs, and the routing policy only when the document the panel stores differs from the wanted one. Force mode reaches those gates as well, the share address of the connection profile included: every object of the client half is written even when it already matches, which is the permission an operator needs when the running core disagrees with what the panel stores. The proxy path is the second cure for that state: a path that carries nothing while every routing check agrees makes the stage write the routing policy once more before it reports the failure, and a run writes the template at most twice.
+
 ## Credentials boundary
 
 The task generates the panel credentials itself and passes them to the installer as env vars, so the task controls the credentials instead of accepting whatever the installer generates. The values are proquint encodings (draft-rayner-proquint, shared proquint_encode in utils) of fresh random bytes from os.urandom:

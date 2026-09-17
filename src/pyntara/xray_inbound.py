@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 
-from pyntara import metrics
+from pyntara import metrics, xray_panel
 from pyntara import xui as xui_client
 from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.context import Context
@@ -36,10 +36,12 @@ def _ensure_inbound_security(
     in the nested realitySettings.settings block, so the inbound the task
     owns must carry both halves of the pair. The pair is taken from the
     panel itself: getNewX25519Cert returns both keys and both are written
-    back through one inbound update. An inbound that already carries the
-    public key is left alone, so a rerun is a no-op. Returns (changed,
-    warnings): a step that cannot be applied is a warning, never an error,
-    so the rest of the task continues.
+    back through one inbound update. An inbound that already carries both
+    halves is left alone, so a rerun is a no-op, while an inbound that
+    lost either half is issued a fresh pair: a public key without its
+    private key describes a connection no client can make. Returns
+    (changed, warnings): a step that cannot be applied is a warning, never
+    an error, so the rest of the task continues.
     """
 
     fields = cfg.xray_field_keys
@@ -50,7 +52,11 @@ def _ensure_inbound_security(
     if not isinstance(reality, dict):
         return False, ("inbound has no REALITY settings",)
     stored = reality.get(fields["settings"])
-    if isinstance(stored, dict) and stored.get(fields["public_key"]):
+    has_public = isinstance(stored, dict) and bool(
+        stored.get(fields["public_key"])
+    )
+    has_private = bool(reality.get(fields["private_key"]))
+    if has_public and has_private:
         return False, ()
     keypair = xui_client.generate_reality_key(cfg, env, timeout)
     if keypair is None:
@@ -87,20 +93,9 @@ def _stage3(
     """
 
     # Read the credentials the panel generated on first start.
-    try:
-        env = xui_client.panel_environment(cfg, timeout)
-    except FileNotFoundError:
-        return TaskResult(
-            success=True,
-            changed=False,
-            warnings=("install-result.env not found: panel may not have started yet",),
-        )
-    except RuntimeError as exc:
-        return TaskResult(
-            success=True,
-            changed=False,
-            warnings=(str(exc),),
-        )
+    env, warning = xray_panel._panel_environment_or_warning(cfg, timeout)
+    if env is None:
+        return warning
     _log("stage 3: read credentials from install-result.env")
 
     # Check if an inbound on the configured port already exists.
@@ -208,6 +203,8 @@ def _stage_connection(
     full_config: Config,
     timeout: float,
     facts: _RunFacts,
+    *,
+    force: bool = False,
 ) -> TaskResult | None:
     """Ensure the panel has a client and the vault carries its profile.
 
@@ -219,16 +216,9 @@ def _stage_connection(
     TaskResult carrying changed and the warnings otherwise.
     """
 
-    try:
-        env = xui_client.panel_environment(cfg, timeout)
-    except FileNotFoundError:
-        return TaskResult(
-            success=True,
-            changed=False,
-            warnings=("install-result.env not found: panel may not have started yet",),
-        )
-    except RuntimeError as exc:
-        return TaskResult(success=True, changed=False, warnings=(str(exc),))
+    env, warning = xray_panel._panel_environment_or_warning(cfg, timeout)
+    if env is None:
+        return warning
     _log("stage 5: read credentials from install-result.env")
 
     inbound = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
@@ -245,17 +235,25 @@ def _stage_connection(
     changed = False
 
     # The share address: the panel renders the link host from it, and only
-    # the configured strategy makes the panel use it. The address comes
-    # from the public IPv4 detection, the yggdrasil node address or the
-    # value the panel already stores, in that order.
+    # the configured strategy makes the panel use it, so both fields are
+    # written together whenever either one differs. Comparing the strategy
+    # as well keeps the panel honest when a reset leaves the wanted address
+    # behind with the default strategy, a state that would render every
+    # link with the host localhost.
+    share_address_field = cfg.xray_field_keys["share_addr"]
+    share_strategy_field = cfg.xray_field_keys["share_addr_strategy"]
     address = _server_share_address(cfg, full_config, inbound, facts)
     if address is None:
         warnings.append(
             "no server address available: panel links keep the default host"
         )
-    elif inbound.get("shareAddr") != address:
-        inbound["shareAddrStrategy"] = cfg.share_addr_strategy
-        inbound["shareAddr"] = address
+    elif (
+        force
+        or inbound.get(share_address_field) != address
+        or inbound.get(share_strategy_field) != cfg.share_addr_strategy
+    ):
+        inbound[share_strategy_field] = cfg.share_addr_strategy
+        inbound[share_address_field] = address
         ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
         if ok:
             changed = True
@@ -279,7 +277,27 @@ def _stage_connection(
         )
         if entry is not None:
             stored = _notes_map(entry.notes or "")
-    email, client_id, sub_id = _client_identity(cfg, stored)
+    # An identity the panel already serves is adopted when the vault carries
+    # none, so a lost vault entry never adds a second client. Extra clients
+    # are left alone and named: deleting them is not this task's business,
+    # and a warning here would make every later run of the machine look
+    # broken until an operator cleans the panel.
+    served = _client_records_of_inbound(cfg, inbound)
+    adopted = not stored.get("CLIENT_EMAIL") and bool(served)
+    if len(served) > 1:
+        _log(
+            f"the inbound serves {len(served)} clients "
+            f"({', '.join(_client_emails(cfg, served))}): one identity is "
+            "reused and the others are left alone"
+        )
+        if adopted:
+            warnings.append(
+                f"the inbound serves {len(served)} clients while the vault "
+                "carries no client identity: the task adopted "
+                f"{_client_emails(cfg, served)[0]} from the panel and left "
+                "the other clients in place"
+            )
+    email, client_id, sub_id = _client_identity(cfg, stored, served)
 
     inbound_id = inbound.get("id")
     if not isinstance(inbound_id, int):
@@ -386,16 +404,68 @@ def _read_inbound_payload_template(
     ).read_text(encoding="utf-8")
 
 
+def _client_records_of_inbound(
+    cfg: ThreeXuiXraySetupConfig, inbound: dict[str, object]
+) -> list[dict[str, object]]:
+    """The client records the panel stores on one inbound.
+
+    The settings block of an inbound is a JSON document the panel hands
+    over as text, and its clients array is where the panel keeps the
+    identity of every client it serves. Reading it lets the task reuse an
+    identity that already exists instead of adding another client. The
+    name of the settings block comes from the config; the name of the
+    array is the word the shipped payload template writes.
+    """
+
+    settings = xui_client._decoded_json_object(
+        inbound.get(cfg.xray_field_keys["settings"])
+    )
+    if settings is None:
+        return []
+    clients = settings.get("clients")
+    if not isinstance(clients, list):
+        return []
+    return [client for client in clients if isinstance(client, dict)]
+
+
+def _client_emails(
+    cfg: ThreeXuiXraySetupConfig, clients: list[dict[str, object]]
+) -> tuple[str, ...]:
+    """The labels of the clients of one inbound, for a message."""
+
+    field = cfg.panel_field_keys["email"]
+    return tuple(str(client.get(field) or "?") for client in clients)
+
+
 def _client_identity(
-    cfg: ThreeXuiXraySetupConfig, stored: dict[str, str]
+    cfg: ThreeXuiXraySetupConfig,
+    stored: dict[str, str],
+    served: list[dict[str, object]],
 ) -> tuple[str, str, str]:
     """The email, client id and subscription id of the panel client.
 
-    An identity already stored for this panel wins, so a rerun reuses the
-    client instead of adding another; a first run generates one, and the
-    length of the random part of each value comes from the config.
+    An identity already stored for this panel wins, because the profile of
+    the previous run was built from it. When the vault carries none and
+    the panel already serves a client, the identity of that client is
+    adopted from the panel: a lost vault entry must not turn into a second
+    client on an inbound the task keeps at one, which is the state two
+    clients of the same inbound were found in on a live machine. A machine
+    with neither generates a fresh identity, and the length of the random
+    part of each value comes from the config.
     """
 
+    if not stored.get("CLIENT_EMAIL") and served:
+        fields = cfg.panel_field_keys
+        first = served[0]
+        email = str(first.get(fields["email"]) or "")
+        client_id = str(first.get(fields["id"]) or "")
+        sub_id = str(first.get(fields["sub_id"]) or "")
+        if email and client_id:
+            _log(
+                f"the vault carries no client identity: reusing {email} "
+                "from the panel"
+            )
+            return email, client_id, sub_id
     email = stored.get("CLIENT_EMAIL") or proquint_encode(
         os.urandom(cfg.random_username_bytes), "-"
     )

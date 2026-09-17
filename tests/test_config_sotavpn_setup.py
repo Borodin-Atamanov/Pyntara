@@ -54,7 +54,7 @@ from config_helpers import (
         ),
         # subscription_fetch_wait_seconds is zero
         base_config().replace(
-            "subscription_fetch_wait_seconds = 30",
+            "subscription_fetch_wait_seconds = 90",
             "subscription_fetch_wait_seconds = 0",
         ),
         # subscription_allow_private is a string, not a boolean
@@ -94,6 +94,6 @@ def test_load_config_sotavpn_values(tmp_path: Path) -> None:
     assert config.sotavpn_setup.subscription_remark == "sota-bridge"
     assert config.sotavpn_setup.subscription_update_interval_seconds == 300
     assert config.sotavpn_setup.subscription_allow_private is True
-    assert config.sotavpn_setup.subscription_fetch_wait_seconds == 30
+    assert config.sotavpn_setup.subscription_fetch_wait_seconds == 90
     assert config.sotavpn_setup.bridge_ready_wait_seconds == 60
     assert config.sotavpn_setup.readiness_check_delay_seconds == 2

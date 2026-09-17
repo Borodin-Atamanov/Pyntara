@@ -211,7 +211,11 @@ def _inbound_matches(
 
 
 def ensure_local_proxy_inbound(
-    cfg: ThreeXuiXraySetupConfig, env: dict[str, str], timeout: float
+    cfg: ThreeXuiXraySetupConfig,
+    env: dict[str, str],
+    timeout: float,
+    *,
+    force: bool = False,
 ) -> tuple[bool, str]:
     """Serve the local proxy inbound through the panel; (changed, message).
 
@@ -221,8 +225,11 @@ def ensure_local_proxy_inbound(
     limit and without an expiry date. The inbound is created once and
     replaced when its definition differs, so a rerun with another port or
     another sniffing set converges. changed is False when the stored
-    inbound already matches. A write that fails raises RuntimeError with
-    the panel message, so the caller reports the step it could not make.
+    inbound already matches. force writes the inbound even when it
+    matches, which is the lever an operator has when the running core
+    disagrees with the stored definition. A write that fails raises
+    RuntimeError with the panel message, so the caller reports the step
+    it could not make.
     """
 
     payload = routing_policy.build_local_proxy_inbound(
@@ -245,7 +252,11 @@ def ensure_local_proxy_inbound(
     existing = xui_client.find_inbound_by_tag(
         cfg, env, cfg.local_proxy_tag, timeout
     )
-    if existing is not None and _inbound_matches(cfg, existing, payload):
+    if (
+        not force
+        and existing is not None
+        and _inbound_matches(cfg, existing, payload)
+    ):
         return False, ""
     ok, message = xui_client.upsert_inbound(cfg, env, payload, timeout)
     if not ok:

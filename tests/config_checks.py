@@ -264,6 +264,8 @@ XRAY_FIELD_KEY_MEANINGS = (
     "selector",
     "fallback_tag",
     "balancer_tag",
+    "share_addr",
+    "share_addr_strategy",
 )
 
 XRAY_VALUE_MEANINGS = (

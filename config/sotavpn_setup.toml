@@ -73,8 +73,12 @@ subscription_prepend = false
 # Seconds the task waits for the panel to fetch the node list after the
 # refresh call: the bridge answers from its own cache, and a cold cache
 # means the vendor is asked first, which takes a few seconds, usually
-# about twenty.
-subscription_fetch_wait_seconds = 30
+# about twenty. A failed vendor call is repeated by the bridge several
+# times with a pause between the attempts, so a slow vendor exceeds a
+# short budget; a list that has not arrived within this budget is
+# reported as a fact and not as a defect, because the panel fetches the
+# subscription again on its own schedule.
+subscription_fetch_wait_seconds = 90
 # Seconds the bridge HTTP listener may take to answer after the
 # installer ran, and the pause between two readiness probes.
 bridge_ready_wait_seconds = 60

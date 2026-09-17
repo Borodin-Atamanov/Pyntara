@@ -660,15 +660,20 @@ def apply_fastest_pool(
 def _is_own_rule(rule: object, policy: LocalProxyPolicy) -> bool:
     """True when the rule was written by this policy.
 
-    Ownership is decided by the inbound tag alone: every rule of the
-    policy is scoped to the local proxy inbound, and no foreign rule
-    is.
+    Ownership is the inbound tag list exactly: every rule this policy
+    writes is scoped to the local proxy inbound alone, so a rule that
+    names that tag among others was written by an operator and is kept
+    instead of being replaced.
     """
 
     if not isinstance(rule, dict):
         return False
     tags = rule.get(policy.field_keys["inbound_tag"])
-    return isinstance(tags, list) and policy.inbound_tag in tags
+    return (
+        isinstance(tags, list)
+        and len(tags) == 1
+        and tags[0] == policy.inbound_tag
+    )
 
 
 def _is_panel_restriction(rule: object, policy: LocalProxyPolicy) -> bool:

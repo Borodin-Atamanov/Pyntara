@@ -80,7 +80,6 @@ it to itself, so its pool carries the subscription nodes only and falls
 back to the direct outbound.
 """
 
-import re
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -121,12 +120,6 @@ from pyntara.xray_panel import (
     _wait_active,
     _wait_panel_http,
 )
-
-# The IPv4 pattern used to validate an address reported by an echo
-# service; a full match only, so garbage is never accepted. The ACME
-# port, the certificate locations and the echo services live in the
-# [three_x_ui_xray_setup] config table, never as module constants.
-IPV4_PATTERN = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
 
 
 def _install_or_reuse(
@@ -339,6 +332,27 @@ def _install_or_reuse(
     return result, install_warnings
 
 
+def _fold_stage(
+    result: TaskResult, stage: TaskResult | None
+) -> tuple[tuple[str, ...], bool]:
+    """Fold one stage result into the result of the whole task.
+
+    The message of the stage is appended to the message of the task, so a
+    rerun reads as the list of what each stage did, and the warnings and
+    the changed flag are handed back for the caller to collect. None, the
+    answer of a stage that found everything already in place, folds in
+    nothing.
+    """
+
+    if stage is None:
+        return (), False
+    if stage.message:
+        result.message = "; ".join(
+            part for part in (result.message, stage.message) if part
+        )
+    return stage.warnings or (), stage.changed
+
+
 def _run_panel_stages(
     ctx: Context,
     cfg: ThreeXuiXraySetupConfig,
@@ -347,6 +361,7 @@ def _run_panel_stages(
     facts: _RunFacts,
     result: TaskResult,
     install_warnings: list[str],
+    force: bool,
 ) -> TaskResult:
     """Run every panel stage and merge their results into one answer.
 
@@ -357,7 +372,10 @@ def _run_panel_stages(
     the connection profile, and stages 6 and 7 give the machine its local
     proxy with the routing policy and the pool of remote exits. Every stage
     reports its own warnings instead of failing, so one dead step leaves
-    the rest of the machine configured. Returns the merged result.
+    the rest of the machine configured. force writes the objects of the
+    client half even when they already match, which is the lever an operator
+    has when the running core disagrees with what the panel stores. Returns
+    the merged result.
     """
 
     # Bring the panel to the configured port and sync install-result.env
@@ -387,15 +405,8 @@ def _run_panel_stages(
     # stored scheme and url are correct on the first run. The stage may
     # restart the panel, so the listener is polled again after it.
     ssl_result = _stage_ssl(engine, cfg, timeout, facts)
-    ssl_warnings: tuple[str, ...] = ()
-    ssl_changed = False
+    ssl_warnings, ssl_changed = _fold_stage(result, ssl_result)
     if ssl_result is not None:
-        ssl_warnings = ssl_result.warnings or ()
-        ssl_changed = ssl_result.changed
-        if ssl_result.message:
-            result.message = "; ".join(
-                part for part in (result.message, ssl_result.message) if part
-            )
         _wait_panel_http(cfg, timeout)
 
     # Sync install-result.env so its port and scheme match reality: the
@@ -403,11 +414,11 @@ def _run_panel_stages(
     # the certificate.
     _sync_install_result_env(cfg, timeout)
 
-    # Stage 2: read credentials, verify session, store in vault.
-    stage2_result = _stage2(cfg, ctx.config, timeout)
-    stage2_warnings: tuple[str, ...] = ()
-    if stage2_result is not None:
-        stage2_warnings = stage2_result.warnings or ()
+    # Stage 2: read credentials, verify session, store in vault. The stage
+    # reports only warnings, so its changed flag is not collected.
+    stage2_warnings, _ = _fold_stage(
+        result, _stage2(cfg, ctx.config, timeout)
+    )
 
     # Panel settings: move the subscription paths off the well-known
     # defaults so the panel does not warn about them. A failure here is a
@@ -437,59 +448,34 @@ def _run_panel_stages(
     except OSError as exc:
         stage3_warnings = (f"inbound payload template not read: {exc}",)
     else:
-        stage3_result = _stage3(cfg, payload_template, timeout)
-        if stage3_result is not None:
-            stage3_warnings = stage3_result.warnings or ()
-            stage3_changed = stage3_result.changed
-            if stage3_result.message:
-                result.message = "; ".join(
-                    part for part in (result.message, stage3_result.message) if part
-                )
+        stage3_warnings, stage3_changed = _fold_stage(
+            result, _stage3(cfg, payload_template, timeout)
+        )
 
     # Stage 5: ensure the panel client and store the connection profile.
-    connection_result = _stage_connection(cfg, ctx.config, timeout, facts)
-    connection_warnings: tuple[str, ...] = ()
-    connection_changed = False
-    if connection_result is not None:
-        connection_warnings = connection_result.warnings or ()
-        connection_changed = connection_result.changed
-        if connection_result.message:
-            result.message = "; ".join(
-                part
-                for part in (result.message, connection_result.message)
-                if part
-            )
+    connection_warnings, connection_changed = _fold_stage(
+        result,
+        _stage_connection(cfg, ctx.config, timeout, facts, force=force),
+    )
 
     # Stage 6: serve the local proxy of this machine through the panel,
     # and stage 7: write the routing policy and the pool of remote exits
     # and verify them. Both run on every machine; the machine that is the
     # remote server itself gets no outbound to itself, so its pool falls
     # back to the direct outbound.
-    proxy_result = _stage_local_proxy(cfg, timeout)
-    proxy_warnings: tuple[str, ...] = ()
-    proxy_changed = False
-    if proxy_result is not None:
-        proxy_warnings = proxy_result.warnings or ()
-        proxy_changed = proxy_result.changed
-        if proxy_result.message:
-            result.message = "; ".join(
-                part for part in (result.message, proxy_result.message) if part
-            )
+    proxy_warnings, proxy_changed = _fold_stage(
+        result, _stage_local_proxy(cfg, timeout, force=force)
+    )
 
-    routing_result = _stage_routing_policy(cfg, ctx, timeout, facts)
-    routing_warnings: tuple[str, ...] = ()
-    routing_changed = False
-    if routing_result is not None:
-        routing_warnings = routing_result.warnings or ()
-        routing_changed = routing_result.changed
-        if routing_result.message:
-            result.message = "; ".join(
-                part for part in (result.message, routing_result.message) if part
-            )
+    routing_warnings, routing_changed = _fold_stage(
+        result, _stage_routing_policy(cfg, ctx, timeout, facts, force=force)
+    )
 
+    # The install warnings already travel inside the result of the install
+    # step, so they are listed once here; adding result.warnings as well
+    # would print every install warning twice.
     all_warnings = (
         tuple(install_warnings)
-        + (result.warnings or ())
         + ssl_warnings
         + stage2_warnings
         + settings_warnings
@@ -498,26 +484,18 @@ def _run_panel_stages(
         + proxy_warnings
         + routing_warnings
     )
-    if (
-        all_warnings
-        or ssl_changed
+    changed_by_a_stage = (
+        ssl_changed
         or settings_changed
         or stage3_changed
         or connection_changed
         or proxy_changed
         or routing_changed
-    ):
+    )
+    if all_warnings or changed_by_a_stage:
         return TaskResult(
             success=True,
-            changed=(
-                result.changed
-                or ssl_changed
-                or settings_changed
-                or stage3_changed
-                or connection_changed
-                or proxy_changed
-                or routing_changed
-            ),
+            changed=result.changed or changed_by_a_stage,
             message=result.message,
             warnings=all_warnings or (),
         )
@@ -553,5 +531,5 @@ def task(ctx: Context) -> TaskResult:
         ctx, cfg, engine, timeout, force, facts
     )
     return _run_panel_stages(
-        ctx, cfg, engine, timeout, facts, result, install_warnings
+        ctx, cfg, engine, timeout, facts, result, install_warnings, force
     )

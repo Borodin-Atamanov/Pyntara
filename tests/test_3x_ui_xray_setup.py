@@ -279,7 +279,7 @@ def _install_fake(
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _cfg, _full_config, _timeout, _facts: None,
+            lambda _cfg, _full_config, _timeout, _facts, **_kwargs: None,
         )
     return calls
 
@@ -356,7 +356,7 @@ def _panel_fake(
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _cfg, _full_config, _timeout, _facts: None,
+            lambda _cfg, _full_config, _timeout, _facts, **_kwargs: None,
         )
     return calls
 
@@ -557,6 +557,34 @@ def test_release_json_failure_is_a_warning(
     assert any("cannot fetch" in warning for warning in result.warnings)
 
 
+def test_an_install_warning_is_reported_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The install step reports its warning inside its own result, and the
+    # merged result must not repeat it: an operator who reads the same
+    # sentence twice cannot tell one problem from two.
+    _stage2_fake(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    monkeypatch.setattr(
+        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
+    )
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        del kwargs
+        if command[0] == "curl":
+            return _FakeProc(7, "")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = xui.task(ctx)
+    fetch_warnings = [
+        warning
+        for warning in result.warnings or ()
+        if "cannot fetch" in warning
+    ]
+    assert len(fetch_warnings) == 1
+
+
 def test_stage2_login_failure_reports_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -719,7 +747,7 @@ class TestProquintCredentials:
         assert len(env["XUI_USERNAME"]) == 5
         assert len(env["XUI_PASSWORD"]) == 10
         assert len(env["XUI_WEB_BASE_PATH"]) == 11
-        email, client_id, sub_id = xray_inbound._client_identity(cfg, {})
+        email, client_id, sub_id = xray_inbound._client_identity(cfg, {}, [])
         assert len(email) == 5
         assert len(client_id) == 11
         assert len(sub_id) == 11
@@ -731,7 +759,21 @@ class TestProquintCredentials:
         # client the panel already knows.
         cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
         stored = {"CLIENT_EMAIL": "a", "CLIENT_ID": "b", "SUB_ID": "c"}
-        assert xray_inbound._client_identity(cfg, stored) == ("a", "b", "c")
+        assert xray_inbound._client_identity(cfg, stored, []) == ("a", "b", "c")
+
+    def test_client_identity_adopts_the_client_the_panel_serves(
+        self, tmp_path: Path
+    ) -> None:
+        # The vault carries no identity while the panel already serves one:
+        # the identity of that client is used, so the task does not add a
+        # second client to the same inbound.
+        cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
+        served = [{"email": "kazoj-nogur", "id": "uuid-1", "subId": "sub-1"}]
+        assert xray_inbound._client_identity(cfg, {}, served) == (
+            "kazoj-nogur",
+            "uuid-1",
+            "sub-1",
+        )
 
     def test_installer_receives_credential_env(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1220,7 +1262,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _cfg, _full_config, _timeout, _facts: TaskResult(
+            lambda _cfg, _full_config, _timeout, _facts, **_kwargs: TaskResult(
                 success=True, changed=True, message="connection profile stored"
             ),
         )
@@ -2594,6 +2636,45 @@ class TestInboundSecurityStage:
             "fingerprint": "chrome",
         }
 
+    def test_issues_a_new_pair_when_the_private_key_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The public key is there and the private key is gone, which is a
+        # pair no client can use. The panel is asked for a fresh pair and
+        # both halves are written back.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._inbound()
+        stream = cast("dict[str, object]", inbound["streamSettings"])
+        reality = cast("dict[str, object]", stream["realitySettings"])
+        reality["settings"] = {
+            "publicKey": "old-public",
+            "fingerprint": "chrome",
+        }
+        reality.pop("privateKey", None)
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound",
+            lambda _c, _e, _ib, _t: (True, "inbound updated"),
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert result.changed is True
+        assert reality["privateKey"] == "priv123"
+        assert reality["settings"] == {
+            "publicKey": "pub123",
+            "fingerprint": "chrome",
+        }
+
     def test_reports_warning_when_the_panel_has_no_key(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -2684,6 +2765,190 @@ class TestConnectionStage:
         # connection stage writes the profile entry.
         titles = [call.args[1] for call in fake_kp.add_entry.call_args_list]
         assert titles == ["three_x_ui_credentials", "xray_connection"]
+
+    def test_restores_the_share_strategy_when_the_address_matches(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The panel keeps the wanted address but carries the default
+        # strategy, so the links it renders would use the host localhost.
+        # The address matches, and only the strategy is wrong, so the task
+        # must still write the inbound: a comparison of the address alone
+        # would skip this repair.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._inbound()
+        inbound["shareAddrStrategy"] = "node"
+        written: list[dict[str, object]] = []
+
+        def record_update(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            written.append(payload)
+            return True, "updated"
+
+        monkeypatch.setattr("pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound)
+        monkeypatch.setattr("pyntara.xui.update_inbound", record_update)
+        monkeypatch.setattr(
+            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": "a-b"}
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.client_links",
+            lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
+        )
+        monkeypatch.setattr(
+            xray_inbound, "_server_share_address", lambda _c, _f, _i, _t: "203.0.113.5"
+        )
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert written, "the inbound was never written"
+        assert written[0]["shareAddrStrategy"] == "custom"
+        assert written[0]["shareAddr"] == "203.0.113.5"
+
+    def _serving_inbound(self, *emails: str) -> dict[str, object]:
+        """The inbound of the stage with the given clients it serves."""
+
+        inbound = self._inbound()
+        inbound["settings"] = json.dumps(
+            {
+                "clients": [
+                    {
+                        "email": email,
+                        "id": f"uuid-{email}",
+                        "subId": f"sub-{email}",
+                    }
+                    for email in emails
+                ],
+                "decryption": "none",
+            }
+        )
+        return inbound
+
+    def test_reuses_the_client_the_panel_already_serves(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The vault carries no identity while the panel already serves one
+        # client: the identity of that client is adopted and nothing is
+        # created, so an inbound that must serve one client never gains a
+        # second one.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._serving_inbound("kazoj-nogur")
+        created: list[str] = []
+
+        def record_create(
+            _cfg: object,
+            _env: object,
+            _inbound_id: object,
+            _client_id: str,
+            email: str,
+            _sub_id: str,
+            _timeout: object,
+        ) -> tuple[bool, str]:
+            created.append(email)
+            return True, "client created"
+
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr("pyntara.xui.create_client", record_create)
+        monkeypatch.setattr(
+            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": _m}
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.client_links",
+            lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
+        )
+        monkeypatch.setattr(
+            xray_inbound,
+            "_server_share_address",
+            lambda _c, _f, _i, _t: "203.0.113.5",
+        )
+        fake_kp = Mock()
+        fake_kp.root_group = Mock()
+        fake_kp.find_entries.return_value = None
+        fake_kp.add_entry = Mock()
+        fake_kp.save = Mock()
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert created == []
+        notes = next(
+            call.kwargs["notes"]
+            for call in fake_kp.add_entry.call_args_list
+            if call.args[1] == "xray_connection"
+        )
+        assert "CLIENT_EMAIL=kazoj-nogur" in notes
+
+    def test_warns_when_the_vault_is_empty_and_two_clients_are_served(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Two clients on the inbound and no identity in the vault: the first
+        # identity is adopted and the extra client stays in the panel, which
+        # the operator must hear about because the vault and the panel have
+        # drifted apart.
+        _stage2_fake(monkeypatch, tmp_path, inbound_exists=True)
+        inbound = self._serving_inbound("kazoj-nogur", "tapom-hovuj")
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.create_client",
+            lambda _c, _e, _i, _j, _m, _s, _t: (True, "client created"),
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": _m}
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.client_links",
+            lambda _c, _e, _m, _t: ["vless://x@203.0.113.5:443"],
+        )
+        monkeypatch.setattr(
+            "pyntara.xui.update_inbound", lambda _c, _e, _i, _t: (True, "updated")
+        )
+        monkeypatch.setattr(
+            xray_inbound,
+            "_server_share_address",
+            lambda _c, _f, _i, _t: "203.0.113.5",
+        )
+        fake_kp = Mock()
+        fake_kp.root_group = Mock()
+        fake_kp.find_entries.return_value = None
+        fake_kp.add_entry = Mock()
+        fake_kp.save = Mock()
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _cfg: fake_kp)
+        ctx = _ctx(tmp_path)
+        _install_fake(
+            monkeypatch,
+            install_dir=tmp_path / "usr" / "local" / "x-ui",
+            installed_version=TAG,
+            enabled=True,
+            active=True,
+            mock_connection=False,
+        )
+        result = xui.task(ctx)
+        assert result.success is True
+        assert any(
+            "serves 2 clients" in warning for warning in result.warnings or ()
+        )
 
     def test_reports_warning_when_the_vault_is_unavailable(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3284,6 +3549,52 @@ class TestLocalProxyStage:
         monkeypatch.setattr("pyntara.xui.upsert_inbound", fail_upsert)
         cfg = self._cfg(tmp_path)
         assert xui._stage_local_proxy(cfg, 30.0) is None
+
+    def test_force_writes_the_inbound_that_already_matches(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The stored definition matches and the running core disagrees with
+        # it, which the comparison cannot see: force writes the inbound
+        # again, and that is the only lever an operator has there.
+        _profile_source(monkeypatch)
+        _panel_env_fake(monkeypatch)
+        stored = {
+            "id": 2,
+            "tag": "pyntara-local-proxy",
+            "remark": "pyntara-local-proxy",
+            "listen": "127.0.0.1",
+            "port": 10800,
+            "protocol": "mixed",
+            "enable": True,
+            "expiryTime": 0,
+            "total": 0,
+            "up": 4096,
+            "down": 8192,
+            "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
+            "sniffing": {
+                "enabled": True,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": False,
+                "routeOnly": False,
+            },
+        }
+        written: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: stored
+        )
+
+        def record_upsert(
+            _cfg: object, _env: object, payload: dict[str, object], _timeout: object
+        ) -> tuple[bool, str]:
+            written.append(payload)
+            return True, "inbound updated"
+
+        monkeypatch.setattr("pyntara.xui.upsert_inbound", record_upsert)
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_local_proxy(cfg, 30.0, force=True)
+        assert result is not None
+        assert result.changed is True
+        assert written and written[0]["tag"] == "pyntara-local-proxy"
 
     def test_replaces_the_inbound_when_the_definition_differs(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3930,6 +4241,72 @@ class TestRoutingPolicyStage:
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
         assert result is not None
         assert any("did not leave by the remote path" in w for w in result.warnings or ())
+
+    def _outside_russia_answers(self) -> dict[str, str]:
+        """The core answers the policy expects outside Russia."""
+
+        return {
+            "pyntara-check.onion": "pyntara-tor",
+            "pyntara-check.i2p": "pyntara-i2p",
+            "doubleclick.net": "blocked",
+            "localhost": "direct",
+            "10.10.0.0": "direct",
+            "example.com": "pyntara-remote",
+        }
+
+    def test_writes_again_when_the_proxy_path_failed_once(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Every routing check agrees while the path carries nothing, which
+        # is the state a core that has not taken the pool leaves behind:
+        # one more write is tried, and the second check passes without a
+        # warning.
+        writes = self._prepare(monkeypatch, tmp_path)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(self._outside_russia_answers(), seen),
+        )
+        cfg = self._cfg(tmp_path)
+        monkeypatch.setattr(
+            xray_local_proxy,
+            "run_command",
+            self._answers_by_url(
+                {
+                    cfg.proxy_check_url: [
+                        (1, ""),
+                        (1, ""),
+                        (1, ""),
+                        (0, "203.0.113.9\n200"),
+                    ]
+                }
+            ),
+        )
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert len(writes) == 2
+        assert not [w for w in result.warnings or () if "answered nothing" in w]
+
+    def test_the_proxy_path_retry_does_not_write_in_a_loop(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The path stays broken, so the failure is reported and one more
+        # write was tried; the retry must not turn into a run that writes
+        # the template again and again.
+        writes = self._prepare(monkeypatch, tmp_path)
+        seen: list[str] = []
+        monkeypatch.setattr(
+            "pyntara.xui.route_test",
+            self._route_fake(self._outside_russia_answers(), seen),
+        )
+        monkeypatch.setattr(
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(1, "")
+        )
+        cfg = self._cfg(tmp_path)
+        result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
+        assert result is not None
+        assert len(writes) == 2
+        assert [w for w in result.warnings or () if "answered nothing" in w]
 
     def test_a_second_run_writes_nothing(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
