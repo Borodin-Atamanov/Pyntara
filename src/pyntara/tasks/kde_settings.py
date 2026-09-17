@@ -858,12 +858,12 @@ def _apply_kconfig_records(
 
 
 def _is_shortcut_record(cfg: KdeSettingsConfig, record: KConfigRecord) -> bool:
-    """True when a record names keyboard combinations of one action.
+    """True when a record names the keyboard combination of one action.
 
     The shortcut file carries one record per action of a component, in
-    the portable primary,alternate,description form, which is what the
-    comma test recognises. A delete record is a plain KConfig removal and
-    stays with the other records of the file.
+    the form key,defaults,friendly name, which is what the comma test
+    recognises. A delete record is a plain KConfig removal and stays with
+    the other records of the file.
     """
 
     return (
@@ -875,18 +875,24 @@ def _is_shortcut_record(cfg: KdeSettingsConfig, record: KConfigRecord) -> bool:
 
 def _shortcut_record_changes(
     cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     """The configured combinations, by component, action and combination.
 
-    A shortcut record names one action and the combinations it must own:
-    the first two comma fields of its value are the combinations, the
-    absent word and an empty field mean no combination at all, and the
-    description field is not read. The group segment of the record is the
-    unique component name the running daemon knows and the key is the
-    unique action name inside that component.
+    A shortcut record names one action and the combination it must own.
+    Only the first comma field of its value is read: the second field
+    holds the combination the action ships with and the third its
+    friendly name, both of which the running daemon reports and writes
+    itself, so a record copied from the shortcut file carries the default
+    combination in the second field, and reading that field as a
+    configured combination would take a key the action must not own. The
+    absent word and an empty field mean no combination at all. The group
+    segment of the record is the unique component name the running daemon
+    knows and the key is the unique action name inside that component;
+    the component friendly name of the change is that same name, because a
+    record names no other.
     """
 
-    changes: list[tuple[str, str, tuple[str, ...]]] = []
+    changes: list[tuple[str, str, str, tuple[str, ...]]] = []
     for record in cfg.kconfig:
         if not _is_shortcut_record(cfg, record):
             continue
@@ -897,29 +903,31 @@ def _shortcut_record_changes(
             )
             continue
         keys: list[str] = []
-        for slot in record.value.split(",")[:2]:
-            text = trim_whitespace(slot)
-            if text and text != cfg.shortcut_absent_value:
-                keys.append(text)
-        changes.append((record.group[0], record.key, tuple(keys)))
+        text = trim_whitespace(record.value.split(",", 1)[0])
+        if text and text != cfg.shortcut_absent_value:
+            keys.append(text)
+        component_unique = record.group[0]
+        changes.append(
+            (component_unique, component_unique, record.key, tuple(keys))
+        )
     return tuple(changes)
 
 
 def _shortcut_apply_request(
-    changes: tuple[tuple[str, str, tuple[str, ...]], ...],
+    changes: tuple[tuple[str, str, str, tuple[str, ...]], ...],
 ) -> str:
-    """The JSON request of the shared client: one change per record."""
+    """The JSON request of the shared client: one change per combination."""
 
     return json.dumps(
         {
             "changes": [
                 {
-                    "component_unique": component,
-                    "component_friendly": component,
+                    "component_unique": component_unique,
+                    "component_friendly": component_friendly,
                     "action": action,
                     "keys": list(keys),
                 }
-                for component, action, keys in changes
+                for component_unique, component_friendly, action, keys in changes
             ]
         }
     )
@@ -942,18 +950,186 @@ class _ShortcutReport(TypedDict):
     missing: bool
 
 
-def _report_shortcut_warning(
-    warnings: list[str] | None, warning: str
-) -> bool:
-    """Report a shortcut step that could not be completed; always False."""
+def _report_is_confirmed(report: _ShortcutReport) -> bool:
+    """True when the daemon holds exactly the requested combinations.
 
-    _log(warning)
-    if warnings is not None:
-        warnings.append(warning)
-    return False
+    An action the daemon does not know and a combination the client cannot
+    read are never confirmed, whatever the daemon reports, because the
+    requested state was not reached.
+    """
+
+    return (
+        not report.get("missing")
+        and not report.get("unsupported")
+        and report.get("after") == report.get("requested")
+    )
 
 
-def _apply_shortcut_records_live(
+def _a_repeat_can_confirm(reports: list[_ShortcutReport]) -> bool:
+    """True when asking again can still reach the configured state.
+
+    Only a plain difference can be decided differently by a second attempt,
+    because the daemon resolves a conflict against the first one; an action
+    it does not know and a combination the client cannot read stay
+    unreachable, so the attempts stop instead of waiting for them.
+    """
+
+    return any(
+        not report.get("missing")
+        and not report.get("unsupported")
+        and report.get("after") != report.get("requested")
+        for report in reports
+    )
+
+
+def _shortcut_changes(
+    cfg: KdeSettingsConfig,
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+    """Every combination the task must give to an action.
+
+    The configured records come first, then the combination of each KWin
+    script action, so one call to the shared client carries the whole
+    intended state of the keyboard combinations: a record of the shortcut
+    file and a combination a script claims are two changes of the same kind
+    and are reported the same way.
+    """
+
+    changes = list(_shortcut_record_changes(cfg))
+    changes.extend(
+        (
+            cfg.kwin_component_unique,
+            cfg.kwin_component_friendly,
+            action,
+            (hotkey,),
+        )
+        for action, hotkey in _script_hotkey_pairs(cfg)
+    )
+    return tuple(changes)
+
+
+def _shortcut_record_value(
+    cfg: KdeSettingsConfig, current: str, keys: tuple[str, ...], action: str
+) -> str:
+    """The shortcut file value of one action: its key, then what follows.
+
+    The first field is the combination the action owns; the fields after it
+    are the default combinations and the friendly name, which the running
+    daemon owns. They are kept exactly as the file has them, so a write
+    never loses them. An action the file does not know yet gets the absent
+    word as its default combination.
+    """
+
+    first = ",".join(keys) if keys else cfg.shortcut_absent_value
+    if not current:
+        return f"{first},{cfg.shortcut_absent_value},{action}"
+    _head, separator, rest = current.partition(",")
+    if not separator:
+        rest = current
+    return f"{first},{rest}"
+
+
+def _write_shortcut_records_to_file(
+    cfg: KdeSettingsConfig,
+    changes: tuple[tuple[str, str, str, tuple[str, ...]], ...],
+    *,
+    timeout: float,
+    warnings: list[str] | None = None,
+) -> None:
+    """Write combinations into the shortcut file for the next login.
+
+    The running daemon owns the combinations and writes the file from its
+    memory, so a value written here survives only until the next change
+    made through the daemon. The write is therefore a fallback for a
+    combination the daemon did not confirm: it gives the next login the
+    configured key even when the live call could not run. Only the first
+    field of a record is written and the rest of it is kept, so nothing the
+    desktop needs is lost. Every other record that holds one of these keys
+    gets the absent word in its first field, so the next login does not hand
+    a key to an action that was not running during this run. A record that
+    cannot be read or written is reported and the remaining records still
+    write.
+    """
+
+    owned_keys = {
+        key
+        for _component_unique, _component_friendly, _action, keys in changes
+        for key in keys
+    }
+    own_records = {
+        (component_unique, action)
+        for component_unique, _component_friendly, action, _keys in changes
+    }
+    for component_unique, _component_friendly, action, keys in changes:
+        record_group = (component_unique,)
+        try:
+            current = _kreadconfig(
+                cfg, cfg.global_shortcuts_file_name, record_group, action, timeout
+            )
+            _kwriteconfig(
+                cfg,
+                cfg.global_shortcuts_file_name,
+                record_group,
+                action,
+                _shortcut_record_value(cfg, current, keys, action),
+                timeout=timeout,
+                bool_value=False,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = (
+                f"cannot write the shortcut record {action} of"
+                f" {component_unique}: {exc}"
+            )
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+    if not owned_keys:
+        return
+    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.global_shortcuts_file_name
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    section: tuple[str, ...] = ()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = tuple(part for part in stripped[1:-1].split("][") if part)
+            continue
+        key, separator, value = stripped.partition("=")
+        if not separator or "," not in value:
+            continue
+        if ((section[0] if section else ""), key) in own_records:
+            continue
+        first, _comma, rest = value.partition(",")
+        if trim_whitespace(first) not in owned_keys:
+            continue
+        try:
+            _kwriteconfig(
+                cfg,
+                cfg.global_shortcuts_file_name,
+                section,
+                key,
+                f"{cfg.shortcut_absent_value},{rest}",
+                timeout=timeout,
+                bool_value=False,
+            )
+            _log(f"cleared the conflicting shortcut {key} of {section}: {value}")
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            warning = f"cannot clear the conflicting shortcut {key}: {exc}"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+
+
+def _apply_shortcuts_live(
     cfg: KdeSettingsConfig,
     *,
     client_path: Path,
@@ -966,30 +1142,50 @@ def _apply_shortcut_records_live(
     """Give every configured combination to its action; True when changed.
 
     The running daemon holds the combinations in memory and writes the
-    shortcut file from that memory, so the records are applied to the
-    daemon instead of being compared as file text: the shared client
-    frees every named combination from whatever action holds it and gives
-    it to the configured action, and reports per change the combinations
-    the action held before and after. A state that is still not the
-    configured one is asked for again, because the daemon can decide a
-    conflict against the first attempt; after the configured number of
-    attempts the remaining difference is reported once and the task
-    continues. A combination the client cannot read, and an action the
-    daemon does not know, are reported as well and never guessed at.
+    shortcut file from that memory, so the whole intended state goes to the
+    daemon in one call: the shared client frees every named combination
+    from whatever action holds it and gives it to the configured action,
+    and reports per change the combinations the action held before and
+    after. A state that is still not the configured one is asked for again
+    while a repeat can still change it, because the daemon can decide a
+    conflict against the first attempt; a state a repeat cannot reach, an
+    action the daemon does not know, and a combination the client cannot
+    read, are reported at once and never guessed at. Every combination the
+    daemon does not hold after the last attempt is written into the
+    shortcut file, so the next login gets it even though the running
+    session did not.
     """
 
-    changes = _shortcut_record_changes(cfg)
-    if not changes or env is None:
+    changes = _shortcut_changes(cfg)
+    if not changes:
+        return False
+
+    def report_and_write_for_next_login(
+        remaining: tuple[tuple[str, str, str, tuple[str, ...]], ...],
+        warning: str,
+    ) -> None:
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        _write_shortcut_records_to_file(
+            cfg, remaining, timeout=timeout, warnings=warnings
+        )
+
+    if env is None:
+        _log("no desktop session, the shortcuts apply at the next login")
+        _write_shortcut_records_to_file(
+            cfg, changes, timeout=timeout, warnings=warnings
+        )
         return False
     try:
         client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
             **kglobalaccel_names
         )
     except OSError as exc:
-        return _report_shortcut_warning(
-            warnings, f"cannot read the shortcut client {client_path}: {exc}"
+        report_and_write_for_next_login(
+            changes, f"cannot read the shortcut client {client_path}: {exc}"
         )
-    payload = _shortcut_apply_request(changes)
+        return False
     command = _as_user_command(
         cfg,
         [
@@ -997,7 +1193,7 @@ def _apply_shortcut_records_live(
                 cfg.python_script_command, {"python": system_python}
             ),
             client_text,
-            payload,
+            _shortcut_apply_request(changes),
         ],
     )
     reports: list[_ShortcutReport] = []
@@ -1011,161 +1207,74 @@ def _apply_shortcut_records_live(
         except subprocess.CalledProcessError as exc:
             detail = trim_whitespace(exc.stderr or "")
             suffix = f": {detail}" if detail else ""
-            return _report_shortcut_warning(
-                warnings,
-                f"cannot apply the configured shortcuts: {exc}{suffix}",
+            report_and_write_for_next_login(
+                changes, f"cannot apply the configured shortcuts: {exc}{suffix}"
             )
+            return False
         except subprocess.TimeoutExpired as exc:
-            return _report_shortcut_warning(
-                warnings, f"cannot apply the configured shortcuts: {exc}"
+            report_and_write_for_next_login(
+                changes, f"cannot apply the configured shortcuts: {exc}"
             )
+            return False
         try:
             reply = json.loads(result.stdout)
         except json.JSONDecodeError:
-            return _report_shortcut_warning(
-                warnings, f"cannot read the kglobalaccel reply: {result.stdout}"
+            report_and_write_for_next_login(
+                changes, f"cannot read the kglobalaccel reply: {result.stdout}"
             )
+            return False
         reports = list(reply.get("results") or [])
         if len(reports) != len(changes):
-            return _report_shortcut_warning(
-                warnings,
+            report_and_write_for_next_login(
+                changes,
                 f"the client reported {len(reports)} of {len(changes)}"
                 " configured shortcuts",
             )
+            return False
         if attempt == 1:
-            for (component, action, _keys), report_item in zip(changes, reports):
-                if report_item.get("missing"):
+            for (_component, _friendly, action, _keys), report in zip(
+                changes, reports
+            ):
+                if report.get("missing"):
                     _log(
-                        f"the daemon does not know the action {action} of"
-                        f" {component}, its shortcut stays for the next login"
+                        f"the daemon does not know the action {action},"
+                        " its shortcut is written for the next login"
                     )
-                for text in report_item.get("unsupported"):
+                for text in report.get("unsupported"):
                     _log(
                         f"the client cannot read {text} of {action},"
-                        " its shortcut stays for the next login"
+                        " its shortcut is written for the next login"
                     )
-        if all(
-            report_item.get("after") == report_item.get("requested")
-            for report_item in reports
-        ):
+        if all(_report_is_confirmed(report) for report in reports):
+            break
+        if not _a_repeat_can_confirm(reports):
             break
     changed = any(
-        report_item.get("before") != report_item.get("after")
-        for report_item in reports
+        report.get("before") != report.get("after") for report in reports
     )
-    unresolved = [
-        (
-            component,
-            action,
-            report_item.get("after"),
-            report_item.get("requested"),
-        )
-        for (component, action, _keys), report_item in zip(changes, reports)
-        if report_item.get("after") != report_item.get("requested")
-    ]
-    if unresolved:
-        # The combinations the daemon still refuses are reported, and the
-        # work done on the remaining actions is reported as well: a
-        # difference is often partial, and hiding the part that took would
-        # make the next run start from a wrong idea of the machine.
-        _report_shortcut_warning(
-            warnings,
-            "the daemon does not hold the configured shortcuts:"
-            f" {unresolved}",
-        )
+    unconfirmed = tuple(
+        change
+        for change, report in zip(changes, reports)
+        if not _report_is_confirmed(report)
+    )
+    if not unconfirmed:
+        _log(f"applied {len(changes)} configured shortcuts in the running daemon")
         return changed
-    _log(f"applied {len(changes)} configured shortcuts in the running daemon")
-    return changed
-
-
-def _shortcut_primaries(cfg: KdeSettingsConfig) -> dict[str, list[str]]:
-    """Map every shortcut primary key to the shortcut keys that own it.
-
-    The shortcut records are the kconfig records of kglobalshortcutsrc
-    whose value is in the KDE primary,alternate,description format; the
-    primary is the first comma field. A delete record owns no key.
-    """
-
-    owned: dict[str, list[str]] = {}
-    for record in cfg.kconfig:
-        if record.file != cfg.global_shortcuts_file_name or record.delete:
-            continue
-        if "," not in record.value:
-            continue
-        primary = record.value.split(",", 1)[0]
-        owned.setdefault(primary, []).append(record.key)
-    return owned
-
-
-def _clear_shortcut_conflicts(
-    cfg: KdeSettingsConfig,
-    *,
-    timeout: float,
-    warnings: list[str] | None = None,
-) -> bool:
-    """Unbind every action that holds a configured key in a shortcut
-    slot; True when any was cleared.
-
-    A configured shortcut must win over any other action on the target
-    machine, wherever that action lives. The scan reads kglobalshortcutsrc
-    and rewrites each of the first two shortcut slots of a foreign value
-    that equals a configured primary key to none, keeping the other slot
-    and the description, so the key stops belonging to that action in any
-    slot. The rewrite runs through kwriteconfig6 as the target user,
-    keeping the file owned by that user. A missing file is not an error.
-    An action that fails to clear is reported and the remaining actions
-    still clear.
-    """
-
-    owned = _shortcut_primaries(cfg)
-    if not owned:
-        return False
-    configured_keys = {
-        record_key for record_keys in owned.values() for record_key in record_keys
-    }
-    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.global_shortcuts_file_name
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    group: tuple[str, ...] = ()
-    changed = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            group = tuple(part for part in stripped[1:-1].split("][") if part)
-            continue
-        key, sep, value = stripped.partition("=")
-        if not sep or "," not in value or key in configured_keys:
-            continue
-        fields = value.split(",")
-        cleared = [
-            "none" if index < 2 and field in owned else field
-            for index, field in enumerate(fields)
-        ]
-        if cleared == fields:
-            continue
-        try:
-            _kwriteconfig(
-                cfg,
-                cfg.global_shortcuts_file_name,
-                group,
-                key,
-                ",".join(cleared),
-                timeout=timeout,
-                bool_value=False,
-            )
-            _log(f"cleared conflicting shortcut {key}: {value}")
-            changed = True
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-            OSError,
-        ) as exc:
-            warning = f"cannot clear the conflicting shortcut {key}: {exc}"
-            _log(warning)
-            if warnings is not None:
-                warnings.append(warning)
+    # The combinations the daemon still refuses are reported, and the work
+    # done on the remaining actions is reported as well: a difference is
+    # often partial, and hiding the part that took would make the next run
+    # start from a wrong idea of the machine.
+    difference = [
+        (action, report.get("after"), report.get("requested"))
+        for (_component, _friendly, action, _keys), report in zip(changes, reports)
+        if not _report_is_confirmed(report)
+    ]
+    report_and_write_for_next_login(
+        unconfirmed,
+        "the daemon does not hold the configured shortcuts:"
+        f" {difference}, they are written into the shortcut file for the"
+        " next login",
+    )
     return changed
 
 
@@ -1318,159 +1427,6 @@ def _apply_kwin_scripts(
     return changed
 
 
-def _script_hotkey_owners(
-    cfg: KdeSettingsConfig,
-    text: str,
-) -> list[tuple[tuple[str, ...], str, str]]:
-    """The records in kglobalshortcutsrc that own a script hotkey.
-
-    Every record whose primary or alternate key matches one of the
-    combinations the KWin scripts claim is returned with its group, key
-    and description, so the task can clear it from any action, whatever
-    process registered it. The scripts' own actions are never returned.
-    """
-
-    owners: list[tuple[tuple[str, ...], str, str]] = []
-    group: tuple[str, ...] = ()
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            group = tuple(part for part in stripped[1:-1].split("][") if part)
-            continue
-        key, sep, value = stripped.partition("=")
-        if not sep or "," not in value:
-            continue
-        if key in cfg.kwin_script_actions:
-            continue
-        fields = value.split(",")
-        primary = fields[0].strip()
-        alternate = fields[1].strip() if len(fields) > 1 else ""
-        if (
-            primary not in cfg.kwin_script_hotkeys
-            and alternate not in cfg.kwin_script_hotkeys
-        ):
-            continue
-        description = fields[2] if len(fields) > 2 else ""
-        owners.append((group, key, description))
-    return owners
-
-
-def _release_hotkeys_live(
-    cfg: KdeSettingsConfig,
-    targets: list[tuple[str, str]],
-    *,
-    script_path: Path,
-    env: dict[str, str],
-    timeout: float,
-    system_python: str,
-    kglobalaccel_names: dict[str, str],
-) -> None:
-    """Ask the running KGlobalAccel daemon to release the hotkeys.
-
-    The config rewrite alone only applies at the next session start; the
-    running daemon holds the keys in memory, so it must release them for
-    the change to apply live. The call runs through python3-dbus as the
-    target user, the package the task installs, under the system
-    interpreter because the bindings install into the system Python only.
-    The client is a file under task_data/ named by the config, because its
-    body is longer than five lines (config content spec, Exceptions).
-    """
-
-    code = Template(script_path.read_text(encoding="utf-8")).substitute(
-        **kglobalaccel_names
-    )
-    command = [
-        *substituted_command(cfg.python_script_command, {"python": system_python}),
-        code,
-    ]
-    for group, action in targets:
-        command.extend([group, action])
-    run_command(
-        _as_user_command(cfg, command),
-        extra_env=env,
-        timeout=timeout,
-    )
-    _log(f"released {len(targets)} hotkey owners in the running daemon")
-
-
-def _free_script_hotkeys(
-    cfg: KdeSettingsConfig,
-    *,
-    script_path: Path,
-    env: dict[str, str] | None,
-    timeout: float,
-    system_python: str,
-    kglobalaccel_names: dict[str, str],
-    warnings: list[str] | None = None,
-) -> bool:
-    """Clear every action that owns a script hotkey; True when changed.
-
-    The keyboard combinations the KWin scripts claim are set
-    aggressively: any action that owns one of them, wherever it lives,
-    is cleared, so the script grabs the key when it registers. The
-    records are rewritten as the target user; when a desktop session is
-    running the daemon releases the keys live through python3-dbus. An
-    action that fails to clear or release is reported and the remaining
-    actions still clear.
-    """
-
-    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.global_shortcuts_file_name
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    owners = _script_hotkey_owners(cfg, text)
-    if not owners:
-        return False
-    changed = False
-    targets: list[tuple[str, str]] = []
-    for group, key, description in owners:
-        try:
-            _kwriteconfig(
-                cfg,
-                cfg.global_shortcuts_file_name,
-                group,
-                key,
-                f"none,none,{description}" if description else "none,none",
-                timeout=timeout,
-                bool_value=False,
-            )
-            _log(f"cleared {key} from {group} for the kwin script hotkeys")
-            if group:
-                targets.append((group[0], key))
-            changed = True
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-            OSError,
-        ) as exc:
-            warning = f"cannot clear {key} from {group} for the script hotkeys: {exc}"
-            _log(warning)
-            if warnings is not None:
-                warnings.append(warning)
-    if targets and env is not None:
-        try:
-            _release_hotkeys_live(
-                cfg,
-                targets,
-                script_path=script_path,
-                env=env,
-                timeout=timeout,
-                system_python=system_python,
-                kglobalaccel_names=kglobalaccel_names,
-            )
-        except (
-            OSError,
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-        ) as exc:
-            warning = f"cannot release the script hotkeys in the running daemon: {exc}"
-            _log(warning)
-            if warnings is not None:
-                warnings.append(warning)
-    return changed
-
-
 def _script_hotkey_pairs(
     cfg: KdeSettingsConfig,
 ) -> tuple[tuple[str, str], ...]:
@@ -1482,117 +1438,6 @@ def _script_hotkey_pairs(
     """
 
     return tuple(zip(cfg.kwin_script_actions or (), cfg.kwin_script_hotkeys or ()))
-
-
-def _assign_script_hotkeys(
-    cfg: KdeSettingsConfig,
-    *,
-    client_path: Path,
-    timeout: float,
-    env: dict[str, str] | None,
-    system_python: str,
-    kglobalaccel_names: dict[str, str],
-    warnings: list[str] | None = None,
-) -> bool:
-    """Give every script hotkey to its action in the running daemon.
-
-    The combination the config names must belong to the action of the
-    script whatever owned it before the run, so the task does not leave
-    the outcome to the registration of the script: the client named by the
-    config frees the combination from its current owner, assigns it to the
-    action and prints the state before and after, which the task checks.
-    An action the daemon does not know yet, or a key it reports
-    differently, is reported as a warning of a completed task and never as
-    a failure, because the record in kglobalshortcutsrc carries the
-    combination to the next login. The call runs as the target user on the
-    session bus of the desktop with the system interpreter, so a missing
-    live session is a progress line and not an error.
-    """
-
-    pairs = _script_hotkey_pairs(cfg)
-    if not pairs:
-        return False
-    if env is None:
-        _log("no desktop session, the script hotkeys apply at the next login")
-        return False
-
-    def report(warning: str) -> bool:
-        _log(warning)
-        if warnings is not None:
-            warnings.append(warning)
-        return False
-
-    payload = json.dumps(
-        {
-            "changes": [
-                {
-                    "component_unique": cfg.kwin_component_unique,
-                    "component_friendly": cfg.kwin_component_friendly,
-                    "action": action,
-                    "keys": [hotkey],
-                }
-                for action, hotkey in pairs
-            ]
-        }
-    )
-    try:
-        client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
-            **kglobalaccel_names
-        )
-    except OSError as exc:
-        return report(f"cannot read the script hotkey client {client_path}: {exc}")
-    try:
-        result = run_command(
-            _as_user_command(
-                cfg,
-                [
-                    *substituted_command(
-                        cfg.python_script_command, {"python": system_python}
-                    ),
-                    client_text,
-                    payload,
-                ],
-            ),
-            extra_env=env,
-            timeout=timeout,
-            capture=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        detail = trim_whitespace(exc.stderr or "")
-        suffix = f": {detail}" if detail else ""
-        return report(f"cannot assign the script hotkeys: {exc}{suffix}")
-    except subprocess.TimeoutExpired as exc:
-        return report(f"cannot assign the script hotkeys: {exc}")
-    try:
-        reply = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return report(f"cannot read the kglobalaccel reply: {result.stdout}")
-    results = list(reply.get("results") or [])
-    if len(results) != len(pairs):
-        return report(
-            f"the client reported {len(results)} of {len(pairs)} script hotkeys"
-        )
-    changed = False
-    for (action, hotkey), item in zip(pairs, results):
-        if item.get("missing"):
-            return report(
-                f"the daemon does not know the action {action},"
-                f" {hotkey} is written for the next login"
-            )
-        if item.get("unsupported"):
-            return report(
-                f"the client cannot read {hotkey},"
-                " it is written for the next login"
-            )
-        if item.get("after") != item.get("requested"):
-            return report(
-                f"cannot give {hotkey} to {action}: the daemon reports"
-                f" {item.get('after')}"
-            )
-        if item.get("before") != item.get("after"):
-            changed = True
-    _log(f"assigned {len(pairs)} script hotkeys in the running daemon")
-    return changed
 
 
 def _write_script_hotkey_records(
@@ -2171,21 +2016,22 @@ def task(ctx: Context) -> TaskResult:
     over the theme default the switch writes. When automatic_look_and_feel
     is set, the theme is not applied directly: the task enables the native
     day and night switch instead, so a run never fights the switch. The
-    KWin scripts of the section are installed and enabled after the
-    combinations they claim are freed, then every combination is assigned
-    to the action of its script in the running daemon and read back, so a
-    key works whatever owned it before the run and a state an earlier run
-    left behind cannot keep it dead. The configured shortcut records are
-    applied to the running daemon as well, which owns their state and
-    writes the shortcut file itself, so a combination is taken from
-    whatever action holds it and a state the daemon still refuses is
-    asked for again. Each
+    KWin scripts of the section are installed and enabled first, and the
+    whole intended state of the keyboard combinations is then applied to
+    the running daemon in one call, which owns that state and writes the
+    shortcut file itself: the configured records and the combinations the
+    scripts claim are taken from whatever action holds them and given to
+    the configured actions, a state the daemon still refuses is asked for
+    again while a repeat can still change it, and every combination the
+    daemon does not hold is written into the shortcut file for the next
+    login, so a key works whatever owned it before the run. Each
     settings step runs independently: a step that fails through an external
     tool error or an environment error is reported as a warning and the
     remaining independent steps still run, because one bad setting must
-    not stop the rest. Missing packages are attempted one by one; when a
-    package cannot be installed the task reports it in its warnings and
-    stops its own settings, because its mechanism is incomplete.
+    not stop the rest. Missing packages are attempted one by one; a
+    package that cannot be installed is reported in the warnings and the
+    settings that need it report their own failure, while the remaining
+    settings still apply.
     """
 
     cfg = ctx.config.kde_settings
@@ -2210,11 +2056,9 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if packages_failed:
-        return TaskResult(
-            success=True,
-            changed=changed,
-            message="KDE appearance and input settings not configured",
-            warnings=tuple(warnings),
+        _log(
+            "a package is missing, the settings that need it are reported as"
+            " warnings and the remaining settings still apply"
         )
 
     def step(description: str, call: Callable[[], bool]) -> bool:
@@ -2297,23 +2141,6 @@ def task(ctx: Context) -> TaskResult:
         ),
     )
     settings_changed |= step(
-        "apply the configured shortcuts",
-        lambda: _apply_shortcut_records_live(
-            cfg,
-            client_path=(
-                task_data_dir(
-                    ctx.repo_root, cfg.kglobalaccel_client_section_name
-                )
-                / cfg.kglobalaccel_client_file_name
-            ),
-            timeout=timeout,
-            env=apply_env,
-            system_python=ctx.config.engine.system_python,
-            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-            warnings=warnings,
-        ),
-    )
-    settings_changed |= step(
         "write the theme cursor overrides",
         lambda: _apply_theme_cursor_overrides(
             cfg, timeout=timeout, force=force, warnings=warnings
@@ -2325,31 +2152,11 @@ def task(ctx: Context) -> TaskResult:
             cfg, env=apply_env, timeout=timeout, force=force
         ),
     )
-    settings_changed |= step(
-        "clear the conflicting shortcuts",
-        lambda: _clear_shortcut_conflicts(
-            cfg, timeout=timeout, warnings=warnings
-        ),
-    )
-    settings_changed |= step(
-        "free the kwin script hotkeys",
-        lambda: _free_script_hotkeys(
-            cfg,
-            script_path=(
-                task_data_dir(ctx.repo_root, ctx.task_name)
-                / cfg.kglobalaccel_release_script_file_name
-            ),
-            env=apply_env,
-            timeout=timeout,
-            system_python=ctx.config.engine.system_python,
-            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-            warnings=warnings,
-        ),
-    )
-    # The combinations are freed before the scripts are enabled: enabling
-    # applies live and makes kwin register the combinations at once, so a
-    # script that registers while another action still owns the key would
-    # be refused and would keep the refused state in its record.
+    # The combinations are applied after the scripts are enabled: enabling
+    # applies live and makes kwin register the combinations of the scripts at
+    # once, and the shared client then takes each claimed combination from
+    # whatever action holds it and gives it to the action of its script, so a
+    # script is never left with a refused registration.
     kwin_scripts_changed = step(
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
@@ -2364,8 +2171,8 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= kwin_scripts_changed
     settings_changed |= step(
-        "assign the kwin script hotkeys",
-        lambda: _assign_script_hotkeys(
+        "apply the configured shortcuts",
+        lambda: _apply_shortcuts_live(
             cfg,
             client_path=(
                 task_data_dir(

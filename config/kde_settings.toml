@@ -203,18 +203,26 @@ kwin_scripts = ["window-grow-shrink", "window-restore-tracker"]
 kwin_script_files = ["metadata.json", "contents/code/main.js"]
 kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
 kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
-# The word a shortcut slot of kglobalshortcutsrc carries when it holds no
-# key: the task reads it as "no combination", and the action holds none on
-# the running machine.
+# The word the first field of a shortcut record carries when its action
+# owns no combination: the task reads it as "no combination", and the
+# action holds none on the running machine.
 shortcut_absent_value = "none"
-# The shortcut records of kglobalshortcutsrc are applied to the running
-# KGlobalAccel daemon, which holds the combinations in memory and writes
-# the file itself: the shared client frees every named combination from
-# whatever action holds it and gives it to the configured action. A
-# combination the daemon does not report back is asked for again, because
-# the state right after the first attempt can still belong to another
-# action; the number of attempts and the pause between two of them are
-# values like any other.
+# A shortcut record names one action and the combination it must own in
+# the first field of its value; the task reads only that field, because
+# the second field holds the combination the action ships with and the
+# third its friendly name, which the running daemon reports and writes
+# itself. A record copied from kglobalshortcutsrc therefore needs nothing
+# removed from it. The records are applied to the running KGlobalAccel
+# daemon, which holds the combinations in memory and writes the file
+# itself: the shared client frees every named combination from whatever
+# action holds it and gives it to the configured action. A combination
+# the daemon does not report back is asked for again, because the state
+# right after the first attempt can still belong to another action; the
+# number of attempts and the pause between two of them are values like
+# any other. An action the daemon does not know and a combination the
+# client cannot read are reported at once, without waiting, and every
+# combination the daemon still does not hold is written into the file as
+# the fallback of the next login.
 shortcut_apply_attempts = 5
 shortcut_apply_retry_delay_seconds = 3.0
 # The component of the KGlobalAccel daemon that owns the script actions:
@@ -234,16 +242,13 @@ kglobalaccel_client_section_name = "kde_keyboard_setup"
 kglobalaccel_client_file_name = "apply_hotkeys.py"
 # The python client that prints the id of every virtual desktop, one per
 # line, in position order; the directory under task_data that holds one
-# directory per kwin script; the Konsole profile shipped as a task
-# data file; the client that asks the running KGlobalAccel daemon to
-# release the hotkeys a script owns; and the shared client named above.
-# All of them are read from task_data/ of the clone, and a body longer
-# than five lines lives in a file like the clients rather than in the
-# code.
+# directory per kwin script; and the Konsole profile shipped as a task
+# data file. All of them are read from task_data/ of the clone, and a body
+# longer than five lines lives in a file like the clients rather than in
+# the code.
 desktop_ids_script_file_name = "list_desktop_ids.py"
 kwin_scripts_dir_name = "kwin"
 konsole_profile_file_name = "Pyntara.profile"
-kglobalaccel_release_script_file_name = "kglobalaccel_release.py"
 
 # The XDG user directories, all folded into Downloads while Desktop stays;
 # each maps an XDG_*_DIR variable to its target path.
@@ -755,12 +760,15 @@ key = "ButtonsOnRight"
 value = "HFBIAX"
 
 # kglobalshortcutsrc: the keyboard shortcuts for the window effects. KDE
-# stores them in the full primary,alternate,description format, so the
-# values carry that format with the primary key from the journal. The
-# empty active screen bindings are removed instead of written. The task
-# unbinds any other action that holds a configured key in a shortcut
-# slot, so a configured shortcut wins over conflicts on any target
-# machine.
+# stores them in the full key,defaults,friendly name form, where only the
+# first field is a combination the task reads or writes: the second field
+# belongs to the running service, which keeps the default combinations of
+# the action there. The empty active screen bindings are removed instead
+# of written. The task takes every configured key from whatever other
+# action holds it in the running service, and writes the absent word into
+# the first field of such a record when the value goes into the file for
+# the next login, so a configured shortcut wins over conflicts on any
+# target machine.
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]

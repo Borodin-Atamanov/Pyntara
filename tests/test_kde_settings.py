@@ -25,7 +25,7 @@ from pyntara.config.kde_settings import (
     KdeSettingsConfig,
 )
 from pyntara.tasks import kde_settings as task_module
-from pyntara.utils import kglobalaccel_names, task_data_dir
+from pyntara.utils import kglobalaccel_names
 
 # The templates of the task live in the clone the tests run from, so a test
 # that pre-writes the files the task expects reads the shipped template.
@@ -121,9 +121,9 @@ def _ctx(
 def _is_assign_call(inner: list[str]) -> bool:
     """True when a python client call carries the hotkey payload.
 
-    The task runs two python clients as the target user: the release
-    client of the script hotkeys and the shared client that assigns them.
-    The assignment is the call whose last argument is its JSON payload.
+    The task runs one python client as the target user, the shared client
+    that gives the configured combinations to the running daemon. Its call
+    is the one whose last argument is its JSON payload.
     """
 
     return inner[-1].startswith("{")
@@ -478,20 +478,23 @@ def test_missing_packages_are_installed(
     ]
 
 
-def test_package_install_failure_returns_warnings_and_skips_settings(
+def test_package_install_failure_is_a_warning_and_settings_still_apply(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A failed package install is a recoverable failure: every package is
-    # attempted, the failures are reported as warnings, the task stops its
-    # own settings (its mechanism is incomplete) and completes as done.
+    # attempted, the failures are reported as warnings, and the settings
+    # that do not need the package still apply, because a missing package
+    # of one step must not leave the rest of the desktop unconfigured.
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch, installed=False, fail_install=True)
     result = task_module.task(ctx)
     assert result.success is True
-    assert result.changed is False
+    assert result.changed is True
     assert result.warnings
     assert any("cannot install" in warning for warning in result.warnings)
-    assert result.message == "KDE appearance and input settings not configured"
+    assert result.message == (
+        "KDE appearance and input settings configured with warnings"
+    )
 
 
 def test_appearance_tool_failure_does_not_fail_task(
@@ -1049,209 +1052,6 @@ def test_theme_cursor_overrides_idempotent(
     assert changed2 is False
 
 
-SHORTCUTS_RC = """\
-[kwin]
-Show Desktop=Meta+D,Meta+D,Peek at Desktop
-ClearMouseMarks=Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks
-[org.kde.krunner.desktop]
-clipboard_action=Meta+Ctrl+X,Meta+Ctrl+X,Automatic Action Popup Menu
-"""
-
-
-def test_shortcut_primaries_collects_owned_keys(tmp_path: Path) -> None:
-    # Only the non-delete kglobalshortcutsrc records with a comma value
-    # own a primary key.
-    records = (
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAll",
-            "Meta+D,none,Minimize all windows",
-            "string",
-            False,
-        ),
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "ClearMouseMarks",
-            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
-            "string",
-            False,
-        ),
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAllActiveScreen",
-            "",
-            "string",
-            True,
-        ),
-        KConfigRecord("kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False),
-    )
-    cfg = make_config(
-        task_data_root=tmp_path, kde_settings_kconfig=records
-    ).kde_settings
-    owned = task_module._shortcut_primaries(cfg)
-    assert owned == {
-        "Meta+D": ["MinimizeAll"],
-        "Meta+Shift+F11": ["ClearMouseMarks"],
-    }
-
-
-def test_clear_shortcut_conflicts_unbinds_other_actions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The action sharing a configured primary key is unbound; the
-    # configured shortcuts and unrelated actions are left alone.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        SHORTCUTS_RC, encoding="utf-8"
-    )
-    records = (
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAll",
-            "Meta+D,none,Minimize all windows",
-            "string",
-            False,
-        ),
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "ClearMouseMarks",
-            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
-            "string",
-            False,
-        ),
-    )
-    ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    cleared = task_module._clear_shortcut_conflicts(
-        ctx.config.kde_settings, timeout=5
-    )
-    assert cleared is True
-    show_writes = [command for command in writes if "Show Desktop" in command]
-    assert show_writes
-    assert show_writes[0][-1] == "none,none,Peek at Desktop"
-    assert not [command for command in writes if "ClearMouseMarks" in command]
-    assert not [command for command in writes if "clipboard_action" in command]
-
-
-def test_clear_shortcut_conflicts_idempotent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # After the conflict is cleared its primary is none, so a second pass
-    # changes nothing.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\nShow Desktop=none,none,Peek at Desktop\n",
-        encoding="utf-8",
-    )
-    records = (
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAll",
-            "Meta+D,none,Minimize all windows",
-            "string",
-            False,
-        ),
-    )
-    ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    cleared = task_module._clear_shortcut_conflicts(
-        ctx.config.kde_settings, timeout=5
-    )
-    assert cleared is False
-    assert writes == []
-
-
-def test_clear_shortcut_conflicts_clears_any_slot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A foreign action loses a configured key from its primary or its
-    # alternate slot; the other slot and the description survive, and the
-    # configured actions and the unrelated actions stay untouched.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Show Desktop=none,Meta+D,Peek at Desktop\n"
-        "Walk Through Desktops=Meta+D,Meta+Tab,Walk Through Desktops\n"
-        "ClearMouseMarks=Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks\n"
-        "[org.kde.krunner.desktop]\n"
-        "clipboard_action=Meta+Ctrl+X,Meta+Ctrl+X,Automatic Action Popup Menu\n",
-        encoding="utf-8",
-    )
-    records = (
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAll",
-            "Meta+D,none,Minimize all windows",
-            "string",
-            False,
-        ),
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "ClearMouseMarks",
-            "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
-            "string",
-            False,
-        ),
-    )
-    ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    cleared = task_module._clear_shortcut_conflicts(
-        ctx.config.kde_settings, timeout=5
-    )
-    assert cleared is True
-    cleared_values = {}
-    for command in writes:
-        key = command[command.index("--key") + 1]
-        cleared_values[key] = command[-1]
-    assert cleared_values == {
-        "Show Desktop": "none,none,Peek at Desktop",
-        "Walk Through Desktops": "none,Meta+Tab,Walk Through Desktops",
-    }
-    assert "ClearMouseMarks" not in cleared_values
-    assert "clipboard_action" not in cleared_values
-
-
-def test_clear_shortcut_conflicts_any_slot_idempotent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Once both shortcut slots of the foreign action are none, a second
-    # pass changes nothing.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\nShow Desktop=none,none,Peek at Desktop\n",
-        encoding="utf-8",
-    )
-    records = (
-        KConfigRecord(
-            "kglobalshortcutsrc",
-            ("kwin",),
-            "MinimizeAll",
-            "Meta+D,none,Minimize all windows",
-            "string",
-            False,
-        ),
-    )
-    ctx = _kconfig_ctx(tmp_path, records)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    cleared = task_module._clear_shortcut_conflicts(
-        ctx.config.kde_settings, timeout=5
-    )
-    assert cleared is False
-    assert writes == []
-
-
 def test_user_dirs_merged_replaces_in_place_and_keeps_others() -> None:
     # A matching directive keeps the line, a differing one is replaced in
     # place, missing directives are appended, comments and foreign keys
@@ -1442,217 +1242,13 @@ def test_apply_kwin_scripts_missing_templates_skips(
     assert writes == []
 
 
-def test_script_hotkey_owners_finds_foreign_and_skips_own() -> None:
-    # A foreign action that owns a script hotkey is returned; the
-    # scripts' own actions are not.
-    text = (
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n"
-        "Grow Window by 5px=Meta+Ctrl+Up,none,Grow Window by 5px\n"
-        "Window Maximize=Meta+PgUp,Meta+PgUp,Maximize Window\n"
-    )
-    owners = task_module._script_hotkey_owners(make_config().kde_settings, text)
-    assert owners == [
-        (("kwin",), "Switch One Desktop Up", "Switch One Desktop Up")
-    ]
-
-
-def test_free_script_hotkeys_clears_and_releases_live(
+def test_kwin_scripts_installed_and_the_records_written_without_a_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The foreign owner is cleared in the config and the running daemon
-    # is asked to release the key through python3-dbus.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path)
-    writes, releases = _script_fakes(monkeypatch, session=True)
-    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings,
-        script_path=_write_release_client(tmp_path),
-        env=env,
-        timeout=5,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-    )
-    assert changed is True
-    cleared = [command for command in writes if "Switch One Desktop Up" in command]
-    assert cleared
-    assert cleared[0][-1] == "none,none,Switch One Desktop Up"
-    assert releases
-    assert releases[0][:4] == ["runuser", "-u", "i", "--"]
-    assert "/usr/bin/python3" in releases[0]
-    assert (
-        _write_release_client(tmp_path).read_text(encoding="utf-8")
-        in releases[0]
-    )
-
-
-def test_release_client_text_comes_from_the_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The client text comes from the task data file the config names, so
-    # editing that file changes what the daemon is asked without touching
-    # the code.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path, repo_root=tmp_path)
-    data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    client = data_dir / "other_release.py"
-    client.write_text(
-        "import dbus\nprint('another client')\n", encoding="utf-8"
-    )
-    _writes, releases = _script_fakes(monkeypatch, session=True)
-    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    changed = task_module._free_script_hotkeys(
-        replace(
-            ctx.config.kde_settings,
-            kglobalaccel_release_script_file_name=client.name,
-        ),
-        script_path=data_dir / client.name,
-        env=env,
-        timeout=5,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-    )
-    assert changed is True
-    assert releases
-    assert client.read_text(encoding="utf-8") in releases[0]
-
-
-def test_the_release_client_dbus_names_come_from_the_engine_table(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The client under task_data/ names the KGlobalAccel daemon through
-    # substitutions: another vocabulary in the engine table is what the
-    # client text carries, and the shipped names stop appearing.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path, repo_root=tmp_path)
-    data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    shipped_client = (
-        Path(__file__).resolve().parents[1]
-        / "task_data"
-        / "kde_settings"
-        / "kglobalaccel_release.py"
-    )
-    client = data_dir / "kglobalaccel_release.py"
-    client.write_text(
-        shipped_client.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    engine = replace(
-        ctx.config.engine,
-        kglobalaccel_bus_name="org.example.KGlobalAccel",
-        kglobalaccel_object_path="/example",
-        kglobalaccel_interface_name="org.example.GlobalAccel",
-    )
-    config = replace(ctx.config, engine=engine)
-    _writes, releases = _script_fakes(monkeypatch, session=True)
-    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    changed = task_module._free_script_hotkeys(
-        config.kde_settings,
-        script_path=client,
-        env=env,
-        timeout=5,
-        system_python=engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(engine),
-    )
-    assert changed is True
-    assert releases
-    text = next(part for part in releases[0] if "import dbus" in part)
-    assert "org.example.KGlobalAccel" in text
-    assert "org.example.GlobalAccel" in text
-    assert "org.kde.kglobalaccel" not in text
-    assert "$kglobalaccel_bus_name" not in text
-
-
-def test_hotkey_release_prefix_comes_from_the_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The prefix of the release call is a config value: another
-    # interpreter command is exactly what runs, with the system
-    # interpreter of the engine filling its {python} slot. The first
-    # element stays the system interpreter, which is what the fake of this
-    # test recognises as the release call.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path)
-    _writes, releases = _script_fakes(monkeypatch, session=True)
-    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    task_module._free_script_hotkeys(
-        replace(
-            ctx.config.kde_settings,
-            python_script_command=(
-                "/usr/bin/python3",
-                "--run",
-                "{python}",
-            ),
-        ),
-        script_path=_write_release_client(tmp_path),
-        env=env,
-        timeout=5,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-    )
-    assert releases
-    assert releases[0][:4] == ["runuser", "-u", "i", "--"]
-    assert releases[0][5] == "--run"
-    assert ctx.config.engine.system_python in releases[0]
-
-
-def test_free_script_hotkeys_without_session_skips_live(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Without a live session there is no environment to run the daemon
-    # release through: the config is still cleared, but nothing runs live.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Down=Meta+Ctrl+Down,none,Switch One Desktop Down\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path)
-    _, releases = _script_fakes(monkeypatch, session=False)
-    changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings,
-        script_path=_write_release_client(tmp_path),
-        env=None,
-        timeout=5,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-    )
-    assert changed is True
-    assert releases == []
-
-
-def test_kwin_scripts_installed_and_hotkeys_freed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The full task installs the scripts, enables them and frees the
-    # script hotkeys from the foreign actions.
+    # Without a live session the combinations cannot reach the running
+    # daemon, so the full task installs the scripts and writes the
+    # combinations into the shortcut file for the next login, clearing a
+    # foreign action that holds a claimed key.
     template_root = tmp_path / "task_data" / "kde_settings" / "kwin"
     _write_script_templates(template_root)
     config_dir = tmp_path / ".config"
@@ -1680,37 +1276,6 @@ def test_kwin_scripts_installed_and_hotkeys_freed(
     assert len(cleared) == 2
 
 
-def test_free_script_hotkeys_run_before_the_scripts_are_enabled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Enabling a script applies live and makes kwin register the
-    # combinations it claims at once, so the combinations are freed from
-    # the foreign actions first: a registration that finds its key taken
-    # is refused and keeps the refused state in the record of its action.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    result = task_module.task(ctx)
-    assert result.success is True
-    freed = next(
-        index
-        for index, command in enumerate(writes)
-        if "Switch One Desktop Up" in command
-    )
-    enabled = next(
-        index
-        for index, command in enumerate(writes)
-        if "window-grow-shrinkEnabled" in command
-    )
-    assert freed < enabled
-
-
 def test_script_hotkey_pairs_read_the_configured_actions_and_hotkeys(
     tmp_path: Path,
 ) -> None:
@@ -1724,43 +1289,54 @@ def test_script_hotkey_pairs_read_the_configured_actions_and_hotkeys(
     )
 
 
-def test_shortcut_record_changes_read_the_configured_combinations(
+def test_shortcut_record_changes_read_only_the_first_field(
     tmp_path: Path,
 ) -> None:
     # Every record of the shortcut file with the portable form becomes one
-    # change: the first two fields are the combinations, the absent word
-    # and an empty field mean none, a record of two absent slots asks the
-    # action to own no key at all, and a record of another file stays with
-    # the plain KConfig values.
+    # change, and only the first field is read: the second field is the
+    # combination the action ships with, so reading it would take a key
+    # the action must not own. The absent word and an empty field mean no
+    # combination, and a record of another file stays with the plain
+    # KConfig values.
     cfg = make_config(kde_settings_kconfig=_SHORTCUT_RECORDS).kde_settings
     assert task_module._shortcut_record_changes(cfg) == (
-        ("kwin", "Walk Through Windows", ("Alt+Tab",)),
-        ("kwin", "MinimizeAll", ("Meta+D", "meta+u")),
-        ("plasmashell", "manage activities", ()),
+        ("kwin", "kwin", "Walk Through Windows", ("Alt+Tab",)),
+        ("kwin", "kwin", "MinimizeAll", ("Meta+D",)),
+        ("plasmashell", "plasmashell", "manage activities", ()),
     )
 
 
-def test_apply_shortcut_records_live_runs_the_shared_client(
+def _shortcut_env(ctx: Any) -> dict[str, str]:
+    """The session environment of a live desktop for the shortcut client."""
+
+    return {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+
+
+def test_apply_shortcuts_live_runs_the_shared_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The records are handed to the running daemon through the shared
-    # client: the request names the component, the action and the
-    # combinations as the portable text, and the state the client reports
-    # back decides whether the task changed anything.
+    # The whole intended state goes to the running daemon in one call: the
+    # configured records first, then the combinations of the KWin script
+    # actions, and the state the client reports back decides whether the
+    # task changed anything.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    cfg = ctx.config.kde_settings
     calls: list[list[str]] = []
     _install_fakes(monkeypatch, assign_calls=calls)
-    changed = task_module._apply_shortcut_records_live(
-        ctx.config.kde_settings,
+    changed = task_module._apply_shortcuts_live(
+        cfg,
         client_path=_SHARED_CLIENT,
         timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        env=_shortcut_env(ctx),
         system_python=ctx.config.engine.system_python,
         kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
     assert changed is True
     assert len(calls) == 1
     assert calls[0][0] == ctx.config.engine.system_python
+    client_text = next(part for part in calls[0] if "import dbus" in part)
+    assert ctx.config.engine.kglobalaccel_bus_name in client_text
+    assert "$kglobalaccel_bus_name" not in client_text
     request = json.loads(calls[0][-1])
     assert request["changes"] == [
         {
@@ -1773,7 +1349,7 @@ def test_apply_shortcut_records_live_runs_the_shared_client(
             "component_unique": "kwin",
             "component_friendly": "kwin",
             "action": "MinimizeAll",
-            "keys": ["Meta+D", "meta+u"],
+            "keys": ["Meta+D"],
         },
         {
             "component_unique": "plasmashell",
@@ -1781,10 +1357,22 @@ def test_apply_shortcut_records_live_runs_the_shared_client(
             "action": "manage activities",
             "keys": [],
         },
+        {
+            "component_unique": cfg.kwin_component_unique,
+            "component_friendly": cfg.kwin_component_friendly,
+            "action": "Grow Window by 5px",
+            "keys": ["Meta+Ctrl+Up"],
+        },
+        {
+            "component_unique": cfg.kwin_component_unique,
+            "component_friendly": cfg.kwin_component_friendly,
+            "action": "Shrink Window by 5px",
+            "keys": ["Meta+Ctrl+Down"],
+        },
     ]
 
 
-def test_apply_shortcut_records_live_asks_again_until_the_state_takes(
+def test_apply_shortcuts_live_asks_again_until_the_state_takes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The state right after one attempt can still belong to another action,
@@ -1802,11 +1390,11 @@ def test_apply_shortcut_records_live_asks_again_until_the_state_takes(
             {},
         ],
     )
-    changed = task_module._apply_shortcut_records_live(
+    changed = task_module._apply_shortcuts_live(
         ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        env=_shortcut_env(ctx),
         system_python=ctx.config.engine.system_python,
         kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
     )
@@ -1817,24 +1405,71 @@ def test_apply_shortcut_records_live_asks_again_until_the_state_takes(
     ]
 
 
-def test_apply_shortcut_records_live_warns_when_the_state_never_takes(
+def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action the daemon does not know and a combination the client
+    # cannot read stay unreachable whatever the number of attempts, so the
+    # task reports them at once, waits for nothing and writes the whole
+    # intended state into the shortcut file for the next login.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    messages: list[str] = []
+    pauses: list[float] = []
+    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
+    monkeypatch.setattr(task_module, "_log", messages.append)
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch,
+        assign_calls=calls,
+        assign_missing=frozenset({"manage activities"}),
+        assign_unsupported={"MinimizeAll": ["meta+u"]},
+    )
+    task_module._apply_shortcuts_live(
+        ctx.config.kde_settings,
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env=_shortcut_env(ctx),
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        warnings=[],
+    )
+    assert len(calls) == 1
+    assert pauses == []
+    assert any(
+        "does not know the action manage activities" in message
+        for message in messages
+    )
+    assert any("cannot read meta+u" in message for message in messages)
+    written = {
+        command[command.index("--key") + 1]: command[-1] for command in writes
+    }
+    assert set(written) == {"MinimizeAll", "manage activities"}
+    assert written["MinimizeAll"] == "Meta+D,none,MinimizeAll"
+    assert written["manage activities"] == "none,none,manage activities"
+
+
+def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A combination the daemon does not report back after the configured
-    # number of attempts is a warning of a completed task, naming the
-    # component and the action whose state stayed wrong.
+    # number of attempts is a warning of a completed task, and the record
+    # of the action is written for the next login with the fields the
+    # daemon owns kept exactly as the file has them.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
     calls: list[list[str]] = []
     warnings: list[str] = []
     monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
-    _install_fakes(
-        monkeypatch, assign_calls=calls, assign_after={"MinimizeAll": []}
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch,
+        currents={"MinimizeAll": "none,Meta+D,Minimize all windows"},
+        assign_calls=calls,
+        assign_after={"MinimizeAll": []},
     )
-    changed = task_module._apply_shortcut_records_live(
+    changed = task_module._apply_shortcuts_live(
         ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        env=_shortcut_env(ctx),
         system_python=ctx.config.engine.system_python,
         kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
         warnings=warnings,
@@ -1842,141 +1477,49 @@ def test_apply_shortcut_records_live_warns_when_the_state_never_takes(
     assert changed is True
     assert len(calls) == ctx.config.kde_settings.shortcut_apply_attempts
     assert len(warnings) == 1
-    assert "kwin" in warnings[0]
     assert "MinimizeAll" in warnings[0]
+    written = {
+        command[command.index("--key") + 1]: command[-1] for command in writes
+    }
+    assert written["MinimizeAll"] == "Meta+D,Meta+D,Minimize all windows"
+    assert "Walk Through Windows" not in written
 
 
-def test_apply_shortcut_records_live_reports_what_the_client_cannot_do(
+def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An action the daemon does not know and a combination Qt cannot read
-    # are reported in plain words instead of being guessed at: the record
-    # keeps them for the next login and the remaining records still apply.
-    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
-    messages: list[str] = []
-    monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(task_module, "_log", messages.append)
-    _install_fakes(
-        monkeypatch,
-        assign_missing={"manage activities"},
-        assign_unsupported={"MinimizeAll": ["meta+u"]},
+    # Without a live session the combinations cannot reach the running
+    # daemon, so the file carries them to the next login; a foreign record
+    # that holds one of the keys loses it there, so the next login does
+    # not hand the key to another action first.
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "kglobalshortcutsrc").write_text(
+        "[kwin]\n"
+        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n"
+        "[kwin]\n"
+        "Walk Through Windows=Alt+Tab,Meta+Tab<TAB>Alt+Tab,Walk Through Windows\n",
+        encoding="utf-8",
     )
-    task_module._apply_shortcut_records_live(
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, assign_calls=calls)
+    changed = task_module._apply_shortcuts_live(
         ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
-        timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-        warnings=[],
-    )
-    assert any(
-        "does not know the action manage activities" in message
-        for message in messages
-    )
-    assert any("cannot read meta+u" in message for message in messages)
-
-
-
-def test_assign_script_hotkeys_runs_the_shared_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The task hands the combinations to the running daemon through the
-    # client the config names, so the hotkeys work without a session
-    # restart, and the call carries the component names and the
-    # combinations of the config as the portable text KDE stores.
-    ctx = _ctx(tmp_path)
-    calls: list[list[str]] = []
-    _script_fakes(monkeypatch, session=True, assign_calls=calls)
-    cfg = ctx.config.kde_settings
-    client_path = (
-        _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
-    )
-    changed = task_module._assign_script_hotkeys(
-        cfg,
-        client_path=client_path,
-        timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-    )
-    assert changed is True
-    assert calls
-    assert calls[0][0] == ctx.config.engine.system_python
-    text = next(part for part in calls[0] if "import dbus" in part)
-    assert ctx.config.engine.kglobalaccel_bus_name in text
-    assert "$kglobalaccel_bus_name" not in text
-    request = json.loads(calls[0][-1])
-    assert request["changes"] == [
-        {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
-            "action": "Grow Window by 5px",
-            "keys": ["Meta+Ctrl+Up"],
-        },
-        {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
-            "action": "Shrink Window by 5px",
-            "keys": ["Meta+Ctrl+Down"],
-        },
-    ]
-
-
-def test_assign_script_hotkeys_warns_when_the_daemon_reports_no_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # An action whose key the daemon does not report as the configured
-    # one is a warning of a completed task: the record in
-    # kglobalshortcutsrc still carries the combination to the next login.
-    ctx = _ctx(tmp_path)
-    warnings: list[str] = []
-    _script_fakes(
-        monkeypatch,
-        session=True,
-        assign_after={"Grow Window by 5px": []},
-    )
-    changed = task_module._assign_script_hotkeys(
-        ctx.config.kde_settings,
-        client_path=_REPO_ROOT
-        / "task_data"
-        / "kde_keyboard_setup"
-        / "apply_hotkeys.py",
-        timeout=5,
-        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-        warnings=warnings,
-    )
-    assert changed is False
-    assert len(warnings) == 1
-    assert "Grow Window by 5px" in warnings[0]
-
-
-def test_assign_script_hotkeys_without_session_skips_live(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Without a live session there is nothing to apply: the task reports
-    # it and leaves the combinations to the next login.
-    ctx = _ctx(tmp_path)
-    calls: list[list[str]] = []
-    _script_fakes(monkeypatch, session=False, assign_calls=calls)
-    warnings: list[str] = []
-    changed = task_module._assign_script_hotkeys(
-        ctx.config.kde_settings,
-        client_path=_REPO_ROOT
-        / "task_data"
-        / "kde_keyboard_setup"
-        / "apply_hotkeys.py",
         timeout=5,
         env=None,
         system_python=ctx.config.engine.system_python,
         kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-        warnings=warnings,
+        warnings=[],
     )
     assert changed is False
     assert calls == []
-    assert warnings == []
+    written = {
+        command[command.index("--key") + 1]: command[-1] for command in writes
+    }
+    assert written["Switch One Desktop Up"] == "none,Meta+Ctrl+Up,Switch One Desktop Up"
+    assert written["Walk Through Windows"] == "Alt+Tab,none,Walk Through Windows"
 
 
 def test_write_script_hotkey_records_repairs_a_refused_record(
@@ -2479,21 +2022,6 @@ def _write_desktop_ids_client(tmp_path: Path) -> Path:
     return path
 
 
-def _write_release_client(tmp_path: Path) -> Path:
-    """Write the python hotkey release client the task runs, its path.
-
-    Like the desktop id client, the text travels from the task data file
-    the config names into the interpreter call, so the test recognises the
-    release call by that exact text.
-    """
-
-    path = tmp_path / "kglobalaccel_release.py"
-    path.write_text(
-        "import dbus\nprint('release the hotkeys')\n", encoding="utf-8"
-    )
-    return path
-
-
 def test_desktop_count_live_removes_extra_desktops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2758,48 +2286,6 @@ def test_sddm_one_key_failure_keeps_other_keys(
     assert any("User" in command for command in writes)
     assert any("Font" in command for command in writes)
     assert not any("CursorSize" in command for command in writes)
-
-
-def test_free_script_hotkeys_release_failure_is_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The config clearing succeeds; a failing live daemon release is
-    # reported as a warning and does not lose the cleared owners.
-    config_dir = tmp_path / ".config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "kglobalshortcutsrc").write_text(
-        "[kwin]\n"
-        "Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up\n",
-        encoding="utf-8",
-    )
-    ctx = _ctx(tmp_path)
-    writes: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
-        if command[0] == "runuser":
-            inner = command[4:]
-            if inner[0] == "kwriteconfig6":
-                writes.append(list(command))
-                return _FakeProc(0, "")
-            if inner[0] == "/usr/bin/python3":
-                raise subprocess.CalledProcessError(1, command)
-        raise AssertionError(f"unexpected command: {command}")
-
-    monkeypatch.setattr(task_module, "run_command", fake_run)
-    env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    warnings: list[str] = []
-    changed = task_module._free_script_hotkeys(
-        ctx.config.kde_settings,
-        script_path=_write_release_client(tmp_path),
-        env=env,
-        timeout=5,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
-        warnings=warnings,
-    )
-    assert changed is True
-    assert writes
-    assert any("release" in warning for warning in warnings)
 
 
 def test_user_command_prefix_comes_from_the_config() -> None:

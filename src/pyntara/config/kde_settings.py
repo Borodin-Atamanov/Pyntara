@@ -77,14 +77,12 @@ class KdeSettingsConfig:
     virtual desktop ids; kwin_scripts_dir_name is the directory under
     task_data that holds one directory per kwin script;
     konsole_profile_file_name is the Konsole profile shipped as a task data
-    file; and kglobalaccel_release_script_file_name is the python client
-    that asks the running KGlobalAccel daemon to release the hotkeys a
-    script owns, a body longer than five lines and therefore a file rather
-    than a value of the code. kwin_component_unique with
+    file. kwin_component_unique with
     kwin_component_friendly name the KGlobalAccel component that owns the
     script actions, so the task forms their action id itself;
-    shortcut_absent_value is the word a shortcut slot carries when it
-    holds no key, and shortcut_apply_attempts with
+    shortcut_absent_value is the word the first field of a shortcut record
+    carries when its action owns no combination, and
+    shortcut_apply_attempts with
     shortcut_apply_retry_delay_seconds bound how often a configured
     combination is given to the running daemon before the task reports
     that it did not take. kglobalaccel_client_section_name and
@@ -188,7 +186,6 @@ class KdeSettingsConfig:
     kwin_component_unique: str
     kwin_component_friendly: str
     desktop_ids_script_file_name: str
-    kglobalaccel_release_script_file_name: str
     kglobalaccel_client_section_name: str
     kglobalaccel_client_file_name: str
     kwin_scripts_dir_name: str
