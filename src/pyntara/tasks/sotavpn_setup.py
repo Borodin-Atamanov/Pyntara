@@ -141,9 +141,10 @@ def _settings_value(settings_path: Path, name: str) -> object | None:
         for target in node.targets:
             if isinstance(target, ast.Name) and target.id == name:
                 try:
-                    return ast.literal_eval(node.value)
+                    value: object = ast.literal_eval(node.value)
                 except ValueError:
                     return None
+                return value
     return None
 
 

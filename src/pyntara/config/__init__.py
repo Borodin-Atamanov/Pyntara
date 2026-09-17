@@ -48,6 +48,7 @@ from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
+from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
@@ -64,7 +65,6 @@ from .system_metrics_setup import (
     SystemMetricsSetupConfig,
     TelemetryPdfConfig,
 )
-from .scrcpy_setup import ScrcpySetupConfig
 from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import (

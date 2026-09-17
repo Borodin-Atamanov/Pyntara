@@ -1125,8 +1125,8 @@ def _script_fakes(
     *,
     session: bool = True,
     assign_calls: list[list[str]] | None = None,
-    assign_state: dict[str, list[int]] | None = None,
-    assign_after: dict[str, list[int]] | None = None,
+    assign_state: dict[str, list[str]] | None = None,
+    assign_after: dict[str, list[str]] | None = None,
 ) -> tuple[list[list[str]], list[list[str]]]:
     """Replace run_command for the KWin script install helpers.
 

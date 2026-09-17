@@ -61,6 +61,7 @@ from pyntara.utils import (
     version_without_tag_prefix,
 )
 
+
 class _ReleaseOutcome(NamedTuple):
     """What the release path did.
 

@@ -17,9 +17,11 @@ import shutil
 import stat
 import subprocess
 import tarfile
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from support import FakeProc, make_config, make_context
@@ -36,8 +38,8 @@ SETTINGS_NAME = "settings.py"
 def _ctx(
     tmp_path: Path,
     *,
-    sotavpn: dict[str, object] | None = None,
-    three_x_ui: dict[str, object] | None = None,
+    sotavpn: dict[str, Any] | None = None,
+    three_x_ui: dict[str, Any] | None = None,
     force: bool = False,
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
@@ -125,8 +127,8 @@ class _Commands:
         self.active = active
         self.installer_ok = installer_ok
 
-    def __call__(self, command: object, **_kwargs: object) -> FakeProc:
-        argv = [str(part) for part in command]  # type: ignore[union-attr]
+    def __call__(self, command: Iterable[str], **_kwargs: object) -> FakeProc:
+        argv = [str(part) for part in command]
         self.commands.append(argv)
         if "is-active" in argv:
             return (
@@ -738,8 +740,8 @@ class TestFetchTheBridge:
         prepared = self._archive(tmp_path)
         seen: list[list[str]] = []
 
-        def fake_run(command: object, **_kwargs: object) -> FakeProc:
-            argv = [str(part) for part in command]  # type: ignore[union-attr]
+        def fake_run(command: Iterable[str], **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]
             seen.append(argv)
             target = Path(next(part for part in argv if part.endswith(".tar.gz")))
             shutil.copyfile(prepared, target)
@@ -769,8 +771,8 @@ class TestFetchTheBridge:
         # that account as its owner instead of being opened to everyone.
         prepared = self._archive(tmp_path)
 
-        def fake_run(command: object, **_kwargs: object) -> FakeProc:
-            argv = [str(part) for part in command]  # type: ignore[union-attr]
+        def fake_run(command: Iterable[str], **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]
             target = Path(next(part for part in argv if part.endswith(".tar.gz")))
             shutil.copyfile(prepared, target)
             return FakeProc(0, "")
@@ -792,8 +794,8 @@ class TestFetchTheBridge:
     ) -> None:
         prepared = self._archive(tmp_path)
 
-        def fake_run(command: object, **_kwargs: object) -> FakeProc:
-            argv = [str(part) for part in command]  # type: ignore[union-attr]
+        def fake_run(command: Iterable[str], **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]
             target = Path(next(part for part in argv if part.endswith(".tar.gz")))
             shutil.copyfile(prepared, target)
             return FakeProc(0, "")
@@ -810,8 +812,8 @@ class TestFetchTheBridge:
     def test_an_unusable_archive_is_a_warning(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        def fake_run(command: object, **_kwargs: object) -> FakeProc:
-            argv = [str(part) for part in command]  # type: ignore[union-attr]
+        def fake_run(command: Iterable[str], **_kwargs: object) -> FakeProc:
+            argv = [str(part) for part in command]
             target = Path(next(part for part in argv if part.endswith(".tar.gz")))
             target.write_text("not an archive", encoding="utf-8")
             return FakeProc(0, "")

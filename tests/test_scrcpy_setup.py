@@ -262,6 +262,7 @@ def test_install_from_release_points_the_command_at_the_new_version(
     assert Path(os.readlink(link)) == _version_dir(tmp_path) / "scrcpy"
     for name in ("scrcpy", "scrcpy-server", "adb"):
         assert (_version_dir(tmp_path) / name).is_file()
+    assert result.message is not None
     assert "GitHub release" in result.message
     assert any(ASSET_URL in " ".join(call) for call in calls)
 
@@ -290,6 +291,7 @@ def test_checksum_mismatch_keeps_the_machine_and_never_downgrades(
     assert result.success is True
     assert result.changed is False
     assert result.warnings
+    assert result.message is not None
     assert "digest" in result.message
     assert not _command_path(tmp_path).is_symlink()
     assert not _version_dir(tmp_path).exists()
@@ -320,6 +322,7 @@ def test_missing_asset_falls_back_to_the_ubuntu_archive(
     result = scrcpy_setup.task(_ctx(tmp_path, config=config))
     assert "scrcpy" in installed
     assert "scrcpy" in _apt_installed_packages(calls)
+    assert result.message is not None
     assert "Ubuntu archive" in result.message
     assert str(apt_binary) in _launcher_path(tmp_path).read_text(encoding="utf-8")
 
@@ -330,7 +333,7 @@ def test_client_that_does_not_answer_falls_back_to_the_archive(
     apt_binary = tmp_path / "usr-bin-scrcpy"
     apt_binary.write_bytes(b"sentinel\n")
     config = _config_with(tmp_path, apt_binary_path=apt_binary)
-    calls, installed = _fake_run_factory(monkeypatch, tmp_path, client_banner="")
+    _, installed = _fake_run_factory(monkeypatch, tmp_path, client_banner="")
     result = scrcpy_setup.task(_ctx(tmp_path, config=config))
     assert "scrcpy" in installed
     assert not _version_dir(tmp_path).exists()
@@ -348,6 +351,7 @@ def test_archive_install_failure_is_a_warning(
     assert result.success is True
     assert result.changed is False
     assert result.warnings
+    assert result.message is not None
     assert "did not install" in result.message
     assert _apt_install_calls(calls)
 
@@ -356,11 +360,12 @@ def test_unavailable_release_keeps_the_installed_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tree = _install_fake_release(tmp_path)
-    calls, installed = _fake_run_factory(monkeypatch, tmp_path, release_json=None)
+    calls, _ = _fake_run_factory(monkeypatch, tmp_path, release_json=None)
     result = scrcpy_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert Path(os.readlink(_command_path(tmp_path))) == tree / "scrcpy"
     assert "scrcpy" not in _apt_installed_packages(calls)
+    assert result.message is not None
     assert "unavailable" in result.message
     assert "keeping the installed scrcpy" in result.message
 
@@ -374,6 +379,7 @@ def test_rerun_with_the_same_version_downloads_nothing(
     downloads = len(_download_calls(calls))
     second = scrcpy_setup.task(_ctx(tmp_path))
     assert second.changed is False
+    assert second.message is not None
     assert "already installed scrcpy" in second.message
     assert len(_download_calls(calls)) == downloads
 
@@ -450,6 +456,7 @@ def test_android_usb_rules_failure_is_a_warning(
     calls, _ = _fake_run_factory(monkeypatch, tmp_path, apt_install_rc=100)
     result = scrcpy_setup.task(_ctx(tmp_path))
     assert result.changed is True
+    assert result.message is not None
     assert "android-udev-rules" in result.message
     assert "unreachable" in result.message
     # One initial attempt plus the configured retries, all for the rules
