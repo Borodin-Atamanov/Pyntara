@@ -232,7 +232,6 @@ def base_config() -> str:
         'input_method_locales_key = "enabledLocales"\n'
         'cursor_theme_key = "cursorTheme"\n'
         'click_method_key = "ClickMethod"\n'
-        'touchpad_disable_external_mouse_key = "DisableEventsOnExternalMouse"\n'
         'desktop_count_key = "Number"\n'
         'kconfig_true_value = "true"\n'
         'kconfig_false_value = "false"\n'
@@ -282,7 +281,6 @@ def base_config() -> str:
         'cursor_theme_light = "Oxygen_Blue"\n'
         'numlock_on_boot = "off"\n'
         'touchpad_click_method = "clickfinger"\n'
-        "touchpad_disable_on_external_mouse = false\n"
         "virtual_keyboard_enabled = true\n"
         'virtual_keyboard_input_method = "/usr/share/applications/org.kde.plasma.keyboard.desktop"\n'
         'virtual_keyboard_locales = ["en_US", "es_MX", "ru_RU"]\n'

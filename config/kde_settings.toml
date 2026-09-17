@@ -50,11 +50,9 @@ cursor_theme_light = "Oxygen_Blue"
 # The NumLock state when Plasma starts: on, off or unchanged. Stored in
 # kcminputrc [Keyboard] NumLock as 0, 1 or 2.
 numlock_on_boot = "off"
-# Touchpad preferences, applied to every touchpad found on the target:
-# clickfinger, clickareas or none for the click method, and whether the
-# internal touchpad is disabled while an external mouse is connected.
+# Touchpad click method, applied to every touchpad found on the target:
+# clickfinger, clickareas or none.
 touchpad_click_method = "clickareas"
-touchpad_disable_on_external_mouse = true
 # The Wayland virtual keyboard: whether it is enabled, the input method
 # that provides it and the enabled locales written to plasmakeyboardrc.
 virtual_keyboard_enabled = true
@@ -169,7 +167,6 @@ input_method_key = "InputMethod"
 input_method_locales_key = "enabledLocales"
 cursor_theme_key = "cursorTheme"
 click_method_key = "ClickMethod"
-touchpad_disable_external_mouse_key = "DisableEventsOnExternalMouse"
 desktop_count_key = "Number"
 # The boolean spelling of those files, used for every key the task writes
 # as a flag.

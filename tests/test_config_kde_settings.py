@@ -89,11 +89,6 @@ from config_helpers import (
         base_config().replace(
             'touchpad_click_method = "clickfinger"', 'touchpad_click_method = "tap"'
         ),
-        # touchpad_disable_on_external_mouse is a string, not a boolean
-        base_config().replace(
-            "touchpad_disable_on_external_mouse = false",
-            'touchpad_disable_on_external_mouse = "false"',
-        ),
         # virtual_keyboard_enabled is a string, not a boolean
         base_config().replace(
             "virtual_keyboard_enabled = true",
@@ -182,7 +177,6 @@ def test_load_config_kde_settings_values(tmp_path: Path) -> None:
     assert config.kde_settings.cursor_theme_light == "Oxygen_Blue"
     assert config.kde_settings.numlock_on_boot == "off"
     assert config.kde_settings.touchpad_click_method == "clickfinger"
-    assert config.kde_settings.touchpad_disable_on_external_mouse is False
     assert config.kde_settings.virtual_keyboard_enabled is True
     assert config.kde_settings.virtual_keyboard_input_method == (
         "/usr/share/applications/org.kde.plasma.keyboard.desktop"

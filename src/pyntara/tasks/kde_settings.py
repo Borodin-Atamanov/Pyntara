@@ -6,7 +6,7 @@ that covers the whole desktop (panel, widgets, window decorations, icons).
 Both values are applied with the plasma-apply tools through runuser, so
 the config files stay owned by that user. The task also applies the input
 and keyboard settings as KConfig values with kwriteconfig6: the NumLock
-state on startup, the touchpad preferences (to every touchpad found) and
+state on startup, the touchpad click method (to every touchpad found) and
 the Wayland virtual keyboard. The cursor theme is applied with
 plasma-apply-cursortheme after the kconfig records, so it wins over the
 theme default that the day and night switch writes. The dark and light
@@ -536,10 +536,10 @@ def _apply_touchpad(
     force: bool,
     warnings: list[str] | None = None,
 ) -> bool:
-    """Write the touchpad preferences to every touchpad found.
+    """Write the touchpad click method to every touchpad found.
 
     The touchpad group ids are machine-specific and the target device is
-    unknown, so the task applies the preferences to every libinput group
+    unknown, so the task applies the click method to every libinput group
     whose device name ends with Touchpad; no touchpad is not an error. A
     group that fails to write is reported and the remaining groups still
     apply.
@@ -573,26 +573,12 @@ def _apply_touchpad(
                 force=force,
                 bool_value=False,
             )
-            changed |= _sync_config_value(
-                cfg,
-                cfg.kcminputrc_file_name,
-                group,
-                cfg.touchpad_disable_external_mouse_key,
-                (
-                    cfg.kconfig_true_value
-                    if cfg.touchpad_disable_on_external_mouse
-                    else cfg.kconfig_false_value
-                ),
-                timeout=timeout,
-                force=force,
-                bool_value=True,
-            )
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
             OSError,
         ) as exc:
-            warning = f"cannot set the touchpad preferences for {group[-1]}: {exc}"
+            warning = f"cannot set the touchpad click method for {group[-1]}: {exc}"
             _log(warning)
             if warnings is not None:
                 warnings.append(warning)
@@ -2009,8 +1995,8 @@ def task(ctx: Context) -> TaskResult:
     packages are installed; the task then returns changed=False. Otherwise
     it installs missing packages and applies the differing values as the
     target user: the global theme first, then the color scheme so the
-    configured scheme wins, then the NumLock state, the touchpad
-    preferences, the Wayland virtual keyboard, the configured kconfig
+    configured scheme wins, then the NumLock state, the touchpad click
+    method, the Wayland virtual keyboard, the configured kconfig
     values, the theme cursor overrides that let the day and night switch
     apply the configured cursors, and the cursor theme last, so it wins
     over the theme default the switch writes. When automatic_look_and_feel
@@ -2118,7 +2104,7 @@ def task(ctx: Context) -> TaskResult:
         lambda: _apply_numlock(cfg, timeout=timeout, force=force),
     )
     settings_changed |= step(
-        "set the touchpad preferences",
+        "set the touchpad click method",
         lambda: _apply_touchpad(
             cfg, timeout=timeout, force=force, warnings=warnings
         ),

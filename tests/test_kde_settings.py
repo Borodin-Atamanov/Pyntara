@@ -650,7 +650,6 @@ def test_reload_failure_is_a_warning_not_an_error(
 TOUCHPAD_RC = """\
 [Libinput][2362][597][SYNA3602:00 093A:0255 Touchpad]
 ClickMethod=2
-DisableEventsOnExternalMouse=true
 
 [Mouse]
 cursorSize=72
@@ -712,21 +711,16 @@ def test_numlock_skips_when_matching(
 def test_touchpad_writes_to_each_found(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The preferences go to every touchpad group in kcminputrc.
+    # The click method goes to every touchpad group in kcminputrc.
     ctx = _ctx(tmp_path, kcminputrc=TOUCHPAD_RC)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     click_writes = [command for command in writes if "ClickMethod" in command]
-    disable_writes = [
-        command for command in writes if "DisableEventsOnExternalMouse" in command
-    ]
     assert click_writes
-    assert disable_writes
     assert "Libinput" in " ".join(click_writes[0])
-    # clickfinger maps to 1, disable on external mouse to false.
+    # clickfinger maps to 1.
     assert click_writes[0][-1] == "1"
-    assert disable_writes[0][-1] == "false"
 
 
 def test_touchpad_missing_skips(

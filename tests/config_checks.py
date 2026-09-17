@@ -2320,10 +2320,6 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         click_method_key=_nonempty_string_field(
             raw.get("click_method_key"), "kde_settings.click_method_key"
         ),
-        touchpad_disable_external_mouse_key=_nonempty_string_field(
-            raw.get("touchpad_disable_external_mouse_key"),
-            "kde_settings.touchpad_disable_external_mouse_key",
-        ),
         desktop_count_key=_nonempty_string_field(
             raw.get("desktop_count_key"), "kde_settings.desktop_count_key"
         ),
@@ -2519,10 +2515,6 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
             raw.get("touchpad_click_method"),
             "kde_settings.touchpad_click_method",
             CLICK_METHODS,
-        ),
-        touchpad_disable_on_external_mouse=_bool_field(
-            raw.get("touchpad_disable_on_external_mouse"),
-            "kde_settings.touchpad_disable_on_external_mouse",
         ),
         virtual_keyboard_enabled=_bool_field(
             raw.get("virtual_keyboard_enabled"),

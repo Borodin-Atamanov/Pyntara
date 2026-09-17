@@ -62,9 +62,8 @@ class KdeSettingsConfig:
     default that the day and night switch writes; cursor_theme_light is
     the cursor theme written into the light theme defaults, so the switch
     applies it on the light theme too; numlock_on_boot is the
-    NumLock state at Plasma startup; touchpad_click_method and
-    touchpad_disable_on_external_mouse are the touchpad preferences
-    applied to every touchpad found; virtual_keyboard_enabled,
+    NumLock state at Plasma startup; touchpad_click_method is the touchpad
+    click method applied to every touchpad found; virtual_keyboard_enabled,
     virtual_keyboard_input_method and virtual_keyboard_locales configure
     the Wayland virtual keyboard; kwin_reload_command makes kwin re-read
     its configuration; kconfig carries additional KConfig values applied
@@ -104,7 +103,6 @@ class KdeSettingsConfig:
     cursor_theme_light: str
     numlock_on_boot: str
     touchpad_click_method: str
-    touchpad_disable_on_external_mouse: bool
     virtual_keyboard_enabled: bool
     virtual_keyboard_input_method: str
     virtual_keyboard_locales: tuple[str, ...]
@@ -161,7 +159,6 @@ class KdeSettingsConfig:
     input_method_locales_key: str
     cursor_theme_key: str
     click_method_key: str
-    touchpad_disable_external_mouse_key: str
     desktop_count_key: str
     kconfig_true_value: str
     kconfig_false_value: str
