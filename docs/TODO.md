@@ -811,7 +811,9 @@ machine in this turn, and the probe is named with the figure.
 101. The plain sections of stage D that remain, with their values, task lines,
     config reads and test file lines, counted with grep -cE "^[a-z_]+ *= " over
     config/<section>.toml, wc -l over the task, grep -cE "cfg\." over the task
-    and wc -l over the test: kde_settings 1607 / 2244 / 171 / 2420. vocalinux
+    and wc -l over the test: kde_settings 112 settings and 327 KConfig records
+    (see point 114; the figure 1607 of the earlier points counted the fields of
+    the records as well) / 2244 / 171 / 2420. vocalinux
     _setup, chrome_setup and dnsproxy_setup stood before it and landed, as points
     23, 24 and 27 record, and ssh_daemon_setup left the stage for the coupled
     cluster (point 113). kde_settings is therefore the last plain section, and
@@ -901,12 +903,14 @@ machine in this turn, and the probe is named with the figure.
     four readers have moved. Another agent session shares this clone, so every
     change takes a fresh branch from main with a clean tree before and after the
     commit. Stage I needs a machine the user names.
-112. First stage: kde_settings, the last plain section and the largest one, with
-    1607 values, 171 reads and a 2420 line test. Its values carry a list of
-    KConfig records, so the commit decides a named record type (point 58) and
-    reads the boolean spelling from the shared module. Its harness carries five
-    disagreements with the shipped values (point 89), which the commit decides in
-    the direction of the shipped value.
+112. Next stage: kde_settings, the last plain section and the largest one. It is
+    one commit and it is a job of its own, because the section carries 112
+    settings and 327 KConfig records (point 114), 52 helpers with 171 config
+    reads in a 2244 line task and 77 tests in a 2420 line test file. The commit
+    moves the record type and the records into the values module (point 58),
+    reads the boolean spelling and the shortcut file name from the shared module,
+    and decides the five harness disagreements of point 89 in the direction of
+    the shipped value.
 113. Correction of 2026-09-17, found by the probe that opened the turn of
     ssh_daemon_setup: nine live modules read its directives through
     ssh_port_from_directives, so it is a coupled section and leaves stage D for
@@ -921,6 +925,29 @@ machine in this turn, and the probe is named with the figure.
     next to a live TOML copy would be two truths about the port the machine
     forwards to. The order rule of point 75 is unaffected, and the next plain
     section is kde_settings.
+114. Reconnaissance of kde_settings, the probe that opens its turn, measured on
+    2026-09-17 before any edit. The section is not 1607 values: that figure came
+    from counting every line that looks like a setting, and the file declares 112
+    top-level settings besides 327 KConfig records, each with a file, a group, a
+    key, a value and usually a type. The records are the reason the section is
+    the largest: config/kde_settings.toml is 2244 lines. The task is 2244 lines
+    with 52 helpers and 171 config reads, and tests/test_kde_settings.py is 2420
+    lines with 77 tests. The record type already exists as KConfigRecord in
+    src/pyntara/config/kde_settings.py, so the commit moves it and the 327
+    records into the values module of the section (point 58). Four names the
+    section holds are copies of a shared one and go: username and home_dir
+    (values/common.py), global_shortcuts_file_name (SHORTCUTS_FILE_NAME) and the
+    two boolean words kconfig_true_value and kconfig_false_value
+    (KCONFIG_TRUE_VALUE, KCONFIG_FALSE_VALUE). Two modes need a decision at the
+    start of the turn: script_file_mode is 0644 and default_file_mode is 0600,
+    and neither is the shared pair of the desktop launcher and binary modes
+    (0644 and 0755), because 0600 names a private file of the desktop user and a
+    shared value would have to be undone, the way the zram compressor word is not
+    shared. The five harness disagreements of point 89 belong to this section
+    (automatic_look_and_feel False against true, an empty record list against the
+    shipped records, a package list without python3-pyqt6, empty hidden places
+    against six entries and the touchpad method clickfinger against clickareas),
+    and the commit decides each in the direction of the shipped value.
 
 
 
