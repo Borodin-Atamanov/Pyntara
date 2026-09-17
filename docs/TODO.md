@@ -38,10 +38,14 @@ The pattern, set by the hostname pilot and now the only one in the tree:
 6. tests/test_values.py also proves that READ_VALUE_NAMES names exactly the
    declared values, and by an AST scan that every declared value is read
    somewhere. A new values module is added to VALUES_MODULE_NAMES.
-7. A task test points its values at the fixture tree with
-   monkeypatch.setattr(module, "NAME", value) inside a per-section helper that
-   takes monkeypatch and the fixture paths; monkeypatch restores the shipped
-   values whether the test passed or failed.
+7. A task test points its values at its fixture with
+   monkeypatch.setattr(module, "NAME", value); monkeypatch restores the shipped
+   values whether the test passed or failed. The patch lives inside a
+   per-section helper that takes monkeypatch and the fixture paths when the
+   helper already takes them (ffmpeg_setup), and inside a small autouse fixture
+   of the test module when the helper takes no arguments and many call sites
+   use it (cli_tools): the fixture keeps those call sites unchanged, and a test
+   that needs another set or another threshold patches the same names itself.
 8. While a section is being migrated its TOML section and its config tests stay
    in place; only the task, its tests and the new rules move. Stage C removes
    the old sources in one go.
