@@ -8,6 +8,7 @@ Run uv sync to set up the Python environment.
 Run uv run pytest to execute the test suite.  
 Run uv run ruff check . for linting.  
 Run uv run mypy --strict src/ for type checking.  
+Run scripts/check_gates.sh to run every gate of this page in one command: the linting, both type checks, the test suite and the four bash suites.  
 The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default.
 
 The test suite runs in parallel through pytest-xdist: [tool.pytest.ini_options] addopts in pyproject.toml is -n auto, so uv run pytest spreads the tests over worker processes on its own, and the worker count follows the machine. Use uv run pytest -n 0 for a serial run when measuring where the time goes, because under workers the wall time no longer maps to a single test.
@@ -30,7 +31,10 @@ Testing MUST cover both the Python application and the bootstrap installer.
 ## CI requirements
 
 Project must enforce ruff, mypy --strict, and full pytest.  
-Pushing to repository without these checks is not allowed.
+Pushing to repository without these checks is not allowed.  
+Every push and every pull request runs .github/workflows/checks.yml, which calls scripts/check_gates.sh, so the pipeline checks the same set the [quick start](#quick-start) lists and never a second copy that drifts from it.  
+That run reports after the push, so it shows a red commit instead of stopping it; keeping a red commit out of main needs a status check in the repository settings of GitHub, which is not a file in the tree.  
+The workflow takes Python 3.14 through actions/setup-python and sets UV_PYTHON_DOWNLOADS to never, so the pipeline runs the interpreter the fleet runs and uv never downloads one itself.
 
 ## Commit workflow
 

@@ -19,6 +19,8 @@ README.md — Quick start, installation modes, and links to detailed docs.
 config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
+scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the four bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline.
+.github/workflows/checks.yml — Pipeline: runs scripts/check_gates.sh on every push and every pull request, with Python 3.14 and uv that never downloads an interpreter.
 .gitattributes — Marks src/pyntara/_version.py merge=union, so a version conflict resolves into two lines the version tool normalizes instead of a stopped merge (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).  
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.
 
