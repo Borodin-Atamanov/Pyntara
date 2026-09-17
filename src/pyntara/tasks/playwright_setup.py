@@ -32,6 +32,7 @@ from pyntara.utils import (
     run_command,
     substituted_command,
 )
+from pyntara.values import common as common_values
 from pyntara.values import missing_value_names
 from pyntara.values import playwright_setup as playwright_values
 
@@ -110,6 +111,7 @@ def task(ctx: Context) -> TaskResult:
     absent = missing_value_names(
         playwright_values, playwright_values.READ_VALUE_NAMES
     )
+    absent += missing_value_names(common_values, common_values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -123,7 +125,7 @@ def task(ctx: Context) -> TaskResult:
         )
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
-    status_timeout = playwright_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
     messages: list[str] = []
@@ -141,7 +143,7 @@ def task(ctx: Context) -> TaskResult:
             missing,
             install_timeout=timeout,
             update_timeout=timeout,
-            retries=playwright_values.PACKAGE_INSTALL_RETRIES,
+            retries=common_values.PACKAGE_INSTALL_RETRIES,
             skip_update=ctx.skip_apt_update,
         )
         warnings.extend(apt_warnings)

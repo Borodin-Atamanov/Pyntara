@@ -24,6 +24,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import install_packages, package_is_installed, task_data_dir
+from pyntara.values import common as common_values
 from pyntara.values import imagemagick_setup as imagemagick_values
 from pyntara.values import missing_value_names
 
@@ -79,7 +80,7 @@ def task(ctx: Context) -> TaskResult:
 
     absent = missing_value_names(
         imagemagick_values, imagemagick_values.READ_VALUE_NAMES
-    )
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run:
         # the names are reported in plain words and the runner carries on
@@ -93,7 +94,7 @@ def task(ctx: Context) -> TaskResult:
         )
     engine = ctx.config.engine
     install_timeout = engine.command_timeout_seconds
-    status_timeout = imagemagick_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
     warnings: list[str] = []
@@ -109,7 +110,7 @@ def task(ctx: Context) -> TaskResult:
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,
-            retries=imagemagick_values.PACKAGE_INSTALL_RETRIES,
+            retries=common_values.PACKAGE_INSTALL_RETRIES,
             skip_update=ctx.skip_apt_update,
         )
         installed_packages = installed

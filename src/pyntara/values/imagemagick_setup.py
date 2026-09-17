@@ -27,13 +27,6 @@ POLICY_TEMPLATE_FILE_NAME: str = "policy.xml"
 # it is meant to preserve.
 POLICY_BACKUP_FILE_SUFFIX: str = ".bak"
 
-# Seconds the dpkg status query may take.
-PACKAGE_STATUS_TIMEOUT_SECONDS: int = 30
-
-# Retry attempts after a failed package install; the total number of
-# attempts is this count plus one.
-PACKAGE_INSTALL_RETRIES: int = 3
-
 # The names the task reads. The list lives next to the values it names, the
 # task reads it from here and reports the names this module does not
 # declare, instead of stopping on a Python error.
@@ -42,6 +35,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "POLICY_PATH",
     "POLICY_TEMPLATE_FILE_NAME",
     "POLICY_BACKUP_FILE_SUFFIX",
-    "PACKAGE_STATUS_TIMEOUT_SECONDS",
-    "PACKAGE_INSTALL_RETRIES",
 )

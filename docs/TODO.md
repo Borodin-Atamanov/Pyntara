@@ -246,16 +246,21 @@ Decisions taken while the migration runs:
     project rule to delete only through the trash applies to resources outside
     the repository; the user decided this case, it is not an assumption.
 
-Open questions, to be answered before the sections that need them:
-
-63. Where the shared values live: in the values module of the engine, which
-    every module reads already, or in a separate shared module of the values
-    package. To be answered before the four migrated sections are rewritten to
-    read the shared pair of package install values.
-64. How an internal helper of a large task obtains the values it needs: by
-    reading the values module of its own task, by receiving them as parameters,
-    or by receiving a small object built at the top of the task. To be answered
-    before rustdesk_setup is migrated.
+63. Where the shared values live (user decision of 2026-09-17): in a separate
+    module of the values package, src/pyntara/values/common.py, which any task
+    that needs it reads. The values module of the engine keeps the values of
+    the run itself. Reason: a module named after the run that also carries the
+    values of package installation stops telling the truth, while a module
+    named common states the rule in its own name. The shared pair of package
+    install values moved there when this decision was recorded, and the three
+    migrated sections read it from there.
+64. How an internal helper of a large task obtains the values it needs (user
+    decision of 2026-09-17): it reads the values module of its own task. The
+    rejected alternatives were passing each value as a parameter, which
+    lengthens every call and lets the order of the numbers be mistaken, and
+    passing a small object built at the top of the task, which writes every
+    value twice. A helper shared by two tasks still receives the values as
+    parameters, because it must not depend on one task's module.
 
 
 

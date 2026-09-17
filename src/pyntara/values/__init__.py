@@ -20,9 +20,17 @@ def missing_value_names(module: object, names: tuple[str, ...]) -> tuple[str, ..
     """Return the names the module does not declare, in the order given.
 
     The caller passes the names it is about to read, so the answer names
-    exactly the values it cannot use. An absent name is reported by the
-    caller as a warning of the step that needed it, and the remaining
-    steps and tasks still run: absence is a statement, never an error.
+    exactly the values it cannot use. Each absent value is named with the
+    module that should declare it, so a value of the shared module is reported
+    as common.NAME and the reader of the message knows where to look. An
+    absent name is reported by the caller as a warning of the step that needed
+    it, and the remaining steps and tasks still run: absence is a statement,
+    never an error.
     """
 
-    return tuple(name for name in names if not hasattr(module, name))
+    module_name = getattr(module, "__name__", "").rpartition(".")[2] or "unknown"
+    return tuple(
+        f"{module_name}.{name}"
+        for name in names
+        if not hasattr(module, name)
+    )

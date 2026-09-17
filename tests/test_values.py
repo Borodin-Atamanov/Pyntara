@@ -35,6 +35,7 @@ import pyntara
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
+    "common",
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",

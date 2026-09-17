@@ -37,6 +37,7 @@ from pyntara.utils import (
     run_command,
     task_data_dir,
 )
+from pyntara.values import common as common_values
 from pyntara.values import ffmpeg_setup as ffmpeg_values
 from pyntara.values import missing_value_names
 
@@ -148,6 +149,7 @@ def task(ctx: Context) -> TaskResult:
     """
 
     absent = missing_value_names(ffmpeg_values, ffmpeg_values.READ_VALUE_NAMES)
+    absent += missing_value_names(common_values, common_values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run:
         # the names are reported in plain words and the runner carries on
@@ -161,7 +163,7 @@ def task(ctx: Context) -> TaskResult:
         )
     engine = ctx.config.engine
     install_timeout = engine.command_timeout_seconds
-    status_timeout = ffmpeg_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
     warnings: list[str] = []
@@ -177,7 +179,7 @@ def task(ctx: Context) -> TaskResult:
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,
-            retries=ffmpeg_values.PACKAGE_INSTALL_RETRIES,
+            retries=common_values.PACKAGE_INSTALL_RETRIES,
             skip_update=ctx.skip_apt_update,
         )
         installed_packages = installed

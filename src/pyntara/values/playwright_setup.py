@@ -23,13 +23,6 @@ HOME_DIR: str = "/home/i"
 # The apt packages that provide the npm runtime on the target.
 PACKAGES: tuple[str, ...] = ("nodejs", "npm")
 
-# Seconds the dpkg status query may take.
-PACKAGE_STATUS_TIMEOUT_SECONDS: int = 30
-
-# Retry attempts after a failed package install; the total number of attempts
-# is this count plus one.
-PACKAGE_INSTALL_RETRIES: int = 3
-
 # The npm package that provides the playwright-cli binary.
 CLI_PACKAGE: str = "@playwright/cli"
 
@@ -75,8 +68,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "USERNAME",
     "HOME_DIR",
     "PACKAGES",
-    "PACKAGE_STATUS_TIMEOUT_SECONDS",
-    "PACKAGE_INSTALL_RETRIES",
     "CLI_PACKAGE",
     "USER_PREFIX_RELATIVE_PATH",
     "CLI_BIN_RELATIVE_PATH",

@@ -65,13 +65,6 @@ WAYRECORD_BUILD_FLAGS_COMMAND: tuple[str, ...] = (
 # with the staged binary path and appends the sources and the flags.
 WAYRECORD_COMPILE_COMMAND: tuple[str, ...] = ("gcc", "-O2", "-o", "{output}")
 
-# Seconds the dpkg status query may take.
-PACKAGE_STATUS_TIMEOUT_SECONDS: int = 30
-
-# Retry attempts after a failed package install; the total number of
-# attempts is this count plus one.
-PACKAGE_INSTALL_RETRIES: int = 3
-
 # The names the task reads. The list lives next to the values it names, the
 # task reads it from here and reports the names this module does not
 # declare, instead of stopping on a Python error.
@@ -85,6 +78,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "WAYRECORD_BUILD_FILE_SUFFIX",
     "WAYRECORD_BUILD_FLAGS_COMMAND",
     "WAYRECORD_COMPILE_COMMAND",
-    "PACKAGE_STATUS_TIMEOUT_SECONDS",
-    "PACKAGE_INSTALL_RETRIES",
 )
