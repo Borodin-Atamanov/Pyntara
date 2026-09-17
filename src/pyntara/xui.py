@@ -31,6 +31,7 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
@@ -320,12 +321,12 @@ def login_and_verify(
 
     # Step 2: login with username and password.
     fields = cfg.panel_field_keys
-    login_data = urllib.parse.urlencode(
+    login_data = _form_body(
         {
             fields["username"]: env.get(keys["username"], ""),
             fields["password"]: env.get(keys["password"], ""),
         }
-    ).encode("utf-8")
+    )
     status, body = _api_call(
         cfg,
         opener,
@@ -427,6 +428,43 @@ def _bearer_headers(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> dict[s
         ),
         headers["requested_with"]: header_values["xml_http_request"],
     }
+
+
+def _bearer_form_headers(
+    cfg: ThreeXuiXraySetupConfig, env: dict[str, str]
+) -> dict[str, str]:
+    """Bearer headers for the calls the panel reads its fields as a form.
+
+    The routing check, the geodata check, the Xray template write, the
+    balancer status and the outbound subscriptions read their fields with
+    the form reader of the panel, so the content type and the body built
+    by _form_body belong together.
+    """
+
+    headers = _bearer_headers(cfg, env)
+    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+        "form"
+    ]
+    return headers
+
+
+def _form_body(values: Mapping[str, object]) -> bytes:
+    """One request body in the form the panel reads its fields from.
+
+    A boolean becomes the lower-case word "true" or "false", which is what
+    the panel compares a flag against; urlencode alone would write the
+    Python spelling and the panel would read the flag as absent. Every
+    other value is written as text, and a value that is already text stays
+    as it is.
+    """
+
+    fields: dict[str, str] = {}
+    for name, value in values.items():
+        if isinstance(value, bool):
+            fields[name] = "true" if value else "false"
+        else:
+            fields[name] = str(value)
+    return urllib.parse.urlencode(fields).encode("utf-8")
 
 
 def _payload_of(
@@ -903,14 +941,16 @@ def create_outbound_subscription(
     payload: dict[str, object],
     timeout: float,
 ) -> tuple[bool, str]:
-    """Create an outbound subscription through the panel API."""
+    """Create an outbound subscription through the panel API.
+
+    The fields travel as a form body, because the panel reads them with
+    its form reader; a JSON body would leave the address empty and the
+    panel would refuse the subscription.
+    """
 
     base_url, opener = _bearer_opener(cfg, env)
-    data = json.dumps(payload).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "json"
-    ]
+    data = _form_body(payload)
+    headers = _bearer_form_headers(cfg, env)
     status, body = _api_call(
         cfg,
         opener,
@@ -931,17 +971,15 @@ def update_outbound_subscription(
 ) -> tuple[bool, str]:
     """Replace one outbound subscription, identified by its own id.
 
-    The panel persists the whole object, so the caller reads it, changes
-    the wanted keys and sends it back, the same contract as update_inbound.
+    The fields travel as a form body, the only body the panel reads them
+    from, and the id travels in the address; the caller passes the payload
+    it wants stored together with the id of the row it replaces.
     """
 
     base_url, opener = _bearer_opener(cfg, env)
-    data = json.dumps(subscription).encode("utf-8")
+    data = _form_body(subscription)
     fields = cfg.panel_field_keys
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "json"
-    ]
+    headers = _bearer_form_headers(cfg, env)
     subscription_id = subscription.get(fields["id"])
     status, body = _api_call(
         cfg,
@@ -1038,14 +1076,9 @@ def list_balancer_status(
     """
 
     fields = cfg.panel_field_keys
-    form = urllib.parse.urlencode(
-        {fields["balancer_status_query"]: ",".join(tags)}
-    ).encode("utf-8")
+    form = _form_body({fields["balancer_status_query"]: ",".join(tags)})
     base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "form"
-    ]
+    headers = _bearer_form_headers(cfg, env)
     status, body = _api_call(
         cfg,
         opener,
@@ -1369,16 +1402,13 @@ def write_xray_template(
 
     base_url, opener = _bearer_opener(cfg, env)
     fields = cfg.panel_field_keys
-    form = urllib.parse.urlencode(
+    form = _form_body(
         {
             fields["xray_setting"]: json.dumps(template.settings),
             fields["outbound_test_url"]: template.outbound_test_url,
         }
-    ).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "form"
-    ]
+    )
+    headers = _bearer_form_headers(cfg, env)
     status, body = _api_call(
         cfg,
         opener,
@@ -1419,13 +1449,8 @@ def validate_geodata_tokens(
         return {}
     base_url, opener = _bearer_opener(cfg, env)
     fields = cfg.panel_field_keys
-    form = urllib.parse.urlencode(
-        {fields["kind"]: kind, fields["tokens"]: ",".join(tokens)}
-    ).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "form"
-    ]
+    form = _form_body({fields["kind"]: kind, fields["tokens"]: ",".join(tokens)})
+    headers = _bearer_form_headers(cfg, env)
     status, body = _api_call(
         cfg,
         opener,
@@ -1503,11 +1528,8 @@ def route_test(
         request[fields["ip"]] = address
     else:
         raise ValueError("route_test needs a domain or an address")
-    form = urllib.parse.urlencode(request).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
-        "form"
-    ]
+    form = _form_body(request)
+    headers = _bearer_form_headers(cfg, env)
     status, body = _api_call(
         cfg,
         opener,

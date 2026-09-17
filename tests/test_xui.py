@@ -1671,7 +1671,43 @@ class TestOutboundSubscriptions:
         assert ok is True
         assert message == "subscription added"
         assert recorded[1].url.endswith("/panel/api/xray/outbound-subs")
-        assert recorded[1].json_body()["tagPrefix"] == "sota-"
+        assert recorded[1].header("Content-Type") == (
+            "application/x-www-form-urlencoded"
+        )
+        assert recorded[1].form()["tagPrefix"] == "sota-"
+
+    def test_writes_the_flags_as_the_words_the_panel_compares(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = _record_requests(
+            monkeypatch,
+            (200, json.dumps({"success": True, "obj": []})),
+            (200, json.dumps({"success": True, "msg": "subscription added"})),
+        )
+        ok, _ = xui_client.upsert_outbound_subscription(
+            _cfg(),
+            _ENV,
+            {
+                "remark": "sota-bridge",
+                "url": "http://127.0.0.1:25080/sub/sample/raw",
+                "enabled": True,
+                "allowPrivate": True,
+                "allowInsecure": False,
+                "prepend": False,
+                "updateInterval": 300,
+            },
+            5,
+        )
+        assert ok is True
+        assert recorded[1].form() == {
+            "remark": "sota-bridge",
+            "url": "http://127.0.0.1:25080/sub/sample/raw",
+            "enabled": "true",
+            "allowPrivate": "true",
+            "allowInsecure": "false",
+            "prepend": "false",
+            "updateInterval": "300",
+        }
 
     def test_replaces_the_subscription_that_carries_the_remark(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1700,7 +1736,10 @@ class TestOutboundSubscriptions:
         assert ok is True
         assert message == "subscription sota-bridge updated: subscription updated"
         assert recorded[1].url.endswith("/panel/api/xray/outbound-subs/4")
-        assert recorded[1].json_body()["url"] == "http://new"
+        assert recorded[1].header("Content-Type") == (
+            "application/x-www-form-urlencoded"
+        )
+        assert recorded[1].form()["url"] == "http://new"
 
     def test_refuses_a_payload_without_a_remark(
         self, monkeypatch: pytest.MonkeyPatch
