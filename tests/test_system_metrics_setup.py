@@ -1044,7 +1044,14 @@ def test_force_recreates_command_file(
         import_ok=True,
         deployed=True,
     )
-    inode_before = fixtures["command_path"].stat().st_ino
+    # A hard link keeps the old inode alive, because a filesystem is free to
+    # hand the number of a just-deleted file to the new one, which the ext4
+    # temporary directory of a continuous integration runner does. Without
+    # the link the comparison below is a coin toss; with it the number of the
+    # old file cannot be reused, so a file left in place is still caught.
+    alias = tmp_path / "commit_system_metrics.before"
+    os.link(fixtures["command_path"], alias)
+    inode_before = alias.stat().st_ino
     result = system_metrics_setup.task(
         _ctx(tmp_path, force=True, config=fixtures["config"])
     )
