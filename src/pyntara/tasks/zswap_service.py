@@ -39,21 +39,24 @@ def _parameter_paths() -> dict[str, Path]:
     """The kernel attribute file of every configured parameter."""
 
     return {
-        name: values.PARAMETERS_DIR_PATH / name
-        for name, _ in values.PARAMETER_VALUES
+        parameter.attribute_name: values.PARAMETERS_DIR_PATH
+        / parameter.attribute_name
+        for parameter in values.PARAMETER_VALUES
     }
 
 
 def _target_values() -> dict[str, str]:
     """Target values keyed by parameter name, in write order.
 
-    The value of a parameter is the text the kernel is given: the Y or N
-    spelling a boolean attribute reports, the digits or the word of a
-    number and of a string, so the rendered unit, the idempotency
-    comparison and the read-back verification all share one representation.
+    The value of a parameter is the text the kernel is given, so the
+    rendered unit, the idempotency comparison and the read-back
+    verification all share one representation.
     """
 
-    return dict(values.PARAMETER_VALUES)
+    return {
+        parameter.attribute_name: parameter.value
+        for parameter in values.PARAMETER_VALUES
+    }
 
 
 def _normalize(expected: str, value: str) -> str:
@@ -148,7 +151,9 @@ def task(ctx: Context) -> TaskResult:
         )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    parameter_names = tuple(name for name, _ in values.PARAMETER_VALUES)
+    parameter_names = tuple(
+        parameter.attribute_name for parameter in values.PARAMETER_VALUES
+    )
     service_name = values.SERVICE_UNIT_NAME
     target = _target_values()
     paths = _parameter_paths()

@@ -38,7 +38,10 @@ WantedBy=multi-user.target
 
 # Target parameter values: the shipped table of the values module, which is
 # what the task must write on a real machine.
-TARGET = dict(values.PARAMETER_VALUES)
+TARGET = {
+    parameter.attribute_name: parameter.value
+    for parameter in values.PARAMETER_VALUES
+}
 
 # Kernel defaults on Kubuntu: zswap on with lzo at a 20 percent pool.
 DEFAULTS = {
@@ -100,7 +103,8 @@ def _install_fixtures(
     current_values = dict(DEFAULTS if current is None else current)
     params_dir = values.PARAMETERS_DIR_PATH
     params_dir.mkdir(parents=True, exist_ok=True)
-    for name, _ in values.PARAMETER_VALUES:
+    for parameter in values.PARAMETER_VALUES:
+        name = parameter.attribute_name
         (params_dir / name).write_text(
             f"{current_values.get(name, '')}\n", encoding="utf-8"
         )
@@ -312,9 +316,15 @@ def test_the_parameter_table_and_directory_come_from_the_values(
     # task that kept the kernel interface in code would write the shipped
     # five parameters into the shipped path instead.
     other_dir = tmp_path / "fixture" / "parameters"
-    other_target = (("enabled", "Y"), ("compressor", "zstd"))
+    other_values = (
+        values.ZswapParameter("enabled", "Y"),
+        values.ZswapParameter("compressor", "zstd"),
+    )
+    other_target = {
+        parameter.attribute_name: parameter.value for parameter in other_values
+    }
     monkeypatch.setattr(values, "PARAMETERS_DIR_PATH", other_dir)
-    monkeypatch.setattr(values, "PARAMETER_VALUES", other_target)
+    monkeypatch.setattr(values, "PARAMETER_VALUES", other_values)
     fixtures = _install_fixtures(
         tmp_path, current={"enabled": "N", "compressor": "lzo"}
     )
@@ -324,7 +334,7 @@ def test_the_parameter_table_and_directory_come_from_the_values(
     assert writes == [("enabled", "Y"), ("compressor", "zstd")]
     unit = tmp_path / "systemd" / values.SERVICE_UNIT_NAME
     assert unit.read_text(encoding="utf-8") == _expected_unit(
-        dict(other_target), fixtures["params_dir"]
+        other_target, fixtures["params_dir"]
     )
 
 

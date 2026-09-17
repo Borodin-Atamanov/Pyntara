@@ -25,15 +25,20 @@ from pyntara.models import TaskResult
 def load_task(name: str) -> Callable[[Context], TaskResult] | None:
     """Return the task callable for a name, or None when not implemented.
 
-    An ImportError means the module does not exist yet, which is a normal
-    state during incremental development; other import errors propagate to
-    the runner and are reported as failed tasks.
+    A ModuleNotFoundError that names the task module itself means the module
+    is not written yet, which is a normal state during incremental
+    development, so the task is reported as skipped. A failure inside the
+    module or inside the values it imports is raised instead, so the reason
+    reaches the user as an import failure and never looks like a task nobody
+    wrote.
     """
 
     try:
         module = importlib.import_module(f"pyntara.tasks.{name}")
-    except ImportError:
-        return None
+    except ModuleNotFoundError as exc:
+        if exc.name == f"pyntara.tasks.{name}":
+            return None
+        raise
     task: object = getattr(module, "task", None)
     if not callable(task):
         return None

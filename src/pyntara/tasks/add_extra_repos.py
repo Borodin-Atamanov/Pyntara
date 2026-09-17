@@ -265,13 +265,12 @@ def task(ctx: Context) -> TaskResult:
     the remaining tasks and never stops here.
     """
 
-    configured = values.COMPONENTS
-    warnings: list[str] = []
     absent = missing_value_names(values, values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
-        # remaining tasks.
+        # remaining tasks. The guard stands above every read, so no value is
+        # touched before the names are known.
         return TaskResult(
             success=True,
             message="the add_extra_repos values are not declared, nothing was changed",
@@ -280,6 +279,8 @@ def task(ctx: Context) -> TaskResult:
                 + ", ".join(absent),
             ),
         )
+    configured = values.COMPONENTS
+    warnings: list[str] = []
     _log(f"configured components: {' '.join(configured)}")
     keep_changed, keep_error = _ensure_keep_debs_dropin()
     if keep_error:

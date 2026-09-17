@@ -289,6 +289,47 @@ Decisions taken while the migration runs:
     value twice. A helper shared by two tasks still receives the values as
     parameters, because it must not depend on one task's module.
 
+Remainder plan, set 2026-09-17 with the planning procedure. Numbered after the
+decisions so no earlier number moves.
+
+65. Stage A, done: the parameter table of zswap_service became a tuple of the
+    named record type ZswapParameter, as decision 58 requires; a tuple of plain
+    pairs was my mistake in the first version of that section.
+66. Stage B, done: tests/test_values_softness.py proves for every migrated
+    section that a value which is not declared costs the task and never the run,
+    and that a values module which cannot be imported costs only its task. It
+    found two real defects. The guard of add_extra_repos stood below a read of
+    COMPONENTS, so a missing value crashed that task instead of warning about
+    it; the guard now stands above every read. And load_task treated any import
+    failure as a task nobody wrote, so a values module that could not be
+    imported was reported as a missing task module; load_task now separates a
+    ModuleNotFoundError that names the task module itself (not written yet, a
+    normal state during development) from a failure inside the module or its
+    values (raised, so the reason reaches the user).
+67. Resolved assumption, measured 2026-09-17: the built wheel carries the values
+    package, and the deployment already syncs the venv with --no-editable
+    (venv_sync_command of the [system_metrics_setup] table), so a deployed
+    service gets the values with no deployment change. What the coupled stage
+    removes is only the config path mechanism.
+68. Stage C, documents: a minimal truthful edit now, because the architecture
+    contract calls a value outside config/ a violation to fix on discovery and
+    the README still says the engine values live in config/. The full rewrite
+    stays in Stage D (point 31).
+69. Stage D, the plain sections, smallest first, one commit each: the section
+    list above minus the COUPLED ones.
+70. Stage E, the engine and the task catalog, before the coupled sections: a
+    runtime module that stops reading the config takes the engine values from
+    values/engine.py, so those values must exist first.
+71. Stage F, the coupled sections, one service per commit: port forwarding
+    (port_forwarding.py, port_forwarding_state.py, network_addresses.py), then
+    i2pd (i2pd_address.py), then metrics (metrics.py, metrics_collect.py,
+    metrics_ingest.py, public_address_report.py, country_report.py). In each, the
+    runtime module imports the values package, the config path argument and
+    {config_path} disappear, and the proof is a run of that module without the
+    argument.
+72. Stage G, removal: the old point 30. Stage H, documents: the old point 31.
+    Stage I, live proof on a target machine: the old point 32.
+
 
 
 

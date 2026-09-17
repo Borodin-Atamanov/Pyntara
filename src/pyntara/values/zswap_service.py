@@ -12,26 +12,40 @@ is always on.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-# The zswap parameters, in the order the task writes them, as the text the
-# kernel receives: enable the cache first, then the compressor, the pool
-# ceiling, the re-accept threshold and the shrinker. The name is the kernel
-# attribute, so a parameter the kernel drops is removed here and nowhere else.
-# A boolean attribute carries the Y or N spelling sysfs reports; a number
-# carries the digits the attribute expects.
-PARAMETER_VALUES: tuple[tuple[str, str], ...] = (
+
+@dataclass(frozen=True)
+class ZswapParameter:
+    """One kernel attribute of the zswap module and the text it is given.
+
+    The attribute name is the name the kernel itself uses, so a parameter
+    the kernel drops is removed by deleting its record and nothing else.
+    The text is what the kernel receives: a boolean attribute carries the Y
+    or N spelling sysfs reports, a number carries the digits the attribute
+    expects.
+    """
+
+    attribute_name: str
+    value: str
+
+
+# The zswap parameters, in the order the task writes them: enable the cache
+# first, then the compressor, the pool ceiling, the re-accept threshold and the
+# shrinker.
+PARAMETER_VALUES: tuple[ZswapParameter, ...] = (
     # Compressed cache switched on.
-    ("enabled", "Y"),
+    ZswapParameter("enabled", "Y"),
     # Strongest compressor available on Kubuntu.
-    ("compressor", "zstd"),
+    ZswapParameter("compressor", "zstd"),
     # Maximum share of RAM the compressed pool may occupy, in percent.
-    ("max_pool_percent", "12"),
+    ZswapParameter("max_pool_percent", "12"),
     # Percent of the pool limit at which zswap starts accepting pages again
     # after being full; below 100 the pool keeps a hysteresis.
-    ("accept_threshold_percent", "87"),
+    ZswapParameter("accept_threshold_percent", "87"),
     # The shrinker proactively writes cold pages to the backing swap.
-    ("shrinker_enabled", "Y"),
+    ZswapParameter("shrinker_enabled", "Y"),
 )
 
 # Kernel attribute directory of the zswap module: the only path of the task.
