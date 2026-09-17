@@ -420,28 +420,6 @@ def make_config(
     scrcpy_setup_download_dir: Path = Path("/var/cache/pyntara/scrcpy"),
     telegram_home_dir: str = "/home/i",
     telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
-    chrome_home_dir: str = "/home/i",
-    chrome_keyring_armored_file_name: str = "google-chrome-key.pub",
-    chrome_settings_dir: Path = Path("/var/cache/pyntara/chromium-settings"),
-    chrome_system_root: Path = Path("/"),
-    chrome_apt_source_path: Path = Path(
-        "/etc/apt/sources.list.d/google-chrome.sources"
-    ),
-    chrome_keyring_path: Path = Path("/usr/share/keyrings/google-chrome.gpg"),
-    chrome_desktop_source_path: Path = Path(
-        "/usr/share/applications/google-chrome.desktop"
-    ),
-    chrome_desktop_override_path: Path = Path(
-        "/usr/local/share/applications/google-chrome.desktop"
-    ),
-    chrome_profile_mirror_path: Path = Path("/home/i/.config/google-chrome-cdp"),
-    chrome_kreadconfig_command: tuple[str, ...] = (
-        "kreadconfig6",
-        "--file",
-        "{file_name}",
-    ),
-    chrome_config_group_flag: tuple[str, ...] = ("--group", "{group}"),
-    chrome_desktop_entry_exec_key: str = "Exec=",
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_install_retries: int = 3,
     yggdrasil_asset_name_template: str = "yggdrasil-{version}-{arch}.deb",
@@ -921,21 +899,6 @@ def make_config(
         playwright_setup=replace(
             base.playwright_setup,
             home_dir=playwright_setup_home_dir,
-        ),
-        chrome_setup=replace(
-            base.chrome_setup,
-            home_dir=chrome_home_dir,
-            keyring_armored_file_name=chrome_keyring_armored_file_name,
-            settings_dir=chrome_settings_dir,
-            system_root=chrome_system_root,
-            apt_source_path=chrome_apt_source_path,
-            keyring_path=chrome_keyring_path,
-            desktop_source_path=chrome_desktop_source_path,
-            desktop_override_path=chrome_desktop_override_path,
-            desktop_entry_exec_key=chrome_desktop_entry_exec_key,
-            profile_mirror_path=chrome_profile_mirror_path,
-            kreadconfig_command=chrome_kreadconfig_command,
-            config_group_flag=chrome_config_group_flag,
         ),
         local_vault_setup=replace(
             base.local_vault_setup,

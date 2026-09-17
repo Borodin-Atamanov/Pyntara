@@ -55,11 +55,7 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara.config import (
-    ChromeSetupConfig,
-    EngineConfig,
-    ThreeXuiXraySetupConfig,
-)
+from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -75,6 +71,9 @@ from pyntara.utils import (
     task_data_dir,
     trim_whitespace,
 )
+from pyntara.values import chrome_setup as values
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
 
 # The placeholders of a configured launch flag, e.g. {proxy_server}: a
 # flag whose value is empty is left out of the Exec line.
@@ -95,7 +94,6 @@ def _source_text(template_path: Path, keyring_path: Path) -> str:
 
 def _ensure_repository(
     engine: EngineConfig,
-    cfg: ChromeSetupConfig,
     apt_source_template_path: Path,
     timeout: float,
     owner_uid: int,
@@ -113,39 +111,40 @@ def _ensure_repository(
     changed = False
     try:
         if not (
-            cfg.keyring_path.is_file() and cfg.keyring_path.stat().st_size > 0
+            values.KEYRING_PATH.is_file()
+            and values.KEYRING_PATH.stat().st_size > 0
         ):
-            cfg.keyring_path.parent.mkdir(parents=True, exist_ok=True)
+            values.KEYRING_PATH.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(
-                prefix=cfg.keyring_temp_dir_prefix
+                prefix=values.KEYRING_TEMP_DIR_PREFIX
             ) as tmp:
-                armored = Path(tmp) / cfg.keyring_armored_file_name
+                armored = Path(tmp) / values.KEYRING_ARMORED_FILE_NAME
                 run_command(
-                    download_command(engine, armored, cfg.google_key_url),
+                    download_command(engine, armored, values.GOOGLE_KEY_URL),
                     timeout=timeout,
                 )
                 run_command(
                     substituted_command(
-                        cfg.keyring_dearmor_command,
+                        values.KEYRING_DEARMOR_COMMAND,
                         {
-                            "output": str(cfg.keyring_path),
+                            "output": str(values.KEYRING_PATH),
                             "armored": str(armored),
                         },
                     ),
                     timeout=timeout,
                 )
-            cfg.keyring_path.chmod(cfg.file_mode)
-            apply_owner(cfg.keyring_path, owner_uid, owner_gid)
+            values.KEYRING_PATH.chmod(common_values.LAUNCHER_FILE_MODE)
+            apply_owner(values.KEYRING_PATH, owner_uid, owner_gid)
             changed = True
-        content = _source_text(apt_source_template_path, cfg.keyring_path)
+        content = _source_text(apt_source_template_path, values.KEYRING_PATH)
         if not (
-            cfg.apt_source_path.is_file()
-            and cfg.apt_source_path.read_text(encoding="utf-8") == content
+            values.APT_SOURCE_PATH.is_file()
+            and values.APT_SOURCE_PATH.read_text(encoding="utf-8") == content
         ):
-            cfg.apt_source_path.parent.mkdir(parents=True, exist_ok=True)
-            cfg.apt_source_path.write_text(content, encoding="utf-8")
-            cfg.apt_source_path.chmod(cfg.file_mode)
-            apply_owner(cfg.apt_source_path, owner_uid, owner_gid)
+            values.APT_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            values.APT_SOURCE_PATH.write_text(content, encoding="utf-8")
+            values.APT_SOURCE_PATH.chmod(common_values.LAUNCHER_FILE_MODE)
+            apply_owner(values.APT_SOURCE_PATH, owner_uid, owner_gid)
             changed = True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return changed, f"cannot register the Google Chrome apt repository: {exc}"
@@ -153,56 +152,58 @@ def _ensure_repository(
 
 
 def _ensure_chrome_installed(
-    cfg: ChromeSetupConfig,
     engine: EngineConfig,
     *,
     force: bool,
     skip_apt_update: bool,
     timeout: float,
 ) -> tuple[bool, str | None]:
-    """Install the configured Chrome package when missing or forced; (changed, error)."""
+    """Install the browser package when missing or forced; (changed, error)."""
 
-    if not force and package_is_installed(engine, cfg.package_name, timeout):
+    if not force and package_is_installed(engine, values.PACKAGE_NAME, timeout):
         return False, None
     try:
         if not skip_apt_update:
             refresh_apt_index(engine, timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot refresh the apt index: {exc}"
-    ok, error = install_package_once(engine, cfg.package_name, timeout)
+    ok, error = install_package_once(engine, values.PACKAGE_NAME, timeout)
     if not ok:
-        return False, f"cannot install {cfg.package_name}: {error}"
+        return False, f"cannot install {values.PACKAGE_NAME}: {error}"
     return True, None
 
 
-def _sync_settings_repo(cfg: ChromeSetupConfig, *, timeout: float) -> tuple[bool, str | None]:
+def _sync_settings_repo(*, timeout: float) -> tuple[bool, str | None]:
     """Clone or update the browser settings repository; (changed, error).
 
-    The clone, the fetch and the two revision queries come from the config
-    as command templates, so the flags of the version control tool are
-    values and not code.
+    The clone, the fetch and the two revision queries come from the values as
+    command templates, so the flags of the version control tool are values and
+    not code.
     """
 
-    values = {
-        "url": cfg.settings_repo_url,
-        "ref": cfg.settings_repo_ref,
-        "dir": str(cfg.settings_dir),
+    placeholders = {
+        "url": values.SETTINGS_REPO_URL,
+        "ref": values.SETTINGS_REPO_REF,
+        "dir": str(values.SETTINGS_DIR),
     }
     try:
-        if not (cfg.settings_dir / ".git").is_dir():
-            cfg.settings_dir.parent.mkdir(parents=True, exist_ok=True)
+        if not (values.SETTINGS_DIR / ".git").is_dir():
+            values.SETTINGS_DIR.parent.mkdir(parents=True, exist_ok=True)
             run_command(
-                substituted_command(cfg.settings_clone_command, values),
+                substituted_command(
+                    values.SETTINGS_CLONE_COMMAND, placeholders
+                ),
                 timeout=timeout,
             )
             return True, None
         run_command(
-            substituted_command(cfg.settings_fetch_command, values),
+            substituted_command(values.SETTINGS_FETCH_COMMAND, placeholders),
             timeout=timeout,
         )
         head = run_command(
             substituted_command(
-                cfg.settings_revision_command, {**values, "revision": "HEAD"}
+                values.SETTINGS_REVISION_COMMAND,
+                {**placeholders, "revision": "HEAD"},
             ),
             check=False,
             capture=True,
@@ -210,8 +211,8 @@ def _sync_settings_repo(cfg: ChromeSetupConfig, *, timeout: float) -> tuple[bool
         )
         fetched = run_command(
             substituted_command(
-                cfg.settings_revision_command,
-                {**values, "revision": "FETCH_HEAD"},
+                values.SETTINGS_REVISION_COMMAND,
+                {**placeholders, "revision": "FETCH_HEAD"},
             ),
             check=False,
             capture=True,
@@ -225,7 +226,8 @@ def _sync_settings_repo(cfg: ChromeSetupConfig, *, timeout: float) -> tuple[bool
             return False, None
         run_command(
             substituted_command(
-                cfg.settings_reset_command, {**values, "revision": "FETCH_HEAD"}
+                values.SETTINGS_RESET_COMMAND,
+                {**placeholders, "revision": "FETCH_HEAD"},
             ),
             timeout=timeout,
         )
@@ -235,20 +237,21 @@ def _sync_settings_repo(cfg: ChromeSetupConfig, *, timeout: float) -> tuple[bool
 
 
 def _deploy_system_tree(
-    cfg: ChromeSetupConfig,
     *,
     force: bool,
     owner_uid: int,
     owner_gid: int,
 ) -> tuple[bool, list[str]]:
-    """Deploy the repository system/ tree under system_root; (changed, warnings).
+    """Deploy the repository system/ tree under SYSTEM_ROOT; (changed, warnings).
 
-    Each file is copied to cfg.system_root with its relative path
+    Each file is copied to the values.SYSTEM_ROOT with its relative path
     preserved, root-owned mode 0644, only when the target differs (or in
     force mode). A per-file failure is a warning, never a fatal error.
     """
 
-    source_root = cfg.settings_dir / cfg.settings_system_tree_relative_path
+    source_root = (
+        values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
+    )
     if not source_root.is_dir():
         return False, ["the settings repository carries no system/ tree"]
     changed = False
@@ -257,13 +260,13 @@ def _deploy_system_tree(
         if not path.is_file():
             continue
         rel = path.relative_to(source_root)
-        target = cfg.system_root / rel
+        target = values.SYSTEM_ROOT / rel
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             if not force and target.is_file() and target.read_bytes() == path.read_bytes():
                 continue
             shutil.copyfile(path, target)
-            target.chmod(cfg.file_mode)
+            target.chmod(common_values.LAUNCHER_FILE_MODE)
             apply_owner(target, owner_uid, owner_gid)
             changed = True
         except OSError as exc:
@@ -271,16 +274,19 @@ def _deploy_system_tree(
     return changed, warnings
 
 
-def _profile_dir(cfg: ChromeSetupConfig) -> Path:
+def _profile_dir() -> Path:
     """The live Chrome profile directory of the desktop user."""
 
-    return Path(cfg.home_dir) / cfg.profile_dir_relative_path
+    return (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.PROFILE_DIR_RELATIVE_PATH
+    )
 
 
-def _profile_preferences_path(cfg: ChromeSetupConfig) -> Path:
+def _profile_preferences_path() -> Path:
     """The live Chrome profile preferences of the desktop user."""
 
-    return _profile_dir(cfg) / cfg.preferences_relative_path
+    return _profile_dir() / values.PREFERENCES_RELATIVE_PATH
 
 
 def _merge_preferences(current: object, overlay: object) -> object:
@@ -302,12 +308,13 @@ def _merge_preferences(current: object, overlay: object) -> object:
     return overlay
 
 
-def _chrome_is_running(cfg: ChromeSetupConfig, timeout: float) -> bool:
+def _chrome_is_running(timeout: float) -> bool:
     """True when a Google Chrome main process is running."""
 
     result = run_command(
         substituted_command(
-            cfg.process_check_command, {"process_name": cfg.process_name}
+            values.PROCESS_CHECK_COMMAND,
+            {"process_name": values.PROCESS_NAME},
         ),
         check=False,
         capture=True,
@@ -335,9 +342,7 @@ def _own_to_user(username: str, path: Path) -> None:
     os.chown(path, entry.pw_uid, entry.pw_gid)
 
 
-def _apply_profile_preferences(
-    cfg: ChromeSetupConfig, *, timeout: float
-) -> tuple[bool, str | None]:
+def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     """Merge the repository profile over the live profile; (changed, note).
 
     The merge is identical in normal and force mode: the repository
@@ -349,15 +354,15 @@ def _apply_profile_preferences(
     memory.
     """
 
-    repo_prefs = cfg.settings_dir / cfg.preferences_relative_path
+    repo_prefs = values.SETTINGS_DIR / values.PREFERENCES_RELATIVE_PATH
     if not repo_prefs.is_file():
         return False, "the settings repository carries no preferences file"
-    if _chrome_is_running(cfg, timeout):
+    if _chrome_is_running(timeout):
         return (
             False,
             "Google Chrome is running; the profile settings apply on the next Chrome start",
         )
-    target = _profile_preferences_path(cfg)
+    target = _profile_preferences_path()
     try:
         try:
             current: object = (
@@ -379,15 +384,15 @@ def _apply_profile_preferences(
             json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        target.chmod(cfg.file_mode)
-        _own_to_user(cfg.username, target)
+        target.chmod(common_values.LAUNCHER_FILE_MODE)
+        _own_to_user(common_values.DESKTOP_USERNAME, target)
     except OSError as exc:
         return False, f"cannot write the profile preferences: {exc}"
     return True, None
 
 
 def _mirror_is_mounted(
-    cfg: ChromeSetupConfig, profile_dir: Path, mirror_path: Path, timeout: float
+    profile_dir: Path, mirror_path: Path, timeout: float
 ) -> bool:
     """True when the mirror path is a bind mount of the live profile.
 
@@ -401,7 +406,9 @@ def _mirror_is_mounted(
     """
 
     result = run_command(
-        substituted_command(cfg.mount_check_command, {"path": str(mirror_path)}),
+        substituted_command(
+            values.MOUNT_CHECK_COMMAND, {"path": str(mirror_path)}
+        ),
         check=False,
         capture=True,
         timeout=timeout,
@@ -430,7 +437,6 @@ def _render_mount_unit(
 
 
 def _ensure_profile_mirror(
-    cfg: ChromeSetupConfig,
     unit_dir: Path,
     template_path: Path,
     *,
@@ -446,7 +452,7 @@ def _ensure_profile_mirror(
     mounted to a second path and Chrome is started with --user-data-dir on
     that path: the same files under another directory name. The mount is
     restored at every boot by the oneshot unit named by
-    mount_service_unit_name, rendered from the template; the unit is written
+    MOUNT_SERVICE_UNIT_NAME, rendered from the template; the unit is written
     and enabled on every run, so a mirror that was mounted by hand is
     restored after a reboot too. Returns whether the
     mirror is mounted; a failure is a note and leaves the caller without the
@@ -454,13 +460,14 @@ def _ensure_profile_mirror(
     while the live profile stays where Chrome expects it.
     """
 
-    profile_dir = _profile_dir(cfg)
-    mirror_path = cfg.profile_mirror_path
-    unit_name = cfg.mount_service_unit_name
+    username = common_values.DESKTOP_USERNAME
+    profile_dir = _profile_dir()
+    mirror_path = values.PROFILE_MIRROR_PATH
+    unit_name = values.MOUNT_SERVICE_UNIT_NAME
     try:
         if not profile_dir.is_dir():
             profile_dir.mkdir(parents=True, exist_ok=True)
-            _own_to_user(cfg.username, profile_dir)
+            _own_to_user(username, profile_dir)
     except OSError as exc:
         return (
             False,
@@ -468,7 +475,7 @@ def _ensure_profile_mirror(
         )
     try:
         content = _render_mount_unit(
-            template_path, profile_dir, mirror_path, cfg.username
+            template_path, profile_dir, mirror_path, username
         )
     except OSError as exc:
         return False, f"cannot read the profile mirror unit template: {exc}"
@@ -478,18 +485,18 @@ def _ensure_profile_mirror(
         if force or current != content:
             unit_dir.mkdir(parents=True, exist_ok=True)
             unit_file.write_text(content, encoding="utf-8")
-            unit_file.chmod(cfg.file_mode)
+            unit_file.chmod(common_values.LAUNCHER_FILE_MODE)
             apply_owner(unit_file, owner_uid, owner_gid)
-            run_command(cfg.mount_reload_command, timeout=timeout)
+            run_command(values.MOUNT_RELOAD_COMMAND, timeout=timeout)
         run_command(
             substituted_command(
-                cfg.mount_enable_command, {"unit_name": unit_name}
+                values.MOUNT_ENABLE_COMMAND, {"unit_name": unit_name}
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return False, f"cannot enable the profile mirror mount {unit_name}: {exc}"
-    if not _mirror_is_mounted(cfg, profile_dir, mirror_path, timeout):
+    if not _mirror_is_mounted(profile_dir, mirror_path, timeout):
         return False, (
             f"the profile mirror {mirror_path} is not mounted; Chrome starts "
             "without --user-data-dir and the DevTools listener stays off"
@@ -527,7 +534,6 @@ def _local_proxy_server(
 
 
 def _desktop_content(
-    cfg: ChromeSetupConfig,
     source_text: str,
     *,
     proxy_server: str,
@@ -535,29 +541,29 @@ def _desktop_content(
 ) -> str:
     """The packaged desktop entry with the launch flags on every Exec line.
 
-    The flags come from the configured launch_flags list in order, each
-    rendered with the values of this run: the local proxy the browser must
-    use, the profile mirror that makes the DevTools listener work with the
-    live profile, and the DevTools listener itself. A flag whose placeholder
-    has no value is left out, so a piece that is not in place costs the
-    browser that one flag instead of the whole start.
+    The flags come from LAUNCH_FLAGS in order, each rendered with the values of
+    this run: the local proxy the browser must use, the profile mirror that
+    makes the DevTools listener work with the live profile, and the DevTools
+    listener itself. A flag whose placeholder has no value is left out, so a
+    piece that is not in place costs the browser that one flag instead of the
+    whole start.
     """
 
-    values = {
+    placeholders = {
         "proxy_server": proxy_server,
         "user_data_dir": user_data_dir,
-        "cdp_port": str(cfg.cdp_port),
-        "cdp_address": cfg.cdp_address,
+        "cdp_port": str(values.CDP_PORT),
+        "cdp_address": values.CDP_ADDRESS,
     }
     flags = ""
-    for flag in cfg.launch_flags:
-        placeholders = FLAG_PLACEHOLDER_PATTERN.findall(flag)
-        if any(not values[name] for name in placeholders):
+    for flag in values.LAUNCH_FLAGS:
+        names = FLAG_PLACEHOLDER_PATTERN.findall(flag)
+        if any(not placeholders[name] for name in names):
             continue
-        flags += " " + flag.format(**values)
+        flags += " " + flag.format(**placeholders)
     lines: list[str] = []
     for line in source_text.splitlines(keepends=True):
-        if line.startswith(cfg.desktop_entry_exec_key):
+        if line.startswith(values.DESKTOP_ENTRY_EXEC_KEY):
             lines.append(line.rstrip("\n") + flags + "\n")
         else:
             lines.append(line)
@@ -565,7 +571,6 @@ def _desktop_content(
 
 
 def _ensure_desktop_override(
-    cfg: ChromeSetupConfig,
     *,
     proxy_server: str,
     user_data_dir: str,
@@ -575,32 +580,31 @@ def _ensure_desktop_override(
 ) -> tuple[bool, str | None]:
     """Write the desktop override with the launch flags; (changed, warning)."""
 
-    source = cfg.desktop_source_path
+    source = values.DESKTOP_SOURCE_PATH
     if not source.is_file():
         return (
             False,
             f"the packaged desktop entry is missing; launch flags not applied: {source}",
         )
     content = _desktop_content(
-        cfg,
         source.read_text(encoding="utf-8"),
         proxy_server=proxy_server,
         user_data_dir=user_data_dir,
     )
-    target = cfg.desktop_override_path
+    target = values.DESKTOP_OVERRIDE_PATH
     try:
         if not force and target.is_file() and target.read_text(encoding="utf-8") == content:
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        target.chmod(cfg.file_mode)
+        target.chmod(common_values.LAUNCHER_FILE_MODE)
         apply_owner(target, owner_uid, owner_gid)
     except OSError as exc:
         return False, f"cannot write the desktop override: {exc}"
     return True, None
 
 
-def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | None:
+def _refresh_menu_database(*, timeout: float) -> str | None:
     """Rebuild the KDE menu cache for the desktop user; return warning text.
 
     A best-effort step: the override is picked up by the session when the
@@ -614,8 +618,11 @@ def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | N
     try:
         run_command(
             substituted_command(
-                cfg.menu_refresh_command,
-                {"username": cfg.username, "home_dir": cfg.home_dir},
+                values.MENU_REFRESH_COMMAND,
+                {
+                    "username": common_values.DESKTOP_USERNAME,
+                    "home_dir": common_values.DESKTOP_HOME_DIR,
+                },
             ),
             timeout=timeout,
         )
@@ -624,52 +631,53 @@ def _refresh_menu_database(cfg: ChromeSetupConfig, *, timeout: float) -> str | N
     return None
 
 
-def _as_user_command(cfg: ChromeSetupConfig, command: list[str]) -> list[str]:
-    """Prefix a command with the configured wrapper of the desktop user.
+def _as_user_command(command: list[str]) -> list[str]:
+    """Prefix a command with the wrapper of the desktop user.
 
-    The wrapper is a config value of the section, so a machine whose
-    desktop user is reached another way is a config change.
+    The wrapper is a value of this section, so a machine whose desktop user is
+    reached another way is a values change.
     """
 
     return [
-        *substituted_command(cfg.runuser_command, {"username": cfg.username}),
+        *substituted_command(
+            values.RUNUSER_COMMAND,
+            {"username": common_values.DESKTOP_USERNAME},
+        ),
         *command,
     ]
 
 
-def _home_env(cfg: ChromeSetupConfig) -> dict[str, str]:
+def _home_env() -> dict[str, str]:
     """Environment that points the KDE config tools at the user home."""
 
-    return {"HOME": cfg.home_dir}
+    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _kconfig_command(
-    cfg: ChromeSetupConfig,
     base_command: tuple[str, ...],
     group_segments: tuple[str, ...],
     key: str,
 ) -> list[str]:
-    """One KConfig call: the configured base, the groups and the key.
+    """One KConfig call: the base, the groups and the key.
 
-    The base call carries the file name and every selector is a config
-    value, so another KConfig version or another tool is a config change
+    The base call carries the file name and every selector is a value of the
+    section, so another KConfig version or another tool is a values change
     (docs/spec/config-content.md, Exceptions). The reader and the writer
     share this builder, so the two calls can never drift apart.
     """
 
     command = substituted_command(
-        base_command, {"file_name": cfg.appletsrc_file_name}
+        base_command, {"file_name": values.APPLETSRC_FILE_NAME}
     )
     for segment in group_segments:
         command.extend(
-            substituted_command(cfg.config_group_flag, {"group": segment})
+            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
 def _kreadconfig(
-    cfg: ChromeSetupConfig,
     group_segments: tuple[str, ...],
     key: str,
     *,
@@ -677,10 +685,10 @@ def _kreadconfig(
 ) -> str:
     """Current value of one appletsrc key of the desktop user."""
 
-    command = _kconfig_command(cfg, cfg.kreadconfig_command, group_segments, key)
+    command = _kconfig_command(values.KREADCONFIG_COMMAND, group_segments, key)
     result = run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         check=False,
         capture=True,
         timeout=timeout,
@@ -689,25 +697,24 @@ def _kreadconfig(
 
 
 def _kwriteconfig(
-    cfg: ChromeSetupConfig,
     group_segments: tuple[str, ...],
     key: str,
     value: str,
     *,
     timeout: float,
 ) -> None:
-    """Write one appletsrc key with the configured writer as the desktop user."""
+    """Write one appletsrc key with the writer of the section as the user."""
 
-    command = _kconfig_command(cfg, cfg.kwriteconfig_command, group_segments, key)
+    command = _kconfig_command(values.KWRITECONFIG_COMMAND, group_segments, key)
     command.append(value)
     run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         timeout=timeout,
     )
 
 
-def _taskbar_launcher_groups(cfg: ChromeSetupConfig, text: str) -> list[tuple[str, ...]]:
+def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
     """The group of every task manager applet that holds pinned launchers.
 
     Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
@@ -729,14 +736,12 @@ def _taskbar_launcher_groups(cfg: ChromeSetupConfig, text: str) -> list[tuple[st
             current = tuple(part for part in line[1:-1].split("][") if part)
         elif line.startswith(plugin_key) and line.removeprefix(
             plugin_key
-        ) in cfg.taskbar_plugin_names:
-            groups.append(current + cfg.appletsrc_launcher_group)
+        ) in values.TASKBAR_PLUGIN_NAMES:
+            groups.append(current + values.APPLETSRC_LAUNCHER_GROUP)
     return groups
 
 
-def _pin_chrome_launcher(
-    cfg: ChromeSetupConfig, *, timeout: float
-) -> tuple[bool, str | None]:
+def _pin_chrome_launcher(*, timeout: float) -> tuple[bool, str | None]:
     """Pin the CDP Chrome launcher to the Plasma taskbars; (changed, note).
 
     Every task manager applet of the desktop user appletsrc, icons-only
@@ -748,10 +753,12 @@ def _pin_chrome_launcher(
     still run.
     """
 
-    appletsrc_path = Path(cfg.home_dir) / cfg.appletsrc_relative_path
+    appletsrc_path = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+    )
     try:
         groups = _taskbar_launcher_groups(
-            cfg, appletsrc_path.read_text(encoding="utf-8")
+            appletsrc_path.read_text(encoding="utf-8")
         )
     except OSError:
         _log(
@@ -766,16 +773,15 @@ def _pin_chrome_launcher(
     try:
         for group in groups:
             current = _kreadconfig(
-                cfg, group, cfg.appletsrc_launchers_key, timeout=timeout
+                group, values.APPLETSRC_LAUNCHERS_KEY, timeout=timeout
             )
             entries = [entry for entry in current.split(",") if entry]
-            if cfg.panel_launcher_id in entries:
+            if values.PANEL_LAUNCHER_ID in entries:
                 continue
             _kwriteconfig(
-                cfg,
                 group,
-                cfg.appletsrc_launchers_key,
-                ",".join([*entries, cfg.panel_launcher_id]),
+                values.APPLETSRC_LAUNCHERS_KEY,
+                ",".join([*entries, values.PANEL_LAUNCHER_ID]),
                 timeout=timeout,
             )
             changed = True
@@ -800,7 +806,20 @@ def task(ctx: Context) -> TaskResult:
     files; the profile merge itself is identical in both modes.
     """
 
-    cfg = ctx.config.chrome_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the chrome_setup values are not declared, nothing was changed",
+            warnings=(
+                "the chrome_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
     owner_uid = engine.root_owner_uid
@@ -811,17 +830,16 @@ def task(ctx: Context) -> TaskResult:
     messages: list[str] = []
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     apt_source_template_path = (
-        template_dir / cfg.apt_source_template_file_name
+        template_dir / values.APT_SOURCE_TEMPLATE_FILE_NAME
     )
     mount_unit_template_path = (
-        template_dir / cfg.mount_unit_template_file_name
+        template_dir / values.MOUNT_UNIT_TEMPLATE_FILE_NAME
     )
 
     if apt_source_template_path.is_file():
         _log("registering the Google Chrome apt repository")
         repo_changed, error = _ensure_repository(
             engine,
-            cfg,
             apt_source_template_path,
             timeout,
             owner_uid,
@@ -839,8 +857,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log("checking the Google Chrome installation")
     install_changed, error = _ensure_chrome_installed(
-        cfg,
-        ctx.config.engine,
+        engine,
         force=force,
         skip_apt_update=ctx.skip_apt_update,
         timeout=timeout,
@@ -848,11 +865,11 @@ def task(ctx: Context) -> TaskResult:
     if error:
         warnings.append(error)
     elif install_changed:
-        messages.append(f"installed {cfg.package_name}")
+        messages.append(f"installed {values.PACKAGE_NAME}")
         changed = True
 
     _log("updating the browser settings repository")
-    sync_changed, error = _sync_settings_repo(cfg, timeout=timeout)
+    sync_changed, error = _sync_settings_repo(timeout=timeout)
     if error:
         warnings.append(error)
     elif sync_changed:
@@ -860,28 +877,27 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     tree_changed, tree_warnings = _deploy_system_tree(
-        cfg, force=force, owner_uid=owner_uid, owner_gid=owner_gid
+        force=force, owner_uid=owner_uid, owner_gid=owner_gid
     )
     warnings.extend(tree_warnings)
     if tree_changed:
-        messages.append(f"deployed system browser settings to {cfg.system_root}")
+        messages.append(
+            f"deployed system browser settings to {values.SYSTEM_ROOT}"
+        )
         changed = True
 
-    profile_changed, profile_note = _apply_profile_preferences(
-        cfg, timeout=timeout
-    )
+    profile_changed, profile_note = _apply_profile_preferences(timeout=timeout)
     if profile_note:
         warnings.append(profile_note)
     if profile_changed:
         messages.append(
-            "merged the browser profile settings over "
-            f"{_profile_preferences_path(cfg)}"
+            f"merged the browser profile settings over {_profile_preferences_path()}"
         )
         changed = True
 
     _log("checking the local proxy of the Xray client")
     proxy_server, proxy_note = _local_proxy_server(
-        ctx.config.engine, ctx.config.three_x_ui_xray_setup, timeout=timeout
+        engine, ctx.config.three_x_ui_xray_setup, timeout=timeout
     )
     if proxy_note:
         warnings.append(proxy_note)
@@ -891,7 +907,6 @@ def task(ctx: Context) -> TaskResult:
     _log("mounting the Chrome profile mirror for the DevTools listener")
     if mount_unit_template_path.is_file():
         mirror_mounted, mirror_note = _ensure_profile_mirror(
-            cfg,
             engine.systemd_unit_dir,
             mount_unit_template_path,
             force=force,
@@ -902,7 +917,9 @@ def task(ctx: Context) -> TaskResult:
         if mirror_note:
             warnings.append(mirror_note)
         else:
-            _log(f"the profile mirror is mounted at {cfg.profile_mirror_path}")
+            _log(
+                f"the profile mirror is mounted at {values.PROFILE_MIRROR_PATH}"
+            )
     else:
         mirror_mounted = False
         warnings.append(
@@ -910,9 +927,8 @@ def task(ctx: Context) -> TaskResult:
         )
 
     override_changed, override_note = _ensure_desktop_override(
-        cfg,
         proxy_server=proxy_server,
-        user_data_dir=str(cfg.profile_mirror_path) if mirror_mounted else "",
+        user_data_dir=str(values.PROFILE_MIRROR_PATH) if mirror_mounted else "",
         force=force,
         owner_uid=owner_uid,
         owner_gid=owner_gid,
@@ -921,15 +937,15 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(override_note)
     if override_changed:
         messages.append(
-            f"wrote the browser launcher entry to {cfg.desktop_override_path}"
+            f"wrote the browser launcher entry to {values.DESKTOP_OVERRIDE_PATH}"
         )
         changed = True
-        menu_note = _refresh_menu_database(cfg, timeout=timeout)
+        menu_note = _refresh_menu_database(timeout=timeout)
         if menu_note:
             warnings.append(menu_note)
 
     _log("pinning the Chrome launcher to the Plasma taskbar")
-    pin_changed, pin_note = _pin_chrome_launcher(cfg, timeout=timeout)
+    pin_changed, pin_note = _pin_chrome_launcher(timeout=timeout)
     if pin_note:
         warnings.append(pin_note)
     if pin_changed:
@@ -938,7 +954,8 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(
                 substituted_command(
-                    cfg.panel_restart_command, {"username": cfg.username}
+                    values.PANEL_RESTART_COMMAND,
+                    {"username": common_values.DESKTOP_USERNAME},
                 ),
                 timeout=timeout,
             )
@@ -950,17 +967,17 @@ def task(ctx: Context) -> TaskResult:
         ) as exc:
             warnings.append(f"cannot restart the Plasma panel: {exc}")
 
-    if port_listener_pid(ctx.config.engine, cfg.cdp_port, timeout) is None:
-        if _chrome_is_running(cfg, timeout):
+    if port_listener_pid(engine, values.CDP_PORT, timeout) is None:
+        if _chrome_is_running(timeout):
             warnings.append(
                 "Chrome is running but the DevTools listener does not answer on "
-                f"{cfg.cdp_address}:{cfg.cdp_port}; restart Chrome from the menu "
-                "so the launcher flags apply"
+                f"{values.CDP_ADDRESS}:{values.CDP_PORT}; restart Chrome from "
+                "the menu so the launcher flags apply"
             )
         else:
             _log(
                 "the DevTools listener starts with the next Chrome launch from "
-                f"the menu, on {cfg.cdp_address}:{cfg.cdp_port}"
+                f"the menu, on {values.CDP_ADDRESS}:{values.CDP_PORT}"
             )
 
     if not messages:

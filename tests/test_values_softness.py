@@ -23,6 +23,7 @@ from pyntara.context import Context
 # Every migrated section: the task module and the values module it reads.
 MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("add_extra_repos", "add_extra_repos"),
+    ("chrome_setup", "chrome_setup"),
     ("cli_tools", "cli_tools"),
     ("ffmpeg_setup", "ffmpeg_setup"),
     ("hostname", "hostname"),

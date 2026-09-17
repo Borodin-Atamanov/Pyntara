@@ -1,8 +1,9 @@
 """Unit tests for the chrome_setup task.
 
 All external commands (curl, gpg, apt, git, pgrep, runuser) are mocked via
-monkeypatch of subprocess.run; the file operations run against the tmp tree
-under the configurable paths (docs/guides/developer-guide.md).
+monkeypatch of subprocess.run; the file operations run against the tmp tree,
+because one autouse fixture points every writable path of the section at the
+temporary directory of the test (docs/guides/developer-guide.md).
 """
 
 from __future__ import annotations
@@ -17,9 +18,11 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import ChromeSetupConfig, Config, load_config
+from pyntara.config import Config, load_config
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
+from pyntara.values import chrome_setup as values
+from pyntara.values import common as common_values
 
 # The real catalog from the repository config; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -89,24 +92,62 @@ APPLETSRC_TEXT = (
 
 
 def _test_config(tmp_path: Path) -> Config:
-    """Config whose every writable path lives in the tmp tree."""
+    """Config the task still reads: the engine values alone.
 
-    return make_config(
-        chrome_home_dir=str(tmp_path / "home"),
-        chrome_settings_dir=tmp_path / "repo",
-        chrome_system_root=tmp_path / "root",
-        chrome_profile_mirror_path=(
-            tmp_path / "home" / ".config" / "google-chrome-cdp"
-        ),
-        chrome_apt_source_path=(
-            tmp_path / "etc" / "apt" / "sources.list.d" / "google-chrome.sources"
-        ),
-        chrome_keyring_path=tmp_path / "usr" / "share" / "keyrings" / "google-chrome.gpg",
-        chrome_desktop_source_path=tmp_path / "pkg" / "google-chrome.desktop",
-        chrome_desktop_override_path=(
-            tmp_path / "usr" / "local" / "share" / "applications" / "google-chrome.desktop"
-        ),
-        systemd_unit_dir=tmp_path / "systemd",
+    Every writable path of the section is a value now and points at the tmp
+    tree through the fixture below, so no chrome_setup parameter is left in the
+    harness.
+    """
+
+    return make_config(systemd_unit_dir=tmp_path / "systemd")
+
+
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test its own writable tree for the section values.
+
+    The paths the task writes are values of the section, plus the home of the
+    desktop user, which comes from the shared module. The fixture points them
+    at the temporary directory of the test and the shipped values come back
+    afterwards, so no test writes into /usr, /etc or a real home.
+    """
+
+    monkeypatch.setattr(values, "SETTINGS_DIR", tmp_path / "repo")
+    monkeypatch.setattr(values, "SYSTEM_ROOT", tmp_path / "root")
+    monkeypatch.setattr(
+        values,
+        "PROFILE_MIRROR_PATH",
+        tmp_path / "home" / ".config" / "google-chrome-cdp",
+    )
+    monkeypatch.setattr(
+        values,
+        "APT_SOURCE_PATH",
+        tmp_path / "etc" / "apt" / "sources.list.d" / "google-chrome.sources",
+    )
+    monkeypatch.setattr(
+        values,
+        "KEYRING_PATH",
+        tmp_path / "usr" / "share" / "keyrings" / "google-chrome.gpg",
+    )
+    monkeypatch.setattr(
+        values,
+        "DESKTOP_SOURCE_PATH",
+        tmp_path / "pkg" / "google-chrome.desktop",
+    )
+    monkeypatch.setattr(
+        values,
+        "DESKTOP_OVERRIDE_PATH",
+        tmp_path
+        / "usr"
+        / "local"
+        / "share"
+        / "applications"
+        / "google-chrome.desktop",
+    )
+    monkeypatch.setattr(
+        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
     )
 
 
@@ -119,35 +160,37 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     )
 
 
-def _write_repo(cfg: ChromeSetupConfig) -> None:
+def _write_repo() -> None:
     """Create the settings repository as if already cloned."""
 
-    settings_dir = cfg.settings_dir
+    settings_dir = values.SETTINGS_DIR
     (settings_dir / ".git").mkdir(parents=True, exist_ok=True)
-    prefs_path = settings_dir / cfg.preferences_relative_path
+    prefs_path = settings_dir / values.PREFERENCES_RELATIVE_PATH
     prefs_path.parent.mkdir(parents=True, exist_ok=True)
     prefs_path.write_text(
         json.dumps(PREFERENCES_CONTENT, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     for rel, data in SYSTEM_FILES.items():
-        path = settings_dir / cfg.settings_system_tree_relative_path / rel
+        path = settings_dir / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
 
-def _write_desktop_source(cfg: ChromeSetupConfig) -> None:
+def _write_desktop_source() -> None:
     """Create the packaged Chrome desktop entry."""
 
-    source = cfg.desktop_source_path
+    source = values.DESKTOP_SOURCE_PATH
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(DESKTOP_SOURCE, encoding="utf-8")
 
 
-def _write_appletsrc(cfg: ChromeSetupConfig, text: str = APPLETSRC_TEXT) -> None:
+def _write_appletsrc(text: str = APPLETSRC_TEXT) -> None:
     """Create the Plasma appletsrc of the desktop user."""
 
-    path = Path(cfg.home_dir) / cfg.appletsrc_relative_path
+    path = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -198,8 +241,14 @@ def _kwrite_group(command: list[str]) -> tuple[str, ...]:
         index += 2
 
 
-def _profile_path(cfg: ChromeSetupConfig) -> Path:
-    return Path(cfg.home_dir) / ".config" / "google-chrome" / "Default" / "Preferences"
+def _profile_path() -> Path:
+    """The preferences file of the live profile of the desktop user."""
+
+    return (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.PROFILE_DIR_RELATIVE_PATH
+        / values.PREFERENCES_RELATIVE_PATH
+    )
 
 
 def _fake_run_factory(
@@ -338,14 +387,13 @@ def test_merge_preferences_overlay_wins_and_keeps_unrelated() -> None:
 
 
 def test_source_text_mentions_google_repo_and_keyring() -> None:
-    # The body of the source file comes from the configured template, so
-    # the suite, the components and the archive address are template text.
-    cfg = make_config().chrome_setup
+    # The body of the source file comes from the template, so the suite, the
+    # components and the archive address are template text.
     template_path = (
         Path(__file__).resolve().parents[1]
         / "task_data"
         / "chrome_setup"
-        / cfg.apt_source_template_file_name
+        / values.APT_SOURCE_TEMPLATE_FILE_NAME
     )
     text = chrome_setup._source_text(
         template_path, Path("/etc/apt/keyrings/google-chrome.gpg")
@@ -355,9 +403,7 @@ def test_source_text_mentions_google_repo_and_keyring() -> None:
 
 
 def test_desktop_content_appends_flags_to_each_exec() -> None:
-    cfg = make_config().chrome_setup
     content = chrome_setup._desktop_content(
-        cfg,
         DESKTOP_SOURCE,
         proxy_server=f"socks5://127.0.0.1:{LOCAL_PROXY_PORT}",
         user_data_dir="/home/i/.config/google-chrome-cdp",
@@ -376,9 +422,7 @@ def test_desktop_content_appends_flags_to_each_exec() -> None:
 
 
 def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
-    cfg = make_config().chrome_setup
     content = chrome_setup._desktop_content(
-        cfg,
         DESKTOP_SOURCE,
         proxy_server="",
         user_data_dir="",
@@ -393,19 +437,21 @@ def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
         assert "--user-data-dir" not in line
 
 
-def test_desktop_content_follows_the_configured_launch_flags() -> None:
-    # Another flag list and another debug port in the config are what the
-    # Exec lines carry, so the flags are values and not code.
-    cfg = replace(
-        make_config().chrome_setup,
-        cdp_port=31337,
-        launch_flags=(
+def test_desktop_content_follows_the_launch_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Another flag list and another debug port are what the Exec lines carry,
+    # so the flags are values and not code.
+    monkeypatch.setattr(values, "CDP_PORT", 31337)
+    monkeypatch.setattr(
+        values,
+        "LAUNCH_FLAGS",
+        (
             "--proxy-server={proxy_server}",
             "--remote-debugging-port={cdp_port}",
         ),
     )
     content = chrome_setup._desktop_content(
-        cfg,
         DESKTOP_SOURCE,
         proxy_server="socks5://127.0.0.1:10808",
         user_data_dir="",
@@ -419,16 +465,15 @@ def test_desktop_content_follows_the_configured_launch_flags() -> None:
             assert "--user-data-dir" not in line
 
 
-def test_the_desktop_entry_key_comes_from_the_config() -> None:
-    # The key of the desktop entry line that starts the program is a
-    # config value: another key in the table is the line the task appends
-    # the launch flags to, and the shipped key matches nothing.
-    cfg = replace(
-        make_config().chrome_setup, desktop_entry_exec_key="Starts="
-    )
+def test_the_desktop_entry_key_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The key of the desktop entry line that starts the program is a value of
+    # the section: another key is the line the task appends the launch flags
+    # to, and the shipped key matches nothing in the renamed source.
+    monkeypatch.setattr(values, "DESKTOP_ENTRY_EXEC_KEY", "Starts=")
     renamed = DESKTOP_SOURCE.replace("Exec=", "Starts=")
     content = chrome_setup._desktop_content(
-        cfg,
         renamed,
         proxy_server="",
         user_data_dir="",
@@ -499,43 +544,51 @@ def test_full_flow_mounts_the_profile_mirror_and_enables_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=False)
 
     result = chrome_setup.task(ctx)
 
     assert result.success
-    unit_file = ctx.config.engine.systemd_unit_dir / cfg.mount_service_unit_name
-    unit_text = unit_file.read_text(encoding="utf-8")
-    profile_dir = chrome_setup._profile_dir(cfg)
-    assert (
-        f"ExecStart=/usr/bin/mount --bind {profile_dir} {cfg.profile_mirror_path}"
-        in unit_text
+    unit_file = (
+        ctx.config.engine.systemd_unit_dir / values.MOUNT_SERVICE_UNIT_NAME
     )
-    assert f"ExecStartPre=/usr/bin/install -d -o {cfg.username}" in unit_text
+    unit_text = unit_file.read_text(encoding="utf-8")
+    profile_dir = chrome_setup._profile_dir()
+    assert (
+        f"ExecStart=/usr/bin/mount --bind {profile_dir} "
+        f"{values.PROFILE_MIRROR_PATH}" in unit_text
+    )
+    assert (
+        f"ExecStartPre=/usr/bin/install -d -o "
+        f"{common_values.DESKTOP_USERNAME}" in unit_text
+    )
     assert ["systemctl", "daemon-reload"] in calls
-    assert ["systemctl", "enable", "--now", cfg.mount_service_unit_name] in calls
-    override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
+    assert [
+        "systemctl",
+        "enable",
+        "--now",
+        values.MOUNT_SERVICE_UNIT_NAME,
+    ] in calls
+    override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
     assert PROXY_FLAG in override_text
-    assert f" --user-data-dir={cfg.profile_mirror_path}" in override_text
+    assert f" --user-data-dir={values.PROFILE_MIRROR_PATH}" in override_text
 
 
 def test_mirror_that_is_not_mounted_keeps_the_user_data_dir_flag_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=True, mirror_mounted=False)
 
     result = chrome_setup.task(ctx)
 
     assert result.success
     assert any("is not mounted" in warning for warning in result.warnings)
-    override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
+    override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
     assert "--user-data-dir" not in override_text
     assert PROXY_FLAG in override_text
     assert CDP_FLAGS in override_text
@@ -545,9 +598,8 @@ def test_cdp_listener_warning_when_chrome_runs_without_the_listener(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(
         monkeypatch,
         chrome_installed=True,
@@ -564,25 +616,17 @@ def test_cdp_listener_warning_when_chrome_runs_without_the_listener(
     )
 
 
-def test_keyring_armored_file_name_comes_from_the_config(
+def test_keyring_armored_file_name_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The proof of the value: another armored file name in the config is
-    # the name the download writes.
+    # The proof of the value: another armored file name in the module is the
+    # name the download writes.
     ctx = _ctx(tmp_path)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            chrome_setup=replace(
-                ctx.config.chrome_setup,
-                keyring_armored_file_name="other-key.pub",
-            ),
-        ),
+    monkeypatch.setattr(
+        values, "KEYRING_ARMORED_FILE_NAME", "other-key.pub"
     )
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=False)
 
     assert chrome_setup.task(ctx).success
@@ -595,9 +639,8 @@ def test_keyring_armored_file_name_comes_from_the_config(
 
 def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=False)
 
     result = chrome_setup.task(ctx)
@@ -605,32 +648,47 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
     assert result.success
     assert result.changed
     assert not result.warnings
-    assert cfg.apt_source_path.is_file()
-    assert cfg.keyring_path.is_file()
-    assert cfg.keyring_path.stat().st_size > 0
+    assert values.APT_SOURCE_PATH.is_file()
+    assert values.KEYRING_PATH.is_file()
+    assert values.KEYRING_PATH.stat().st_size > 0
     assert (
         chrome_setup._source_text(
             Path(__file__).resolve().parents[1]
             / "task_data"
             / "chrome_setup"
-            / cfg.apt_source_template_file_name,
-            cfg.keyring_path,
+            / values.APT_SOURCE_TEMPLATE_FILE_NAME,
+            values.KEYRING_PATH,
         )
-        in cfg.apt_source_path.read_text(encoding="utf-8")
+        in values.APT_SOURCE_PATH.read_text(encoding="utf-8")
     )
     assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
-    policy = cfg.system_root / "etc" / "opt" / "chrome" / "policies" / "managed" / "chrome.json"
+    policy = (
+        values.SYSTEM_ROOT
+        / "etc"
+        / "opt"
+        / "chrome"
+        / "policies"
+        / "managed"
+        / "chrome.json"
+    )
     assert policy.read_bytes() == SYSTEM_FILES[
         "etc/opt/chrome/policies/managed/chrome.json"
     ]
-    extension = cfg.system_root / "opt" / "google" / "chrome" / "extensions" / "abcdefghijklmnop.json"
+    extension = (
+        values.SYSTEM_ROOT
+        / "opt"
+        / "google"
+        / "chrome"
+        / "extensions"
+        / "abcdefghijklmnop.json"
+    )
     assert extension.read_bytes() == SYSTEM_FILES[
         "opt/google/chrome/extensions/abcdefghijklmnop.json"
     ]
-    assert json.loads(_profile_path(cfg).read_text(encoding="utf-8")) == (
+    assert json.loads(_profile_path().read_text(encoding="utf-8")) == (
         PREFERENCES_CONTENT
     )
-    override_text = cfg.desktop_override_path.read_text(encoding="utf-8")
+    override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
     assert CDP_FLAGS in override_text
     menu_calls = [call for call in calls if "kbuildsycoca6" in call]
     assert menu_calls
@@ -640,25 +698,27 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_menu_refresh_carries_the_plasma_menu_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = _test_config(tmp_path).chrome_setup
     calls = _fake_run_factory(monkeypatch)
 
-    assert chrome_setup._refresh_menu_database(cfg, timeout=60) is None
+    assert chrome_setup._refresh_menu_database(timeout=60) is None
 
     menu_calls = [call for call in calls if "kbuildsycoca6" in call]
     assert len(menu_calls) == 1
     command = menu_calls[0]
-    assert command[:4] == ["runuser", "-u", cfg.username, "--"]
+    assert command[:4] == [
+        "runuser",
+        "-u",
+        common_values.DESKTOP_USERNAME,
+        "--",
+    ]
     assert command[4] == "env"
-    assert f"HOME={cfg.home_dir}" in command
+    assert f"HOME={common_values.DESKTOP_HOME_DIR}" in command
     assert "XDG_MENU_PREFIX=plasma-" in command
     assert command[-2:] == ["kbuildsycoca6", "--noincremental"]
 
 
 def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
-    groups = chrome_setup._taskbar_launcher_groups(
-        make_config().chrome_setup, APPLETSRC_TEXT
-    )
+    groups = chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT)
     assert len(groups) == 2
     assert ICON_TASKS_GROUP in groups
     assert TASKMANAGER_GROUP in groups
@@ -667,13 +727,12 @@ def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
 def test_pin_appends_launcher_to_every_taskbar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = _test_config(tmp_path).chrome_setup
-    _write_appletsrc(cfg)
+    _write_appletsrc()
     calls = _pin_run_fakes(
         monkeypatch, current="applications:org.kde.dolphin.desktop"
     )
 
-    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
 
     assert changed
     assert note is None
@@ -685,16 +744,17 @@ def test_pin_appends_launcher_to_every_taskbar(
     assert all(call[-1] == expected_value for call in writes)
 
 
-def test_the_launcher_group_comes_from_the_config() -> None:
-    # The group below a task manager applet that holds the pinned launchers
-    # is a value of the foreign file the task edits: another group in the
-    # config is the group the task looks for, and the shipped one stops
-    # matching the fixture.
-    renamed = replace(
-        make_config().chrome_setup,
-        appletsrc_launcher_group=("Pinned", "Launchers"),
+def test_the_launcher_group_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The group below a task manager applet that holds the pinned launchers is
+    # a value of the foreign file the task edits: another group in the module
+    # is the group the task looks for, and the shipped one stops matching the
+    # fixture.
+    monkeypatch.setattr(
+        values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers")
     )
-    assert chrome_setup._taskbar_launcher_groups(renamed, APPLETSRC_TEXT) == [
+    assert chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT) == [
         (
             "Containments", "2", "Applets", "5", "Pinned", "Launchers",
         ),
@@ -707,14 +767,13 @@ def test_the_launcher_group_comes_from_the_config() -> None:
 def test_pin_is_idempotent_when_launcher_already_pinned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = _test_config(tmp_path).chrome_setup
-    _write_appletsrc(cfg)
+    _write_appletsrc()
     calls = _pin_run_fakes(
         monkeypatch,
         current="applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER,
     )
 
-    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
 
     assert not changed
     assert note is None
@@ -724,10 +783,9 @@ def test_pin_is_idempotent_when_launcher_already_pinned(
 def test_pin_without_panel_config_changes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = _test_config(tmp_path).chrome_setup
     calls = _pin_run_fakes(monkeypatch)
 
-    changed, note = chrome_setup._pin_chrome_launcher(cfg, timeout=60)
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
 
     assert not changed
     assert note is None
@@ -738,10 +796,9 @@ def test_full_flow_pins_launcher_and_restarts_panel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
-    _write_appletsrc(cfg)
+    _write_repo()
+    _write_desktop_source()
+    _write_appletsrc()
     calls = _fake_run_factory(monkeypatch, chrome_installed=False)
 
     result = chrome_setup.task(ctx)
@@ -759,9 +816,8 @@ def test_second_run_changes_nothing_when_target_reached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=True)
     assert chrome_setup.task(ctx).success
 
@@ -782,12 +838,11 @@ def test_merge_restores_repo_value_keeping_unrelated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=True)
     assert chrome_setup.task(ctx).success
-    prefs = _profile_path(cfg)
+    prefs = _profile_path()
     data = json.loads(prefs.read_text(encoding="utf-8"))
     data["browser"]["theme"] = "user-pick"
     data["extra"] = "keep-me"
@@ -808,15 +863,14 @@ def test_profile_left_untouched_when_chrome_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=True, chrome_running=True)
 
     result = chrome_setup.task(ctx)
 
     assert result.success
-    assert not _profile_path(cfg).exists()
+    assert not _profile_path().exists()
     assert any("Chrome is running" in warning for warning in result.warnings)
 
 
@@ -824,9 +878,8 @@ def test_force_rewrites_files_and_reinstalls(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path, force=True)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=True)
 
     result = chrome_setup.task(ctx)
@@ -842,9 +895,8 @@ def test_repository_failure_is_warning(
     # A failed repository registration leaves the task completed: the
     # profile settings are independent of the apt source.
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=True, curl_fail=True)
 
     result = chrome_setup.task(ctx)
@@ -854,7 +906,7 @@ def test_repository_failure_is_warning(
         "cannot register the Google Chrome apt repository" in warning
         for warning in result.warnings
     )
-    assert _profile_path(cfg).exists()
+    assert _profile_path().exists()
 
 
 def test_install_failure_is_warning(
@@ -863,9 +915,8 @@ def test_install_failure_is_warning(
     # A failed package install leaves the task completed: the delivered
     # browser settings do not depend on the package step.
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     _fake_run_factory(monkeypatch, chrome_installed=False, apt_fail=True)
 
     result = chrome_setup.task(ctx)
@@ -875,8 +926,8 @@ def test_install_failure_is_warning(
         "cannot install google-chrome-stable" in warning
         for warning in result.warnings
     )
-    assert _profile_path(cfg).exists()
-    assert cfg.desktop_override_path.exists()
+    assert _profile_path().exists()
+    assert values.DESKTOP_OVERRIDE_PATH.exists()
 
 
 def test_missing_templates_leave_settings_in_place(
@@ -890,9 +941,8 @@ def test_missing_templates_leave_settings_in_place(
         config=_test_config(tmp_path),
         repo_root=tmp_path,
     )
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
-    _write_desktop_source(cfg)
+    _write_repo()
+    _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=True)
 
     result = chrome_setup.task(ctx)
@@ -906,7 +956,7 @@ def test_missing_templates_leave_settings_in_place(
         "missing mirror unit template" in warning
         for warning in result.warnings
     )
-    assert _profile_path(cfg).exists()
+    assert _profile_path().exists()
     assert not any(call[0] == "curl" for call in calls)
     assert not any(
         call[:2] == ["systemctl", "enable"] for call in calls
@@ -917,14 +967,13 @@ def test_desktop_override_warns_when_packaged_entry_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
+    _write_repo()
     _fake_run_factory(monkeypatch, chrome_installed=True)
 
     result = chrome_setup.task(ctx)
 
     assert result.success
-    assert not cfg.desktop_override_path.exists()
+    assert not values.DESKTOP_OVERRIDE_PATH.exists()
     assert any(
         "packaged desktop entry is missing" in warning for warning in result.warnings
     )
@@ -933,27 +982,23 @@ def test_desktop_override_warns_when_packaged_entry_missing(
 def test_sync_clones_missing_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    assert not cfg.settings_dir.exists()
+    assert not values.SETTINGS_DIR.exists()
     _fake_run_factory(monkeypatch, clone_creates_dir=True)
 
-    changed, error = chrome_setup._sync_settings_repo(cfg, timeout=10)
+    changed, error = chrome_setup._sync_settings_repo(timeout=10)
 
     assert changed
     assert error is None
-    assert cfg.settings_dir.is_dir()
+    assert values.SETTINGS_DIR.is_dir()
 
 
 def test_sync_updates_when_remote_advanced(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
+    _write_repo()
     calls = _fake_run_factory(monkeypatch, git_head="a" * 40, git_fetch="b" * 40)
 
-    changed, error = chrome_setup._sync_settings_repo(cfg, timeout=10)
+    changed, error = chrome_setup._sync_settings_repo(timeout=10)
 
     assert changed
     assert error is None
@@ -963,46 +1008,53 @@ def test_sync_updates_when_remote_advanced(
 def test_sync_leaves_current_repository_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.chrome_setup
-    _write_repo(cfg)
+    _write_repo()
     calls = _fake_run_factory(monkeypatch)
 
-    changed, error = chrome_setup._sync_settings_repo(cfg, timeout=10)
+    changed, error = chrome_setup._sync_settings_repo(timeout=10)
 
     assert not changed
     assert error is None
     assert not any("reset" in call for call in calls)
 
 
-def test_user_command_prefix_comes_from_the_config() -> None:
-    # The wrapper that runs a command as the desktop user is a config value:
-    # another wrapper in the section is the argv the task builds.
-    cfg = replace(
-        make_config().chrome_setup,
-        runuser_command=("sudo", "-u", "{username}"),
+def test_user_command_prefix_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The wrapper that runs a command as the desktop user is a value of the
+    # section: another wrapper is the argv the task builds.
+    monkeypatch.setattr(
+        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}")
     )
     assert chrome_setup._as_user_command(
-        cfg, ["kwriteconfig6", "--file", "plasmashellrc"]
-    ) == ["sudo", "-u", cfg.username, "kwriteconfig6", "--file", "plasmashellrc"]
+        ["kwriteconfig6", "--file", "plasmashellrc"]
+    ) == [
+        "sudo",
+        "-u",
+        common_values.DESKTOP_USERNAME,
+        "kwriteconfig6",
+        "--file",
+        "plasmashellrc",
+    ]
 
 
-def test_kconfig_calls_come_from_the_config() -> None:
-    # The reader, the file selector, the group selector and the key
-    # selector of the KConfig access are config values: another set of
-    # commands is what the task builds.
-    cfg = replace(
-        make_config().chrome_setup,
-        kreadconfig_command=("my-reader", "--config", "{file_name}"),
-        config_group_flag=("--section", "{group}"),
-        config_key_flag=("--entry", "{key}"),
+def test_kconfig_calls_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reader, the file selector, the group selector and the key selector of
+    # the KConfig access are values: another set of commands is what the task
+    # builds.
+    monkeypatch.setattr(
+        values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
     )
+    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert chrome_setup._kconfig_command(
-        cfg, cfg.kreadconfig_command, ("Containments", "1"), "launchers"
+        values.KREADCONFIG_COMMAND, ("Containments", "1"), "launchers"
     ) == [
         "my-reader",
         "--config",
-        cfg.appletsrc_file_name,
+        values.APPLETSRC_FILE_NAME,
         "--section",
         "Containments",
         "--section",

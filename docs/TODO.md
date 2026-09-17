@@ -208,7 +208,18 @@ is the correction.
     eleven call sites of the template writer keep an unused monkeypatch argument,
     the same shape the ssh_client_setup section chose, because the edit tool
     cannot aim a call whose text is identical at every site.
-24. chrome_setup, 49 / 973 / 87
+24. chrome_setup, done, 49 / 973 / 83, and it settled three things. Three of its
+    values came from the shared module: the desktop user name and home and the
+    mode of every deployed file. One read still belongs to another section: the
+    address and the port of the local proxy come from three_x_ui_xray_setup and
+    stay in the config document until that section lands in stage F, which the
+    task marks with a comment. The twelve harness parameters of the section are
+    gone, because every writable path is a value now and the test file points
+    them at its temporary tree through one autouse fixture; the engine value it
+    still needs (systemd_unit_dir) is the only config parameter left in that
+    harness. The name of a local variable had to move: two helpers built a
+    placeholder map called values, which is now the name of the module the task
+    reads, so both maps are named placeholders.
 25. ssh_daemon_setup, 64 / 659 / 90
 26. i2pd_service_setup, 35 / 728 / 93, COUPLED
 27. dnsproxy_setup, 78 / 1051 / 117
@@ -785,11 +796,11 @@ machine in this turn, and the probe is named with the figure.
 101. The plain sections of stage D that remain, with their values, task lines,
     config reads and test file lines, counted with grep -cE "^[a-z_]+ *= " over
     config/<section>.toml, wc -l over the task, grep -cE "cfg\." over the task
-    and wc -l over the test: chrome_setup 49 / 973 / 83 / 1012, ssh_daemon_setup
-    64 / 659 / 82 / 1050, dnsproxy_setup 78 / 1051 / 108 / 757 and kde_settings
-    1607 / 2244 / 171 / 2420. vocalinux_setup stood first in that order and
-    landed, as point 23 records. The read count leaves the order of point 75
-    unchanged, so the next section is chrome_setup.
+    and wc -l over the test: ssh_daemon_setup 64 / 659 / 82 / 1050,
+    dnsproxy_setup 78 / 1051 / 108 / 757 and kde_settings
+    1607 / 2244 / 171 / 2420. vocalinux_setup and chrome_setup stood first in
+    that order and landed, as points 23 and 24 record. The read count leaves the
+    order of point 75 unchanged, so the next section is ssh_daemon_setup.
 102. What each remaining plain section carries besides its own values.
     vocalinux_setup drops its own desktop user name and home directory and reads
     SHORTCUTS_FILE_NAME from the shared module, because both already arrived
@@ -871,10 +882,12 @@ machine in this turn, and the probe is named with the figure.
     four readers have moved. Another agent session shares this clone, so every
     change takes a fresh branch from main with a clean tree before and after the
     commit. Stage I needs a machine the user names.
-112. First stage: chrome_setup, 49 values, 83 reads and a 1012 line test. Its
-    commit drops the desktop pair, which the shared module already carries, and
-    deletes the twelve harness parameters of that section. It carries no harness
-    disagreement, checked name by name against the shipped values.
+112. First stage: ssh_daemon_setup, 64 values, 82 reads and a 1050 line test. Its
+    commit moves dropin_file_mode, private_key_file_mode and the augeas package
+    name to the shared module and drops the copies that the migrated
+    ssh_client_setup holds. It carries one harness disagreement, a start check
+    retry delay of 0.0 against the shipped 1, which the commit decides in the
+    direction of the shipped value.
 
 
 
