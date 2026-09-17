@@ -28,7 +28,6 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import FfmpegSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -38,6 +37,8 @@ from pyntara.utils import (
     run_command,
     task_data_dir,
 )
+from pyntara.values import ffmpeg_setup as ffmpeg_values
+from pyntara.values import missing_value_names
 
 
 def _wayrecord_sources(source_dir: Path, file_names: tuple[str, ...]) -> list[Path]:
@@ -46,24 +47,24 @@ def _wayrecord_sources(source_dir: Path, file_names: tuple[str, ...]) -> list[Pa
     return [source_dir / name for name in file_names]
 
 
-def _build_wayrecord(
-    cfg: FfmpegSetupConfig, source_dir: Path, timeout: float
-) -> tuple[bool, str | None]:
+def _build_wayrecord(source_dir: Path, timeout: float) -> tuple[bool, str | None]:
     """Compile the engine and install it; return (changed, error).
 
-    The build flags come from the configured flags command; the binary is
+    The build flags come from WAYRECORD_BUILD_FLAGS_COMMAND; the binary is
     compiled to a sibling file first, so an identical engine is detected
     by byte comparison and left alone (idempotent deploy). A missing
     source, a failed build or an install error is an error string.
     """
 
-    binary_path = cfg.wayrecord_bin_path
-    sources = _wayrecord_sources(source_dir, cfg.wayrecord_source_file_names)
+    binary_path = ffmpeg_values.WAYRECORD_BIN_PATH
+    sources = _wayrecord_sources(
+        source_dir, ffmpeg_values.WAYRECORD_SOURCE_FILE_NAMES
+    )
     for source in sources:
         if not source.is_file():
             return False, f"missing wayrecord source: {source}"
     flags_result = run_command(
-        list(cfg.wayrecord_build_flags_command),
+        list(ffmpeg_values.WAYRECORD_BUILD_FLAGS_COMMAND),
         capture=True,
         check=False,
         timeout=timeout,
@@ -71,17 +72,17 @@ def _build_wayrecord(
     if flags_result.returncode != 0:
         return False, (
             "cannot resolve build flags "
-            f"({' '.join(cfg.wayrecord_build_flags_command)})"
+            f"({' '.join(ffmpeg_values.WAYRECORD_BUILD_FLAGS_COMMAND)})"
         )
     flags = flags_result.stdout.strip().split()
     build_path = binary_path.parent / (
-        binary_path.name + cfg.wayrecord_build_file_suffix
+        binary_path.name + ffmpeg_values.WAYRECORD_BUILD_FILE_SUFFIX
     )
     try:
         binary_path.parent.mkdir(parents=True, exist_ok=True)
         compile_command = [
             part.replace("{output}", str(build_path))
-            for part in cfg.wayrecord_compile_command
+            for part in ffmpeg_values.WAYRECORD_COMPILE_COMMAND
         ]
         run_command(
             [*compile_command, *(str(source) for source in sources), *flags],
@@ -97,7 +98,7 @@ def _build_wayrecord(
             build_path.unlink(missing_ok=True)
             return False, None
         build_path.replace(binary_path)
-        binary_path.chmod(cfg.wayrecord_file_mode)
+        binary_path.chmod(ffmpeg_values.WAYRECORD_FILE_MODE)
     except OSError as exc:
         build_path.unlink(missing_ok=True)
         return False, f"cannot install wayrecord engine: {exc}"
@@ -119,10 +120,11 @@ def _desktop_content(template_path: Path, bin_path: Path) -> str:
 def _deploy_desktop(ctx: Context, template_path: Path) -> tuple[bool, str | None]:
     """Write the trusted-app desktop entry; return (changed, error)."""
 
-    cfg = ctx.config.ffmpeg_setup
-    target = cfg.wayrecord_desktop_path
+    target = ffmpeg_values.WAYRECORD_DESKTOP_PATH
     try:
-        content = _desktop_content(template_path, cfg.wayrecord_bin_path)
+        content = _desktop_content(
+            template_path, ffmpeg_values.WAYRECORD_BIN_PATH
+        )
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -145,16 +147,27 @@ def task(ctx: Context) -> TaskResult:
     updates through the regular apt upgrade.
     """
 
-    cfg = ctx.config.ffmpeg_setup
+    absent = missing_value_names(ffmpeg_values, ffmpeg_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run:
+        # the names are reported in plain words and the runner carries on
+        # with the remaining tasks.
+        return TaskResult(
+            success=True,
+            message="the ffmpeg values are not declared, nothing was changed",
+            warnings=(
+                "the ffmpeg values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     install_timeout = engine.command_timeout_seconds
-    status_timeout = cfg.package_status_timeout_seconds
+    status_timeout = ffmpeg_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
     warnings: list[str] = []
     missing = [
         package
-        for package in cfg.packages
+        for package in ffmpeg_values.PACKAGES
         if not package_is_installed(engine, package, status_timeout)
     ]
     if missing:
@@ -164,7 +177,7 @@ def task(ctx: Context) -> TaskResult:
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,
-            retries=cfg.package_install_retries,
+            retries=ffmpeg_values.PACKAGE_INSTALL_RETRIES,
             skip_update=ctx.skip_apt_update,
         )
         installed_packages = installed
@@ -173,13 +186,14 @@ def task(ctx: Context) -> TaskResult:
             failed_names = "; ".join(f"{name}: {reason}" for name, reason in failures)
             warnings.append(f"failed to install: {failed_names}")
     source_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    engine_changed, engine_error = _build_wayrecord(cfg, source_dir, install_timeout)
+    engine_changed, engine_error = _build_wayrecord(source_dir, install_timeout)
     if engine_error:
         # The build needs the installed packages, so its failure is
         # reported while the desktop entry is still deployed.
         warnings.append(engine_error)
     desktop_changed, desktop_error = _deploy_desktop(
-        ctx, source_dir / cfg.wayrecord_desktop_template_file_name
+        ctx,
+        source_dir / ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME,
     )
     if desktop_error:
         warnings.append(desktop_error)
@@ -188,9 +202,14 @@ def task(ctx: Context) -> TaskResult:
     if installed_packages:
         messages.append(f"installed {', '.join(installed_packages)}")
     if engine_changed:
-        messages.append(f"wayrecord engine built to {cfg.wayrecord_bin_path}")
+        messages.append(
+            f"wayrecord engine built to {ffmpeg_values.WAYRECORD_BIN_PATH}"
+        )
     if desktop_changed:
-        messages.append(f"wayrecord desktop entry written to {cfg.wayrecord_desktop_path}")
+        messages.append(
+            "wayrecord desktop entry written to "
+            f"{ffmpeg_values.WAYRECORD_DESKTOP_PATH}"
+        )
     if not messages:
         messages.append("already installed")
     if warnings:

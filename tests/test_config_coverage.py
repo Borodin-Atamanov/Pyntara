@@ -325,17 +325,21 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
 
 
 def test_no_module_applies_a_literal_file_mode() -> None:
-    # A file mode the run applies is a config value: the mode key names it
-    # and the code reads it. A literal mode in the code is a permission the
-    # reader of the config cannot see, so the suite refuses it. Every
-    # permission of a file is a config value (docs/spec/config-content.md,
-    # File permissions), including the masks and bits the checks compare
-    # modes with, so no octal literal lives in a module at all.
+    # A file mode the run applies is a value: the value names it and the
+    # code reads it. A literal mode in the code is a permission the reader
+    # of the values cannot see, so the suite refuses it. Every permission
+    # of a file is a value (docs/spec/config-content.md, File permissions),
+    # including the masks and bits the checks compare modes with, so no
+    # octal literal lives in a module at all. The values package is where
+    # such a literal belongs and is left out of the scan.
     octal_literal = re.compile(r"0o[0-7]+")
     literal_mode_argument = re.compile(r'mode="0[0-7]{3}"')
     src_root = REPOSITORY_CONFIG_DIR.parent / "src"
+    values_root = src_root / "pyntara" / "values"
     offenders: list[str] = []
     for path in sorted(src_root.rglob("*.py")):
+        if values_root in path.parents:
+            continue
         text = path.read_text(encoding="utf-8")
         if octal_literal.search(text) or literal_mode_argument.search(text):
             offenders.append(str(path.relative_to(src_root)))

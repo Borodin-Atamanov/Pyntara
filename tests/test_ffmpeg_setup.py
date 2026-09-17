@@ -9,17 +9,18 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import replace
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, Config, load_config
+from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import ffmpeg_setup
+from pyntara.values import ffmpeg_setup as ffmpeg_values
 
 # Package set used by the tests; mirrors the real config but stays small.
 TEST_PACKAGES = ("ffmpeg",)
@@ -61,7 +62,7 @@ DESKTOP_TEMPLATE = (
 def _desktop_template_path() -> Path:
     """The desktop entry template of the clone the fixture points at."""
     repo = _FIXTURE_REPO or _CLONE_ROOT
-    name = make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+    name = ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME
     return repo / "task_data" / "ffmpeg_setup" / name
 
 
@@ -84,7 +85,7 @@ def _wayrecord_env(
     (template_dir / "zkde-screencast-client.c").write_text(
         ZKDE_CLIENT_C, encoding="utf-8"
     )
-    template_name = make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+    template_name = ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME
     (template_dir / template_name).write_text(DESKTOP_TEMPLATE, encoding="utf-8")
     _FIXTURE_REPO = repo
     return (
@@ -93,16 +94,20 @@ def _wayrecord_env(
     )
 
 
-def _test_config(
-    wayrecord_bin_path: Path, wayrecord_desktop_path: Path
-) -> Config:
-    """Config with values safe for unit tests; the real file is never touched."""
+# The shipped values, kept so a test that points the task at the fixture
+# tree cannot leak into the next test of the same worker.
+_SHIPPED_VALUES: dict[str, object] = {
+    name: getattr(ffmpeg_values, name) for name in ffmpeg_values.READ_VALUE_NAMES
+}
 
-    return make_config(
-        ffmpeg_setup_packages=TEST_PACKAGES,
-        ffmpeg_setup_wayrecord_bin_path=wayrecord_bin_path,
-        ffmpeg_setup_wayrecord_desktop_path=wayrecord_desktop_path,
-    )
+
+@pytest.fixture(autouse=True)
+def _restore_ffmpeg_values() -> Iterator[None]:
+    """Put the shipped values back after a test pointed them elsewhere."""
+
+    yield
+    for name, value in _SHIPPED_VALUES.items():
+        setattr(ffmpeg_values, name, value)
 
 
 def _ctx(
@@ -112,9 +117,18 @@ def _ctx(
     skip_apt_update: bool = False,
     repo_root: Path | None = None,
 ) -> Context:
+    """Context of the task with the values pointed at the fixture tree.
+
+    The values are module constants, so the helper hands the task the
+    temporary binary and desktop entry the test owns; the autouse fixture
+    above restores the shipped values after the test.
+    """
+
+    ffmpeg_values.PACKAGES = TEST_PACKAGES
+    ffmpeg_values.WAYRECORD_BIN_PATH = wayrecord_bin_path
+    ffmpeg_values.WAYRECORD_DESKTOP_PATH = wayrecord_desktop_path
     return make_context(
         task_name="ffmpeg_setup",
-        config=_test_config(wayrecord_bin_path, wayrecord_desktop_path),
         repo_root=repo_root or _FIXTURE_REPO or _CLONE_ROOT,
         skip_apt_update=skip_apt_update,
     )
@@ -180,18 +194,17 @@ def test_ffmpeg_setup_depends_on_add_extra_repos() -> None:
     assert task_def.depends == ("add_extra_repos",)
 
 
-def test_real_config_names_the_meta_package() -> None:
-    # The real config must name the real package ffmpeg, not a virtual
+def test_the_shipped_values_name_the_meta_package() -> None:
+    # The shipped values must name the real package ffmpeg, not a virtual
     # name, so dpkg-query sees it as installed.
-    config = load_config(REPO_ROOT / "config")
-    assert "ffmpeg" in config.ffmpeg_setup.packages
-    assert config.ffmpeg_setup.wayrecord_bin_path.name == "pyntara-wayrecord"
-    assert config.ffmpeg_setup.wayrecord_desktop_path.name == (
+    assert "ffmpeg" in ffmpeg_values.PACKAGES
+    assert ffmpeg_values.WAYRECORD_BIN_PATH.name == "pyntara-wayrecord"
+    assert ffmpeg_values.WAYRECORD_DESKTOP_PATH.name == (
         "pyntara-wayrecord.desktop"
     )
     # The build toolchain is part of the package set.
     for build_dep in ("gcc", "libwayland-dev", "libpipewire-0.3-dev", "pkgconf"):
-        assert build_dep in config.ffmpeg_setup.packages
+        assert build_dep in ffmpeg_values.PACKAGES
 
 
 def test_all_installed_skips_apt_and_rebuild(
@@ -323,10 +336,10 @@ def test_wayrecord_idempotent_when_matching(
     assert result.message == "already installed"
 
 
-def test_desktop_template_name_comes_from_the_config(
+def test_desktop_template_name_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The fixture clone carries only the template name the config gives, so
+    # The fixture clone carries only the template name the values give, so
     # a name written in the code could not find a template at all.
     wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
         monkeypatch, tmp_path
@@ -338,17 +351,7 @@ def test_desktop_template_name_comes_from_the_config(
         encoding="utf-8",
     )
     ctx = _ctx(wayrecord_bin_path, wayrecord_desktop_path)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(
-            config,
-            ffmpeg_setup=replace(
-                config.ffmpeg_setup,
-                wayrecord_desktop_template_file_name="other.desktop",
-            ),
-        ),
-    )
+    ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME = "other.desktop"
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(ctx)
     assert result.success is True
@@ -427,8 +430,7 @@ def test_the_desktop_entry_grants_the_interface_the_engine_binds() -> None:
     bound = sorted(set(_ZKDE_INTERFACE_NAME.findall(source)))
     assert bound, "the C source no longer names the KWin screencast interface"
     template = (
-        task_data
-        / make_config().ffmpeg_setup.wayrecord_desktop_template_file_name
+        task_data / ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME
     ).read_text(encoding="utf-8")
     granted = [
         line.removeprefix("X-KDE-Wayland-Interfaces=")

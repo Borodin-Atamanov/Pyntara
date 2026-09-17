@@ -19,6 +19,7 @@ import pytest
 from value_checks import (
     ValueRuleError,
     check_absolute_path,
+    check_file_mode,
     check_nonempty_text,
     check_nonnegative_int,
     check_positive_int,
@@ -26,11 +27,16 @@ from value_checks import (
 )
 
 import pyntara
+from pyntara.values import ffmpeg_setup as ffmpeg_values
 from pyntara.values import hostname as hostname_values
 from pyntara.values import imagemagick_setup as imagemagick_values
 
 # Every values module of the package, by its name inside pyntara.values.
-VALUES_MODULE_NAMES: tuple[str, ...] = ("hostname", "imagemagick_setup")
+VALUES_MODULE_NAMES: tuple[str, ...] = (
+    "ffmpeg_setup",
+    "hostname",
+    "imagemagick_setup",
+)
 
 # The name of the list a values module declares next to its values, which
 # names the values its task reads.
@@ -164,6 +170,83 @@ def test_shipped_imagemagick_values_pass_every_rule() -> None:
     )
 
 
+def test_shipped_ffmpeg_values_pass_every_rule() -> None:
+    assert (
+        check_text_tuple(ffmpeg_values.PACKAGES, "ffmpeg_setup.PACKAGES")
+        == ffmpeg_values.PACKAGES
+    )
+    assert (
+        check_absolute_path(
+            str(ffmpeg_values.WAYRECORD_BIN_PATH),
+            "ffmpeg_setup.WAYRECORD_BIN_PATH",
+        )
+        == str(ffmpeg_values.WAYRECORD_BIN_PATH)
+    )
+    assert (
+        check_absolute_path(
+            str(ffmpeg_values.WAYRECORD_DESKTOP_PATH),
+            "ffmpeg_setup.WAYRECORD_DESKTOP_PATH",
+        )
+        == str(ffmpeg_values.WAYRECORD_DESKTOP_PATH)
+    )
+    assert (
+        check_file_mode(
+            ffmpeg_values.WAYRECORD_FILE_MODE,
+            "ffmpeg_setup.WAYRECORD_FILE_MODE",
+        )
+        == ffmpeg_values.WAYRECORD_FILE_MODE
+    )
+    assert (
+        check_text_tuple(
+            ffmpeg_values.WAYRECORD_SOURCE_FILE_NAMES,
+            "ffmpeg_setup.WAYRECORD_SOURCE_FILE_NAMES",
+        )
+        == ffmpeg_values.WAYRECORD_SOURCE_FILE_NAMES
+    )
+    assert (
+        check_nonempty_text(
+            ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME,
+            "ffmpeg_setup.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME",
+        )
+        == ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME
+    )
+    assert (
+        check_nonempty_text(
+            ffmpeg_values.WAYRECORD_BUILD_FILE_SUFFIX,
+            "ffmpeg_setup.WAYRECORD_BUILD_FILE_SUFFIX",
+        )
+        == ffmpeg_values.WAYRECORD_BUILD_FILE_SUFFIX
+    )
+    assert (
+        check_text_tuple(
+            ffmpeg_values.WAYRECORD_BUILD_FLAGS_COMMAND,
+            "ffmpeg_setup.WAYRECORD_BUILD_FLAGS_COMMAND",
+        )
+        == ffmpeg_values.WAYRECORD_BUILD_FLAGS_COMMAND
+    )
+    assert (
+        check_text_tuple(
+            ffmpeg_values.WAYRECORD_COMPILE_COMMAND,
+            "ffmpeg_setup.WAYRECORD_COMPILE_COMMAND",
+        )
+        == ffmpeg_values.WAYRECORD_COMPILE_COMMAND
+    )
+    assert (
+        check_positive_int(
+            ffmpeg_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
+            "ffmpeg_setup.PACKAGE_STATUS_TIMEOUT_SECONDS",
+        )
+        == ffmpeg_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    )
+    assert (
+        check_nonnegative_int(
+            ffmpeg_values.PACKAGE_INSTALL_RETRIES,
+            "ffmpeg_setup.PACKAGE_INSTALL_RETRIES",
+        )
+        == ffmpeg_values.PACKAGE_INSTALL_RETRIES
+    )
+
+
 @pytest.mark.parametrize("value", [42, "", "   ", None, ("a",)])
 def test_the_nonempty_text_rule_refuses_a_text_with_nothing_in_it(
     value: object,
@@ -194,6 +277,14 @@ def test_the_nonnegative_int_rule_refuses_a_count_below_zero(
 ) -> None:
     with pytest.raises(ValueRuleError):
         check_nonnegative_int(value, "section.NAME")
+
+
+@pytest.mark.parametrize("value", [0, -1, 0o10000, 493.0, "0755", True, None])
+def test_the_file_mode_rule_refuses_a_value_that_is_no_mode(
+    value: object,
+) -> None:
+    with pytest.raises(ValueRuleError):
+        check_file_mode(value, "section.NAME")
 
 
 @pytest.mark.parametrize(

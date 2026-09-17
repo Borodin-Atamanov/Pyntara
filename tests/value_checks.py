@@ -69,6 +69,20 @@ def check_nonnegative_int(value: object, name: str) -> int:
     return value
 
 
+def check_file_mode(value: object, name: str) -> int:
+    """A file mode: a whole number with a permission bit, in chmod range.
+
+    A mode of zero leaves the file unusable for everyone, and a value above
+    the twelve bits chmod accepts is not a mode at all.
+    """
+
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueRuleError(f"{name} must be a file mode above zero")
+    if value > 0o7777:
+        raise ValueRuleError(f"{name} must be a mode chmod accepts")
+    return value
+
+
 def check_text_tuple(value: object, name: str) -> tuple[str, ...]:
     """A non-empty tuple of non-empty texts, such as a command.
 
