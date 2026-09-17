@@ -948,6 +948,21 @@ machine in this turn, and the probe is named with the figure.
     shipped records, a package list without python3-pyqt6, empty hidden places
     against six entries and the touchpad method clickfinger against clickareas),
     and the commit decides each in the direction of the shipped value.
+115. The record list of kde_settings, prepared on 2026-09-17 by a read-only script
+    over the TOML, which printed each record as one Python line. Measured facts
+    the conversion rests on: 327 records; the only field shapes are file, group,
+    key and value, with type added when the value is a flag and delete added when
+    the key is removed instead of written; type is always the word "bool" and
+    never anything else; three records are delete records and carry no value at
+    all, so the record type needs a default for value and for delete; and one
+    value is built from angle, round and square brackets plus both quote
+    characters, so its Python literal must be escaped. That escaping is the
+    reason the records are written by hand
+    from the printed lines and then read back: an unescaped quote produces a
+    syntax error that the gate catches, but a wrongly escaped one would produce a
+    wrong desktop setting that only the desktop would notice. The same script
+    proves the record count and the field shapes against the TOML after the
+    conversion, so the move of 327 records is checked, not trusted.
 
 
 
