@@ -3,7 +3,7 @@
 Zswap stores pages that are in the process of being swapped out in a
 compressed RAM pool before they reach the backing swapfile, trading CPU
 cycles for reduced swap I/O. The task writes the configured parameters
-into /sys/module/zswap/parameters and installs a systemd oneshot service
+into the kernel attribute directory and installs a systemd oneshot service
 that repeats the same writes at every boot. Kernel 7.0 (Kubuntu 26.04)
 exposes exactly five parameters: enabled, compressor, max_pool_percent,
 accept_threshold_percent and shrinker_enabled; the zpool and
@@ -11,9 +11,9 @@ same_filled_pages_enabled attributes no longer exist because zsmalloc is
 the only pool and same-filled page handling is always on. The unit file
 is rendered from the template at task_data/zswap_service/zswap.service
 with the ExecStart block substituted (string.Template); the service never
-reads config.toml itself. The task is idempotent: it skips when every
-parameter already equals the configured value and the service is enabled;
-force mode rewrites all parameters.
+reads the values itself. The task is idempotent: it skips when every
+parameter already equals the value and the service is enabled; force mode
+rewrites all parameters.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import ZswapServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -32,34 +31,29 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import missing_value_names
+from pyntara.values import zswap_service as values
 
 
-def _parameter_paths(cfg: ZswapServiceConfig) -> dict[str, Path]:
+def _parameter_paths() -> dict[str, Path]:
     """The kernel attribute file of every configured parameter."""
 
     return {
-        name: cfg.parameters_dir_path / name for name in cfg.parameter_names
+        name: values.PARAMETERS_DIR_PATH / name
+        for name, _ in values.PARAMETER_VALUES
     }
 
 
-def _target_values(cfg: ZswapServiceConfig) -> dict[str, str]:
-    """Canonical target values keyed by parameter name.
+def _target_values() -> dict[str, str]:
+    """Target values keyed by parameter name, in write order.
 
-    The value of a parameter is the key of the section with the same name:
-    a boolean key is written as the Y/N spelling the sysfs attributes
-    report, a number and a string as they are, so the rendered unit, the
-    idempotency comparison and the read-back verification all share one
-    representation.
+    The value of a parameter is the text the kernel is given: the Y or N
+    spelling a boolean attribute reports, the digits or the word of a
+    number and of a string, so the rendered unit, the idempotency
+    comparison and the read-back verification all share one representation.
     """
 
-    values: dict[str, str] = {}
-    for name in cfg.parameter_names:
-        value = getattr(cfg, name)
-        if isinstance(value, bool):
-            values[name] = "Y" if value else "N"
-        else:
-            values[name] = str(value)
-    return values
+    return dict(values.PARAMETER_VALUES)
 
 
 def _normalize(expected: str, value: str) -> str:
@@ -96,7 +90,6 @@ def _write_sysfs(path: Path, value: str) -> None:
 
 
 def _render_unit(
-    cfg: ZswapServiceConfig,
     template_path: Path,
     target: dict[str, str],
     paths: dict[str, Path],
@@ -105,14 +98,14 @@ def _render_unit(
 
     One ExecStart line per parameter writes the exact configured value, so
     the boot service reproduces the install-time configuration. The line
-    template comes from the config, with the value and the attribute path
-    as its placeholders. The block is fully expanded here, so the template
-    carries no shell variables of its own and substitute cannot trip on
-    stray dollar signs.
+    template comes from the values module, with the value and the attribute
+    path as its placeholders. The block is fully expanded here, so the
+    template carries no shell variables of its own and substitute cannot
+    trip on stray dollar signs.
     """
 
     lines = [
-        cfg.unit_exec_line_template.format(value=value, path=paths[name])
+        values.UNIT_EXEC_LINE_TEMPLATE.format(value=value, path=paths[name])
         for name, value in target.items()
     ]
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -141,23 +134,35 @@ def task(ctx: Context) -> TaskResult:
     contract).
     """
 
-    cfg = ctx.config.zswap_service
+    absent = missing_value_names(values, values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks.
+        return TaskResult(
+            success=True,
+            message="the zswap_service values are not declared, nothing was changed",
+            warnings=(
+                "the zswap_service values are not declared: " + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    service_name = cfg.service_unit_name
-    target = _target_values(cfg)
-    paths = _parameter_paths(cfg)
+    parameter_names = tuple(name for name, _ in values.PARAMETER_VALUES)
+    service_name = values.SERVICE_UNIT_NAME
+    target = _target_values()
+    paths = _parameter_paths()
     warnings: list[str] = []
 
     current: dict[str, str | None] = {}
-    for name in cfg.parameter_names:
+    for name in parameter_names:
         value = _read_value(paths[name])
         current[name] = value
         shown = "absent" if value is None else value
         _log(f"reading {paths[name]}: {shown}")
 
     mismatches: list[str] = []
-    for name in cfg.parameter_names:
+    for name in parameter_names:
         value = current[name]
         if value is None or _normalize(target[name], value) != target[name]:
             mismatches.append(name)
@@ -173,7 +178,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=True, changed=False, message="already configured")
 
     changed = False
-    for name in cfg.parameter_names:
+    for name in parameter_names:
         if force or name in mismatches:
             _log(f"writing {paths[name]}: {target[name]}")
             try:
@@ -186,7 +191,7 @@ def task(ctx: Context) -> TaskResult:
     if changed:
         _log("verifying zswap parameters")
         problems: list[str] = []
-        for name in cfg.parameter_names:
+        for name in parameter_names:
             value = _read_value(paths[name])
             if value is None or _normalize(target[name], value) != target[name]:
                 problems.append(f"{name} mismatch")
@@ -200,11 +205,11 @@ def task(ctx: Context) -> TaskResult:
 
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / cfg.unit_template_file_name
+        / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     try:
-        content = _render_unit(cfg, template_path, target, paths)
+        content = _render_unit(template_path, target, paths)
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     else:
@@ -219,13 +224,14 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _log("reloading systemd: systemctl daemon-reload")
                 run_command(
-                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
+                    timeout=timeout,
                 )
                 _log("systemd reloaded")
                 _log(f"enabling service: systemctl enable {service_name}")
                 run_command(
                     substituted_command(
-                        cfg.systemctl_enable_command,
+                        values.SYSTEMCTL_ENABLE_COMMAND,
                         {"service_unit_name": service_name},
                     ),
                     timeout=timeout,
@@ -237,12 +243,13 @@ def task(ctx: Context) -> TaskResult:
             ) as exc:
                 warnings.append(f"systemd setup failed: {exc}")
 
-    message = (
-        f"zswap configured: compressor {cfg.compressor}, "
-        f"max pool {cfg.max_pool_percent}%, accept threshold "
-        f"{cfg.accept_threshold_percent}%, shrinker "
-        f"{'on' if cfg.shrinker_enabled else 'off'}"
+    # The closing line names every parameter with the value it was given, in
+    # write order: the names come from the table and the task knows none of
+    # them itself.
+    configured_values = ", ".join(
+        f"{name} {value}" for name, value in target.items()
     )
+    message = f"zswap configured: {configured_values}"
     if warnings:
         message = f"{message}; {'; '.join(warnings)}"
     return TaskResult(

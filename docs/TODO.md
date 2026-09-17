@@ -59,6 +59,20 @@ values in the TOML section, lines of the task module, value reads in it. The
 numbers below are the current order, not stable names: a section is named by its
 module, and git log holds the commit of each finished one.
 
+A section is COUPLED when a deployed runtime module reads the same values.
+Those modules still load the config from a path argument, so such a section
+cannot be migrated alone: its values would live twice, in the values package for
+the task and in the TOML for the running service. A coupled section is migrated
+together with its runtime module, which then imports the values package and
+loses the config path argument, and the unit command loses {config_path}; the
+values package lives inside the wheel for exactly this (point 33). Coupled are
+port_forwarding_setup (port_forwarding.py, port_forwarding_state.py,
+network_addresses.py), system_metrics_setup (metrics.py, metrics_collect.py,
+metrics_ingest.py, public_address_report.py, country_report.py),
+i2pd_service_setup (i2pd_address.py) and the engine itself (pyntara.py). Each is
+a turn of its own, and the order rule skips them until the plain sections are
+done.
+
 1. cli_tools, done, 4 / 120 / 3
 2. imagemagick_setup, done, 6 / 142 / 1
 3. playwright_setup, done, 12 / 216 / 1
@@ -66,10 +80,11 @@ module, and git log holds the commit of each finished one.
 5. hostname, done, 3 / 189 / 1
 6. add_extra_repos, done, 13 / 411 / 17
 7. nextdns_setup_system_wide, done, 4 / 152 / 10
-8. port_forwarding_setup, 48 / 292 / 11
-9. system_metrics_setup, 117 / 759 / 18, the largest by values: the collector,
-   the ingest, the sender, the deployment and the two telemetry pdf values
-10. zswap_service, 12 / 253 / 19
+8. port_forwarding_setup, 48 / 292 / 11, COUPLED, waits for its own turn
+9. system_metrics_setup, 117 / 759 / 18, COUPLED, the largest by values: the
+   collector, the ingest, the sender, the deployment and the two telemetry pdf
+   values
+10. zswap_service, done, 12 / 253 / 19
 11. ssh_client_setup, 37 / 185 / 26
 12. three_x_ui_xray_setup, 162 / 535 / 32
 13. local_vault_setup and vault_structure, 11 / 467 / 33
@@ -86,11 +101,11 @@ module, and git log holds the commit of each finished one.
 23. vocalinux_setup, 38 / 680 / 71
 24. chrome_setup, 49 / 973 / 87
 25. ssh_daemon_setup, 64 / 659 / 90
-26. i2pd_service_setup, 35 / 728 / 93
+26. i2pd_service_setup, 35 / 728 / 93, COUPLED
 27. dnsproxy_setup, 78 / 1051 / 117
 28. yggdrasil_service_setup, 74 / 1249 / 147
 29. kde_settings, 1607 / 2244 / 177, and last the engine with the task
-    catalog, the most connected section of all
+    catalog, the most connected section of all, COUPLED
 
 Stages after the sections:
 

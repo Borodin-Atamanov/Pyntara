@@ -44,6 +44,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "imagemagick_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
+    "zswap_service",
 )
 
 # The name of the list a values module declares next to its values, which

@@ -2,15 +2,15 @@
 
 All external resources (subprocess and the kernel attribute files) are
 mocked; the parameter files and the unit template live in temporary
-fixtures whose paths come from the config, so the task is exercised the
-way it runs on a machine (docs/guides/developer-guide.md).
+fixtures, and the attribute directory comes from the values module, so the
+task is exercised the way it runs on a machine
+(docs/guides/developer-guide.md).
 """
 
 from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
 
@@ -18,9 +18,9 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara.config import ZswapServiceConfig
 from pyntara.context import Context
 from pyntara.tasks import zswap_service
+from pyntara.values import zswap_service as values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -36,14 +36,9 @@ $exec_lines
 WantedBy=multi-user.target
 """
 
-# Target parameter values derived from the _ctx config below.
-TARGET = {
-    "enabled": "Y",
-    "compressor": "zstd",
-    "max_pool_percent": "50",
-    "accept_threshold_percent": "100",
-    "shrinker_enabled": "Y",
-}
+# Target parameter values: the shipped table of the values module, which is
+# what the task must write on a real machine.
+TARGET = dict(values.PARAMETER_VALUES)
 
 # Kernel defaults on Kubuntu: zswap on with lzo at a 20 percent pool.
 DEFAULTS = {
@@ -55,17 +50,25 @@ DEFAULTS = {
 }
 
 
-def _ctx(
-    tmp_path: Path,
-    *,
-    force: bool = False,
-    enable_command: tuple[str, ...] = (
-        "systemctl",
-        "enable",
-        "{service_unit_name}",
-    ),
-) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_parameter_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own kernel attribute directory.
+
+    The path is a value of the task, so the fixture points it at the temporary
+    directory of the test and the shipped value comes back afterwards.
+    """
+
+    monkeypatch.setattr(
+        values,
+        "PARAMETERS_DIR_PATH",
+        tmp_path / "sys" / "module" / "zswap" / "parameters",
+    )
+
+
+def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+    """Context safe for unit tests; the real files are never touched."""
 
     return make_context(
         task_name="zswap_service",
@@ -77,11 +80,6 @@ def _ctx(
         config=make_config(
             task_data_root=tmp_path,
             systemd_unit_dir=tmp_path / "systemd",
-            zswap_parameters_dir_path=tmp_path / "sys" / "module" / "zswap" / "parameters",
-            zswap_systemctl_enable_command=enable_command,
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
         ),
     )
 
@@ -90,35 +88,27 @@ def _install_fixtures(
     tmp_path: Path,
     *,
     current: dict[str, str] | None = None,
-    settings: ZswapServiceConfig | None = None,
 ) -> ZswapFixtures:
     """Point the task at temporary fixtures; return the fixture paths.
 
-    The parameter files live under the directory the section names, so the
-    task reads the configured path and no module constant has to be
-    replaced; the current values default to the kernel defaults, which
-    mismatch the target so most tests exercise the write path. A test that
-    wants another layout passes its own settings.
+    The parameter files live under the directory the values module names, so
+    the task reads that path and no module constant has to be replaced; the
+    current values default to the kernel defaults, which mismatch the target
+    so most tests exercise the write path.
     """
 
-    values = dict(DEFAULTS if current is None else current)
-    if settings is None:
-        settings = make_config(
-            zswap_parameters_dir_path=(
-                tmp_path / "sys" / "module" / "zswap" / "parameters"
-            )
-        ).zswap_service
-    params_dir = settings.parameters_dir_path
+    current_values = dict(DEFAULTS if current is None else current)
+    params_dir = values.PARAMETERS_DIR_PATH
     params_dir.mkdir(parents=True, exist_ok=True)
-    for name in settings.parameter_names:
+    for name, _ in values.PARAMETER_VALUES:
         (params_dir / name).write_text(
-            f"{values.get(name, '')}\n", encoding="utf-8"
+            f"{current_values.get(name, '')}\n", encoding="utf-8"
         )
     template = (
         tmp_path
         / "task_data"
         / "zswap_service"
-        / settings.unit_template_file_name
+        / values.UNIT_TEMPLATE_FILE_NAME
     )
     template.parent.mkdir(parents=True, exist_ok=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
@@ -177,20 +167,14 @@ def _install_fake(
     return calls, writes
 
 
-def _expected_unit(
-    target: dict[str, str],
-    params_dir: Path,
-    settings: ZswapServiceConfig | None = None,
-) -> str:
+def _expected_unit(target: dict[str, str], params_dir: Path) -> str:
     """The unit file the task must render for the given target."""
 
-    if settings is None:
-        settings = make_config().zswap_service
     lines = [
-        settings.unit_exec_line_template.format(
+        values.UNIT_EXEC_LINE_TEMPLATE.format(
             value=target[name], path=params_dir / name
         )
-        for name in settings.parameter_names
+        for name in target
     ]
     return UNIT_TEMPLATE.replace("$exec_lines", "\n".join(lines))
 
@@ -227,8 +211,8 @@ def test_writes_parameters_and_installs_service(
     # the two percentages are rewritten.
     assert writes == [
         ("compressor", "zstd"),
-        ("max_pool_percent", "50"),
-        ("accept_threshold_percent", "100"),
+        ("max_pool_percent", "12"),
+        ("accept_threshold_percent", "87"),
     ]
     assert ["systemctl", "daemon-reload"] in calls
     assert ["systemctl", "enable", "zswap.service"] in calls
@@ -238,7 +222,7 @@ def test_writes_parameters_and_installs_service(
     )
     assert "compressor zstd" in (result.message or "")
     captured = capsys.readouterr()
-    assert "max_pool_percent: 50" in captured.out
+    assert "max_pool_percent: 12" in captured.out
 
 
 def test_force_mode_rewrites_everything(
@@ -254,8 +238,8 @@ def test_force_mode_rewrites_everything(
     assert writes == [
         ("enabled", "Y"),
         ("compressor", "zstd"),
-        ("max_pool_percent", "50"),
-        ("accept_threshold_percent", "100"),
+        ("max_pool_percent", "12"),
+        ("accept_threshold_percent", "87"),
         ("shrinker_enabled", "Y"),
     ]
     assert ["systemctl", "enable", "zswap.service"] in calls
@@ -290,16 +274,17 @@ def test_normalize_maps_bool_spellings() -> None:
     assert zswap_service._normalize("zstd", "zstd") == "zstd"
 
 
-def test_enable_command_comes_from_the_config(
+def test_enable_command_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The systemctl call the task makes is a config value: another command
-    # with the same placeholder is the argv the run carries out.
+    # The systemctl call the task makes is a value: another command with the
+    # same placeholder is the argv the run carries out.
     fixtures = _install_fixtures(tmp_path, current=TARGET)
     calls, _writes = _install_fake(monkeypatch, fixtures, enabled=False)
-    result = zswap_service.task(
-        _ctx(tmp_path, enable_command=("my-enable", "{service_unit_name}"))
+    monkeypatch.setattr(
+        values, "SYSTEMCTL_ENABLE_COMMAND", ("my-enable", "{service_unit_name}")
     )
+    result = zswap_service.task(_ctx(tmp_path))
     assert result.success is True
     assert ["my-enable", "zswap.service"] in calls
 
@@ -320,56 +305,47 @@ def test_nonstandard_bool_spelling_still_skips(
     assert writes == []
 
 
-def test_parameter_names_and_directory_come_from_the_config(
+def test_the_parameter_table_and_directory_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another parameter list, in another order, in another directory: a
+    # Another parameter table, in another order, in another directory: a
     # task that kept the kernel interface in code would write the shipped
     # five parameters into the shipped path instead.
-    settings = replace(
-        make_config().zswap_service,
-        parameter_names=("enabled", "compressor"),
-        parameters_dir_path=tmp_path / "fixture" / "parameters",
-    )
+    other_dir = tmp_path / "fixture" / "parameters"
+    other_target = (("enabled", "Y"), ("compressor", "zstd"))
+    monkeypatch.setattr(values, "PARAMETERS_DIR_PATH", other_dir)
+    monkeypatch.setattr(values, "PARAMETER_VALUES", other_target)
     fixtures = _install_fixtures(
-        tmp_path,
-        current={"enabled": "N", "compressor": "lzo"},
-        settings=settings,
+        tmp_path, current={"enabled": "N", "compressor": "lzo"}
     )
     _calls, writes = _install_fake(monkeypatch, fixtures, enabled=False)
-    ctx = _ctx(tmp_path)
-    ctx = replace(ctx, config=replace(ctx.config, zswap_service=settings))
-    result = zswap_service.task(ctx)
+    result = zswap_service.task(_ctx(tmp_path))
     assert result.success is True
     assert writes == [("enabled", "Y"), ("compressor", "zstd")]
-    unit = tmp_path / "systemd" / settings.service_unit_name
+    unit = tmp_path / "systemd" / values.SERVICE_UNIT_NAME
     assert unit.read_text(encoding="utf-8") == _expected_unit(
-        {"enabled": "Y", "compressor": "zstd"},
-        fixtures["params_dir"],
-        settings,
+        dict(other_target), fixtures["params_dir"]
     )
 
 
-def test_unit_exec_line_comes_from_the_config(
+def test_unit_exec_line_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The proof of the value: another line template in the config is the
-    # ExecStart line of the installed unit, so a machine that repeats the
-    # writes in another way says so in the config.
-    settings = replace(
-        make_config().zswap_service,
-        parameters_dir_path=tmp_path / "fixture" / "parameters",
-        unit_exec_line_template="ExecStart=/bin/sh -c 'echo {value} | tee {path}'",
+    # The proof of the value: another line template is the ExecStart line of
+    # the installed unit, so a machine that repeats the writes in another way
+    # says so in the values module.
+    other_dir = tmp_path / "fixture" / "parameters"
+    monkeypatch.setattr(values, "PARAMETERS_DIR_PATH", other_dir)
+    monkeypatch.setattr(
+        values,
+        "UNIT_EXEC_LINE_TEMPLATE",
+        "ExecStart=/bin/sh -c 'echo {value} | tee {path}'",
     )
-    fixtures = _install_fixtures(
-        tmp_path, current={"enabled": "N"}, settings=settings
-    )
+    fixtures = _install_fixtures(tmp_path, current={"enabled": "N"})
     _install_fake(monkeypatch, fixtures, enabled=False)
-    ctx = _ctx(tmp_path)
-    ctx = replace(ctx, config=replace(ctx.config, zswap_service=settings))
-    result = zswap_service.task(ctx)
+    result = zswap_service.task(_ctx(tmp_path))
     assert result.success is True
-    unit = tmp_path / "systemd" / settings.service_unit_name
+    unit = tmp_path / "systemd" / values.SERVICE_UNIT_NAME
     assert "| tee " in unit.read_text(encoding="utf-8")
 
 
@@ -394,8 +370,8 @@ def test_write_failure_is_a_warning(
     # rejected value must not stop the independent ones.
     assert writes == [
         ("compressor", "zstd"),
-        ("max_pool_percent", "50"),
-        ("accept_threshold_percent", "100"),
+        ("max_pool_percent", "12"),
+        ("accept_threshold_percent", "87"),
     ]
     # The service is still deployed and enabled, because the unit does not
     # depend on the rejected parameter.
