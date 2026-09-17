@@ -856,6 +856,21 @@ machine in this turn, and the probe is named with the figure.
     values module. The metrics task and metrics.py belong to the
     system_metrics_setup commit, the two xray modules to the
     three_x_ui_xray_setup commit.
+116. Why the two homes of point 104 cannot be closed early, measured on
+    2026-09-17 while trying exactly that as a small step. The vault pair is read
+    through one shared helper, pyntara.metrics.open_runtime_vault, and seven
+    modules call it: pyntara/telemetry_pdf.py, pyntara/metrics_send.py,
+    pyntara/port_forwarding.py, pyntara/xray_inbound.py, pyntara/xray_panel.py,
+    tasks/rustdesk_setup.py and tasks/nextdns_setup_system_wide.py, apart from
+    the metrics modules of the system_metrics_setup section itself. Several test
+    files create a real vault in a temporary directory and configure its path
+    through make_config (test_metrics_send.py and
+    test_commit_final_system_metrics.py at least), so a helper that stopped
+    reading the config would send those tests to the shipped path under /var,
+    which is a machine-safety failure, not a test failure. The pair therefore
+    moves with the system_metrics_setup commit, in the same change as the module
+    that reads it and every test that configures it, which is what point 93
+    already asks. The shortcut was abandoned before any edit.
 105. Stage E, the engine and the task catalog, unchanged from point 92: the values
     of the run itself in values/engine.py (97 names in engine.toml today), the
     catalog as a tuple of TaskSpec records in values/tasks.py (124 keys today),
