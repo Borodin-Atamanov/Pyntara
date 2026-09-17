@@ -24,22 +24,28 @@ The pattern, set by the hostname pilot and now the only one in the tree:
 3. The task reads its values at the point of use and, before that, reports the
    absent names once as TaskResult(success=True, message=..., warnings=(...))
    and changes nothing. No per-value branch, no substituted default.
-4. tests/value_checks.py holds the shared rules a type cannot express:
-   check_nonempty_text, check_absolute_path, check_positive_int,
-   check_nonnegative_int, check_file_mode and check_text_tuple, each taking the
-   value and the dotted name it reports, so a section adds no copy of a rule.
-5. tests/test_values.py applies those rules to the shipped values, proves
-   READ_VALUE_NAMES names exactly the declared values and proves by an AST scan
-   that every declared value is read somewhere. A new values module is added to
-   VALUES_MODULE_NAMES and gets its shipped-values test there.
-6. A task test points its values at the fixture tree with
+4. The rule of a value follows from its own annotation: tests/test_values.py
+   walks every values module, reads the annotation of each declared value and
+   applies the generic rule, which is that a text is not empty, a whole number
+   is not negative, a path is absolute, and a tuple holds something whose
+   elements are non-empty texts. A new value needs no line anywhere. This pass
+   is also the only thing that looks at the shipped values, because a task test
+   points the values at its own fixture tree and never exercises them.
+5. A rule an annotation cannot express, and where a wrong value would break the
+   machine silently, is one line in EXTRA_VALUE_RULES of tests/test_values.py:
+   the module, the name and the rule. A guard refuses a name no module
+   declares. Today the list holds one entry, the file mode of ffmpeg_setup.
+6. tests/test_values.py also proves that READ_VALUE_NAMES names exactly the
+   declared values, and by an AST scan that every declared value is read
+   somewhere. A new values module is added to VALUES_MODULE_NAMES.
+7. A task test points its values at the fixture tree with
    monkeypatch.setattr(module, "NAME", value) inside a per-section helper that
    takes monkeypatch and the fixture paths; monkeypatch restores the shipped
    values whether the test passed or failed.
-7. While a section is being migrated its TOML section and its config tests stay
+8. While a section is being migrated its TOML section and its config tests stay
    in place; only the task, its tests and the new rules move. Stage C removes
    the old sources in one go.
-8. A section is one commit: the gate of scripts/check_gates.sh green, then a
+9. A section is one commit: the gate of scripts/check_gates.sh green, then a
    fast-forward merge into main and a push.
 
 Sections, one commit each. Renumber this list while it shrinks:
@@ -198,6 +204,24 @@ What every section must keep true: the criteria and the nuances.
     proves too expensive section by section, the alternative is a settings object
     per task, built inside its values module. That keeps two places per value
     instead of one, so it is a decision to take with the user, never silently.
+
+Decisions taken while the migration runs:
+
+55. The rules of the values are generic (user decision of 2026-09-17). The two
+    rejected alternatives were a full table of rules per value, and no rules at
+    all. The annotation of a value carries its shape rule, tests/test_values.py
+    applies it to every shipped value, and only a rule an annotation cannot
+    express, whose absence would be silent, stays in EXTRA_VALUE_RULES. Reason:
+    a task test points the values at its own fixture tree, so nothing else looks
+    at the shipped values, while a table of two hundred rules is an entity
+    nobody keeps in step. What no rules would have cost: the class of wrong
+    values that leave the machine looking configured, such as a relative path or
+    a backup suffix that names the file it should preserve.
+56. Consequence of the generic pass to keep in view: a rule cannot be overridden
+    for one value. A value whose shape the pass would refuse and which is
+    legitimate, an empty list among them, needs a documented exemption list, and
+    adding an entry is a decision, never a convenience. That list is empty
+    today; the empty depends list of a task is the case expected to reach it.
 
 
 
