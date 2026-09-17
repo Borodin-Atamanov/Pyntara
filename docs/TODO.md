@@ -105,5 +105,100 @@ Decisions already taken, not to be reopened silently:
     tests/test_config_coverage.py leaves that package out of its scan and keeps
     refusing a mode literal everywhere else.
 
+What every section must keep true: the criteria and the nuances.
+
+37. Softness at run time is the mission and mypy does not replace it. A value
+    that is not declared must cost a step or a task and never the run: the task
+    names the absent value in plain words, changes nothing, and the runner
+    carries on with the remaining tasks. The values of the engine itself (its
+    module, the task catalog and the install modes) stay the only fatal read,
+    as an empty task catalog is fatal today.
+38. A values module is all or nothing: Python imports it whole or not at all, so
+    a module that lost one value cannot exist; it is the module that fails to
+    import. A task module imports the values module of its own task and never a
+    shared one, so an unimportable module costs the tasks that import it and
+    never the run.
+39. No defensive code in a task body: no test for None at a read, no default at
+    a read, no try around a read. The absence is caught once, by the guard at
+    the top of the task, and a step that cannot run without a value adds its
+    name to the warnings the task already collects. One condition per step,
+    never one per value.
+40. The deployed long-running services (the metrics collector, the ingest and
+    the sender) have no task runner, so each keeps one protected read at the top
+    of its entry function, one line in plain words naming what it could not
+    find, and a clean exit instead of a crash loop under systemd. The places
+    that name absent config keys today (COLLECTOR_SECTION_KEYS,
+    COLLECTOR_TABLE_KEYS, INGEST_CONFIG_KEYS, SERVICE_CONFIG_KEYS,
+    COUNTRY_REPORT_CONFIG_KEYS and the address ones) lose their purpose and go
+    away with them.
+41. The tests that prove the softness belong to a migrated section and are not a
+    later nice to have: one that removes a name from the values module and
+    requires a warning naming it, no change and a successful task; one for a
+    values module that does not import, requiring the remaining tasks to run;
+    the entry point test of a deployed service; and the existing proof that an
+    empty task catalog stays fatal.
+42. Four guards hold the values package: the shipped values pass every rule of
+    tests/value_checks.py; READ_VALUE_NAMES names exactly the declared values;
+    every declared value is read somewhere; and a value literal outside the
+    values package fails the suite. A fifth is worth having: a task module
+    imports only the values module of its own task.
+43. Every rule of the old suite is either replaced or deleted with its reason: a
+    shape rule dies with mypy on the annotation, and a rule a type cannot
+    express moves to tests/value_checks.py together with its negative test. A
+    rule that disappears without one of those two is a defect, which is why a
+    section is migrated with the diff read, not by a script.
+44. Values of special kinds. MODES and SEND_ORDERS are read by production and
+    become values. The vocabularies only the checks read (I2PD_LOG_LEVELS,
+    TOR_LOG_LEVELS, the listen and peer schemes, the numlock states, the click
+    methods, the share address strategies, the domain strategies) stay in the
+    tests. A record type (TaskConfig, VaultEntry, VaultGroupSeed, SshDirective,
+    CollectorModuleConfig, TelemetryPdfConfig, KConfigRecord,
+    RustdeskOptionConfig) stays in code as a type, and the value is the tuple of
+    its records.
+45. Context keeps the clone root, the install mode, the forced task names and
+    the task name; only its config goes away. A helper shared by two tasks takes
+    the value as a parameter; anything else reads the module of its own task.
+46. The deployment stops carrying a config. The deployed services import the
+    values of the installed wheel, which is built with uv sync --no-editable, so
+    the values package must be inside the wheel. The whole config path mechanism
+    goes with it: system_config_path, the write and the compare of
+    /etc/pyntara/config.toml, the three service commands and the two
+    module_run_command values that pass {config_path}.
+47. Consequence to state plainly about a machine: a changed value reaches a
+    deployed service only through a provisioning run. That is what happens today
+    as well, because the task writes that file from the clone.
+48. Out of scope, not to be touched by this migration: inst.sh, the templates of
+    task_data/, secrets/, hooks/, and the logic of a task other than the place
+    where it reads a value.
+49. Two removals in stage C that are easy to forget: absent_config_keys and
+    describe_absent_config_keys go away with their call sites, and
+    OPTIONAL_SECTION_KEYS goes away because the four keys it names are real
+    values now. DERIVED_SECTION_FIELDS stays, because the four certificate path
+    fields of three_x_ui_xray_setup are still derived from other values.
+50. Stage E proves more than one task run: that the built wheel carries the
+    values package, that a deployed service completes a cycle reading its
+    values, and that the installer path of inst.sh produces the same machine.
+51. The engine is migrated last on purpose: every module reads it, so it is the
+    one section whose migration touches the whole package at once.
+52. Where a value goes after the migration, which is the whole point: one line in
+    src/pyntara/values/<task>.py with its annotation and its comment, and the
+    read at the place in the task that needs it. Nothing else. A rule in
+    tests/value_checks.py only for what the annotation cannot say, its entry in
+    the shipped-values test of tests/test_values.py, and the module added to
+    VALUES_MODULE_NAMES. No second copy exists anywhere.
+53. Scale, measured on 2026-09-17 before the migration started, for judging the
+    remaining work: 31 sections and about 1313 values in 6377 lines of TOML; 66
+    modules of the package use pyntara.config; 238 places in 19 task modules read
+    a value through the aggregate; tests/config_checks.py is 7262 lines with 33
+    section functions and 342 refusals; the tests hold 610 replace sites in 56
+    files, and 62 files use the make_config factory. One migrated section costs a
+    values module of 45 to 90 lines, 43 to 65 lines of task edits and 76 to 105
+    lines of test edits, plus about 90 lines in the shared guards.
+54. The one fallback worth keeping in view: if removing the aggregate Config
+    proves too expensive section by section, the alternative is a settings object
+    per task, built inside its values module. That keeps two places per value
+    instead of one, so it is a decision to take with the user, never silently.
+
+
 
 
