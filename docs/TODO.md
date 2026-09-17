@@ -93,7 +93,11 @@ is the correction.
    values
 10. zswap_service, done, 12 / 253 / 19
 11. ssh_client_setup, done, 37 / 185 / 26
-12. three_x_ui_xray_setup, 162 / 535 / 32
+12. three_x_ui_xray_setup, 162 / 535 / 32, COUPLED, corrected 2026-09-17: it
+    was planned as the first plain section of stage D, and the probe that
+    opened its turn showed five live readers of the table instead of one, so it
+    moved to stage F (point 85). Its shape is one flat table, so the shape
+    question is only whether parts of it are lists of records
 13. local_vault_setup and vault_structure, done, 11 / 467 / 33, with a
     consequence worth naming: secrets/regenerate_vault_by_config.py read the
     [vault_structure] table through the loader and now reads
@@ -117,8 +121,16 @@ is the correction.
     (point 57) and the telegram task reads them there; playwright_setup was
     switched in the same commit, and each of the remaining six sections drops
     its own copy when its turn comes
-16. scrcpy_setup, 29 / 725 / 48, added to this list 2026-09-17: the section and
-    the module were added to the repository after the list was written
+16. scrcpy_setup, done, 29 / 725 / 48, added to this list 2026-09-17: the
+    section and the module were added to the repository after the list was
+    written. Its commit moved two more values to the shared module: the mode of
+    a menu entry (0644) and the mode of a delivered binary (0755) stood in the
+    telegram_setup section as well, so both now live in values/common.py as
+    LAUNCHER_FILE_MODE and EXECUTABLE_FILE_MODE and the telegram task reads
+    them there; the icon mode stays with telegram_setup, where nothing shares
+    it. The section also drops its own copies of the desktop user pair and of
+    the two package budgets, which the shared module has carried since the
+    first sections
 17. swapfile_service_install, 17 / 380 / 51
 18. kde_keyboard_setup, 41 / 631 / 52
 19. rustdesk_setup, 42 / 733 / 61
@@ -428,19 +440,16 @@ it is named with the figure.
     each, with the telegram_setup pattern: the values module, the guard above
     every read, the tests moved to the values, the section registered in
     tests/test_values.py and tests/test_values_softness.py, the plan updated, the
-    full gate, the merge into main and the branch deleted. The order:
-    three_x_ui_xray_setup (162 values / 34 reads / 535 task lines),
-    scrcpy_setup (29 / 48 / 725), swapfile_service_install (17 / 51 / 380),
-    kde_keyboard_setup (41 / 52 / 631), rustdesk_setup (42 / 62 / 733),
-    zram_service (27 / 66 / 679, its commit moves compressor to common and drops
-    the copy of zswap_service), sotavpn_setup (24 / 67 / 663), vocalinux_setup
-    (38 / 71 / 680), chrome_setup (49 / 87 / 973), ssh_daemon_setup (64 / 90 /
-    659), dnsproxy_setup (78 / 117 / 1051, its commit moves the nextdns profile
-    id pair to common) and kde_settings (1607 / 177 / 2244, a list of kconfig
-    records, so a named record type and the tuple of those records per point 58).
-    three_x_ui_xray_setup is next: its table is one header with flat entries, so
-    the shape probe at the start decides only whether parts of it are lists of
-    records.
+    full gate, the merge into main and the branch deleted. telegram_setup and
+    scrcpy_setup are done; the order that remains is swapfile_service_install
+    (17 / 51 / 380), kde_keyboard_setup (41 / 52 / 631), rustdesk_setup
+    (42 / 62 / 733), zram_service (27 / 66 / 679, its commit moves compressor to
+    common and drops the copy of zswap_service), sotavpn_setup (24 / 67 / 663),
+    vocalinux_setup (38 / 71 / 680), chrome_setup (49 / 87 / 973),
+    ssh_daemon_setup (64 / 90 / 659), dnsproxy_setup (78 / 117 / 1051, its commit
+    moves the nextdns profile id pair to common) and kde_settings (1607 / 177 /
+    2244, a list of kconfig records, so a named record type and the tuple of
+    those records per point 58). swapfile_service_install is next.
 76. Stage E, the engine and the task catalog, one commit. values/engine.py
     carries the values of the run itself and stays the only fatal read (point
     37); values/tasks.py carries the catalog as a tuple of the named record type
@@ -537,9 +546,29 @@ it is named with the figure.
     while every earlier stage is provable in the clone. The softness rule is the
     one mypy cannot check: every new section joins
     tests/test_values_softness.py in the same commit as its values module.
-84. First stage: point 75 begins with three_x_ui_xray_setup, and that is the
-    work to start with. The plan waits for the user's approval before it starts
-    (stage 12 of the planning procedure).
+84. First stage: point 75 begins with swapfile_service_install, and that is the
+    work to start with.
+85. Correction of 2026-09-17, found by the probe that opened the turn of
+    three_x_ui_xray_setup: its table has five live readers and not one, so it is
+    a coupled section and leaves stage D for stage F. The readers, measured with
+    grep -rn on the source: tasks/three_x_ui_xray_setup.py (the owner),
+    tasks/sotavpn_setup.py (the panel vocabulary it reuses),
+    tasks/chrome_setup.py (the local proxy address and port of the section),
+    public_address_report.py (server_ip_services and server_ip_timeout_seconds)
+    and country_report.py (country_services, country_word, the two country
+    timeouts). The two report modules belong to the metrics cluster of stage F,
+    so the section lands in that cluster, after chrome_setup and sotavpn_setup
+    have taken their values from the package in stage D. The reason for waiting
+    is the one the plan already gives for a coupled section: the six values the
+    reports read live in the deployed copy of the config, so a values module
+    next to a live TOML copy would be two truths, and each module changes its
+    source once when the section lands with both reports in the same commit.
+    The refinement of point 57 that this turn settled: a value that belongs to a
+    section by meaning (the address and the port of its local proxy) is read by
+    the second consumer straight from the values module of that section, and
+    only a value that belongs to no section moves to common. The plan of stage D
+    therefore continues with swapfile_service_install, and point 83 keeps its
+    risk about the size of that section's test file.
 
 
 

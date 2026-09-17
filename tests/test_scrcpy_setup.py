@@ -2,7 +2,9 @@
 
 Every external resource (curl, tar, sha256sum, dpkg, apt) is mocked by
 patching subprocess.run, so the tests never touch the real system, the real
-release or the real packages (docs/guides/developer-guide.md).
+release or the real packages (docs/guides/developer-guide.md). The home of the
+desktop user and the download cache are values, so one autouse fixture points
+them at the temporary directory of the test.
 """
 
 from __future__ import annotations
@@ -10,19 +12,19 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from string import Template
-from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import Config, ScrcpySetupConfig, load_config
+from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import scrcpy_setup
+from pyntara.values import common as common_values
+from pyntara.values import scrcpy_setup as values
 
 # The real catalog from the repository config, so the mode-membership test
 # covers the actual task set.
@@ -53,82 +55,76 @@ RELEASE_JSON = json.dumps(
 )
 
 
-def _test_config(tmp_path: Path) -> Config:
-    """Config whose home and cache live in the tmp tree."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own home directory and cache.
 
-    return make_config(
-        scrcpy_setup_home_dir=str(tmp_path / "home"),
-        scrcpy_setup_download_dir=tmp_path / "cache",
+    Both are values: the home of the desktop user comes from the shared module
+    and the download cache from this section. The fixture points them at the
+    temporary directory of the test and the shipped values come back
+    afterwards, so no test writes into a real home or a real cache.
+    """
+
+    monkeypatch.setattr(
+        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
     )
+    monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
 
 
-def _config_with(tmp_path: Path, **changes: Any) -> Config:
-    """The test config with fields of the scrcpy section replaced."""
+def _ctx(*, force: bool = False) -> Context:
+    """Context safe for unit tests; the real paths are never touched."""
 
-    config = _test_config(tmp_path)
-    return replace(
-        config, scrcpy_setup=replace(config.scrcpy_setup, **changes)
-    )
-
-
-def _ctx(
-    tmp_path: Path, *, config: Config | None = None, force: bool = False
-) -> Context:
     return make_context(
         install_mode="desktop",
         task_name="scrcpy_setup",
-        config=config if config is not None else _test_config(tmp_path),
         force_tasks=frozenset({"scrcpy_setup"}) if force else frozenset(),
     )
 
 
-def _settings(tmp_path: Path) -> ScrcpySetupConfig:
-    return _test_config(tmp_path).scrcpy_setup
+def _home() -> Path:
+    return Path(common_values.DESKTOP_HOME_DIR)
 
 
-def _home(tmp_path: Path) -> Path:
-    return Path(_settings(tmp_path).home_dir)
+def _install_dir() -> Path:
+    return _home() / values.INSTALL_DIR_RELATIVE_PATH
 
 
-def _install_dir(tmp_path: Path) -> Path:
-    return _home(tmp_path) / _settings(tmp_path).install_dir_relative_path
+def _version_dir(version: str = VERSION) -> Path:
+    return _install_dir() / version
 
 
-def _version_dir(tmp_path: Path, version: str = VERSION) -> Path:
-    return _install_dir(tmp_path) / version
+def _command_path() -> Path:
+    return _home() / values.COMMAND_RELATIVE_PATH
 
 
-def _command_path(tmp_path: Path) -> Path:
-    return _home(tmp_path) / _settings(tmp_path).command_relative_path
+def _launcher_path() -> Path:
+    return _home() / values.LAUNCHER_RELATIVE_PATH
 
 
-def _launcher_path(tmp_path: Path) -> Path:
-    return _home(tmp_path) / _settings(tmp_path).launcher_relative_path
+def _console_launcher_path() -> Path:
+    return _home() / values.CONSOLE_LAUNCHER_RELATIVE_PATH
 
 
-def _console_launcher_path(tmp_path: Path) -> Path:
-    return _home(tmp_path) / _settings(tmp_path).console_launcher_relative_path
+def _trash_dir() -> Path:
+    return _home() / values.TRASH_DIR_RELATIVE_PATH
 
 
-def _trash_dir(tmp_path: Path) -> Path:
-    return _home(tmp_path) / _settings(tmp_path).trash_dir_relative_path
-
-
-def _install_fake_release(tmp_path: Path, version: str = OLD_VERSION) -> Path:
+def _install_fake_release(version: str = OLD_VERSION) -> Path:
     """Pre-install a complete release tree and point the command at it."""
 
-    settings = _settings(tmp_path)
-    tree = _version_dir(tmp_path, version)
+    tree = _version_dir(version)
     tree.mkdir(parents=True, exist_ok=True)
     for name in (
-        settings.binary_file_name,
-        settings.server_file_name,
-        settings.adb_file_name,
+        values.BINARY_FILE_NAME,
+        values.SERVER_FILE_NAME,
+        values.ADB_FILE_NAME,
     ):
         (tree / name).write_bytes(b"sentinel\n")
-    link = _command_path(tmp_path)
+    link = _command_path()
     link.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(str(tree / settings.binary_file_name), link)
+    os.symlink(str(tree / values.BINARY_FILE_NAME), link)
     return tree
 
 
@@ -241,27 +237,28 @@ def test_scrcpy_setup_is_in_desktop_default_set() -> None:
     assert "scrcpy_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
 
 
-def test_real_config_names_the_release_repository() -> None:
-    config = load_config(REPO_ROOT / "config")
-    assert config.scrcpy_setup.github_repo == "Genymobile/scrcpy"
-    assert config.scrcpy_setup.username == "i"
-    assert "{asset_arch}" in config.scrcpy_setup.archive_name_template
-    assert config.scrcpy_setup.fallback_packages == ("scrcpy",)
+def test_the_shipped_values_name_the_release_repository() -> None:
+    # The shipped values are the ones a real run reads, so they are checked
+    # here without a config document.
+    assert values.GITHUB_REPO == "Genymobile/scrcpy"
+    assert common_values.DESKTOP_USERNAME == "i"
+    assert "{asset_arch}" in values.ARCHIVE_NAME_TEMPLATE
+    assert values.FALLBACK_PACKAGES == ("scrcpy",)
 
 
 def test_install_from_release_points_the_command_at_the_new_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls, _ = _fake_run_factory(monkeypatch, tmp_path)
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert result.warnings == ()
-    link = _command_path(tmp_path)
+    link = _command_path()
     assert link.is_symlink()
-    assert Path(os.readlink(link)) == _version_dir(tmp_path) / "scrcpy"
+    assert Path(os.readlink(link)) == _version_dir() / "scrcpy"
     for name in ("scrcpy", "scrcpy-server", "adb"):
-        assert (_version_dir(tmp_path) / name).is_file()
+        assert (_version_dir() / name).is_file()
     assert result.message is not None
     assert "GitHub release" in result.message
     assert any(ASSET_URL in " ".join(call) for call in calls)
@@ -271,7 +268,7 @@ def test_release_download_is_verified_against_the_published_checksum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls, _ = _fake_run_factory(monkeypatch, tmp_path)
-    scrcpy_setup.task(_ctx(tmp_path))
+    scrcpy_setup.task(_ctx())
     downloads = [call[-1] for call in _download_calls(calls)]
     assert any(name.endswith(ASSET_NAME) for name in downloads)
     assert any(name.endswith(CHECKSUM_NAME) for name in downloads)
@@ -287,14 +284,14 @@ def test_checksum_mismatch_keeps_the_machine_and_never_downgrades(
         printed_digest=OTHER_DIGEST,
         installed_packages=(UDEV_PACKAGE,),
     )
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.warnings
     assert result.message is not None
     assert "digest" in result.message
-    assert not _command_path(tmp_path).is_symlink()
-    assert not _version_dir(tmp_path).exists()
+    assert not _command_path().is_symlink()
+    assert not _version_dir().exists()
     # The archive and the checksum file are fetched twice: one retry, then
     # the release is abandoned. The Ubuntu archive is never taken, because
     # an integrity alarm must not replace the installation with an older one.
@@ -315,16 +312,16 @@ def test_missing_asset_falls_back_to_the_ubuntu_archive(
     )
     apt_binary = tmp_path / "usr-bin-scrcpy"
     apt_binary.write_bytes(b"sentinel\n")
-    config = _config_with(tmp_path, apt_binary_path=apt_binary)
+    monkeypatch.setattr(values, "APT_BINARY_PATH", apt_binary)
     calls, installed = _fake_run_factory(
         monkeypatch, tmp_path, release_json=release_json
     )
-    result = scrcpy_setup.task(_ctx(tmp_path, config=config))
+    result = scrcpy_setup.task(_ctx())
     assert "scrcpy" in installed
     assert "scrcpy" in _apt_installed_packages(calls)
     assert result.message is not None
     assert "Ubuntu archive" in result.message
-    assert str(apt_binary) in _launcher_path(tmp_path).read_text(encoding="utf-8")
+    assert str(apt_binary) in _launcher_path().read_text(encoding="utf-8")
 
 
 def test_client_that_does_not_answer_falls_back_to_the_archive(
@@ -332,12 +329,12 @@ def test_client_that_does_not_answer_falls_back_to_the_archive(
 ) -> None:
     apt_binary = tmp_path / "usr-bin-scrcpy"
     apt_binary.write_bytes(b"sentinel\n")
-    config = _config_with(tmp_path, apt_binary_path=apt_binary)
+    monkeypatch.setattr(values, "APT_BINARY_PATH", apt_binary)
     _, installed = _fake_run_factory(monkeypatch, tmp_path, client_banner="")
-    result = scrcpy_setup.task(_ctx(tmp_path, config=config))
+    result = scrcpy_setup.task(_ctx())
     assert "scrcpy" in installed
-    assert not _version_dir(tmp_path).exists()
-    assert (_trash_dir(tmp_path) / VERSION).is_dir()
+    assert not _version_dir().exists()
+    assert (_trash_dir() / VERSION).is_dir()
     assert result.warnings
 
 
@@ -347,7 +344,7 @@ def test_archive_install_failure_is_a_warning(
     calls, _ = _fake_run_factory(
         monkeypatch, tmp_path, release_json=None, apt_install_rc=100
     )
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.warnings
@@ -359,11 +356,11 @@ def test_archive_install_failure_is_a_warning(
 def test_unavailable_release_keeps_the_installed_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    tree = _install_fake_release(tmp_path)
+    tree = _install_fake_release()
     calls, _ = _fake_run_factory(monkeypatch, tmp_path, release_json=None)
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.success is True
-    assert Path(os.readlink(_command_path(tmp_path))) == tree / "scrcpy"
+    assert Path(os.readlink(_command_path())) == tree / "scrcpy"
     assert "scrcpy" not in _apt_installed_packages(calls)
     assert result.message is not None
     assert "unavailable" in result.message
@@ -374,10 +371,10 @@ def test_rerun_with_the_same_version_downloads_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls, _ = _fake_run_factory(monkeypatch, tmp_path)
-    first = scrcpy_setup.task(_ctx(tmp_path))
+    first = scrcpy_setup.task(_ctx())
     assert first.changed is True
     downloads = len(_download_calls(calls))
-    second = scrcpy_setup.task(_ctx(tmp_path))
+    second = scrcpy_setup.task(_ctx())
     assert second.changed is False
     assert second.message is not None
     assert "already installed scrcpy" in second.message
@@ -388,9 +385,9 @@ def test_force_reinstalls_the_same_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls, _ = _fake_run_factory(monkeypatch, tmp_path)
-    scrcpy_setup.task(_ctx(tmp_path))
+    scrcpy_setup.task(_ctx())
     downloads = len(_download_calls(calls))
-    forced = scrcpy_setup.task(_ctx(tmp_path, force=True))
+    forced = scrcpy_setup.task(_ctx(force=True))
     assert forced.changed is True
     assert len(_download_calls(calls)) > downloads
 
@@ -398,26 +395,24 @@ def test_force_reinstalls_the_same_version(
 def test_superseded_version_moves_into_the_trash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _install_fake_release(tmp_path)
+    _install_fake_release()
     _fake_run_factory(monkeypatch, tmp_path)
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.changed is True
-    assert not _version_dir(tmp_path, OLD_VERSION).exists()
-    assert (_trash_dir(tmp_path) / OLD_VERSION).is_dir()
-    assert Path(os.readlink(_command_path(tmp_path))) == (
-        _version_dir(tmp_path) / "scrcpy"
-    )
+    assert not _version_dir(OLD_VERSION).exists()
+    assert (_trash_dir() / OLD_VERSION).is_dir()
+    assert Path(os.readlink(_command_path())) == (_version_dir() / "scrcpy")
 
 
 def test_menu_entries_start_the_client_and_keep_the_messages(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _fake_run_factory(monkeypatch, tmp_path)
-    scrcpy_setup.task(_ctx(tmp_path))
-    client = str(_version_dir(tmp_path) / "scrcpy")
-    icon = str(_version_dir(tmp_path) / "scrcpy.png")
-    launcher = _launcher_path(tmp_path).read_text(encoding="utf-8")
-    console = _console_launcher_path(tmp_path).read_text(encoding="utf-8")
+    scrcpy_setup.task(_ctx())
+    client = str(_version_dir() / "scrcpy")
+    icon = str(_version_dir() / "scrcpy.png")
+    launcher = _launcher_path().read_text(encoding="utf-8")
+    console = _console_launcher_path().read_text(encoding="utf-8")
     assert f"Exec={client}\n" in launcher
     assert f"Icon={icon}\n" in launcher
     assert "Terminal=false" in launcher
@@ -429,13 +424,12 @@ def test_menu_entries_are_rendered_from_the_real_templates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _fake_run_factory(monkeypatch, tmp_path)
-    scrcpy_setup.task(_ctx(tmp_path))
-    settings = _settings(tmp_path)
+    scrcpy_setup.task(_ctx())
     for template_name, target in (
-        (settings.launcher_template_file_name, _launcher_path(tmp_path)),
+        (values.LAUNCHER_TEMPLATE_FILE_NAME, _launcher_path()),
         (
-            settings.console_launcher_template_file_name,
-            _console_launcher_path(tmp_path),
+            values.CONSOLE_LAUNCHER_TEMPLATE_FILE_NAME,
+            _console_launcher_path(),
         ),
     ):
         template = Template(
@@ -444,8 +438,8 @@ def test_menu_entries_are_rendered_from_the_real_templates(
             ).read_text(encoding="utf-8")
         )
         expected = template.substitute(
-            binary=str(_version_dir(tmp_path) / settings.binary_file_name),
-            icon=str(_version_dir(tmp_path) / settings.icon_file_name),
+            binary=str(_version_dir() / values.BINARY_FILE_NAME),
+            icon=str(_version_dir() / values.ICON_FILE_NAME),
         )
         assert target.read_text(encoding="utf-8") == expected
 
@@ -454,7 +448,7 @@ def test_android_usb_rules_failure_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls, _ = _fake_run_factory(monkeypatch, tmp_path, apt_install_rc=100)
-    result = scrcpy_setup.task(_ctx(tmp_path))
+    result = scrcpy_setup.task(_ctx())
     assert result.changed is True
     assert result.message is not None
     assert "android-udev-rules" in result.message

@@ -107,11 +107,10 @@ TAR_EXTRACT_COMMAND: tuple[str, ...] = (
     "{extract_dir}",
 )
 
-# Modes of the three deployed files: the launcher entry and the icon are read by
-# the desktop, the two binaries are executed by the user.
-LAUNCHER_FILE_MODE: int = 0o644
+# Mode of the deployed icon: read by the desktop. The mode of the menu entry
+# and the mode of the two deployed binaries come from the shared module, because
+# the scrcpy task deploys the same pair.
 ICON_FILE_MODE: int = 0o644
-EXECUTABLE_FILE_MODE: int = 0o755
 
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
@@ -133,7 +132,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "EXTRACT_DIR_PREFIX",
     "LAUNCHER_TEMPLATE_FILE_NAME",
     "TAR_EXTRACT_COMMAND",
-    "LAUNCHER_FILE_MODE",
     "ICON_FILE_MODE",
-    "EXECUTABLE_FILE_MODE",
 )

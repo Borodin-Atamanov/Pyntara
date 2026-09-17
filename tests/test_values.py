@@ -46,6 +46,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "local_vault_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
+    "scrcpy_setup",
     "ssh_client_setup",
     "telegram_setup",
     "vault_structure",
@@ -64,6 +65,8 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 # the task reinstall that package on every run without ever reaching its goal.
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
     ("cli_tools", "PACKAGES", check_real_package_names),
+    ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
+    ("common", "LAUNCHER_FILE_MODE", check_file_mode),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
     ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_DIR_MODE", check_file_mode),
@@ -72,10 +75,9 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("local_vault_setup", "SECRETS_DIR_MODE", check_file_mode),
     ("local_vault_setup", "VAULT_PASSWORD_ENTRY_TITLE", check_vault_entry_title),
     ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
+    ("scrcpy_setup", "FALLBACK_PACKAGES", check_nonempty_text_tuple),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
-    ("telegram_setup", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
-    ("telegram_setup", "LAUNCHER_FILE_MODE", check_file_mode),
 )
 
 

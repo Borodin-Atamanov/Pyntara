@@ -43,7 +43,7 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import EngineConfig, ScrcpySetupConfig
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -60,6 +60,9 @@ from pyntara.utils import (
     trim_whitespace,
     version_without_tag_prefix,
 )
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import scrcpy_setup as values
 
 
 class _ReleaseOutcome(NamedTuple):
@@ -77,37 +80,37 @@ class _ReleaseOutcome(NamedTuple):
     fall_back: bool
 
 
-def _home(cfg: ScrcpySetupConfig) -> Path:
+def _home() -> Path:
     """The home directory of the desktop user."""
 
-    return Path(cfg.home_dir)
+    return Path(common_values.DESKTOP_HOME_DIR)
 
 
-def _install_dir(cfg: ScrcpySetupConfig) -> Path:
+def _install_dir() -> Path:
     """The directory that holds one subdirectory per installed release."""
 
-    return _home(cfg) / cfg.install_dir_relative_path
+    return _home() / values.INSTALL_DIR_RELATIVE_PATH
 
 
-def _command_path(cfg: ScrcpySetupConfig) -> Path:
+def _command_path() -> Path:
     """The symbolic link the desktop user starts."""
 
-    return _home(cfg) / cfg.command_relative_path
+    return _home() / values.COMMAND_RELATIVE_PATH
 
 
-def _version_dir(cfg: ScrcpySetupConfig, version: str) -> Path:
+def _version_dir(version: str) -> Path:
     """The directory of one installed release version."""
 
-    return _install_dir(cfg) / version
+    return _install_dir() / version
 
 
-def _client_path(cfg: ScrcpySetupConfig, version: str) -> Path:
+def _client_path(version: str) -> Path:
     """The client binary inside one installed release version."""
 
-    return _version_dir(cfg, version) / cfg.binary_file_name
+    return _version_dir(version) / values.BINARY_FILE_NAME
 
 
-def _tree_is_complete(cfg: ScrcpySetupConfig, version: str) -> bool:
+def _tree_is_complete(version: str) -> bool:
     """True when the version directory carries every file of one release.
 
     The client, the server it pushes to the device and its own adb are the
@@ -115,14 +118,18 @@ def _tree_is_complete(cfg: ScrcpySetupConfig, version: str) -> bool:
     is a half finished install and is never treated as usable.
     """
 
-    tree = _version_dir(cfg, version)
+    tree = _version_dir(version)
     return all(
         (tree / name).is_file()
-        for name in (cfg.binary_file_name, cfg.server_file_name, cfg.adb_file_name)
+        for name in (
+            values.BINARY_FILE_NAME,
+            values.SERVER_FILE_NAME,
+            values.ADB_FILE_NAME,
+        )
     )
 
 
-def _installed_release_version(cfg: ScrcpySetupConfig) -> str | None:
+def _installed_release_version() -> str | None:
     """The version of the installed release, read from the symbolic link.
 
     The link target is <install dir>/<version>/<client>, so the parent
@@ -133,7 +140,7 @@ def _installed_release_version(cfg: ScrcpySetupConfig) -> str | None:
     installed client being able to answer.
     """
 
-    link = _command_path(cfg)
+    link = _command_path()
     try:
         if not link.is_symlink():
             return None
@@ -144,7 +151,6 @@ def _installed_release_version(cfg: ScrcpySetupConfig) -> str | None:
 
 
 def _own_to_user(
-    cfg: ScrcpySetupConfig,
     path: Path,
     *,
     recursive: bool = False,
@@ -161,7 +167,7 @@ def _own_to_user(
     if os.geteuid() != 0:
         return
     try:
-        record = pwd.getpwnam(cfg.username)
+        record = pwd.getpwnam(common_values.DESKTOP_USERNAME)
     except KeyError:
         return
     try:
@@ -180,14 +186,14 @@ def _own_to_user(
         _log(f"cannot set the owner of {path}: {exc}")
 
 
-def _move_to_trash(cfg: ScrcpySetupConfig, path: Path) -> str:
+def _move_to_trash(path: Path) -> str:
     """Move a superseded path into the user trash; never deletes it.
 
     A name that is already taken in the trash gets a counter, so nothing is
     overwritten. A failed move is reported and leaves the path where it is.
     """
 
-    trash_dir = _home(cfg) / cfg.trash_dir_relative_path
+    trash_dir = _home() / values.TRASH_DIR_RELATIVE_PATH
     target = trash_dir / path.name
     counter = 2
     while target.exists():
@@ -198,13 +204,11 @@ def _move_to_trash(cfg: ScrcpySetupConfig, path: Path) -> str:
         shutil.move(str(path), str(target))
     except OSError as exc:
         return f"cannot move {path} into the trash: {exc}"
-    _own_to_user(cfg, target, recursive=True)
+    _own_to_user(target, recursive=True)
     return f"moved {path.name} into the trash"
 
 
-def _probe_client_answer(
-    cfg: ScrcpySetupConfig, client: Path, timeout: float
-) -> str | None:
+def _probe_client_answer(client: Path, timeout: float) -> str | None:
     """The words the delivered client answers with, or None when it does not answer.
 
     The probe is the acceptance check of the release path, so it asks the
@@ -215,7 +219,7 @@ def _probe_client_answer(
     missing binary, a nonzero exit and a timeout all answer None.
     """
 
-    command = substituted_command(cfg.version_command, {"binary": str(client)})
+    command = substituted_command(values.VERSION_COMMAND, {"binary": str(client)})
     try:
         result = run_command(command, check=False, capture=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
@@ -230,7 +234,6 @@ def _probe_client_answer(
 
 def _download_into_cache(
     engine: EngineConfig,
-    cfg: ScrcpySetupConfig,
     name: str,
     url: str,
     timeout: float,
@@ -242,26 +245,26 @@ def _download_into_cache(
     always a complete one.
     """
 
-    cfg.download_dir.mkdir(parents=True, exist_ok=True)
-    partial = cfg.download_dir / (name + engine.partial_download_file_suffix)
+    values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    partial = values.DOWNLOAD_DIR / (name + engine.partial_download_file_suffix)
     try:
         run_command(download_command(engine, partial, url), timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"cannot download {url}: {exc}") from None
-    target = cfg.download_dir / name
+    target = values.DOWNLOAD_DIR / name
     partial.replace(target)
     return target
 
 
-def _printed_digest(cfg: ScrcpySetupConfig, path: Path, timeout: float) -> str | None:
+def _printed_digest(path: Path, timeout: float) -> str | None:
     """The digest the configured checksum command prints for a file, or None.
 
     The command prints "<digest>  <name>"; only the digest is read, because
     the name is resolved by the caller from the published checksum file.
     """
 
-    command = substituted_command(cfg.checksum_command, {"file": str(path)})
+    command = substituted_command(values.CHECKSUM_COMMAND, {"file": str(path)})
     try:
         result = run_command(command, check=False, capture=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
@@ -288,7 +291,6 @@ def _published_digest(text: str, file_name: str) -> str | None:
 
 
 def _verify_archive(
-    cfg: ScrcpySetupConfig,
     archive: Path,
     checksum_file: Path,
     timeout: float,
@@ -303,7 +305,7 @@ def _verify_archive(
         return False, f"cannot read {checksum_file}: {exc}"
     if published is None:
         return False, f"{checksum_file.name} carries no line for {archive.name}"
-    printed = _printed_digest(cfg, archive, timeout)
+    printed = _printed_digest(archive, timeout)
     if printed is None:
         return False, f"cannot read the digest of {archive.name}"
     if printed != published:
@@ -314,9 +316,7 @@ def _verify_archive(
     return True, f"{archive.name} matches the published digest"
 
 
-def _extract_tree(
-    cfg: ScrcpySetupConfig, archive: Path, timeout: float
-) -> tuple[Path, Path]:
+def _extract_tree(archive: Path, timeout: float) -> tuple[Path, Path]:
     """Unpack the archive; return (the release tree, the temporary directory).
 
     The directory inside the archive is discovered instead of assumed: a
@@ -325,11 +325,11 @@ def _extract_tree(
     Raises RuntimeError when the archive cannot be unpacked.
     """
 
-    work_dir = Path(tempfile.mkdtemp(prefix=cfg.extract_dir_prefix))
+    work_dir = Path(tempfile.mkdtemp(prefix=values.EXTRACT_DIR_PREFIX))
     try:
         run_command(
             substituted_command(
-                cfg.archive_extract_command,
+                values.ARCHIVE_EXTRACT_COMMAND,
                 {"archive": str(archive), "extract_dir": str(work_dir)},
             ),
             timeout=timeout,
@@ -343,7 +343,7 @@ def _extract_tree(
     return work_dir, work_dir
 
 
-def _switch_command_link(cfg: ScrcpySetupConfig, client: Path) -> None:
+def _switch_command_link(client: Path) -> None:
     """Point the user command at a client, replacing the previous link atomically.
 
     The new link is created next to the old one and renamed over it, so a
@@ -351,18 +351,17 @@ def _switch_command_link(cfg: ScrcpySetupConfig, client: Path) -> None:
     user like the rest of the install.
     """
 
-    link = _command_path(cfg)
+    link = _command_path()
     link.parent.mkdir(parents=True, exist_ok=True)
     staged = link.parent / (link.name + ".staged")
     staged.unlink(missing_ok=True)
     os.symlink(str(client), staged)
     os.replace(staged, link)
-    _own_to_user(cfg, link, follow_symlinks=False)
+    _own_to_user(link, follow_symlinks=False)
 
 
 def _deploy_release(
     engine: EngineConfig,
-    cfg: ScrcpySetupConfig,
     asset_name: str,
     asset_url: str,
     checksum_url: str,
@@ -381,17 +380,15 @@ def _deploy_release(
     note = ""
     for _attempt in range(2):
         try:
-            archive = _download_into_cache(
-                engine, cfg, asset_name, asset_url, timeout
-            )
+            archive = _download_into_cache(engine, asset_name, asset_url, timeout)
             checksum_file = _download_into_cache(
-                engine, cfg, cfg.checksum_file_name, checksum_url, timeout
+                engine, values.CHECKSUM_FILE_NAME, checksum_url, timeout
             )
         except RuntimeError as exc:
             return _ReleaseOutcome(
                 version, str(exc), installed=False, fall_back=True
             )
-        verified, note = _verify_archive(cfg, archive, checksum_file, timeout)
+        verified, note = _verify_archive(archive, checksum_file, timeout)
         if verified:
             break
     else:
@@ -400,16 +397,16 @@ def _deploy_release(
         )
 
     try:
-        tree, work_dir = _extract_tree(cfg, archive, timeout)
+        tree, work_dir = _extract_tree(archive, timeout)
     except RuntimeError as exc:
         return _ReleaseOutcome(
             version, str(exc), installed=False, fall_back=True
         )
-    target = _version_dir(cfg, version)
+    target = _version_dir(version)
     try:
-        _install_dir(cfg).mkdir(parents=True, exist_ok=True)
+        _install_dir().mkdir(parents=True, exist_ok=True)
         if target.exists() or target.is_symlink():
-            _log(_move_to_trash(cfg, target))
+            _log(_move_to_trash(target))
         shutil.move(str(tree), str(target))
     except OSError as exc:
         return _ReleaseOutcome(
@@ -420,40 +417,40 @@ def _deploy_release(
         )
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-    for name in (cfg.binary_file_name, cfg.adb_file_name):
+    for name in (values.BINARY_FILE_NAME, values.ADB_FILE_NAME):
         path = target / name
         try:
             if path.is_file():
-                path.chmod(cfg.executable_file_mode)
+                path.chmod(common_values.EXECUTABLE_FILE_MODE)
         except OSError as exc:
             _log(f"cannot set the mode of {path}: {exc}")
-    _own_to_user(cfg, target, recursive=True)
+    _own_to_user(target, recursive=True)
 
-    client = target / cfg.binary_file_name
-    answer = _probe_client_answer(cfg, client, timeout)
+    client = target / values.BINARY_FILE_NAME
+    answer = _probe_client_answer(client, timeout)
     if answer is None:
         return _ReleaseOutcome(
             version,
             f"the client of {asset_name} does not answer "
-            f"{' '.join(cfg.version_command)}; {_move_to_trash(cfg, target)}",
+            f"{' '.join(values.VERSION_COMMAND)}; {_move_to_trash(target)}",
             installed=False,
             fall_back=True,
         )
 
-    previous = _installed_release_version(cfg)
+    previous = _installed_release_version()
     try:
-        _switch_command_link(cfg, client)
+        _switch_command_link(client)
     except OSError as exc:
         return _ReleaseOutcome(
             version,
-            f"cannot point {cfg.command_relative_path} at {client}: {exc}",
+            f"cannot point {values.COMMAND_RELATIVE_PATH} at {client}: {exc}",
             installed=False,
             fall_back=True,
         )
     if previous and previous != version:
-        superseded = _version_dir(cfg, previous)
+        superseded = _version_dir(previous)
         if superseded.exists():
-            _log(_move_to_trash(cfg, superseded))
+            _log(_move_to_trash(superseded))
     return _ReleaseOutcome(
         version,
         f"installed scrcpy {version} from the GitHub release, "
@@ -464,16 +461,16 @@ def _deploy_release(
 
 
 def _install_from_apt(
-    ctx: Context, cfg: ScrcpySetupConfig, timeout: float, warnings: list[str]
+    ctx: Context, timeout: float, warnings: list[str]
 ) -> tuple[bool, str]:
     """Install the fallback packages; return (installed something, note)."""
 
     engine = ctx.config.engine
     missing = [
         package
-        for package in cfg.fallback_packages
+        for package in values.FALLBACK_PACKAGES
         if not package_is_installed(
-            engine, package, cfg.package_status_timeout_seconds
+            engine, package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
         )
     ]
     if not missing:
@@ -484,7 +481,7 @@ def _install_from_apt(
         missing,
         install_timeout=timeout,
         update_timeout=timeout,
-        retries=cfg.package_install_retries,
+        retries=common_values.PACKAGE_INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
     warnings.extend(apt_warnings)
@@ -495,7 +492,7 @@ def _install_from_apt(
 
 
 def _ensure_udev_rules(
-    ctx: Context, cfg: ScrcpySetupConfig, timeout: float, warnings: list[str]
+    ctx: Context, timeout: float, warnings: list[str]
 ) -> bool:
     """Install the Android USB rules when they are missing; True when changed.
 
@@ -506,32 +503,32 @@ def _ensure_udev_rules(
 
     engine = ctx.config.engine
     if package_is_installed(
-        engine, cfg.udev_rules_package_name, cfg.package_status_timeout_seconds
+        engine,
+        values.UDEV_RULES_PACKAGE_NAME,
+        common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
     ):
         return False
-    _log(f"installing {cfg.udev_rules_package_name} for Android USB access")
+    _log(f"installing {values.UDEV_RULES_PACKAGE_NAME} for Android USB access")
     installed, failures, apt_warnings = install_packages(
         engine,
-        [cfg.udev_rules_package_name],
+        [values.UDEV_RULES_PACKAGE_NAME],
         install_timeout=timeout,
         update_timeout=timeout,
-        retries=cfg.package_install_retries,
+        retries=common_values.PACKAGE_INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
     warnings.extend(apt_warnings)
     if failures:
         detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
         warnings.append(
-            f"cannot install {cfg.udev_rules_package_name}: {detail}; a device "
+            f"cannot install {values.UDEV_RULES_PACKAGE_NAME}: {detail}; a device "
             "connected over the cable may stay unreachable for the desktop user"
         )
         return False
     return bool(installed)
 
 
-def _launcher_binary_and_icon(
-    cfg: ScrcpySetupConfig,
-) -> tuple[Path | None, str | None]:
+def _launcher_binary_and_icon() -> tuple[Path | None, str | None]:
     """The client and the icon the menu entry starts, or (None, None).
 
     The installed release wins because it is the primary source; without it
@@ -540,18 +537,17 @@ def _launcher_binary_and_icon(
     the system theme and not in an install directory.
     """
 
-    version = _installed_release_version(cfg)
-    if version and _tree_is_complete(cfg, version):
-        tree = _version_dir(cfg, version)
-        return tree / cfg.binary_file_name, str(tree / cfg.icon_file_name)
-    apt_binary = Path(cfg.apt_binary_path)
+    version = _installed_release_version()
+    if version and _tree_is_complete(version):
+        tree = _version_dir(version)
+        return tree / values.BINARY_FILE_NAME, str(tree / values.ICON_FILE_NAME)
+    apt_binary = Path(values.APT_BINARY_PATH)
     if apt_binary.is_file():
-        return apt_binary, cfg.theme_icon_name
+        return apt_binary, values.THEME_ICON_NAME
     return None, None
 
 
 def _write_launcher(
-    cfg: ScrcpySetupConfig,
     template_path: Path,
     target: Path,
     client: Path,
@@ -566,7 +562,7 @@ def _write_launcher(
 
     try:
         content = Template(template_path.read_text(encoding="utf-8")).substitute(
-            binary=str(client), icon=icon or cfg.theme_icon_name
+            binary=str(client), icon=icon or values.THEME_ICON_NAME
         )
     except (OSError, KeyError) as exc:
         return False, f"cannot render {template_path}: {exc}"
@@ -575,9 +571,9 @@ def _write_launcher(
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        target.chmod(cfg.launcher_file_mode)
-        _own_to_user(cfg, target)
-        _own_to_user(cfg, target.parent)
+        target.chmod(common_values.LAUNCHER_FILE_MODE)
+        _own_to_user(target)
+        _own_to_user(target.parent)
     except OSError as exc:
         return False, f"cannot write {target}: {exc}"
     return True, None
@@ -595,7 +591,20 @@ def task(ctx: Context) -> TaskResult:
     stdout and a step that cannot run becomes a warning of a completed task.
     """
 
-    cfg = ctx.config.scrcpy_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the scrcpy_setup values are not declared, nothing was changed",
+            warnings=(
+                "the scrcpy_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
@@ -617,7 +626,7 @@ def task(ctx: Context) -> TaskResult:
     checksum_url = ""
     if not release_error:
         try:
-            release = fetch_latest_release(cfg.github_repo, engine)
+            release = fetch_latest_release(values.GITHUB_REPO, engine)
             tag = release_tag(release)
             assets = dict(asset_name_urls(release))
         except RuntimeError as exc:
@@ -626,22 +635,22 @@ def task(ctx: Context) -> TaskResult:
             asset_arch = release_asset_architecture(
                 engine.release_asset_architectures, arch
             )
-            asset_name = cfg.archive_name_template.format(
+            asset_name = values.ARCHIVE_NAME_TEMPLATE.format(
                 asset_arch=asset_arch, release_tag=tag
             )
             if asset_name not in assets:
                 release_error = f"release {tag} carries no {asset_name} asset"
-            elif cfg.checksum_file_name not in assets:
+            elif values.CHECKSUM_FILE_NAME not in assets:
                 release_error = (
-                    f"release {tag} carries no {cfg.checksum_file_name} asset, "
+                    f"release {tag} carries no {values.CHECKSUM_FILE_NAME} asset, "
                     "so the archive cannot be verified"
                 )
             else:
                 asset_url = assets[asset_name]
-                checksum_url = assets[cfg.checksum_file_name]
+                checksum_url = assets[values.CHECKSUM_FILE_NAME]
     version = version_without_tag_prefix(tag) if tag else ""
-    installed = _installed_release_version(cfg)
-    complete = installed is not None and _tree_is_complete(cfg, installed)
+    installed = _installed_release_version()
+    complete = installed is not None and _tree_is_complete(installed)
     if tag:
         _log(f"checking latest release: {tag}")
 
@@ -652,7 +661,7 @@ def task(ctx: Context) -> TaskResult:
     elif not release_error:
         _log(f"installing scrcpy {version} from the GitHub release")
         outcome = _deploy_release(
-            engine, cfg, asset_name, asset_url, checksum_url, version, timeout
+            engine, asset_name, asset_url, checksum_url, version, timeout
         )
         if outcome.installed:
             changed = True
@@ -670,28 +679,28 @@ def task(ctx: Context) -> TaskResult:
             messages.append(f"keeping the installed scrcpy {installed}")
         else:
             _log(f"the GitHub release is unavailable: {release_error}")
-            apt_changed, apt_note = _install_from_apt(ctx, cfg, timeout, warnings)
+            apt_changed, apt_note = _install_from_apt(ctx, timeout, warnings)
             changed = changed or apt_changed
             messages.append(apt_note)
-            apt_binary = Path(cfg.apt_binary_path)
+            apt_binary = Path(values.APT_BINARY_PATH)
             if not apt_binary.is_file():
                 warnings.append(
                     f"no scrcpy client at {apt_binary} after the Ubuntu archive "
                     "install"
                 )
-            elif _probe_client_answer(cfg, apt_binary, timeout) is None:
+            elif _probe_client_answer(apt_binary, timeout) is None:
                 warnings.append(
                     f"the client from the Ubuntu archive does not answer "
-                    f"{' '.join(cfg.version_command)}"
+                    f"{' '.join(values.VERSION_COMMAND)}"
                 )
             else:
                 messages.append("the Ubuntu archive client answers")
 
-    if _ensure_udev_rules(ctx, cfg, timeout, warnings):
+    if _ensure_udev_rules(ctx, timeout, warnings):
         changed = True
-        messages.append(f"installed {cfg.udev_rules_package_name}")
+        messages.append(f"installed {values.UDEV_RULES_PACKAGE_NAME}")
 
-    client, icon = _launcher_binary_and_icon(cfg)
+    client, icon = _launcher_binary_and_icon()
     if client is None:
         warnings.append(
             "no scrcpy client to start, so no menu entry was written"
@@ -699,15 +708,15 @@ def task(ctx: Context) -> TaskResult:
     else:
         data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
         for template_name, relative_path in (
-            (cfg.launcher_template_file_name, cfg.launcher_relative_path),
+            (values.LAUNCHER_TEMPLATE_FILE_NAME, values.LAUNCHER_RELATIVE_PATH),
             (
-                cfg.console_launcher_template_file_name,
-                cfg.console_launcher_relative_path,
+                values.CONSOLE_LAUNCHER_TEMPLATE_FILE_NAME,
+                values.CONSOLE_LAUNCHER_RELATIVE_PATH,
             ),
         ):
-            target = _home(cfg) / relative_path
+            target = _home() / relative_path
             written, error = _write_launcher(
-                cfg, data_dir / template_name, target, client, icon
+                data_dir / template_name, target, client, icon
             )
             if error:
                 warnings.append(error)

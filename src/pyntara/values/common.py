@@ -51,6 +51,13 @@ SOURCE_VAULT_DEFAULT: str = "secrets/default.vault"
 DESKTOP_USERNAME: str = "i"
 DESKTOP_HOME_DIR: str = "/home/i"
 
+# Modes of two deployed files of the desktop tasks: the menu entry a task writes
+# into the user directory is read by the desktop and carries 0644, the delivered
+# binaries are executed and carry 0755. Telegram Desktop and scrcpy both deploy
+# that pair, and vocalinux follows, so the modes are written once here.
+LAUNCHER_FILE_MODE: int = 0o644
+EXECUTABLE_FILE_MODE: int = 0o755
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -60,4 +67,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SOURCE_VAULT_DEFAULT",
     "DESKTOP_USERNAME",
     "DESKTOP_HOME_DIR",
+    "LAUNCHER_FILE_MODE",
+    "EXECUTABLE_FILE_MODE",
 )

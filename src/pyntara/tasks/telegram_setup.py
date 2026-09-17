@@ -260,7 +260,7 @@ def _install_archive(archive: Path, timeout: float) -> None:
                 and filecmp.cmp(source, target, shallow=False)
             ):
                 shutil.copyfile(source, target)
-            target.chmod(values.EXECUTABLE_FILE_MODE)
+            target.chmod(common_values.EXECUTABLE_FILE_MODE)
             _own_to_user(common_values.DESKTOP_USERNAME, target)
     except OSError as exc:
         raise RuntimeError(
@@ -307,7 +307,7 @@ def _ensure_launcher(template_path: Path) -> tuple[bool, str | None]:
             return False, None
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_text(content, encoding="utf-8")
-        launcher.chmod(values.LAUNCHER_FILE_MODE)
+        launcher.chmod(common_values.LAUNCHER_FILE_MODE)
         _own_to_user(common_values.DESKTOP_USERNAME, launcher)
         _own_to_user(common_values.DESKTOP_USERNAME, launcher.parent)
     except OSError as exc:
