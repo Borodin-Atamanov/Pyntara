@@ -9,9 +9,11 @@
 # Packages that must be present: the provider of kwriteconfig6 and
 # kreadconfig6 (libkf6config-bin), the DBus client used for the reload
 # (qdbus-qt6) and the python3-dbus bindings used to apply layout hotkeys
-# through the kglobalaccel daemon. Missing packages are installed by the
+# through the kglobalaccel daemon. The Qt bindings (python3-pyqt6) turn a
+# portable shortcut into the combined Qt key code the daemon takes, so
+# the shared client needs them. Missing packages are installed by the
 # task.
-packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
+packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus", "python3-pyqt6"]
 # The user whose desktop configuration is edited and that user's home and
 # config directories.
 username = "i"

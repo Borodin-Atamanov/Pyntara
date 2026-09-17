@@ -18,17 +18,17 @@ from config_helpers import (
     [
         # packages is a string, not an array
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus", "python3-pyqt6"]',
             'packages = "libkf6config-bin"',
         ),
         # packages is an empty array
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus", "python3-pyqt6"]',
             "packages = []",
         ),
         # packages contains a number, not strings
         base_config().replace(
-            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]',
+            'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus", "python3-pyqt6"]',
             "packages = [1]",
         ),
         # username is a number, not a string
@@ -117,6 +117,7 @@ def test_load_config_kde_keyboard_setup_values(tmp_path: Path) -> None:
         "libkf6config-bin",
         "qdbus-qt6",
         "python3-dbus",
+        "python3-pyqt6",
     )
     assert config.kde_keyboard_setup.username == "i"
     assert config.kde_keyboard_setup.home_dir == "/home/i"

@@ -32,14 +32,17 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from string import Template
+from typing import TypedDict
 from xml.etree import ElementTree
 
 from pyntara.config import (
     KCONFIG_BOOL_TYPE,
     EngineConfig,
+    KConfigRecord,
     KdeSettingsConfig,
 )
 from pyntara.context import Context
@@ -808,6 +811,12 @@ def _apply_kconfig_records(
     changed = False
     for record in cfg.kconfig:
         try:
+            if _is_shortcut_record(cfg, record):
+                # The running daemon owns the shortcut state and writes
+                # the shortcut file from its memory, so these records are
+                # applied to the daemon in their own step and never
+                # compared as file text.
+                continue
             if record.delete:
                 current = _kreadconfig(
                     cfg, record.file, record.group, record.key, timeout
@@ -845,6 +854,227 @@ def _apply_kconfig_records(
             _log(warning)
             if warnings is not None:
                 warnings.append(warning)
+    return changed
+
+
+def _is_shortcut_record(cfg: KdeSettingsConfig, record: KConfigRecord) -> bool:
+    """True when a record names keyboard combinations of one action.
+
+    The shortcut file carries one record per action of a component, in
+    the portable primary,alternate,description form, which is what the
+    comma test recognises. A delete record is a plain KConfig removal and
+    stays with the other records of the file.
+    """
+
+    return (
+        record.file == cfg.global_shortcuts_file_name
+        and not record.delete
+        and "," in record.value
+    )
+
+
+def _shortcut_record_changes(
+    cfg: KdeSettingsConfig,
+) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """The configured combinations, by component, action and combination.
+
+    A shortcut record names one action and the combinations it must own:
+    the first two comma fields of its value are the combinations, the
+    absent word and an empty field mean no combination at all, and the
+    description field is not read. The group segment of the record is the
+    unique component name the running daemon knows and the key is the
+    unique action name inside that component.
+    """
+
+    changes: list[tuple[str, str, tuple[str, ...]]] = []
+    for record in cfg.kconfig:
+        if not _is_shortcut_record(cfg, record):
+            continue
+        if not record.group:
+            _log(
+                f"no component in the record of {record.key},"
+                " the shortcut is left as is"
+            )
+            continue
+        keys: list[str] = []
+        for slot in record.value.split(",")[:2]:
+            text = trim_whitespace(slot)
+            if text and text != cfg.shortcut_absent_value:
+                keys.append(text)
+        changes.append((record.group[0], record.key, tuple(keys)))
+    return tuple(changes)
+
+
+def _shortcut_apply_request(
+    changes: tuple[tuple[str, str, tuple[str, ...]], ...],
+) -> str:
+    """The JSON request of the shared client: one change per record."""
+
+    return json.dumps(
+        {
+            "changes": [
+                {
+                    "component_unique": component,
+                    "component_friendly": component,
+                    "action": action,
+                    "keys": list(keys),
+                }
+                for component, action, keys in changes
+            ]
+        }
+    )
+
+
+class _ShortcutReport(TypedDict):
+    """One change as the shared client reports it.
+
+    requested holds the combined codes the client read from the configured
+    combinations, before and after the codes the action held around the
+    call, unsupported the combinations Qt could not read, and missing
+    marks an action the daemon does not know.
+    """
+
+    action: str
+    requested: list[int]
+    before: list[int]
+    after: list[int]
+    unsupported: list[str]
+    missing: bool
+
+
+def _report_shortcut_warning(
+    warnings: list[str] | None, warning: str
+) -> bool:
+    """Report a shortcut step that could not be completed; always False."""
+
+    _log(warning)
+    if warnings is not None:
+        warnings.append(warning)
+    return False
+
+
+def _apply_shortcut_records_live(
+    cfg: KdeSettingsConfig,
+    *,
+    client_path: Path,
+    timeout: float,
+    env: dict[str, str] | None,
+    system_python: str,
+    kglobalaccel_names: dict[str, str],
+    warnings: list[str] | None = None,
+) -> bool:
+    """Give every configured combination to its action; True when changed.
+
+    The running daemon holds the combinations in memory and writes the
+    shortcut file from that memory, so the records are applied to the
+    daemon instead of being compared as file text: the shared client
+    frees every named combination from whatever action holds it and gives
+    it to the configured action, and reports per change the combinations
+    the action held before and after. A state that is still not the
+    configured one is asked for again, because the daemon can decide a
+    conflict against the first attempt; after the configured number of
+    attempts the remaining difference is reported once and the task
+    continues. A combination the client cannot read, and an action the
+    daemon does not know, are reported as well and never guessed at.
+    """
+
+    changes = _shortcut_record_changes(cfg)
+    if not changes or env is None:
+        return False
+    try:
+        client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
+            **kglobalaccel_names
+        )
+    except OSError as exc:
+        return _report_shortcut_warning(
+            warnings, f"cannot read the shortcut client {client_path}: {exc}"
+        )
+    payload = _shortcut_apply_request(changes)
+    command = _as_user_command(
+        cfg,
+        [
+            *substituted_command(
+                cfg.python_script_command, {"python": system_python}
+            ),
+            client_text,
+            payload,
+        ],
+    )
+    reports: list[_ShortcutReport] = []
+    for attempt in range(1, cfg.shortcut_apply_attempts + 1):
+        if attempt > 1:
+            time.sleep(cfg.shortcut_apply_retry_delay_seconds)
+        try:
+            result = run_command(
+                command, extra_env=env, timeout=timeout, capture=True
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = trim_whitespace(exc.stderr or "")
+            suffix = f": {detail}" if detail else ""
+            return _report_shortcut_warning(
+                warnings,
+                f"cannot apply the configured shortcuts: {exc}{suffix}",
+            )
+        except subprocess.TimeoutExpired as exc:
+            return _report_shortcut_warning(
+                warnings, f"cannot apply the configured shortcuts: {exc}"
+            )
+        try:
+            reply = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return _report_shortcut_warning(
+                warnings, f"cannot read the kglobalaccel reply: {result.stdout}"
+            )
+        reports = list(reply.get("results") or [])
+        if len(reports) != len(changes):
+            return _report_shortcut_warning(
+                warnings,
+                f"the client reported {len(reports)} of {len(changes)}"
+                " configured shortcuts",
+            )
+        if attempt == 1:
+            for (component, action, _keys), report_item in zip(changes, reports):
+                if report_item.get("missing"):
+                    _log(
+                        f"the daemon does not know the action {action} of"
+                        f" {component}, its shortcut stays for the next login"
+                    )
+                for text in report_item.get("unsupported"):
+                    _log(
+                        f"the client cannot read {text} of {action},"
+                        " its shortcut stays for the next login"
+                    )
+        if all(
+            report_item.get("after") == report_item.get("requested")
+            for report_item in reports
+        ):
+            break
+    changed = any(
+        report_item.get("before") != report_item.get("after")
+        for report_item in reports
+    )
+    unresolved = [
+        (
+            component,
+            action,
+            report_item.get("after"),
+            report_item.get("requested"),
+        )
+        for (component, action, _keys), report_item in zip(changes, reports)
+        if report_item.get("after") != report_item.get("requested")
+    ]
+    if unresolved:
+        # The combinations the daemon still refuses are reported, and the
+        # work done on the remaining actions is reported as well: a
+        # difference is often partial, and hiding the part that took would
+        # make the next run start from a wrong idea of the machine.
+        _report_shortcut_warning(
+            warnings,
+            "the daemon does not hold the configured shortcuts:"
+            f" {unresolved}",
+        )
+        return changed
+    _log(f"applied {len(changes)} configured shortcuts in the running daemon")
     return changed
 
 
@@ -1243,27 +1473,15 @@ def _free_script_hotkeys(
 
 def _script_hotkey_pairs(
     cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str, int], ...]:
-    """The script hotkeys as their action, combination and key code.
+) -> tuple[tuple[str, str], ...]:
+    """The script hotkeys as their action and combination.
 
     The configured action list and hotkey list describe one hotkey per
-    position, and kwin_script_hotkey_codes gives the combined Qt key code
-    the KGlobalAccel daemon takes for that combination. A combination
-    without a configured code is left out with a progress line, so a
-    partial config applies what it describes instead of guessing a code.
+    position; the shared client turns a combination into the combined Qt
+    key code the daemon takes, so the two lists are all the task needs.
     """
 
-    actions = cfg.kwin_script_actions or ()
-    hotkeys = cfg.kwin_script_hotkeys or ()
-    codes = cfg.kwin_script_hotkey_codes or {}
-    pairs: list[tuple[str, str, int]] = []
-    for action, hotkey in zip(actions, hotkeys):
-        code = codes.get(hotkey)
-        if code is None:
-            _log(f"no key code configured for {hotkey}, {action} keeps its key")
-            continue
-        pairs.append((action, hotkey, code))
-    return tuple(pairs)
+    return tuple(zip(cfg.kwin_script_actions or (), cfg.kwin_script_hotkeys or ()))
 
 
 def _assign_script_hotkeys(
@@ -1306,9 +1524,15 @@ def _assign_script_hotkeys(
 
     payload = json.dumps(
         {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
-            "assign": [[action, code] for action, _hotkey, code in pairs],
+            "changes": [
+                {
+                    "component_unique": cfg.kwin_component_unique,
+                    "component_friendly": cfg.kwin_component_friendly,
+                    "action": action,
+                    "keys": [hotkey],
+                }
+                for action, hotkey in pairs
+            ]
         }
     )
     try:
@@ -1343,16 +1567,29 @@ def _assign_script_hotkeys(
         reply = json.loads(result.stdout)
     except json.JSONDecodeError:
         return report(f"cannot read the kglobalaccel reply: {result.stdout}")
-    before = reply.get("before", {})
-    after = reply.get("after", {})
+    results = list(reply.get("results") or [])
+    if len(results) != len(pairs):
+        return report(
+            f"the client reported {len(results)} of {len(pairs)} script hotkeys"
+        )
     changed = False
-    for action, hotkey, code in pairs:
-        if after.get(action) != [code]:
+    for (action, hotkey), item in zip(pairs, results):
+        if item.get("missing"):
+            return report(
+                f"the daemon does not know the action {action},"
+                f" {hotkey} is written for the next login"
+            )
+        if item.get("unsupported"):
+            return report(
+                f"the client cannot read {hotkey},"
+                " it is written for the next login"
+            )
+        if item.get("after") != item.get("requested"):
             return report(
                 f"cannot give {hotkey} to {action}: the daemon reports"
-                f" {after.get(action)}"
+                f" {item.get('after')}"
             )
-        if before.get(action) != after.get(action):
+        if item.get("before") != item.get("after"):
             changed = True
     _log(f"assigned {len(pairs)} script hotkeys in the running daemon")
     return changed
@@ -1379,7 +1616,7 @@ def _write_script_hotkey_records(
     """
 
     changed = False
-    for action, hotkey, _code in _script_hotkey_pairs(cfg):
+    for action, hotkey in _script_hotkey_pairs(cfg):
         group = (cfg.kwin_component_unique,)
         try:
             current = _kreadconfig(
@@ -1752,11 +1989,12 @@ def _reload_kwin(
 
 
 def _desktop_dbus_names(cfg: KdeSettingsConfig) -> dict[str, str]:
-    """The DBus names of the KWin virtual desktop interface, by placeholder.
+    """The DBus vocabulary of the KWin desktop interface, by placeholder.
 
-    The three commands of the section and the desktop list client of
-    task_data/ name the same interface, so both take it from these values
-    and no name of the desktop interface stands in code.
+    The commands of the section and the desktop list client of task_data/
+    name the same interface and the same properties, so all of them take
+    it from these values and no name of the desktop interface stands in
+    code.
     """
 
     return {
@@ -1767,6 +2005,11 @@ def _desktop_dbus_names(cfg: KdeSettingsConfig) -> dict[str, str]:
         "virtual_desktop_manager_interface_name": (
             cfg.virtual_desktop_manager_interface_name
         ),
+        "virtual_desktops_property_name": cfg.virtual_desktops_property_name,
+        "virtual_desktop_count_property_name": (
+            cfg.virtual_desktop_count_property_name
+        ),
+        "dbus_properties_interface_name": cfg.dbus_properties_interface_name,
     }
 
 
@@ -1774,11 +2017,7 @@ def _desktop_list_client_text(cfg: KdeSettingsConfig, script_path: Path) -> str:
     """The desktop list client with the DBus names of the section filled in."""
 
     template = Template(script_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        **_desktop_dbus_names(cfg),
-        virtual_desktops_property_name=cfg.virtual_desktops_property_name,
-        dbus_properties_interface_name=cfg.dbus_properties_interface_name,
-    )
+    return template.substitute(**_desktop_dbus_names(cfg))
 
 
 def _apply_desktop_count_live(
@@ -1936,7 +2175,11 @@ def task(ctx: Context) -> TaskResult:
     combinations they claim are freed, then every combination is assigned
     to the action of its script in the running daemon and read back, so a
     key works whatever owned it before the run and a state an earlier run
-    left behind cannot keep it dead. Each
+    left behind cannot keep it dead. The configured shortcut records are
+    applied to the running daemon as well, which owns their state and
+    writes the shortcut file itself, so a combination is taken from
+    whatever action holds it and a state the daemon still refuses is
+    asked for again. Each
     settings step runs independently: a step that fails through an external
     tool error or an environment error is reported as a warning and the
     remaining independent steps still run, because one bad setting must
@@ -2051,6 +2294,23 @@ def task(ctx: Context) -> TaskResult:
         "apply the configured kconfig values",
         lambda: _apply_kconfig_records(
             cfg, timeout=timeout, force=force, env=apply_env, warnings=warnings
+        ),
+    )
+    settings_changed |= step(
+        "apply the configured shortcuts",
+        lambda: _apply_shortcut_records_live(
+            cfg,
+            client_path=(
+                task_data_dir(
+                    ctx.repo_root, cfg.kglobalaccel_client_section_name
+                )
+                / cfg.kglobalaccel_client_file_name
+            ),
+            timeout=timeout,
+            env=apply_env,
+            system_python=ctx.config.engine.system_python,
+            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+            warnings=warnings,
         ),
     )
     settings_changed |= step(

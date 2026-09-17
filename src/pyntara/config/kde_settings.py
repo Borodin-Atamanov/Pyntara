@@ -80,11 +80,14 @@ class KdeSettingsConfig:
     file; and kglobalaccel_release_script_file_name is the python client
     that asks the running KGlobalAccel daemon to release the hotkeys a
     script owns, a body longer than five lines and therefore a file rather
-    than a value of the code. kwin_script_hotkey_codes maps every
-    combination a script claims to the combined Qt key code the daemon
-    takes, and kwin_component_unique with kwin_component_friendly name the
-    KGlobalAccel component that owns the script actions, so the task forms
-    their action id itself. kglobalaccel_client_section_name and
+    than a value of the code. kwin_component_unique with
+    kwin_component_friendly name the KGlobalAccel component that owns the
+    script actions, so the task forms their action id itself;
+    shortcut_absent_value is the word a shortcut slot carries when it
+    holds no key, and shortcut_apply_attempts with
+    shortcut_apply_retry_delay_seconds bound how often a configured
+    combination is given to the running daemon before the task reports
+    that it did not take. kglobalaccel_client_section_name and
     kglobalaccel_client_file_name point at the shared python3-dbus client
     that frees a combination from its current owner and gives it to an
     action of that component, the same client the keyboard layout hotkeys
@@ -113,6 +116,7 @@ class KdeSettingsConfig:
     virtual_desktop_manager_object_path: str
     virtual_desktop_manager_interface_name: str
     virtual_desktops_property_name: str
+    virtual_desktop_count_property_name: str
     dbus_properties_interface_name: str
     kwin_desktop_count_command: tuple[str, ...]
     kwin_desktop_create_command: tuple[str, ...]
@@ -178,7 +182,9 @@ class KdeSettingsConfig:
     kwin_script_files: tuple[str, ...]
     kwin_script_hotkeys: tuple[str, ...]
     kwin_script_actions: tuple[str, ...]
-    kwin_script_hotkey_codes: dict[str, int]
+    shortcut_absent_value: str
+    shortcut_apply_attempts: int
+    shortcut_apply_retry_delay_seconds: float
     kwin_component_unique: str
     kwin_component_friendly: str
     desktop_ids_script_file_name: str

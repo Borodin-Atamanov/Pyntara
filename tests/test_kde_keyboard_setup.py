@@ -84,14 +84,16 @@ def _install_fakes(
     fail_on_write: bool = False,
     fail_live_apply: bool = False,
     live_apply_error_stderr: str = "",
-    hotkey_state: dict[str, list[int]] | None = None,
+    hotkey_state: dict[str, list[str]] | None = None,
 ):
     """Replace run_command and package state; return captured command lists.
 
     currents maps a KConfig key name to its current value, so a key whose
     value matches the target skips the write. bus_pid empty disables the
     desktop session lookup. hotkey_state maps a hotkey action name to the
-    keys the daemon reports before the live apply, for idempotency tests.
+    combinations the client reports before the live apply, for idempotency
+    tests; the fake reports a combination as the portable text the request
+    carries, because the task compares the two lists of one report.
     """
 
     currents = currents or {}
@@ -124,12 +126,23 @@ def _install_fakes(
                         1, command, stderr=live_apply_error_stderr
                     )
                 payload = json.loads(inner[-1])
-                before: dict[str, list[int]] = {}
-                after: dict[str, list[int]] = {}
-                for action, combined in payload["assign"]:
-                    before[action] = list((hotkey_state or {}).get(action, []))
-                    after[action] = [combined]
-                return _FakeProc(0, json.dumps({"before": before, "after": after}))
+                results = []
+                for change in payload["changes"]:
+                    action = change["action"]
+                    keys = list(change["keys"])
+                    results.append(
+                        {
+                            "action": action,
+                            "requested": keys,
+                            "before": list(
+                                (hotkey_state or {}).get(action, [])
+                            ),
+                            "after": keys,
+                            "unsupported": [],
+                            "missing": False,
+                        }
+                    )
+                return _FakeProc(0, json.dumps({"results": results}))
         if command[0] == "pgrep":
             return _FakeProc(0, f"{bus_pid}\n" if bus_pid else "")
         if command[0] == "systemctl":
@@ -279,7 +292,12 @@ def test_missing_packages_are_installed(
     _, _, _, installs, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
-    assert installs == ["libkf6config-bin", "qdbus-qt6", "python3-dbus"]
+    assert installs == [
+        "libkf6config-bin",
+        "qdbus-qt6",
+        "python3-dbus",
+        "python3-pyqt6",
+    ]
 
 
 def test_package_install_failure_is_warning(
@@ -465,9 +483,14 @@ def test_session_applies_hotkey_live(
     assert result.changed is True
     assert len(live_applies) == 1
     payload = json.loads(live_applies[0][-1])
-    assert payload["component_unique"] == "KDE Keyboard Layout Switcher"
-    assert payload["component_friendly"] == "Keyboard Layout Switcher"
-    assert [SPANISH_ACTION, META_Q] in payload["assign"]
+    assert payload["changes"] == [
+        {
+            "component_unique": "KDE Keyboard Layout Switcher",
+            "component_friendly": "Keyboard Layout Switcher",
+            "action": SPANISH_ACTION,
+            "keys": [HOTKEYS[SPANISH_ACTION]],
+        }
+    ]
 
 
 def test_session_hotkey_already_applied_is_idempotent(
@@ -490,7 +513,7 @@ def test_session_hotkey_already_applied_is_idempotent(
     writes, reloads, restarts, _, live_applies = _install_fakes(
         monkeypatch,
         currents=currents,
-        hotkey_state={SPANISH_ACTION: [META_Q]},
+        hotkey_state={SPANISH_ACTION: [HOTKEYS[SPANISH_ACTION]]},
     )
     result = task_module.task(ctx)
     assert result.success is True

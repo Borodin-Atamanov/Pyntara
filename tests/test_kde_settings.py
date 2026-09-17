@@ -20,6 +20,7 @@ from support import make_config, make_context
 from pyntara.config import KConfigRecord
 from pyntara.config.kde_settings import (
     KCONFIG_BOOL_TYPE,
+    KCONFIG_STRING_TYPE,
     KCONFIG_TYPES,
     KdeSettingsConfig,
 )
@@ -30,6 +31,51 @@ from pyntara.utils import kglobalaccel_names, task_data_dir
 # that pre-writes the files the task expects reads the shipped template.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# The shared python3-dbus client that frees a combination from whatever
+# action holds it and gives it to a configured action; both the script
+# hotkeys and the configured shortcut records are applied through it.
+_SHARED_CLIENT = (
+    _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
+)
+
+# Shortcut records as the config carries them: the description field is not
+# read, the absent word and an empty field mean no combination, and a record
+# of another file is a plain KConfig value.
+_SHORTCUT_RECORDS = (
+    KConfigRecord(
+        file="kglobalshortcutsrc",
+        group=("kwin",),
+        key="Walk Through Windows",
+        value="Alt+Tab,none,Walk Through Windows",
+        type=KCONFIG_STRING_TYPE,
+        delete=False,
+    ),
+    KConfigRecord(
+        file="kglobalshortcutsrc",
+        group=("kwin",),
+        key="MinimizeAll",
+        value="Meta+D,meta+u,Minimize all windows",
+        type=KCONFIG_STRING_TYPE,
+        delete=False,
+    ),
+    KConfigRecord(
+        file="kglobalshortcutsrc",
+        group=("plasmashell",),
+        key="manage activities",
+        value="none,none,Show Activity Switcher",
+        type=KCONFIG_STRING_TYPE,
+        delete=False,
+    ),
+    KConfigRecord(
+        file="kwinrc",
+        group=("TabBox",),
+        key="LayoutName",
+        value="thumbnail_grid",
+        type=KCONFIG_STRING_TYPE,
+        delete=False,
+    ),
+)
+
 
 def _ctx(
     tmp_path: Path,
@@ -39,6 +85,7 @@ def _ctx(
     virtual_keyboard_enabled: bool = True,
     system_look_and_feel_dir: Path | None = None,
     repo_root: Path | None = None,
+    kconfig: tuple[KConfigRecord, ...] = (),
 ):
     """Context with the target user home rooted in tmp_path.
 
@@ -66,6 +113,7 @@ def _ctx(
             kde_settings_system_look_and_feel_dir=(
                 system_look_and_feel_dir or tmp_path / "no-system-themes"
             ),
+            kde_settings_kconfig=kconfig,
         ),
     )
 
@@ -84,37 +132,73 @@ def _is_assign_call(inner: list[str]) -> bool:
 def _assign_reply(
     inner: list[str],
     assign_calls: list[list[str]] | None,
-    assign_state: dict[str, list[int]] | None,
-    assign_after: dict[str, list[int]] | None,
+    assign_state: dict[str, list[str]] | None,
+    assign_after: dict[str, list[str]] | None,
+    assign_missing: frozenset[str] | None = None,
+    assign_unsupported: dict[str, list[str]] | None = None,
 ) -> _FakeProc:
-    """The answer of the hotkey client: the state before and after.
+    """The answer of the shortcut client: the state before and after.
 
-    assign_state is what the daemon already holds, so a machine whose
-    hotkeys are granted reports the same state before and after the call
-    and nothing changes. Without an override the client reports the
-    requested combinations as the state after the call, which is what a
-    granted hotkey looks like; assign_after replaces that state, so a
-    test can make the daemon report another key or no key at all. The
-    call is recorded as it ran, so a test reads the payload and the
-    client text the task passed to the interpreter.
+    The request carries one change per action with the combinations as the
+    portable text the config names; the real client reports the combined
+    Qt key codes, and the fake reports the same text, because the task
+    compares the two lists inside one report and never converts a
+    combination itself. assign_state is the state an action already
+    holds, so a machine whose combinations are granted reports the same
+    state before and after the call and nothing changes. assign_after
+    replaces the state an action holds after the call, so a test can make
+    the client report another combination or none at all. assign_missing
+    names actions the daemon does not know, which the client reports
+    without touching them, and assign_unsupported names combinations Qt
+    cannot read. The call is
+    recorded as it ran, so a test reads the request the task passed to
+    the interpreter.
     """
 
     if assign_calls is not None:
         assign_calls.append(list(inner))
     request = json.loads(inner[-1])
     held = assign_state or {}
-    before = {action: held.get(action, []) for action, _code in request["assign"]}
-    after = assign_after or {
-        action: [code] for action, code in request["assign"]
-    }
-    return _FakeProc(0, json.dumps({"before": before, "after": after}))
+    missing = assign_missing or frozenset()
+    unsupported = assign_unsupported or {}
+    results = []
+    for change in request["changes"]:
+        action = change["action"]
+        if action in missing:
+            results.append(
+                {
+                    "action": action,
+                    "requested": [],
+                    "before": [],
+                    "after": [],
+                    "unsupported": [],
+                    "missing": True,
+                }
+            )
+            continue
+        unreadable = list(unsupported.get(action, []))
+        keys = [text for text in change["keys"] if text not in unreadable]
+        after = keys
+        if assign_after is not None and action in assign_after:
+            after = list(assign_after[action])
+        results.append(
+            {
+                "action": action,
+                "requested": keys,
+                "before": list(held.get(action, [])),
+                "after": after,
+                "unsupported": unreadable,
+                "missing": False,
+            }
+        )
+    return _FakeProc(0, json.dumps({"results": results}))
 
 
-def _granted_script_hotkeys(cfg: KdeSettingsConfig) -> dict[str, list[int]]:
-    """The daemon state of a machine whose script hotkeys are granted."""
+def _granted_script_hotkeys(cfg: KdeSettingsConfig) -> dict[str, list[str]]:
+    """The client state of a machine whose script hotkeys are granted."""
 
     return {
-        action: [cfg.kwin_script_hotkey_codes[hotkey]]
+        action: [hotkey]
         for action, hotkey in zip(
             cfg.kwin_script_actions, cfg.kwin_script_hotkeys
         )
@@ -133,8 +217,11 @@ def _install_fakes(
     fail_on_write_keys: frozenset[str] | None = None,
     fail_on_reload: bool = False,
     assign_calls: list[list[str]] | None = None,
-    assign_state: dict[str, list[int]] | None = None,
-    assign_after: dict[str, list[int]] | None = None,
+    assign_state: dict[str, list[str]] | None = None,
+    assign_after: dict[str, list[str]] | None = None,
+    assign_after_sequence: list[dict[str, list[str]]] | None = None,
+    assign_missing: frozenset[str] | None = None,
+    assign_unsupported: dict[str, list[str]] | None = None,
 ):
     """Replace run_command, the session environment and package state.
 
@@ -143,10 +230,15 @@ def _install_fakes(
     disables the desktop session lookup. fail_on_write_keys fails only
     the writes of the named keys, so one bad value leaves the others
     alone. assign_calls collects the calls of the hotkey client,
-    assign_state is the key state the daemon already holds and
-    assign_after overrides the key state the client reports back.
+    assign_state is the combination state an action already holds and
+    assign_after overrides the state the client reports back;
+    assign_after_sequence answers one state per call, which a test uses to
+    let the first attempt fail and a later one take. assign_missing names
+    actions the daemon does not know and assign_unsupported names
+    combinations the client cannot read.
     """
 
+    attempt = [0]
     currents = currents or {}
     themes: list[list[str]] = []
     schemes: list[list[str]] = []
@@ -196,8 +288,20 @@ def _install_fakes(
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 if _is_assign_call(inner):
+                    after = assign_after
+                    if assign_after_sequence:
+                        position = min(
+                            attempt[0], len(assign_after_sequence) - 1
+                        )
+                        after = assign_after_sequence[position]
+                        attempt[0] += 1
                     return _assign_reply(
-                        inner, assign_calls, assign_state, assign_after
+                        inner,
+                        assign_calls,
+                        assign_state,
+                        after,
+                        assign_missing,
+                        assign_unsupported,
                     )
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
@@ -1607,20 +1711,171 @@ def test_free_script_hotkeys_run_before_the_scripts_are_enabled(
     assert freed < enabled
 
 
-def test_script_hotkey_pairs_read_the_codes_from_the_config(
+def test_script_hotkey_pairs_read_the_configured_actions_and_hotkeys(
     tmp_path: Path,
 ) -> None:
-    # The key code of a combination is a config value and not a number of
-    # the code: another table in the config is what the daemon is told,
-    # and a combination the table does not name is left to the script.
+    # The two lists of the config describe one hotkey per position, and the
+    # shared client turns a combination into the combined key code the
+    # daemon takes, so the task holds no table of hand written codes.
     cfg = make_config().kde_settings
-    changed_cfg = replace(
-        cfg,
-        kwin_script_hotkey_codes={"Meta+Ctrl+Up": 7},
+    assert task_module._script_hotkey_pairs(cfg) == (
+        ("Grow Window by 5px", "Meta+Ctrl+Up"),
+        ("Shrink Window by 5px", "Meta+Ctrl+Down"),
     )
-    assert task_module._script_hotkey_pairs(changed_cfg) == (
-        ("Grow Window by 5px", "Meta+Ctrl+Up", 7),
+
+
+def test_shortcut_record_changes_read_the_configured_combinations(
+    tmp_path: Path,
+) -> None:
+    # Every record of the shortcut file with the portable form becomes one
+    # change: the first two fields are the combinations, the absent word
+    # and an empty field mean none, a record of two absent slots asks the
+    # action to own no key at all, and a record of another file stays with
+    # the plain KConfig values.
+    cfg = make_config(kde_settings_kconfig=_SHORTCUT_RECORDS).kde_settings
+    assert task_module._shortcut_record_changes(cfg) == (
+        ("kwin", "Walk Through Windows", ("Alt+Tab",)),
+        ("kwin", "MinimizeAll", ("Meta+D", "meta+u")),
+        ("plasmashell", "manage activities", ()),
     )
+
+
+def test_apply_shortcut_records_live_runs_the_shared_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The records are handed to the running daemon through the shared
+    # client: the request names the component, the action and the
+    # combinations as the portable text, and the state the client reports
+    # back decides whether the task changed anything.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    _install_fakes(monkeypatch, assign_calls=calls)
+    changed = task_module._apply_shortcut_records_live(
+        ctx.config.kde_settings,
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+    )
+    assert changed is True
+    assert len(calls) == 1
+    assert calls[0][0] == ctx.config.engine.system_python
+    request = json.loads(calls[0][-1])
+    assert request["changes"] == [
+        {
+            "component_unique": "kwin",
+            "component_friendly": "kwin",
+            "action": "Walk Through Windows",
+            "keys": ["Alt+Tab"],
+        },
+        {
+            "component_unique": "kwin",
+            "component_friendly": "kwin",
+            "action": "MinimizeAll",
+            "keys": ["Meta+D", "meta+u"],
+        },
+        {
+            "component_unique": "plasmashell",
+            "component_friendly": "plasmashell",
+            "action": "manage activities",
+            "keys": [],
+        },
+    ]
+
+
+def test_apply_shortcut_records_live_asks_again_until_the_state_takes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The state right after one attempt can still belong to another action,
+    # so a state that is not the configured one is asked for again, with
+    # the configured pause between two attempts.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    pauses: list[float] = []
+    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
+    _install_fakes(
+        monkeypatch,
+        assign_calls=calls,
+        assign_after_sequence=[
+            {"Walk Through Windows": ["Meta+Tab"]},
+            {},
+        ],
+    )
+    changed = task_module._apply_shortcut_records_live(
+        ctx.config.kde_settings,
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+    )
+    assert changed is True
+    assert len(calls) == 2
+    assert pauses == [
+        ctx.config.kde_settings.shortcut_apply_retry_delay_seconds
+    ]
+
+
+def test_apply_shortcut_records_live_warns_when_the_state_never_takes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A combination the daemon does not report back after the configured
+    # number of attempts is a warning of a completed task, naming the
+    # component and the action whose state stayed wrong.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
+    _install_fakes(
+        monkeypatch, assign_calls=calls, assign_after={"MinimizeAll": []}
+    )
+    changed = task_module._apply_shortcut_records_live(
+        ctx.config.kde_settings,
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        warnings=warnings,
+    )
+    assert changed is True
+    assert len(calls) == ctx.config.kde_settings.shortcut_apply_attempts
+    assert len(warnings) == 1
+    assert "kwin" in warnings[0]
+    assert "MinimizeAll" in warnings[0]
+
+
+def test_apply_shortcut_records_live_reports_what_the_client_cannot_do(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action the daemon does not know and a combination Qt cannot read
+    # are reported in plain words instead of being guessed at: the record
+    # keeps them for the next login and the remaining records still apply.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    messages: list[str] = []
+    monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(task_module, "_log", messages.append)
+    _install_fakes(
+        monkeypatch,
+        assign_missing={"manage activities"},
+        assign_unsupported={"MinimizeAll": ["meta+u"]},
+    )
+    task_module._apply_shortcut_records_live(
+        ctx.config.kde_settings,
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        system_python=ctx.config.engine.system_python,
+        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        warnings=[],
+    )
+    assert any(
+        "does not know the action manage activities" in message
+        for message in messages
+    )
+    assert any("cannot read meta+u" in message for message in messages)
+
 
 
 def test_assign_script_hotkeys_runs_the_shared_client(
@@ -1628,15 +1883,12 @@ def test_assign_script_hotkeys_runs_the_shared_client(
 ) -> None:
     # The task hands the combinations to the running daemon through the
     # client the config names, so the hotkeys work without a session
-    # restart, and the call carries the component names and the codes of
-    # the config.
+    # restart, and the call carries the component names and the
+    # combinations of the config as the portable text KDE stores.
     ctx = _ctx(tmp_path)
     calls: list[list[str]] = []
     _script_fakes(monkeypatch, session=True, assign_calls=calls)
-    cfg = replace(
-        ctx.config.kde_settings,
-        kwin_script_hotkey_codes={"Meta+Ctrl+Up": 11, "Meta+Ctrl+Down": 22},
-    )
+    cfg = ctx.config.kde_settings
     client_path = (
         _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
     )
@@ -1655,11 +1907,19 @@ def test_assign_script_hotkeys_runs_the_shared_client(
     assert ctx.config.engine.kglobalaccel_bus_name in text
     assert "$kglobalaccel_bus_name" not in text
     request = json.loads(calls[0][-1])
-    assert request["component_unique"] == cfg.kwin_component_unique
-    assert request["component_friendly"] == cfg.kwin_component_friendly
-    assert request["assign"] == [
-        ["Grow Window by 5px", 11],
-        ["Shrink Window by 5px", 22],
+    assert request["changes"] == [
+        {
+            "component_unique": cfg.kwin_component_unique,
+            "component_friendly": cfg.kwin_component_friendly,
+            "action": "Grow Window by 5px",
+            "keys": ["Meta+Ctrl+Up"],
+        },
+        {
+            "component_unique": cfg.kwin_component_unique,
+            "component_friendly": cfg.kwin_component_friendly,
+            "action": "Shrink Window by 5px",
+            "keys": ["Meta+Ctrl+Down"],
+        },
     ]
 
 
@@ -2195,6 +2455,17 @@ def test_kconfig_force_writes_even_when_matching(
     assert [command for command in writes if "LayoutName" in command]
 
 
+def _is_desktop_count_call(command: list[str]) -> bool:
+    """True for the call that reads the live number of desktops.
+
+    The number is a property of the desktop interface, not a call, so the
+    command goes through the property reader of DBus and a test
+    recognises it by that method name.
+    """
+
+    return any(part.endswith(".Get") for part in command)
+
+
 def _write_desktop_ids_client(tmp_path: Path) -> Path:
     """Write the python desktop id client the task runs, return its path.
 
@@ -2240,7 +2511,7 @@ def test_desktop_count_live_removes_extra_desktops(
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         calls.append(list(command))
         joined = " ".join(command)
-        if ".count" in joined:
+        if _is_desktop_count_call(command):
             return _FakeProc(0, "6")
         if ids_client in command:
             return _FakeProc(0, "id1\nid2\nid3\nid4\nid5\nid6\n")
@@ -2300,7 +2571,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         calls.append(list(command))
         joined = " ".join(command)
-        if ".count" in joined:
+        if _is_desktop_count_call(command):
             return _FakeProc(0, "4")
         if command and "import dbus" in command[-1]:
             client_texts.append(command[-1])
@@ -2338,6 +2609,11 @@ def test_the_desktop_dbus_names_come_from_the_config(
         for command in calls
         for part in command
     )
+    assert all(
+        "$virtual_desktop_count_property_name" not in part
+        for command in calls
+        for part in command
+    )
     assert client_texts
     assert "org.example.KWin" in client_texts[0]
     assert "org.example.Properties" in client_texts[0]
@@ -2359,7 +2635,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         calls.append(list(command))
         joined = " ".join(command)
-        if ".count" in joined:
+        if _is_desktop_count_call(command):
             return _FakeProc(0, "3")
         if "createDesktop" in joined:
             return _FakeProc(0, "")
@@ -2406,7 +2682,7 @@ def test_desktop_count_live_reports_a_missing_client(
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         calls.append(list(command))
-        if ".count" in " ".join(command):
+        if _is_desktop_count_call(command):
             return _FakeProc(0, "6")
         raise AssertionError(f"unexpected command: {command}")
 

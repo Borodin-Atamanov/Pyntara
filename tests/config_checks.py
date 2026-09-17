@@ -2211,20 +2211,11 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
     actions = _string_list(
         raw.get("kwin_script_actions"), "kde_settings.kwin_script_actions"
     )
-    hotkey_codes = _int_map(
-        raw.get("kwin_script_hotkey_codes"),
-        "kde_settings.kwin_script_hotkey_codes",
-    )
     if len(actions) != len(hotkeys):
         raise ConfigError(
             "kde_settings.kwin_script_actions and"
             " kde_settings.kwin_script_hotkeys must hold the same number of"
             " entries"
-        )
-    if set(hotkey_codes) != set(hotkeys):
-        raise ConfigError(
-            "kde_settings.kwin_script_hotkey_codes must name every combination"
-            " of kde_settings.kwin_script_hotkeys and no other key"
         )
     return KdeSettingsConfig(
         packages=_string_list(raw.get("packages"), "kde_settings.packages"),
@@ -2386,7 +2377,18 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         ),
         kwin_script_hotkeys=hotkeys,
         kwin_script_actions=actions,
-        kwin_script_hotkey_codes=hotkey_codes,
+        shortcut_absent_value=_nonempty_string_field(
+            raw.get("shortcut_absent_value"),
+            "kde_settings.shortcut_absent_value",
+        ),
+        shortcut_apply_attempts=_positive_int_field(
+            raw.get("shortcut_apply_attempts"),
+            "kde_settings.shortcut_apply_attempts",
+        ),
+        shortcut_apply_retry_delay_seconds=_float_field(
+            raw.get("shortcut_apply_retry_delay_seconds"),
+            "kde_settings.shortcut_apply_retry_delay_seconds",
+        ),
         kwin_component_unique=_nonempty_string_field(
             raw.get("kwin_component_unique"),
             "kde_settings.kwin_component_unique",
@@ -2567,6 +2569,10 @@ def _kde_settings_table(raw: object) -> KdeSettingsConfig:
         virtual_desktops_property_name=_nonempty_string_field(
             raw.get("virtual_desktops_property_name"),
             "kde_settings.virtual_desktops_property_name",
+        ),
+        virtual_desktop_count_property_name=_nonempty_string_field(
+            raw.get("virtual_desktop_count_property_name"),
+            "kde_settings.virtual_desktop_count_property_name",
         ),
         dbus_properties_interface_name=_nonempty_string_field(
             raw.get("dbus_properties_interface_name"),

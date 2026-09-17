@@ -348,20 +348,25 @@ def _apply_hotkeys_live(
     whether a shortcut actually changed.
     """
 
-    assign: list[tuple[str, int]] = []
+    changes: list[tuple[str, str]] = []
     for action, shortcut in shortcuts.items():
-        combined = _shortcut_to_combined(cfg, shortcut)
-        if combined is None:
+        if _shortcut_to_combined(cfg, shortcut) is None:
             _log(f"hotkey {action} is not applicable live, applies at login")
             continue
-        assign.append((action, combined))
-    if not assign:
+        changes.append((action, shortcut))
+    if not changes:
         return None, False
     payload = json.dumps(
         {
-            "component_unique": cfg.layout_switcher_component_unique,
-            "component_friendly": cfg.layout_switcher_component_friendly,
-            "assign": assign,
+            "changes": [
+                {
+                    "component_unique": cfg.layout_switcher_component_unique,
+                    "component_friendly": cfg.layout_switcher_component_friendly,
+                    "action": action,
+                    "keys": [shortcut],
+                }
+                for action, shortcut in changes
+            ]
         }
     )
     try:
@@ -396,16 +401,31 @@ def _apply_hotkeys_live(
         report = json.loads(result.stdout)
     except json.JSONDecodeError:
         return f"cannot parse kglobalaccel reply: {result.stdout}", False
-    before = report.get("before", {})
-    after = report.get("after", {})
+    results = list(report.get("results") or [])
+    if len(results) != len(changes):
+        counted = f"{len(results)} of {len(changes)}"
+        return (
+            f"cannot apply layout hotkeys: the client reported {counted}",
+            False,
+        )
     changed = False
-    for action, combined in assign:
-        if after.get(action) != [combined]:
+    for (action, shortcut), item in zip(changes, results):
+        if item.get("missing"):
             return (
-                f"cannot apply hotkey {action}: daemon reports {after.get(action)}",
+                f"cannot apply hotkey {action}: the daemon does not know it",
                 False,
             )
-        if before.get(action) != after.get(action):
+        if item.get("unsupported"):
+            return (
+                f"cannot apply hotkey {action}: {shortcut} is unreadable",
+                False,
+            )
+        if item.get("after") != item.get("requested"):
+            return (
+                f"cannot apply hotkey {action}: daemon reports {item.get('after')}",
+                False,
+            )
+        if item.get("before") != item.get("after"):
             changed = True
     return None, changed
 

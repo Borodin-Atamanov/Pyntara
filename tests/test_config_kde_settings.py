@@ -114,25 +114,30 @@ from config_helpers import (
             'kwin_reload_command = ["qdbus6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"]',
             "kwin_reload_command = []",
         ),
-        # kwin_script_hotkey_codes is an array, not a table
+        # shortcut_absent_value is a number, not a string
         base_config().replace(
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
-            "kwin_script_hotkey_codes = [352321555]",
+            'shortcut_absent_value = "none"',
+            "shortcut_absent_value = 42",
         ),
-        # a key code is a string, not an integer
+        # shortcut_apply_attempts is a string, not an integer
         base_config().replace(
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = "352321555", "Meta+Ctrl+Down" = 352321557 }',
+            "shortcut_apply_attempts = 5",
+            'shortcut_apply_attempts = "5"',
         ),
-        # a claimed combination has no key code
+        # no attempt at applying a combination would ever be made
         base_config().replace(
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555 }',
+            "shortcut_apply_attempts = 5",
+            "shortcut_apply_attempts = 0",
         ),
-        # the key codes name a combination the scripts do not claim
+        # the pause between two attempts is negative
         base_config().replace(
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }',
-            'kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557, "Meta+Q" = 268435537 }',
+            "shortcut_apply_retry_delay_seconds = 3.0",
+            "shortcut_apply_retry_delay_seconds = -1.0",
+        ),
+        # virtual_desktop_count_property_name is an empty string
+        base_config().replace(
+            'virtual_desktop_count_property_name = "count"',
+            'virtual_desktop_count_property_name = ""',
         ),
         # the script actions and the claimed combinations differ in length
         base_config().replace(

@@ -9,8 +9,9 @@ substitutions of the engine table, so the client names no interface of the
 desktop itself.
 """
 
-import dbus
 import sys
+
+import dbus
 
 bus = dbus.SessionBus()
 obj = bus.get_object("$kglobalaccel_bus_name", "$kglobalaccel_object_path")

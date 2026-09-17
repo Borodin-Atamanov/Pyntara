@@ -1,67 +1,181 @@
 
+"""Give keyboard combinations to named actions of the running daemon.
+
+The client is started with one JSON argument that carries a list of
+changes. Every change names a component, one action of that component and
+the combinations the action must own; a combination is written in the
+portable form KDE stores, and the client turns it into the combined Qt
+key code with the Qt bindings, so no caller needs a table of hand written
+codes. An empty combination list means the action must own no key at all.
+
+A combination another action holds is taken from that action first, and
+only that combination: the other combinations of the owner stay. The
+reply carries, per change in the order of the request, the codes that were
+requested, the codes the action held before and the codes it holds after,
+plus the combinations Qt could not read and the changes whose action the
+daemon does not know, so the caller decides whether the configured state
+is reached. An empty slot of the daemon state and a combination a change
+names twice are not keys: the daemon keeps a placeholder for a slot it
+granted nothing to, and it grants the same combination once, so both are
+left out of the reported codes.
+
+The bus name, the object path and the interface of the daemon arrive as
+substitutions of the engine table, so the client names no interface of the
+desktop itself.
+"""
+
 import json
 import sys
 
 import dbus
-
-payload = json.loads(sys.argv[1])
-component_unique = payload["component_unique"]
-component_friendly = payload["component_friendly"]
-assign = payload["assign"]
-
-
-def combined_array(combined):
-    return dbus.Array(
-        [dbus.Int32(combined), dbus.Int32(0), dbus.Int32(0), dbus.Int32(0)],
-        signature="i",
-    )
-
-
-def set_keys(action_id, combined):
-    if combined:
-        keys = dbus.Array(
-            [dbus.Struct([combined_array(combined)], signature="(ai)")],
-            signature="(ai)",
-        )
-    else:
-        keys = dbus.Array([], signature="(ai)")
-    iface.setForeignShortcutKeys(action_id, keys)
-
-
-def owner_of(combined):
-    sequence = dbus.Struct([combined_array(combined)], signature=None)
-    result = list(iface.actionList(sequence))
-    return [str(part) for part in result] if result else None
-
-
-def read_keys(action_id):
-    return [int(seq[0][0]) for seq in iface.shortcutKeys(action_id)]
-
+from PyQt6.QtGui import QKeySequence
 
 bus = dbus.SessionBus()
 daemon = bus.get_object("$kglobalaccel_bus_name", "$kglobalaccel_object_path")
 iface = dbus.Interface(daemon, "$kglobalaccel_interface_name")
 
-before = {}
-for action, combined in assign:
-    before[action] = read_keys([component_unique, action, component_friendly, action])
+known = {}
 
-owners = set()
-for action, combined in assign:
-    if not combined:
+
+def combined_code(text):
+    """The combined Qt key code of a portable combination, or None.
+
+    Qt reads the same spellings the KDE files store. A text Qt cannot
+    read returns None instead of a guessed code, so an unsupported
+    combination is reported and never assigned by mistake.
+    """
+
+    sequence = QKeySequence(text)
+    if sequence.count() == 0:
+        return None
+    code = sequence[0].toCombined()
+    return code if code > 0 else None
+
+
+def key_sequence(code):
+    """One key sequence as the daemon marshals it: a four int array."""
+
+    return dbus.Struct(
+        [
+            dbus.Array(
+                [
+                    dbus.Int32(code),
+                    dbus.Int32(0),
+                    dbus.Int32(0),
+                    dbus.Int32(0),
+                ],
+                signature="i",
+            )
+        ],
+        signature=None,
+    )
+
+
+def action_id(change, action):
+    """The four parts the daemon addresses an action by.
+
+    The unique parts select the action and they are unique inside the
+    component, so the unique component name stands in for the friendly
+    one as well; a change may name the friendly component explicitly.
+    """
+
+    component = change["component_unique"]
+    return [
+        component,
+        action,
+        change.get("component_friendly") or component,
+        action,
+    ]
+
+
+def known_actions(component):
+    """The unique action names the daemon knows for one component."""
+
+    if component not in known:
+        known[component] = {
+            str(entry[1]) for entry in iface.allActionsForComponent([component])
+        }
+    return known[component]
+
+
+def current_keys(action):
+    """The combined codes one action holds now.
+
+    A code of zero is the placeholder of a slot the daemon granted
+    nothing to, and a repeated code is one key, so both are left out: the
+    caller compares what the action really holds.
+    """
+
+    codes = []
+    for sequence in iface.shortcutKeys(action):
+        code = int(sequence[0][0])
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def give_keys(action, codes):
+    """Let one action own exactly the given codes and nothing else."""
+
+    if codes:
+        keys = dbus.Array([key_sequence(code) for code in codes], signature="(ai)")
+    else:
+        keys = dbus.Array([], signature="(ai)")
+    iface.setForeignShortcutKeys(action, keys)
+
+
+def owner_of(code):
+    """The action that holds one combination now, or None."""
+
+    result = list(iface.actionList(key_sequence(code)))
+    return [str(part) for part in result] if result else None
+
+
+def take_from_owner(code, action):
+    """Free one combination from the action that holds it, if a stranger."""
+
+    owner = owner_of(code)
+    if not owner or owner[1] == action:
+        return
+    remaining = [key for key in current_keys(owner) if key != code]
+    give_keys(owner, remaining)
+
+
+payload = json.loads(sys.argv[1])
+results = []
+for change in payload["changes"]:
+    action = change["action"]
+    target = action_id(change, action)
+    report = {
+        "action": action,
+        "requested": [],
+        "before": [],
+        "after": [],
+        "unsupported": [],
+        "missing": False,
+    }
+    if action not in known_actions(change["component_unique"]):
+        report["missing"] = True
+        results.append(report)
         continue
-    owner = owner_of(combined)
-    if owner and owner[1] != action:
-        owners.add(tuple(owner))
+    for text in change["keys"]:
+        code = combined_code(text)
+        if code is None:
+            report["unsupported"].append(text)
+        elif code not in report["requested"]:
+            report["requested"].append(code)
+    if change["keys"] and not report["requested"]:
+        # Not one combination of this change is readable: leave the
+        # action exactly as it is, because clearing it would be wrong.
+        report["before"] = current_keys(target)
+        report["after"] = list(report["before"])
+        results.append(report)
+        continue
+    for code in report["requested"]:
+        take_from_owner(code, action)
+    report["before"] = current_keys(target)
+    give_keys(target, report["requested"])
+    report["after"] = current_keys(target)
+    results.append(report)
 
-for owner in sorted(owners):
-    set_keys(list(owner), 0)
-
-for action, combined in assign:
-    set_keys([component_unique, action, component_friendly, action], combined)
-
-after = {}
-for action, combined in assign:
-    after[action] = read_keys([component_unique, action, component_friendly, action])
-
-print(json.dumps({"before": before, "after": after}))
+print(json.dumps({"results": results}))

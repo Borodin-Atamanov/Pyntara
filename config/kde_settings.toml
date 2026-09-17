@@ -15,8 +15,11 @@
 # day and night switch alternates between (kubuntu-settings-desktop), and
 # the dbus python client used to release keyboard combinations in the
 # running KGlobalAccel daemon (python3-dbus).
+# The Qt bindings (python3-pyqt6) turn a portable keyboard combination
+# into the combined Qt key code the daemon takes, so the task needs no
+# table of hand written codes.
 # Missing packages are installed by the task.
-packages = ["plasma-workspace", "libkf6config-bin", "kubuntu-settings-desktop", "python3-dbus"]
+packages = ["plasma-workspace", "libkf6config-bin", "kubuntu-settings-desktop", "python3-dbus", "python3-pyqt6"]
 # The user whose desktop configuration is edited and that user's home
 # directory; the KDE tools resolve the config directory under it.
 username = "i"
@@ -72,8 +75,12 @@ kwin_bus_name = "org.kde.KWin"
 virtual_desktop_manager_object_path = "/VirtualDesktopManager"
 virtual_desktop_manager_interface_name = "org.kde.KWin.VirtualDesktopManager"
 # Property of that interface that lists the desktops, read by the desktop list
-# client, and the standard DBus interface that carries the property call.
+# client, the property that carries the live number of desktops, and the
+# standard DBus interface that carries the property call. The number is a
+# property and not a call: asking for a method of that name is refused by
+# the interface, which is why the count command below reads the property.
 virtual_desktops_property_name = "desktops"
+virtual_desktop_count_property_name = "count"
 dbus_properties_interface_name = "org.freedesktop.DBus.Properties"
 # Commands that read and change the number of virtual desktops through the
 # kwin DBus interface: the live count, the creation of one desktop at a
@@ -81,7 +88,7 @@ dbus_properties_interface_name = "org.freedesktop.DBus.Properties"
 # kwinrc; these calls only make the running session match it. The name the
 # create call carries is left empty by the task, because kwin names a new
 # desktop after its position.
-kwin_desktop_count_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.count"]
+kwin_desktop_count_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{dbus_properties_interface_name}.Get", "{virtual_desktop_manager_interface_name}", "{virtual_desktop_count_property_name}"]
 kwin_desktop_create_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.createDesktop", "{position}", "{desktop_name}"]
 kwin_desktop_remove_command = ["qdbus6", "{kwin_bus_name}", "{virtual_desktop_manager_object_path}", "{virtual_desktop_manager_interface_name}.removeDesktop", "{desktop_id}"]
 # The SDDM login screen: autologin into the configured user session and
@@ -188,20 +195,28 @@ places_hidden_value = "true"
 # The KWin scripts the task installs and enables, the files each script
 # carries inside its directory, the keyboard combinations the scripts
 # claim and the script actions that own those combinations. A combination
-# is listed in the portable form KWin writes and its combined Qt key code
-# in kwin_script_hotkey_codes, so the daemon receives exactly the key the
-# config names.
+# is listed in the portable form KWin writes; the shared client turns it
+# into the combined Qt key code the daemon takes with the Qt bindings, so
+# no table of hand written codes is needed and a combination the config
+# names is never mistyped.
 kwin_scripts = ["window-grow-shrink", "window-restore-tracker"]
 kwin_script_files = ["metadata.json", "contents/code/main.js"]
 kwin_script_hotkeys = ["Meta+Ctrl+Up", "Meta+Ctrl+Down"]
 kwin_script_actions = ["Grow Window by 5px", "Shrink Window by 5px"]
-# The combined Qt key code of each claimed combination, by the
-# combination as kwin_script_hotkeys spells it: the Qt modifier flags
-# (Meta 0x10000000, Ctrl 0x04000000, Shift 0x02000000, Alt 0x08000000)
-# or-ed with the key code (Up 0x01000013, Down 0x01000015). The daemon
-# takes these numbers, so every claimed combination is listed here and no
-# other key is.
-kwin_script_hotkey_codes = { "Meta+Ctrl+Up" = 352321555, "Meta+Ctrl+Down" = 352321557 }
+# The word a shortcut slot of kglobalshortcutsrc carries when it holds no
+# key: the task reads it as "no combination", and the action holds none on
+# the running machine.
+shortcut_absent_value = "none"
+# The shortcut records of kglobalshortcutsrc are applied to the running
+# KGlobalAccel daemon, which holds the combinations in memory and writes
+# the file itself: the shared client frees every named combination from
+# whatever action holds it and gives it to the configured action. A
+# combination the daemon does not report back is asked for again, because
+# the state right after the first attempt can still belong to another
+# action; the number of attempts and the pause between two of them are
+# values like any other.
+shortcut_apply_attempts = 5
+shortcut_apply_retry_delay_seconds = 3.0
 # The component of the KGlobalAccel daemon that owns the script actions:
 # its unique name, which is also the group their records carry in
 # kglobalshortcutsrc, and its friendly name. With an action they form the
@@ -262,12 +277,12 @@ chown_recursive_command = ["chown", "-R", "{owner}", "{path}"]
 chmod_command = ["chmod", "{file_mode}", "{path}"]
 
 [kde_settings.user_dirs]
-XDG_DOCUMENTS_DIR = "$HOME/Downloads"
-XDG_MUSIC_DIR = "$HOME/Downloads"
-XDG_PICTURES_DIR = "$HOME/Downloads"
-XDG_PUBLICSHARE_DIR = "$HOME/Downloads"
-XDG_TEMPLATES_DIR = "$HOME/Downloads"
-XDG_VIDEOS_DIR = "$HOME/Downloads"
+XDG_DOCUMENTS_DIR = "$HOME/downloads"
+XDG_MUSIC_DIR = "$HOME/downloads"
+XDG_PICTURES_DIR = "$HOME/downloads"
+XDG_PUBLICSHARE_DIR = "$HOME/downloads"
+XDG_TEMPLATES_DIR = "$HOME/downloads"
+XDG_VIDEOS_DIR = "$HOME/downloads"
 # Additional KConfig values applied by the task as the target user, one
 # table per value. file is the config file name under ~/.config, group is
 # the list of group segments, key and value name the key and its string
@@ -813,13 +828,13 @@ value = "Meta+E,none,Switch keyboard layout to Spanish"
 file = "kglobalshortcutsrc"
 group = ["kwin"]
 key = "Walk Through Windows"
-value = "Alt+Tab,Meta+Tab,Walk Through Windows"
+value = "Alt+Tab,none,Walk Through Windows"
 
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
 group = ["kwin"]
 key = "Walk Through Windows (Reverse)"
-value = "Alt+Shift+Tab,Meta+Shift+Tab,Walk Through Windows (Reverse)"
+value = "Alt+Shift+Tab,none,Walk Through Windows (Reverse)"
 
 [[kde_settings.kconfig]]
 file = "kglobalshortcutsrc"
