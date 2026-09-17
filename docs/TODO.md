@@ -171,7 +171,18 @@ is the correction.
     values, so the file went from 60.7 s to 0.6 s. The task also stopped reading
     the local vault path through the config: it reads the values module of
     local_vault_setup, which is already migrated
-20. zram_service, 27 / 679 / 66
+20. zram_service, done, 27 / 679 / 66, and it deviates from the shared-pair list
+    of point 74 in one place, on purpose: compressor is NOT moved to
+    values/common.py. The probe in the migrated zswap_service module shows why
+    the pair the TOML probe reported is not one value: there the word sits inside
+    the record ZswapParameter("compressor", "zstd"), that is, it is the value of
+    one sysfs parameter of the zswap mechanism, while here it is the algorithm of
+    a zram device. They are two settings that happen to carry the same word, and
+    a machine that compresses zram devices with lzo while its zswap cache keeps
+    zstd is a legitimate machine; sharing one constant would have to be undone.
+    The section reads the meminfo line name from the shared module, which point
+    17 moved there, and the values module keeps 26 values including the mode bit
+    of the hot_add interface, which joins the file-mode rule list
 21. sotavpn_setup, 24 / 659 / 67
 22. tor_setup, 27 / 503 / 68
 23. vocalinux_setup, 38 / 680 / 71
@@ -479,10 +490,8 @@ it is named with the figure.
     every read, the tests moved to the values, the section registered in
     tests/test_values.py and tests/test_values_softness.py, the plan updated, the
     full gate, the merge into main and the branch deleted. telegram_setup and
-    scrcpy_setup are done; the order that remains is rustdesk_setup
-    (42 / 62 / 733), zram_service (27 / 66 / 679,
-    which reads the meminfo key from the shared module and moves compressor to
-    common, dropping the copy of zswap_service), sotavpn_setup (24 / 67 / 663),
+    scrcpy_setup are done; the order that remains is sotavpn_setup
+    (24 / 67 / 663),
     vocalinux_setup (38 / 71 / 680), chrome_setup (49 / 87 / 973),
     ssh_daemon_setup (64 / 90 / 659), dnsproxy_setup (78 / 117 / 1051, its commit
     moves the nextdns profile id pair to common) and kde_settings (1607 / 177 /

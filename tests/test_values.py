@@ -53,6 +53,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "swapfile_service_install",
     "telegram_setup",
     "vault_structure",
+    "zram_service",
     "zswap_service",
 )
 
@@ -84,6 +85,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
     ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
+    ("zram_service", "HOT_ADD_READABLE_MODE_BIT", check_file_mode),
 )
 
 # Values the rule of their annotation refuses while the shipped value is

@@ -3,7 +3,9 @@
 All external resources (meminfo, cpuinfo, sysfs, subprocess, filesystem
 paths) are mocked via monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md). The unit template is rendered from a
-fixture, so the tests never read the repository template.
+fixture, so the tests never read the repository template. The values of the
+section come from the values module, and the engine values still come from the
+config document until the engine stage.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from support import make_config, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import zram_service
+from pyntara.values import common as common_values
+from pyntara.values import zram_service as values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -44,20 +48,15 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
-    busy_attempts: int = 5,
-    busy_retry_delay_seconds: float = 0.5,
-    module_load_command: tuple[str, ...] = ("modprobe", "{module_name}"),
-    swap_on_command: tuple[str, ...] = (
-        "swapon",
-        "--priority",
-        "{swap_priority}",
-        "{device_path}",
-    ),
-    unit_algorithm_line: str = (
-        "ExecStart=/bin/sh -c 'echo {compressor} > {algorithm_attribute}'"
-    ),
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context with a small safe config; the real file is never touched.
+
+    The engine values come from the config document until the engine stage; the
+    values of the section are read from the values module, which a test patches
+    where it needs another one. The systemd unit directory and the repository
+    root are the temporary tree, because the task writes the unit there and reads
+    the template from there.
+    """
 
     return make_context(
         task_name="zram_service",
@@ -69,14 +68,6 @@ def _ctx(
         config=make_config(
             task_data_root=tmp_path,
             systemd_unit_dir=tmp_path / "systemd",
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
-            zram_reset_busy_attempts=busy_attempts,
-            zram_reset_busy_retry_delay_seconds=busy_retry_delay_seconds,
-            zram_module_load_command=module_load_command,
-            zram_swap_on_command=swap_on_command,
-            zram_unit_algorithm_line=unit_algorithm_line,
         ),
     )
 
@@ -89,19 +80,22 @@ def test_hot_add_read_interface_uses_the_configured_bit(
     # read-to-add interface while the owner-write bit reports write-to-add
     # for the very same attribute.
     _install_fixtures(monkeypatch, tmp_path, read_interface=True)
-    configured = make_config().zram_service.hot_add_readable_mode_bit
-    assert zram_service._hot_add_read_interface(configured) is True
-    assert zram_service._hot_add_read_interface(0o200) is False
+    assert zram_service._hot_add_read_interface() is True
+    monkeypatch.setattr(values, "HOT_ADD_READABLE_MODE_BIT", 0o200)
+    assert zram_service._hot_add_read_interface() is False
 
 
 def _target(tmp_path: Path) -> tuple[int, int]:
-    """Target (device_count, per_device_bytes) from the test config."""
+    """Target (device_count, per_device_bytes) with the shipped values.
+
+    The engine factors still come from the config document, so the helper builds
+    one for them; the section values are read by the task from its module.
+    """
 
     config = make_config(task_data_root=tmp_path)
     return zram_service._calculate_devices(
         RAM_KIB,
         2,
-        config.zram_service,
         config.engine.bytes_per_kib,
         config.engine.percent_scale,
     )
@@ -357,7 +351,6 @@ def test_calculate_devices_uses_96_percent_and_core_count() -> None:    # 16 GiB
     device_count, per_device_bytes = zram_service._calculate_devices(
         RAM_KIB,
         2,
-        config.zram_service,
         config.engine.bytes_per_kib,
         config.engine.percent_scale,
     )
@@ -377,12 +370,11 @@ def test_device_target_follows_the_engine_factors() -> None:
     device_count, per_device_bytes = zram_service._calculate_devices(
         RAM_KIB,
         2,
-        config.zram_service,
         config.engine.bytes_per_kib,
         config.engine.percent_scale,
     )
     expected_total = (
-        RAM_KIB * 1000 * config.zram_service.memory_fraction_percent // 50
+        RAM_KIB * 1000 * values.MEMORY_FRACTION_PERCENT // 50
     )
     assert device_count == 2
     assert per_device_bytes * 2 <= expected_total
@@ -395,30 +387,24 @@ def test_read_cpu_count_returns_processor_count(
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("processor : 0\nprocessor : 1\n", encoding="utf-8")
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", cpuinfo)
-    key = make_config().zram_service.cpuinfo_processor_key
-    assert zram_service._read_cpu_count(8, key) == (2, False)
+    assert zram_service._read_cpu_count() == (2, False)
 
 
-def test_the_kernel_line_names_come_from_the_config(
+def test_the_kernel_line_names_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The names of the two kernel file lines the task reads are config
-    # values: another name in the table is the line the task counts.
+    # The names of the two kernel file lines the task reads are values: another
+    # name in the module is the line the task counts.
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("Total-RAM:       8192 kB\n", encoding="utf-8")
     monkeypatch.setattr(zram_service, "MEMINFO_PATH", meminfo)
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("core : 0\ncore : 1\ncore : 2\n", encoding="utf-8")
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", cpuinfo)
-    section = make_config(
-        zram_meminfo_total_key="Total-RAM:",
-        zram_cpuinfo_processor_key="core",
-    ).zram_service
-    assert zram_service._read_ram_kib(section.meminfo_total_key) == 8192
-    assert zram_service._read_cpu_count(8, section.cpuinfo_processor_key) == (
-        3,
-        False,
-    )
+    monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "Total-RAM:")
+    monkeypatch.setattr(values, "CPUINFO_PROCESSOR_KEY", "core")
+    assert zram_service._read_ram_kib() == 8192
+    assert zram_service._read_cpu_count() == (3, False)
 
 
 def test_read_cpu_count_falls_back_to_8(
@@ -426,8 +412,7 @@ def test_read_cpu_count_falls_back_to_8(
 ) -> None:
     # A missing cpuinfo file means the spec fallback of 8, flagged.
     monkeypatch.setattr(zram_service, "CPUINFO_PATH", tmp_path / "cpuinfo")
-    key = make_config().zram_service.cpuinfo_processor_key
-    assert zram_service._read_cpu_count(8, key) == (8, True)
+    assert zram_service._read_cpu_count() == (8, True)
 
 
 def test_already_configured_skips(
@@ -449,22 +434,22 @@ def test_already_configured_skips(
     assert writes == []
 
 
-def test_the_device_name_comes_from_the_config(
+def test_the_device_name_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The name of a device is the configured module name with its index:
-    # another module name in the table is the /sys/block entry the task
+    # another module name in the module is the /sys/block entry the task
     # counts and the swap device path it formats and activates.
     sys_block = tmp_path / "sys" / "block"
     (sys_block / "myzram0").mkdir(parents=True)
     (sys_block / "myzram1").mkdir()
     (sys_block / "zram7").mkdir()
     monkeypatch.setattr(zram_service, "SYS_BLOCK_PATH", sys_block)
-    module_name = make_config(zram_module_name="myzram").zram_service.module_name
-    assert zram_service._existing_device_indices(module_name) == [0, 1]
-    assert zram_service._existing_device_count(module_name) == 2
-    assert zram_service._device_path(module_name, 4) == "/dev/myzram4"
-    assert zram_service._device_name(module_name, 4) == "myzram4"
+    monkeypatch.setattr(values, "MODULE_NAME", "myzram")
+    assert zram_service._existing_device_indices(values.MODULE_NAME) == [0, 1]
+    assert zram_service._existing_device_count(values.MODULE_NAME) == 2
+    assert zram_service._device_path(values.MODULE_NAME, 4) == "/dev/myzram4"
+    assert zram_service._device_name(values.MODULE_NAME, 4) == "myzram4"
 
 
 def test_creates_devices_and_service(
@@ -567,9 +552,8 @@ def test_reset_retries_on_transient_busy(
         plain_write(path, value)
 
     monkeypatch.setattr(zram_service, "_write_sysfs", busy_once)
-    result = zram_service.task(
-        _ctx(tmp_path, force=True, busy_retry_delay_seconds=0)
-    )
+    monkeypatch.setattr(values, "RESET_BUSY_RETRY_DELAY_SECONDS", 0.0)
+    result = zram_service.task(_ctx(tmp_path, force=True))
     assert result.success is True
     assert attempts["count"] == 2
 
@@ -599,9 +583,9 @@ def test_reset_failure_after_retries_is_a_warning(
         plain_write(path, value)
 
     monkeypatch.setattr(zram_service, "_write_sysfs", always_busy)
-    result = zram_service.task(
-        _ctx(tmp_path, force=True, busy_attempts=3, busy_retry_delay_seconds=0)
-    )
+    monkeypatch.setattr(values, "RESET_BUSY_ATTEMPTS", 3)
+    monkeypatch.setattr(values, "RESET_BUSY_RETRY_DELAY_SECONDS", 0.0)
+    result = zram_service.task(_ctx(tmp_path, force=True))
     assert result.success is True
     assert result.changed is True
     assert any("cannot reset zram0" in warning for warning in result.warnings)
@@ -734,33 +718,37 @@ def test_write_interface_creates_devices_and_renders_write_unit(
     )
 
 
-def test_commands_and_unit_lines_come_from_the_config(
+def test_commands_and_unit_lines_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The commands of the run and the lines of the ExecStart block are
-    # config values: another load command, another activation call and
-    # another algorithm line are what the run carries out and writes, with
-    # the placeholders of the section filled in.
+    # The commands of the run and the lines of the ExecStart block are values:
+    # another load command, another activation call and another algorithm line
+    # are what the run carries out and writes, with the placeholders of the
+    # section filled in.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     calls, _writes, _active = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )
-    result = zram_service.task(
-        _ctx(
-            tmp_path,
-            module_load_command=("my-load", "{module_name}"),
-            swap_on_command=(
-                "swapon",
-                "--discard",
-                "--priority",
-                "{swap_priority}",
-                "{device_path}",
-            ),
-            unit_algorithm_line=(
-                "ExecStart=/sbin/zram-ctl --set {compressor} {algorithm_attribute}"
-            ),
-        )
+    monkeypatch.setattr(
+        values, "MODULE_LOAD_COMMAND", ("my-load", "{module_name}")
     )
+    monkeypatch.setattr(
+        values,
+        "SWAP_ON_COMMAND",
+        (
+            "swapon",
+            "--discard",
+            "--priority",
+            "{swap_priority}",
+            "{device_path}",
+        ),
+    )
+    monkeypatch.setattr(
+        values,
+        "UNIT_ALGORITHM_LINE",
+        "ExecStart=/sbin/zram-ctl --set {compressor} {algorithm_attribute}",
+    )
+    result = zram_service.task(_ctx(tmp_path))
     assert result.success is True
     assert ["my-load", "zram"] in calls
     assert ["swapon", "--discard", "--priority", "1111", "/dev/zram0"] in calls

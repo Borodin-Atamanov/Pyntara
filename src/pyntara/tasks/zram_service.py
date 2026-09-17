@@ -27,7 +27,6 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import ZramServiceConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -37,6 +36,9 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import zram_service as values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -65,7 +67,7 @@ def _device_path(module_name: str, index: int) -> str:
     return f"/dev/{_device_name(module_name, index)}"
 
 
-def _read_ram_kib(meminfo_total_key: str) -> int:
+def _read_ram_kib() -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
 
     Raises OSError when the file cannot be read or the configured total
@@ -73,39 +75,38 @@ def _read_ram_kib(meminfo_total_key: str) -> int:
     """
 
     for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith(meminfo_total_key):
+        if line.startswith(common_values.MEMINFO_TOTAL_KEY):
             parts = line.split()
             if len(parts) >= 2:
                 return int(parts[1])
-    raise OSError(f"{MEMINFO_PATH} has no {meminfo_total_key} line")
+    raise OSError(f"{MEMINFO_PATH} has no {common_values.MEMINFO_TOTAL_KEY} line")
 
 
-def _read_cpu_count(
-    fallback_cpu_count: int, cpuinfo_processor_key: str
-) -> tuple[int, bool]:
+def _read_cpu_count() -> tuple[int, bool]:
     """CPU core count and whether the fallback was used.
 
     The count comes from the processor lines in /proc/cpuinfo, whose name
-    is a config value. When the file cannot be read or reports no
-    processors, the configured fallback is used and the flag is True.
+    is a value. When the file cannot be read or reports no processors, the
+    configured fallback is used and the flag is True.
     """
 
     try:
         text = CPUINFO_PATH.read_text(encoding="utf-8")
     except OSError:
-        return fallback_cpu_count, True
+        return values.FALLBACK_CPU_COUNT, True
     count = sum(
-        1 for line in text.splitlines() if line.startswith(cpuinfo_processor_key)
+        1
+        for line in text.splitlines()
+        if line.startswith(values.CPUINFO_PROCESSOR_KEY)
     )
     if count == 0:
-        return fallback_cpu_count, True
+        return values.FALLBACK_CPU_COUNT, True
     return count, False
 
 
 def _calculate_devices(
     ram_kib: int,
     cpu_count: int,
-    cfg: ZramServiceConfig,
     bytes_per_kib: int,
     percent_scale: int,
 ) -> tuple[int, int]:
@@ -117,9 +118,14 @@ def _calculate_devices(
     factor and the percent scale come from the engine table.
     """
 
-    total_bytes = ram_kib * bytes_per_kib * cfg.memory_fraction_percent // percent_scale
+    total_bytes = (
+        ram_kib
+        * bytes_per_kib
+        * values.MEMORY_FRACTION_PERCENT
+        // percent_scale
+    )
     per_device_bytes = (
-        total_bytes // cpu_count // cfg.alignment_bytes * cfg.alignment_bytes
+        total_bytes // cpu_count // values.ALIGNMENT_BYTES * values.ALIGNMENT_BYTES
     )
     return cpu_count, per_device_bytes
 
@@ -201,44 +207,42 @@ def _write_sysfs(path: Path, value: str) -> None:
     path.write_text(value, encoding="utf-8")
 
 
-def _write_sysfs_with_retry(
-    path: Path, value: str, attempts: int, delay_seconds: float
-) -> None:
+def _write_sysfs_with_retry(path: Path, value: str) -> None:
     """Write a sysfs attribute, retrying when the device is transiently busy.
 
     The kernel returns EBUSY for reset and hot_remove while the device is
     momentarily open, for example by a udev blkid probe triggered by a
     preceding event; the condition clears within milliseconds. The write
-    is retried with a short pause until attempts run out, then the last
-    error is re-raised so the caller reports it. Other errors are raised
-    immediately: they are not transient.
+    is retried with a short pause until the configured attempts run out, then
+    the last error is re-raised so the caller reports it. Other errors are
+    raised immediately: they are not transient.
     """
 
-    for attempt in range(attempts):
+    for attempt in range(values.RESET_BUSY_ATTEMPTS):
         try:
             _write_sysfs(path, value)
             return
         except OSError as exc:
             if exc.errno != errno.EBUSY:
                 raise
-            if attempt + 1 >= attempts:
+            if attempt + 1 >= values.RESET_BUSY_ATTEMPTS:
                 raise
-            time.sleep(delay_seconds)
+            time.sleep(values.RESET_BUSY_RETRY_DELAY_SECONDS)
 
 
-def _hot_add_read_interface(readable_mode_bit: int) -> bool:
+def _hot_add_read_interface() -> bool:
     """True when hot_add is the read-to-add interface (kernel 7.0+).
 
     Kernel 7.0 creates a zram device on every read of hot_add and
     returns the new device id; older kernels create one device per
     write. The interface is told apart by the attribute mode: readable
     files are read-to-add, write-only files are write-to-add. The mode
-    query itself does not create a device. readable_mode_bit is the
-    configured bit that marks the attribute as readable.
+    query itself does not create a device; the configured bit marks the
+    attribute as readable.
     """
 
     mode = ZRAM_HOT_ADD_PATH.stat().st_mode
-    return bool(mode & readable_mode_bit)
+    return bool(mode & values.HOT_ADD_READABLE_MODE_BIT)
 
 
 def _add_devices(
@@ -272,9 +276,7 @@ def _add_devices(
     return None
 
 
-def _active_swap_devices(
-    cfg: ZramServiceConfig, timeout: float
-) -> set[str]:
+def _active_swap_devices(timeout: float) -> set[str]:
     """Paths of every active swap device, including the disk swapfile.
 
     The configured swap listing command reports all activated swaps; the
@@ -284,7 +286,7 @@ def _active_swap_devices(
     """
 
     result = run_command(
-        list(cfg.swap_show_command),
+        list(values.SWAP_SHOW_COMMAND),
         check=False,
         capture=True,
         timeout=timeout,
@@ -304,7 +306,6 @@ def _target_reached(
     per_device_bytes: int,
     active_paths: set[str],
     enabled: bool,
-    cfg: ZramServiceConfig,
 ) -> bool:
     """True when every device exists at the target size with the target
     algorithm, is active, no extra devices exist and the service is enabled.
@@ -312,14 +313,14 @@ def _target_reached(
 
     if not enabled:
         return False
-    if _existing_device_count(cfg.module_name) != device_count:
+    if _existing_device_count(values.MODULE_NAME) != device_count:
         return False
     for index in range(device_count):
-        if _read_disksize(index, cfg.module_name) != per_device_bytes:
+        if _read_disksize(index, values.MODULE_NAME) != per_device_bytes:
             return False
-        if _read_active_algorithm(index, cfg.module_name) != cfg.compressor:
+        if _read_active_algorithm(index, values.MODULE_NAME) != values.COMPRESSOR:
             return False
-        if _device_path(cfg.module_name, index) not in active_paths:
+        if _device_path(values.MODULE_NAME, index) not in active_paths:
             return False
     return True
 
@@ -329,7 +330,6 @@ def _render_unit(
     device_count: int,
     per_device_bytes: int,
     read_interface: bool,
-    cfg: ZramServiceConfig,
 ) -> str:
     """Render the service unit template with the ExecStart block substituted.
 
@@ -343,51 +343,51 @@ def _render_unit(
     """
 
     lines: list[str] = [
-        cfg.unit_load_line.format(module_name=cfg.module_name)
+        values.UNIT_LOAD_LINE.format(module_name=values.MODULE_NAME)
     ]
     for index in range(1, device_count):
         if read_interface:
             lines.append(
-                cfg.unit_add_read_line.format(
+                values.UNIT_ADD_READ_LINE.format(
                     hot_add_path=str(ZRAM_HOT_ADD_PATH)
                 )
             )
         else:
             lines.append(
-                cfg.unit_add_write_line.format(
+                values.UNIT_ADD_WRITE_LINE.format(
                     hot_add_path=str(ZRAM_HOT_ADD_PATH)
                 )
             )
     for index in range(device_count):
         lines.append(
-            cfg.unit_algorithm_line.format(
-                compressor=cfg.compressor,
+            values.UNIT_ALGORITHM_LINE.format(
+                compressor=values.COMPRESSOR,
                 algorithm_attribute=str(
                     SYS_BLOCK_PATH
-                    / _device_name(cfg.module_name, index)
+                    / _device_name(values.MODULE_NAME, index)
                     / "comp_algorithm"
                 ),
             )
         )
         lines.append(
-            cfg.unit_disksize_line.format(
+            values.UNIT_DISKSIZE_LINE.format(
                 size_bytes=per_device_bytes,
                 disksize_attribute=str(
                     SYS_BLOCK_PATH
-                    / _device_name(cfg.module_name, index)
+                    / _device_name(values.MODULE_NAME, index)
                     / "disksize"
                 ),
             )
         )
         lines.append(
-            cfg.unit_format_line.format(
-                device_path=_device_path(cfg.module_name, index)
+            values.UNIT_FORMAT_LINE.format(
+                device_path=_device_path(values.MODULE_NAME, index)
             )
         )
         lines.append(
-            cfg.unit_swap_on_line.format(
-                swap_priority=cfg.swap_priority,
-                device_path=_device_path(cfg.module_name, index),
+            values.UNIT_SWAP_ON_LINE.format(
+                swap_priority=values.SWAP_PRIORITY,
+                device_path=_device_path(values.MODULE_NAME, index),
             )
         )
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -428,28 +428,39 @@ def task(ctx: Context) -> TaskResult:
     computed at all, so the task ends with the reason in the warnings.
     """
 
-    cfg = ctx.config.zram_service
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the zram_service values are not declared, nothing was changed",
+            warnings=(
+                "the zram_service values are not declared: " + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    service_name = cfg.service_unit_name
+    service_name = values.SERVICE_UNIT_NAME
     percent_scale = ctx.config.engine.percent_scale
     bytes_per_kib = ctx.config.engine.bytes_per_kib
     bytes_per_mib = ctx.config.engine.bytes_per_mib
     warnings: list[str] = []
 
     try:
-        ram_kib = _read_ram_kib(cfg.meminfo_total_key)
+        ram_kib = _read_ram_kib()
     except OSError as exc:
         return _result(
             changed=False,
-            message=f"{cfg.module_name} not configured",
+            message=f"{values.MODULE_NAME} not configured",
             warnings=[f"cannot determine RAM size: {exc}"],
         )
-    cpu_count, cpu_fallback = _read_cpu_count(
-        cfg.fallback_cpu_count, cfg.cpuinfo_processor_key
-    )
+    cpu_count, cpu_fallback = _read_cpu_count()
     device_count, per_device_bytes = _calculate_devices(
-        ram_kib, cpu_count, cfg, bytes_per_kib, percent_scale
+        ram_kib, cpu_count, bytes_per_kib, percent_scale
     )
     total_mb = per_device_bytes * device_count // bytes_per_mib
 
@@ -457,7 +468,7 @@ def task(ctx: Context) -> TaskResult:
     if cpu_fallback:
         _log(
             f"reading CPU count from {CPUINFO_PATH}: undeterminable, "
-            f"using fallback {cfg.fallback_cpu_count}"
+            f"using fallback {values.FALLBACK_CPU_COUNT}"
         )
     else:
         _log(f"reading CPU count from {CPUINFO_PATH}: {cpu_count} cores")
@@ -466,10 +477,10 @@ def task(ctx: Context) -> TaskResult:
         f"each, total {total_mb} MiB"
     )
 
-    active_paths = _active_swap_devices(cfg, timeout)
+    active_paths = _active_swap_devices(timeout)
     enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
-    existing_count = _existing_device_count(cfg.module_name)
-    _log(f"checking existing {cfg.module_name} devices: {existing_count}")
+    existing_count = _existing_device_count(values.MODULE_NAME)
+    _log(f"checking existing {values.MODULE_NAME} devices: {existing_count}")
     _log(f"checking active swap devices: {len(active_paths)}")
     _log(
         f"checking autorun service {service_name}: "
@@ -477,7 +488,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     if not force and _target_reached(
-        device_count, per_device_bytes, active_paths, enabled, cfg
+        device_count, per_device_bytes, active_paths, enabled
     ):
         _log("target state already reached, skipping")
         return _result(changed=False, message="already configured", warnings=warnings)
@@ -485,15 +496,15 @@ def task(ctx: Context) -> TaskResult:
     # Deactivate, reset and remove the existing devices so sizes and
     # algorithms can be rewritten; devices beyond the target count are
     # removed entirely.
-    for index in _existing_device_indices(cfg.module_name):
-        name = _device_name(cfg.module_name, index)
-        device_path = _device_path(cfg.module_name, index)
+    for index in _existing_device_indices(values.MODULE_NAME):
+        name = _device_name(values.MODULE_NAME, index)
+        device_path = _device_path(values.MODULE_NAME, index)
         if device_path in active_paths:
             _log(f"deactivating swap: swapoff {device_path}")
             try:
                 run_command(
                     substituted_command(
-                        cfg.swap_off_command, {"device_path": device_path}
+                        values.SWAP_OFF_COMMAND, {"device_path": device_path}
                     ),
                     timeout=timeout,
                 )
@@ -507,8 +518,6 @@ def task(ctx: Context) -> TaskResult:
                 _write_sysfs_with_retry(
                     SYS_BLOCK_PATH / name / "reset",
                     "1",
-                    attempts=cfg.reset_busy_attempts,
-                    delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
                 warnings.append(f"cannot reset {name}: {exc}")
@@ -520,8 +529,6 @@ def task(ctx: Context) -> TaskResult:
                 _write_sysfs_with_retry(
                     ZRAM_HOT_REMOVE_PATH,
                     str(index),
-                    attempts=cfg.reset_busy_attempts,
-                    delay_seconds=cfg.reset_busy_retry_delay_seconds,
                 )
             except OSError as exc:
                 warnings.append(f"cannot remove {name}: {exc}")
@@ -530,11 +537,11 @@ def task(ctx: Context) -> TaskResult:
 
     # Load the module, then create the devices that are still missing. The
     # module creates zram0 itself; the rest come from hot_add.
-    _log(f"loading module: modprobe {cfg.module_name}")
+    _log(f"loading module: modprobe {values.MODULE_NAME}")
     try:
         run_command(
             substituted_command(
-                cfg.module_load_command, {"module_name": cfg.module_name}
+                values.MODULE_LOAD_COMMAND, {"module_name": values.MODULE_NAME}
             ),
             timeout=timeout,
         )
@@ -544,16 +551,16 @@ def task(ctx: Context) -> TaskResult:
         _log("module loaded")
     read_interface = False
     try:
-        read_interface = _hot_add_read_interface(cfg.hot_add_readable_mode_bit)
+        read_interface = _hot_add_read_interface()
     except OSError as exc:
         # The write spelling of the interface is the fallback, and the
         # creation step reports its own failure if the module is absent.
         warnings.append(f"cannot query hot_add: {exc}")
     _log(f"hot_add interface: {'read' if read_interface else 'write'}")
-    missing = device_count - _existing_device_count(cfg.module_name)
+    missing = device_count - _existing_device_count(values.MODULE_NAME)
     if missing > 0:
         _log(f"creating missing devices: hot_add {missing} times")
-        add_error = _add_devices(missing, read_interface, cfg.module_name)
+        add_error = _add_devices(missing, read_interface, values.MODULE_NAME)
         if add_error is not None:
             warnings.append(add_error)
         else:
@@ -564,13 +571,13 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     device_changed = False
     for index in range(device_count):
-        name = _device_name(cfg.module_name, index)
-        device_path = _device_path(cfg.module_name, index)
-        _log(f"configuring {name}: algorithm {cfg.compressor}")
+        name = _device_name(values.MODULE_NAME, index)
+        device_path = _device_path(values.MODULE_NAME, index)
+        _log(f"configuring {name}: algorithm {values.COMPRESSOR}")
         try:
             _write_sysfs(
                 SYS_BLOCK_PATH / name / "comp_algorithm",
-                cfg.compressor,
+                values.COMPRESSOR,
             )
             _write_sysfs(
                 SYS_BLOCK_PATH / name / "disksize",
@@ -584,16 +591,16 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(
                 substituted_command(
-                    cfg.format_command, {"device_path": device_path}
+                    values.FORMAT_COMMAND, {"device_path": device_path}
                 ),
                 timeout=timeout,
             )
-            _log(f"activating {name}: swapon --priority {cfg.swap_priority}")
+            _log(f"activating {name}: swapon --priority {values.SWAP_PRIORITY}")
             run_command(
                 substituted_command(
-                    cfg.swap_on_command,
+                    values.SWAP_ON_COMMAND,
                     {
-                        "swap_priority": str(cfg.swap_priority),
+                        "swap_priority": str(values.SWAP_PRIORITY),
                         "device_path": device_path,
                     },
                 ),
@@ -607,32 +614,33 @@ def task(ctx: Context) -> TaskResult:
     changed = changed or device_changed
 
     # Verify the configured state by reading the system files back.
-    _log(f"verifying {cfg.module_name} configuration")
+    _log(f"verifying {values.MODULE_NAME} configuration")
     problems: list[str] = []
-    verified_active = _active_swap_devices(cfg, timeout)
+    verified_active = _active_swap_devices(timeout)
     for index in range(device_count):
-        name = _device_name(cfg.module_name, index)
-        if _read_disksize(index, cfg.module_name) != per_device_bytes:
+        name = _device_name(values.MODULE_NAME, index)
+        if _read_disksize(index, values.MODULE_NAME) != per_device_bytes:
             problems.append(f"{name} disksize mismatch")
-        if _read_active_algorithm(index, cfg.module_name) != cfg.compressor:
+        if _read_active_algorithm(index, values.MODULE_NAME) != values.COMPRESSOR:
             problems.append(f"{name} algorithm mismatch")
-        if _device_path(cfg.module_name, index) not in verified_active:
+        if _device_path(values.MODULE_NAME, index) not in verified_active:
             problems.append(f"{name} not active")
-    if _existing_device_count(cfg.module_name) != device_count:
-        problems.append(f"extra {cfg.module_name} devices present")
+    if _existing_device_count(values.MODULE_NAME) != device_count:
+        problems.append(f"extra {values.MODULE_NAME} devices present")
     if problems:
         warnings.append("; ".join(problems))
     else:
         _log("verification passed")
 
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / cfg.unit_template_file_name
+        task_data_dir(ctx.repo_root, ctx.task_name)
+        / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     content: str | None = None
     try:
         content = _render_unit(
-            template_path, device_count, per_device_bytes, read_interface, cfg
+            template_path, device_count, per_device_bytes, read_interface
         )
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
@@ -651,13 +659,13 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _log("reloading systemd: systemctl daemon-reload")
                 run_command(
-                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
                 )
                 _log("systemd reloaded")
                 _log(f"enabling service: systemctl enable {service_name}")
                 run_command(
                     substituted_command(
-                        cfg.systemctl_enable_command,
+                        values.SYSTEMCTL_ENABLE_COMMAND,
                         {"service_unit_name": service_name},
                     ),
                     timeout=timeout,
@@ -672,7 +680,7 @@ def task(ctx: Context) -> TaskResult:
     return _result(
         changed=changed,
         message=(
-            f"{cfg.module_name} configured: {device_count} devices, "
+            f"{values.MODULE_NAME} configured: {device_count} devices, "
             f"{per_device_bytes} bytes each, total {total_mb} MiB"
         ),
         warnings=warnings,
