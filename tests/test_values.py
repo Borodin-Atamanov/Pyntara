@@ -54,6 +54,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "swapfile_service_install",
     "telegram_setup",
     "vault_structure",
+    "vocalinux_setup",
     "zram_service",
     "zswap_service",
 )

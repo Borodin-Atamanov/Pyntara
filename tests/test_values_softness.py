@@ -37,6 +37,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("ssh_client_setup", "ssh_client_setup"),
     ("swapfile_service_install", "swapfile_service_install"),
     ("telegram_setup", "telegram_setup"),
+    ("vocalinux_setup", "vocalinux_setup"),
     ("zram_service", "zram_service"),
     ("zswap_service", "zswap_service"),
 )

@@ -442,8 +442,6 @@ def make_config(
     ),
     chrome_config_group_flag: tuple[str, ...] = ("--group", "{group}"),
     chrome_desktop_entry_exec_key: str = "Exec=",
-    vocalinux_home_dir: str = "/home/i",
-    vocalinux_download_dir: Path = Path("/var/cache/pyntara/vocalinux"),
     yggdrasil_download_dir: Path = Path("/var/lib/pyntara/yggdrasil-download"),
     yggdrasil_install_retries: int = 3,
     yggdrasil_asset_name_template: str = "yggdrasil-{version}-{arch}.deb",
@@ -900,11 +898,6 @@ def make_config(
             base.port_forwarding_setup,
             connect_timeout_seconds=port_forwarding_connect_timeout_seconds,
             state_file_path=port_forwarding_state_file_path,
-        ),
-        vocalinux_setup=replace(
-            base.vocalinux_setup,
-            home_dir=vocalinux_home_dir,
-            download_dir=vocalinux_download_dir,
         ),
         rustdesk_setup=replace(
             base.rustdesk_setup,

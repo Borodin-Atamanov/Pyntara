@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig, VocalinuxSetupConfig
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -44,6 +44,9 @@ from pyntara.utils import (
     task_data_dir,
     trim_whitespace,
 )
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import vocalinux_setup as values
 
 
 def _read_task_template(
@@ -63,23 +66,26 @@ def _read_task_template(
     return path.read_text(encoding="utf-8"), None
 
 
-def _as_user_command(cfg: VocalinuxSetupConfig, command: list[str]) -> list[str]:
-    """Prefix a command with the configured wrapper of the target user.
+def _as_user_command(command: list[str]) -> list[str]:
+    """Prefix a command with the wrapper of the target user.
 
-    The wrapper is a config value of the section, so a machine whose
-    desktop user is reached another way is a config change.
+    The wrapper is a value of this section, so a machine whose desktop user
+    is reached another way is a values change.
     """
 
     return [
-        *substituted_command(cfg.runuser_command, {"username": cfg.username}),
+        *substituted_command(
+            values.RUNUSER_COMMAND,
+            {"username": common_values.DESKTOP_USERNAME},
+        ),
         *command,
     ]
 
 
-def _home_env(cfg: VocalinuxSetupConfig) -> dict[str, str]:
+def _home_env() -> dict[str, str]:
     """Environment that points the KDE tools at the target user home."""
 
-    return {"HOME": cfg.home_dir}
+    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _release_download_url(
@@ -97,24 +103,25 @@ def _release_download_url(
     )
 
 
-def _asset_name(cfg: VocalinuxSetupConfig, asset_arch: str) -> str:
+def _asset_name(asset_arch: str) -> str:
     """The asset file name of a Vocalinux release for one arch."""
 
-    return cfg.asset_name_template.format(
-        version=cfg.version, asset_arch=asset_arch
+    return values.ASSET_NAME_TEMPLATE.format(
+        version=values.VERSION, asset_arch=asset_arch
     )
 
 
-def _appimage_install_path(
-    cfg: VocalinuxSetupConfig, asset_name: str
-) -> Path:
+def _appimage_install_path(asset_name: str) -> Path:
     """The install path of the pinned AppImage under the user home."""
 
-    return Path(cfg.home_dir) / cfg.appimage_dir_relative_path / asset_name
+    return (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.APPIMAGE_DIR_RELATIVE_PATH
+        / asset_name
+    )
 
 
 def _write_user_file(
-    cfg: VocalinuxSetupConfig,
     rel_path: str,
     content: str,
     *,
@@ -133,7 +140,7 @@ def _write_user_file(
     remaining files and the steps after them still run.
     """
 
-    target = Path(cfg.home_dir) / rel_path
+    target = Path(common_values.DESKTOP_HOME_DIR) / rel_path
     if not force and target.is_file():
         try:
             if target.read_text(encoding="utf-8") == content:
@@ -143,21 +150,23 @@ def _write_user_file(
     try:
         run_command(
             _as_user_command(
-                cfg,
                 substituted_command(
-                    cfg.mkdir_command, {"path": str(target.parent)}
+                    values.MKDIR_COMMAND, {"path": str(target.parent)}
                 ),
             ),
-            extra_env=_home_env(cfg),
+            extra_env=_home_env(),
             timeout=timeout,
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         run_command(
             substituted_command(
-                cfg.chown_command,
+                values.CHOWN_COMMAND,
                 {
-                    "owner": f"{cfg.username}:{cfg.username}",
+                    "owner": (
+                        f"{common_values.DESKTOP_USERNAME}:"
+                        f"{common_values.DESKTOP_USERNAME}"
+                    ),
                     "path": str(target),
                 },
             ),
@@ -165,7 +174,7 @@ def _write_user_file(
         )
         run_command(
             substituted_command(
-                cfg.chmod_command,
+                values.CHMOD_COMMAND,
                 {"file_mode": f"{file_mode:o}", "path": str(target)},
             ),
             timeout=timeout,
@@ -177,32 +186,30 @@ def _write_user_file(
 
 
 def _kconfig_command(
-    cfg: VocalinuxSetupConfig,
     base_command: tuple[str, ...],
     group_segments: tuple[str, ...],
     key: str,
 ) -> list[str]:
-    """One KConfig call: the configured base, the groups and the key.
+    """One KConfig call: the base, the groups and the key.
 
-    The base call carries the shortcut file name and every selector is a
-    config value, so another KConfig version or another tool is a config
-    change. The reader and the writer share this builder, so the two calls
-    can never drift apart.
+    The base call carries the shortcut file name and every selector is a value
+    of this section, so another KConfig version or another tool is a values
+    change. The reader and the writer share this builder, so the two calls can
+    never drift apart.
     """
 
     command = substituted_command(
-        base_command, {"file_name": cfg.shortcuts_file_name}
+        base_command, {"file_name": common_values.SHORTCUTS_FILE_NAME}
     )
     for segment in group_segments:
         command.extend(
-            substituted_command(cfg.config_group_flag, {"group": segment})
+            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
 def _kreadconfig(
-    cfg: VocalinuxSetupConfig,
     group_segments: tuple[str, ...],
     key: str,
     timeout: float,
@@ -210,11 +217,11 @@ def _kreadconfig(
     """Current value of one KConfig key, or an empty string when unset."""
 
     command = _kconfig_command(
-        cfg, cfg.kreadconfig_command, group_segments, key
+        values.KREADCONFIG_COMMAND, group_segments, key
     )
     result = run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         check=False,
         capture=True,
         timeout=timeout,
@@ -223,28 +230,26 @@ def _kreadconfig(
 
 
 def _kwriteconfig(
-    cfg: VocalinuxSetupConfig,
     group_segments: tuple[str, ...],
     key: str,
     value: str,
     *,
     timeout: float,
 ) -> None:
-    """Write one KConfig key with the configured writer as the target user."""
+    """Write one KConfig key with the writer of the section as the user."""
 
     command = _kconfig_command(
-        cfg, cfg.kwriteconfig_command, group_segments, key
+        values.KWRITECONFIG_COMMAND, group_segments, key
     )
     command.append(value)
     run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         timeout=timeout,
     )
 
 
 def _sync_echo_shortcut(
-    cfg: VocalinuxSetupConfig,
     *,
     timeout: float,
     force: bool,
@@ -260,26 +265,25 @@ def _sync_echo_shortcut(
     done.
     """
 
-    group = (cfg.shortcut_group_name, cfg.shortcut_entry_name)
+    group = (values.SHORTCUT_GROUP_NAME, values.SHORTCUT_ENTRY_NAME)
     try:
-        current = _kreadconfig(cfg, group, cfg.shortcut_action_name, timeout)
+        current = _kreadconfig(group, values.SHORTCUT_ACTION_NAME, timeout)
     except (OSError, subprocess.SubprocessError) as exc:
-        return False, f"cannot read the {cfg.shortcut_action_name} shortcut: {exc}"
-    if not force and current == cfg.shortcut_key_sequence:
+        return False, f"cannot read the {values.SHORTCUT_ACTION_NAME} shortcut: {exc}"
+    if not force and current == values.SHORTCUT_KEY_SEQUENCE:
         return False, None
     try:
         _kwriteconfig(
-            cfg,
             group,
-            cfg.shortcut_action_name,
-            cfg.shortcut_key_sequence,
+            values.SHORTCUT_ACTION_NAME,
+            values.SHORTCUT_KEY_SEQUENCE,
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return False, f"cannot write the {cfg.shortcut_action_name} shortcut: {exc}"
+        return False, f"cannot write the {values.SHORTCUT_ACTION_NAME} shortcut: {exc}"
     _log(
-        f"set {cfg.shortcuts_file_name} {cfg.shortcut_action_name}: "
-        f"{cfg.shortcut_key_sequence}"
+        f"set {common_values.SHORTCUTS_FILE_NAME} "
+        f"{values.SHORTCUT_ACTION_NAME}: {values.SHORTCUT_KEY_SEQUENCE}"
     )
     return True, None
 
@@ -297,7 +301,6 @@ def _autostart_content(template: str, appimage_path: Path) -> str:
 
 
 def _install_appimage(
-    cfg: VocalinuxSetupConfig,
     engine: EngineConfig,
     *,
     timeout: float,
@@ -308,7 +311,7 @@ def _install_appimage(
     The asset arch follows the dpkg architecture of the machine. The
     release asset is trusted as is and its checksum is not verified: the
     source is the official GitHub release of the pinned version. The file
-    is downloaded into the root download_dir cache once and copied into
+    is downloaded into the root DOWNLOAD_DIR cache once and copied into
     the user home, so a rerun with a present install file changes nothing
     and never downloads again. An installed file whose bytes already equal
     the cached release is left where it is, even in force mode, because a
@@ -322,27 +325,30 @@ def _install_appimage(
     asset_arch = release_asset_architecture(
         engine.release_asset_architectures, arch
     )
-    asset_name = _asset_name(cfg, asset_arch)
-    url = _release_download_url(engine, cfg.github_repo, cfg.version, asset_name)
-    install_dir = Path(cfg.home_dir) / cfg.appimage_dir_relative_path
+    asset_name = _asset_name(asset_arch)
+    url = _release_download_url(
+        engine, values.GITHUB_REPO, values.VERSION, asset_name
+    )
+    install_dir = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.APPIMAGE_DIR_RELATIVE_PATH
+    )
     target = install_dir / asset_name
-    cache = cfg.download_dir / asset_name
+    cache = values.DOWNLOAD_DIR / asset_name
     if target.is_file() and not force:
         return False, None
     run_command(
         _as_user_command(
-            cfg,
             substituted_command(
-                cfg.mkdir_command, {"path": str(install_dir)}
+                values.MKDIR_COMMAND, {"path": str(install_dir)}
             ),
         ),
-        extra_env=_home_env(cfg),
+        extra_env=_home_env(),
         timeout=timeout,
     )
     install_dir.mkdir(parents=True, exist_ok=True)
     if not cache.is_file():
         cache.parent.mkdir(parents=True, exist_ok=True)
-        partial = cfg.download_dir / (
+        partial = values.DOWNLOAD_DIR / (
             asset_name + engine.partial_download_file_suffix
         )
         try:
@@ -371,9 +377,12 @@ def _install_appimage(
         return False, f"cannot install {target}: {exc}"
     run_command(
         substituted_command(
-            cfg.chown_command,
+            values.CHOWN_COMMAND,
             {
-                "owner": f"{cfg.username}:{cfg.username}",
+                "owner": (
+                    f"{common_values.DESKTOP_USERNAME}:"
+                    f"{common_values.DESKTOP_USERNAME}"
+                ),
                 "path": str(target),
             },
         ),
@@ -381,15 +390,15 @@ def _install_appimage(
     )
     run_command(
         substituted_command(
-            cfg.chmod_command,
+            values.CHMOD_COMMAND,
             {
-                "file_mode": f"{cfg.executable_file_mode:o}",
+                "file_mode": f"{common_values.EXECUTABLE_FILE_MODE:o}",
                 "path": str(target),
             },
         ),
         timeout=timeout,
     )
-    trash_dir = Path(cfg.home_dir) / ".local" / "share" / "Trash" / "files"
+    trash_dir = Path(common_values.DESKTOP_HOME_DIR) / ".local" / "share" / "Trash" / "files"
     for stale in install_dir.glob("Vocalinux-*.AppImage"):
         if stale.name == asset_name:
             continue
@@ -404,9 +413,7 @@ def _install_appimage(
     return rewritten, None
 
 
-def _ensure_input_group(
-    cfg: VocalinuxSetupConfig, *, timeout: float
-) -> tuple[bool, str | None]:
+def _ensure_input_group(*, timeout: float) -> tuple[bool, str | None]:
     """Add the desktop user to the input group; (changed, error).
 
     The group owns /dev/input and /dev/uinput, so without it the app-level
@@ -414,32 +421,31 @@ def _ensure_input_group(
     effect at the next login.
     """
 
+    username = common_values.DESKTOP_USERNAME
     result = run_command(
         substituted_command(
-            cfg.group_members_command, {"username": cfg.username}
+            values.GROUP_MEMBERS_COMMAND, {"username": username}
         ),
         check=False,
         capture=True,
         timeout=timeout,
     )
-    if cfg.input_group in result.stdout.split():
+    if values.INPUT_GROUP in result.stdout.split():
         return False, None
     try:
         run_command(
             substituted_command(
-                cfg.group_add_command,
-                {"input_group": cfg.input_group, "username": cfg.username},
+                values.GROUP_ADD_COMMAND,
+                {"input_group": values.INPUT_GROUP, "username": username},
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot add {cfg.username} to {cfg.input_group}: {exc}"
+        return False, f"cannot add {username} to {values.INPUT_GROUP}: {exc}"
     return True, None
 
 
-def _enable_user_service(
-    cfg: VocalinuxSetupConfig, *, timeout: float
-) -> tuple[bool, str | None]:
+def _enable_user_service(*, timeout: float) -> tuple[bool, str | None]:
     """Enable and start the ydotool user unit; (changed, error).
 
     The unit runs as the desktop user through its user manager, so the
@@ -449,12 +455,13 @@ def _enable_user_service(
     at the next login.
     """
 
+    username = common_values.DESKTOP_USERNAME
     active = run_command(
         substituted_command(
-            cfg.service_active_command,
+            values.SERVICE_ACTIVE_COMMAND,
             {
-                "username": cfg.username,
-                "service_unit_name": cfg.service_unit_name,
+                "username": username,
+                "service_unit_name": values.SERVICE_UNIT_NAME,
             },
         ),
         check=False,
@@ -463,22 +470,22 @@ def _enable_user_service(
     )
     if (
         active.returncode == 0
-        and trim_whitespace(active.stdout) == cfg.service_active_state
+        and trim_whitespace(active.stdout) == values.SERVICE_ACTIVE_STATE
     ):
         return False, None
     try:
         run_command(
             substituted_command(
-                cfg.service_enable_command,
+                values.SERVICE_ENABLE_COMMAND,
                 {
-                    "username": cfg.username,
-                    "service_unit_name": cfg.service_unit_name,
+                    "username": username,
+                    "service_unit_name": values.SERVICE_UNIT_NAME,
                 },
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot enable {cfg.service_unit_name}: {exc}"
+        return False, f"cannot enable {values.SERVICE_UNIT_NAME}: {exc}"
     return True, None
 
 
@@ -491,14 +498,14 @@ def _install_packages(ctx: Context) -> tuple[bool, bool]:
     app cannot type on Wayland.
     """
 
-    cfg = ctx.config.vocalinux_setup
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
-    status_timeout = cfg.package_status_timeout_seconds
     missing = [
         package
-        for package in cfg.packages
-        if not package_is_installed(engine, package, status_timeout)
+        for package in values.PACKAGES
+        if not package_is_installed(
+            engine, package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+        )
     ]
     if not missing:
         return True, False
@@ -508,7 +515,7 @@ def _install_packages(ctx: Context) -> tuple[bool, bool]:
         missing,
         install_timeout=timeout,
         update_timeout=timeout,
-        retries=cfg.package_install_retries,
+        retries=common_values.PACKAGE_INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
     ok = not failures
@@ -532,7 +539,20 @@ def task(ctx: Context) -> TaskResult:
     shortcut to take effect, which the message states.
     """
 
-    cfg = ctx.config.vocalinux_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the vocalinux_setup values are not declared, nothing was changed",
+            warnings=(
+                "the vocalinux_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     engine = ctx.config.engine
     force = ctx.task_name in ctx.force_tasks
@@ -546,7 +566,9 @@ def task(ctx: Context) -> TaskResult:
     if not packages_ok:
         # The AppImage is self-contained, so the deployment of the user
         # files still runs and the missing packages are reported.
-        warnings.append(f"failed to install required packages for {cfg.packages}")
+        warnings.append(
+            f"failed to install required packages for {values.PACKAGES}"
+        )
     if installed_any:
         messages.append("installed the required packages")
 
@@ -554,11 +576,10 @@ def task(ctx: Context) -> TaskResult:
     asset_arch = release_asset_architecture(
         engine.release_asset_architectures, arch
     )
-    asset_name = _asset_name(cfg, asset_arch)
-    appimage_path = _appimage_install_path(cfg, asset_name)
+    asset_name = _asset_name(asset_arch)
+    appimage_path = _appimage_install_path(asset_name)
 
     appimage_changed, appimage_error = _install_appimage(
-        cfg,
         engine,
         timeout=timeout,
         force=force,
@@ -569,51 +590,54 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(appimage_error)
     if appimage_changed:
         changed = True
-        messages.append(f"installed Vocalinux {cfg.version} to {appimage_path}")
+        messages.append(f"installed Vocalinux {values.VERSION} to {appimage_path}")
     elif appimage_error is None:
-        messages.append(f"Vocalinux {cfg.version} already installed")
+        messages.append(f"Vocalinux {values.VERSION} already installed")
 
-    group_changed, group_error = _ensure_input_group(cfg, timeout=timeout)
+    group_changed, group_error = _ensure_input_group(timeout=timeout)
     if group_error:
         warnings.append(group_error)
     if group_changed:
         changed = True
-        messages.append(f"added {cfg.username} to the {cfg.input_group} group")
+        messages.append(
+            f"added {common_values.DESKTOP_USERNAME} to the "
+            f"{values.INPUT_GROUP} group"
+        )
 
-    service_changed, service_error = _enable_user_service(cfg, timeout=timeout)
+    service_changed, service_error = _enable_user_service(timeout=timeout)
     if service_error:
         warnings.append(service_error)
     if service_changed:
         changed = True
-        messages.append(f"enabled the {cfg.service_unit_name} user unit")
+        messages.append(f"enabled the {values.SERVICE_UNIT_NAME} user unit")
 
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     app_config_template, app_config_error = _read_task_template(
-        template_dir, cfg.app_config_template_file_name, "app config template"
+        template_dir, values.APP_CONFIG_TEMPLATE_FILE_NAME, "app config template"
     )
     if app_config_error is not None:
         warnings.append(app_config_error)
     autostart_template, autostart_error = _read_task_template(
-        template_dir, cfg.autostart_template_file_name, "autostart template"
+        template_dir, values.AUTOSTART_TEMPLATE_FILE_NAME, "autostart template"
     )
     if autostart_error is not None:
         warnings.append(autostart_error)
     echo_desktop_template, echo_desktop_error = _read_task_template(
         template_dir,
-        cfg.echo_desktop_template_file_name,
+        values.ECHO_DESKTOP_TEMPLATE_FILE_NAME,
         "empty-action desktop template",
     )
     if echo_desktop_error is not None:
         warnings.append(echo_desktop_error)
-    app_config_path = Path(cfg.home_dir) / cfg.app_config_relative_path
-    autostart_path = Path(cfg.home_dir) / cfg.autostart_relative_path
+    home_dir = Path(common_values.DESKTOP_HOME_DIR)
+    app_config_path = home_dir / values.APP_CONFIG_RELATIVE_PATH
+    autostart_path = home_dir / values.AUTOSTART_RELATIVE_PATH
 
     if app_config_template is not None:
         config_changed, config_error = _write_user_file(
-            cfg,
-            cfg.app_config_relative_path,
+            values.APP_CONFIG_RELATIVE_PATH,
             app_config_template,
-            file_mode=cfg.user_file_mode,
+            file_mode=common_values.LAUNCHER_FILE_MODE,
             timeout=timeout,
             force=force,
         )
@@ -625,10 +649,9 @@ def task(ctx: Context) -> TaskResult:
 
     if autostart_template is not None and appimage_path.is_file():
         autostart_changed, autostart_error = _write_user_file(
-            cfg,
-            cfg.autostart_relative_path,
+            values.AUTOSTART_RELATIVE_PATH,
             _autostart_content(autostart_template, appimage_path),
-            file_mode=cfg.user_file_mode,
+            file_mode=common_values.LAUNCHER_FILE_MODE,
             timeout=timeout,
             force=force,
         )
@@ -640,10 +663,9 @@ def task(ctx: Context) -> TaskResult:
 
     if echo_desktop_template is not None:
         echo_changed, echo_error = _write_user_file(
-            cfg,
-            cfg.echo_desktop_relative_path,
+            values.ECHO_DESKTOP_RELATIVE_PATH,
             echo_desktop_template,
-            file_mode=cfg.user_file_mode,
+            file_mode=common_values.LAUNCHER_FILE_MODE,
             timeout=timeout,
             force=force,
         )
@@ -654,7 +676,7 @@ def task(ctx: Context) -> TaskResult:
             messages.append("wrote the empty Meta+S action desktop file")
 
     shortcut_changed, shortcut_error = _sync_echo_shortcut(
-        cfg, timeout=timeout, force=force
+        timeout=timeout, force=force
     )
     if shortcut_error:
         warnings.append(shortcut_error)

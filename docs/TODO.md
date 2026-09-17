@@ -197,7 +197,17 @@ is the correction.
     config document until that section lands in stage F, so the task still
     receives that object while its own values come from the module
 22. tor_setup, 27 / 503 / 68
-23. vocalinux_setup, 38 / 680 / 71
+23. vocalinux_setup, done, 38 / 680 / 66, and it settled three things. Seven of
+    its values were copies of a shared one: the desktop user name and home, the
+    two deployed file modes (0644 and 0755), the name of the KConfig shortcut
+    file and the package status timeout with the install retries, so the task
+    reads values/common.py and every number stays as it was on the machine. The
+    download cache and the home of the desktop user come from the values now, so
+    the section contributes no make_config parameter at all, and the two the
+    harness carried (vocalinux_home_dir, vocalinux_download_dir) are gone. The
+    eleven call sites of the template writer keep an unused monkeypatch argument,
+    the same shape the ssh_client_setup section chose, because the edit tool
+    cannot aim a call whose text is identical at every site.
 24. chrome_setup, 49 / 973 / 87
 25. ssh_daemon_setup, 64 / 659 / 90
 26. i2pd_service_setup, 35 / 728 / 93, COUPLED
@@ -775,11 +785,11 @@ machine in this turn, and the probe is named with the figure.
 101. The plain sections of stage D that remain, with their values, task lines,
     config reads and test file lines, counted with grep -cE "^[a-z_]+ *= " over
     config/<section>.toml, wc -l over the task, grep -cE "cfg\." over the task
-    and wc -l over the test: vocalinux_setup 38 / 680 / 66 / 745, chrome_setup
-    49 / 973 / 83 / 1012, ssh_daemon_setup 64 / 659 / 82 / 1050, dnsproxy_setup
-    78 / 1051 / 108 / 757 and kde_settings 1607 / 2244 / 171 / 2420. The read
-    count leaves the order of point 75 unchanged, so the next section is
-    vocalinux_setup.
+    and wc -l over the test: chrome_setup 49 / 973 / 83 / 1012, ssh_daemon_setup
+    64 / 659 / 82 / 1050, dnsproxy_setup 78 / 1051 / 108 / 757 and kde_settings
+    1607 / 2244 / 171 / 2420. vocalinux_setup stood first in that order and
+    landed, as point 23 records. The read count leaves the order of point 75
+    unchanged, so the next section is chrome_setup.
 102. What each remaining plain section carries besides its own values.
     vocalinux_setup drops its own desktop user name and home directory and reads
     SHORTCUTS_FILE_NAME from the shared module, because both already arrived
@@ -861,11 +871,10 @@ machine in this turn, and the probe is named with the figure.
     four readers have moved. Another agent session shares this clone, so every
     change takes a fresh branch from main with a clean tree before and after the
     commit. Stage I needs a machine the user names.
-112. First stage: vocalinux_setup, 38 values, 66 reads and a 745 line test, with
-    no harness disagreement and two shared values to drop, the desktop pair and
-    the shortcuts file name, both of which the shared module already carries. The
-    plan waits for the user's approval before that section starts (stage 12 of
-    the planning procedure).
+112. First stage: chrome_setup, 49 values, 83 reads and a 1012 line test. Its
+    commit drops the desktop pair, which the shared module already carries, and
+    deletes the twelve harness parameters of that section. It carries no harness
+    disagreement, checked name by name against the shipped values.
 
 
 

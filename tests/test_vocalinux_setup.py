@@ -2,7 +2,9 @@
 
 All external resources (subprocess, package state, the user manager) are
 mocked via monkeypatch; the tests only touch temporary fixtures. The fake
-run_command inspects the command shape and answers per command.
+run_command inspects the command shape and answers per command. The cache
+directory of the section and the home of the desktop user are values, so one
+autouse fixture points them at the temporary directory of the test.
 """
 
 from __future__ import annotations
@@ -18,6 +20,24 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara.tasks import vocalinux_setup as task_module
+from pyntara.values import common as common_values
+from pyntara.values import vocalinux_setup as values
+
+
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own cache directory and user home.
+
+    Both are values: the download cache of this section and the home of the
+    desktop user, which comes from the shared module. The fixture points them
+    at the temporary directory of the test and the shipped values come back
+    afterwards, so no test writes into a real cache or a real home.
+    """
+
+    monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
 
 ASSET = "Vocalinux-0.16.2-x86_64.AppImage"
 CONFIG_CONTENT = '{"speech_recognition": {"engine": "whisper_cpp"}}\n'
@@ -34,35 +54,27 @@ AUTOSTART_CONTENT = (
 )
 
 
-def _shipped() -> Any:
-    """The vocalinux section of the shared test document."""
-
-    return make_config().vocalinux_setup
-
-
 def _write_templates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    settings: Any | None = None,
 ) -> None:
-    """Write the task data templates and point the task at them.
+    """Write the task data templates the task reads.
 
-    The fixture file names come from the section, so a renamed template key
-    is what the task looks for and the test stays honest; a test that wants
-    another name passes its own settings.
+    The file names come from the values module, so a renamed template key is
+    what the task looks for and the test stays honest. The unused monkeypatch
+    argument is kept because the eleven call sites of this file spell the call
+    the same way.
     """
 
-    if settings is None:
-        settings = _shipped()
     template_dir = tmp_path / "task_data" / "vocalinux_setup"
     template_dir.mkdir(parents=True, exist_ok=True)
-    (template_dir / settings.app_config_template_file_name).write_text(
+    (template_dir / values.APP_CONFIG_TEMPLATE_FILE_NAME).write_text(
         CONFIG_CONTENT, encoding="utf-8"
     )
-    (template_dir / settings.autostart_template_file_name).write_text(
+    (template_dir / values.AUTOSTART_TEMPLATE_FILE_NAME).write_text(
         AUTOSTART_CONTENT, encoding="utf-8"
     )
-    (template_dir / settings.echo_desktop_template_file_name).write_text(
+    (template_dir / values.ECHO_DESKTOP_TEMPLATE_FILE_NAME).write_text(
         ECHO_CONTENT, encoding="utf-8"
     )
 
@@ -72,7 +84,7 @@ def _ctx(
     *,
     force: bool = False,
 ) -> Any:
-    """Context with the target user home rooted in tmp_path."""
+    """Context safe for unit tests; the real paths are never touched."""
 
     return make_context(
         task_name="vocalinux_setup",
@@ -80,11 +92,6 @@ def _ctx(
         force_tasks=frozenset({"vocalinux_setup"}) if force else frozenset(),
         repo_root=tmp_path,
         task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            vocalinux_home_dir=str(tmp_path),
-            vocalinux_download_dir=tmp_path / "cache",
-        ),
     )
 
 
@@ -199,12 +206,10 @@ def _install_fakes(
     return fakes
 
 
-def _appimage_target(tmp_path: Path, settings: Any | None = None) -> Path:
+def _appimage_target(tmp_path: Path) -> Path:
     """The install path of the AppImage under the fake home."""
 
-    if settings is None:
-        settings = _shipped()
-    return tmp_path / settings.appimage_dir_relative_path / ASSET
+    return tmp_path / values.APPIMAGE_DIR_RELATIVE_PATH / ASSET
 
 
 def _user_file(tmp_path: Path, relative_path: str) -> Path:
@@ -224,11 +229,10 @@ def _seed_installed(tmp_path: Path) -> None:
 def _seed_user_files(tmp_path: Path) -> None:
     """Write the matching user files the idempotent rerun expects."""
 
-    settings = _shipped()
-    config_path = _user_file(tmp_path, settings.app_config_relative_path)
+    config_path = _user_file(tmp_path, values.APP_CONFIG_RELATIVE_PATH)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(CONFIG_CONTENT, encoding="utf-8")
-    autostart_path = _user_file(tmp_path, settings.autostart_relative_path)
+    autostart_path = _user_file(tmp_path, values.AUTOSTART_RELATIVE_PATH)
     autostart_path.parent.mkdir(parents=True, exist_ok=True)
     autostart_path.write_text(
         task_module._autostart_content(
@@ -236,7 +240,7 @@ def _seed_user_files(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    echo_path = _user_file(tmp_path, settings.echo_desktop_relative_path)
+    echo_path = _user_file(tmp_path, values.ECHO_DESKTOP_RELATIVE_PATH)
     echo_path.parent.mkdir(parents=True, exist_ok=True)
     echo_path.write_text(ECHO_CONTENT, encoding="utf-8")
 
@@ -314,8 +318,9 @@ def test_package_install_failure_is_a_warning(
 
     assert result.success is True
     assert result.warnings
-    cfg = ctx.config.vocalinux_setup
-    assert (Path(cfg.home_dir) / cfg.app_config_relative_path).is_file()
+    assert (
+        Path(common_values.DESKTOP_HOME_DIR) / values.APP_CONFIG_RELATIVE_PATH
+    ).is_file()
 
 
 def test_download_failure_is_a_warning(
@@ -331,9 +336,9 @@ def test_download_failure_is_a_warning(
 
     assert result.success is True
     assert any("cannot download" in warning for warning in result.warnings)
-    cfg = ctx.config.vocalinux_setup
-    assert not (Path(cfg.home_dir) / cfg.autostart_relative_path).exists()
-    assert (Path(cfg.home_dir) / cfg.app_config_relative_path).is_file()
+    home = Path(common_values.DESKTOP_HOME_DIR)
+    assert not (home / values.AUTOSTART_RELATIVE_PATH).exists()
+    assert (home / values.APP_CONFIG_RELATIVE_PATH).is_file()
 
 
 def test_recoverable_steps_report_warnings(
@@ -385,9 +390,8 @@ def test_a_failed_user_file_write_is_a_warning_and_skips_that_file(
 
     assert result.success is True
     assert any("config.json" in warning for warning in result.warnings)
-    settings = _shipped()
-    assert _user_file(tmp_path, settings.autostart_relative_path).is_file()
-    assert _user_file(tmp_path, settings.echo_desktop_relative_path).is_file()
+    assert _user_file(tmp_path, values.AUTOSTART_RELATIVE_PATH).is_file()
+    assert _user_file(tmp_path, values.ECHO_DESKTOP_RELATIVE_PATH).is_file()
     assert fakes.kwrites
 
 
@@ -411,8 +415,7 @@ def test_a_failed_shortcut_write_is_a_warning(
 
     assert result.success is True
     assert any("_launch" in warning for warning in result.warnings)
-    settings = _shipped()
-    assert _user_file(tmp_path, settings.app_config_relative_path).is_file()
+    assert _user_file(tmp_path, values.APP_CONFIG_RELATIVE_PATH).is_file()
 
 
 def test_force_rewrites_matching_state(
@@ -506,8 +509,9 @@ def test_a_busy_installed_image_is_reported_with_the_remedy(
     assert any("while Vocalinux runs" in warning for warning in result.warnings)
     assert any("close the app and rerun" in warning for warning in result.warnings)
     assert target.read_text(encoding="utf-8") == "older-bytes"
-    cfg = ctx.config.vocalinux_setup
-    assert (Path(cfg.home_dir) / cfg.autostart_relative_path).is_file()
+    assert (
+        Path(common_values.DESKTOP_HOME_DIR) / values.AUTOSTART_RELATIVE_PATH
+    ).is_file()
 
 
 def test_missing_config_template_is_a_warning(
@@ -527,15 +531,16 @@ def test_missing_config_template_is_a_warning(
     assert any(
         "config template" in warning for warning in result.warnings
     )
-    cfg = ctx.config.vocalinux_setup
-    assert not (Path(cfg.home_dir) / cfg.app_config_relative_path).exists()
-    assert (Path(cfg.home_dir) / cfg.autostart_relative_path).is_file()
+    home = Path(common_values.DESKTOP_HOME_DIR)
+    assert not (home / values.APP_CONFIG_RELATIVE_PATH).exists()
+    assert (home / values.AUTOSTART_RELATIVE_PATH).is_file()
 
 
-def test_release_download_url_comes_from_the_config() -> None:
-    # The repository pair and the host template are config values: another
-    # pair and another host in the config are the URL the task downloads
-    # from, so a mirror needs no code change.
+def test_release_download_url_comes_from_the_engine_template() -> None:
+    # The repository pair and the host template are values: another pair and
+    # another host are the URL the task downloads from, so a mirror needs no
+    # code change. The template belongs to the engine and still lives in the
+    # config document until the engine migrates.
     engine = replace(
         make_config().engine,
         github_release_download_url=(
@@ -550,19 +555,20 @@ def test_release_download_url_comes_from_the_config() -> None:
     )
 
 
-def test_user_command_prefix_comes_from_the_config() -> None:
-    # The wrapper that runs a command as the target user is a config value:
-    # another wrapper in the section is the argv the task builds.
-    cfg = replace(
-        make_config().vocalinux_setup,
-        runuser_command=("sudo", "-u", "{username}", "--"),
+def test_user_command_prefix_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The wrapper that runs a command as the target user is a value of the
+    # section: another wrapper is the argv the task builds.
+    monkeypatch.setattr(
+        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--")
     )
     assert task_module._as_user_command(
-        cfg, ["kwriteconfig6", "--file", "kglobalshortcutsrc"]
+        ["kwriteconfig6", "--file", "kglobalshortcutsrc"]
     ) == [
         "sudo",
         "-u",
-        cfg.username,
+        common_values.DESKTOP_USERNAME,
         "--",
         "kwriteconfig6",
         "--file",
@@ -570,21 +576,22 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     ]
 
 
-def test_kconfig_calls_come_from_the_config() -> None:
-    # The writer and the two selectors are config values: another set of
-    # commands is what the task builds for the shortcut file.
-    cfg = replace(
-        make_config().vocalinux_setup,
-        kwriteconfig_command=("my-writer", "--config", "{file_name}"),
-        config_group_flag=("--section", "{group}"),
-        config_key_flag=("--entry", "{key}"),
+def test_kconfig_calls_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The writer and the two selectors are values: another set of commands is
+    # what the task builds for the shortcut file of the shared module.
+    monkeypatch.setattr(
+        values, "KWRITECONFIG_COMMAND", ("my-writer", "--config", "{file_name}")
     )
+    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert task_module._kconfig_command(
-        cfg, cfg.kwriteconfig_command, ("services",), "myservice"
+        values.KWRITECONFIG_COMMAND, ("services",), "myservice"
     ) == [
         "my-writer",
         "--config",
-        cfg.shortcuts_file_name,
+        common_values.SHORTCUTS_FILE_NAME,
         "--section",
         "services",
         "--entry",
@@ -592,18 +599,20 @@ def test_kconfig_calls_come_from_the_config() -> None:
     ]
 
 
-def test_file_operations_come_from_the_config(
+def test_file_operations_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The maker of the parent directory, the owner writer and the mode
-    # writer are config values: another program in the section is the argv
-    # the task runs around a user service file.
-    cfg = replace(
-        make_config().vocalinux_setup,
-        home_dir=str(tmp_path),
-        mkdir_command=("mymkdir", "--parents", "{path}"),
-        chown_command=("mychown", "--owner", "{owner}", "{path}"),
-        chmod_command=("mychmod", "--mode", "{file_mode}", "{path}"),
+    # The maker of the parent directory, the owner writer and the mode writer
+    # are values: another program in the section is the argv the task runs
+    # around a user file.
+    monkeypatch.setattr(
+        values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}")
+    )
+    monkeypatch.setattr(
+        values, "CHOWN_COMMAND", ("mychown", "--owner", "{owner}", "{path}")
+    )
+    monkeypatch.setattr(
+        values, "CHMOD_COMMAND", ("mychmod", "--mode", "{file_mode}", "{path}")
     )
     seen: list[list[str]] = []
 
@@ -613,7 +622,6 @@ def test_file_operations_come_from_the_config(
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
     assert task_module._write_user_file(
-        cfg,
         ".config/systemd/user/ydotool.service",
         "body\n",
         file_mode=0o644,
@@ -625,53 +633,60 @@ def test_file_operations_come_from_the_config(
     assert seen[1] == [
         "mychown",
         "--owner",
-        f"{cfg.username}:{cfg.username}",
+        (
+            f"{common_values.DESKTOP_USERNAME}:"
+            f"{common_values.DESKTOP_USERNAME}"
+        ),
         str(target),
     ]
     assert seen[2] == ["mychmod", "--mode", f"{0o644:o}", str(target)]
 
 
-def test_group_commands_come_from_the_config(
+def test_group_commands_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The reader of the membership and the group writer are config values:
-    # another program in the section is the argv the task runs when the
-    # user is not yet in the group.
-    cfg = replace(
-        make_config().vocalinux_setup,
-        group_members_command=("myid", "--groups", "{username}"),
-        group_add_command=(
-            "myusermod",
-            "--append",
-            "{input_group}",
-            "{username}",
-        ),
+    # The reader of the membership and the group writer are values: another
+    # program in the section is the argv the task runs when the user is not
+    # yet in the group.
+    monkeypatch.setattr(
+        values, "GROUP_MEMBERS_COMMAND", ("myid", "--groups", "{username}")
+    )
+    monkeypatch.setattr(
+        values,
+        "GROUP_ADD_COMMAND",
+        ("myusermod", "--append", "{input_group}", "{username}"),
     )
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         seen.append(list(command))
         if command[0] == "myid":
-            return _FakeProc(0, f"{cfg.username}\n")
+            return _FakeProc(0, f"{common_values.DESKTOP_USERNAME}\n")
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    assert task_module._ensure_input_group(cfg, timeout=30.0) == (True, None)
+    assert task_module._ensure_input_group(timeout=30.0) == (True, None)
     assert seen == [
-        ["myid", "--groups", cfg.username],
-        ["myusermod", "--append", cfg.input_group, cfg.username],
+        ["myid", "--groups", common_values.DESKTOP_USERNAME],
+        [
+            "myusermod",
+            "--append",
+            values.INPUT_GROUP,
+            common_values.DESKTOP_USERNAME,
+        ],
     ]
 
 
-def test_user_service_commands_come_from_the_config(
+def test_user_service_commands_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The state query and the enable of the user unit are config values:
-    # another program in the section is the argv the task runs through the
-    # user manager of the desktop session.
-    cfg = replace(
-        make_config().vocalinux_setup,
-        service_active_command=(
+    # The state query and the enable of the user unit are values: another
+    # program in the section is the argv the task runs through the user
+    # manager of the desktop session.
+    monkeypatch.setattr(
+        values,
+        "SERVICE_ACTIVE_COMMAND",
+        (
             "mysystemctl",
             "--user",
             "is-active",
@@ -679,7 +694,11 @@ def test_user_service_commands_come_from_the_config(
             "--machine",
             "{username}",
         ),
-        service_enable_command=(
+    )
+    monkeypatch.setattr(
+        values,
+        "SERVICE_ENABLE_COMMAND",
+        (
             "mysystemctl",
             "--user",
             "enable",
@@ -698,34 +717,34 @@ def test_user_service_commands_come_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    assert task_module._enable_user_service(cfg, timeout=30.0) == (True, None)
+    assert task_module._enable_user_service(timeout=30.0) == (True, None)
     assert seen == [
         [
             "mysystemctl",
             "--user",
             "is-active",
-            cfg.service_unit_name,
+            values.SERVICE_UNIT_NAME,
             "--machine",
-            cfg.username,
+            common_values.DESKTOP_USERNAME,
         ],
         [
             "mysystemctl",
             "--user",
             "enable",
             "--now",
-            cfg.service_unit_name,
+            values.SERVICE_UNIT_NAME,
             "--machine",
-            cfg.username,
+            common_values.DESKTOP_USERNAME,
         ],
     ]
 
 
-def test_the_running_state_word_comes_from_the_config(
+def test_the_running_state_word_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The word that means "the unit runs" belongs to the answer of the
-    # configured query: with another word in the section the same answer
-    # counts as not running and the task enables the unit again.
+    # configured query: with another word in the module the same answer counts
+    # as not running and the task enables the unit again.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -735,11 +754,11 @@ def test_the_running_state_word_comes_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    cfg = replace(make_config().vocalinux_setup, service_active_state="running")
-    assert task_module._enable_user_service(cfg, timeout=30.0) == (False, None)
+    monkeypatch.setattr(values, "SERVICE_ACTIVE_STATE", "running")
+    assert task_module._enable_user_service(timeout=30.0) == (False, None)
     assert len(calls) == 1
 
     calls.clear()
-    shipped = make_config().vocalinux_setup
-    assert task_module._enable_user_service(shipped, timeout=30.0) == (True, None)
+    monkeypatch.setattr(values, "SERVICE_ACTIVE_STATE", "active")
+    assert task_module._enable_user_service(timeout=30.0) == (True, None)
     assert len(calls) == 2
