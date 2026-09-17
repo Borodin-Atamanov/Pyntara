@@ -3390,7 +3390,7 @@ def _profile_source(monkeypatch: pytest.MonkeyPatch, link: str = PROFILE_LINK) -
 
     monkeypatch.setattr(
         "pyntara.xray_local_proxy.open_source_vault",
-        lambda _repo_root, _cfg, _password: (
+        lambda _repo_root, _production, _default, _password: (
             _source_vault(link),
             Path("/repo/secrets/production.vault"),
         ),
@@ -3636,7 +3636,7 @@ class TestLocalProxyStage:
         # local proxy: the pool of that proxy is filled elsewhere.
         monkeypatch.setattr(
             "pyntara.xray_local_proxy.open_source_vault",
-            lambda _repo_root, _cfg, _password: None,
+            lambda _repo_root, _production, _default, _password: None,
         )
         _panel_env_fake(monkeypatch)
         created: list[dict[str, object]] = []

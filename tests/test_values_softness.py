@@ -27,6 +27,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("ffmpeg_setup", "ffmpeg_setup"),
     ("hostname", "hostname"),
     ("imagemagick_setup", "imagemagick_setup"),
+    ("local_vault_setup", "local_vault_setup"),
     ("nextdns_setup_system_wide", "nextdns_setup_system_wide"),
     ("playwright_setup", "playwright_setup"),
     ("ssh_client_setup", "ssh_client_setup"),

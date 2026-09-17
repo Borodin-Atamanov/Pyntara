@@ -30,6 +30,7 @@ from value_checks import (
     check_not_negative_int,
     check_real_package_names,
     check_shipped_value,
+    check_vault_entry_title,
 )
 
 import pyntara
@@ -42,9 +43,11 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",
+    "local_vault_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
     "ssh_client_setup",
+    "vault_structure",
     "zswap_service",
 )
 
@@ -61,6 +64,12 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
     ("cli_tools", "PACKAGES", check_real_package_names),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
+    ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
+    ("local_vault_setup", "PASS_DIR_MODE", check_file_mode),
+    ("local_vault_setup", "PASS_FILE_MODE", check_file_mode),
+    ("local_vault_setup", "PASS_FILE_WRITABLE_MODE", check_file_mode),
+    ("local_vault_setup", "SECRETS_DIR_MODE", check_file_mode),
+    ("local_vault_setup", "VAULT_PASSWORD_ENTRY_TITLE", check_vault_entry_title),
     ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
 )
@@ -72,6 +81,23 @@ def _source_root() -> Path:
     package_file = pyntara.__file__
     assert package_file is not None
     return Path(package_file).resolve().parent
+
+
+# Directories outside the package that read values too: the maintenance scripts
+# of the repository, which import a values module and are not part of the wheel.
+EXTRA_SOURCE_DIRECTORIES: tuple[str, ...] = ("secrets",)
+
+
+def _scanned_source_paths() -> list[Path]:
+    """Every source file whose reads of values count, package and scripts."""
+
+    paths = list(_source_root().rglob("*.py"))
+    repository_root = _source_root().parents[1]
+    for directory_name in EXTRA_SOURCE_DIRECTORIES:
+        directory = repository_root / directory_name
+        if directory.is_dir():
+            paths.extend(directory.rglob("*.py"))
+    return sorted(path for path in paths if "__pycache__" not in path.parts)
 
 
 def _values_module(module_name: str) -> object:
@@ -106,15 +132,15 @@ def _declared_value_names(module_name: str) -> set[str]:
 def _read_names_by_attribute() -> dict[str, set[str]]:
     """Names read as attributes of a values module, per module.
 
-    Every module of the package is parsed: a module that imports a values
-    module under an alias is followed, so a read through an alias counts and a
-    read that never happens leaves the name unread.
+    Every scanned source file is parsed: a module that imports a values module
+    under an alias is followed, so a read through an alias counts and a read
+    that never happens leaves the name unread. The scan covers the package and
+    the maintenance scripts under secrets/, because a value read only there is
+    not dead.
     """
 
     reads: dict[str, set[str]] = {name: set() for name in VALUES_MODULE_NAMES}
-    for path in sorted(_source_root().rglob("*.py")):
-        if "__pycache__" in path.parts:
-            continue
+    for path in _scanned_source_paths():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         aliases: dict[str, str] = {}
         for node in ast.walk(tree):
@@ -262,6 +288,17 @@ def test_the_real_package_rule_refuses_a_virtual_package_name() -> None:
     assert check_real_package_names(
         ("mc", "libimage-exiftool-perl"), "cli_tools.PACKAGES"
     ) == ("mc", "libimage-exiftool-perl")
+
+
+def test_the_vault_entry_title_rule_refuses_a_title_the_structure_lacks() -> None:
+    # The runtime vault carries the password under this title: a title no entry
+    # of the structure holds would leave the vault password unreadable while
+    # the task looked finished, which is the silent failure the rule refuses.
+    with pytest.raises(ValueRuleError):
+        check_vault_entry_title("no_such_entry", "local_vault_setup.TITLE")
+    assert check_vault_entry_title(
+        "pyntara_local_vault_password", "local_vault_setup.TITLE"
+    ) == "pyntara_local_vault_password"
 
 
 def test_the_read_list_names_exactly_the_declared_values() -> None:

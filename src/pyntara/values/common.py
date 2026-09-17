@@ -37,9 +37,17 @@ PACKAGE_STATUS_TIMEOUT_SECONDS: int = 30
 # is this count plus one.
 PACKAGE_INSTALL_RETRIES: int = 3
 
+# Paths of the source KeePass vaults, relative to the clone root. Two tasks
+# resolve them: local_vault_setup builds the runtime vault from the first one
+# that opens, and nextdns_setup_system_wide reads the NextDNS profiles from it.
+SOURCE_VAULT_PRODUCTION: str = "secrets/production.vault"
+SOURCE_VAULT_DEFAULT: str = "secrets/default.vault"
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_STATUS_TIMEOUT_SECONDS",
     "PACKAGE_INSTALL_RETRIES",
+    "SOURCE_VAULT_PRODUCTION",
+    "SOURCE_VAULT_DEFAULT",
 )

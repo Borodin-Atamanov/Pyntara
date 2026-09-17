@@ -11,7 +11,6 @@ the real environment and the real stdin are never touched.
 from __future__ import annotations
 
 import importlib.util
-import json
 import re
 import sys
 from pathlib import Path
@@ -21,6 +20,8 @@ from typing import Any
 import pytest
 from pykeepass import PyKeePass, create_database
 from pykeepass.exceptions import CredentialsError
+
+from pyntara.values import vault_structure as gen_values
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "secrets" / "regenerate_vault_by_config.py"
 
@@ -111,37 +112,37 @@ def _isolate_environment(
     monkeypatch.setattr(gen, "getpass", _FakeGetpass())
 
 
-def _write_config(
-    tmp_path: Path,
-    entries: list[dict[str, Any]],
-    groups: list[dict[str, Any]] | None = None,
-) -> Path:
-    """A minimal config.toml whose [vault_structure] carries the entries."""
+def _entry_records(entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """The test dictionaries as the vault entry records the script reads."""
 
-    lines = ["[vault_structure]"]
-    for group in groups or []:
-        lines.append("")
-        lines.append("[[vault_structure.groups]]")
-        for name, value in group.items():
-            if name == "seed_entries" and isinstance(value, list) and all(
-                isinstance(item, dict) for item in value
-            ):
-                # The nested tables need real TOML array-of-tables syntax;
-                # json.dumps would emit colons that TOML rejects.
-                for seed in value:
-                    lines.append("[[vault_structure.groups.seed_entries]]")
-                    for seed_name, seed_value in seed.items():
-                        lines.append(f"{seed_name} = {json.dumps(seed_value)}")
-            else:
-                lines.append(f"{name} = {json.dumps(value)}")
-    for entry in entries:
-        lines.append("")
-        lines.append("[[vault_structure.entries]]")
-        for name, value in entry.items():
-            lines.append(f"{name} = {json.dumps(value)}")
-    config_path = tmp_path / "config.toml"
-    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return config_path
+    return tuple(
+        gen_values.VaultEntry(
+            title=entry.get("title", ""),
+            notes=entry.get("notes", ""),
+            generated_password=entry.get("generated_password"),
+        )
+        for entry in entries
+    )
+
+
+def _group_records(groups: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """The test dictionaries as the vault group records the script reads."""
+
+    return tuple(
+        gen_values.VaultGroup(
+            title=group.get("title", ""),
+            notes=group.get("notes", ""),
+            seed_entries=tuple(
+                gen_values.VaultGroupSeed(
+                    title=seed.get("title", ""),
+                    url=seed.get("url"),
+                    notes=seed.get("notes"),
+                )
+                for seed in group.get("seed_entries", [])
+            ),
+        )
+        for group in groups
+    )
 
 
 def _prepare(
@@ -153,14 +154,24 @@ def _prepare(
     groups: list[dict[str, Any]] | None = None,
     env_password: str | None = VAULT_PASSWORD,
 ) -> None:
-    """Point the script at a temp config and set the password source."""
+    """Point the script at the records of a temporary structure.
 
-    config_path = _write_config(
-        tmp_path,
-        entries if entries is not None else DEFAULT_ENTRIES,
-        groups if groups is not None else DEFAULT_GROUPS,
+    The structure of a real machine lives in pyntara.values.vault_structure;
+    the test replaces the two value tuples of that module for the run, so the
+    script reads a structure the test describes and the shipped one comes back
+    afterwards.
+    """
+
+    monkeypatch.setattr(
+        gen_values,
+        "ENTRIES",
+        _entry_records(entries if entries is not None else DEFAULT_ENTRIES),
     )
-    monkeypatch.setattr(gen, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        gen_values,
+        "GROUPS",
+        _group_records(groups if groups is not None else DEFAULT_GROUPS),
+    )
     if env_password is not None:
         monkeypatch.setenv("PYNTARA_VAULT_PASSWORD", env_password)
 
@@ -296,22 +307,9 @@ def test_update_keeps_existing_generated_entry_password(
             "generated_password": "dice-7",
             "notes": "x",
         },
-        # both password and generated_password set
-        {
-            "title": "bad",
-            "password": "manual",
-            "generated_password": "proquint-7",
-            "notes": "x",
-        },
-        # generated_password is not a string
-        {
-            "title": "bad",
-            "generated_password": 7,
-            "notes": "x",
-        },
     ],
 )
-def test_generated_password_wrong_config_raises(
+def test_generated_password_with_a_wrong_format_raises(
     gen: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -513,34 +511,7 @@ def test_broken_nonempty_file_is_an_error(
     assert vault_path.read_bytes() == payload
 
 
-def test_unknown_config_field_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A field name that is not a KeePass entry field is a config error and
-    # nothing is created.
-    _prepare(
-        gen,
-        tmp_path,
-        monkeypatch,
-        entries=[{"title": "a", "notes": "n", "colour": "red"}],
-    )
-    vault_path = tmp_path / "default.vault"
-    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
-    assert not vault_path.exists()
-
-
-def test_missing_config_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The config is mandatory; without it the script fails cleanly.
-    _prepare(gen, tmp_path, monkeypatch)
-    monkeypatch.setattr(gen, "CONFIG_PATH", tmp_path / "missing.toml")
-    vault_path = tmp_path / "default.vault"
-    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
-    assert not vault_path.exists()
-
-
-def test_duplicate_titles_in_config_is_an_error(
+def test_duplicate_entry_titles_are_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _prepare(
@@ -548,20 +519,6 @@ def test_duplicate_titles_in_config_is_an_error(
         tmp_path,
         monkeypatch,
         entries=[{"title": "a", "notes": "first"}, {"title": "a", "notes": "second"}],
-    )
-    vault_path = tmp_path / "default.vault"
-    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
-    assert not vault_path.exists()
-
-
-def test_non_string_field_in_config_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _prepare(
-        gen,
-        tmp_path,
-        monkeypatch,
-        entries=[{"title": "a", "notes": "n", "password": 123}],
     )
     vault_path = tmp_path / "default.vault"
     assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
@@ -588,58 +545,6 @@ def test_subgroup_entry_does_not_satisfy_root_lookup(
     assert root_salt is not None
     nested = kp2.find_entries(title="password_salt", recursive=True, first=True)
     assert nested is not None
-
-
-def test_future_fields_applied_one_to_one(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Any config field that is a KeePass field name lands in the entry
-    # verbatim, so future fields like username need no script change.
-    _prepare(
-        gen,
-        tmp_path,
-        monkeypatch,
-        entries=[
-            {
-                "title": "service",
-                "username": "svc-user",
-                "password": "svc-pass",
-                "notes": "Service credentials.",
-            }
-        ],
-    )
-    vault_path = tmp_path / "default.vault"
-    assert gen.main([str(vault_path)]) == gen.EXIT_OK
-    kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
-    entry = kp.find_entries(
-        title="service", group=kp.root_group, recursive=False, first=True
-    )
-    assert entry is not None
-    assert entry.username == "svc-user"
-    assert entry.password == "svc-pass"
-    assert entry.notes == "Service credentials."
-
-
-def test_url_field_is_rejected(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # url is not a structure field: it is maintained directly in the vault
-    # databases, so a config that carries it must be rejected.
-    _prepare(
-        gen,
-        tmp_path,
-        monkeypatch,
-        entries=[
-            {
-                "title": "google_script_key",
-                "url": "https://example.com/exec",
-                "notes": "Auth key.",
-            }
-        ],
-    )
-    vault_path = tmp_path / "default.vault"
-    assert gen.main([str(vault_path)]) == gen.EXIT_ERROR
-    assert not vault_path.exists()
 
 
 def test_help_without_arguments(
@@ -772,10 +677,6 @@ def test_overwrite_recreates_group_with_seed_entries(
 @pytest.mark.parametrize(
     "group",
     [
-        # seed_entries is a string, not an array
-        {"title": "g", "notes": "n", "seed_entries": "Server 001"},
-        # seed entry is a string, not a table
-        {"title": "g", "notes": "n", "seed_entries": ["Server 001"]},
         # seed entry title is missing
         {
             "title": "g",
@@ -784,18 +685,6 @@ def test_overwrite_recreates_group_with_seed_entries(
         },
         # seed entry title is an empty string
         {"title": "g", "notes": "n", "seed_entries": [{"title": ""}]},
-        # seed entry url is a number, not a string
-        {
-            "title": "g",
-            "notes": "n",
-            "seed_entries": [{"title": "Server 001", "url": 7}],
-        },
-        # seed entry names an unknown field
-        {
-            "title": "g",
-            "notes": "n",
-            "seed_entries": [{"title": "Server 001", "password": "x"}],
-        },
         # duplicate seed entry titles
         {
             "title": "g",
@@ -804,7 +693,7 @@ def test_overwrite_recreates_group_with_seed_entries(
         },
     ],
 )
-def test_group_seed_entries_wrong_config_raises(
+def test_group_seed_entries_without_a_title_are_an_error(
     gen: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -822,7 +711,7 @@ def test_group_seed_entries_wrong_config_raises(
     assert not vault_path.exists()
 
 
-def test_duplicate_group_title_in_config_is_an_error(
+def test_duplicate_group_titles_are_an_error(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _prepare(

@@ -27,6 +27,7 @@ from pyntara.models import TaskResult
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import apply_owner
+from pyntara.values import common as common_values
 from pyntara.values import missing_value_names
 from pyntara.values import nextdns_setup_system_wide as values
 
@@ -75,7 +76,10 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
     """
 
     source = open_source_vault(
-        ctx.repo_root, ctx.config.local_vault_setup, ctx.vault_password
+        ctx.repo_root,
+        common_values.SOURCE_VAULT_PRODUCTION,
+        common_values.SOURCE_VAULT_DEFAULT,
+        ctx.vault_password,
     )
     if source is not None:
         return source[0]
@@ -97,7 +101,9 @@ def task(ctx: Context) -> TaskResult:
     profile it reports done with no changes; force mode rewrites the file.
     """
 
-    absent = missing_value_names(values, values.READ_VALUE_NAMES)
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the

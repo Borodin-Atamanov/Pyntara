@@ -1,15 +1,14 @@
 """Task local_vault_setup: create the runtime secret vault on the machine.
 
-The runtime secret database at the configured local_vault_path and its
-password file at pass_file_path are created so services that start after
-install can decrypt the vault without user input
-(docs/spec/secrets-model.md). The copy is re-encrypted with the password
-from the vault_password_entry_title entry of the source vault, so the
-source password never opens the runtime vault. The entry lives in the
-root group of the vault, because the structure is flat (the
-[vault_structure] table in config.toml). All paths and the entry title
-come from config.toml through ctx.config.local_vault_setup (architecture
-contract, Configuration). The source vault is not fixed: the production vault
+The runtime secret database at the configured local vault path and its password
+file at the pass file path are created so services that start after install can
+decrypt the vault without user input (docs/spec/secrets-model.md). The copy is
+re-encrypted with the password from the vault password entry of the source
+vault, so the source password never opens the runtime vault. The entry lives in
+the root group of the vault, because the structure is flat. Every value comes
+from pyntara.values.local_vault_setup, and the two source vault paths come from
+the shared module common, because nextdns_setup_system_wide resolves the same
+two paths. The source vault is not fixed: the production vault
 is tried first, then the default vault, both with the password from
 Context; when neither opens, the task journals a serious error at syslog
 level 3 and fails without stopping the run. The task is idempotent:
@@ -29,28 +28,27 @@ from pathlib import Path
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
-from pyntara.config import LocalVaultSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import apply_owner
+from pyntara.values import common as common_values
+from pyntara.values import local_vault_setup as values
+from pyntara.values import missing_value_names
 
 
 def _resolve_source_vault(
-    repo_root: Path, cfg: LocalVaultSetupConfig
+    repo_root: Path, production: str, default: str
 ) -> tuple[Path, Path]:
     """Source vault paths resolved against the repository root.
 
-    The configured source paths are relative to the repository root, so
-    the clone can live anywhere on the machine (/var/cache/pyntara/repo
-    in production, a temporary directory in tests); the root comes from
-    the context.
+    The source paths are relative to the repository root, so the clone can live
+    anywhere on the machine (/var/cache/pyntara/repo in production, a temporary
+    directory in tests); the root comes from the context and the two texts from
+    the caller.
     """
 
-    return (
-        repo_root / cfg.source_vault_production,
-        repo_root / cfg.source_vault_default,
-    )
+    return (repo_root / production, repo_root / default)
 
 
 def _open_source_vault(
@@ -83,32 +81,38 @@ def _open_source_vault(
 
 
 def open_source_vault(
-    repo_root: Path, cfg: LocalVaultSetupConfig, password: str | None
+    repo_root: Path,
+    production: str,
+    default: str,
+    password: str | None,
 ) -> tuple[PyKeePass, Path] | None:
-    """Open the first source vault for a config and a run password, or None.
+    """Open the first source vault for a run password, or None.
 
-    The public entry point to the source vault resolution: the paths come
-    from the config, the password from the run, and the production vault
-    wins over the default vault. Other tasks that must read secrets from
-    the fresh clone (nextdns_setup_system_wide) import this function
+    The public entry point to the source vault resolution: the two paths
+    relative to the clone root come from the caller, the password from the
+    run, and the production vault wins over the default vault. Other tasks
+    that must read secrets from the fresh clone
+    (nextdns_setup_system_wide) import this function
     instead of reimplementing the source selection
     (project rules, General engineering requirements).
     """
 
-    return _open_source_vault(*_resolve_source_vault(repo_root, cfg), password)
+    return _open_source_vault(
+        *_resolve_source_vault(repo_root, production, default), password
+    )
 
 
-def _read_local_vault_password(kp: PyKeePass, cfg: LocalVaultSetupConfig) -> str | None:
+def _read_local_vault_password(kp: PyKeePass) -> str | None:
     """Runtime vault password from the source vault entry, or None.
 
     The entry is looked up by title in the root group, matching the flat
-    structure of the [vault_structure] table; a missing entry or an empty
-    password value both mean the source vault cannot provide the runtime
-    password, and None is returned.
+    structure of the source vault; a missing entry or an empty password value
+    both mean the source vault cannot provide the runtime password, and None is
+    returned.
     """
 
     entry = kp.find_entries(
-        title=cfg.vault_password_entry_title,
+        title=values.VAULT_PASSWORD_ENTRY_TITLE,
         group=kp.root_group,
         recursive=False,
         first=True,
@@ -217,7 +221,6 @@ def _copy_missing_groups(
 
 
 def _sync_existing_runtime_vault(
-    cfg: LocalVaultSetupConfig,
     production_path: Path,
     default_path: Path,
     source_password: str | None,
@@ -236,14 +239,16 @@ def _sync_existing_runtime_vault(
         _log("leaving the runtime vault as is: no source vault opened")
         return None
     source_kp, _ = opened
-    local_password = _read_password_file(cfg.pass_file_path)
+    local_password = _read_password_file(values.PASS_FILE_PATH)
     if local_password is None:
         _log(
             "leaving the runtime vault as is: password file missing or empty"
         )
         return None
     try:
-        runtime_kp = PyKeePass(str(cfg.local_vault_path), password=local_password)
+        runtime_kp = PyKeePass(
+            str(values.LOCAL_VAULT_PATH), password=local_password
+        )
     except CredentialsError:
         _log("leaving the runtime vault as is: local password does not match")
         return None
@@ -254,7 +259,7 @@ def _sync_existing_runtime_vault(
     changed = _copy_missing_groups(source_kp, runtime_kp) or changed
     if not changed:
         return False
-    runtime_kp.save(filename=str(cfg.local_vault_path))
+    runtime_kp.save(filename=str(values.LOCAL_VAULT_PATH))
     return True
 
 
@@ -336,16 +341,38 @@ def task(ctx: Context) -> TaskResult:
     password file and the verification that depend on it.
     """
 
-    cfg = ctx.config.local_vault_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read, so no value is
+        # touched before the names are known.
+        return TaskResult(
+            success=True,
+            message=(
+                "the local_vault_setup values are not declared, nothing was "
+                "changed"
+            ),
+            warnings=(
+                "the local_vault_setup values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
     force = ctx.task_name in ctx.force_tasks
-    production_path, default_path = _resolve_source_vault(ctx.repo_root, cfg)
+    production_path, default_path = _resolve_source_vault(
+        ctx.repo_root,
+        common_values.SOURCE_VAULT_PRODUCTION,
+        common_values.SOURCE_VAULT_DEFAULT,
+    )
 
-    if not force and cfg.local_vault_path.exists():
-        _log(f"checking runtime vault {cfg.local_vault_path}: exists")
+    if not force and values.LOCAL_VAULT_PATH.exists():
+        _log(f"checking runtime vault {values.LOCAL_VAULT_PATH}: exists")
         synced = _sync_existing_runtime_vault(
-            cfg, production_path, default_path, ctx.vault_password
+            production_path, default_path, ctx.vault_password
         )
         if synced is None:
             return TaskResult(
@@ -363,14 +390,14 @@ def task(ctx: Context) -> TaskResult:
             ),
         )
 
-    _log(f"checking runtime vault {cfg.local_vault_path}: absent")
+    _log(f"checking runtime vault {values.LOCAL_VAULT_PATH}: absent")
     opened = _open_source_vault(production_path, default_path, ctx.vault_password)
     if opened is None:
         warning = (
             "cannot open any source vault: neither production nor default "
             "opened with the run password"
         )
-        _log(warning, priority=cfg.error_priority)
+        _log(warning, priority=values.ERROR_PRIORITY)
         return TaskResult(
             success=True,
             changed=False,
@@ -379,14 +406,16 @@ def task(ctx: Context) -> TaskResult:
         )
     kp, source_path = opened
 
-    _log(f"reading entry {cfg.vault_password_entry_title!r} from {source_path}")
-    local_password = _read_local_vault_password(kp, cfg)
+    _log(
+        f"reading entry {values.VAULT_PASSWORD_ENTRY_TITLE!r} from {source_path}"
+    )
+    local_password = _read_local_vault_password(kp)
     if local_password is None:
         warning = (
-            f"entry {cfg.vault_password_entry_title!r} is missing or empty "
+            f"entry {values.VAULT_PASSWORD_ENTRY_TITLE!r} is missing or empty "
             "in the source vault"
         )
-        _log(warning, priority=cfg.error_priority)
+        _log(warning, priority=values.ERROR_PRIORITY)
         return TaskResult(
             success=True,
             changed=False,
@@ -398,23 +427,26 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
     vault_written = True
     try:
-        _log(f"writing runtime vault {cfg.local_vault_path} with local password")
+        _log(
+            f"writing runtime vault {values.LOCAL_VAULT_PATH} with local "
+            "password"
+        )
         _write_local_vault(
             kp,
             local_password.strip(),
-            cfg.local_vault_path,
-            cfg.secrets_dir_mode,
-            cfg.local_vault_file_mode,
+            values.LOCAL_VAULT_PATH,
+            values.SECRETS_DIR_MODE,
+            values.LOCAL_VAULT_FILE_MODE,
         )
     except (OSError, ValueError) as exc:
         warning = f"cannot write runtime vault: {exc}"
-        _log(warning, priority=cfg.error_priority)
+        _log(warning, priority=values.ERROR_PRIORITY)
         warnings.append(warning)
         vault_written = False
     else:
         _log("runtime vault written")
         try:
-            apply_owner(cfg.local_vault_path, owner_uid, owner_gid)
+            apply_owner(values.LOCAL_VAULT_PATH, owner_uid, owner_gid)
         except OSError:
             _log("cannot set owner of the runtime vault")
 
@@ -430,31 +462,31 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        _log(f"writing password file {cfg.pass_file_path}")
+        _log(f"writing password file {values.PASS_FILE_PATH}")
         _write_password_file(
             local_password,
-            cfg.pass_file_path,
-            cfg.pass_dir_mode,
-            cfg.pass_file_mode,
-            cfg.pass_file_writable_mode,
+            values.PASS_FILE_PATH,
+            values.PASS_DIR_MODE,
+            values.PASS_FILE_MODE,
+            values.PASS_FILE_WRITABLE_MODE,
         )
     except (OSError, ValueError) as exc:
         warning = f"cannot write password file: {exc}"
-        _log(warning, priority=cfg.error_priority)
+        _log(warning, priority=values.ERROR_PRIORITY)
         warnings.append(warning)
     else:
         _log("password file written")
         try:
-            apply_owner(cfg.pass_file_path, owner_uid, owner_gid)
+            apply_owner(values.PASS_FILE_PATH, owner_uid, owner_gid)
         except OSError:
             _log("cannot set owner of the password file")
 
-    _log(f"verifying runtime vault {cfg.local_vault_path}")
-    if not _verify_local_vault(cfg.local_vault_path, local_password.strip()):
+    _log(f"verifying runtime vault {values.LOCAL_VAULT_PATH}")
+    if not _verify_local_vault(values.LOCAL_VAULT_PATH, local_password.strip()):
         warning = "runtime vault verification failed"
         _log(
             "verification failed: runtime vault does not open with the local password",
-            priority=cfg.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         warnings.append(warning)
     else:

@@ -3,9 +3,10 @@
 The tests create real KeePass databases in temporary directories with
 pykeepass, so the re-encryption path is exercised for real: the runtime
 vault must open with the local password and must not open with the source
-password. All target paths come from a config built by support.make_config
-and the repository root is monkeypatched to the temporary directory, so
-the real vault files and system paths are never touched.
+password. All four paths are values of the task, so one autouse fixture points
+them at the temporary directory of the test and the repository root is
+monkeypatched to the same directory, which keeps the real vault files and
+system paths untouched.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from support import make_config, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import local_vault_setup
+from pyntara.values import common as common_values
+from pyntara.values import local_vault_setup as values
 
 LOCAL_PASSWORD = "local-secret-password"
 ENTRY_TITLE = "pyntara_local_vault_password"
@@ -37,6 +40,25 @@ def _create_source_vault(
     kp.save()
 
 
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own vault paths under tmp_path.
+
+    The four paths are values of the task: the two source vaults, the runtime
+    vault and the password file. The fixture points them at the temporary
+    directory of the test and the shipped values come back afterwards.
+    """
+
+    monkeypatch.setattr(common_values, "SOURCE_VAULT_PRODUCTION", "production.vault")
+    monkeypatch.setattr(common_values, "SOURCE_VAULT_DEFAULT", "default.vault")
+    monkeypatch.setattr(
+        values, "LOCAL_VAULT_PATH", tmp_path / "secrets" / "pyntara.vault"
+    )
+    monkeypatch.setattr(values, "PASS_FILE_PATH", tmp_path / "etc" / "pass")
+
+
 def _ctx(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -48,21 +70,12 @@ def _ctx(
 ) -> Context:
     """Context whose source vaults live in the temporary directory."""
 
-    config = make_config(
-        task_data_root=tmp_path,
-        root_owner_uid=owner_uid,
-        root_owner_gid=owner_gid,
-        local_vault_source_production=Path("production.vault"),
-        local_vault_source_default=Path("default.vault"),
-        local_vault_path=tmp_path / "secrets" / "pyntara.vault",
-        local_vault_pass_file_path=tmp_path / "etc" / "pass",
-    )
     return make_context(
         task_name="local_vault_setup",
         vault_password=vault_password,
         force_tasks=frozenset({"local_vault_setup"}) if force else frozenset(),
         repo_root=tmp_path,
-        config=config,
+        config=make_config(root_owner_uid=owner_uid, root_owner_gid=owner_gid),
     )
 
 
@@ -101,12 +114,12 @@ def test_creates_runtime_vault_and_password_file(
     assert _file_mode(pass_file) == 0o400
 
 
-def test_password_file_writable_mode_comes_from_the_config(
+def test_password_file_writable_mode_is_applied(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An existing read-only password file is made writable with the
-    # configured mode before the rewrite, so a stricter or looser value is
-    # answered in the config and not in the code.
+    # An existing read-only password file is made writable with the mode the
+    # caller passes before the rewrite, so a stricter or looser value is
+    # answered by the value and not by a literal inside the helper.
     seen: list[int] = []
     monkeypatch.setattr(
         local_vault_setup.os, "chmod", lambda path, mode: seen.append(mode)
@@ -320,7 +333,7 @@ def test_warns_when_entry_missing(
     result = local_vault_setup.task(ctx)
     assert result.success is True
     assert any("missing or empty" in warning for warning in result.warnings)
-    assert not ctx.config.local_vault_setup.local_vault_path.exists()
+    assert not values.LOCAL_VAULT_PATH.exists()
 
 
 def test_warns_when_entry_nested_in_subgroup(
@@ -349,7 +362,7 @@ def test_warns_when_entry_empty(
     result = local_vault_setup.task(ctx)
     assert result.success is True
     assert any("missing or empty" in warning for warning in result.warnings)
-    assert not ctx.config.local_vault_setup.local_vault_path.exists()
+    assert not values.LOCAL_VAULT_PATH.exists()
 
 
 def test_password_file_is_trimmed_without_trailing_newline(

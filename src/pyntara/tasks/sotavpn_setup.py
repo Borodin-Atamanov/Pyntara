@@ -61,6 +61,7 @@ from pyntara.utils import (
     run_command,
     user_session_environment,
 )
+from pyntara.values import common as common_values
 
 
 def _read_access_key(ctx: Context, cfg: SotavpnSetupConfig) -> str | None:
@@ -76,7 +77,10 @@ def _read_access_key(ctx: Context, cfg: SotavpnSetupConfig) -> str | None:
     """
 
     source = open_source_vault(
-        ctx.repo_root, ctx.config.local_vault_setup, ctx.vault_password
+        ctx.repo_root,
+        common_values.SOURCE_VAULT_PRODUCTION,
+        common_values.SOURCE_VAULT_DEFAULT,
+        ctx.vault_password,
     )
     if source is None:
         _log("the source vaults are not available: the Sota pool stays off")

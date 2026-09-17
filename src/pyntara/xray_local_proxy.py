@@ -26,6 +26,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import run_command, substituted_command, trim_whitespace
+from pyntara.values import common as common_values
 from pyntara.xray_facts import _RunFacts
 
 
@@ -43,7 +44,10 @@ def _remote_profile(
     """
 
     source = open_source_vault(
-        ctx.repo_root, ctx.config.local_vault_setup, ctx.vault_password
+        ctx.repo_root,
+        common_values.SOURCE_VAULT_PRODUCTION,
+        common_values.SOURCE_VAULT_DEFAULT,
+        ctx.vault_password,
     )
     if source is None:
         return None, (

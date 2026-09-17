@@ -128,6 +128,26 @@ def check_real_package_names(value: object, name: str) -> tuple[str, ...]:
     return packages
 
 
+def check_vault_entry_title(value: object, name: str) -> str:
+    """The title must name an entry of the vault structure.
+
+    The loader refused a title that no entry of the structure carries, and such
+    a title would leave the runtime vault password unreadable on the machine
+    while the task looked finished. With the values in modules the rule lives
+    here instead of in the loader.
+    """
+
+    from pyntara.values import vault_structure
+
+    title = check_nonempty_text(value, name)
+    titles = {entry.title for entry in vault_structure.ENTRIES}
+    if title not in titles:
+        raise ValueRuleError(
+            f"{name} names no entry of the vault structure: {title}"
+        )
+    return title
+
+
 def check_shipped_value(value: object, annotation: object, name: str) -> None:
     """Apply the rule the annotation of a value asks for.
 

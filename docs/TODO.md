@@ -87,7 +87,20 @@ done.
 10. zswap_service, done, 12 / 253 / 19
 11. ssh_client_setup, done, 37 / 185 / 26
 12. three_x_ui_xray_setup, 162 / 535 / 32
-13. local_vault_setup and vault_structure, 11 / 467 / 33
+13. local_vault_setup and vault_structure, done, 11 / 467 / 33, with a
+    consequence worth naming: secrets/regenerate_vault_by_config.py read the
+    [vault_structure] table through the loader and now reads
+    pyntara.values.vault_structure, so a structure field is added by changing
+    the record type, the values and the script's field mapping instead of a
+    TOML key. The loader cross-check that the local vault password title names
+    a structure entry moved to tests/value_checks.py as
+    check_vault_entry_title, and the read guard of tests/test_values.py now also
+    scans secrets/, because a value read only by a maintenance script is not
+    dead. The script tests that could not outlive the TOML (an unknown field, a
+    non-string field, a rejected url, a field set for the future, a missing
+    config file, the seed shapes that are not records) are gone with this
+    reason: the record type of the values module carries the field set and the
+    text types, and mypy refuses the rest at the module.
 14. upnp_forwarding_setup, 22 / 293 / 35
 15. telegram_setup, 20 / 449 / 37
 16. scrcpy_setup, 29 / 725 / 48, added to this list 2026-09-17: the section and

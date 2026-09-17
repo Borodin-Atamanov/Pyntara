@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Create or update a KeePass vault from the [vault_structure] table.
+"""Create or update a KeePass vault from the vault structure values.
 
-The standalone maintenance script brings a KeePass database in line with
-the vault structure described in config.toml, the single source of truth
-(docs/spec/secrets-model.md). The mapping is one-to-one: the keys of a
-[[vault_structure.entries]] table are the KeePass entry field names
-(title, username, password, url, notes) and the values are the field
-values. A key that is not a database field name is a config error: the
-script stops before touching the vault. Future field names added to the
-config (for example username) are applied as-is.
+The standalone maintenance script brings a KeePass database in line with the
+vault structure of pyntara.values.vault_structure, the single source of truth
+(docs/spec/secrets-model.md). The mapping is one-to-one: the fields of an entry
+record are the KeePass entry field names (title, username, password, url, notes)
+and the record values are the field values. Future field names added to the
+structure are applied as-is.
 
 The vault password comes from the first available source in this order:
 the PYNTARA_VAULT_PASSWORD environment variable, the file next to the
@@ -36,7 +34,6 @@ import os
 import re
 import sys
 import tempfile
-import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -71,29 +68,10 @@ except ModuleNotFoundError:
         sys.exit(1)
     raise
 
-# The joined config text comes from the shared loader, the same single source
-# the engine uses; the script never re-implements the config reading.
-from pyntara.config.loader import render_config_source
+# The vault structure comes from the values package, the same single source the
+# engine and the values guards read; the script never keeps a copy of it.
 from pyntara.utils import proquint_encode
-
-# KeePass entry fields that a [vault_structure] entry may name. The config
-# names must equal the database field names one-to-one, no mapping; any
-# other key is a config error. url is deliberately absent: per-entry
-# values that are not structure (url, password) are maintained directly in
-# the vault databases, not in the config.
-VAULT_FIELD_NAMES: tuple[str, ...] = ("title", "username", "password", "notes")
-
-# KeePass entry fields that a group seed entry may name. Seed entries are
-# the default content of a data group, filled in when the script creates
-# the group, so a fresh vault mirrors the structure before the real data
-# is maintained directly in the database. url is a data value, allowed
-# here because the seed carries it into the database, unlike the
-# [vault_structure] entries whose url is rejected.
-SEED_FIELD_NAMES: tuple[str, ...] = ("title", "url", "notes")
-
-# The fields a [vault_structure] group may name: the group identity, the
-# explanatory notes and the optional seed_entries array.
-GROUP_FIELD_NAMES: tuple[str, ...] = VAULT_FIELD_NAMES + ("seed_entries",)
+from pyntara.values import vault_structure as values
 
 # The optional generated_password field of an entry, a generation
 # instruction rather than a database field: "proquint-N" asks the script
@@ -103,7 +81,6 @@ GROUP_FIELD_NAMES: tuple[str, ...] = VAULT_FIELD_NAMES + ("seed_entries",)
 GENERATED_PASSWORD_FIELD = "generated_password"
 GENERATED_PASSWORD_RE = re.compile(r"^proquint-([1-9][0-9]*)$")
 
-CONFIG_PATH = REPO_ROOT / "config"
 EXIT_OK = 0
 EXIT_ERROR = 1
 
@@ -118,8 +95,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="regenerate_vault_by_config.py",
         description=(
-            "Create or update a KeePass vault from the [vault_structure] "
-            "table of config.toml."
+            "Create or update a KeePass vault from the vault structure "
+            "values of pyntara.values.vault_structure."
         ),
     )
     parser.add_argument(
@@ -135,205 +112,108 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def load_vault_entries(config_path: Path) -> list[dict[str, str]]:
-    """Read and validate the [vault_structure] table of config.toml.
+def load_vault_entries() -> list[dict[str, str]]:
+    """The vault entries as the field dictionaries the vault is written from.
 
-    Every entry is returned as a dict whose keys are the configured field
-    names and whose values are the field values. Unknown field names, a
-    missing or empty title, duplicate titles and non-string values are
-    config errors, reported with the offending entry.
+    The single source is pyntara.values.vault_structure, the module the values
+    guards read; the field names are the KeePass field names, so the mapping
+    stays one-to-one. The record type already guarantees that a title and a note
+    are texts, so what is left to refuse here is an empty or repeated title,
+    which would make a database entry ambiguous, and a generated_password that
+    does not match its format.
     """
 
-    if not config_path.exists():
-        raise ScriptError(f"config file not found: {config_path}")
-    try:
-        data = tomllib.loads(render_config_source(config_path))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ScriptError(f"cannot read config file {config_path}: {exc}") from exc
-    table = data.get("vault_structure")
-    if not isinstance(table, dict):
-        raise ScriptError("[vault_structure] section is missing or not a table")
-    entries_raw = table.get("entries")
-    if not isinstance(entries_raw, list) or not entries_raw:
-        raise ScriptError(
-            "[vault_structure] entries must be a non-empty array of tables"
-        )
     entries: list[dict[str, str]] = []
     seen_titles: set[str] = set()
-    for index, entry_raw in enumerate(entries_raw):
-        if not isinstance(entry_raw, dict):
-            raise ScriptError(f"[vault_structure] entry {index + 1} must be a table")
-        unknown = sorted(
-            name for name in entry_raw if name not in VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,)
-        )
-        if unknown:
+    for index, record in enumerate(values.ENTRIES):
+        if not record.title:
             raise ScriptError(
-                f"[vault_structure] entry {index + 1} names unknown field(s) "
-                f"{', '.join(unknown)}; expected one of "
-                f"{', '.join(VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,))}"
+                f"vault structure entry {index + 1}: title is empty"
             )
-        title = entry_raw.get("title")
-        if not isinstance(title, str) or not title:
+        if record.title in seen_titles:
             raise ScriptError(
-                f"[vault_structure] entry {index + 1}: title must be a "
-                "non-empty string"
+                f"vault structure duplicate entry title: {record.title}"
             )
-        if title in seen_titles:
-            raise ScriptError(f"[vault_structure] duplicate entry title: {title}")
-        seen_titles.add(title)
-        fields: dict[str, str] = {}
-        for name in VAULT_FIELD_NAMES + (GENERATED_PASSWORD_FIELD,):
-            value = entry_raw.get(name)
-            if value is None:
-                continue
-            if not isinstance(value, str):
+        seen_titles.add(record.title)
+        fields: dict[str, str] = {
+            "title": record.title,
+            "notes": record.notes,
+        }
+        if record.generated_password is not None:
+            if not GENERATED_PASSWORD_RE.match(record.generated_password):
                 raise ScriptError(
-                    f"[vault_structure] entry {title}: field {name} must be "
-                    "a string"
+                    f"vault structure entry {record.title}: "
+                    "generated_password must match 'proquint-N' with a "
+                    "positive word count"
                 )
-            fields[name] = value
-        generated = fields.get(GENERATED_PASSWORD_FIELD)
-        if generated is not None and not GENERATED_PASSWORD_RE.match(generated):
-            raise ScriptError(
-                f"[vault_structure] entry {title}: generated_password must "
-                "match 'proquint-N' with a positive word count"
-            )
-        if generated is not None and "password" in fields:
-            raise ScriptError(
-                f"[vault_structure] entry {title}: cannot set both password "
-                "and generated_password"
-            )
+            fields[GENERATED_PASSWORD_FIELD] = record.generated_password
         entries.append(fields)
     return entries
 
 
-def load_vault_groups(config_path: Path) -> list[dict[str, object]]:
-    """Read the [vault_structure] groups array of config.toml.
+def load_vault_groups() -> list[dict[str, object]]:
+    """The data subgroups of the vault structure, ready for the vault writer.
 
-    A group is a table with a unique non-empty title and a non-empty notes
-    field, validated the same way as an entry, plus an optional
-    seed_entries array: the default content the script fills into the
-    group when it creates it, so a fresh vault mirrors the structure. The
-    groups describe data subgroups (NextDNS accounts, port-forwarding
-    server addresses) that the tooling fills with seed entries on creation
-    and never edits afterwards.
+    The single source is pyntara.values.vault_structure, like the entries. A
+    group carries its notes and the seed entries the script fills into the
+    freshly created group; an empty or repeated title is refused, because it
+    would make the group ambiguous.
     """
 
-    if not config_path.exists():
-        raise ScriptError(f"config file not found: {config_path}")
-    try:
-        data = tomllib.loads(render_config_source(config_path))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ScriptError(f"cannot read config file {config_path}: {exc}") from exc
-    table = data.get("vault_structure")
-    if not isinstance(table, dict):
-        raise ScriptError("[vault_structure] section is missing or not a table")
-    groups_raw = table.get("groups")
-    if groups_raw is None:
-        return []
-    if not isinstance(groups_raw, list):
-        raise ScriptError("[vault_structure] groups must be an array of tables")
     groups: list[dict[str, object]] = []
     seen_titles: set[str] = set()
-    for index, group_raw in enumerate(groups_raw):
-        if not isinstance(group_raw, dict):
-            raise ScriptError(f"[vault_structure] group {index + 1} must be a table")
-        unknown = sorted(
-            name for name in group_raw if name not in GROUP_FIELD_NAMES
-        )
-        if unknown:
+    for index, record in enumerate(values.GROUPS):
+        if not record.title:
+            raise ScriptError(f"vault structure group {index + 1}: title is empty")
+        if record.title in seen_titles:
             raise ScriptError(
-                f"[vault_structure] group {index + 1} names unknown field(s) "
-                f"{', '.join(unknown)}; expected one of "
-                f"{', '.join(GROUP_FIELD_NAMES)}"
+                f"vault structure duplicate group title: {record.title}"
             )
-        title = group_raw.get("title")
-        if not isinstance(title, str) or not title:
+        seen_titles.add(record.title)
+        if not record.notes:
             raise ScriptError(
-                f"[vault_structure] group {index + 1}: title must be a "
-                "non-empty string"
-            )
-        if title in seen_titles:
-            raise ScriptError(f"[vault_structure] duplicate group title: {title}")
-        seen_titles.add(title)
-        notes = group_raw.get("notes")
-        if not isinstance(notes, str) or not notes:
-            raise ScriptError(
-                f"[vault_structure] group {title}: notes must be a non-empty string"
+                f"vault structure group {record.title}: notes are empty"
             )
         groups.append(
             {
-                "title": title,
-                "notes": notes,
-                "seed_entries": _load_group_seed_entries(group_raw, title),
+                "title": record.title,
+                "notes": record.notes,
+                "seed_entries": _load_group_seed_entries(record),
             }
         )
     return groups
 
 
-def _load_group_seed_entries(
-    group_raw: dict[object, object], group_title: str
-) -> list[dict[str, str]]:
-    """The validated seed_entries array of a group, or an empty list.
+def _load_group_seed_entries(group: values.VaultGroup) -> list[dict[str, str]]:
+    """The seed entries of one group, ready for the vault writer.
 
-    Each seed entry is a table with a unique non-empty title and optional
-    url and notes fields. The url field carries the data value (for
-    example the port-forwarding server address) into the freshly created
-    group, so a new vault mirrors the structure before the real data is
-    maintained directly in the database.
+    A seed entry carries the data value (for example the port-forwarding server
+    address) into the freshly created group, so a new vault mirrors the
+    structure before the real data is maintained directly in the database. An
+    empty or repeated title is refused here too.
     """
 
-    raw = group_raw.get("seed_entries")
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ScriptError(
-            f"[vault_structure] group {group_title}: seed_entries must be "
-            "an array of tables"
-        )
     seed_entries: list[dict[str, str]] = []
     seen_titles: set[str] = set()
-    for index, seed_raw in enumerate(raw):
-        if not isinstance(seed_raw, dict):
+    for index, seed in enumerate(group.seed_entries):
+        title = seed.title or ""
+        if not title:
             raise ScriptError(
-                f"[vault_structure] group {group_title}: seed entry "
-                f"{index + 1} must be a table"
+                f"vault structure group {group.title}: seed entry "
+                f"{index + 1}: title is empty"
             )
-        unknown = sorted(
-            name for name in seed_raw if name not in SEED_FIELD_NAMES
-        )
-        if unknown:
+        if title in seen_titles:
             raise ScriptError(
-                f"[vault_structure] group {group_title}: seed entry "
-                f"{index + 1} names unknown field(s) {', '.join(unknown)}; "
-                f"expected one of {', '.join(SEED_FIELD_NAMES)}"
+                f"vault structure group {group.title}: duplicate seed entry "
+                f"title: {title}"
             )
-        seed_title = seed_raw.get("title")
-        if not isinstance(seed_title, str) or not seed_title:
-            raise ScriptError(
-                f"[vault_structure] group {group_title}: seed entry "
-                f"{index + 1}: title must be a non-empty string"
-            )
-        if seed_title in seen_titles:
-            raise ScriptError(
-                f"[vault_structure] group {group_title}: duplicate seed "
-                f"entry title: {seed_title}"
-            )
-        seen_titles.add(seed_title)
-        url = seed_raw.get("url")
-        if url is not None and not isinstance(url, str):
-            raise ScriptError(
-                f"[vault_structure] group {group_title}: seed entry "
-                f"{seed_title}: url must be a string"
-            )
-        seed_notes = seed_raw.get("notes")
-        if seed_notes is not None and not isinstance(seed_notes, str):
-            raise ScriptError(
-                f"[vault_structure] group {group_title}: seed entry "
-                f"{seed_title}: notes must be a string"
-            )
+        seen_titles.add(title)
         seed_entries.append(
-            {"title": seed_title, "url": url or "", "notes": seed_notes or ""}
+            {
+                "title": title,
+                "url": seed.url or "",
+                "notes": seed.notes or "",
+            }
         )
     return seed_entries
 
@@ -612,11 +492,11 @@ def main(argv: list[str] | None = None) -> int:
     vault_path = Path(args.vault_path)
     print(f"vault: {vault_path}")
     try:
-        entries = load_vault_entries(CONFIG_PATH)
-        groups = load_vault_groups(CONFIG_PATH)
+        entries = load_vault_entries()
+        groups = load_vault_groups()
         print(
-            f"config: {CONFIG_PATH}, {len(entries)} entries, "
-            f"{len(groups)} groups in [vault_structure]"
+            f"structure: pyntara.values.vault_structure, {len(entries)} entries, "
+            f"{len(groups)} groups"
         )
         password = resolve_password(vault_path, os.environ)
         if password is None:
