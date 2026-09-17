@@ -67,7 +67,7 @@ The bash suites cover both halves on temporary git repositories: bash tests/test
 
 Add a [[tasks]] entry to config/tasks.toml with name, description, dependencies and modes. Dependencies must name tasks listed earlier in the file (docs/contracts/task-model.md).  
 Create src/pyntara/tasks/<name>.py with a task(ctx) -> TaskResult function ([Task contract](../contracts/architecture.md#task-contract)). Import shared helpers from utils.py, config_edit.py or domain modules (i2pd.py, yggdrasil.py, tor.py, ssh.py, nextdns_profile.py) instead of reimplementing.  
-If the task needs configuration values, add the value or the section to a TOML file in config/ and add the dataclass field in src/pyntara/config/ ([Adding a value to an existing section](project-structure.md#adding-a-value-to-an-existing-section) and [Adding a new config section](project-structure.md#adding-a-new-config-section)).  
+If the task needs values, add them to the values module of the task under src/pyntara/values/ and read them at the point of use ([Where a value lives](project-structure.md#adding-a-value-to-an-existing-section)). A section that is not migrated to the values package yet keeps its TOML file in config/ and its dataclass in src/pyntara/config/; a value that exists in both places is a defect.  
 If the task needs runtime data files, create a task_data/<name>/ directory.  
 Write tests in tests/test_<name>.py: at minimum one success scenario and one realistic error scenario. Use shared factories from tests/support.py (make_config, make_context, FakeProc). Mock external resources via monkeypatch ([Testing rules](#testing-rules)).  
 If the task belongs to a default install mode, verify that the mode lists it in tasks.toml and that the dependency chain is complete.

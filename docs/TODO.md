@@ -311,10 +311,16 @@ decisions so no earlier number moves.
     (venv_sync_command of the [system_metrics_setup] table), so a deployed
     service gets the values with no deployment change. What the coupled stage
     removes is only the config path mechanism.
-68. Stage C, documents: a minimal truthful edit now, because the architecture
-    contract calls a value outside config/ a violation to fix on discovery and
-    the README still says the engine values live in config/. The full rewrite
-    stays in Stage D (point 31).
+68. Stage C, documents: done. The minimal truthful edit landed in the
+    architecture contract (the Configuration paragraph, the behavioral-values
+    paragraph, the resilience paragraph, the NextDNS exception line), in
+    docs/spec/config-content.md (the header and the Rules paragraph), in
+    README.md and in the adding-a-task step of docs/guides/developer-guide.md.
+    A search for the old claims answers nothing. The full rewrite of the
+    documents, including the Config section map of docs/guides/
+    project-structure.md and the type lists of docs/spec/config-content.md,
+    stays in Stage D (point 31); 17 mentions of config/ remain across five
+    documents, and they describe the sections that are still in TOML.
 69. Stage D, the plain sections, smallest first, one commit each: the section
     list above minus the COUPLED ones.
 70. Stage E, the engine and the task catalog, before the coupled sections: a

@@ -1,9 +1,9 @@
 # Config content
 
-What the config/ directory holds, value type by value type, and what never goes
-there. The list of types is closed: a value of a type in the Types section is a
-config value, a value of a type in the Exceptions section stays in code, and a
-value that fits no type is a config value by the first rule below
+What the values hold, value type by value type, and what never goes into them.
+The list of types is closed: a value of a type in the Types section is a value
+of a task, a value of a type in the Exceptions section stays in code, and a
+value that fits no type is a value of a task by the first rule below
 (architecture contract, Configuration).
 
 The types describe the shipped config/ directory as it is today. The audit that
@@ -14,11 +14,12 @@ not limits.
 
 ## Rules
 
-Every value the run uses lives in config/, in the section of the task or of the
-engine that owns it, unless its type is listed in the Exceptions section. The
-rule holds whether the value ever changes: the config is the one place where a
-reader sees the machine the installer builds and changes it, so a value hidden
-in a module is a defect even when it is stable. A module level constant, a
+Every value the run uses lives in the values package, in the module of the task
+or of the engine that owns it, and in the config/ section of that owner while the
+section is not migrated yet, unless its type is listed in the Exceptions section.
+The rule holds whether the value ever changes: the module of a task is the one
+place where a reader sees the machine the installer builds and changes it, so a
+value hidden inside a task body is a defect even when it is stable. A module level constant, a
 literal inside a function, a literal in a command list and a default fallback
 are all subject to the rule in the same way.
 
