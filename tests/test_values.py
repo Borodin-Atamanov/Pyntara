@@ -43,6 +43,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",
+    "kde_keyboard_setup",
     "local_vault_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",

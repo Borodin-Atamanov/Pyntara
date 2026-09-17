@@ -64,6 +64,16 @@ EXECUTABLE_FILE_MODE: int = 0o755
 # renames the line is answered here.
 MEMINFO_TOTAL_KEY: str = "MemTotal:"
 
+# Name of the KConfig file of the global shortcuts. Two desktop sections write
+# it, the keyboard section and the settings section, so the name is written once
+# here; it names a file of KDE and belongs to no section.
+SHORTCUTS_FILE_NAME: str = "kglobalshortcutsrc"
+
+# The boolean spelling of the KConfig files, used by every section that writes a
+# flag into one of them, and the KDE spelling is a word and not 1 or 0.
+KCONFIG_TRUE_VALUE: str = "true"
+KCONFIG_FALSE_VALUE: str = "false"
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -76,4 +86,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "LAUNCHER_FILE_MODE",
     "EXECUTABLE_FILE_MODE",
     "MEMINFO_TOTAL_KEY",
+    "SHORTCUTS_FILE_NAME",
+    "KCONFIG_TRUE_VALUE",
+    "KCONFIG_FALSE_VALUE",
 )

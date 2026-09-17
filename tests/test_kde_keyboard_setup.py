@@ -3,7 +3,8 @@
 All external resources (subprocess, the process environment, package
 state) are mocked via monkeypatch; the tests only touch temporary
 fixtures (docs/guides/developer-guide.md). The fake run_command inspects
-the command shape and answers per key.
+the command shape and answers per key. The target config directory is a value,
+so one autouse fixture points it at the temporary tree of the test.
 """
 
 from __future__ import annotations
@@ -18,15 +19,27 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara.config.kde_keyboard_setup import KdeKeyboardSetupConfig
 from pyntara.tasks import kde_keyboard_setup as task_module
 from pyntara.utils import kglobalaccel_names, task_data_dir
+from pyntara.values import common as common_values
+from pyntara.values import kde_keyboard_setup as values
 
 
-def _keyboard_cfg() -> KdeKeyboardSetupConfig:
-    """Config of the task with the values of the shared test document."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own target configuration directory.
 
-    return make_config().kde_keyboard_setup
+    The directory of the KDE configuration is a value and follows the home of
+    the desktop user of the shared module, so the fixture points both at the
+    temporary directory of the test; the shipped values come back afterwards.
+    """
+
+    monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "i")
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
+    monkeypatch.setattr(values, "CONFIG_DIR", tmp_path / ".config")
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", {})
 
 SAMPLE_APPLETSRC = """\
 [Containments][2]
@@ -48,14 +61,12 @@ def _ctx(
     *,
     force: bool = False,
     appletsrc: str = SAMPLE_APPLETSRC,
-    hotkeys: dict[str, str] | None = None,
-    mkdir_command: tuple[str, ...] | None = None,
 ):
     """Context with the target config directory rooted in tmp_path."""
 
-    config_dir = tmp_path / ".config"
+    config_dir = values.CONFIG_DIR
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "plasma-org.kde.plasma.desktop-appletsrc").write_text(
+    (config_dir / values.APPLETSRC_FILE_NAME).write_text(
         appletsrc, encoding="utf-8"
     )
     return make_context(
@@ -63,14 +74,6 @@ def _ctx(
         install_mode="desktop",
         force_tasks=frozenset({"kde_keyboard_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_keyboard_setup_username="i",
-            kde_keyboard_setup_home_dir=str(tmp_path),
-            kde_keyboard_setup_config_dir=str(config_dir),
-            kde_keyboard_setup_layout_switch_shortcuts=hotkeys,
-            kde_keyboard_setup_mkdir_command=mkdir_command,
-        ),
     )
 
 
@@ -360,7 +363,7 @@ def test_keyboard_layout_config_group_finds_nested_applet() -> None:
     # The Configuration/General group of the keyboard layout applet is
     # derived from the nested group that declares the plugin.
     group = task_module._keyboard_layout_config_group(
-        _keyboard_cfg(), SAMPLE_APPLETSRC, "org.kde.plasma.keyboardlayout"
+        SAMPLE_APPLETSRC, "org.kde.plasma.keyboardlayout"
     )
     assert group == (
         "Containments",
@@ -378,7 +381,6 @@ def test_keyboard_layout_config_group_missing() -> None:
     # A document without the applet returns None.
     assert (
         task_module._keyboard_layout_config_group(
-            _keyboard_cfg(),
             "[Containments][2]\nplugin=org.kde.plasma.panel\n",
             "org.kde.plasma.keyboardlayout",
         )
@@ -391,33 +393,33 @@ HOTKEYS = {SPANISH_ACTION: "Meta+Q"}
 META_Q = 0x10000000 | 0x51
 
 
-def test_shortcut_modifier_bits_come_from_the_config() -> None:
-    # The combined key code is composed from the flags of the config, so
-    # the Qt vocabulary lives in the config and not in the code.
-    cfg = replace(_keyboard_cfg(), shortcut_modifier_bits={"Meta": 0x7})
-    assert task_module._shortcut_to_combined(cfg, "Meta+Q") == 0x7 | 0x51
+def test_shortcut_modifier_bits_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The combined key code is composed from the flags of the values module, so
+    # the Qt vocabulary lives there and not in the code.
+    monkeypatch.setattr(values, "SHORTCUT_MODIFIER_BITS", {"Meta": 0x7})
+    assert task_module._shortcut_to_combined("Meta+Q") == 0x7 | 0x51
 
 
 def test_shortcut_to_combined_parses_modifiers_and_key() -> None:
     # Modifiers plus one alphanumeric key become the combined Qt key code.
-    cfg = _keyboard_cfg()
-    assert task_module._shortcut_to_combined(cfg, "Meta+Q") == META_Q
-    assert task_module._shortcut_to_combined(cfg, "Ctrl+Alt+E") == (
+    assert task_module._shortcut_to_combined("Meta+Q") == META_Q
+    assert task_module._shortcut_to_combined("Ctrl+Alt+E") == (
         0x04000000 | 0x08000000 | 0x45
     )
-    assert task_module._shortcut_to_combined(cfg, "Shift+Meta+1") == (
+    assert task_module._shortcut_to_combined("Shift+Meta+1") == (
         0x02000000 | 0x10000000 | 0x31
     )
-    assert task_module._shortcut_to_combined(cfg, "Q") == 0x51
+    assert task_module._shortcut_to_combined("Q") == 0x51
 
 
 def test_shortcut_to_combined_rejects_unsupported() -> None:
     # Function keys, named keys and a bare modifier are not supported.
-    cfg = _keyboard_cfg()
-    assert task_module._shortcut_to_combined(cfg, "F5") is None
-    assert task_module._shortcut_to_combined(cfg, "Space") is None
-    assert task_module._shortcut_to_combined(cfg, "Meta") is None
-    assert task_module._shortcut_to_combined(cfg, "") is None
+    assert task_module._shortcut_to_combined("F5") is None
+    assert task_module._shortcut_to_combined("Space") is None
+    assert task_module._shortcut_to_combined("Meta") is None
+    assert task_module._shortcut_to_combined("") is None
 
 
 def test_no_session_writes_hotkey_file(
@@ -425,7 +427,8 @@ def test_no_session_writes_hotkey_file(
 ) -> None:
     # Without a desktop session the hotkey is written to kglobalshortcutsrc
     # and the live apply is skipped.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     writes, _, _, _, live_applies = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
@@ -447,7 +450,8 @@ def test_no_session_hotkey_already_set_skips_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # When the kglobalshortcutsrc entry already matches, nothing changes.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     currents = {
         "LayoutList": "us,ru,es",
         "DisplayNames": ",,",
@@ -476,7 +480,8 @@ def test_session_applies_hotkey_live(
 ) -> None:
     # With a desktop session the hotkey is applied through the daemon: the
     # python3 client runs as the user with the correct payload.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     _, _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
@@ -498,7 +503,8 @@ def test_session_hotkey_already_applied_is_idempotent(
 ) -> None:
     # When the file entry and the daemon already carry the shortcut, the
     # task reports no change (the live client still runs and confirms).
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     currents = {
         "LayoutList": "us,ru,es",
         "DisplayNames": ",,",
@@ -524,13 +530,14 @@ def test_session_hotkey_already_applied_is_idempotent(
     assert len(live_applies) == 1
 
 
-def test_live_apply_runs_the_script_the_config_names(
+def test_live_apply_runs_the_script_the_values_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The client text comes from the task data file the config names and
+    # The client text comes from the task data file the values name and
     # its DBus names come from the engine table, so editing that file or
     # another bus name changes what runs without touching the code.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     engine = replace(
         ctx.config.engine,
         kglobalaccel_bus_name="org.example.KGlobalAccel",
@@ -543,7 +550,7 @@ def test_live_apply_runs_the_script_the_config_names(
     assert result.success is True
     script_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / ctx.config.kde_keyboard_setup.apply_hotkeys_script_file_name
+        / values.APPLY_HOTKEYS_SCRIPT_FILE_NAME
     )
     shipped = script_path.read_text(encoding="utf-8")
     rendered = shipped
@@ -554,26 +561,17 @@ def test_live_apply_runs_the_script_the_config_names(
     assert any("org.example.KGlobalAccel" in part for part in live_applies[0])
 
 
-def test_live_apply_prefix_comes_from_the_config(
+def test_live_apply_prefix_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The prefix of the client call is a config value: another interpreter
+    # The prefix of the client call is a value: another interpreter
     # command is exactly what runs, with the system interpreter filling its
     # {python} slot and the client source following as the next argument.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            kde_keyboard_setup=replace(
-                ctx.config.kde_keyboard_setup,
-                python_script_command=(
-                    ctx.config.engine.system_python,
-                    "--apply",
-                    "{python}",
-                ),
-            ),
-        ),
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
+    system_python = ctx.config.engine.system_python
+    monkeypatch.setattr(
+        values, "PYTHON_SCRIPT_COMMAND", (system_python, "--apply", "{python}")
     )
     _, _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
@@ -581,7 +579,7 @@ def test_live_apply_prefix_comes_from_the_config(
     assert live_applies
     assert live_applies[0][:4] == ["runuser", "-u", "i", "--"]
     assert live_applies[0][5] == "--apply"
-    assert live_applies[0][6] == ctx.config.engine.system_python
+    assert live_applies[0][6] == system_python
 
 
 def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
@@ -589,7 +587,6 @@ def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
     # the user which file is not there instead of crashing on it.
     missing_script = tmp_path / "missing_apply_hotkeys.py"
     error, changed = task_module._apply_hotkeys_live(
-        _keyboard_cfg(),
         {SPANISH_ACTION: "Meta+Q"},
         script_path=missing_script,
         timeout=5.0,
@@ -608,7 +605,8 @@ def test_session_hotkey_apply_failure_is_warning(
 ) -> None:
     # A failing live apply is a warning and the task still completes, so
     # the reload and the panel restart are not skipped.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     _, reloads, restarts, _, _ = _install_fakes(
         monkeypatch, fail_live_apply=True
     )
@@ -626,7 +624,8 @@ def test_session_hotkey_apply_failure_reports_client_stderr(
 ) -> None:
     # The warning carries the client error output, so a recurring live
     # apply failure is diagnosable from the task log alone.
-    ctx = _ctx(tmp_path, hotkeys=HOTKEYS)
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
     _install_fakes(
         monkeypatch,
         fail_live_apply=True,
@@ -642,7 +641,8 @@ def test_unsupported_shortcut_is_written_not_applied_live(
 ) -> None:
     # A function-key shortcut cannot be applied live but is still written
     # to the config file.
-    ctx = _ctx(tmp_path, hotkeys={SPANISH_ACTION: "F5"})
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", {SPANISH_ACTION: "F5"})
+    ctx = _ctx(tmp_path)
     writes, _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
@@ -655,29 +655,39 @@ def test_unsupported_shortcut_is_written_not_applied_live(
     assert any(SPANISH_ACTION in " ".join(command) for command in hotkey_writes)
 
 
-def test_user_command_prefix_comes_from_the_config() -> None:
-    # The wrapper that runs a command as the desktop user is a config value:
-    # another wrapper in the section is the argv the task builds.
-    cfg = replace(
-        make_config().kde_keyboard_setup,
-        runuser_command=("sudo", "-u", "{username}", "--"),
+def test_user_command_prefix_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The wrapper that runs a command as the desktop user is a value: another
+    # wrapper in the section is the argv the task builds.
+    monkeypatch.setattr(
+        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--")
     )
     assert task_module._as_user_command(
-        cfg, ["kreadconfig6", "--file", "kxkbrc"]
-    ) == ["sudo", "-u", cfg.username, "--", "kreadconfig6", "--file", "kxkbrc"]
+        ["kreadconfig6", "--file", "kxkbrc"]
+    ) == [
+        "sudo",
+        "-u",
+        common_values.DESKTOP_USERNAME,
+        "--",
+        "kreadconfig6",
+        "--file",
+        "kxkbrc",
+    ]
 
 
-def test_kconfig_calls_come_from_the_config() -> None:
-    # The reader and the two selectors are config values: another set of
+def test_kconfig_calls_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reader and the two selectors are values: another set of
     # commands is what the task builds.
-    cfg = replace(
-        make_config().kde_keyboard_setup,
-        kreadconfig_command=("my-reader", "--config", "{file_name}"),
-        config_group_flag=("--section", "{group}"),
-        config_key_flag=("--entry", "{key}"),
+    monkeypatch.setattr(
+        values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
     )
+    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert task_module._kconfig_command(
-        cfg, cfg.kreadconfig_command, "kxkbrc", ("Layout",), "LayoutList"
+        values.KREADCONFIG_COMMAND, "kxkbrc", ("Layout",), "LayoutList"
     ) == [
         "my-reader",
         "--config",
@@ -689,33 +699,29 @@ def test_kconfig_calls_come_from_the_config() -> None:
     ]
 
 
-def test_mkdir_command_comes_from_the_config(
+def test_mkdir_command_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The maker of the target config directory is a config value: another
-    # program in the section is the command the task runs before its
-    # writes.
+    # The maker of the target config directory is a value: another program in
+    # the section is the command the task runs before its writes.
     mkdir_commands: list[list[str]] = []
     real_as_user_command = task_module._as_user_command
 
-    def recording_as_user_command(
-        cfg: Any, command: list[str]
-    ) -> list[str]:
+    def recording_as_user_command(command: list[str]) -> list[str]:
         if command[0] == "mymkdir":
             mkdir_commands.append(list(command))
             # The path is the last element of the rendered template; the
             # shared fake only answers the plain maker of directories.
             command = ["mkdir", "-p", command[-1]]
-        return real_as_user_command(cfg, command)
+        return real_as_user_command(command)
 
     monkeypatch.setattr(
         task_module, "_as_user_command", recording_as_user_command
     )
-    ctx = _ctx(
-        tmp_path, mkdir_command=("mymkdir", "--parents", "{path}")
+    monkeypatch.setattr(
+        values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}")
     )
+    ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
     task_module.task(ctx)
-    assert mkdir_commands == [
-        ["mymkdir", "--parents", str(tmp_path / ".config")]
-    ]
+    assert mkdir_commands == [["mymkdir", "--parents", str(values.CONFIG_DIR)]]

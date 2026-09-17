@@ -141,7 +141,20 @@ is the correction.
     of 2 from its own defaults while the shipped value is 1.6, so the expected
     swap size of the tests was wrong and nobody saw it while the harness faked
     the value; the tests now compute the expected size from the values
-18. kde_keyboard_setup, 41 / 631 / 52
+18. kde_keyboard_setup, done, 41 / 631 / 52, and it settled three points. First,
+    its own copies of the desktop user pair are gone: the home of that user
+    comes from the shared module, and the directory of the KDE configuration is
+    declared as the home plus ".config" in the values module, so the home is
+    written once and no section repeats the literal. Second, the name of the
+    KDE shortcuts file and the boolean spelling of the KConfig files moved to
+    values/common.py, because two sections write each of them (kde_keyboard_setup
+    and kde_settings for the spelling, this section and vocalinux_setup for the
+    file), and neither value belongs to a section by meaning. Third, the two
+    switches of the section (reset_old_options, use_layout_switching) are 1 and 0
+    and not True and False, per the user rule that a switch setting answers 1 or
+    0; a values module had no switch before this section, so this is the pattern
+    the remaining sections follow, and kde_settings will carry the same answer
+    for its own flags
 19. rustdesk_setup, 42 / 733 / 61
 20. zram_service, 27 / 679 / 66
 21. sotavpn_setup, 24 / 659 / 67
@@ -451,8 +464,8 @@ it is named with the figure.
     every read, the tests moved to the values, the section registered in
     tests/test_values.py and tests/test_values_softness.py, the plan updated, the
     full gate, the merge into main and the branch deleted. telegram_setup and
-    scrcpy_setup are done; the order that remains is kde_keyboard_setup
-    (41 / 52 / 631), rustdesk_setup (42 / 62 / 733), zram_service (27 / 66 / 679,
+    scrcpy_setup are done; the order that remains is rustdesk_setup
+    (42 / 62 / 733), zram_service (27 / 66 / 679,
     which reads the meminfo key from the shared module and moves compressor to
     common, dropping the copy of zswap_service), sotavpn_setup (24 / 67 / 663),
     vocalinux_setup (38 / 71 / 680), chrome_setup (49 / 87 / 973),

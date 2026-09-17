@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig, KdeKeyboardSetupConfig
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -43,35 +43,38 @@ from pyntara.utils import (
     task_data_dir,
     trim_whitespace,
 )
+from pyntara.values import common as common_values
+from pyntara.values import kde_keyboard_setup as values
+from pyntara.values import missing_value_names
 
-# The kxkbrc group that carries the layout settings, the KConfig file of
-# the global shortcuts, the keys the task writes and the Qt modifier
-# flags all come from the config: they are the vocabulary of foreign
-# files, so they are values like any other.
+# The kxkbrc group that carries the layout settings, the KConfig file of the
+# global shortcuts, the keys the task writes and the Qt modifier flags all come
+# from the values module: they are the vocabulary of foreign files, so they are
+# values like any other.
 
 
-def _as_user_command(cfg: KdeKeyboardSetupConfig, command: list[str]) -> list[str]:
+def _as_user_command(command: list[str]) -> list[str]:
     """Prefix a command with the configured wrapper of the target user.
 
-    The wrapper is a config value of the section, so a machine whose
-    desktop user is reached another way is a config change.
+    The wrapper is a value of the section, so a machine whose desktop user is
+    reached another way is a value change.
     """
 
     return [
-        *substituted_command(cfg.runuser_command, {"username": cfg.username}),
+        *substituted_command(
+            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
+        ),
         *command,
     ]
 
 
-def _home_env(cfg: KdeKeyboardSetupConfig) -> dict[str, str]:
+def _home_env() -> dict[str, str]:
     """Environment that points the KDE tools at the target user home."""
 
-    return {"HOME": cfg.home_dir}
+    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
-def _session_bus_env(
-    cfg: KdeKeyboardSetupConfig, engine: EngineConfig
-) -> dict[str, str]:
+def _session_bus_env(engine: EngineConfig) -> dict[str, str]:
     """The one-entry environment that reaches the live session bus.
 
     The bus address comes from the session manager of the desktop user, so the
@@ -81,7 +84,7 @@ def _session_bus_env(
     """
 
     bus = session_bus_address(
-        cfg.username,
+        common_values.DESKTOP_USERNAME,
         command_template=engine.session_environment_command,
         keys=engine.session_environment_keys,
         bus_key=engine.session_bus_key,
@@ -99,7 +102,6 @@ def _per_layout_empty_list(layouts: tuple[str, ...]) -> str:
 
 
 def _kconfig_command(
-    cfg: KdeKeyboardSetupConfig,
     base_command: tuple[str, ...],
     file_name: str,
     group_segments: tuple[str, ...],
@@ -107,23 +109,21 @@ def _kconfig_command(
 ) -> list[str]:
     """One KConfig call: the configured base, the groups and the key.
 
-    The base call carries the file name and every selector is a config
-    value, so another KConfig version or another tool is a config change.
-    The reader and the writer share this builder, so the two calls can
-    never drift apart.
+    The base call carries the file name and every selector is a value, so
+    another KConfig version or another tool is a value change. The reader and
+    the writer share this builder, so the two calls can never drift apart.
     """
 
     command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
-            substituted_command(cfg.config_group_flag, {"group": segment})
+            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
 def _kreadconfig(
-    cfg: KdeKeyboardSetupConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -132,11 +132,11 @@ def _kreadconfig(
     """Current value of one KConfig key, or an empty string when unset."""
 
     command = _kconfig_command(
-        cfg, cfg.kreadconfig_command, file_name, group_segments, key
+        values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         check=False,
         capture=True,
         timeout=timeout,
@@ -145,7 +145,6 @@ def _kreadconfig(
 
 
 def _kwriteconfig(
-    cfg: KdeKeyboardSetupConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -157,20 +156,19 @@ def _kwriteconfig(
     """Write one KConfig key with the configured writer as the target user."""
 
     command = _kconfig_command(
-        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     if bool_value:
-        command.extend(cfg.config_bool_type_flag)
+        command.extend(values.CONFIG_BOOL_TYPE_FLAG)
     command.append(value)
     run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         timeout=timeout,
     )
 
 
 def _sync_key(
-    cfg: KdeKeyboardSetupConfig,
     group_segments: tuple[str, ...],
     key: str,
     target: str,
@@ -186,12 +184,11 @@ def _sync_key(
     always writes.
     """
 
-    current = _kreadconfig(cfg, cfg.kxkbrc_file_name, group_segments, key, timeout)
+    current = _kreadconfig(values.KXKBRC_FILE_NAME, group_segments, key, timeout)
     if not force and current == target:
         return False
     _kwriteconfig(
-        cfg,
-        cfg.kxkbrc_file_name,
+        values.KXKBRC_FILE_NAME,
         group_segments,
         key,
         target,
@@ -202,9 +199,7 @@ def _sync_key(
     return True
 
 
-def _keyboard_layout_config_group(
-    cfg: KdeKeyboardSetupConfig, text: str, plugin: str
-) -> tuple[str, ...] | None:
+def _keyboard_layout_config_group(text: str, plugin: str) -> tuple[str, ...] | None:
     """The Configuration/General group of the applet that declares plugin.
 
     Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
@@ -219,12 +214,11 @@ def _keyboard_layout_config_group(
         if line.startswith("[") and line.endswith("]"):
             current = tuple(part for part in line[1:-1].split("][") if part)
         elif line == f"plugin={plugin}":
-            return current + cfg.applet_configuration_group
+            return current + values.APPLET_CONFIGURATION_GROUP
     return None
 
 
 def _reload_kwin(
-    cfg: KdeKeyboardSetupConfig,
     *,
     timeout: float,
     home_env: dict[str, str],
@@ -244,7 +238,7 @@ def _reload_kwin(
         return None
     try:
         run_command(
-            _as_user_command(cfg, list(cfg.kwin_reload_command)),
+            _as_user_command(list(values.KWIN_RELOAD_COMMAND)),
             extra_env={**home_env, **bus_env},
             timeout=timeout,
         )
@@ -254,22 +248,22 @@ def _reload_kwin(
     return None
 
 
-def _shortcut_to_combined(cfg: KdeKeyboardSetupConfig, shortcut: str) -> int | None:
+def _shortcut_to_combined(shortcut: str) -> int | None:
     """The combined Qt key code of a portable shortcut, or None.
 
     Only the shortcuts the daemon accepts are supported: any modifiers
     from Ctrl, Alt, Shift and Meta plus one alphanumeric key. Other
     portable forms (function keys, named keys) return None; the caller
     then still writes the shortcut to the config file, it just cannot be
-    applied live. The modifier flags come from the config.
+    applied live. The modifier flags come from the values module.
     """
 
     parts = [part for part in shortcut.split("+") if part]
     modifiers = 0
     key: int | None = None
     for part in parts:
-        if part in cfg.shortcut_modifier_bits:
-            modifiers |= cfg.shortcut_modifier_bits[part]
+        if part in values.SHORTCUT_MODIFIER_BITS:
+            modifiers |= values.SHORTCUT_MODIFIER_BITS[part]
         elif key is None and len(part) == 1 and part.isalnum():
             key = ord(part.upper())
         else:
@@ -280,7 +274,6 @@ def _shortcut_to_combined(cfg: KdeKeyboardSetupConfig, shortcut: str) -> int | N
 
 
 def _sync_hotkey_file(
-    cfg: KdeKeyboardSetupConfig,
     shortcuts: dict[str, str],
     *,
     timeout: float,
@@ -294,17 +287,16 @@ def _sync_hotkey_file(
     """
 
     changed = False
-    group = (cfg.layout_switcher_component_unique,)
+    group = (values.LAYOUT_SWITCHER_COMPONENT_UNIQUE,)
     for action, shortcut in shortcuts.items():
         value = f"{shortcut},none,{action}"
         current = _kreadconfig(
-            cfg, cfg.shortcuts_file_name, group, action, timeout
+            common_values.SHORTCUTS_FILE_NAME, group, action, timeout
         )
         if not force and current == value:
             continue
         _kwriteconfig(
-            cfg,
-            cfg.shortcuts_file_name,
+            common_values.SHORTCUTS_FILE_NAME,
             group,
             action,
             value,
@@ -327,7 +319,6 @@ def _sync_hotkey_file(
 
 
 def _apply_hotkeys_live(
-    cfg: KdeKeyboardSetupConfig,
     shortcuts: dict[str, str],
     *,
     script_path: Path,
@@ -350,7 +341,7 @@ def _apply_hotkeys_live(
 
     changes: list[tuple[str, str]] = []
     for action, shortcut in shortcuts.items():
-        if _shortcut_to_combined(cfg, shortcut) is None:
+        if _shortcut_to_combined(shortcut) is None:
             _log(f"hotkey {action} is not applicable live, applies at login")
             continue
         changes.append((action, shortcut))
@@ -360,8 +351,10 @@ def _apply_hotkeys_live(
         {
             "changes": [
                 {
-                    "component_unique": cfg.layout_switcher_component_unique,
-                    "component_friendly": cfg.layout_switcher_component_friendly,
+                    "component_unique": values.LAYOUT_SWITCHER_COMPONENT_UNIQUE,
+                    "component_friendly": (
+                        values.LAYOUT_SWITCHER_COMPONENT_FRIENDLY
+                    ),
                     "action": action,
                     "keys": [shortcut],
                 }
@@ -378,10 +371,9 @@ def _apply_hotkeys_live(
     try:
         result = run_command(
             _as_user_command(
-                cfg,
                 [
                     *substituted_command(
-                        cfg.python_script_command, {"python": system_python}
+                        values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
                     ),
                     client_text,
                     payload,
@@ -443,16 +435,33 @@ def task(ctx: Context) -> TaskResult:
     stop the provisioning.
     """
 
-    cfg = ctx.config.kde_keyboard_setup
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message=(
+                "the kde_keyboard_setup values are not declared, "
+                "nothing was changed"
+            ),
+            warnings=(
+                "the kde_keyboard_setup values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    home_env = _home_env(cfg)
-    bus_env = _session_bus_env(cfg, engine)
+    home_env = _home_env()
+    bus_env = _session_bus_env(engine)
     changed = False
     warnings: list[str] = []
 
-    for package in cfg.packages:
+    for package in values.PACKAGES:
         if package_is_installed(engine, package, timeout):
             continue
         _log(f"installing {package}")
@@ -475,9 +484,8 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _as_user_command(
-                cfg,
                 substituted_command(
-                    cfg.mkdir_command, {"path": cfg.config_dir}
+                    values.MKDIR_COMMAND, {"path": str(values.CONFIG_DIR)}
                 ),
             ),
             extra_env=home_env,
@@ -488,35 +496,46 @@ def task(ctx: Context) -> TaskResult:
             success=True,
             changed=changed,
             message="KDE keyboard layouts not configured",
-            warnings=(f"cannot create {cfg.config_dir}: {exc}",),
+            warnings=(f"cannot create {values.CONFIG_DIR}: {exc}",),
         )
 
     layout_changed = False
     for key, target, bool_value in (
-        (cfg.kxkbrc_key_layout_list, ",".join(cfg.layouts), False),
-        (cfg.kxkbrc_key_display_names, _per_layout_empty_list(cfg.layouts), False),
-        (cfg.kxkbrc_key_variant_list, _per_layout_empty_list(cfg.layouts), False),
-        (cfg.kxkbrc_key_options, cfg.switch_option, False),
+        (values.KXKBRC_KEY_LAYOUT_LIST, ",".join(values.LAYOUTS), False),
         (
-            cfg.kxkbrc_key_reset_old_options,
-            cfg.kconfig_true_value if cfg.reset_old_options else cfg.kconfig_false_value,
+            values.KXKBRC_KEY_DISPLAY_NAMES,
+            _per_layout_empty_list(values.LAYOUTS),
+            False,
+        ),
+        (
+            values.KXKBRC_KEY_VARIANT_LIST,
+            _per_layout_empty_list(values.LAYOUTS),
+            False,
+        ),
+        (values.KXKBRC_KEY_OPTIONS, values.SWITCH_OPTION, False),
+        (
+            values.KXKBRC_KEY_RESET_OLD_OPTIONS,
+            (
+                common_values.KCONFIG_TRUE_VALUE
+                if values.RESET_OLD_OPTIONS
+                else common_values.KCONFIG_FALSE_VALUE
+            ),
             True,
         ),
-        (cfg.kxkbrc_key_switch_mode, cfg.switch_mode, False),
+        (values.KXKBRC_KEY_SWITCH_MODE, values.SWITCH_MODE, False),
         (
-            cfg.kxkbrc_key_use,
+            values.KXKBRC_KEY_USE,
             (
-                cfg.kconfig_true_value
-                if cfg.use_layout_switching
-                else cfg.kconfig_false_value
+                common_values.KCONFIG_TRUE_VALUE
+                if values.USE_LAYOUT_SWITCHING
+                else common_values.KCONFIG_FALSE_VALUE
             ),
             True,
         ),
     ):
         try:
             layout_changed |= _sync_key(
-                cfg,
-                cfg.kxkbrc_group,
+                values.KXKBRC_GROUP,
                 key,
                 target,
                 timeout=timeout,
@@ -528,11 +547,10 @@ def task(ctx: Context) -> TaskResult:
     changed |= layout_changed
 
     applet_changed = False
-    appletsrc_path = Path(cfg.config_dir) / cfg.appletsrc_file_name
+    appletsrc_path = values.CONFIG_DIR / values.APPLETSRC_FILE_NAME
     try:
         group = _keyboard_layout_config_group(
-            cfg,
-            appletsrc_path.read_text(encoding="utf-8"), cfg.applet_plugin
+            appletsrc_path.read_text(encoding="utf-8"), values.APPLET_PLUGIN
         )
     except OSError:
         group = None
@@ -544,44 +562,49 @@ def task(ctx: Context) -> TaskResult:
     else:
         try:
             current = _kreadconfig(
-                cfg, cfg.appletsrc_file_name, group, cfg.display_style_key, timeout
+                values.APPLETSRC_FILE_NAME,
+                group,
+                values.DISPLAY_STYLE_KEY,
+                timeout,
             )
-            if force or current != cfg.indicator_display_style:
+            if force or current != values.INDICATOR_DISPLAY_STYLE:
                 _kwriteconfig(
-                    cfg,
-                    cfg.appletsrc_file_name,
+                    values.APPLETSRC_FILE_NAME,
                     group,
-                    cfg.display_style_key,
-                    cfg.indicator_display_style,
+                    values.DISPLAY_STYLE_KEY,
+                    values.INDICATOR_DISPLAY_STYLE,
                     timeout=timeout,
                     bool_value=False,
                 )
-                _log(f"set indicator display style: {cfg.indicator_display_style}")
+                _log(
+                    "set indicator display style: "
+                    f"{values.INDICATOR_DISPLAY_STYLE}"
+                )
                 applet_changed = True
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"cannot write {cfg.appletsrc_file_name}: {exc}")
+            warnings.append(f"cannot write {values.APPLETSRC_FILE_NAME}: {exc}")
     changed |= applet_changed
 
     hotkeys_changed = False
-    if cfg.layout_switch_shortcuts:
+    if values.LAYOUT_SWITCH_SHORTCUTS:
         try:
             hotkeys_changed |= _sync_hotkey_file(
-                cfg,
-                cfg.layout_switch_shortcuts,
+                values.LAYOUT_SWITCH_SHORTCUTS,
                 timeout=timeout,
                 force=force,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"cannot write {cfg.shortcuts_file_name}: {exc}")
+            warnings.append(
+                f"cannot write {common_values.SHORTCUTS_FILE_NAME}: {exc}"
+            )
         if not bus_env:
             _log("no desktop session found, layout hotkeys apply at login")
         else:
             hotkey_error, applied = _apply_hotkeys_live(
-                cfg,
-                cfg.layout_switch_shortcuts,
+                values.LAYOUT_SWITCH_SHORTCUTS,
                 script_path=(
                     task_data_dir(ctx.repo_root, ctx.task_name)
-                    / cfg.apply_hotkeys_script_file_name
+                    / values.APPLY_HOTKEYS_SCRIPT_FILE_NAME
                 ),
                 timeout=timeout,
                 home_env=home_env,
@@ -597,7 +620,7 @@ def task(ctx: Context) -> TaskResult:
 
     if layout_changed:
         reload_error = _reload_kwin(
-            cfg, timeout=timeout, home_env=home_env, bus_env=bus_env
+            timeout=timeout, home_env=home_env, bus_env=bus_env
         )
         if reload_error is not None:
             warnings.append(reload_error)
@@ -605,7 +628,7 @@ def task(ctx: Context) -> TaskResult:
 
     if applet_changed:
         try:
-            run_command(list(cfg.panel_restart_command), timeout=timeout)
+            run_command(list(values.PANEL_RESTART_COMMAND), timeout=timeout)
             _log("restarted Plasma panel")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"cannot restart panel: {exc}")
