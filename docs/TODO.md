@@ -593,6 +593,137 @@ it is named with the figure.
     therefore continues with swapfile_service_install, and point 83 keeps its
     risk about the size of that section's test file.
 
+Remainder plan refreshed on 2026-09-17 with the planning procedure, after the
+telegram_setup, scrcpy_setup, swapfile_service_install and kde_keyboard_setup
+sections landed. Every figure below was measured today, and the probe is named
+with the figure.
+
+86. The sections that remain in stage D, with their values, task lines and config
+    reads, counted with grep -cE "^[a-z_]+ *= " over config/<section>.toml,
+    wc -l over the task and grep -cE "cfg\." over the task: rustdesk_setup
+    42 / 733 / 50, zram_service 27 / 679 / 59, sotavpn_setup 24 / 663 / 63,
+    vocalinux_setup 38 / 680 / 66, chrome_setup 49 / 973 / 83, ssh_daemon_setup
+    64 / 659 / 82, dnsproxy_setup 78 / 1051 / 108 and kde_settings
+    1607 / 2244 / 171. The order of point 75 stands unchanged; the small
+differences
+    from the earlier figures come from the counting pattern, which counted the
+    ctx.config reads as well. The coupled sections keep their own figures:
+    three_x_ui_xray_setup 168 values, port_forwarding_setup 48,
+    i2pd_service_setup 35, tor_setup 27, upnp_forwarding_setup 22,
+    yggdrasil_service_setup 60 (measured today on the section table) and
+    system_metrics_setup 117.
+87. The shared module as it stands today:
+    PACKAGE_STATUS_TIMEOUT_SECONDS, PACKAGE_INSTALL_RETRIES,
+    SOURCE_VAULT_PRODUCTION, SOURCE_VAULT_DEFAULT, DESKTOP_USERNAME,
+    DESKTOP_HOME_DIR, LAUNCHER_FILE_MODE, EXECUTABLE_FILE_MODE,
+    MEMINFO_TOTAL_KEY, SHORTCUTS_FILE_NAME, KCONFIG_TRUE_VALUE and
+    KCONFIG_FALSE_VALUE. The pairs still waiting to move, each on the turn of the
+    section that arrives second: compressor "zstd" (zram_service with the
+    migrated zswap_service), dropin_file_mode (ssh_daemon_setup with the migrated
+    ssh_client_setup and with tor_setup), address_file_mode
+    (i2pd_service_setup, tor_setup, yggdrasil_service_setup), private_key_file_mode
+    (ssh_daemon_setup, yggdrasil_service_setup), the NextDNS profile id path and
+    mode (dnsproxy_setup with the migrated nextdns_setup_system_wide),
+    augeas_tools_package_name (ssh_daemon_setup with the migrated
+    ssh_client_setup), and the desktop pair still standing in chrome_setup,
+    kde_settings, sotavpn_setup and vocalinux_setup. A pair that belongs to no
+    section moves on the first turn instead, as the meminfo line name, the KDE
+    shortcuts file name and the boolean spelling did.
+88. The switch rule the kde_keyboard_setup section set: a switch value answers 1
+    or 0, never True or False. Sections with switches still to come are
+    zram_service, sotavpn_setup, vocalinux_setup, chrome_setup, dnsproxy_setup
+    and the coupled ones. The booleans inside the KConfig records of kde_settings
+    are record fields, so they stay the words "true" and "false".
+89. New risk found today, measured with a comparison of the make_config
+    parameters of tests/support.py with the shipped sections: a test harness can
+    carry its own default for a value the section ships, and while the harness
+    fakes that value no test fails. The swapfile_service_install commit proved it
+    with a RAM multiplier of 2 against the shipped 1.6. The same comparison
+    finds sixteen such disagreements today, all of which will surface when their
+    section migrates: kde_settings five (automatic_look_and_feel False against
+    True, an empty kconfig record list against 114 records, a package list
+    without python3-pyqt6, empty hidden places against six entries, and the
+    touchpad method clickfinger against clickareas), yggdrasil_service_setup six
+    (two key maps named nowhere else, a connection wait of 1 against 30, a peer
+    probe of 0.0 against 60, a peer target count of 6 against 11 and an address
+    save budget of 1 against 67), i2pd_service_setup two (two retry delays of 0.0
+    against 2 and 1), tor_setup one (a start check retry delay of 0.0 against 1),
+    port_forwarding_setup one and upnp_forwarding_setup one (the journal
+    identifier). A section whose harness has no parameter for a value reads the
+    test document instead, so its commit changes fewer expectations.
+90. The test document is the second source of test values: base_config() in
+    tests/config_helpers.py (1243 lines) builds it and make_config overrides
+    parts of it. A migrated section leaves its part of the document as dead data,
+    and 140 test files still call make_config in 339 places; both numbers fall
+    with every section and stage G removes what is left.
+91. Stage D remainder, one commit per section, in the order of point 75 and with
+    the pattern of points 69 and 75. Each commit: the values module verified
+    value by value against the TOML, the guard above every read, the helpers
+    reading the module while an engine value stays a parameter, the tests moved
+    off the config with the harness parameters of the section deleted in the same
+    commit (point 89), the section registered in tests/test_values.py and
+    tests/test_values_softness.py, its shared pairs moved with the copy of the
+    already-migrated owner dropped, the plan updated, the full gate, the merge
+    into main and the branch deleted. Expected extra work per section:
+    rustdesk_setup moves no pair, zram_service moves compressor and reads the
+    meminfo key from the shared module, sotavpn_setup and vocalinux_setup drop
+    the desktop pair (vocalinux also drops the shortcuts file name, which the
+    shared module now carries), chrome_setup drops the desktop pair, ssh_daemon
+    _setup moves the dropin mode, the private key mode and the augeas package
+    name, dnsproxy_setup moves the NextDNS profile id pair, and kde_settings is
+    the large one: 1607 values, a list of KConfig records with a named record
+    type, and the boolean spelling read from the shared module.
+92. Stage E, the engine and the task catalog, unchanged except for its opening
+    probe: it lists every engine.toml name with its readers (97 names today, 12
+    of them counted among the task modules), values/tasks.py carries the catalog
+    as a tuple of TaskSpec records (124 keys today, one record per task with
+    name, description, depends and modes), MODES moves out of config/_fields.py,
+    and a check proves that an undeclared catalog stops the run with one plain
+    sentence and a nonzero exit code.
+93. Stage F, the coupled services, with the correction of point 85 in the order:
+    three_x_ui_xray_setup lands first in the cluster, together with
+    public_address_report.py and country_report.py, because its table has five
+    live readers; then port_forwarding_setup (port_forwarding.py,
+    port_forwarding_state.py, network_addresses.py), i2pd_service_setup,
+    tor_setup, upnp_forwarding_setup, yggdrasil_service_setup, and
+    system_metrics_setup last with the five metrics modules and the task, where
+    the config copy, render_config_source, {config_path} and the ten check
+    commands lose the path.
+94. Stage G, removal, with today's sizes: config/ 32 files and 6470 lines,
+    src/pyntara/config/ 33 modules and 3250 lines, tests/config_checks.py 7388
+    lines, tests/config_helpers.py 1243 lines (the test document),
+    tests/test_config_coverage.py 346 lines, the 28 test_config_*.py files, the
+    make_config factory in 140 test files and 339 calls, and the config layer of
+    VALUE_DIRECTORIES. The order inside the stage: the config layer of the
+    document, then the loader and the factory, then the files that existed only
+    for it, with the gate green after each step.
+95. Stage H, the documents, unchanged from point 80. The counts to drive to zero
+    are measured today: docs/guides/project-structure.md names config/ 37 times,
+    docs/spec/config-content.md 5, docs/contracts/architecture.md 6,
+    docs/simplified-architecture.md 5, docs/spec/system-metrics.md 3, README.md
+    once, and fourteen section specs once each.
+96. Stage I, the live proof, unchanged from point 81 and still waiting for the
+    name of the target machine.
+97. Test coverage of the remainder, unchanged from point 82, plus the check this
+    refresh adds to the working method: a section commit deletes the make_config
+    parameters of that section, so a harness value that disagreed with the
+    shipped one cannot survive its migration.
+98. Risks, refreshed. The harness disagreements of point 89 surface as failing
+    tests in the section that migrates, which is their point: they are fixed in
+    the direction of the shipped value. kde_settings carries 1607 values and the
+    largest test file, so it lands last among the plain sections and its record
+    type is decided at its start. yggdrasil_service_setup is the largest coupled
+    section and its two key maps must become named record types.
+    three_x_ui_xray_setup keeps the risk of point 83: 4770 lines of tests. The
+    metrics venv must be refreshed before the units restart, which the metrics
+    commit checks rather than assumes. Stage G deletes about 18700 lines in one
+    stage. Another agent session shares the clone, so every change takes a fresh
+    branch from main and a clean tree before every commit. Stage I needs a
+    machine the user names.
+99. First stage: rustdesk_setup, with 42 values, no shared pair to move and six
+    harness parameters to delete. The plan waits for the user's approval before
+    the first section starts (stage 12 of the planning procedure).
+
 
 
 
