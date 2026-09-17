@@ -1,23 +1,26 @@
 """Task hostname: generate and persist a random proquint hostname.
 
-The hostname is a pronounceable proquint word pair: hostname_random_bytes
-random bytes encoded by the shared proquint_encode helper into five-letter
-words joined by a dash, for example lusab-babad from the shipped count of
-four bytes (docs/guides/project-structure.md, src/pyntara/utils.py). The
-randomness comes from the secrets module, so the name is cryptographically
-strong: the hostname feeds password generation (docs/spec/secrets-model.md)
-and the deterministic NextDNS profile choice (docs/spec/nextdns-profile.md),
-so it must not be guessable.
+The hostname is a pronounceable proquint word pair: the RANDOM_BYTES value
+of pyntara.values.hostname random bytes encoded by the shared
+proquint_encode helper into five-letter words joined by a dash, for
+example lusab-babad from the shipped count of four bytes
+(src/pyntara/utils.py). The randomness comes from the secrets module, so
+the name is cryptographically strong: the hostname feeds password
+generation (docs/spec/secrets-model.md) and the deterministic NextDNS
+profile choice (docs/spec/nextdns-profile.md), so it must not be
+guessable.
 
-The task writes the name into the configured hostname file and applies it
-to the running kernel through the configured set_hostname_command, so
-socket.gethostname() returns the new name for the dependent tasks
+The task writes the name into HOSTNAME_FILE and applies it to the running
+kernel through SET_HOSTNAME_COMMAND, so socket.gethostname() returns the
+new name for the dependent tasks
 (nextdns_setup_system_wide reads the hostname from the kernel). The task
 is idempotent: it skips when the hostname file already carries a name that
 decodes as a proquint (so it was set by this task) and the kernel already
 knows it. Force mode always generates a fresh name, rewrites the file and
-reapplies it. Any failure is returned as an error TaskResult: the runner
-continues with the remaining tasks and never stops here.
+reapplies it. A value the values module does not declare is reported as a
+warning and nothing is changed; any other failure is returned as an error
+TaskResult, so the runner continues with the remaining tasks and never
+stops here.
 """
 
 from __future__ import annotations
@@ -31,6 +34,8 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import proquint_decode, proquint_encode, run_command, trim_whitespace
+from pyntara.values import hostname as hostname_values
+from pyntara.values import missing_value_names
 
 
 def _generate_hostname(random_bytes: int) -> str:
@@ -105,10 +110,21 @@ def task(ctx: Context) -> TaskResult:
     continues with the remaining tasks and never stops here.
     """
 
-    cfg = ctx.config.hostname
+    absent = missing_value_names(hostname_values, hostname_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run:
+        # the names are reported in plain words and the runner carries on
+        # with the remaining tasks.
+        return TaskResult(
+            success=True,
+            message="the hostname values are not declared, nothing was changed",
+            warnings=(
+                "the hostname values are not declared: " + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    hostname_file = Path(cfg.hostname_file)
+    hostname_file = Path(hostname_values.HOSTNAME_FILE)
     warnings: list[str] = []
 
     current_file = _read_hostname_file(hostname_file)
@@ -129,10 +145,10 @@ def task(ctx: Context) -> TaskResult:
         and proquint_decode(current_file) is not None
     )
     if force or not file_is_ours:
-        name = _generate_hostname(cfg.hostname_random_bytes)
+        name = _generate_hostname(hostname_values.RANDOM_BYTES)
         _log(f"generated hostname: {name}")
     else:
-        name = current_file or _generate_hostname(cfg.hostname_random_bytes)
+        name = current_file or _generate_hostname(hostname_values.RANDOM_BYTES)
         _log(f"using existing hostname: {name}")
 
     needs_write = force or not file_is_ours
@@ -156,7 +172,7 @@ def task(ctx: Context) -> TaskResult:
             _log(f"wrote {hostname_file}: {name}")
 
     if needs_apply:
-        error = _apply_hostname(cfg.set_hostname_command, name, timeout)
+        error = _apply_hostname(hostname_values.SET_HOSTNAME_COMMAND, name, timeout)
         if error is None:
             _log(f"applied kernel hostname: {name}")
         else:

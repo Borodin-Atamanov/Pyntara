@@ -18,27 +18,38 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara.tasks import hostname as task_module
+from pyntara.values import hostname as hostname_values
 
 # Four fixed bytes encode to the canonical proquint pair lusab-babad.
 FIXED_BYTES = b"\x7f\x00\x00\x01"
 FIXED_NAME = "lusab-babad"
 
 
-def _ctx(tmp_path: Path, *, force: bool = False, random_bytes: int = 4):
-    """Context with the hostname file rooted in the temporary directory."""
+def _ctx(tmp_path: Path, *, force: bool = False):
+    """Context with the task data rooted in the temporary directory."""
 
     return make_context(
         task_name="hostname",
         install_mode="server",
         force_tasks=frozenset({"hostname"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            hostname_file=tmp_path / "etc" / "hostname",
-            hostname_random_bytes=random_bytes,
-            hostname_set_hostname_command=("hostnamectl", "set-hostname"),
-        ),
+        config=make_config(task_data_root=tmp_path),
     )
+
+
+def _use_hostname_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, random_bytes: int = 4
+) -> None:
+    """Point the task values at the temporary directory.
+
+    The values are module constants, so a test patches the module for its
+    own duration and monkeypatch restores the shipped values afterwards.
+    """
+
+    monkeypatch.setattr(
+        hostname_values, "HOSTNAME_FILE", str(tmp_path / "etc" / "hostname")
+    )
+    monkeypatch.setattr(hostname_values, "RANDOM_BYTES", random_bytes)
 
 
 def _install_fakes(
@@ -72,6 +83,7 @@ def test_first_run_generates_writes_and_applies(
 ) -> None:
     # A missing hostname file generates a fresh name, writes it and
     # applies it to the kernel.
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fakes(monkeypatch, kernel_name="old-host")
     result = task_module.task(ctx)
@@ -82,11 +94,11 @@ def test_first_run_generates_writes_and_applies(
     assert calls == [["hostnamectl", "set-hostname", FIXED_NAME]]
 
 
-def test_random_byte_count_comes_from_the_config(
+def test_random_byte_count_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Another byte count in the config is the count the randomness is
-    # asked for, so a config value the code ignored could not change the
+    # Another byte count in the values module is the count the randomness
+    # is asked for, so a value the code ignored could not change the
     # length of the generated name.
     requested: list[int] = []
 
@@ -100,7 +112,8 @@ def test_random_byte_count_comes_from_the_config(
         "pyntara.tasks.hostname.run_command",
         lambda command, **kwargs: _FakeProc(0, ""),
     )
-    result = task_module.task(_ctx(tmp_path, random_bytes=8))
+    _use_hostname_values(monkeypatch, tmp_path, random_bytes=8)
+    result = task_module.task(_ctx(tmp_path))
     assert result.success is True
     assert requested == [8]
 
@@ -113,6 +126,7 @@ def test_skip_when_already_configured(
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text(f"{FIXED_NAME}\n", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fakes(monkeypatch, kernel_name=FIXED_NAME)
     result = task_module.task(ctx)
@@ -129,6 +143,7 @@ def test_foreign_name_is_replaced(
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text("my-laptop\n", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fakes(monkeypatch, kernel_name="my-laptop")
     result = task_module.task(ctx)
@@ -146,6 +161,7 @@ def test_valid_file_applied_without_regenerating(
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text(f"{FIXED_NAME}\n", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fakes(monkeypatch, kernel_name="old-host")
     result = task_module.task(ctx)
@@ -161,6 +177,7 @@ def test_force_regenerates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text(f"{FIXED_NAME}\n", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path, force=True)
     calls = _install_fakes(monkeypatch, kernel_name=FIXED_NAME)
     result = task_module.task(ctx)
@@ -179,6 +196,7 @@ def test_write_failure_is_a_warning(
     # the mkdir fail, so the write cannot proceed.
     etc = tmp_path / "etc"
     etc.write_text("not a directory", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     calls = _install_fakes(monkeypatch, kernel_name="old-host")
     result = task_module.task(ctx)
@@ -197,9 +215,25 @@ def test_apply_failure_is_a_warning(
     hostname_file = tmp_path / "etc" / "hostname"
     hostname_file.parent.mkdir(parents=True)
     hostname_file.write_text("", encoding="utf-8")
+    _use_hostname_values(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch, kernel_name="old-host", apply_ok=False)
     result = task_module.task(ctx)
     assert result.success is True
     assert any("cannot apply" in warning for warning in result.warnings)
     assert hostname_file.read_text(encoding="utf-8").strip() != ""
+
+
+def test_a_value_that_is_not_declared_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A name the values module does not declare costs the task and never
+    # the run: the task names the missing value in plain words, changes
+    # nothing and reports success with a warning, which is what the entry
+    # point counts at the end of the run.
+    _use_hostname_values(monkeypatch, tmp_path)
+    monkeypatch.delattr(hostname_values, "RANDOM_BYTES")
+    result = task_module.task(_ctx(tmp_path))
+    assert result.success is True
+    assert result.changed is False
+    assert any("RANDOM_BYTES" in warning for warning in result.warnings)

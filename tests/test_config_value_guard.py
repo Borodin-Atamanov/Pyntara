@@ -40,7 +40,12 @@ from pathlib import Path
 import pytest
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "pyntara"
-CONFIG_LAYER = PACKAGE_ROOT / "config"
+
+# The directories where a value may be declared. The config layer holds the
+# values while the migration to the values package runs, and the values
+# package holds them afterwards; a value written anywhere else under the
+# package is a defect the suite refuses.
+VALUE_DIRECTORIES = (PACKAGE_ROOT / "config", PACKAGE_ROOT / "values")
 
 VALUE_CONSTANT_DEFINITION = re.compile(r"^(_?[A-Z][A-Z0-9_]*)\s+=\s+\S")
 COMMAND_ARGV_LITERAL = re.compile(r'\[\s*"([a-z0-9][a-z0-9._+-]*)"\s*,', re.DOTALL)
@@ -193,13 +198,13 @@ DUPLICATED_PATTERNS_ALLOWED: dict[str, int] = {}
 
 
 def _module_paths() -> list[Path]:
-    """Every module of the package except the config layer."""
+    """Every module of the package outside the value directories."""
 
     return sorted(
         path
         for path in PACKAGE_ROOT.rglob("*.py")
         if "__pycache__" not in path.parts
-        and CONFIG_LAYER not in path.parents
+        and not any(directory in path.parents for directory in VALUE_DIRECTORIES)
     )
 
 
@@ -401,7 +406,7 @@ def test_every_rule_finds_its_shape_in_a_module(
         "test_config_value_guard.PACKAGE_ROOT", package
     )
     monkeypatch.setattr(
-        "test_config_value_guard.CONFIG_LAYER", package / "config"
+        "test_config_value_guard.VALUE_DIRECTORIES", (package / "config",)
     )
     constants = _offenders(VALUE_CONSTANT_DEFINITION)
     assert constants["src/pyntara/first.py"] == frozenset(
