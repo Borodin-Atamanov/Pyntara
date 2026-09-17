@@ -17,6 +17,7 @@ from support import make_config, make_context
 
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks import nextdns_setup_system_wide as task_module
+from pyntara.values import common as common_values
 from pyntara.values import nextdns_setup_system_wide as values
 
 VAULT_PASSWORD = "local-vault-password"
@@ -29,13 +30,12 @@ def _point_the_profile_id_file_at_the_temporary_directory(
 ) -> None:
     """Give every test of this file its own profile ID file path.
 
-    The path is a value of the task, so the fixture points it at the
-    temporary directory of the test and the shipped value comes back
-    afterwards.
+    The path is a shared value now, so the fixture points it at the temporary
+    directory of the test and the shipped value comes back afterwards.
     """
 
     monkeypatch.setattr(
-        values,
+        common_values,
         "PROFILE_ID_FILE_PATH",
         tmp_path / "var" / "lib" / "pyntara" / "nextdns_profile_id",
     )
@@ -100,7 +100,7 @@ def test_records_profile_id_file(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    profile_file = values.PROFILE_ID_FILE_PATH
+    profile_file = common_values.PROFILE_ID_FILE_PATH
     assert profile_file.read_text(encoding="utf-8").strip() in PROFILE_IDS
     assert result.message is not None
     assert "NextDNS profile" in result.message
@@ -124,7 +124,7 @@ def test_profile_file_owner_comes_from_the_engine_config(
     ctx = _ctx(tmp_path, owner_uid=7, owner_gid=11)
     result = task_module.task(ctx)
     assert result.success is True
-    profile_file = values.PROFILE_ID_FILE_PATH
+    profile_file = common_values.PROFILE_ID_FILE_PATH
     assert (profile_file, 7, 11) in chowned
 
 
@@ -139,7 +139,7 @@ def test_already_done_when_file_matches(
     # no changes, never a skip.
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
     selected = _selected_profile(tmp_path)
-    profile_file = values.PROFILE_ID_FILE_PATH
+    profile_file = common_values.PROFILE_ID_FILE_PATH
     profile_file.parent.mkdir(parents=True, exist_ok=True)
     profile_file.write_text(f"{selected}\n", encoding="utf-8")
     result = task_module.task(ctx)
@@ -157,7 +157,7 @@ def test_force_rewrites_file(
     ctx = _ctx(tmp_path, force=True)
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")
     selected = _selected_profile(tmp_path)
-    profile_file = values.PROFILE_ID_FILE_PATH
+    profile_file = common_values.PROFILE_ID_FILE_PATH
     profile_file.parent.mkdir(parents=True, exist_ok=True)
     profile_file.write_text(f"{selected}\n", encoding="utf-8")
     result = task_module.task(ctx)
@@ -178,7 +178,7 @@ def test_missing_group_warns_without_writing(
     result = task_module.task(ctx)
     assert result.success is True
     assert any("group" in warning for warning in result.warnings)
-    assert not values.PROFILE_ID_FILE_PATH.exists()
+    assert not common_values.PROFILE_ID_FILE_PATH.exists()
 
 
 def test_empty_group_warns_without_writing(
@@ -194,4 +194,4 @@ def test_empty_group_warns_without_writing(
     result = task_module.task(ctx)
     assert result.success is True
     assert result.warnings
-    assert not values.PROFILE_ID_FILE_PATH.exists()
+    assert not common_values.PROFILE_ID_FILE_PATH.exists()

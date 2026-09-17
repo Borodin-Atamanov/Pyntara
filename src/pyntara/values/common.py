@@ -14,6 +14,7 @@ here by the same rule.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,13 @@ SHORTCUTS_FILE_NAME: str = "kglobalshortcutsrc"
 KCONFIG_TRUE_VALUE: str = "true"
 KCONFIG_FALSE_VALUE: str = "false"
 
+# Path and mode of the file that records the selected NextDNS profile ID. Two
+# sections use it: nextdns_setup_system_wide writes the ID that its vault group
+# selection chose, and dnsproxy_setup reads it to build the encrypted upstream
+# addresses. The file is readable by the reader and not writable by it.
+PROFILE_ID_FILE_PATH: Path = Path("/var/lib/pyntara/nextdns_profile_id")
+PROFILE_ID_FILE_MODE: int = 0o644
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -89,4 +97,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SHORTCUTS_FILE_NAME",
     "KCONFIG_TRUE_VALUE",
     "KCONFIG_FALSE_VALUE",
+    "PROFILE_ID_FILE_PATH",
+    "PROFILE_ID_FILE_MODE",
 )

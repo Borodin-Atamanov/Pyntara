@@ -220,9 +220,24 @@ is the correction.
     harness. The name of a local variable had to move: two helpers built a
     placeholder map called values, which is now the name of the module the task
     reads, so both maps are named placeholders.
-25. ssh_daemon_setup, 64 / 659 / 90
+25. ssh_daemon_setup, 64 / 659 / 90, COUPLED since 2026-09-17 (see point 113):
+    nine live modules read its directives, so it cannot leave the config alone
 26. i2pd_service_setup, 35 / 728 / 93, COUPLED
-27. dnsproxy_setup, 78 / 1051 / 117
+27. dnsproxy_setup, done, 78 / 1051 / 108, and it settled four things. The
+    NextDNS profile id path and mode moved to values/common.py and the copy in
+    the migrated nextdns_setup_system_wide module is gone, so the file has one
+    home; the task reads it through the shared module. The section carried an
+    install_retries value that no code ever read: the value guard refused the
+    declaration, the value is dropped rather than frozen, and its TOML line goes
+    with the config layer in stage G. Three values disagreed with the test
+    document (bootstrap_resolvers held two addresses against the shipped
+    eighteen, service_restart_seconds 2.0 against 7.0 and
+    start_check_retry_delay_seconds 1.0 against 3.0), and the test that counted
+    the generated arguments now computes the count from the values module. One
+    annotation is a deliberate choice: service_template_path is a relative path
+    and is declared as text, not as Path like the old loader typed it, which is
+    the shape the other sections use for a relative path and joins to the clone
+    root the same way.
 28. yggdrasil_service_setup, 74 / 1249 / 147
 29. kde_settings, 1607 / 2244 / 177, and last the engine with the task
     catalog, the most connected section of all, COUPLED
@@ -796,11 +811,11 @@ machine in this turn, and the probe is named with the figure.
 101. The plain sections of stage D that remain, with their values, task lines,
     config reads and test file lines, counted with grep -cE "^[a-z_]+ *= " over
     config/<section>.toml, wc -l over the task, grep -cE "cfg\." over the task
-    and wc -l over the test: ssh_daemon_setup 64 / 659 / 82 / 1050,
-    dnsproxy_setup 78 / 1051 / 108 / 757 and kde_settings
-    1607 / 2244 / 171 / 2420. vocalinux_setup and chrome_setup stood first in
-    that order and landed, as points 23 and 24 record. The read count leaves the
-    order of point 75 unchanged, so the next section is ssh_daemon_setup.
+    and wc -l over the test: kde_settings 1607 / 2244 / 171 / 2420. vocalinux
+    _setup, chrome_setup and dnsproxy_setup stood before it and landed, as points
+    23, 24 and 27 record, and ssh_daemon_setup left the stage for the coupled
+    cluster (point 113). kde_settings is therefore the last plain section, and
+    the read count keeps the order of point 75.
 102. What each remaining plain section carries besides its own values.
     vocalinux_setup drops its own desktop user name and home directory and reads
     SHORTCUTS_FILE_NAME from the shared module, because both already arrived
@@ -850,7 +865,11 @@ machine in this turn, and the probe is named with the figure.
     commits. The sizes measured today on the section tables:
     three_x_ui_xray_setup 162 values, port_forwarding_setup 48,
     i2pd_service_setup 35, tor_setup 27, upnp_forwarding_setup 22,
-    yggdrasil_service_setup 74 and system_metrics_setup 117.
+    yggdrasil_service_setup 74 and system_metrics_setup 117. ssh_daemon_setup
+    joined the cluster on 2026-09-17 with nine live readers (point 113); it has
+    64 values and lands after the three_x_ui cluster, together with the readers
+    of its directives, because those readers compare the port they forward to
+    with the directive the section carries.
 107. Stage G, removal, with the sizes measured today: config/ 32 TOML files and
     6470 lines, src/pyntara/config/ 33 modules and 3250 lines,
     tests/config_checks.py 7388 lines, tests/config_helpers.py 1243 lines,
@@ -882,12 +901,26 @@ machine in this turn, and the probe is named with the figure.
     four readers have moved. Another agent session shares this clone, so every
     change takes a fresh branch from main with a clean tree before and after the
     commit. Stage I needs a machine the user names.
-112. First stage: ssh_daemon_setup, 64 values, 82 reads and a 1050 line test. Its
-    commit moves dropin_file_mode, private_key_file_mode and the augeas package
-    name to the shared module and drops the copies that the migrated
-    ssh_client_setup holds. It carries one harness disagreement, a start check
-    retry delay of 0.0 against the shipped 1, which the commit decides in the
-    direction of the shipped value.
+112. First stage: kde_settings, the last plain section and the largest one, with
+    1607 values, 171 reads and a 2420 line test. Its values carry a list of
+    KConfig records, so the commit decides a named record type (point 58) and
+    reads the boolean spelling from the shared module. Its harness carries five
+    disagreements with the shipped values (point 89), which the commit decides in
+    the direction of the shipped value.
+113. Correction of 2026-09-17, found by the probe that opened the turn of
+    ssh_daemon_setup: nine live modules read its directives through
+    ssh_port_from_directives, so it is a coupled section and leaves stage D for
+    stage F, exactly as three_x_ui_xray_setup did in point 85. The readers,
+    measured with grep over src/pyntara: network_addresses.py,
+    public_address_report.py, yggdrasil_address.py, port_forwarding.py,
+    i2pd_address.py, upnp_forwarding.py, ssh.py (the shared reader of the port),
+    and the two coupled tasks tor_setup and i2pd_service_setup. One reader goes
+    further: port_forwarding.py reads root_ssh_dir and
+    port_forwarding_private_key_file_name from the same section. The reason to
+    wait is the one the plan gives for every coupled section: a values module
+    next to a live TOML copy would be two truths about the port the machine
+    forwards to. The order rule of point 75 is unaffected, and the next plain
+    section is kde_settings.
 
 
 

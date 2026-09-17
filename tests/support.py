@@ -253,12 +253,6 @@ def make_config(
 
     sotavpn_setup_username: str = "i",
     sotavpn_setup_home_dir: str = "/home/i",
-
-    dnsproxy_download_dir: Path = Path("/tmp/dnsproxy"),
-    dnsproxy_binary_path: Path = Path("/usr/local/bin/dnsproxy"),
-    dnsproxy_service_unit_path: Path = Path("/etc/systemd/system/dnsproxy.service"),
-    dnsproxy_profile_id_file_path: Path = Path("/var/lib/pyntara/nextdns_profile_id"),
-    dnsproxy_resolved_conf_dir: Path = Path("/etc/systemd/resolved.conf.d"),
     add_extra_repos_components: tuple[str, ...] = (
         "universe",
         "restricted",
@@ -614,14 +608,6 @@ def make_config(
             wayrecord_desktop_path=ffmpeg_setup_wayrecord_desktop_path,
         ),
 
-        dnsproxy_setup=replace(
-            base.dnsproxy_setup,
-            download_dir=dnsproxy_download_dir,
-            binary_path=dnsproxy_binary_path,
-            service_unit_path=dnsproxy_service_unit_path,
-            resolved_conf_dir=dnsproxy_resolved_conf_dir,
-            profile_id_file_path=dnsproxy_profile_id_file_path,
-        ),
         add_extra_repos=replace(
             base.add_extra_repos,
             components=add_extra_repos_components,

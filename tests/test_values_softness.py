@@ -25,6 +25,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("add_extra_repos", "add_extra_repos"),
     ("chrome_setup", "chrome_setup"),
     ("cli_tools", "cli_tools"),
+    ("dnsproxy_setup", "dnsproxy_setup"),
     ("ffmpeg_setup", "ffmpeg_setup"),
     ("hostname", "hostname"),
     ("imagemagick_setup", "imagemagick_setup"),

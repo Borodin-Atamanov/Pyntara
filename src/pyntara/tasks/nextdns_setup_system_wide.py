@@ -49,11 +49,11 @@ def _write_profile_id_file(
     task fails loudly instead of silently losing the telemetry source.
     """
 
-    path = values.PROFILE_ID_FILE_PATH
+    path = common_values.PROFILE_ID_FILE_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{profile_id}\n", encoding="utf-8")
-        os.chmod(path, values.PROFILE_ID_FILE_MODE)
+        os.chmod(path, common_values.PROFILE_ID_FILE_MODE)
         apply_owner(path, owner_uid, owner_gid)
         return True
     except OSError as exc:
@@ -144,7 +144,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        existing = values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
+        existing = common_values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         existing = ""
     if existing == profile_id and ctx.task_name not in ctx.force_tasks:

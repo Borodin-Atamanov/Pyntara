@@ -1,14 +1,43 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
 from support import FakeProc, make_config, make_context
 
 from pyntara.tasks import dnsproxy_setup as task_module
+from pyntara.values import common as common_values
+from pyntara.values import dnsproxy_setup as values
 
 PASSWORD = "password"
+
+
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test its own writable tree for the section values.
+
+    Every path the task writes is a value of the section, plus the shared path
+    of the NextDNS profile id file. The fixture points them at the temporary
+    directory of the test and the shipped values come back afterwards, so no
+    test writes into /etc, /usr or /var.
+    """
+
+    monkeypatch.setattr(
+        values, "SERVICE_UNIT_PATH", tmp_path / "dnsproxy.service"
+    )
+    monkeypatch.setattr(values, "BINARY_PATH", tmp_path / "dnsproxy")
+    monkeypatch.setattr(
+        values, "RESOLVED_CONF_DIR", tmp_path / "resolved.conf.d"
+    )
+    monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "download")
+    monkeypatch.setattr(
+        common_values,
+        "PROFILE_ID_FILE_PATH",
+        tmp_path / "nextdns_profile_id",
+    )
 
 ROUTED_STATUS = (
     "Global\n"
@@ -34,7 +63,7 @@ def test_discover_dns_servers_combines_and_sorts_both_command_outputs(monkeypatc
         return outputs[command[0]]
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    result = task_module.discover_dns_servers(make_config().dnsproxy_setup, 3.0)
+    result = task_module.discover_dns_servers(3.0)
     assert result.ipv4 == ("192.168.1.1",)
     assert result.ipv6 == ("2001:db8::1", "2001:db8::2")
     assert [command[0] for command in calls] == ["resolvectl", "nmcli"]
@@ -47,7 +76,7 @@ def test_discover_dns_servers_keeps_one_source_when_other_fails(monkeypatch: Any
         return FakeProc(0, "IP4.DNS[1]:192.168.1.1\n")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    result = task_module.discover_dns_servers(make_config().dnsproxy_setup, 3.0)
+    result = task_module.discover_dns_servers(3.0)
     assert result.ipv4 == ("192.168.1.1",)
     assert result.ipv6 == ()
     assert result.errors == ("resolvectl exited with 1",)
@@ -56,19 +85,20 @@ def test_discover_dns_servers_keeps_one_source_when_other_fails(monkeypatch: Any
 def test_the_program_name_in_a_diagnostic_comes_from_the_command(
     monkeypatch: Any,
 ) -> None:
-    # A diagnostic names the program the configured command starts with, so
-    # the name can never disagree with the command and no program name
-    # written in the code reaches the log.
+    # A diagnostic names the program the command starts with, so the name can
+    # never disagree with the command and no program name written in the code
+    # reaches the log.
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         return FakeProc(1, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    cfg = replace(
-        make_config().dnsproxy_setup,
-        resolvectl_dns_command=("myresolvectl", "--status"),
-        nmcli_dns_command=("mynmcli", "device", "show"),
+    monkeypatch.setattr(
+        values, "RESOLVECTL_DNS_COMMAND", ("myresolvectl", "--status")
     )
-    result = task_module.discover_dns_servers(cfg, 3.0)
+    monkeypatch.setattr(
+        values, "NMCLI_DNS_COMMAND", ("mynmcli", "device", "show")
+    )
+    result = task_module.discover_dns_servers(3.0)
     assert result.errors == (
         "myresolvectl exited with 1",
         "mynmcli exited with 1",
@@ -76,9 +106,8 @@ def test_the_program_name_in_a_diagnostic_comes_from_the_command(
 
 
 def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> None:
-    config = make_config()
     command = task_module._command(
-        config.dnsproxy_setup, "39284e", task_module.DiscoveredDnsServers((), (), ())
+        "39284e", task_module.DiscoveredDnsServers((), (), ())
     )
     assert "--listen=0.0.0.0" in command
     assert "--listen=::" in command
@@ -102,30 +131,29 @@ def test_command_contains_all_primary_upstreams_cache_fallback_and_logging() -> 
     assert not any(arg.startswith("--output=") for arg in command)
 
 
-def test_verify_system_error_excerpt_length_comes_from_the_config(
+def test_verify_system_error_excerpt_length_comes_from_the_values(
     monkeypatch: Any,
 ) -> None:
-    # The failure text is cut to the configured length, so a longer or
-    # shorter excerpt is answered in the config and not in the code.
-    cfg = make_config().dnsproxy_setup
+    # The failure text is cut to the value of the module, so a longer or
+    # shorter excerpt is answered there and not in the code.
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         return FakeProc(1, "x" * 1000)
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
+    monkeypatch.setattr(values, "VERIFICATION_ERROR_EXCERPT_LENGTH", 7)
     error, _ = task_module._verify_system(
-        replace(cfg, verification_error_excerpt_length=7),
         task_module.DiscoveredDnsServers((), (), ()),
         3.0,
     )
     assert error == "system DNS verification failed: " + "x" * 7
 
 
-def test_installed_version_command_comes_from_the_config(
+def test_installed_version_command_comes_from_the_values(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
-    # The version query is a config value: another argv is exactly what the
-    # helper runs, with the path of the binary filling its {binary} slot.
+    # The version query is a value of the section: another argv is exactly what
+    # the helper runs, with the path of the binary filling its {binary} slot.
     calls: list[list[str]] = []
     binary = tmp_path / "dnsproxy"
 
@@ -134,64 +162,68 @@ def test_installed_version_command_comes_from_the_config(
         return FakeProc(0, "dnsproxy v0.84.1")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    cfg = make_config().dnsproxy_setup
-    replaced = replace(
-        cfg, installed_version_command=("myproxy", "-version", "{binary}")
+    monkeypatch.setattr(
+        values,
+        "INSTALLED_VERSION_COMMAND",
+        ("myproxy", "-version", "{binary}"),
     )
-    assert task_module._installed_version(replaced, binary, 3.0) == "0.84.1"
+    assert task_module._installed_version(binary, 3.0) == "0.84.1"
     assert calls == [["myproxy", "-version", str(binary)]]
 
-    assert task_module._installed_version(cfg, binary, 3.0) == "0.84.1"
+    monkeypatch.setattr(values, "INSTALLED_VERSION_COMMAND", ("{binary}", "--version"))
+    assert task_module._installed_version(binary, 3.0) == "0.84.1"
     assert calls[-1] == [str(binary), "--version"]
 
 
-def test_daemon_flags_come_from_the_config() -> None:
-    # The flags the daemon starts with are config values: another template
-    # per flag is exactly what the command carries, and a renamed flag
+def test_daemon_flags_come_from_the_values(
+    monkeypatch: Any,
+) -> None:
+    # The flags the daemon starts with are values of the section: another
+    # template per flag is exactly what the command carries, and a renamed flag
     # never appears.
-    cfg = make_config().dnsproxy_setup
-    marked = replace(
-        cfg,
-        cache_enabled=True,
-        daemon_flag_templates={
-            **cfg.daemon_flag_templates,
+    monkeypatch.setattr(
+        values,
+        "DAEMON_FLAG_TEMPLATES",
+        {
+            **values.DAEMON_FLAG_TEMPLATES,
             "port": "--listener={value}",
             "cache": "--enable-cache",
         },
     )
     command = task_module._command(
-        marked, "abc123", task_module.DiscoveredDnsServers((), (), ())
+        "abc123", task_module.DiscoveredDnsServers((), (), ())
     )
-    assert command[1] == f"--listener={marked.listen_port}"
+    assert command[1] == f"--listener={values.LISTEN_PORT}"
     assert "--enable-cache" in command
     assert not any(part.startswith("--port=") for part in command)
 
 
-def test_service_log_excerpt_length_comes_from_the_config(
+def test_service_log_excerpt_length_comes_from_the_values(
     monkeypatch: Any,
 ) -> None:
-    # The diagnosis keeps the trailing characters the config asks for.
-    cfg = make_config().dnsproxy_setup
+    # The diagnosis keeps the trailing characters the module asks for.
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         return FakeProc(0, "y" * 1000)
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    tail = task_module._service_log(
-        replace(cfg, service_log_excerpt_length=11), 3.0
-    )
+    monkeypatch.setattr(values, "SERVICE_LOG_EXCERPT_LENGTH", 11)
+    tail = task_module._service_log(3.0)
     assert tail == "y" * 11
 
 
-def test_bootstrap_forms_come_from_the_config() -> None:
+def test_bootstrap_forms_come_from_the_values(
+    monkeypatch: Any,
+) -> None:
     # The proof of the value: the protocol forms of every address are the
-    # templates of the table, so a pool that needs another form names it
-    # in the config without a code change.
-    cfg = replace(
-        make_config().dnsproxy_setup,
-        bootstrap_form_templates=("{host}", "tls://{host}:8853"),
+    # templates of the module, so a pool that needs another form names it
+    # there without a code change.
+    monkeypatch.setattr(
+        values,
+        "BOOTSTRAP_FORM_TEMPLATES",
+        ("{host}", "tls://{host}:8853"),
     )
-    assert task_module._protocol_forms(cfg, ("1.1.1.1", "2001:db8::1")) == (
+    assert task_module._protocol_forms(("1.1.1.1", "2001:db8::1")) == (
         "1.1.1.1",
         "tls://1.1.1.1:8853",
         "[2001:db8::1]",
@@ -200,9 +232,8 @@ def test_bootstrap_forms_come_from_the_config() -> None:
 
 
 def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
-    config = make_config()
     command = task_module._command(
-        config.dnsproxy_setup, "39284e", task_module.DiscoveredDnsServers((), (), ())
+        "39284e", task_module.DiscoveredDnsServers((), (), ())
     )
     for form in (
         "--bootstrap=1.1.1.1",
@@ -228,11 +259,10 @@ def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
 
 
 def test_command_appends_provider_dns_plain_forms_to_fallback_end() -> None:
-    config = make_config()
     discovered = task_module.DiscoveredDnsServers(
         ("192.168.1.1",), ("2001:db8::1",), ()
     )
-    command = task_module._command(config.dnsproxy_setup, "39284e", discovered)
+    command = task_module._command("39284e", discovered)
     fallback_indices = [
         index for index, arg in enumerate(command) if arg.startswith("--fallback=")
     ]
@@ -244,11 +274,10 @@ def test_command_appends_provider_dns_plain_forms_to_fallback_end() -> None:
 
 
 def test_command_appends_provider_dns_plain_forms_to_bootstrap_end() -> None:
-    config = make_config()
     discovered = task_module.DiscoveredDnsServers(
         ("192.168.1.1",), ("2001:db8::1",), ()
     )
-    command = task_module._command(config.dnsproxy_setup, "39284e", discovered)
+    command = task_module._command("39284e", discovered)
     bootstrap_indices = [
         index for index, arg in enumerate(command) if arg.startswith("--bootstrap=")
     ]
@@ -258,21 +287,27 @@ def test_command_appends_provider_dns_plain_forms_to_bootstrap_end() -> None:
 
 
 def test_command_with_empty_discovery_keeps_configured_pool_only() -> None:
-    config = make_config()
     command = task_module._command(
-        config.dnsproxy_setup,
         "39284e",
         task_module.DiscoveredDnsServers((), (), ()),
     )
-    assert sum(arg.startswith("--fallback=") for arg in command) == 8
-    assert sum(arg.startswith("--bootstrap=") for arg in command) == 8
+    # An empty discovery adds nothing, so both groups carry exactly the
+    # configured pool and no provider address.
+    expected_per_group = len(values.BOOTSTRAP_RESOLVERS) * len(
+        values.BOOTSTRAP_FORM_TEMPLATES
+    )
+    assert sum(arg.startswith("--fallback=") for arg in command) == expected_per_group
+    assert (
+        sum(arg.startswith("--bootstrap=") for arg in command)
+        == expected_per_group
+    )
 
 
 def _run_task(
     tmp_path: Path,
     monkeypatch: Any,
     *,
-    append_provider_dns: bool = True,
+    append_provider_dns: int = 1,
     provider_dns: bool = False,
     probe: bool = True,
     occupied_port: bool = False,
@@ -282,33 +317,21 @@ def _run_task(
     nmcli_missing: bool = False,
     resolvectl_status_output: str = "",
     device_status: str = "",
-) -> tuple[Any, Path, list[list[str]], Any]:
+) -> tuple[Any, Path, list[list[str]]]:
     '''Run the dnsproxy task with a uniform command mock and return the
-    result, the rendered service path, the recorded commands and the
-    built config. provider_dns makes the discovery commands return a
-    provider IPv4 and IPv6 resolver pair. occupied_port makes the port
-    scan report one listener on the first pass, stubborn_port keeps the
-    listener after the kill, routing_leftover keeps the provider address
-    in the post-cutover per-link state, and nmcli_active supplies the
-    active connection listing. nmcli_missing makes the nmcli check
-    command raise FileNotFoundError, and resolvectl_status_output
-    overrides the resolvectl status listing; an empty value uses a
-    listing that routes through dnsproxy. probe controls the pre-cutover
-    dnsproxy answer check.'''
+    result, the rendered service path and the recorded commands. provider_dns
+    makes the discovery commands return a provider IPv4 and IPv6 resolver
+    pair. occupied_port makes the port scan report one listener on the first
+    pass, stubborn_port keeps the listener after the kill, routing_leftover
+    keeps the provider address in the post-cutover per-link state, and
+    nmcli_active supplies the active connection listing. nmcli_missing makes
+    the nmcli check command raise FileNotFoundError, and
+    resolvectl_status_output overrides the resolvectl status listing; an
+    empty value uses a listing that routes through dnsproxy. probe controls
+    the pre-cutover dnsproxy answer check.'''
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config(
-        task_data_root=tmp_path,
-        dnsproxy_service_unit_path=service_path,
-        dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
-        dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
-    )
-    config = replace(
-        config,
-        dnsproxy_setup=replace(
-            config.dnsproxy_setup, append_provider_dns=append_provider_dns
-        ),
-    )
+    config = make_config(task_data_root=tmp_path)
+    monkeypatch.setattr(values, "APPEND_PROVIDER_DNS", append_provider_dns)
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
     context = make_context(
         vault_password=PASSWORD, config=config, repo_root=Path.cwd()
@@ -337,10 +360,8 @@ def _run_task(
     monkeypatch.setattr(task_module, "_dns_probe_answers", lambda *_: probe)
     calls: list[list[str]] = []
     state = {"ss": 0, "routedns": 0}
-    active_list_command = list(config.dnsproxy_setup.nmcli_active_list_command)
-    device_status_command = list(
-        config.dnsproxy_setup.nmcli_device_status_command
-    )
+    active_list_command = list(values.NMCLI_ACTIVE_LIST_COMMAND)
+    device_status_command = list(values.NMCLI_DEVICE_STATUS_COMMAND)
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         command = list(command)
@@ -360,7 +381,7 @@ def _run_task(
             return FakeProc(0, device_status)
         if command == active_list_command:
             return FakeProc(0, nmcli_active)
-        if command == list(config.dnsproxy_setup.resolvectl_status_command):
+        if command == list(values.RESOLVECTL_STATUS_COMMAND):
             return FakeProc(0, resolvectl_status_output or ROUTED_STATUS)
         if command[:4] == ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns"]:
             return FakeProc(0, "ipv4.ignore-auto-dns:no\nipv6.ignore-auto-dns:no\n")
@@ -375,26 +396,27 @@ def _run_task(
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
     result = task_module.task(context)
-    return result, service_path, calls, config
+    return result, service_path, calls
 
 
 def test_task_writes_root_service_and_resolver_configuration(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, service_path, calls, config = _run_task(tmp_path, monkeypatch)
+    result, service_path, calls = _run_task(tmp_path, monkeypatch)
     assert result.success is True
     assert service_path.read_text(encoding="utf-8").startswith("[Unit]")
-    assert all(directive in (
-        config.dnsproxy_setup.resolved_conf_dir
-        / config.dnsproxy_setup.resolved_dropin_file_name
-    ).read_text(encoding="utf-8") for directive in config.dnsproxy_setup.resolved_dns_directives)
+    dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
+    assert all(
+        directive in dropin.read_text(encoding="utf-8")
+        for directive in values.RESOLVED_DNS_DIRECTIVES
+    )
     assert any(command[:2] == ["systemctl", "enable"] for command in calls)
 
 
 def test_task_renders_log_rate_limit_and_no_file_output_into_the_unit(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, service_path, _, _ = _run_task(tmp_path, monkeypatch)
+    result, service_path, _ = _run_task(tmp_path, monkeypatch)
     assert result.success is True
     unit = service_path.read_text(encoding="utf-8")
     assert "LogRateLimitIntervalSec=3777" in unit
@@ -405,7 +427,7 @@ def test_task_renders_log_rate_limit_and_no_file_output_into_the_unit(
 def test_task_appends_discovered_provider_dns_to_service_unit(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, service_path, _, _ = _run_task(tmp_path, monkeypatch, provider_dns=True)
+    result, service_path, _ = _run_task(tmp_path, monkeypatch, provider_dns=True)
     assert result.success is True
     unit = service_path.read_text(encoding="utf-8")
     assert "--fallback=192.168.1.1" in unit
@@ -418,8 +440,8 @@ def test_task_appends_discovered_provider_dns_to_service_unit(
 def test_task_skips_provider_dns_discovery_when_disabled(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, service_path, calls, _ = _run_task(
-        tmp_path, monkeypatch, append_provider_dns=False
+    result, service_path, calls = _run_task(
+        tmp_path, monkeypatch, append_provider_dns=0
     )
     assert result.success is True
     assert not any(command == ["resolvectl", "dns"] for command in calls)
@@ -432,13 +454,7 @@ def test_task_fails_early_without_the_nextdns_profile_file(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config(
-        task_data_root=tmp_path,
-        dnsproxy_service_unit_path=service_path,
-        dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
-        dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
-    )
+    config = make_config(task_data_root=tmp_path)
     context = make_context(
         vault_password=PASSWORD, config=config, repo_root=Path.cwd()
     )
@@ -453,7 +469,7 @@ def test_task_fails_early_without_the_nextdns_profile_file(
 def test_task_kills_the_process_listening_on_the_port(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, calls, _ = _run_task(tmp_path, monkeypatch, occupied_port=True)
+    result, _, calls = _run_task(tmp_path, monkeypatch, occupied_port=True)
     assert result.success is True
     assert ["kill", "12345"] in calls
     assert any(command[:2] == ["systemctl", "start"] for command in calls)
@@ -462,31 +478,25 @@ def test_task_kills_the_process_listening_on_the_port(
 def test_task_warns_when_the_port_stays_occupied(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, calls, config = _run_task(tmp_path, monkeypatch, stubborn_port=True)
+    result, _, calls = _run_task(tmp_path, monkeypatch, stubborn_port=True)
     assert result.success is True
     assert any("still occupied" in warning for warning in result.warnings)
     assert ["kill", "12345"] in calls
     assert not any(command[:2] == ["systemctl", "start"] for command in calls)
-    dropin = (
-        config.dnsproxy_setup.resolved_conf_dir
-        / config.dnsproxy_setup.resolved_dropin_file_name
-    )
+    dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
     assert not dropin.exists()
 
 
 def test_task_does_not_change_the_resolver_when_the_probe_fails(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, calls, config = _run_task(tmp_path, monkeypatch, probe=False)
+    result, _, calls = _run_task(tmp_path, monkeypatch, probe=False)
     assert result.success is True
     assert any(
         "does not answer direct DNS" in warning for warning in result.warnings
     )
     assert ["systemctl", "stop", "dnsproxy.service"] in calls
-    dropin = (
-        config.dnsproxy_setup.resolved_conf_dir
-        / config.dnsproxy_setup.resolved_dropin_file_name
-    )
+    dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
     assert not dropin.exists()
 
 
@@ -504,7 +514,7 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
         "ygg:tun\n"
         "lo:loopback\n"
     )
-    result, _, calls, _ = _run_task(
+    result, _, calls = _run_task(
         tmp_path, monkeypatch, nmcli_active=active, device_status=status
     )
     assert result.success is True
@@ -534,7 +544,7 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
 def test_task_succeeds_when_nmcli_is_missing(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, calls, _ = _run_task(tmp_path, monkeypatch, nmcli_missing=True)
+    result, _, calls = _run_task(tmp_path, monkeypatch, nmcli_missing=True)
     assert result.success is True
     nmcli_modifies = [
         command for command in calls
@@ -551,7 +561,7 @@ def test_task_succeeds_when_nmcli_is_missing(
 def test_task_succeeds_with_warning_when_nm_missing_and_resolved_routes_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, _, _ = _run_task(
+    result, _, _ = _run_task(
         tmp_path,
         monkeypatch,
         provider_dns=True,
@@ -573,7 +583,7 @@ def test_task_fails_when_nm_missing_and_global_dns_does_not_point_at_dnsproxy(
         "       DNS Servers: 195.179.224.53 209.126.15.53\n"
         "        DNS Domain: ~.\n"
     )
-    result, _, _, _ = _run_task(
+    result, _, _ = _run_task(
         tmp_path,
         monkeypatch,
         provider_dns=True,
@@ -595,7 +605,7 @@ def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
         "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
         "        DNS Domain: ~.\n"
     )
-    result, _, _, _ = _run_task(
+    result, _, _ = _run_task(
         tmp_path,
         monkeypatch,
         provider_dns=True,
@@ -612,16 +622,13 @@ def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
 def test_task_succeeds_with_warning_when_per_link_provider_dns_survives_but_routing_goes_through_dnsproxy(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    result, _, calls, config = _run_task(
+    result, _, calls = _run_task(
         tmp_path, monkeypatch, provider_dns=True, routing_leftover=True
     )
     assert result.success is True
     assert any("per-link DNS" in warning for warning in result.warnings)
     assert "routes queries through dnsproxy" in " ".join(result.warnings)
-    dropin = (
-        config.dnsproxy_setup.resolved_conf_dir
-        / config.dnsproxy_setup.resolved_dropin_file_name
-    )
+    dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
     assert dropin.exists()
     assert not any(
         command[:3] == ["systemctl", "stop", "dnsproxy.service"]
@@ -637,7 +644,7 @@ def test_per_link_dns_addresses_matches_whole_tokens_only() -> None:
         "Link 3 (wlx1):\n"
     )
     addresses = task_module._per_link_dns_addresses(
-        output, make_config().dnsproxy_setup.resolved_status_link_prefix
+        output, values.RESOLVED_STATUS_LINK_PREFIX
     )
     assert "2800:810:100:1:200:115:192:29" in addresses
     assert "2800:810:100::15" in addresses
@@ -645,12 +652,11 @@ def test_per_link_dns_addresses_matches_whole_tokens_only() -> None:
     assert "810:100::15" not in addresses
 
 
-def test_the_resolvectl_vocabulary_comes_from_the_config() -> None:
+def test_the_resolvectl_vocabulary_comes_from_the_values() -> None:
     # The marker of the global block, the prefix of a per-link line and the
     # labels of the DNS server and routing domain lines belong to the output
-    # of the tool and are config values: another set of them parses another
-    # output, while the shipped one parses nothing of it.
-    setup = make_config().dnsproxy_setup
+    # of the tool and are values of the section: another set of them parses
+    # another output, while the shipped one parses nothing of it.
     status_lines = [
         "GLOBAL-BLOCK",
         "  mode-marker",
@@ -664,8 +670,8 @@ def test_the_resolvectl_vocabulary_comes_from_the_config() -> None:
     assert (
         task_module._global_block_lines(
             status_lines,
-            setup.resolved_status_global_marker,
-            setup.resolved_status_link_prefix,
+            values.RESOLVED_STATUS_GLOBAL_MARKER,
+            values.RESOLVED_STATUS_LINK_PREFIX,
         )
         == []
     )
@@ -674,7 +680,8 @@ def test_the_resolvectl_vocabulary_comes_from_the_config() -> None:
     ) == {"10.0.0.1"}
     assert (
         task_module._per_link_dns_addresses(
-            "\n".join(status_lines) + "\n", setup.resolved_status_link_prefix
+            "\n".join(status_lines) + "\n",
+            values.RESOLVED_STATUS_LINK_PREFIX,
         )
         == set()
     )
@@ -690,7 +697,7 @@ def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
         "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
         "        DNS Domain: local\n"
     )
-    result, _, _, _ = _run_task(
+    result, _, _ = _run_task(
         tmp_path, monkeypatch, resolvectl_status_output=status
     )
     assert result.success is True
@@ -698,10 +705,9 @@ def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
 
 
 def test_release_asset_selection_rejects_unsupported_architecture() -> None:
-    settings = make_config().dnsproxy_setup
     try:
         task_module._asset_for_architecture(
-            settings, {"tag_name": "v0.84.1", "assets": []}, "riscv64"
+            {"tag_name": "v0.84.1", "assets": []}, "riscv64"
         )
     except RuntimeError as error:
         assert "unsupported" in str(error)
@@ -709,22 +715,25 @@ def test_release_asset_selection_rejects_unsupported_architecture() -> None:
         raise AssertionError("unsupported architecture was accepted")
 
 
-def test_asset_name_and_architecture_table_come_from_the_config() -> None:
-    # Another asset template and another architecture table in the config
-    # are the asset the task looks for, so the naming scheme of the release
-    # is a value and not a judgement of the code.
-    settings = replace(
-        make_config().dnsproxy_setup,
-        asset_name_template="dnsproxy-{asset_arch}-{release_tag}.bin",
-        asset_architecture_names={"riscv64": "riscv64"},
+def test_asset_name_and_architecture_table_come_from_the_values(
+    monkeypatch: Any,
+) -> None:
+    # Another asset template and another architecture table in the module are
+    # the asset the task looks for, so the naming scheme of the release is a
+    # value and not a judgement of the code.
+    monkeypatch.setattr(
+        values,
+        "ASSET_NAME_TEMPLATE",
+        "dnsproxy-{asset_arch}-{release_tag}.bin",
     )
+    monkeypatch.setattr(values, "ASSET_ARCHITECTURE_NAMES", {"riscv64": "riscv64"})
     payload: dict[str, object] = {
         "tag_name": "v9.9.9",
         "assets": [
             {"name": "dnsproxy-riscv64-v9.9.9.bin", "browser_download_url": "u"}
         ],
     }
-    name, url = task_module._asset_for_architecture(settings, payload, "riscv64")
+    name, url = task_module._asset_for_architecture(payload, "riscv64")
     assert name == "dnsproxy-riscv64-v9.9.9.bin"
     assert url == "u"
 
@@ -735,13 +744,7 @@ def test_release_and_download_curls_carry_configured_flags(
     # The release query runs through the shared release reader, which takes
     # the endpoint and the curl flags from the engine config; the flags of
     # the query itself are asserted in tests/test_github_release.py.
-    config = make_config(
-        task_data_root=tmp_path,
-        dnsproxy_download_dir=tmp_path / "download",
-        dnsproxy_binary_path=tmp_path / "dnsproxy",
-        dnsproxy_profile_id_file_path=tmp_path / "nextdns_profile_id",
-        dnsproxy_resolved_conf_dir=tmp_path / "resolved.conf.d",
-    )
+    config = make_config(task_data_root=tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:

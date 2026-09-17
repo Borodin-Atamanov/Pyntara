@@ -3,24 +3,14 @@
 The task picks one NextDNS profile per machine from the vault group named here,
 deterministically from the hostname, and records the profile ID in the file
 below. The system-wide resolver is owned by the dnsproxy_setup task, which
-reads the recorded ID (docs/spec/nextdns-profile.md).
+reads the recorded ID (docs/spec/nextdns-profile.md); the path and the mode of
+that file are shared with it and live in the shared module.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 # Title of the vault subgroup that carries the NextDNS profile accounts.
 VAULT_GROUP_TITLE: str = "NextDNS"
-
-# Path of the file that records the selected NextDNS profile ID. dnsproxy_setup
-# and the System Metrics collector read it (docs/spec/system-metrics.md,
-# section Collected data).
-PROFILE_ID_FILE_PATH: Path = Path("/var/lib/pyntara/nextdns_profile_id")
-
-# File mode of the recorded profile ID file: readable by the collector that
-# reads the ID, not writable by it.
-PROFILE_ID_FILE_MODE: int = 0o644
 
 # Syslog priority of a serious failure, 0 to 7.
 ERROR_PRIORITY: int = 3
@@ -30,7 +20,5 @@ ERROR_PRIORITY: int = 3
 # instead of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "VAULT_GROUP_TITLE",
-    "PROFILE_ID_FILE_PATH",
-    "PROFILE_ID_FILE_MODE",
     "ERROR_PRIORITY",
 )
