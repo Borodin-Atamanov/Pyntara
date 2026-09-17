@@ -52,41 +52,45 @@ The pattern, set by the hostname pilot and now the only one in the tree:
 9. A section is one commit: the gate of scripts/check_gates.sh green, then a
    fast-forward merge into main and a push.
 
-Sections, one commit each. The number names the section and does not change, so
-reports stay unambiguous; git log holds the commit of each finished section:
+Sections, one commit each. Order rule set 2026-09-17: the smallest section
+first, so every turn lands one whole section and main stays green; the work is
+proportional to the number of value reads. Sizes were measured on 2026-09-17 as
+values in the TOML section, lines of the task module, value reads in it. The
+numbers below are the current order, not stable names: a section is named by its
+module, and git log holds the commit of each finished one.
 
-1. hostname, done, commit 4b9076b
-2. imagemagick_setup, done, commit 6cbeacc
-3. ffmpeg_setup, done, commit 736bcab
-4. playwright_setup, done, commit 99b3e8f
-5. rustdesk_setup; deferred on purpose: 13 helpers take the config record, about
-   60 value reads and a 705 line test, so it needs a turn of its own. It is
-   migrated after the small sections of the batch, because a half-migrated
-   section would leave the clone worse than it was.
-6. vocalinux_setup
-7. cli_tools, done
-8. add_extra_repos
-9. telegram_setup
-10. chrome_setup
-11. kde_keyboard_setup
-12. zram_service
-13. zswap_service
-14. swapfile_service_install
-15. nextdns_setup_system_wide
-16. tor_setup
-17. i2pd_service_setup
-18. yggdrasil_service_setup
-19. ssh_client_setup
-20. ssh_daemon_setup
-21. port_forwarding_setup
-22. upnp_forwarding_setup
-23. vault_structure, local_vault_setup and the vault entry titles the sections cross-check
-24. system_metrics_setup, the largest section: the collector, the ingest, the sender, the deployment and the two telemetry pdf values
-25. three_x_ui_xray_setup
-26. sotavpn_setup
-27. kde_settings
-28. dnsproxy_setup
-29. engine, the most connected section, and the task catalog of tasks
+1. cli_tools, done, 4 / 120 / 3
+2. imagemagick_setup, done, 6 / 142 / 1
+3. playwright_setup, done, 12 / 216 / 1
+4. ffmpeg_setup, done, 11 / 224 / 1
+5. hostname, done, 3 / 189 / 1
+6. add_extra_repos, done, 13 / 411 / 17
+7. nextdns_setup_system_wide, 4 / 152 / 10
+8. port_forwarding_setup, 48 / 292 / 11
+9. system_metrics_setup, 117 / 759 / 18, the largest by values: the collector,
+   the ingest, the sender, the deployment and the two telemetry pdf values
+10. zswap_service, 12 / 253 / 19
+11. ssh_client_setup, 37 / 185 / 26
+12. three_x_ui_xray_setup, 162 / 535 / 32
+13. local_vault_setup and vault_structure, 11 / 467 / 33
+14. upnp_forwarding_setup, 22 / 293 / 35
+15. telegram_setup, 20 / 449 / 37
+16. scrcpy_setup, 29 / 725 / 48, added to this list 2026-09-17: the section and
+    the module were added to the repository after the list was written
+17. swapfile_service_install, 17 / 380 / 51
+18. kde_keyboard_setup, 41 / 631 / 52
+19. rustdesk_setup, 42 / 733 / 61
+20. zram_service, 27 / 679 / 66
+21. sotavpn_setup, 24 / 659 / 67
+22. tor_setup, 27 / 503 / 68
+23. vocalinux_setup, 38 / 680 / 71
+24. chrome_setup, 49 / 973 / 87
+25. ssh_daemon_setup, 64 / 659 / 90
+26. i2pd_service_setup, 35 / 728 / 93
+27. dnsproxy_setup, 78 / 1051 / 117
+28. yggdrasil_service_setup, 74 / 1249 / 147
+29. kde_settings, 1607 / 2244 / 177, and last the engine with the task
+    catalog, the most connected section of all
 
 Stages after the sections:
 

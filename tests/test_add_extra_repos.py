@@ -1,24 +1,24 @@
 """Unit tests for the add_extra_repos task.
 
 The task reads the apt source files, the keep-debs file and the body it
-carries from the config, and runs apt-get through run_command; subprocess
-is monkeypatched, so the tests only touch temporary fixtures
-(docs/guides/developer-guide.md). The fixtures mirror the real files on a
-Kubuntu system, including comments and Signed-By lines.
+carries from pyntara.values.add_extra_repos, and runs apt-get through
+run_command; subprocess is monkeypatched, so the tests only touch temporary
+fixtures (docs/guides/developer-guide.md). The fixtures mirror the real files
+on a Kubuntu system, including comments and Signed-By lines.
 """
 
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.context import Context
 from pyntara.tasks import add_extra_repos
+from pyntara.values import add_extra_repos as values
 
 # Two Ubuntu sections (base and security) with only main enabled, as on a
 # fresh Kubuntu before this task runs.
@@ -46,43 +46,40 @@ Components: main
 Signed-By: /usr/share/keyrings/google-chrome.gpg
 """
 
-CONFIGURED = ("universe", "restricted", "multiverse")
-
-# Another drop-in body the proof test puts into the config; the task must
-# write exactly the configured body, never a value of its own.
+# Another drop-in body the proof test puts into the values module; the task
+# must write exactly that body, never a value of its own.
 OTHER_KEEP_DEBS_BODY = 'APT::Keep-Downloaded-Packages "true";\n'
 
 
-def _configured_keep_debs_content() -> str:
-    """The keep-debs body the test document carries."""
+def _shipped_keep_debs_body() -> str:
+    """The keep-debs body the values module carries."""
 
-    return make_config().add_extra_repos.keep_debs_dropin_content
+    return values.KEEP_DEBS_DROPIN_CONTENT
 
 
-def _ctx(
-    tmp_path: Path,
-    *,
-    skip_apt_update: bool = False,
-    keep_downloaded_debs: bool = True,
-) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_temporary_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file temporary apt source and drop-in paths.
 
-    return make_context(
-        task_data_root=tmp_path,
-        skip_apt_update=skip_apt_update,
-        config=make_config(
-            task_data_root=tmp_path,
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=CONFIGURED,
-            add_extra_repos_keep_downloaded_debs=keep_downloaded_debs,
-            add_extra_repos_legacy_sources_file=tmp_path / "sources.list",
-            add_extra_repos_sources_list_d=tmp_path / "sources.list.d",
-            add_extra_repos_keep_debs_file=(
-                tmp_path / "apt.conf.d" / "99keep-debs.conf"
-            ),
-            swapfile_path=tmp_path / "swapfile",
-        ),
+    The three paths are values of the task, so the fixture points them at the
+    temporary directory of the test and the shipped values come back
+    afterwards. The paths are the same in every test, which keeps the call
+    sites of _ctx free of them.
+    """
+
+    monkeypatch.setattr(values, "LEGACY_SOURCES_FILE", tmp_path / "sources.list")
+    monkeypatch.setattr(values, "SOURCES_LIST_D", tmp_path / "sources.list.d")
+    monkeypatch.setattr(
+        values, "KEEP_DEBS_FILE", tmp_path / "apt.conf.d" / "99keep-debs.conf"
     )
+
+
+def _ctx(tmp_path: Path, *, skip_apt_update: bool = False) -> Context:
+    """Context safe for unit tests; the real files are never touched."""
+
+    return make_context(task_data_root=tmp_path, skip_apt_update=skip_apt_update)
 
 
 def _install_sources(
@@ -121,7 +118,7 @@ def _install_keep_debs(
     path = tmp_path / "apt.conf.d" / "99keep-debs.conf"
     path.parent.mkdir(parents=True, exist_ok=True)
     if create:
-        path.write_text(_configured_keep_debs_content(), encoding="utf-8")
+        path.write_text(_shipped_keep_debs_body(), encoding="utf-8")
     elif path.exists():
         path.unlink()
     return path
@@ -228,13 +225,13 @@ def test_legacy_sources_list_is_rewritten(
     )
 
 
-def test_the_line_keywords_and_schemes_come_from_the_config(
+def test_the_line_keywords_and_schemes_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The keywords that open a one-line source line and the schemes that
     # mark its archive URI belong to the format of the foreign file: with
-    # another keyword and another scheme in the section the task rewrites
-    # the line of that format and leaves the shipped one alone.
+    # another keyword and another scheme in the values module the task
+    # rewrites the line of that format and leaves the shipped one alone.
     legacy = tmp_path / "sources.list"
     legacy.write_text(
         "repo mirror://archive.ubuntu.com/ubuntu/ resolute main\n"
@@ -243,19 +240,9 @@ def test_the_line_keywords_and_schemes_come_from_the_config(
     )
     _install_sources(monkeypatch, tmp_path, {})
     _record_calls(monkeypatch)
-    ctx = _ctx(tmp_path)
-    renamed = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            add_extra_repos=replace(
-                ctx.config.add_extra_repos,
-                legacy_source_type_keywords=("repo ",),
-                source_url_schemes=("mirror://",),
-            ),
-        ),
-    )
-    result = add_extra_repos.task(renamed)
+    monkeypatch.setattr(values, "LEGACY_SOURCE_TYPE_KEYWORDS", ("repo ",))
+    monkeypatch.setattr(values, "SOURCE_URL_SCHEMES", ("mirror://",))
+    result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     text = legacy.read_text(encoding="utf-8")
@@ -347,12 +334,12 @@ def test_legacy_and_deb822_are_both_updated(
     assert "Components: main universe restricted multiverse" in ubuntu_text
 
 
-def test_the_deb822_field_names_come_from_the_config(
+def test_the_deb822_field_names_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The two deb822 field names the task reads are config values: a file
-    # that spells them differently is still recognized and rewritten, and
-    # the field the task reads stays the configured one.
+    # The two deb822 field names the task reads are values: a file that
+    # spells them differently is still recognized and rewritten, and the
+    # field the task reads stays the value of the module.
     renamed = (
         "Types: deb\n"
         "Archive-URIs: http://archive.ubuntu.com/ubuntu/\n"
@@ -360,19 +347,9 @@ def test_the_deb822_field_names_come_from_the_config(
         "Parts: main\n"
     )
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": renamed})
-    ctx = _ctx(tmp_path)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            add_extra_repos=replace(
-                ctx.config.add_extra_repos,
-                uris_field_name="archive-uris:",
-                components_field_name="parts:",
-            ),
-        ),
-    )
-    result = add_extra_repos.task(ctx)
+    monkeypatch.setattr(values, "URIS_FIELD_NAME", "archive-uris:")
+    monkeypatch.setattr(values, "COMPONENTS_FIELD_NAME", "parts:")
+    result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     text = (tmp_path / "sources.list.d" / "ubuntu.sources").read_text(
@@ -381,27 +358,17 @@ def test_the_deb822_field_names_come_from_the_config(
     assert "Parts: main universe restricted multiverse\n" in text
 
 
-def test_the_source_file_suffixes_come_from_the_config(
+def test_the_source_file_suffixes_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The two extensions apt reads in the sources directory are config
-    # values: with another deb822 suffix the task rewrites the file that
-    # carries it, while the shipped .sources name is not an apt source and
-    # is left alone.
+    # The two extensions apt reads in the sources directory are values:
+    # with another deb822 suffix the task rewrites the file that carries
+    # it, while the shipped .sources name is not an apt source and is left
+    # alone.
     _install_sources(monkeypatch, tmp_path, {"ubuntu.apt": UBUNTU_DEB822})
-    ctx = _ctx(tmp_path)
-    renamed = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            add_extra_repos=replace(
-                ctx.config.add_extra_repos,
-                deb822_source_suffix=".apt",
-                legacy_source_suffix=".sources",
-            ),
-        ),
-    )
-    result = add_extra_repos.task(renamed)
+    monkeypatch.setattr(values, "DEB822_SOURCE_SUFFIX", ".apt")
+    monkeypatch.setattr(values, "LEGACY_SOURCE_SUFFIX", ".sources")
+    result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     text = (tmp_path / "sources.list.d" / "ubuntu.apt").read_text(
@@ -412,18 +379,12 @@ def test_the_source_file_suffixes_come_from_the_config(
     shipped_dir = tmp_path / "shipped"
     shipped_dir.mkdir()
     (shipped_dir / "ubuntu.apt").write_text(UBUNTU_DEB822, encoding="utf-8")
-    shipped = _ctx(shipped_dir)
-    shipped = replace(
-        shipped,
-        config=replace(
-            shipped.config,
-            add_extra_repos=replace(
-                shipped.config.add_extra_repos,
-                sources_list_d=shipped_dir,
-            ),
-        ),
-    )
-    untouched = add_extra_repos.task(shipped)
+    # Back to the shipped suffixes: a .apt file is then no apt source at
+    # all, which is what the second half proves.
+    monkeypatch.setattr(values, "DEB822_SOURCE_SUFFIX", ".sources")
+    monkeypatch.setattr(values, "LEGACY_SOURCE_SUFFIX", ".list")
+    monkeypatch.setattr(values, "SOURCES_LIST_D", shipped_dir)
+    untouched = add_extra_repos.task(_ctx(shipped_dir))
     assert untouched.success is True
     assert "no apt source files found" in untouched.warnings
     assert (shipped_dir / "ubuntu.apt").read_text(
@@ -451,7 +412,7 @@ def test_keep_debs_dropin_created_even_when_sources_satisfied(
     assert result.changed is True
     assert "already satisfied" in (result.message or "")
     assert "enabled" in (result.message or "")
-    assert keep_debs.read_text(encoding="utf-8") == _configured_keep_debs_content()
+    assert keep_debs.read_text(encoding="utf-8") == _shipped_keep_debs_body()
 
 
 def test_keep_debs_dropin_normalized_when_stale(
@@ -465,29 +426,18 @@ def test_keep_debs_dropin_normalized_when_stale(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    assert keep_debs.read_text(encoding="utf-8") == _configured_keep_debs_content()
+    assert keep_debs.read_text(encoding="utf-8") == _shipped_keep_debs_body()
 
 
-def test_keep_debs_body_comes_from_the_config(
+def test_keep_debs_body_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another body in the [add_extra_repos] table is the body the task
-    # writes, so the drop-in content is not a value of the module.
+    # Another body in the values module is the body the task writes, so the
+    # drop-in content is a value and nothing else in the task holds it.
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=False)
-    ctx = _ctx(tmp_path)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(
-            config,
-            add_extra_repos=replace(
-                config.add_extra_repos,
-                keep_debs_dropin_content=OTHER_KEEP_DEBS_BODY,
-            ),
-        ),
-    )
-    result = add_extra_repos.task(ctx)
+    monkeypatch.setattr(values, "KEEP_DEBS_DROPIN_CONTENT", OTHER_KEEP_DEBS_BODY)
+    result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert keep_debs.read_text(encoding="utf-8") == OTHER_KEEP_DEBS_BODY
 
@@ -507,11 +457,12 @@ def test_keep_debs_dropin_unchanged_when_exact(
 def test_keep_debs_dropin_removed_when_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The config turns retention off: the existing drop-in is removed and
-    # the result reports the disabled state.
+    # KEEP_DOWNLOADED_DEBS is 0: the existing drop-in is removed and the
+    # result reports the disabled state.
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=True)
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
-    result = add_extra_repos.task(_ctx(tmp_path, keep_downloaded_debs=False))
+    monkeypatch.setattr(values, "KEEP_DOWNLOADED_DEBS", 0)
+    result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert not keep_debs.exists()

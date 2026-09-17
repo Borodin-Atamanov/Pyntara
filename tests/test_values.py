@@ -36,6 +36,7 @@ import pyntara
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
+    "add_extra_repos",
     "cli_tools",
     "common",
     "ffmpeg_setup",

@@ -10,8 +10,8 @@ filter only matches the official archive domains. The goal is reached when
 every Ubuntu section already lists every configured component; the task
 then skips. Independent of the components work the task also keeps an apt
 drop-in that stops apt and unattended-upgrades from deleting downloaded
-.deb files after a successful install, writing it when
-add_extra_repos.keep_downloaded_debs is true and removing it when false.
+.deb files after a successful install, writing it while
+KEEP_DOWNLOADED_DEBS is 1 and removing it while the value is 0.
 After a real change the apt index is refreshed once, unless
 ctx.skip_apt_update is set (test or offline runs). A failure is reported
 through TaskResult and never stops the run (task-model contract): the
@@ -24,11 +24,12 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyntara.config import AddExtraReposConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import refresh_apt_index
+from pyntara.values import add_extra_repos as values
+from pyntara.values import missing_value_names
 
 
 @dataclass(frozen=True)
@@ -42,19 +43,13 @@ class _FileRewrite:
     problems: tuple[str, ...]
 
 
-def _uri_is_ubuntu(uri: str, hosts: tuple[str, ...]) -> bool:
+def _uri_is_ubuntu(uri: str) -> bool:
     """True when the URI points to an official Ubuntu archive host."""
 
-    return any(host in uri for host in hosts)
+    return any(host in uri for host in values.UBUNTU_HOSTS)
 
 
-def _process_deb822(
-    text: str,
-    configured: tuple[str, ...],
-    hosts: tuple[str, ...],
-    uris_field_name: str,
-    components_field_name: str,
-) -> _FileRewrite:
+def _process_deb822(text: str) -> _FileRewrite:
     """Rewrite Components lines of Ubuntu sections in a deb822 source file.
 
     Sections are separated by blank lines. A section is an Ubuntu archive
@@ -63,11 +58,12 @@ def _process_deb822(
     continuation lines. Only the Components line of such a section is
     rewritten: missing configured components are appended in configured
     order, everything else in the file stays byte-identical. The names of
-    the two fields come from the config and are compared without case.
+    the two fields come from the values module and are compared without
+    case.
     """
 
-    uris_key = uris_field_name.lower()
-    components_key = components_field_name.lower()
+    uris_key = values.URIS_FIELD_NAME.lower()
+    components_key = values.COMPONENTS_FIELD_NAME.lower()
 
     lines = text.splitlines(keepends=True)
     has_ubuntu = False
@@ -91,13 +87,13 @@ def _process_deb822(
             lower = stripped.lower()
             if lower.startswith(uris_key):
                 uris = stripped[len(uris_key) :].split()
-                if any(_uri_is_ubuntu(uri, hosts) for uri in uris):
+                if any(_uri_is_ubuntu(uri) for uri in uris):
                     is_ubuntu = True
             elif lower.startswith(components_key):
                 components_line = line_index
         if not is_ubuntu:
             section_text = "".join(lines[i] for i in section)
-            if any(host in section_text for host in hosts):
+            if any(host in section_text for host in values.UBUNTU_HOSTS):
                 is_ubuntu = True
         if not is_ubuntu:
             continue
@@ -114,7 +110,9 @@ def _process_deb822(
         key_text = line[: key_start + len(components_key)]
         existing = line[key_start + len(components_key) :].split()
         missing = [
-            component for component in configured if component not in existing
+            component
+            for component in values.COMPONENTS
+            if component not in existing
         ]
         if missing:
             satisfied = False
@@ -135,19 +133,14 @@ def _split_trailing_comment(line: str) -> tuple[str, str]:
     return content[:comment_at].rstrip(), content[comment_at:]
 
 
-def _process_legacy(
-    text: str,
-    configured: tuple[str, ...],
-    hosts: tuple[str, ...],
-    cfg: AddExtraReposConfig,
-) -> _FileRewrite:
+def _process_legacy(text: str) -> _FileRewrite:
     """Append missing components to legacy Ubuntu deb lines.
 
     A legacy line has the shape deb [options] URI suite component...
     Components are the tokens after the suite. The trailing comment, if
     any, stays at the end of the line. The keywords that open such a line
-    and the schemes that mark its URI token come from the section, so the
-    line format of another distribution is answered in the config.
+    and the schemes that mark its URI token come from the values module, so
+    the line format of another distribution is answered in one place.
     """
 
     lines = text.splitlines(keepends=True)
@@ -157,9 +150,9 @@ def _process_legacy(
     problems: list[str] = []
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if not stripped.startswith(cfg.legacy_source_type_keywords):
+        if not stripped.startswith(values.LEGACY_SOURCE_TYPE_KEYWORDS):
             continue
-        if not any(host in line for host in hosts):
+        if not any(host in line for host in values.UBUNTU_HOSTS):
             continue
         has_ubuntu = True
         body, comment = _split_trailing_comment(line)
@@ -168,7 +161,7 @@ def _process_legacy(
             (
                 i
                 for i, token in enumerate(tokens)
-                if token.startswith(cfg.source_url_schemes)
+                if token.startswith(values.SOURCE_URL_SCHEMES)
             ),
             None,
         )
@@ -178,7 +171,9 @@ def _process_legacy(
             continue
         components = tokens[url_index + 2 :]
         missing = [
-            component for component in configured if component not in components
+            component
+            for component in values.COMPONENTS
+            if component not in components
         ]
         if missing:
             satisfied = False
@@ -191,83 +186,68 @@ def _process_legacy(
     return _FileRewrite("".join(lines), changed, has_ubuntu, satisfied, tuple(problems))
 
 
-def _collect_source_files(legacy_sources_file: Path, cfg: AddExtraReposConfig) -> list[Path]:
+def _collect_source_files() -> list[Path]:
     """The apt source files apt itself reads, legacy file first.
 
-    apt reads the configured legacy sources file and, in the configured
-    sources directory, only lowercase files carrying the configured suffix
-    of either format. Backup files (.bak) and other extensions are ignored
-    by apt and by this task.
+    apt reads the legacy sources file and, in the sources directory, only
+    lowercase files carrying the suffix of either format. Backup files
+    (.bak) and other extensions are ignored by apt and by this task.
     """
 
-    suffix = (cfg.legacy_source_suffix, cfg.deb822_source_suffix)
+    suffix = (values.LEGACY_SOURCE_SUFFIX, values.DEB822_SOURCE_SUFFIX)
     files: list[Path] = []
-    if legacy_sources_file.is_file():
-        files.append(legacy_sources_file)
-    if cfg.sources_list_d.is_dir():
+    if values.LEGACY_SOURCES_FILE.is_file():
+        files.append(values.LEGACY_SOURCES_FILE)
+    if values.SOURCES_LIST_D.is_dir():
         files.extend(
             sorted(
                 path
-                for path in cfg.sources_list_d.iterdir()
+                for path in values.SOURCES_LIST_D.iterdir()
                 if path.suffix in suffix and path.name.islower()
             )
         )
     return files
 
 
-def _process_file(
-    path: Path,
-    configured: tuple[str, ...],
-    hosts: tuple[str, ...],
-    cfg: AddExtraReposConfig,
-) -> _FileRewrite:
+def _process_file(path: Path) -> _FileRewrite:
     """Analyze and rewrite one source file in memory, by its format."""
 
-    if path.suffix == cfg.deb822_source_suffix:
-        return _process_deb822(
-            path.read_text(encoding="utf-8"),
-            configured,
-            hosts,
-            cfg.uris_field_name,
-            cfg.components_field_name,
-        )
-    return _process_legacy(
-        path.read_text(encoding="utf-8"), configured, hosts, cfg
-    )
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == values.DEB822_SOURCE_SUFFIX:
+        return _process_deb822(text)
+    return _process_legacy(text)
 
 
-def _keep_debs_state_note(keep_debs: bool) -> str:
+def _keep_debs_state_note() -> str:
     """User note for the keep-debs state applied to the apt drop-in."""
 
-    if keep_debs:
+    if values.KEEP_DOWNLOADED_DEBS:
         return "keep downloaded .deb files after install enabled"
     return "keep downloaded .deb files after install disabled"
 
 
-def _ensure_keep_debs_dropin(
-    keep_debs: bool, keep_debs_file: Path, content: str
-) -> tuple[bool, str | None]:
-    """Bring the apt keep-debs drop-in to the configured state.
+def _ensure_keep_debs_dropin() -> tuple[bool, str | None]:
+    """Bring the apt keep-debs drop-in to the state KEEP_DOWNLOADED_DEBS asks.
 
-    When keep_debs is true the drop-in must carry the configured body, the
-    two option lines that stop apt and unattended-upgrades from deleting
-    downloaded .deb files after a successful install; when false the
-    drop-in must not exist. The current content is read before writing, so
-    an exact match changes nothing (idempotency through read-back).
-    Returns whether the file changed and an error string when the file
-    could not be updated.
+    While the value is 1 the drop-in must carry KEEP_DEBS_DROPIN_CONTENT,
+    the two option lines that stop apt and unattended-upgrades from
+    deleting downloaded .deb files after a successful install; while it is
+    0 the drop-in must not exist. The current content is read before
+    writing, so an exact match changes nothing (idempotency through
+    read-back). Returns whether the file changed and an error string when
+    the file could not be updated.
     """
 
-    path = keep_debs_file
+    path = values.KEEP_DEBS_FILE
     try:
-        if not keep_debs:
+        if not values.KEEP_DOWNLOADED_DEBS:
             if not path.exists():
                 return False, None
             path.unlink()
             return True, None
-        if path.exists() and path.read_text(encoding="utf-8") == content:
+        if path.exists() and path.read_text(encoding="utf-8") == values.KEEP_DEBS_DROPIN_CONTENT:
             return False, None
-        path.write_text(content, encoding="utf-8")
+        path.write_text(values.KEEP_DEBS_DROPIN_CONTENT, encoding="utf-8")
     except OSError as exc:
         return False, f"cannot update {path}: {exc}"
     return True, None
@@ -285,25 +265,28 @@ def task(ctx: Context) -> TaskResult:
     the remaining tasks and never stops here.
     """
 
-    configured = ctx.config.add_extra_repos.components
-    hosts = ctx.config.add_extra_repos.ubuntu_hosts
-    keep_debs = ctx.config.add_extra_repos.keep_downloaded_debs
-    keep_debs_file = ctx.config.add_extra_repos.keep_debs_file
-    keep_debs_content = ctx.config.add_extra_repos.keep_debs_dropin_content
-    section = ctx.config.add_extra_repos
+    configured = values.COMPONENTS
     warnings: list[str] = []
+    absent = missing_value_names(values, values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks.
+        return TaskResult(
+            success=True,
+            message="the add_extra_repos values are not declared, nothing was changed",
+            warnings=(
+                "the add_extra_repos values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     _log(f"configured components: {' '.join(configured)}")
-    keep_changed, keep_error = _ensure_keep_debs_dropin(
-        keep_debs, keep_debs_file, keep_debs_content
-    )
+    keep_changed, keep_error = _ensure_keep_debs_dropin()
     if keep_error:
         warnings.append(keep_error)
     if keep_changed:
-        _log(f"updated {keep_debs_file}: keep downloaded .deb files")
-    files = _collect_source_files(
-        ctx.config.add_extra_repos.legacy_sources_file,
-        ctx.config.add_extra_repos,
-    )
+        _log(f"updated {values.KEEP_DEBS_FILE}: keep downloaded .deb files")
+    files = _collect_source_files()
     if not files:
         warning = "no apt source files found"
         warnings.append(warning)
@@ -318,7 +301,7 @@ def task(ctx: Context) -> TaskResult:
     has_ubuntu = False
     for path in files:
         try:
-            state = _process_file(path, configured, hosts, section)
+            state = _process_file(path)
         except OSError as exc:
             warnings.append(f"cannot read {path}: {exc}")
             continue
@@ -349,7 +332,7 @@ def task(ctx: Context) -> TaskResult:
         _log("target state already reached, skipping")
         message = "already satisfied"
         if keep_changed:
-            message = f"{message}; {_keep_debs_state_note(keep_debs)}"
+            message = f"{message}; {_keep_debs_state_note()}"
         if warnings:
             message = f"{message}; warnings: {'; '.join(warnings)}"
         return TaskResult(
@@ -386,7 +369,7 @@ def task(ctx: Context) -> TaskResult:
     verified: list[tuple[Path, _FileRewrite]] = []
     for path in files:
         try:
-            verified.append((path, _process_file(path, configured, hosts, section)))
+            verified.append((path, _process_file(path)))
         except OSError as exc:
             warnings.append(f"cannot read {path} for verification: {exc}")
     unsatisfied = [str(path) for path, state in verified if not state.satisfied]
@@ -400,7 +383,7 @@ def task(ctx: Context) -> TaskResult:
         f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     )
     if keep_changed:
-        message = f"{message}; {_keep_debs_state_note(keep_debs)}"
+        message = f"{message}; {_keep_debs_state_note()}"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(
