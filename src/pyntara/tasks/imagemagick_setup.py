@@ -11,9 +11,11 @@ the runner continues with the remaining tasks and never stops here.
 
 After the packages are in place the task deploys the tuned security policy:
 the template task_data/imagemagick_setup/policy.xml is written over the
-system policy at cfg.policy_path. The package original is saved once next to
-it as policy_path.bak; ImageMagick loads only the file named policy.xml, so
-the backup is never picked up.
+system policy at POLICY_PATH. The package original is saved once next to
+it as POLICY_PATH with POLICY_BACKUP_FILE_SUFFIX appended; ImageMagick
+loads only the file named policy.xml, so the backup is never picked up.
+A value the values module does not declare is reported as a warning and
+nothing is changed.
 """
 
 from __future__ import annotations
@@ -22,6 +24,8 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import install_packages, package_is_installed, task_data_dir
+from pyntara.values import imagemagick_setup as imagemagick_values
+from pyntara.values import missing_value_names
 
 
 def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
@@ -34,11 +38,13 @@ def _deploy_policy(ctx: Context) -> tuple[bool, str | None]:
     written and an existing backup is never overwritten.
     """
 
-    cfg = ctx.config.imagemagick_setup
-    target = cfg.policy_path
-    backup = target.with_name(f"{target.name}{cfg.policy_backup_file_suffix}")
+    target = imagemagick_values.POLICY_PATH
+    backup = target.with_name(
+        f"{target.name}{imagemagick_values.POLICY_BACKUP_FILE_SUFFIX}"
+    )
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / cfg.policy_template_file_name
+        task_data_dir(ctx.repo_root, ctx.task_name)
+        / imagemagick_values.POLICY_TEMPLATE_FILE_NAME
     )
     try:
         template = template_path.read_text(encoding="utf-8")
@@ -71,16 +77,29 @@ def task(ctx: Context) -> TaskResult:
     upgrade.
     """
 
-    cfg = ctx.config.imagemagick_setup
+    absent = missing_value_names(
+        imagemagick_values, imagemagick_values.READ_VALUE_NAMES
+    )
+    if absent:
+        # A value that is not declared costs the task and never the run:
+        # the names are reported in plain words and the runner carries on
+        # with the remaining tasks.
+        return TaskResult(
+            success=True,
+            message="the imagemagick values are not declared, nothing was changed",
+            warnings=(
+                "the imagemagick values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     install_timeout = engine.command_timeout_seconds
-    status_timeout = cfg.package_status_timeout_seconds
+    status_timeout = imagemagick_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
     warnings: list[str] = []
     missing = [
         package
-        for package in cfg.packages
+        for package in imagemagick_values.PACKAGES
         if not package_is_installed(engine, package, status_timeout)
     ]
     if missing:
@@ -90,7 +109,7 @@ def task(ctx: Context) -> TaskResult:
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,
-            retries=cfg.package_install_retries,
+            retries=imagemagick_values.PACKAGE_INSTALL_RETRIES,
             skip_update=ctx.skip_apt_update,
         )
         installed_packages = installed
@@ -109,7 +128,7 @@ def task(ctx: Context) -> TaskResult:
     if installed_packages:
         messages.append(f"installed {', '.join(installed_packages)}")
     if policy_changed:
-        messages.append(f"policy written to {cfg.policy_path}")
+        messages.append(f"policy written to {imagemagick_values.POLICY_PATH}")
     if not messages:
         messages.append("already installed")
     if warnings:

@@ -7,9 +7,11 @@ cross-checks between values. The rules of the shipped values are applied
 by tests/test_values.py, which is also where a rule that a value breaks
 fails the suite during development instead of on a machine.
 
-Every rule takes the value as an argument and returns it unchanged when it
-holds, so a test can feed a rule a bad value without touching the shipped
-ones.
+Every rule takes the value and the dotted name it is reported under,
+returns the value unchanged when the rule holds and raises ValueRuleError
+when it does not, so a test feeds a rule a bad value without touching the
+shipped ones. The rules are shared by every section, because a rule about
+the shape of a text or a count is the same rule everywhere.
 """
 
 from __future__ import annotations
@@ -19,44 +21,64 @@ class ValueRuleError(RuntimeError):
     """Raised when a shipped value breaks a rule that its type cannot say."""
 
 
-def check_hostname_file(value: object) -> str:
-    """A non-empty path text: the file that holds the hostname.
+def check_nonempty_text(value: object, name: str) -> str:
+    """A text with something in it.
 
-    An empty path names no file, and the task that writes the hostname
-    would write it nowhere.
+    An empty text is the shape a value takes when it is declared and never
+    filled in: a path that names nothing, a file name that matches no file,
+    a suffix that names no suffix.
     """
 
     if not isinstance(value, str) or not value.strip():
-        raise ValueRuleError("hostname.HOSTNAME_FILE must be a non-empty path")
+        raise ValueRuleError(f"{name} must be a non-empty text")
     return value
 
 
-def check_random_bytes(value: object) -> int:
-    """A positive whole number of random bytes.
+def check_absolute_path(value: object, name: str) -> str:
+    """A non-empty text that names an absolute path.
 
-    A count of zero or less encodes no name, so the task could not
-    generate one. A boolean is refused although Python counts it as a
-    whole number, because it is not a count.
+    A relative path would be resolved against the working directory of the
+    run, so the task would write somewhere other than the machine path the
+    value is meant to name.
+    """
+
+    text = check_nonempty_text(value, name)
+    if not text.startswith("/"):
+        raise ValueRuleError(f"{name} must be an absolute path")
+    return text
+
+
+def check_positive_int(value: object, name: str) -> int:
+    """A whole number above zero.
+
+    A boolean is refused although Python counts it as a whole number,
+    because it is not a count; zero is refused because a count of zero
+    means no attempt at all.
     """
 
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise ValueRuleError("hostname.RANDOM_BYTES must be a positive integer")
+        raise ValueRuleError(f"{name} must be a positive integer")
     return value
 
 
-def check_set_hostname_command(value: object) -> tuple[str, ...]:
-    """A non-empty command of non-empty words that applies the hostname.
+def check_nonnegative_int(value: object, name: str) -> int:
+    """A whole number of zero or more, such as a retry count."""
 
-    An empty command applies nothing, and an empty word is a missing
-    argument of the tool rather than a command part.
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueRuleError(f"{name} must not be negative")
+    return value
+
+
+def check_text_tuple(value: object, name: str) -> tuple[str, ...]:
+    """A non-empty tuple of non-empty texts, such as a command.
+
+    An empty tuple is a command that runs nothing; an empty word is a
+    missing argument of the tool rather than a part of the command.
     """
 
     if not isinstance(value, tuple) or not value:
-        raise ValueRuleError(
-            "hostname.SET_HOSTNAME_COMMAND must be a non-empty command"
-        )
-    if not all(isinstance(word, str) and word.strip() for word in value):
-        raise ValueRuleError(
-            "hostname.SET_HOSTNAME_COMMAND must hold non-empty words"
-        )
+        raise ValueRuleError(f"{name} must be a non-empty tuple of texts")
+    for word in value:
+        if not isinstance(word, str) or not word.strip():
+            raise ValueRuleError(f"{name} must hold non-empty texts")
     return value

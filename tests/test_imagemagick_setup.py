@@ -11,12 +11,13 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, Config, load_config
+from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import imagemagick_setup
+from pyntara.values import imagemagick_setup as imagemagick_values
 
 # Package set used by the tests; mirrors the real config but stays small.
 TEST_PACKAGES = ("imagemagick",)
@@ -57,38 +58,36 @@ def _policy_env(
     return tmp_path / "policy.xml"
 
 
-def _test_config(
-    policy_path: Path,
-    *,
-    template_file_name: str = "policy.xml",
-    backup_file_suffix: str = ".bak",
-) -> Config:
-    """Config with values safe for unit tests; the real file is never touched."""
+def _ctx(*, skip_apt_update: bool = False) -> Context:
+    """Context of the task; the values come from the values module."""
 
-    return make_config(
-        imagemagick_setup_packages=TEST_PACKAGES,
-        imagemagick_setup_policy_path=policy_path,
-        imagemagick_setup_policy_template_file_name=template_file_name,
-        imagemagick_setup_policy_backup_file_suffix=backup_file_suffix,
+    return make_context(
+        task_name="imagemagick_setup",
+        repo_root=_FIXTURE_REPO or REPO_ROOT,
+        skip_apt_update=skip_apt_update,
     )
 
 
-def _ctx(
-    *,
-    skip_apt_update: bool = False,
+def _use_imagemagick_values(
+    monkeypatch: pytest.MonkeyPatch,
     policy_path: Path,
+    *,
     template_file_name: str = "policy.xml",
     backup_file_suffix: str = ".bak",
-) -> Context:
-    return make_context(
-        task_name="imagemagick_setup",
-        config=_test_config(
-            policy_path,
-            template_file_name=template_file_name,
-            backup_file_suffix=backup_file_suffix,
-        ),
-        repo_root=_FIXTURE_REPO or REPO_ROOT,
-        skip_apt_update=skip_apt_update,
+) -> None:
+    """Point the task values at the fixture tree and the temporary file.
+
+    The values are module constants, so a test patches the module for its
+    own duration and monkeypatch restores the shipped values afterwards.
+    """
+
+    monkeypatch.setattr(imagemagick_values, "PACKAGES", TEST_PACKAGES)
+    monkeypatch.setattr(imagemagick_values, "POLICY_PATH", policy_path)
+    monkeypatch.setattr(
+        imagemagick_values, "POLICY_TEMPLATE_FILE_NAME", template_file_name
+    )
+    monkeypatch.setattr(
+        imagemagick_values, "POLICY_BACKUP_FILE_SUFFIX", backup_file_suffix
     )
 
 
@@ -139,11 +138,10 @@ def test_imagemagick_setup_depends_on_add_extra_repos() -> None:
     assert task_def.depends == ("add_extra_repos",)
 
 
-def test_real_config_names_the_meta_package() -> None:
-    # The real config must name the real meta package imagemagick, not a
+def test_the_shipped_values_name_the_meta_package() -> None:
+    # The shipped values must name the real meta package imagemagick, not a
     # virtual name, so dpkg-query sees it as installed.
-    config = load_config(REPO_ROOT / "config")
-    assert "imagemagick" in config.imagemagick_setup.packages
+    assert "imagemagick" in imagemagick_values.PACKAGES
 
 
 def test_all_installed_skips_apt(
@@ -151,8 +149,9 @@ def test_all_installed_skips_apt(
 ) -> None:
     policy_path = _policy_env(monkeypatch, tmp_path)
     policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
+    _use_imagemagick_values(monkeypatch, policy_path)
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.message == "already installed"
@@ -164,8 +163,9 @@ def test_installs_missing_package(
 ) -> None:
     policy_path = _policy_env(monkeypatch, tmp_path)
     policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
+    _use_imagemagick_values(monkeypatch, policy_path)
     calls = _install_fake(monkeypatch, installed=set())
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "imagemagick" in (result.message or "")
@@ -185,9 +185,8 @@ def test_skip_apt_update_skips_the_update(
     policy_path = _policy_env(monkeypatch, tmp_path)
     policy_path.write_text(POLICY_CONTENT, encoding="utf-8")
     calls = _install_fake(monkeypatch, installed=set())
-    result = imagemagick_setup.task(
-        _ctx(skip_apt_update=True, policy_path=policy_path)
-    )
+    _use_imagemagick_values(monkeypatch, policy_path)
+    result = imagemagick_setup.task(_ctx(skip_apt_update=True))
     assert result.success is True
     assert result.changed is True
     update_calls = [
@@ -203,7 +202,8 @@ def test_install_failure_is_a_warning(
     # deploys the policy it owns.
     policy_path = _policy_env(monkeypatch, tmp_path)
     _install_fake(monkeypatch, installed=set(), install_rc=1)
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    _use_imagemagick_values(monkeypatch, policy_path)
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert any(
         "failed to install" in warning for warning in result.warnings
@@ -217,13 +217,14 @@ def test_policy_written_and_backed_up_once(
     policy_path = _policy_env(monkeypatch, tmp_path)
     policy_path.write_text("package original policy", encoding="utf-8")
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    _use_imagemagick_values(monkeypatch, policy_path)
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
     backup = policy_path.with_name(f"{policy_path.name}.bak")
     assert backup.read_text(encoding="utf-8") == "package original policy"
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert backup.read_text(encoding="utf-8") == "package original policy"
@@ -234,7 +235,8 @@ def test_policy_created_when_target_missing(
 ) -> None:
     policy_path = _policy_env(monkeypatch, tmp_path)
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    _use_imagemagick_values(monkeypatch, policy_path)
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
@@ -249,38 +251,37 @@ def test_policy_backup_never_overwritten(
     backup = policy_path.with_name(f"{policy_path.name}.bak")
     backup.write_text("original backup", encoding="utf-8")
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(_ctx(policy_path=policy_path))
+    _use_imagemagick_values(monkeypatch, policy_path)
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
     assert backup.read_text(encoding="utf-8") == "original backup"
 
 
-def test_policy_template_file_name_comes_from_the_config(
+def test_policy_template_file_name_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The fixture clone carries only the template name the config gives, so
+    # The fixture clone carries only the template name the values give, so
     # a name written in the code could not find a template at all.
     policy_path = _policy_env(monkeypatch, tmp_path, template_file_name="tuned.xml")
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(
-        _ctx(policy_path=policy_path, template_file_name="tuned.xml")
-    )
+    _use_imagemagick_values(monkeypatch, policy_path, template_file_name="tuned.xml")
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
 
 
-def test_policy_backup_file_suffix_comes_from_the_config(
+def test_policy_backup_file_suffix_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another suffix in the config is the name of the single backup the
+    # Another suffix in the values is the name of the single backup the
     # task writes next to the system policy.
     policy_path = _policy_env(monkeypatch, tmp_path)
     policy_path.write_text("package original policy", encoding="utf-8")
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = imagemagick_setup.task(
-        _ctx(policy_path=policy_path, backup_file_suffix=".orig")
-    )
+    _use_imagemagick_values(monkeypatch, policy_path, backup_file_suffix=".orig")
+    result = imagemagick_setup.task(_ctx())
     assert result.success is True
     backup = policy_path.with_name(f"{policy_path.name}.orig")
     assert backup.read_text(encoding="utf-8") == "package original policy"

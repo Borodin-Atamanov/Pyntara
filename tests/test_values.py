@@ -18,16 +18,19 @@ from pathlib import Path
 import pytest
 from value_checks import (
     ValueRuleError,
-    check_hostname_file,
-    check_random_bytes,
-    check_set_hostname_command,
+    check_absolute_path,
+    check_nonempty_text,
+    check_nonnegative_int,
+    check_positive_int,
+    check_text_tuple,
 )
 
 import pyntara
 from pyntara.values import hostname as hostname_values
+from pyntara.values import imagemagick_setup as imagemagick_values
 
 # Every values module of the package, by its name inside pyntara.values.
-VALUES_MODULE_NAMES: tuple[str, ...] = ("hostname",)
+VALUES_MODULE_NAMES: tuple[str, ...] = ("hostname", "imagemagick_setup")
 
 # The name of the list a values module declares next to its values, which
 # names the values its task reads.
@@ -42,14 +45,27 @@ def _source_root() -> Path:
     return Path(package_file).resolve().parent
 
 
-def _declared_value_names(module: object) -> set[str]:
-    """The uppercase names a values module declares, its list excluded."""
+def _declared_value_names(module_name: str) -> set[str]:
+    """The names a values module declares by assignment, its list excluded.
 
-    return {
-        name
-        for name in dir(module)
-        if name[:1].isupper() and name != READ_VALUE_NAMES_ATTRIBUTE
-    }
+    The names are read from the module source rather than from the module
+    object, so a name the module imports, such as Path, is not mistaken for
+    a value.
+    """
+
+    source = (_source_root() / "values" / f"{module_name}.py").read_text(
+        encoding="utf-8"
+    )
+    names: set[str] = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+    names.discard(READ_VALUE_NAMES_ATTRIBUTE)
+    return names
 
 
 def _read_names_by_attribute() -> dict[str, set[str]]:
@@ -87,36 +103,108 @@ def _read_names_by_attribute() -> dict[str, set[str]]:
 def test_shipped_hostname_values_pass_every_rule() -> None:
     # The values that ship are the values the machine runs, so the rules
     # are applied to them and not only to the values a test makes up.
-    assert check_hostname_file(hostname_values.HOSTNAME_FILE) == (
-        hostname_values.HOSTNAME_FILE
+    assert (
+        check_absolute_path(
+            hostname_values.HOSTNAME_FILE, "hostname.HOSTNAME_FILE"
+        )
+        == hostname_values.HOSTNAME_FILE
     )
-    assert check_random_bytes(hostname_values.RANDOM_BYTES) == (
-        hostname_values.RANDOM_BYTES
+    assert (
+        check_positive_int(hostname_values.RANDOM_BYTES, "hostname.RANDOM_BYTES")
+        == hostname_values.RANDOM_BYTES
     )
-    assert check_set_hostname_command(hostname_values.SET_HOSTNAME_COMMAND) == (
-        hostname_values.SET_HOSTNAME_COMMAND
+    assert (
+        check_text_tuple(
+            hostname_values.SET_HOSTNAME_COMMAND,
+            "hostname.SET_HOSTNAME_COMMAND",
+        )
+        == hostname_values.SET_HOSTNAME_COMMAND
+    )
+
+
+def test_shipped_imagemagick_values_pass_every_rule() -> None:
+    assert (
+        check_text_tuple(imagemagick_values.PACKAGES, "imagemagick_setup.PACKAGES")
+        == imagemagick_values.PACKAGES
+    )
+    assert (
+        check_absolute_path(
+            str(imagemagick_values.POLICY_PATH),
+            "imagemagick_setup.POLICY_PATH",
+        )
+        == str(imagemagick_values.POLICY_PATH)
+    )
+    assert (
+        check_nonempty_text(
+            imagemagick_values.POLICY_TEMPLATE_FILE_NAME,
+            "imagemagick_setup.POLICY_TEMPLATE_FILE_NAME",
+        )
+        == imagemagick_values.POLICY_TEMPLATE_FILE_NAME
+    )
+    assert (
+        check_nonempty_text(
+            imagemagick_values.POLICY_BACKUP_FILE_SUFFIX,
+            "imagemagick_setup.POLICY_BACKUP_FILE_SUFFIX",
+        )
+        == imagemagick_values.POLICY_BACKUP_FILE_SUFFIX
+    )
+    assert (
+        check_positive_int(
+            imagemagick_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
+            "imagemagick_setup.PACKAGE_STATUS_TIMEOUT_SECONDS",
+        )
+        == imagemagick_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+    )
+    assert (
+        check_nonnegative_int(
+            imagemagick_values.PACKAGE_INSTALL_RETRIES,
+            "imagemagick_setup.PACKAGE_INSTALL_RETRIES",
+        )
+        == imagemagick_values.PACKAGE_INSTALL_RETRIES
     )
 
 
 @pytest.mark.parametrize("value", [42, "", "   ", None, ("a",)])
-def test_the_hostname_file_rule_refuses_a_value_that_is_no_path(value: object) -> None:
+def test_the_nonempty_text_rule_refuses_a_text_with_nothing_in_it(
+    value: object,
+) -> None:
     with pytest.raises(ValueRuleError):
-        check_hostname_file(value)
+        check_nonempty_text(value, "section.NAME")
+
+
+@pytest.mark.parametrize("value", ["relative/path", "etc/hostname", "", None, 42])
+def test_the_absolute_path_rule_refuses_a_path_that_is_not_absolute(
+    value: object,
+) -> None:
+    with pytest.raises(ValueRuleError):
+        check_absolute_path(value, "section.NAME")
 
 
 @pytest.mark.parametrize("value", [0, -1, 4.0, "4", True, None])
-def test_the_random_bytes_rule_refuses_a_value_that_is_no_count(value: object) -> None:
+def test_the_positive_int_rule_refuses_a_count_that_is_not_positive(
+    value: object,
+) -> None:
     with pytest.raises(ValueRuleError):
-        check_random_bytes(value)
+        check_positive_int(value, "section.NAME")
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "3", True, None])
+def test_the_nonnegative_int_rule_refuses_a_count_below_zero(
+    value: object,
+) -> None:
+    with pytest.raises(ValueRuleError):
+        check_nonnegative_int(value, "section.NAME")
 
 
 @pytest.mark.parametrize(
     "value",
     [(), [], "hostnamectl", ("hostnamectl", ""), ("hostnamectl", 1), None],
 )
-def test_the_command_rule_refuses_a_value_that_is_no_command(value: object) -> None:
+def test_the_text_tuple_rule_refuses_a_value_that_is_no_command(
+    value: object,
+) -> None:
     with pytest.raises(ValueRuleError):
-        check_set_hostname_command(value)
+        check_text_tuple(value, "section.NAME")
 
 
 def test_the_read_list_names_exactly_the_declared_values() -> None:
@@ -127,7 +215,7 @@ def test_the_read_list_names_exactly_the_declared_values() -> None:
     for module_name in VALUES_MODULE_NAMES:
         module = __import__(f"pyntara.values.{module_name}", fromlist=["*"])
         listed = set(getattr(module, READ_VALUE_NAMES_ATTRIBUTE))
-        assert listed == _declared_value_names(module), module_name
+        assert listed == _declared_value_names(module_name), module_name
 
 
 def test_every_declared_value_is_read_somewhere() -> None:
@@ -136,7 +224,6 @@ def test_every_declared_value_is_read_somewhere() -> None:
     reads = _read_names_by_attribute()
     unread: list[str] = []
     for module_name in VALUES_MODULE_NAMES:
-        module = __import__(f"pyntara.values.{module_name}", fromlist=["*"])
-        for name in sorted(_declared_value_names(module) - reads[module_name]):
+        for name in sorted(_declared_value_names(module_name) - reads[module_name]):
             unread.append(f"{module_name}.{name}")
     assert not unread, f"values no module reads: {unread}"
