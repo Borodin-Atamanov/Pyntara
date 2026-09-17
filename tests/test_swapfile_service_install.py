@@ -3,7 +3,9 @@
 All external resources (meminfo, subprocess, disk usage, filesystem paths)
 are mocked via monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md). The unit template is rendered from a
-fixture, so the tests never read the repository template.
+fixture, so the tests never read the repository template. The swapfile path,
+the template name and the /proc/meminfo line name are values, so one autouse
+fixture points them at the temporary tree of the test.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ from support import make_config, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import swapfile_service_install
+from pyntara.values import common as common_values
+from pyntara.values import swapfile_service_install as values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -34,10 +38,16 @@ ExecStop=/sbin/swapoff $swapfile_path
 WantedBy=multi-user.target
 """
 
-# 16 GiB RAM * 2 + 4096 MiB extra = 36864 MiB target with a large disk.
+# 16 GiB RAM * the shipped multiplier + the shipped extra mebibytes, capped by
+# a large disk: the target the task computes with the values of the section.
+# The engine byte factor comes from the test config, because the engine values
+# still live in the config document.
 RAM_KIB = 16 * 1024 * 1024
 FREE_BYTES = 100 * 1024**3
-TARGET_MB = 16 * 1024 * 2 + 4096
+TARGET_MB = (
+    int(RAM_KIB // make_config().engine.bytes_per_kib * values.RAM_MULTIPLIER)
+    + values.RAM_EXTRA_MB
+)
 
 
 class _FakeDiskUsage:
@@ -49,25 +59,32 @@ class _FakeDiskUsage:
         self.free = free
 
 
-def _ctx(
-    tmp_path: Path,
-    *,
-    force: bool = False,
-    unit_template_file_name: str = "swapfile.service",
-    create_command: tuple[str, ...] = (
-        "fallocate",
-        "-l",
-        "{size_mb}M",
-        "{swapfile_path}",
-    ),
-    chmod_command: tuple[str, ...] = ("chmod", "{file_mode}", "{swapfile_path}"),
-    enable_command: tuple[str, ...] = (
-        "systemctl",
-        "enable",
-        "{service_unit_name}",
-    ),
-) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own swapfile and template directory.
+
+    The swapfile path and the template name are values of the section and the
+    meminfo line name comes from the shared module; the fixture points them at
+    the temporary directory of the test, so no test touches /swapfile or the
+    real /proc/meminfo.
+    """
+
+    monkeypatch.setattr(values, "SWAPFILE_PATH", tmp_path / "swapfile")
+    monkeypatch.setattr(values, "UNIT_TEMPLATE_FILE_NAME", "swapfile.service")
+    monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "MemTotal:")
+
+
+def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+    """Context with a small safe config; the real file is never touched.
+
+    The engine values still come from the config document until the engine
+    stage; the section values are read from the values module, which the
+    autouse fixture points at the temporary tree. The systemd unit directory
+    and the repository root are the temporary tree of the test, because the
+    task writes the unit file there and reads the template from there.
+    """
 
     return make_context(
         task_name="swapfile_service_install",
@@ -78,32 +95,20 @@ def _ctx(
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(
-            task_data_root=tmp_path,
-            systemd_unit_dir=tmp_path / "systemd",
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
-            swapfile_unit_template_file_name=unit_template_file_name,
-            swapfile_create_command=create_command,
-            swapfile_chmod_command=chmod_command,
-            swapfile_systemctl_enable_command=enable_command,
-        ),
+        config=make_config(systemd_unit_dir=tmp_path / "systemd"),
     )
 
 
-def test_the_meminfo_line_name_comes_from_the_config(
+def test_the_meminfo_line_name_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The name of the /proc/meminfo line that carries the installed RAM is
-    # a config value: another name in the table is the line the task reads.
+    # a shared value: another name is the line the task reads.
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("Total-RAM:       8192 kB\n", encoding="utf-8")
     monkeypatch.setattr(swapfile_service_install, "MEMINFO_PATH", meminfo)
-    key = make_config(
-        swapfile_meminfo_total_key="Total-RAM:"
-    ).swapfile_service_install.meminfo_total_key
-    assert swapfile_service_install._read_ram_kib(key) == 8192
+    monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "Total-RAM:")
+    assert swapfile_service_install._read_ram_kib() == 8192
 
 
 def _install_fixtures(
@@ -116,8 +121,12 @@ def _install_fixtures(
     """Point the task at temporary fixtures; return the swapfile path."""
 
     meminfo = tmp_path / "meminfo"
-    meminfo.write_text(f"MemTotal:       {RAM_KIB} kB\n", encoding="utf-8")
+    meminfo.write_text(
+        f"{common_values.MEMINFO_TOTAL_KEY}       {RAM_KIB} kB\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(swapfile_service_install, "MEMINFO_PATH", meminfo)
+    monkeypatch.setattr(values, "UNIT_TEMPLATE_FILE_NAME", unit_template_file_name)
     template = (
         tmp_path / "task_data" / "swapfile_service_install" / unit_template_file_name
     )
@@ -213,9 +222,10 @@ def test_target_size_follows_the_engine_byte_factor(
     )
     result = swapfile_service_install.task(ctx)
     assert result.success is True
-    swap = config.swapfile_service_install
-    ram_based = int(RAM_KIB // 1000 * swap.ram_multiplier) + swap.ram_extra_mb
-    disk_based = int(FREE_BYTES // 1000 // 1000 * swap.disk_fraction)
+    ram_based = (
+        int(RAM_KIB // 1000 * values.RAM_MULTIPLIER) + values.RAM_EXTRA_MB
+    )
+    disk_based = int(FREE_BYTES // 1000 // 1000 * values.DISK_FRACTION)
     expected_mb = min(ram_based, disk_based)
     assert ["fallocate", "-l", f"{expected_mb}M", str(swapfile)] in calls
 
@@ -326,33 +336,37 @@ def test_missing_template_is_a_warning(
     assert ["fallocate", "-l", f"{TARGET_MB}M", str(swapfile)] in calls
 
 
-def test_commands_come_from_the_config(
+def test_commands_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Every command of the task is a config value: another allocation call,
-    # another mode call and another enable call in the config are the argv
-    # the run carries out, with the placeholders of the section filled in.
+    # Every command of the task is a value: another allocation call, another
+    # mode call and another enable call in the values module are the argv the
+    # run carries out, with the placeholders of the section filled in.
     swapfile = _install_fixtures(monkeypatch, tmp_path)
-    calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
-    result = swapfile_service_install.task(
-        _ctx(
-            tmp_path,
-            create_command=("my-allocate", "--length", "{size_mb}M", "{swapfile_path}"),
-            chmod_command=("my-chmod", "{file_mode}", "{swapfile_path}"),
-            enable_command=("my-enable", "{service_unit_name}"),
-        )
+    monkeypatch.setattr(
+        values,
+        "CREATE_COMMAND",
+        ("my-allocate", "--length", "{size_mb}M", "{swapfile_path}"),
     )
+    monkeypatch.setattr(
+        values, "CHMOD_COMMAND", ("my-chmod", "{file_mode}", "{swapfile_path}")
+    )
+    monkeypatch.setattr(
+        values, "SYSTEMCTL_ENABLE_COMMAND", ("my-enable", "{service_unit_name}")
+    )
+    calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
+    result = swapfile_service_install.task(_ctx(tmp_path))
     assert result.success is True
     assert ["my-allocate", "--length", f"{TARGET_MB}M", str(swapfile)] in calls
     assert ["my-chmod", "600", str(swapfile)] in calls
     assert ["my-enable", "swapfile.service"] in calls
 
 
-def test_unit_template_name_comes_from_the_config(
+def test_unit_template_name_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The template of the unit is named by the config: the run renders the
-    # file the config names and leaves the other template of the directory
+    # The template of the unit is named by the values module: the run renders
+    # the file the value names and leaves the other template of the directory
     # unread.
     swapfile = _install_fixtures(
         monkeypatch, tmp_path, unit_template_file_name="other.service"
@@ -361,9 +375,7 @@ def test_unit_template_name_comes_from_the_config(
         "[Unit]\nDescription=wrong\n", encoding="utf-8"
     )
     calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
-    result = swapfile_service_install.task(
-        _ctx(tmp_path, unit_template_file_name="other.service")
-    )
+    result = swapfile_service_install.task(_ctx(tmp_path))
     assert result.success is True
     written = (tmp_path / "systemd" / "swapfile.service").read_text(encoding="utf-8")
     assert "wrong" not in written

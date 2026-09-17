@@ -131,7 +131,16 @@ is the correction.
     it. The section also drops its own copies of the desktop user pair and of
     the two package budgets, which the shared module has carried since the
     first sections
-17. swapfile_service_install, 17 / 380 / 51
+17. swapfile_service_install, done, 17 / 380 / 51, and it moved the name of the
+    /proc/meminfo RAM line to the shared module earlier than point 74 says: the
+    value belongs to no section (it is a kernel interface name), the zram
+    section reads the same line, so MEMINFO_TOTAL_KEY moved to
+    values/common.py in this commit and zram_service reads it there when its
+    turn comes, instead of touching this section twice. The commit also found a
+    silent disagreement: the test harness of the section took a RAM multiplier
+    of 2 from its own defaults while the shipped value is 1.6, so the expected
+    swap size of the tests was wrong and nobody saw it while the harness faked
+    the value; the tests now compute the expected size from the values
 18. kde_keyboard_setup, 41 / 631 / 52
 19. rustdesk_setup, 42 / 733 / 61
 20. zram_service, 27 / 679 / 66
@@ -431,8 +440,9 @@ it is named with the figure.
     (migrated), scrcpy_setup and vocalinux_setup; private_key_file_mode 0600 in
     ssh_daemon_setup and yggdrasil_service_setup; profile_id_file_path and
     profile_id_file_mode in nextdns_setup_system_wide (migrated) and
-    dnsproxy_setup; meminfo_total_key in swapfile_service_install and
-    zram_service; augeas_tools_package_name in ssh_client_setup (migrated) and
+    dnsproxy_setup; meminfo_total_key in swapfile_service_install (migrated, it
+    moved the name to the shared module as point 17 records) and zram_service;
+    augeas_tools_package_name in ssh_client_setup (migrated) and
     ssh_daemon_setup; shortcuts_file_name in kde_keyboard_setup and
     vocalinux_setup; kconfig_true_value and kconfig_false_value in
     kde_keyboard_setup and kde_settings.
@@ -441,15 +451,15 @@ it is named with the figure.
     every read, the tests moved to the values, the section registered in
     tests/test_values.py and tests/test_values_softness.py, the plan updated, the
     full gate, the merge into main and the branch deleted. telegram_setup and
-    scrcpy_setup are done; the order that remains is swapfile_service_install
-    (17 / 51 / 380), kde_keyboard_setup (41 / 52 / 631), rustdesk_setup
-    (42 / 62 / 733), zram_service (27 / 66 / 679, its commit moves compressor to
-    common and drops the copy of zswap_service), sotavpn_setup (24 / 67 / 663),
+    scrcpy_setup are done; the order that remains is kde_keyboard_setup
+    (41 / 52 / 631), rustdesk_setup (42 / 62 / 733), zram_service (27 / 66 / 679,
+    which reads the meminfo key from the shared module and moves compressor to
+    common, dropping the copy of zswap_service), sotavpn_setup (24 / 67 / 663),
     vocalinux_setup (38 / 71 / 680), chrome_setup (49 / 87 / 973),
     ssh_daemon_setup (64 / 90 / 659), dnsproxy_setup (78 / 117 / 1051, its commit
     moves the nextdns profile id pair to common) and kde_settings (1607 / 177 /
     2244, a list of kconfig records, so a named record type and the tuple of
-    those records per point 58). swapfile_service_install is next.
+    those records per point 58). kde_keyboard_setup is next.
 76. Stage E, the engine and the task catalog, one commit. values/engine.py
     carries the values of the run itself and stays the only fatal read (point
     37); values/tasks.py carries the catalog as a tuple of the named record type

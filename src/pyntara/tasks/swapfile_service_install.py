@@ -1,16 +1,15 @@
 """Task swapfile_service_install: calculate and configure a swapfile.
 
 The swap size is min(RAM * ram_multiplier + ram_extra_mb,
-free_disk * disk_fraction), where the parameters come from config.toml
-through ctx.config.swapfile_service_install and the RAM and free disk
-space are measured on the target machine. The task creates the swapfile
-with the configured allocation command, writes its signature with the
-configured format command, activates it with the configured swap commands
-and installs a systemd oneshot service that re-activates the swap at every
-boot. The unit file is rendered from the template the config names under
-task_data/swapfile_service_install/ with the swapfile path substituted
-(string.Template); the service never reads config.toml itself. The task is
-idempotent: it skips when the swapfile already has the computed size, is
+free_disk * disk_fraction), where the parameters come from the values module
+of this task and the RAM and free disk space are measured on the target
+machine. The task creates the swapfile with the configured allocation command,
+writes its signature with the configured format command, activates it with the
+configured swap commands and installs a systemd oneshot service that
+re-activates the swap at every boot. The unit file is rendered from the template
+the values name under task_data/swapfile_service_install/ with the swapfile path
+substituted (string.Template); the service never reads the values itself. The
+task is idempotent: it skips when the swapfile already has the computed size, is
 active and the service is enabled; force mode reruns it and recreates the
 swapfile.
 """
@@ -22,7 +21,6 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import SwapfileServiceInstallConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -32,12 +30,15 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import common as common_values
+from pyntara.values import missing_value_names
+from pyntara.values import swapfile_service_install as values
 
 # Path of the kernel information the RAM size is read from.
 MEMINFO_PATH = Path("/proc/meminfo")
 
 
-def _read_ram_kib(meminfo_total_key: str) -> int:
+def _read_ram_kib() -> int:
     """Total installed RAM in kibibytes from /proc/meminfo.
 
     Raises OSError when the file cannot be read or the configured total
@@ -45,17 +46,16 @@ def _read_ram_kib(meminfo_total_key: str) -> int:
     """
 
     for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith(meminfo_total_key):
+        if line.startswith(common_values.MEMINFO_TOTAL_KEY):
             parts = line.split()
             if len(parts) >= 2:
                 return int(parts[1])
-    raise OSError(f"{MEMINFO_PATH} has no {meminfo_total_key} line")
+    raise OSError(f"{MEMINFO_PATH} has no {common_values.MEMINFO_TOTAL_KEY} line")
 
 
 def _calculate_swap_size_mb(
     ram_kib: int,
     free_disk_kib: int,
-    cfg: SwapfileServiceInstallConfig,
     bytes_per_kib: int,
 ) -> int:
     """Swap size in mebibytes: min(RAM*mult+extra, free*disk_fraction).
@@ -68,8 +68,8 @@ def _calculate_swap_size_mb(
     """
 
     ram_mb = ram_kib // bytes_per_kib
-    ram_based = int(ram_mb * cfg.ram_multiplier) + cfg.ram_extra_mb
-    disk_based = int(free_disk_kib // bytes_per_kib * cfg.disk_fraction)
+    ram_based = int(ram_mb * values.RAM_MULTIPLIER) + values.RAM_EXTRA_MB
+    disk_based = int(free_disk_kib // bytes_per_kib * values.DISK_FRACTION)
     return min(ram_based, disk_based)
 
 
@@ -83,7 +83,7 @@ def _current_swap_size_mb(path: Path, bytes_per_mib: int) -> int | None:
     return size // bytes_per_mib
 
 
-def _swap_active(cfg: SwapfileServiceInstallConfig, timeout: float) -> bool:
+def _swap_active(timeout: float) -> bool:
     """True when the swapfile is currently activated.
 
     The configured swap listing command reports every active swap device;
@@ -92,12 +92,12 @@ def _swap_active(cfg: SwapfileServiceInstallConfig, timeout: float) -> bool:
     """
 
     result = run_command(
-        list(cfg.swap_show_command),
+        list(values.SWAP_SHOW_COMMAND),
         check=False,
         capture=True,
         timeout=timeout,
     )
-    return result.returncode == 0 and str(cfg.swapfile_path) in result.stdout
+    return result.returncode == 0 and str(values.SWAPFILE_PATH) in result.stdout
 
 
 def _render_unit(template_path: Path, swapfile_path: Path) -> str:
@@ -139,19 +139,36 @@ def task(ctx: Context) -> TaskResult:
     continues with the remaining tasks and never stops here.
     """
 
-    cfg = ctx.config.swapfile_service_install
+    absent = missing_value_names(
+        values, values.READ_VALUE_NAMES
+    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message=(
+                "the swapfile_service_install values are not declared, "
+                "nothing was changed"
+            ),
+            warnings=(
+                "the swapfile_service_install values are not declared: "
+                + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
-    service_name = cfg.service_unit_name
+    service_name = values.SERVICE_UNIT_NAME
     bytes_per_kib = ctx.config.engine.bytes_per_kib
     bytes_per_mib = ctx.config.engine.bytes_per_mib
     warnings: list[str] = []
 
     measured = True
     try:
-        ram_kib = _read_ram_kib(cfg.meminfo_total_key)
+        ram_kib = _read_ram_kib()
         free_disk_kib = (
-            shutil.disk_usage(cfg.swapfile_path.parent).free // bytes_per_kib
+            shutil.disk_usage(values.SWAPFILE_PATH.parent).free // bytes_per_kib
         )
     except OSError as exc:
         # Without the measurements the size cannot be computed, so the
@@ -165,27 +182,33 @@ def task(ctx: Context) -> TaskResult:
     ram_mb = ram_kib // bytes_per_kib
     free_disk_mb = free_disk_kib // bytes_per_kib
     _log(f"reading RAM from {MEMINFO_PATH}: {ram_mb} MiB")
-    _log(f"reading free disk space on {cfg.swapfile_path.parent}: {free_disk_mb} MiB")
+    _log(
+        f"reading free disk space on {values.SWAPFILE_PATH.parent}: "
+        f"{free_disk_mb} MiB"
+    )
 
-    multiplier = cfg.ram_multiplier
+    multiplier = values.RAM_MULTIPLIER
     multiplier_text = (
         str(int(multiplier)) if multiplier.is_integer() else str(multiplier)
     )
-    fraction = cfg.disk_fraction
+    fraction = values.DISK_FRACTION
     fraction_text = str(int(fraction)) if fraction.is_integer() else str(fraction)
-    target_mb = _calculate_swap_size_mb(ram_kib, free_disk_kib, cfg, bytes_per_kib)
+    target_mb = _calculate_swap_size_mb(ram_kib, free_disk_kib, bytes_per_kib)
     _log(
         f"calculated target size: min({ram_mb} MiB * {multiplier_text} + "
-        f"{cfg.ram_extra_mb} MiB, {free_disk_mb} MiB * {fraction_text}) = "
+        f"{values.RAM_EXTRA_MB} MiB, {free_disk_mb} MiB * {fraction_text}) = "
         f"{target_mb} MiB"
     )
 
-    current_mb = _current_swap_size_mb(cfg.swapfile_path, bytes_per_mib)
+    current_mb = _current_swap_size_mb(values.SWAPFILE_PATH, bytes_per_mib)
     if current_mb is None:
-        _log(f"checking swapfile {cfg.swapfile_path}: absent")
+        _log(f"checking swapfile {values.SWAPFILE_PATH}: absent")
     else:
-        _log(f"checking swapfile {cfg.swapfile_path}: exists, size: {current_mb} MiB")
-    active = _swap_active(cfg, timeout)
+        _log(
+            f"checking swapfile {values.SWAPFILE_PATH}: exists, size: "
+            f"{current_mb} MiB"
+        )
+    active = _swap_active(timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
     enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
     _log(
@@ -197,7 +220,7 @@ def task(ctx: Context) -> TaskResult:
         measured
         and not force
         and current_mb is not None
-        and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
+        and abs(current_mb - target_mb) <= values.SIZE_TOLERANCE_MB
         and active
         and enabled
     ):
@@ -209,18 +232,18 @@ def task(ctx: Context) -> TaskResult:
         measured
         and not force
         and current_mb is not None
-        and abs(current_mb - target_mb) <= cfg.size_tolerance_mb
+        and abs(current_mb - target_mb) <= values.SIZE_TOLERANCE_MB
     ):
         # The swapfile exists at the computed size; only activation or the
         # service is missing, so no recreation is needed.
         _log(f"swapfile already at target size: {current_mb} MiB")
         if not active:
-            _log(f"activating swap: swapon {cfg.swapfile_path}")
+            _log(f"activating swap: swapon {values.SWAPFILE_PATH}")
             try:
                 run_command(
                     substituted_command(
-                        cfg.swap_on_command,
-                        {"swapfile_path": str(cfg.swapfile_path)},
+                        values.SWAP_ON_COMMAND,
+                        {"swapfile_path": str(values.SWAPFILE_PATH)},
                     ),
                     timeout=timeout,
                 )
@@ -242,12 +265,12 @@ def task(ctx: Context) -> TaskResult:
             )
         deactivated = True
         if active:
-            _log(f"deactivating swap: swapoff {cfg.swapfile_path}")
+            _log(f"deactivating swap: swapoff {values.SWAPFILE_PATH}")
             try:
                 run_command(
                     substituted_command(
-                        cfg.swap_off_command,
-                        {"swapfile_path": str(cfg.swapfile_path)},
+                        values.SWAP_OFF_COMMAND,
+                        {"swapfile_path": str(values.SWAPFILE_PATH)},
                     ),
                     timeout=timeout,
                 )
@@ -260,9 +283,9 @@ def task(ctx: Context) -> TaskResult:
                 _log("swap deactivated")
         removed = True
         if deactivated:
-            _log(f"removing old swapfile {cfg.swapfile_path}")
+            _log(f"removing old swapfile {values.SWAPFILE_PATH}")
             try:
-                cfg.swapfile_path.unlink(missing_ok=True)
+                values.SWAPFILE_PATH.unlink(missing_ok=True)
             except OSError as exc:
                 warnings.append(f"cannot remove old swapfile: {exc}")
                 removed = False
@@ -274,48 +297,48 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _log(
                     f"creating swapfile: fallocate -l {target_mb}M "
-                    f"{cfg.swapfile_path}"
+                    f"{values.SWAPFILE_PATH}"
                 )
                 run_command(
                     substituted_command(
-                        cfg.create_command,
+                        values.CREATE_COMMAND,
                         {
                             "size_mb": str(target_mb),
-                            "swapfile_path": str(cfg.swapfile_path),
+                            "swapfile_path": str(values.SWAPFILE_PATH),
                         },
                     ),
                     timeout=timeout,
                 )
                 _log(f"swapfile created: {target_mb} MiB")
                 _log(
-                    f"setting permissions: chmod {cfg.swapfile_mode:o} "
-                    f"{cfg.swapfile_path}"
+                    f"setting permissions: chmod {values.SWAPFILE_MODE:o} "
+                    f"{values.SWAPFILE_PATH}"
                 )
                 run_command(
                     substituted_command(
-                        cfg.chmod_command,
+                        values.CHMOD_COMMAND,
                         {
-                            "file_mode": f"{cfg.swapfile_mode:o}",
-                            "swapfile_path": str(cfg.swapfile_path),
+                            "file_mode": f"{values.SWAPFILE_MODE:o}",
+                            "swapfile_path": str(values.SWAPFILE_PATH),
                         },
                     ),
                     timeout=timeout,
                 )
                 _log("permissions set")
-                _log(f"formatting swapfile: mkswap {cfg.swapfile_path}")
+                _log(f"formatting swapfile: mkswap {values.SWAPFILE_PATH}")
                 run_command(
                     substituted_command(
-                        cfg.format_command,
-                        {"swapfile_path": str(cfg.swapfile_path)},
+                        values.FORMAT_COMMAND,
+                        {"swapfile_path": str(values.SWAPFILE_PATH)},
                     ),
                     timeout=timeout,
                 )
                 _log("swapfile formatted")
-                _log(f"activating swap: swapon {cfg.swapfile_path}")
+                _log(f"activating swap: swapon {values.SWAPFILE_PATH}")
                 run_command(
                     substituted_command(
-                        cfg.swap_on_command,
-                        {"swapfile_path": str(cfg.swapfile_path)},
+                        values.SWAP_ON_COMMAND,
+                        {"swapfile_path": str(values.SWAPFILE_PATH)},
                     ),
                     timeout=timeout,
                 )
@@ -327,12 +350,12 @@ def task(ctx: Context) -> TaskResult:
 
     template_path = (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / cfg.unit_template_file_name
+        / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     content: str | None = None
     try:
-        content = _render_unit(template_path, cfg.swapfile_path)
+        content = _render_unit(template_path, values.SWAPFILE_PATH)
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     if content is not None:
@@ -351,13 +374,13 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _log("reloading systemd: systemctl daemon-reload")
                 run_command(
-                    list(cfg.systemctl_daemon_reload_command), timeout=timeout
+                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
                 )
                 _log("systemd reloaded")
                 _log(f"enabling service: systemctl enable {service_name}")
                 run_command(
                     substituted_command(
-                        cfg.systemctl_enable_command,
+                        values.SYSTEMCTL_ENABLE_COMMAND,
                         {"service_unit_name": service_name},
                     ),
                     timeout=timeout,
@@ -371,10 +394,10 @@ def task(ctx: Context) -> TaskResult:
                 warnings.append(f"systemd setup failed: {exc}")
 
     if measured:
-        message = f"swapfile {target_mb}M configured at {cfg.swapfile_path}"
+        message = f"swapfile {target_mb}M configured at {values.SWAPFILE_PATH}"
     else:
         message = (
             f"swapfile service {service_name} configured for "
-            f"{cfg.swapfile_path}, size not measured"
+            f"{values.SWAPFILE_PATH}, size not measured"
         )
     return _result(changed=changed, message=message, warnings=warnings)

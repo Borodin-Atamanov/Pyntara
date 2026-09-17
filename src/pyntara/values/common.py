@@ -58,6 +58,12 @@ DESKTOP_HOME_DIR: str = "/home/i"
 LAUNCHER_FILE_MODE: int = 0o644
 EXECUTABLE_FILE_MODE: int = 0o755
 
+# Name of the line in /proc/meminfo that carries the installed RAM, with the
+# separator the file uses. Two tasks read the total size from it, the swapfile
+# section and the zram section, so the name is written once here; a kernel that
+# renames the line is answered here.
+MEMINFO_TOTAL_KEY: str = "MemTotal:"
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -69,4 +75,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DESKTOP_HOME_DIR",
     "LAUNCHER_FILE_MODE",
     "EXECUTABLE_FILE_MODE",
+    "MEMINFO_TOTAL_KEY",
 )

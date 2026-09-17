@@ -48,6 +48,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "playwright_setup",
     "scrcpy_setup",
     "ssh_client_setup",
+    "swapfile_service_install",
     "telegram_setup",
     "vault_structure",
     "zswap_service",
@@ -77,6 +78,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
     ("scrcpy_setup", "FALLBACK_PACKAGES", check_nonempty_text_tuple),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
+    ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
 )
 
