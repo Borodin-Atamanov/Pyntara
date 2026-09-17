@@ -759,6 +759,114 @@ differences
     harness parameters to delete. The plan waits for the user's approval before
     the first section starts (stage 12 of the planning procedure).
 
+Remainder plan refreshed again on 2026-09-17 with the planning procedure, after
+the rustdesk_setup, zram_service and sotavpn_setup sections landed, and after a
+compliance audit of the same day. Every figure below was measured on this
+machine in this turn, and the probe is named with the figure.
+
+100. Where the remainder stands. Seventeen sections are migrated and merged into
+    main: cli_tools, imagemagick_setup, playwright_setup, ffmpeg_setup,
+    hostname, add_extra_repos, nextdns_setup_system_wide, zswap_service,
+    ssh_client_setup, local_vault_setup with vault_structure, telegram_setup,
+    scrcpy_setup, swapfile_service_install, kde_keyboard_setup, rustdesk_setup,
+    zram_service and sotavpn_setup. Stage D still holds five plain sections,
+    stage E then migrates the engine and the task catalog, and stage F takes the
+    seven coupled sections in the order of point 93.
+101. The plain sections of stage D that remain, with their values, task lines,
+    config reads and test file lines, counted with grep -cE "^[a-z_]+ *= " over
+    config/<section>.toml, wc -l over the task, grep -cE "cfg\." over the task
+    and wc -l over the test: vocalinux_setup 38 / 680 / 66 / 745, chrome_setup
+    49 / 973 / 83 / 1012, ssh_daemon_setup 64 / 659 / 82 / 1050, dnsproxy_setup
+    78 / 1051 / 108 / 757 and kde_settings 1607 / 2244 / 171 / 2420. The read
+    count leaves the order of point 75 unchanged, so the next section is
+    vocalinux_setup.
+102. What each remaining plain section carries besides its own values.
+    vocalinux_setup drops its own desktop user name and home directory and reads
+    SHORTCUTS_FILE_NAME from the shared module, because both already arrived
+    there; chrome_setup drops the desktop pair; ssh_daemon_setup moves
+    dropin_file_mode, private_key_file_mode and augeas_tools_package_name;
+    dnsproxy_setup moves the NextDNS profile id path and mode, of which the
+    migrated nextdns_setup_system_wide holds the other copy; kde_settings is the
+    large one, with 1607 values, a list of KConfig records that needs a named
+    record type (point 58) and the boolean spelling read from the shared module.
+    The desktop pair still stands in chrome_setup, kde_settings and
+    vocalinux_setup, so the correction of point 87 is that sotavpn_setup dropped
+    its copy when it landed.
+103. The harness-disagreement count of point 89 is corrected from sixteen to
+    eighteen by a fresh comparison of the make_config parameters of
+    tests/support.py with the shipped TOML values. The two the earlier probe
+    missed: ssh_daemon_setup carries a start check retry delay of 0.0 against the
+    shipped 1, and dnsproxy_setup carries a download directory of /tmp/dnsproxy
+    against the shipped /var/lib/pyntara/dnsproxy-download. The rest stand as
+    point 89 lists them: five in kde_settings, six in yggdrasil_service_setup,
+    two in i2pd_service_setup and one each in tor_setup, port_forwarding_setup
+    and upnp_forwarding_setup. chrome_setup and vocalinux_setup carry none:
+    every harness default of those two equals the shipped value, checked name by
+    name. A disagreement is fixed in the direction of the shipped value in the
+    commit of its section, which is the same commit that deletes the harness
+    parameters of that section.
+104. New fact from the compliance audit of this turn, and it belongs in the plan.
+    Two values of the migrated local_vault_setup section still have a second home
+    in the config document, because four modules of coupled sections read them
+    there: src/pyntara/metrics.py reads local_vault_setup.local_vault_path at
+    line 66 and local_vault_setup.pass_file_path at lines 78 and 82,
+    src/pyntara/tasks/commit_final_system_metrics.py reads the vault path at line
+    218, src/pyntara/xray_inbound.py at line 378 and src/pyntara/xray_panel.py at
+    line 376. No stage D section touches those readers, and the machine works
+    because the TOML section is still alive, but one value lives in two places
+    until the stage F commit of each reader replaces the config read with the
+    values module. The metrics task and metrics.py belong to the
+    system_metrics_setup commit, the two xray modules to the
+    three_x_ui_xray_setup commit.
+105. Stage E, the engine and the task catalog, unchanged from point 92: the values
+    of the run itself in values/engine.py (97 names in engine.toml today), the
+    catalog as a tuple of TaskSpec records in values/tasks.py (124 keys today),
+    the MODES table out of config/_fields.py, the opening probe that lists every
+    engine name with its readers, and the check that an undeclared catalog stops
+    the run with one plain sentence and a nonzero exit code.
+106. Stage F, the coupled sections in the order of point 93, with the readers of
+    point 104 added to the three_x_ui_xray_setup and system_metrics_setup
+    commits. The sizes measured today on the section tables:
+    three_x_ui_xray_setup 162 values, port_forwarding_setup 48,
+    i2pd_service_setup 35, tor_setup 27, upnp_forwarding_setup 22,
+    yggdrasil_service_setup 74 and system_metrics_setup 117.
+107. Stage G, removal, with the sizes measured today: config/ 32 TOML files and
+    6470 lines, src/pyntara/config/ 33 modules and 3250 lines,
+    tests/config_checks.py 7388 lines, tests/config_helpers.py 1243 lines,
+    tests/test_config_coverage.py 346 lines, 27 test_config_*.py files, the
+    make_config factory used by 138 test files in 333 calls, and the config layer
+    of VALUE_DIRECTORIES. The order inside the stage is the one of point 94.
+108. Stage H, documents, with the mentions of config/ measured today:
+    docs/guides/project-structure.md 37, docs/contracts/architecture.md 6,
+    docs/spec/config-content.md 5, docs/simplified-architecture.md 5,
+    docs/spec/system-metrics.md 3, docs/guides/developer-guide.md 2, README.md 1
+    and fourteen section specs once each.
+109. Stage I, the live proof on a target machine, unchanged from point 96 and
+    still waiting for the name of that machine.
+110. Test coverage of the remainder, unchanged from point 97. The values guards
+    run over the package, so a section is covered the moment it joins them, and
+    the check this refresh repeats: a section commit deletes the make_config
+    parameters of that section, so a harness default that disagrees with the
+    shipped value (point 103) cannot survive its migration. The two homes of
+    point 104 get one check in the commit that removes them: the module answers
+    with no config read at all, which is the proof point 77 already asks of every
+    coupled module.
+111. Risks of the remainder, refreshed. kde_settings carries 1607 values and the
+    largest test file, so it lands last among the plain sections and its record
+    type is decided at its start. dnsproxy_setup has 78 values with 108 reads and
+    a 757 line test, so its commit is smaller than its value count suggests,
+    while chrome_setup has 49 values against a 1012 line test. The two homes of
+    point 104 are the one place where the rule of the migration is broken today,
+    so stage G must not delete the TOML section of local_vault_setup before those
+    four readers have moved. Another agent session shares this clone, so every
+    change takes a fresh branch from main with a clean tree before and after the
+    commit. Stage I needs a machine the user names.
+112. First stage: vocalinux_setup, 38 values, 66 reads and a 745 line test, with
+    no harness disagreement and two shared values to drop, the desktop pair and
+    the shortcuts file name, both of which the shared module already carries. The
+    plan waits for the user's approval before that section starts (stage 12 of
+    the planning procedure).
+
 
 
 
