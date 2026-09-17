@@ -2,7 +2,9 @@
 
 All external resources (curl, rustdesk CLI, dpkg, apt-get, systemctl)
 are mocked via monkeypatch; the tests never touch the real system
-(docs/guides/developer-guide.md).
+(docs/guides/developer-guide.md). The download directory, the ID file, the
+client configuration directory and the option list are values, so one autouse
+fixture points them at the temporary directory of the test.
 """
 
 from __future__ import annotations
@@ -10,18 +12,18 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import Config, RustdeskOptionConfig, load_config
+from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import rustdesk_setup
 from pyntara.utils import curl_flags
+from pyntara.values import rustdesk_setup as values
 
 # The real catalog and config from the repository; the mode-membership
 # and dependency tests use them so they cover the actual task set.
@@ -33,6 +35,11 @@ ASSET_NAME = f"rustdesk-{RELEASE_TAG}-x86_64.deb"
 MACHINE_ID = "12345678"
 
 PASSWORD_WORDS_RE = re.compile(r"^[a-z]{5}( [a-z]{5}){5}$")
+
+# The shipped option list as it is declared, captured at import time: the two
+# tests that check the values a real run reads need it, while the autouse fixture
+# of this file replaces the list for the tests that drive the task.
+SHIPPED_OPTIONS = values.OPTIONS
 
 
 def _release_json(tag: str = RELEASE_TAG, arch: str = "x86_64") -> str:
@@ -209,19 +216,31 @@ def _fake_run(
     return calls
 
 
-def _config(*, tmp_path: Path, options: tuple = ()) -> Config:
-    return make_config(
-        rustdesk_download_dir=tmp_path / "download",
-        rustdesk_id_file_path=tmp_path / "rustdesk_id",
-        rustdesk_config_dir=tmp_path / "rustdesk-config",
-        rustdesk_options=options,
-    )
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own cache, ID file and configuration.
+
+    The three paths and the option list are values of the section, so the fixture
+    points them at the temporary directory of the test: no test touches
+    /var/cache, /var/lib or the home of the desktop user. The option list starts
+    empty and a test that needs options patches its own. The pause before the
+    settled service check is zeroed here, because a test never waits out real
+    time to learn an outcome (docs/guides/developer-guide.md); the test that
+    checks the pause sets its own value.
+    """
+
+    monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "download")
+    monkeypatch.setattr(values, "ID_FILE_PATH", tmp_path / "rustdesk_id")
+    monkeypatch.setattr(values, "CONFIG_DIR", tmp_path / "rustdesk-config")
+    monkeypatch.setattr(values, "OPTIONS", ())
+    monkeypatch.setattr(values, "SERVICE_SETTLE_DELAY_SECONDS", 0.0)
 
 
-def _ctx(*, tmp_path: Path, config: Config, force: bool = False) -> Context:
+def _ctx(*, force: bool = False) -> Context:
     return make_context(
         task_name="rustdesk_setup",
-        config=config,
         force_tasks=frozenset({"rustdesk_setup"}) if force else frozenset(),
         skip_apt_update=True,
     )
@@ -248,8 +267,7 @@ def test_real_config_keeps_public_server_defaults() -> None:
     # The whole point of the global-ID setup: no custom server options,
     # so the machine registers with the public RustDesk server and every
     # default client reaches it by ID alone.
-    config = load_config(REPO_ROOT / "config")
-    keys = [option.key for option in config.rustdesk_setup.options]
+    keys = [option.key for option in SHIPPED_OPTIONS]
     assert "custom-rendezvous-server" not in keys
     assert "relay-server" not in keys
     assert "key" not in keys
@@ -260,23 +278,23 @@ def test_real_config_keeps_public_server_defaults() -> None:
 def test_installed_latest_is_unchanged(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
-    config.rustdesk_setup.id_file_path.parent.mkdir(parents=True, exist_ok=True)
-    config.rustdesk_setup.id_file_path.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
+    values.ID_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.ID_FILE_PATH.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
     calls = _fake_run(monkeypatch, installed_version=RELEASE_TAG)
     fake = _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    ctx = _ctx()
+    result = rustdesk_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert fake.saved_to is None
     # the release lookup runs with the configured curl timeout and
     # retries, but no download or install happens
     expected_flags = curl_flags(
-        config.engine.curl_timeout_seconds,
-        config.engine.curl_retries,
-        config.engine.curl_connect_timeout_seconds,
-        config.engine.curl_retry_max_time_seconds,
-        config.engine.curl_retry_delay_seconds,
+        ctx.config.engine.curl_timeout_seconds,
+        ctx.config.engine.curl_retries,
+        ctx.config.engine.curl_connect_timeout_seconds,
+        ctx.config.engine.curl_retry_max_time_seconds,
+        ctx.config.engine.curl_retry_delay_seconds,
     )
     release_calls = [
         call
@@ -292,44 +310,45 @@ def test_installed_latest_is_unchanged(
 def test_installs_missing_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     calls = _fake_run(monkeypatch, installed_version=None)
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
-    assert not (config.rustdesk_setup.download_dir / ASSET_NAME).exists()
+    assert not (values.DOWNLOAD_DIR / ASSET_NAME).exists()
 
 
-def test_client_commands_come_from_the_config(
+def test_client_commands_come_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another command set in the config is the argv the task runs: the
+    # Another command set in the values module is the argv the task runs: the
     # option query and write carry their key and value as data, and the
-    # service commands carry the unit name, so the client interface is a
-    # config value and not code.
-    options = (RustdeskOptionConfig(key="enable-udp-punch", value="Y"),)
-    config = replace(
-        _config(tmp_path=tmp_path, options=options),
-        rustdesk_setup=replace(
-            _config(tmp_path=tmp_path).rustdesk_setup,
-            options=options,
-            get_option_command=("rustdesk", "--query", "{key}"),
-            set_option_command=("rustdesk", "--apply", "{key}", "{value}"),
-            service_start_command=(
-                "systemctl",
-                "--user",
-                "start",
-                "{service_unit_name}",
-            ),
-        ),
+    # service commands carry the unit name, so the client interface is a value
+    # and not code.
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="enable-udp-punch", value="Y"),),
+    )
+    monkeypatch.setattr(
+        values, "GET_OPTION_COMMAND", ("rustdesk", "--query", "{key}")
+    )
+    monkeypatch.setattr(
+        values,
+        "SET_OPTION_COMMAND",
+        ("rustdesk", "--apply", "{key}", "{value}"),
+    )
+    monkeypatch.setattr(
+        values,
+        "SERVICE_START_COMMAND",
+        ("systemctl", "--user", "start", "{service_unit_name}"),
     )
     calls = _fake_run(
         monkeypatch, installed_version=RELEASE_TAG, service_active=False
     )
     _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert ["rustdesk", "--query", "enable-udp-punch"] in calls
     assert ["rustdesk", "--apply", "enable-udp-punch", "Y"] in calls
@@ -337,7 +356,7 @@ def test_client_commands_come_from_the_config(
         "systemctl",
         "--user",
         "start",
-        config.rustdesk_setup.service_unit_name,
+        values.SERVICE_UNIT_NAME,
     ] in calls
 
 
@@ -347,7 +366,6 @@ def test_no_asset_for_unknown_architecture_is_a_warning(
     # The release carries no deb for this architecture: the install is
     # skipped with the reason while the service and the credentials are
     # still handled.
-    config = _config(tmp_path=tmp_path)
     calls = _fake_run(
         monkeypatch,
         installed_version=None,
@@ -355,7 +373,7 @@ def test_no_asset_for_unknown_architecture_is_a_warning(
         release_payload=_release_json(),
     )
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert any(
         "no rustdesk deb asset" in warning for warning in result.warnings
@@ -368,13 +386,16 @@ def test_no_asset_for_unknown_architecture_is_a_warning(
 def test_applies_options_idempotently(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    option = RustdeskOptionConfig(key="enable-udp-punch", value="Y")
-    config = _config(tmp_path=tmp_path, options=(option,))
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="enable-udp-punch", value="Y"),),
+    )
     calls = _fake_run(
         monkeypatch, option_values={"enable-udp-punch": "Y"}
     )
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     # the option was only read, never written
     assert not any(
@@ -386,11 +407,14 @@ def test_applies_options_idempotently(
 def test_sets_missing_option(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    option = RustdeskOptionConfig(key="enable-udp-punch", value="Y")
-    config = _config(tmp_path=tmp_path, options=(option,))
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="enable-udp-punch", value="Y"),),
+    )
     calls = _fake_run(monkeypatch, option_values={"enable-udp-punch": ""})
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert ["rustdesk", "--option", "enable-udp-punch", "Y"] in calls
@@ -399,10 +423,9 @@ def test_sets_missing_option(
 def test_generates_and_stores_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     calls = _fake_run(monkeypatch)
     fake = _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert fake.saved_to is not None
     assert fake._entry is not None
@@ -418,11 +441,10 @@ def test_generates_and_stores_password(
 def test_reuses_stored_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     stored = "kofub vifuf midot nudog zodum hobir"
     calls = _fake_run(monkeypatch)
     fake = _vault(monkeypatch, password=stored)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert fake._entry is not None
     assert fake._entry.password == stored
@@ -434,13 +456,12 @@ def test_reuses_stored_password(
 def test_fills_stored_machine_id_into_stale_vault_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     stored = "kofub vifuf midot nudog zodum hobir"
     calls = _fake_run(monkeypatch)
     # an entry created before the machine ID was stored carries the
     # password but an empty username; the first run fills the username
     fake = _vault(monkeypatch, password=stored, username="")
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert fake.saved_to is not None
@@ -453,23 +474,20 @@ def test_fills_stored_machine_id_into_stale_vault_entry(
 def test_force_regenerates_password_and_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
-    identity_dir = config.rustdesk_setup.config_dir
+    identity_dir = values.CONFIG_DIR
     identity_dir.mkdir(parents=True)
     identity = identity_dir / "RustDesk.toml"
     identity.write_text("old identity", encoding="utf-8")
     calls = _fake_run(monkeypatch)
     fake = _vault(monkeypatch, password="old password words")
-    result = rustdesk_setup.task(
-        _ctx(tmp_path=tmp_path, config=config, force=True)
-    )
+    result = rustdesk_setup.task(_ctx(force=True))
     assert result.success is True
     assert not identity.exists()
     assert fake._entry is not None
     assert fake._entry.password != "old password words"
     assert fake._entry.username == MACHINE_ID
     assert any(
-        call == ["systemctl", "stop", config.rustdesk_setup.service_unit_name]
+        call == ["systemctl", "stop", values.SERVICE_UNIT_NAME]
         for call in calls
     )
 
@@ -477,61 +495,52 @@ def test_force_regenerates_password_and_identity(
 def test_force_stores_regenerated_machine_id(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     # the identity reset makes the daemon report a fresh ID
     _fake_run(monkeypatch, machine_id="99999999")
     fake = _vault(monkeypatch, password="old words", username=MACHINE_ID)
-    result = rustdesk_setup.task(
-        _ctx(tmp_path=tmp_path, config=config, force=True)
-    )
+    result = rustdesk_setup.task(_ctx(force=True))
     assert result.success is True
     assert fake._entry is not None
     assert fake._entry.username == "99999999"
     assert fake._entry.password != "old words"
     assert (
-        config.rustdesk_setup.id_file_path.read_text(encoding="utf-8").strip()
-        == "99999999"
+        values.ID_FILE_PATH.read_text(encoding="utf-8").strip() == "99999999"
     )
 
 
 def test_writes_machine_id_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     _fake_run(monkeypatch, machine_id=MACHINE_ID)
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
-    assert config.rustdesk_setup.id_file_path.read_text(encoding="utf-8").strip() == (
-        MACHINE_ID
-    )
-    assert config.rustdesk_setup.id_file_path.stat().st_mode & 0o777 == 0o644
+    assert values.ID_FILE_PATH.read_text(encoding="utf-8").strip() == MACHINE_ID
+    assert values.ID_FILE_PATH.stat().st_mode & 0o777 == 0o644
 
 
 def test_id_file_stable_on_rerun(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
-    config.rustdesk_setup.id_file_path.parent.mkdir(parents=True, exist_ok=True)
-    config.rustdesk_setup.id_file_path.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
-    before = config.rustdesk_setup.id_file_path.read_text(encoding="utf-8")
+    values.ID_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.ID_FILE_PATH.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
+    before = values.ID_FILE_PATH.read_text(encoding="utf-8")
     _fake_run(monkeypatch, machine_id=MACHINE_ID)
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     # a matching ID file is left exactly as it was
-    assert config.rustdesk_setup.id_file_path.read_text(encoding="utf-8") == before
+    assert values.ID_FILE_PATH.read_text(encoding="utf-8") == before
 
 
 def test_vault_unavailable_warns_without_changing_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config = _config(tmp_path=tmp_path)
     calls = _fake_run(monkeypatch)
     monkeypatch.setattr(
         rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: None
     )
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.warnings
     assert "runtime vault unavailable" in result.warnings[0]
@@ -542,26 +551,26 @@ def test_vault_unavailable_warns_without_changing_password(
 
 def test_real_config_clears_the_service_stopped_flag() -> None:
     # RustDesk disables and stops its own unit while the stop-service flag
-    # is set, so the repository config carries the running value of the
-    # flag: without it a provisioned machine is registered with the public
-    # server and still unreachable.
-    config = load_config(REPO_ROOT / "config")
-    values = {
-        option.key: option.value for option in config.rustdesk_setup.options
-    }
-    assert values.get("stop-service") == ""
+    # is set, so the shipped values carry the running value of the flag:
+    # without it a provisioned machine is registered with the public server
+    # and still unreachable.
+    shipped = {option.key: option.value for option in SHIPPED_OPTIONS}
+    assert shipped.get("stop-service") == ""
 
 
 def test_clears_the_stopped_service_flag(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The running value of the flag comes from the config and reaches the
-    # client as one argv element of its own, the empty value included.
-    flag = RustdeskOptionConfig(key="stop-service", value="")
-    config = _config(tmp_path=tmp_path, options=(flag,))
+    # The running value of the flag comes from the values module and reaches
+    # the client as one argv element of its own, the empty value included.
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="stop-service", value=""),),
+    )
     calls = _fake_run(monkeypatch, option_values={"stop-service": "Y"})
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert ["rustdesk", "--option", "stop-service", ""] in calls
@@ -573,22 +582,25 @@ def test_restarts_the_service_the_stopped_flag_left_down(
     # The flag made RustDesk stop the unit after the start: the run starts
     # it once more once the flag is cleared and reports the machine ready,
     # because the settled check sees the service active.
-    flag = RustdeskOptionConfig(key="stop-service", value="")
-    config = _config(tmp_path=tmp_path, options=(flag,))
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="stop-service", value=""),),
+    )
     calls = _fake_run(
         monkeypatch,
         option_values={"stop-service": "Y"},
         service_active_sequence=[True, False, True],
     )
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert result.warnings == ()
     assert [
         "systemctl",
         "start",
-        config.rustdesk_setup.service_unit_name,
+        values.SERVICE_UNIT_NAME,
     ] in calls
     assert result.message is not None
     assert result.message.startswith("rustdesk ready, ID")
@@ -600,10 +612,9 @@ def test_reports_a_service_that_does_not_stay_up(
     # The unit stays down even after the restart: the run says the machine
     # is not reachable instead of claiming readiness, and reports the
     # finding as a warning of a completed task.
-    config = _config(tmp_path=tmp_path)
     _fake_run(monkeypatch, service_active_sequence=[True, False, False])
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.message is not None
     assert "rustdesk not reachable" in result.message
@@ -621,8 +632,11 @@ def test_repairs_a_service_the_armed_flag_left_disabled_and_down(
     # stop the unit at its start, so the run finds a unit that is neither
     # enabled nor running and leaves both the reachability and the boot
     # state of the machine in place.
-    flag = RustdeskOptionConfig(key="stop-service", value="")
-    config = _config(tmp_path=tmp_path, options=(flag,))
+    monkeypatch.setattr(
+        values,
+        "OPTIONS",
+        (values.RustdeskOption(key="stop-service", value=""),),
+    )
     calls = _fake_run(
         monkeypatch,
         option_values={"stop-service": "Y"},
@@ -630,10 +644,10 @@ def test_repairs_a_service_the_armed_flag_left_disabled_and_down(
         service_active_sequence=[False, False, True],
     )
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.warnings == ()
-    unit = config.rustdesk_setup.service_unit_name
+    unit = values.SERVICE_UNIT_NAME
     assert calls.count(["systemctl", "enable", unit]) == 2
     assert calls.count(["systemctl", "start", unit]) == 2
     assert result.message is not None
@@ -646,14 +660,13 @@ def test_reports_the_words_of_a_failed_service_command(
     # The reason a warned step gives is what systemd said, so the operator
     # of a machine without a developer reads "Unit ... is masked" and not
     # the repr of a Python exception.
-    config = _config(tmp_path=tmp_path)
     _fake_run(
         monkeypatch,
         service_active_sequence=[True, False],
         service_command_failure="Unit rustdesk.service is masked.",
     )
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert any(
         "Unit rustdesk.service is masked." in warning
@@ -669,10 +682,9 @@ def test_reports_a_service_that_runs_without_being_enabled(
     # A unit that runs now and is disabled for boot is reachable today and
     # not after a reboot: the run reports that as a finding instead of
     # hiding it behind the readiness of the moment.
-    config = _config(tmp_path=tmp_path)
     _fake_run(monkeypatch, service_enabled_sequence=[True, False])
     _vault(monkeypatch)
-    result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+    result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert any(
         "is not enabled for boot" in warning for warning in result.warnings
@@ -681,25 +693,20 @@ def test_reports_a_service_that_runs_without_being_enabled(
     assert result.message.startswith("rustdesk ready, ID")
 
 
-def test_settle_delay_comes_from_the_config(
+def test_settle_delay_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The pause before the final state check is a config value: another
-    # value in the config is another pause, so a machine that needs longer
-    # to show its state is tuned without touching the code.
+    # The pause before the final state check is a value: another value in the
+    # module is another pause, so a machine that needs longer to show its
+    # state is tuned without touching the code.
     clock = _RecordingClock()
     monkeypatch.setattr(rustdesk_setup, "time", clock)
     for configured in (2.5, 7.0):
-        config = _config(tmp_path=tmp_path)
-        config = replace(
-            config,
-            rustdesk_setup=replace(
-                config.rustdesk_setup,
-                service_settle_delay_seconds=configured,
-            ),
+        monkeypatch.setattr(
+            values, "SERVICE_SETTLE_DELAY_SECONDS", configured
         )
         _fake_run(monkeypatch)
         _vault(monkeypatch)
-        result = rustdesk_setup.task(_ctx(tmp_path=tmp_path, config=config))
+        result = rustdesk_setup.task(_ctx())
         assert result.success is True
     assert clock.sleeps == [2.5, 7.0]

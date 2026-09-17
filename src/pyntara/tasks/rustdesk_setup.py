@@ -17,10 +17,8 @@ machine ID is also written to id_file_path, so the System Metrics
 collector includes it in the network report
 (docs/spec/rustdesk-setup.md).
 
-The client options (UDP hole punching, IPv6 punching, direct access,
-headless Linux, adaptive bitrate and the access mode) come from the
-[rustdesk_setup.options] tables of the config and are applied through
-rustdesk --option; the task reads the current value and sets the option
+The client options come from the values module of this task and are applied
+through rustdesk --option; the task reads the current value and sets the option
 only when it differs, so the options are idempotent.
 
 The task is idempotent: a normal run keeps the installed version, the
@@ -41,7 +39,7 @@ import time
 from pathlib import Path
 
 from pyntara import metrics
-from pyntara.config import EngineConfig, RustdeskSetupConfig
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -60,13 +58,15 @@ from pyntara.utils import (
     substituted_command,
     version_without_tag_prefix,
 )
+from pyntara.values import local_vault_setup as local_vault_values
+from pyntara.values import missing_value_names
+from pyntara.values import rustdesk_setup as values
 
 # The rustdesk --version output is a bare dotted triple, e.g. 1.4.9.
 VERSION_PATTERN = re.compile(r"(\d+\.\d+(?:\.\d+)?)")
 
 
 def _select_asset(
-    cfg: RustdeskSetupConfig,
     release: dict[str, object],
     version: str,
     arch: str,
@@ -80,14 +80,14 @@ def _select_asset(
     """
 
     asset_arch = release_asset_architecture(architectures, arch)
-    name = cfg.asset_name_template.format(
+    name = values.ASSET_NAME_TEMPLATE.format(
         version=version, asset_arch=asset_arch
     )
     url = dict(asset_name_urls(release)).get(name)
     return (name, url) if url else None
 
 
-def _installed_version(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
+def _installed_version(timeout: float) -> str | None:
     """The installed rustdesk version from rustdesk --version, or None.
 
     A missing binary, a nonzero exit or a hang means rustdesk is not
@@ -98,7 +98,7 @@ def _installed_version(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
 
     try:
         result = run_command(
-            cfg.version_check_command,
+            values.VERSION_CHECK_COMMAND,
             check=False,
             capture=True,
             timeout=timeout,
@@ -179,7 +179,7 @@ def _cleanup_download(download_dir: Path, name: str) -> None:
         pass
 
 
-def _machine_id(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
+def _machine_id(timeout: float) -> str | None:
     """The machine RustDesk ID from rustdesk --get-id, or None.
 
     The command needs the running rustdesk daemon, so it may return None
@@ -188,7 +188,7 @@ def _machine_id(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
 
     try:
         result = run_command(
-            cfg.machine_id_command,
+            values.MACHINE_ID_COMMAND,
             check=False,
             capture=True,
             timeout=timeout,
@@ -200,7 +200,7 @@ def _machine_id(cfg: RustdeskSetupConfig, timeout: float) -> str | None:
     return result.stdout.strip()
 
 
-def _get_option(cfg: RustdeskSetupConfig, key: str, timeout: float) -> str | None:
+def _get_option(key: str, timeout: float) -> str | None:
     """The current value of a rustdesk option, or None.
 
     A missing value or a failed query means the option is not set, so the
@@ -209,7 +209,7 @@ def _get_option(cfg: RustdeskSetupConfig, key: str, timeout: float) -> str | Non
 
     try:
         result = run_command(
-            substituted_command(cfg.get_option_command, {"key": key}),
+            substituted_command(values.GET_OPTION_COMMAND, {"key": key}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -221,15 +221,13 @@ def _get_option(cfg: RustdeskSetupConfig, key: str, timeout: float) -> str | Non
     return result.stdout.strip()
 
 
-def _set_option(
-    cfg: RustdeskSetupConfig, key: str, value: str, timeout: float
-) -> bool:
+def _set_option(key: str, value: str, timeout: float) -> bool:
     """Set one rustdesk option through rustdesk --option; True on success."""
 
     try:
         run_command(
             substituted_command(
-                cfg.set_option_command, {"key": key, "value": value}
+                values.SET_OPTION_COMMAND, {"key": key, "value": value}
             ),
             check=True,
             capture=True,
@@ -241,7 +239,7 @@ def _set_option(
     return True
 
 
-def _apply_options(cfg: RustdeskSetupConfig, timeout: float) -> tuple[bool, str]:
+def _apply_options(timeout: float) -> tuple[bool, str]:
     """Apply the configured options; return (changed, error).
 
     Each option is read first and set only when it differs, so a rerun
@@ -249,20 +247,18 @@ def _apply_options(cfg: RustdeskSetupConfig, timeout: float) -> tuple[bool, str]
     """
 
     changed = False
-    for option in cfg.options:
-        current = _get_option(cfg, option.key, timeout)
+    for option in values.OPTIONS:
+        current = _get_option(option.key, timeout)
         if current == option.value:
             continue
-        if not _set_option(cfg, option.key, option.value, timeout):
+        if not _set_option(option.key, option.value, timeout):
             return False, f"cannot set rustdesk option {option.key}"
         _log(f"set rustdesk option {option.key} to {option.value!r}")
         changed = True
     return changed, ""
 
 
-def _set_password(
-    cfg: RustdeskSetupConfig, password: str, timeout: float
-) -> tuple[bool, str]:
+def _set_password(password: str, timeout: float) -> tuple[bool, str]:
     """Set the permanent rustdesk password; return (success, error_text).
 
     The password is a secret, so the command is never logged
@@ -272,7 +268,7 @@ def _set_password(
     try:
         run_command(
             substituted_command(
-                cfg.set_password_command, {"password": password}
+                values.SET_PASSWORD_COMMAND, {"password": password}
             ),
             check=True,
             capture=True,
@@ -304,7 +300,6 @@ def _ensure_vault_credentials(
     lost silently.
     """
 
-    cfg = ctx.config.rustdesk_setup
     kp = metrics.open_runtime_vault(ctx.config)
     if kp is None:
         return (
@@ -313,7 +308,7 @@ def _ensure_vault_credentials(
             False,
         )
     entry = kp.find_entries(
-        title=cfg.vault_entry_title,
+        title=values.VAULT_ENTRY_TITLE,
         group=kp.root_group,
         recursive=False,
         first=True,
@@ -324,7 +319,8 @@ def _ensure_vault_credentials(
         _log("reusing the stored rustdesk password")
     else:
         password = proquint_encode(
-            os.urandom(2 * cfg.password_words), separator=cfg.password_separator
+            os.urandom(2 * values.PASSWORD_WORDS),
+            separator=values.PASSWORD_SEPARATOR,
         )
         if entry is not None:
             entry.password = password
@@ -333,14 +329,14 @@ def _ensure_vault_credentials(
             note = (
                 "Permanent RustDesk access password of this machine, "
                 "generated by the rustdesk_setup task as "
-                f"{cfg.password_words} random proquint words; the username "
+                f"{values.PASSWORD_WORDS} random proquint words; the username "
                 "field carries the machine RustDesk ID. Applied through "
                 "rustdesk --password; the machine is reachable by its ID "
                 "with this password from any RustDesk client."
             )
             kp.add_entry(
                 kp.root_group,
-                cfg.vault_entry_title,
+                values.VAULT_ENTRY_TITLE,
                 machine_id or "",
                 password,
                 notes=note,
@@ -352,12 +348,11 @@ def _ensure_vault_credentials(
         _log(f"storing rustdesk machine ID {machine_id} in the vault entry")
         changed = True
     if changed:
-        kp.save(filename=str(ctx.config.local_vault_setup.local_vault_path))
+        kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
     return password, None, changed
 
 
 def _write_id_file(
-    cfg: RustdeskSetupConfig,
     machine_id: str,
     force: bool,
     owner_uid: int,
@@ -372,20 +367,20 @@ def _write_id_file(
     """
 
     try:
-        saved = cfg.id_file_path.read_text(encoding="utf-8").strip()
+        saved = values.ID_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         saved = None
     if saved == machine_id and not force:
         return False
-    cfg.id_file_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.id_file_path.write_text(f"{machine_id}\n", encoding="utf-8")
-    apply_owner(cfg.id_file_path, owner_uid, owner_gid)
-    cfg.id_file_path.chmod(cfg.id_file_mode)
-    _log(f"wrote rustdesk ID {machine_id} to {cfg.id_file_path}")
+    values.ID_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.ID_FILE_PATH.write_text(f"{machine_id}\n", encoding="utf-8")
+    apply_owner(values.ID_FILE_PATH, owner_uid, owner_gid)
+    values.ID_FILE_PATH.chmod(values.ID_FILE_MODE)
+    _log(f"wrote rustdesk ID {machine_id} to {values.ID_FILE_PATH}")
     return True
 
 
-def _reset_identity(cfg: RustdeskSetupConfig) -> None:
+def _reset_identity() -> None:
     """Remove the rustdesk identity file so a fresh ID is generated.
 
     The identity (the key pair and the derived machine ID) lives in
@@ -394,7 +389,7 @@ def _reset_identity(cfg: RustdeskSetupConfig) -> None:
     after the service is stopped.
     """
 
-    identity_path = cfg.config_dir / cfg.identity_file_name
+    identity_path = values.CONFIG_DIR / values.IDENTITY_FILE_NAME
     try:
         identity_path.unlink()
         _log("force: removed the rustdesk identity file")
@@ -402,7 +397,7 @@ def _reset_identity(cfg: RustdeskSetupConfig) -> None:
         pass
 
 
-def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
+def _wait_ready(timeout: float) -> bool:
     """Wait until the rustdesk daemon answers --get-id; True when ready.
 
     The rustdesk.service becomes active when its root --service process
@@ -411,10 +406,10 @@ def _wait_ready(cfg: RustdeskSetupConfig, timeout: float) -> bool:
     start_check_attempts times with the configured pause.
     """
 
-    for _ in range(cfg.start_check_attempts):
-        if _machine_id(cfg, min(timeout, cfg.readiness_probe_timeout_seconds)):
+    for _ in range(values.START_CHECK_ATTEMPTS):
+        if _machine_id(min(timeout, values.READINESS_PROBE_TIMEOUT_SECONDS)):
             return True
-        time.sleep(cfg.start_check_retry_delay_seconds)
+        time.sleep(values.START_CHECK_RETRY_DELAY_SECONDS)
     return False
 
 
@@ -444,9 +439,7 @@ def _service_command_result(
     return True, ""
 
 
-def _enable_service(
-    cfg: RustdeskSetupConfig, timeout: float
-) -> tuple[bool, str]:
+def _enable_service(timeout: float) -> tuple[bool, str]:
     """Enable the unit for boot; return (success, error_text).
 
     The boot state is restored with the configured enable command, since
@@ -455,13 +448,11 @@ def _enable_service(
     """
 
     return _service_command_result(
-        cfg.service_enable_command, cfg.service_unit_name, timeout
+        values.SERVICE_ENABLE_COMMAND, values.SERVICE_UNIT_NAME, timeout
     )
 
 
-def _start_service(
-    cfg: RustdeskSetupConfig, timeout: float
-) -> tuple[bool, str]:
+def _start_service(timeout: float) -> tuple[bool, str]:
     """Start the unit; return (success, error_text).
 
     RustDesk stops and disables its own unit at the start while the
@@ -472,25 +463,23 @@ def _start_service(
     """
 
     return _service_command_result(
-        cfg.service_start_command, cfg.service_unit_name, timeout
+        values.SERVICE_START_COMMAND, values.SERVICE_UNIT_NAME, timeout
     )
 
 
-def _service_stays_active(
-    cfg: RustdeskSetupConfig, engine: EngineConfig, timeout: float
-) -> bool:
+def _service_stays_active(engine: EngineConfig, timeout: float) -> bool:
     """True when the unit is still active after the configured settle.
 
     A start is not a working service: while the stop-service option
     carries its stopped value RustDesk disables and stops the unit a
     moment after the start, and the machine ID probe still answers over
     the IPC of the dying daemon. The pause before the final state check
-    comes from the config, so the check sees the state the machine keeps
-    and not the one it had for a second.
+    comes from the values module, so the check sees the state the machine
+    keeps and not the one it had for a second.
     """
 
-    time.sleep(cfg.service_settle_delay_seconds)
-    return service_is_active(engine, cfg.service_unit_name, timeout)
+    time.sleep(values.SERVICE_SETTLE_DELAY_SECONDS)
+    return service_is_active(engine, values.SERVICE_UNIT_NAME, timeout)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -517,7 +506,18 @@ def task(ctx: Context) -> TaskResult:
     with the remaining tasks.
     """
 
-    cfg = ctx.config.rustdesk_setup
+    absent = missing_value_names(values, values.READ_VALUE_NAMES)
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message="the rustdesk_setup values are not declared, nothing was changed",
+            warnings=(
+                "the rustdesk_setup values are not declared: " + ", ".join(absent),
+            ),
+        )
     timeout = ctx.config.engine.command_timeout_seconds
     owner_uid = ctx.config.engine.root_owner_uid
     owner_gid = ctx.config.engine.root_owner_gid
@@ -528,7 +528,7 @@ def task(ctx: Context) -> TaskResult:
     release: dict[str, object] = {}
     tag = ""
     try:
-        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        release = fetch_latest_release(values.GITHUB_REPO, ctx.config.engine)
         tag = version_without_tag_prefix(release_tag(release))
     except (RuntimeError, TypeError) as exc:
         # Without the release tag the installed version cannot be
@@ -538,7 +538,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(str(exc))
     _log(f"checking latest rustdesk release: {tag or 'unknown'}")
 
-    installed = _installed_version(cfg, timeout)
+    installed = _installed_version(timeout)
     _log(f"checking installed rustdesk version: {installed or 'not installed'}")
 
     if tag and installed != tag:
@@ -549,7 +549,7 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(f"cannot read dpkg architecture: {exc}")
         selected = (
             _select_asset(
-                cfg, release, tag, arch, ctx.config.engine.release_asset_architectures
+                release, tag, arch, ctx.config.engine.release_asset_architectures
             )
             if arch
             else None
@@ -567,7 +567,7 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _download_deb(
                     ctx.config.engine,
-                    cfg.download_dir,
+                    values.DOWNLOAD_DIR,
                     name,
                     url,
                     timeout,
@@ -579,15 +579,15 @@ def task(ctx: Context) -> TaskResult:
                 _log("installing rustdesk deb")
                 ok, error = _install_deb(
                     ctx.config.engine,
-                    cfg.download_dir,
+                    values.DOWNLOAD_DIR,
                     name,
-                    install_timeout=cfg.install_timeout_seconds,
-                    update_timeout=cfg.apt_update_timeout_seconds,
-                    retries=cfg.install_retries,
+                    install_timeout=values.INSTALL_TIMEOUT_SECONDS,
+                    update_timeout=values.APT_UPDATE_TIMEOUT_SECONDS,
+                    retries=values.INSTALL_RETRIES,
                     skip_update=ctx.skip_apt_update,
                 )
                 if ok:
-                    _cleanup_download(cfg.download_dir, name)
+                    _cleanup_download(values.DOWNLOAD_DIR, name)
                     _log("rustdesk installed")
                     changed = True
                 else:
@@ -600,37 +600,39 @@ def task(ctx: Context) -> TaskResult:
     if force:
         run_command(
             substituted_command(
-                cfg.service_stop_command,
-                {"service_unit_name": cfg.service_unit_name},
+                values.SERVICE_STOP_COMMAND,
+                {"service_unit_name": values.SERVICE_UNIT_NAME},
             ),
             check=False,
             timeout=timeout,
         )
-        _reset_identity(cfg)
+        _reset_identity()
         changed = True
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(
+        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
+    )
+    active = service_is_active(ctx.config.engine, values.SERVICE_UNIT_NAME, timeout)
     if not enabled:
-        _log(f"enabling service {cfg.service_unit_name}")
-        enabled_ok, enable_error = _enable_service(cfg, timeout)
+        _log(f"enabling service {values.SERVICE_UNIT_NAME}")
+        enabled_ok, enable_error = _enable_service(timeout)
         if enabled_ok:
             changed = True
         else:
             warnings.append(
-                f"cannot enable {cfg.service_unit_name}: {enable_error}"
+                f"cannot enable {values.SERVICE_UNIT_NAME}: {enable_error}"
             )
     if not active:
-        _log(f"starting service {cfg.service_unit_name}")
-        started, start_error = _start_service(cfg, timeout)
+        _log(f"starting service {values.SERVICE_UNIT_NAME}")
+        started, start_error = _start_service(timeout)
         if started:
             changed = True
         else:
             warnings.append(
-                f"cannot start {cfg.service_unit_name}: {start_error}"
+                f"cannot start {values.SERVICE_UNIT_NAME}: {start_error}"
             )
 
-    if not _wait_ready(cfg, timeout):
+    if not _wait_ready(timeout):
         warnings.append("rustdesk daemon did not answer after the service start")
     else:
         _log("rustdesk daemon ready")
@@ -639,9 +641,9 @@ def task(ctx: Context) -> TaskResult:
     # once after the daemon answers and feeds both the vault entry and
     # the ID file below. A missing ID still lets the password be stored,
     # and the run reports the warning after it.
-    machine_id = _machine_id(cfg, timeout)
+    machine_id = _machine_id(timeout)
 
-    options_changed, options_error = _apply_options(cfg, timeout)
+    options_changed, options_error = _apply_options(timeout)
     if options_error:
         warnings.append(options_error)
     if options_changed:
@@ -654,7 +656,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(password_warning or "rustdesk password unavailable")
     else:
         _log("applying the permanent rustdesk password")
-        ok, password_error = _set_password(cfg, password, timeout)
+        ok, password_error = _set_password(password, timeout)
         if ok:
             if vault_changed:
                 changed = True
@@ -664,55 +666,60 @@ def task(ctx: Context) -> TaskResult:
     # The state is checked again here: the options are applied after the
     # start, so a unit that RustDesk stopped and disabled at its start is
     # started once more through the same configured command.
-    if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
+    if not service_is_active(
+        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
+    ):
         _log(
-            f"service {cfg.service_unit_name} is not active after the "
+            f"service {values.SERVICE_UNIT_NAME} is not active after the "
             "configuration steps; enabling and starting it again"
         )
         if not service_is_enabled(
-            ctx.config.engine, cfg.service_unit_name, timeout
+            ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
         ):
-            _log(f"enabling service {cfg.service_unit_name} again")
-            enabled_ok, enable_error = _enable_service(cfg, timeout)
+            _log(f"enabling service {values.SERVICE_UNIT_NAME} again")
+            enabled_ok, enable_error = _enable_service(timeout)
             if enabled_ok:
                 changed = True
             else:
                 warnings.append(
-                    f"cannot enable {cfg.service_unit_name} again: {enable_error}"
+                    f"cannot enable {values.SERVICE_UNIT_NAME} again: "
+                    f"{enable_error}"
                 )
-        restarted, restart_error = _start_service(cfg, timeout)
+        restarted, restart_error = _start_service(timeout)
         if not restarted:
             warnings.append(
-                f"cannot start {cfg.service_unit_name} again: {restart_error}"
+                f"cannot start {values.SERVICE_UNIT_NAME} again: {restart_error}"
             )
         else:
             changed = True
-            if not _wait_ready(cfg, timeout):
+            if not _wait_ready(timeout):
                 warnings.append(
                     "rustdesk daemon did not answer after the service restart"
                 )
             if machine_id is None:
-                machine_id = _machine_id(cfg, timeout)
+                machine_id = _machine_id(timeout)
 
     if machine_id is None:
         warnings.append("cannot read the rustdesk machine ID")
     else:
         _log(f"rustdesk machine ID: {machine_id}")
-        if _write_id_file(cfg, machine_id, force, owner_uid, owner_gid):
+        if _write_id_file(machine_id, force, owner_uid, owner_gid):
             changed = True
 
     # The settled check is the one the run reports: a service that stopped
     # itself is not a machine an operator can reach, whatever the state
     # right after the start was.
-    service_running = _service_stays_active(cfg, ctx.config.engine, timeout)
+    service_running = _service_stays_active(ctx.config.engine, timeout)
     if not service_running:
         warnings.append(
-            f"service {cfg.service_unit_name} is not running after the "
+            f"service {values.SERVICE_UNIT_NAME} is not running after the "
             "configuration steps: the machine is not reachable by RustDesk ID"
         )
-    elif not service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout):
+    elif not service_is_enabled(
+        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
+    ):
         warnings.append(
-            f"service {cfg.service_unit_name} is not enabled for boot: the "
+            f"service {values.SERVICE_UNIT_NAME} is not enabled for boot: the "
             "machine is reachable now and not after a reboot"
         )
     if service_running and machine_id is not None:
@@ -721,7 +728,7 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         reason = (
-            f"service {cfg.service_unit_name} is not running"
+            f"service {values.SERVICE_UNIT_NAME} is not running"
             if not service_running
             else "the machine ID is unknown"
         )

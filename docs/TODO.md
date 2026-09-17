@@ -155,7 +155,22 @@ is the correction.
     0; a values module had no switch before this section, so this is the pattern
     the remaining sections follow, and kde_settings will carry the same answer
     for its own flags
-19. rustdesk_setup, 42 / 733 / 61
+19. rustdesk_setup, done, 42 / 733 / 61, and it settled two things. The option
+    list of the section is a list of records, so it became the tuple of the named
+    record type RustdeskOption, which the values module declares (point 58). And
+    the section produced the first entry of the exemption list of point 56: the
+    separator between the proquint words of the permanent password is one space,
+    and the generic rule that refuses a text with nothing in it is right to
+    refuse it. tests/test_values.py now carries EXEMPT_VALUES with that one
+    entry, a guard proves the entry names a declared value that the generic pass
+    really refuses, so an exemption that became unnecessary fails the suite.
+    The commit also removed 60 seconds of real waiting from the tests of the
+    section: each test paid the settle pause of the service check, and the
+    project rule says a test never waits out real time to learn an outcome. The
+    autouse fixture zeroes that pause and the test of the pause sets its own two
+    values, so the file went from 60.7 s to 0.6 s. The task also stopped reading
+    the local vault path through the config: it reads the values module of
+    local_vault_setup, which is already migrated
 20. zram_service, 27 / 679 / 66
 21. sotavpn_setup, 24 / 659 / 67
 22. tor_setup, 27 / 503 / 68

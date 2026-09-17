@@ -47,6 +47,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "local_vault_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
+    "rustdesk_setup",
     "scrcpy_setup",
     "ssh_client_setup",
     "swapfile_service_install",
@@ -77,10 +78,23 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("local_vault_setup", "SECRETS_DIR_MODE", check_file_mode),
     ("local_vault_setup", "VAULT_PASSWORD_ENTRY_TITLE", check_vault_entry_title),
     ("nextdns_setup_system_wide", "PROFILE_ID_FILE_MODE", check_file_mode),
+    ("rustdesk_setup", "ID_FILE_MODE", check_file_mode),
+    ("rustdesk_setup", "VAULT_ENTRY_TITLE", check_vault_entry_title),
     ("scrcpy_setup", "FALLBACK_PACKAGES", check_nonempty_text_tuple),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
     ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
+)
+
+# Values the rule of their annotation refuses while the shipped value is
+# legitimate: the one place a rule is overridden for a single value, and every
+# entry is a decision with a reason written beside it (point 56 of the plan).
+# A guard proves each entry names a declared value that the generic pass really
+# refuses, so an exemption that has become unnecessary fails the suite.
+EXEMPT_VALUES: tuple[tuple[str, str], ...] = (
+    # The separator between the proquint words of the RustDesk password is one
+    # space, so the text carries no letter on purpose.
+    ("rustdesk_setup", "PASSWORD_SEPARATOR"),
 )
 
 
@@ -180,6 +194,23 @@ def test_every_shipped_value_passes_the_rule_of_its_annotation() -> None:
         for name, annotation in sorted(get_type_hints(module).items()):
             if name == READ_VALUE_NAMES_ATTRIBUTE:
                 continue
+            if (module_name, name) in EXEMPT_VALUES:
+                continue
+            check_shipped_value(
+                getattr(module, name), annotation, f"{module_name}.{name}"
+            )
+
+
+def test_every_exempt_value_is_declared_and_otherwise_refused() -> None:
+    # An exemption that names nothing would look like protection, and one whose
+    # value the generic pass now accepts is a leftover: both fail here.
+    for module_name, name in EXEMPT_VALUES:
+        assert name in _declared_value_names(module_name), (
+            f"exemption naming no declared value: {module_name}.{name}"
+        )
+        module = _values_module(module_name)
+        annotation = get_type_hints(module)[name]
+        with pytest.raises(ValueRuleError):
             check_shipped_value(
                 getattr(module, name), annotation, f"{module_name}.{name}"
             )

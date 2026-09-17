@@ -31,6 +31,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("local_vault_setup", "local_vault_setup"),
     ("nextdns_setup_system_wide", "nextdns_setup_system_wide"),
     ("playwright_setup", "playwright_setup"),
+    ("rustdesk_setup", "rustdesk_setup"),
     ("scrcpy_setup", "scrcpy_setup"),
     ("ssh_client_setup", "ssh_client_setup"),
     ("swapfile_service_install", "swapfile_service_install"),
