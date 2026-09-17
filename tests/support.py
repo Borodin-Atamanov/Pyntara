@@ -416,6 +416,8 @@ def make_config(
     rustdesk_options: tuple[RustdeskOptionConfig, ...] = (
         RustdeskOptionConfig(key="enable-udp-punch", value="Y"),
     ),
+    scrcpy_setup_home_dir: str = "/home/i",
+    scrcpy_setup_download_dir: Path = Path("/var/cache/pyntara/scrcpy"),
     telegram_home_dir: str = "/home/i",
     telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
     chrome_home_dir: str = "/home/i",
@@ -912,6 +914,11 @@ def make_config(
             config_dir=rustdesk_config_dir,
             service_settle_delay_seconds=rustdesk_service_settle_delay_seconds,
             options=rustdesk_options,
+        ),
+        scrcpy_setup=replace(
+            base.scrcpy_setup,
+            home_dir=scrcpy_setup_home_dir,
+            download_dir=scrcpy_setup_download_dir,
         ),
         telegram_setup=replace(
             base.telegram_setup,

@@ -128,7 +128,8 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/ffmpeg-setup.md](docs/spec/ffmpeg-setup.md) — ffmpeg install from the Ubuntu archive, idempotent and without a version chase  
 [docs/spec/rustdesk-setup.md](docs/spec/rustdesk-setup.md) — RustDesk remote desktop client install from GitHub releases, public server registration, per-machine password and the network report ID  
 [docs/spec/telegram-setup.md](docs/spec/telegram-setup.md) — Telegram Desktop install from the official redirect, launcher entry and the built-in auto-update
-[docs/spec/playwright-setup.md](docs/spec/playwright-setup.md) — playwright-cli browser control install for the desktop user, over the chrome_setup CDP listener  
+[docs/spec/playwright-setup.md](docs/spec/playwright-setup.md) — playwright-cli browser control install for the desktop user, over the chrome_setup CDP listener
+[docs/spec/scrcpy-setup.md](docs/spec/scrcpy-setup.md) — scrcpy Android screen mirroring client from the GitHub release with the Ubuntu archive as the fallback, the version directory with the switched command link, the Android USB rules and the two menu entries  
 Guides — how to work with the project:
 
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  

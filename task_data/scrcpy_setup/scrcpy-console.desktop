@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=scrcpy (console)
+GenericName=Android screen mirroring
+Comment=Display and control an Android device over USB, keeping the client messages on screen
+Exec=$binary --pause-on-exit=if-error
+Icon=$icon
+Terminal=true
+Type=Application
+Categories=Utility;RemoteAccess;
+StartupNotify=false

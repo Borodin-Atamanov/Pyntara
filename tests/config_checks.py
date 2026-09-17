@@ -39,6 +39,7 @@ from pyntara.config import (
     PortForwardingSetupConfig,
     RustdeskOptionConfig,
     RustdeskSetupConfig,
+    ScrcpySetupConfig,
     SotavpnSetupConfig,
     SshClientSetupConfig,
     SshDaemonSetupConfig,
@@ -4741,6 +4742,130 @@ def _tasks_table(raw: object) -> tuple[TaskConfig, ...]:
 
 
 
+# from scrcpy_setup.py
+
+
+def _scrcpy_setup_table(raw: object) -> ScrcpySetupConfig:
+    """Validate the [scrcpy_setup] table and build the config."""
+
+    if not isinstance(raw, dict):
+        raise ConfigError("[scrcpy_setup] section is missing or not a table")
+    return ScrcpySetupConfig(
+        username=_nonempty_string_field(
+            raw.get("username"), "scrcpy_setup.username"
+        ),
+        home_dir=_nonempty_string_field(
+            raw.get("home_dir"), "scrcpy_setup.home_dir"
+        ),
+        github_repo=_nonempty_string_field(
+            raw.get("github_repo"), "scrcpy_setup.github_repo"
+        ),
+        archive_name_template=_placeholder_text_field(
+            raw.get("archive_name_template"),
+            "scrcpy_setup.archive_name_template",
+            ("{asset_arch}", "{release_tag}"),
+        ),
+        checksum_file_name=_nonempty_string_field(
+            raw.get("checksum_file_name"), "scrcpy_setup.checksum_file_name"
+        ),
+        fallback_packages=_string_list(
+            raw.get("fallback_packages"), "scrcpy_setup.fallback_packages"
+        ),
+        udev_rules_package_name=_nonempty_string_field(
+            raw.get("udev_rules_package_name"),
+            "scrcpy_setup.udev_rules_package_name",
+        ),
+        apt_binary_path=Path(
+            _nonempty_string_field(
+                raw.get("apt_binary_path"), "scrcpy_setup.apt_binary_path"
+            )
+        ),
+        theme_icon_name=_nonempty_string_field(
+            raw.get("theme_icon_name"), "scrcpy_setup.theme_icon_name"
+        ),
+        download_dir=Path(
+            _nonempty_string_field(
+                raw.get("download_dir"), "scrcpy_setup.download_dir"
+            )
+        ),
+        install_dir_relative_path=_nonempty_string_field(
+            raw.get("install_dir_relative_path"),
+            "scrcpy_setup.install_dir_relative_path",
+        ),
+        command_relative_path=_nonempty_string_field(
+            raw.get("command_relative_path"),
+            "scrcpy_setup.command_relative_path",
+        ),
+        launcher_relative_path=_nonempty_string_field(
+            raw.get("launcher_relative_path"),
+            "scrcpy_setup.launcher_relative_path",
+        ),
+        console_launcher_relative_path=_nonempty_string_field(
+            raw.get("console_launcher_relative_path"),
+            "scrcpy_setup.console_launcher_relative_path",
+        ),
+        launcher_template_file_name=_nonempty_string_field(
+            raw.get("launcher_template_file_name"),
+            "scrcpy_setup.launcher_template_file_name",
+        ),
+        console_launcher_template_file_name=_nonempty_string_field(
+            raw.get("console_launcher_template_file_name"),
+            "scrcpy_setup.console_launcher_template_file_name",
+        ),
+        binary_file_name=_nonempty_string_field(
+            raw.get("binary_file_name"), "scrcpy_setup.binary_file_name"
+        ),
+        server_file_name=_nonempty_string_field(
+            raw.get("server_file_name"), "scrcpy_setup.server_file_name"
+        ),
+        adb_file_name=_nonempty_string_field(
+            raw.get("adb_file_name"), "scrcpy_setup.adb_file_name"
+        ),
+        icon_file_name=_nonempty_string_field(
+            raw.get("icon_file_name"), "scrcpy_setup.icon_file_name"
+        ),
+        extract_dir_prefix=_nonempty_string_field(
+            raw.get("extract_dir_prefix"), "scrcpy_setup.extract_dir_prefix"
+        ),
+        trash_dir_relative_path=_nonempty_string_field(
+            raw.get("trash_dir_relative_path"),
+            "scrcpy_setup.trash_dir_relative_path",
+        ),
+        version_command=_placeholder_command_field(
+            raw.get("version_command"),
+            "scrcpy_setup.version_command",
+            ("{binary}",),
+        ),
+        checksum_command=_placeholder_command_field(
+            raw.get("checksum_command"),
+            "scrcpy_setup.checksum_command",
+            ("{file}",),
+        ),
+        archive_extract_command=_placeholder_command_field(
+            raw.get("archive_extract_command"),
+            "scrcpy_setup.archive_extract_command",
+            ("{archive}", "{extract_dir}"),
+        ),
+        launcher_file_mode=_octal_mode_field(
+            raw.get("launcher_file_mode"), "scrcpy_setup.launcher_file_mode"
+        ),
+        executable_file_mode=_octal_mode_field(
+            raw.get("executable_file_mode"),
+            "scrcpy_setup.executable_file_mode",
+        ),
+        package_status_timeout_seconds=_positive_int_field(
+            raw.get("package_status_timeout_seconds"),
+            "scrcpy_setup.package_status_timeout_seconds",
+        ),
+        package_install_retries=_int_field(
+            raw.get("package_install_retries"),
+            "scrcpy_setup.package_install_retries",
+        ),
+    )
+
+
+
+
 # from telegram_setup.py
 
 
@@ -7253,6 +7378,7 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
         port_forwarding_setup=port_forwarding_setup,
         upnp_forwarding_setup=upnp_forwarding_setup,
         rustdesk_setup=rustdesk_setup,
+        scrcpy_setup=_scrcpy_setup_table(document.get("scrcpy_setup")),
         sotavpn_setup=sotavpn_setup,
         system_metrics_setup=system_metrics_setup,
         vault_structure=vault_structure,

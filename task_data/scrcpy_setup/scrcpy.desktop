@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=scrcpy
+GenericName=Android screen mirroring
+Comment=Display and control an Android device over USB
+Exec=$binary
+Icon=$icon
+Terminal=false
+Type=Application
+Categories=Utility;RemoteAccess;
+StartupNotify=false

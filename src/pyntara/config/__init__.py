@@ -64,6 +64,7 @@ from .system_metrics_setup import (
     SystemMetricsSetupConfig,
     TelemetryPdfConfig,
 )
+from .scrcpy_setup import ScrcpySetupConfig
 from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import (
@@ -130,6 +131,7 @@ __all__ = [
     "PortForwardingSetupConfig",
     "RustdeskOptionConfig",
     "RustdeskSetupConfig",
+    "ScrcpySetupConfig",
     "SotavpnSetupConfig",
     "SshClientSetupConfig",
     "SshDaemonSetupConfig",

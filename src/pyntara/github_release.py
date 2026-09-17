@@ -1,7 +1,7 @@
 """Read the latest release of a GitHub repository.
 
-Five tasks install a program from GitHub releases: dnsproxy_setup,
-i2pd_service_setup, rustdesk_setup, three_x_ui_xray_setup and
+Six tasks install a program from GitHub releases: dnsproxy_setup,
+i2pd_service_setup, rustdesk_setup, scrcpy_setup, three_x_ui_xray_setup and
 yggdrasil_service_setup. Each one used to carry its own copy of the query,
 so the endpoint, the curl flags and the error messages could drift apart;
 the query lives here once and the tasks import it (architecture contract,

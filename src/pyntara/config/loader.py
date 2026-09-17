@@ -35,6 +35,7 @@ from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskSetupConfig
+from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
@@ -87,6 +88,7 @@ class Config:
     port_forwarding_setup: PortForwardingSetupConfig
     upnp_forwarding_setup: UpnpForwardingSetupConfig
     rustdesk_setup: RustdeskSetupConfig
+    scrcpy_setup: ScrcpySetupConfig
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig

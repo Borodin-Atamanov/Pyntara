@@ -180,6 +180,12 @@ depends = []
 modes = ["desktop"]
 
 [[tasks]]
+name = "scrcpy_setup"
+description = "Install the scrcpy Android screen mirroring client for the desktop user from the GitHub release, with the Ubuntu archive as the fallback."
+depends = ["add_extra_repos"]
+modes = ["desktop"]
+
+[[tasks]]
 name = "commit_final_system_metrics"
 description = "Commit the runtime vault and the encrypted telemetry PDF into System Metrics."
 depends = ["system_metrics_setup"]
