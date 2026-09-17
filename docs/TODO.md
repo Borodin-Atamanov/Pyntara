@@ -143,11 +143,11 @@ What every section must keep true: the criteria and the nuances.
     values module that does not import, requiring the remaining tasks to run;
     the entry point test of a deployed service; and the existing proof that an
     empty task catalog stays fatal.
-42. Four guards hold the values package: the shipped values pass every rule of
-    tests/value_checks.py; READ_VALUE_NAMES names exactly the declared values;
-    every declared value is read somewhere; and a value literal outside the
-    values package fails the suite. A fifth is worth having: a task module
-    imports only the values module of its own task.
+42. The guards of the values package: the shipped values pass the rule of their
+    annotation; READ_VALUE_NAMES names exactly the declared values; every
+    declared value is read somewhere; a value literal outside the values
+    package fails the suite; and every extra rule names a declared value. No
+    guard restricts which values module a module may read (decision 59).
 43. Every rule of the old suite is either replaced or deleted with its reason: a
     shape rule dies with mypy on the annotation, and a rule a type cannot
     express moves to tests/value_checks.py together with its negative test. A
@@ -162,8 +162,8 @@ What every section must keep true: the criteria and the nuances.
     RustdeskOptionConfig) stays in code as a type, and the value is the tuple of
     its records.
 45. Context keeps the clone root, the install mode, the forced task names and
-    the task name; only its config goes away. A helper shared by two tasks takes
-    the value as a parameter; anything else reads the module of its own task.
+    the task name; only its config goes away. How an internal helper of a large
+    task obtains the values it needs is still open, question 64.
 46. The deployment stops carrying a config. The deployed services import the
     values of the installed wheel, which is built with uv sync --no-editable, so
     the values package must be inside the wheel. The whole config path mechanism
@@ -222,6 +222,40 @@ Decisions taken while the migration runs:
     legitimate, an empty list among them, needs a documented exemption list, and
     adding an entry is a decision, never a convenience. That list is empty
     today; the empty depends list of a task is the case expected to reach it.
+57. Shared values live in one place for every task (user decision of
+    2026-09-17): a value two or more tasks need is written once, the copies a
+    section used to carry move to the shared place, and the sections read it
+    there. A value one task needs stays in its own module. If a section ever
+    needs another number, it declares its own value, and that is a decision.
+58. A value that is a list of records keeps a named record type in code and the
+    value is the tuple of those records (user decision of 2026-09-17). The
+    rejected alternatives were a tuple of plain pairs, which asks the reader to
+    remember which element is the key, and a dictionary, which loses the order.
+59. No guard restricts which values module a module may read (user decision of
+    2026-09-17): a module reads what it needs. The blast radius of a broken
+    values file is therefore a convention of this migration, not a checked rule.
+60. A values module of the engine that does not import is fatal, and it is
+    reported as one plain sentence with a nonzero exit code, never as a Python
+    traceback (user decision of 2026-09-17): the run cannot continue without
+    those values, and the target machine has no developer to read a traceback.
+61. The TOML sections of migrated sections stay in place as dead data until
+    stage C removes everything at once (user decision of 2026-09-17). They harm
+    nothing, and their list is the list of done sections above.
+62. Stage C removes the old sources with git, so the content stays in the
+    repository history and is recoverable (user decision of 2026-09-17). The
+    project rule to delete only through the trash applies to resources outside
+    the repository; the user decided this case, it is not an assumption.
+
+Open questions, to be answered before the sections that need them:
+
+63. Where the shared values live: in the values module of the engine, which
+    every module reads already, or in a separate shared module of the values
+    package. To be answered before the four migrated sections are rewritten to
+    read the shared pair of package install values.
+64. How an internal helper of a large task obtains the values it needs: by
+    reading the values module of its own task, by receiving them as parameters,
+    or by receiving a small object built at the top of the task. To be answered
+    before rustdesk_setup is migrated.
 
 
 
