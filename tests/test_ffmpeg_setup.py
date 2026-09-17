@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -94,39 +93,27 @@ def _wayrecord_env(
     )
 
 
-# The shipped values, kept so a test that points the task at the fixture
-# tree cannot leak into the next test of the same worker.
-_SHIPPED_VALUES: dict[str, object] = {
-    name: getattr(ffmpeg_values, name) for name in ffmpeg_values.READ_VALUE_NAMES
-}
-
-
-@pytest.fixture(autouse=True)
-def _restore_ffmpeg_values() -> Iterator[None]:
-    """Put the shipped values back after a test pointed them elsewhere."""
-
-    yield
-    for name, value in _SHIPPED_VALUES.items():
-        setattr(ffmpeg_values, name, value)
-
-
 def _ctx(
+    monkeypatch: pytest.MonkeyPatch,
     wayrecord_bin_path: Path,
     wayrecord_desktop_path: Path,
     *,
     skip_apt_update: bool = False,
     repo_root: Path | None = None,
 ) -> Context:
-    """Context of the task with the values pointed at the fixture tree.
+    """Context of the task with its values pointed at the fixture tree.
 
-    The values are module constants, so the helper hands the task the
-    temporary binary and desktop entry the test owns; the autouse fixture
-    above restores the shipped values after the test.
+    The values are module constants, so the helper patches them for the test
+    that calls it; monkeypatch puts the shipped values back afterwards,
+    whether the test passed or failed, so no test can leak into the next one
+    of the same worker.
     """
 
-    ffmpeg_values.PACKAGES = TEST_PACKAGES
-    ffmpeg_values.WAYRECORD_BIN_PATH = wayrecord_bin_path
-    ffmpeg_values.WAYRECORD_DESKTOP_PATH = wayrecord_desktop_path
+    monkeypatch.setattr(ffmpeg_values, "PACKAGES", TEST_PACKAGES)
+    monkeypatch.setattr(ffmpeg_values, "WAYRECORD_BIN_PATH", wayrecord_bin_path)
+    monkeypatch.setattr(
+        ffmpeg_values, "WAYRECORD_DESKTOP_PATH", wayrecord_desktop_path
+    )
     return make_context(
         task_name="ffmpeg_setup",
         repo_root=repo_root or _FIXTURE_REPO or _CLONE_ROOT,
@@ -225,7 +212,7 @@ def test_all_installed_skips_apt_and_rebuild(
     )
     calls = _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert result.changed is False
@@ -245,7 +232,7 @@ def test_installs_missing_package(
     )
     calls = _command_fake(monkeypatch, installed=set())
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert result.changed is True
@@ -268,7 +255,12 @@ def test_skip_apt_update_skips_the_update(
     )
     calls = _command_fake(monkeypatch, installed=set())
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path, skip_apt_update=True)
+        _ctx(
+            monkeypatch,
+            wayrecord_bin_path,
+            wayrecord_desktop_path,
+            skip_apt_update=True,
+        )
     )
     assert result.success is True
     assert result.changed is True
@@ -288,7 +280,7 @@ def test_install_failure_is_a_warning(
     )
     _command_fake(monkeypatch, installed=set(), install_rc=1)
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert any("failed to install" in warning for warning in result.warnings)
@@ -302,7 +294,7 @@ def test_wayrecord_built_when_missing(
     )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert result.changed is True
@@ -329,7 +321,7 @@ def test_wayrecord_idempotent_when_matching(
     )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert result.changed is False
@@ -350,8 +342,10 @@ def test_desktop_template_name_comes_from_the_values(
         DESKTOP_TEMPLATE.replace("Pyntara Wayrecord", "Other Wayrecord"),
         encoding="utf-8",
     )
-    ctx = _ctx(wayrecord_bin_path, wayrecord_desktop_path)
-    ffmpeg_values.WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME = "other.desktop"
+    ctx = _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
+    monkeypatch.setattr(
+        ffmpeg_values, "WAYRECORD_DESKTOP_TEMPLATE_FILE_NAME", "other.desktop"
+    )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(ctx)
     assert result.success is True
@@ -370,7 +364,7 @@ def test_wayrecord_rebuilt_when_different(
     wayrecord_bin_path.write_bytes(b"old stale engine")
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert result.changed is True
@@ -389,7 +383,7 @@ def test_build_failure_is_a_warning(
         monkeypatch, installed=set(TEST_PACKAGES), build_rc=1
     )
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     assert any(
@@ -406,7 +400,7 @@ def test_desktop_written_when_missing(
     )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path)
+        _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
     expected = ffmpeg_setup._desktop_content(
@@ -458,7 +452,12 @@ def test_wayrecord_missing_template_is_a_warning(
     wayrecord_desktop_path = tmp_path / "applications" / "pyntara-wayrecord.desktop"
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
-        _ctx(wayrecord_bin_path, wayrecord_desktop_path, repo_root=repo)
+        _ctx(
+            monkeypatch,
+            wayrecord_bin_path,
+            wayrecord_desktop_path,
+            repo_root=repo,
+        )
     )
     assert result.success is True
     assert any(
