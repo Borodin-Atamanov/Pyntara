@@ -1135,6 +1135,30 @@ machine in this turn, and the probe is named with the figure.
     the mechanical part of kde_settings alone is about 320 edits across a
     2244-line task, so it is the only section of the migration that needs the
     multi-commit branch the user allowed.
+130. Stage 2 of kde_settings finished on 2026-09-17 and is green where it can be:
+    the task reads pyntara.values.kde_settings at every point of use and takes
+    the desktop user, the home, the shortcut file name and the boolean spelling
+    from pyntara.values.common; it carries the missing-values guard and reports
+    "the kde_settings values are not declared, nothing was changed" in plain
+    words, so a values module that is not declared costs the task and never the
+    run; the values module is registered in VALUES_MODULE_NAMES and in
+    MIGRATED_SECTIONS, and both guards pass. ruff, ruff format and mypy --strict
+    are clean on the task, the values module and the whole package.
+    Two facts of the conversion are worth keeping. The values module gained
+    KCONFIG_BOOL_TYPE and its --type flag now takes that constant, so the word of
+    a KConfig flag has one home. The four user-relative directory values are
+    strings in the module (the absolute-path rule cannot apply to a relative
+    path), so the code builds a Path from them where it joins them.
+    What remains before the section is done in stage 3 and stage 4: the tests
+    still configure the section through make_config
+    (kde_settings_home_dir, kde_settings_virtual_keyboard_enabled,
+    kde_settings_system_look_and_feel_dir, kde_settings_kconfig) and import
+    KdeSettingsConfig, KConfigRecord, KCONFIG_BOOL_TYPE, KCONFIG_STRING_TYPE and
+    KCONFIG_TYPES from pyntara.config, which is why about forty tests of the
+    section fail on this commit; the idiom to copy is the one of every migrated
+    section, a test helper that points the values module at the tmp_path
+    fixtures. The config copy of the section, its check, its fragment of the
+    shared test document and its spec section follow in stage 4.
 
 
 
