@@ -1,5 +1,4 @@
-"""Config tests for [yggdrasil_service_setup], [ssh_daemon_setup]
-and [ssh_client_setup]."""
+"""Config tests for [yggdrasil_service_setup]."""
 
 from __future__ import annotations
 
@@ -9,8 +8,6 @@ import pytest
 from config_helpers import (
     assert_config_error,
     base_config,
-    load_checked_config,
-    write_config,
 )
 
 
@@ -149,122 +146,7 @@ from config_helpers import (
             "address_save_retry_max_seconds = 67",
             "address_save_retry_max_seconds = 0",
         ),
-        # ssh_daemon_setup package_name is a number, not a string
-        base_config().replace('package_name = "openssh-server"', "package_name = 1"),
-        # ssh_daemon_setup package_name is an empty string
-        base_config().replace('package_name = "openssh-server"', 'package_name = ""'),
-        # ssh_daemon_setup package_status_timeout_seconds is zero
-        base_config().replace(
-            "package_status_timeout_seconds = 30",
-            "package_status_timeout_seconds = 0",
-        ),
-        # ssh_daemon_setup service_unit_name is a number, not a string
-        base_config().replace(
-            'service_unit_name = "ssh.service"', "service_unit_name = 1"
-        ),
-        # ssh_daemon_setup service_unit_name is an empty string
-        base_config().replace(
-            'service_unit_name = "ssh.service"', 'service_unit_name = ""'
-        ),
-        # ssh_daemon_setup socket_unit_name is a number, not a string
-        base_config().replace(
-            'socket_unit_name = "ssh.socket"', "socket_unit_name = 1"
-        ),
-        # ssh_daemon_setup socket_unit_name is an empty string
-        base_config().replace(
-            'socket_unit_name = "ssh.socket"', 'socket_unit_name = ""'
-        ),
-        # ssh_daemon_setup sshd_config_path is a number, not a string
-        base_config().replace(
-            'sshd_config_path = "/etc/ssh/sshd_config"', "sshd_config_path = 1"
-        ),
-        # ssh_daemon_setup sshd_config_path is an empty string
-        base_config().replace(
-            'sshd_config_path = "/etc/ssh/sshd_config"', 'sshd_config_path = ""'
-        ),
-        # ssh_daemon_setup sshd_config_dropin_path is an empty string
-        base_config().replace(
-            'sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"',
-            'sshd_config_dropin_path = ""',
-        ),
-        # ssh_daemon_setup dropin_file_mode is not octal
-        base_config().replace('dropin_file_mode = "0644"', 'dropin_file_mode = "zzzz"'),
-        # ssh_daemon_setup private_key_file_name is an empty string
-        base_config().replace(
-            'private_key_file_name = "id_ed25519"', 'private_key_file_name = ""'
-        ),
-        # ssh_daemon_setup public_key_file_name is a number, not a string
-        base_config().replace(
-            'public_key_file_name = "id_ed25519.pub"', "public_key_file_name = 1"
-        ),
-        # ssh_daemon_setup private_key_file_mode is not four digits
-        base_config().replace(
-            'private_key_file_mode = "0600"', 'private_key_file_mode = "600"'
-        ),
-        # ssh_daemon_setup public_key_file_mode is a number, not a string
-        base_config().replace(
-            'public_key_file_mode = "0644"', "public_key_file_mode = 644"
-        ),
-        # ssh_daemon_setup authorized_keys_file_mode is not octal
-        base_config().replace(
-            'authorized_keys_file_mode = "0600"', 'authorized_keys_file_mode = "nope"'
-        ),
-        # ssh_daemon_setup ssh_dir_mode is a number, not a string
-        base_config().replace('ssh_dir_mode = "0700"', "ssh_dir_mode = 700"),
-        # ssh_daemon_setup root_ssh_dir is an empty string
-        base_config().replace('root_ssh_dir = "/root/.ssh"', 'root_ssh_dir = ""'),
-        # ssh_daemon_setup users is a string, not an array
-        base_config().replace('users = ["i", "j", "k"]', 'users = "i"'),
-        # ssh_daemon_setup users is an empty array
-        base_config().replace('users = ["i", "j", "k"]', "users = []"),
-        # ssh_daemon_setup users contains a number, not strings
-        base_config().replace('users = ["i", "j", "k"]', "users = [1]"),
-        # ssh_daemon_setup users contains an empty string
-        base_config().replace('users = ["i", "j", "k"]', 'users = [""]'),
-        # ssh_daemon_setup users contains duplicates
-        base_config().replace('users = ["i", "j", "k"]', 'users = ["i", "i"]'),
-        # ssh_daemon_setup directives is a string, not an array of tables
-        base_config().replace(
-            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
-            'directives = "PubkeyAuthentication yes"\n',
-        ),
-        # ssh_daemon_setup directive name is an empty string
-        base_config().replace(
-            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
-            '[[ssh_daemon_setup.directives]]\nname = ""\nvalue = "yes"\n',
-        ),
-        # ssh_daemon_setup directive value is an empty string
-        base_config().replace(
-            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
-            '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = ""\n',
-        ),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
     assert_config_error(tmp_path, content)
-
-
-def test_load_config_rejects_duplicate_ssh_directive_names(tmp_path: Path) -> None:
-    # A directive keyword must be unique in the ssh_daemon_setup table:
-    # a duplicated keyword would render two lines for the same setting.
-    assert_config_error(
-        tmp_path,
-        base_config()
-        + '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
-        match="directive names must be unique",
-    )
-
-
-def test_load_config_accepts_empty_ssh_directives(tmp_path: Path) -> None:
-    # An empty directives list is valid: the drop-in is then removed by
-    # the task instead of rendered.
-    config = load_checked_config(
-        write_config(
-            tmp_path,
-            base_config().replace(
-                '[[ssh_daemon_setup.directives]]\nname = "PubkeyAuthentication"\nvalue = "yes"\n',
-                "",
-            ),
-        )
-    )
-    assert config.ssh_daemon_setup.directives == ()

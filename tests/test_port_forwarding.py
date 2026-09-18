@@ -35,6 +35,8 @@ from pyntara.port_forwarding import (
     start_forward,
 )
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 VAULT_PASSWORD = "vault-secret"
 FAKE_BIN = (
@@ -722,9 +724,11 @@ class TestMain:
         self.root_ssh = tmp_path / "root" / ".ssh"
         self.root_ssh.mkdir(parents=True)
         monkeypatch.setattr(values, "CONNECT_TIMEOUT_SECONDS", 1)
-        self.config = make_config(
-            ssh_daemon_root_ssh_dir=self.root_ssh,
+        monkeypatch.setattr(ssh_daemon_values, "ROOT_SSH_DIR", self.root_ssh)
+        monkeypatch.setattr(
+            ssh_daemon_values, "DIRECTIVES", (SshDirective("Port", "30222"),)
         )
+        self.config = make_config()
         self.key = self.root_ssh / "id_ed25519_pf"
         self.key.write_text("dummy", encoding="utf-8")
         monkeypatch.setattr(pf, "load_config", lambda path: self.config)

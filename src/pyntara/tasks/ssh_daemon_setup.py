@@ -57,7 +57,6 @@ from pyntara.augeas import (
     include_covers_dropin,
     sync_dropin,
 )
-from pyntara.config import SshDaemonSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -73,10 +72,11 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import ssh_daemon_setup as values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 
 def _verify_effective_config(
-    cfg: SshDaemonSetupConfig,
     directives: tuple[SshDirective, ...],
     timeout: float,
 ) -> str | None:
@@ -91,7 +91,7 @@ def _verify_effective_config(
 
     try:
         result = run_command(
-            list(cfg.effective_config_command),
+            list(values.EFFECTIVE_CONFIG_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -117,7 +117,7 @@ def _verify_effective_config(
 
 
 def _verify_listening_port(
-    cfg: SshDaemonSetupConfig, port: str, timeout: float
+    port: str, timeout: float
 ) -> str | None:
     """Error text when nothing listens on the port; None when OK.
 
@@ -128,7 +128,7 @@ def _verify_listening_port(
 
     try:
         result = run_command(
-            list(cfg.listening_sockets_command),
+            list(values.LISTENING_SOCKETS_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -193,7 +193,6 @@ def _deploy_keys(
     pf_private_bytes: bytes,
     pf_public_bytes: bytes,
     pf_public_line: str,
-    cfg: SshDaemonSetupConfig,
     uid: int,
     gid: int,
 ) -> bool:
@@ -210,20 +209,20 @@ def _deploy_keys(
 
     changed = False
     ssh_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(ssh_dir, cfg.ssh_dir_mode)
+    os.chmod(ssh_dir, values.SSH_DIR_MODE)
     apply_owner(ssh_dir, uid, gid)
     if _write_bytes_if_different(
-        ssh_dir / cfg.private_key_file_name,
+        ssh_dir / values.PRIVATE_KEY_FILE_NAME,
         private_bytes,
-        cfg.private_key_file_mode,
+        values.PRIVATE_KEY_FILE_MODE,
         uid,
         gid,
     ):
         changed = True
     if _write_bytes_if_different(
-        ssh_dir / cfg.public_key_file_name,
+        ssh_dir / values.PUBLIC_KEY_FILE_NAME,
         public_bytes,
-        cfg.public_key_file_mode,
+        values.PUBLIC_KEY_FILE_MODE,
         uid,
         gid,
     ):
@@ -231,23 +230,23 @@ def _deploy_keys(
     if _ensure_authorized_key(
         ssh_dir / "authorized_keys",
         public_line,
-        cfg.authorized_keys_file_mode,
+        values.AUTHORIZED_KEYS_FILE_MODE,
         uid,
         gid,
     ):
         changed = True
     if _write_bytes_if_different(
-        ssh_dir / cfg.port_forwarding_private_key_file_name,
+        ssh_dir / values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME,
         pf_private_bytes,
-        cfg.private_key_file_mode,
+        values.PRIVATE_KEY_FILE_MODE,
         uid,
         gid,
     ):
         changed = True
     if _write_bytes_if_different(
-        ssh_dir / cfg.port_forwarding_public_key_file_name,
+        ssh_dir / values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME,
         pf_public_bytes,
-        cfg.public_key_file_mode,
+        values.PUBLIC_KEY_FILE_MODE,
         uid,
         gid,
     ):
@@ -255,7 +254,7 @@ def _deploy_keys(
     if _ensure_authorized_key(
         ssh_dir / "authorized_keys",
         pf_public_line,
-        cfg.authorized_keys_file_mode,
+        values.AUTHORIZED_KEYS_FILE_MODE,
         uid,
         gid,
     ):
@@ -264,7 +263,6 @@ def _deploy_keys(
 
 
 def _ensure_package(
-    cfg: SshDaemonSetupConfig,
     timeout: float,
     skip_update: bool,
 ) -> tuple[bool, str]:
@@ -284,8 +282,8 @@ def _ensure_package(
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
-    for _ in range(cfg.install_retries + 1):
-        ok, error = install_package_once(cfg.package_name, timeout)
+    for _ in range(values.INSTALL_RETRIES + 1):
+        ok, error = install_package_once(values.PACKAGE_NAME, timeout)
         if ok:
             break
     return ok, error
@@ -337,7 +335,6 @@ def task(ctx: Context) -> TaskResult:
     runs, so the runner continues with the remaining tasks.
     """
 
-    cfg = ctx.config.ssh_daemon_setup
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     owner_uid = engine_values.ROOT_OWNER_UID
     owner_gid = engine_values.ROOT_OWNER_GID
@@ -345,22 +342,22 @@ def task(ctx: Context) -> TaskResult:
     ssh_data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
 
-    private_source = ssh_data_dir / cfg.private_key_file_name
-    public_source = ssh_data_dir / cfg.public_key_file_name
-    pf_private_source = ssh_data_dir / cfg.port_forwarding_private_key_file_name
-    pf_public_source = ssh_data_dir / cfg.port_forwarding_public_key_file_name
+    private_source = ssh_data_dir / values.PRIVATE_KEY_FILE_NAME
+    public_source = ssh_data_dir / values.PUBLIC_KEY_FILE_NAME
+    pf_private_source = ssh_data_dir / values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
+    pf_public_source = ssh_data_dir / values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME
     keys_ready = private_source.is_file() and public_source.is_file()
     if not keys_ready:
         warnings.append(
-            f"key files {cfg.private_key_file_name} and "
-            f"{cfg.public_key_file_name} missing in {ssh_data_dir}"
+            f"key files {values.PRIVATE_KEY_FILE_NAME} and "
+            f"{values.PUBLIC_KEY_FILE_NAME} missing in {ssh_data_dir}"
         )
     pf_keys_ready = pf_private_source.is_file() and pf_public_source.is_file()
     if not pf_keys_ready:
         warnings.append(
             f"port-forwarding key files "
-            f"{cfg.port_forwarding_private_key_file_name} and "
-            f"{cfg.port_forwarding_public_key_file_name} "
+            f"{values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME} and "
+            f"{values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME} "
             f"missing in {ssh_data_dir}"
         )
     private_bytes = private_source.read_bytes() if keys_ready else b""
@@ -369,36 +366,36 @@ def task(ctx: Context) -> TaskResult:
     pf_private_bytes = pf_private_source.read_bytes() if pf_keys_ready else b""
     pf_public_bytes = pf_public_source.read_bytes() if pf_keys_ready else b""
     pf_public_line = (
-        f"{cfg.port_forwarding_authorized_keys_options} "
+        f"{values.PORT_FORWARDING_AUTHORIZED_KEYS_OPTIONS} "
         f"{pf_public_bytes.decode('utf-8').strip()}"
     )
 
     changed = False
 
     installed = package_is_installed(
-        cfg.package_name, cfg.package_status_timeout_seconds
+        values.PACKAGE_NAME, values.PACKAGE_STATUS_TIMEOUT_SECONDS
     )
     _log(
-        f"checking package {cfg.package_name}: "
+        f"checking package {values.PACKAGE_NAME}: "
         f"{'installed' if installed else 'missing'}"
     )
     if not installed:
-        _log(f"installing package {cfg.package_name}")
-        ok, error = _ensure_package(cfg, timeout, ctx.skip_apt_update)
+        _log(f"installing package {values.PACKAGE_NAME}")
+        ok, error = _ensure_package(timeout, ctx.skip_apt_update)
         if ok:
             _log("package installed")
             changed = True
         else:
-            warnings.append(f"cannot install {cfg.package_name}: {error}")
+            warnings.append(f"cannot install {values.PACKAGE_NAME}: {error}")
 
     include_ok = include_covers_dropin(
-        cfg.sshd_config_path,
-        cfg.sshd_config_dropin_path,
-        cfg.dropin_comment_sign,
-        cfg.include_directive,
+        values.SSHD_CONFIG_PATH,
+        values.SSHD_CONFIG_DROPIN_PATH,
+        values.DROPIN_COMMENT_SIGN,
+        values.INCLUDE_DIRECTIVE,
     )
     _log(
-        f"checking Include directive in {cfg.sshd_config_path}: "
+        f"checking Include directive in {values.SSHD_CONFIG_PATH}: "
         f"{'found' if include_ok else 'missing'}"
     )
     if not include_ok:
@@ -406,15 +403,15 @@ def task(ctx: Context) -> TaskResult:
         # to work the moment the directive appears, so the work is not
         # thrown away by a line missing from a file we do not own.
         warnings.append(
-            f"{cfg.sshd_config_path} has no Include directive covering "
-            f"{cfg.sshd_config_dropin_path.parent}"
+            f"{values.SSHD_CONFIG_PATH} has no Include directive covering "
+            f"{values.SSHD_CONFIG_DROPIN_PATH.parent}"
         )
 
     augtool_error = ensure_augtool(
-        cfg.augeas_tools_package_name,
-        status_timeout=cfg.package_status_timeout_seconds,
+        values.AUGEAS_TOOLS_PACKAGE_NAME,
+        status_timeout=values.PACKAGE_STATUS_TIMEOUT_SECONDS,
         install_timeout=timeout,
-        retries=cfg.install_retries,
+        retries=values.INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
     if augtool_error is not None:
@@ -423,24 +420,24 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(augtool_error)
 
     directives = tuple(
-        (directive.name, directive.value) for directive in cfg.directives
+        (directive.name, directive.value) for directive in values.DIRECTIVES
     )
     dropin_changed = False
     port_changed = False
     if augtool_error is None:
         try:
             dropin_changed, port_changed = sync_dropin(
-                cfg.sshd_config_dropin_path,
+                values.SSHD_CONFIG_DROPIN_PATH,
                 directives,
-                cfg.dropin_file_mode,
+                values.DROPIN_FILE_MODE,
                 force,
-                cfg.augeas_lens,
-                cfg.dropin_header,
+                values.AUGEAS_LENS,
+                values.DROPIN_HEADER,
                 timeout,
-                cfg.dropin_comment_sign,
+                values.DROPIN_COMMENT_SIGN,
                 owner_uid=owner_uid,
                 owner_gid=owner_gid,
-                port_directive=cfg.port_directive,
+                port_directive=values.PORT_DIRECTIVE,
             )
         except RuntimeError as exc:
             warnings.append(str(exc))
@@ -449,49 +446,48 @@ def task(ctx: Context) -> TaskResult:
                 _log("drop-in synced through augeas")
                 changed = True
 
-    if (dropin_changed or force) and cfg.directives:
-        verify = _verify_effective_config(cfg, cfg.directives, timeout)
+    if (dropin_changed or force) and values.DIRECTIVES:
+        verify = _verify_effective_config(values.DIRECTIVES, timeout)
         if verify is None:
             _log("effective configuration verified through sshd -T")
         else:
             warnings.append(verify)
 
-    socket_enabled = service_is_enabled(cfg.socket_unit_name, timeout)
-    socket_active = service_is_active(cfg.socket_unit_name, timeout)
+    socket_enabled = service_is_enabled(values.SOCKET_UNIT_NAME, timeout)
+    socket_active = service_is_active(values.SOCKET_UNIT_NAME, timeout)
     socket_needs_disable = socket_enabled or socket_active
     if socket_enabled:
-        _log(f"checking socket {cfg.socket_unit_name}: enabled")
+        _log(f"checking socket {values.SOCKET_UNIT_NAME}: enabled")
     elif socket_active:
-        _log(f"checking socket {cfg.socket_unit_name}: active")
+        _log(f"checking socket {values.SOCKET_UNIT_NAME}: active")
     else:
-        _log(f"checking socket {cfg.socket_unit_name}: disabled")
+        _log(f"checking socket {values.SOCKET_UNIT_NAME}: disabled")
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(values.SERVICE_UNIT_NAME, timeout)
+    active = service_is_active(values.SERVICE_UNIT_NAME, timeout)
     _log(
-        f"checking autorun service {cfg.service_unit_name}: "
+        f"checking autorun service {values.SERVICE_UNIT_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
 
     keys_ready = keys_ready and pf_keys_ready
     if keys_ready:
-        _log(f"deploying keys into {cfg.root_ssh_dir}")
+        _log(f"deploying keys into {values.ROOT_SSH_DIR}")
         if _deploy_keys(
-            cfg.root_ssh_dir,
+            values.ROOT_SSH_DIR,
             private_bytes,
             public_bytes,
             public_line,
             pf_private_bytes,
             pf_public_bytes,
             pf_public_line,
-            cfg,
             0,
             0,
         ):
             changed = True
         _log("root keys deployed")
-        for user in cfg.users:
+        for user in values.USERS:
             try:
                 record = pwd.getpwnam(user)
             except KeyError:
@@ -507,7 +503,6 @@ def task(ctx: Context) -> TaskResult:
                 pf_private_bytes,
                 pf_public_bytes,
                 pf_public_line,
-                cfg,
                 record.pw_uid,
                 record.pw_gid,
             ):
@@ -522,12 +517,12 @@ def task(ctx: Context) -> TaskResult:
 
     socket_changed = False
     if socket_needs_disable:
-        _log(f"disabling socket: systemctl disable --now {cfg.socket_unit_name}")
+        _log(f"disabling socket: systemctl disable --now {values.SOCKET_UNIT_NAME}")
         try:
             run_command(
                 substituted_command(
-                    cfg.socket_disable_command,
-                    {"socket_unit_name": cfg.socket_unit_name},
+                    values.SOCKET_DISABLE_COMMAND,
+                    {"socket_unit_name": values.SOCKET_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -539,12 +534,12 @@ def task(ctx: Context) -> TaskResult:
             socket_changed = True
 
     if not enabled:
-        _log(f"enabling service: systemctl enable {cfg.service_unit_name}")
+        _log(f"enabling service: systemctl enable {values.SERVICE_UNIT_NAME}")
         try:
             run_command(
                 substituted_command(
-                    cfg.service_enable_command,
-                    {"service_unit_name": cfg.service_unit_name},
+                    values.SERVICE_ENABLE_COMMAND,
+                    {"service_unit_name": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -557,19 +552,19 @@ def task(ctx: Context) -> TaskResult:
     port_value = next(
         (
             directive.value
-            for directive in cfg.directives
-            if directive.name.casefold() == cfg.port_directive.casefold()
+            for directive in values.DIRECTIVES
+            if directive.name.casefold() == values.PORT_DIRECTIVE.casefold()
         ),
         None,
     )
 
     if not active:
-        _log(f"starting service: systemctl start {cfg.service_unit_name}")
+        _log(f"starting service: systemctl start {values.SERVICE_UNIT_NAME}")
         try:
             run_command(
                 substituted_command(
-                    cfg.service_start_command,
-                    {"service_unit_name": cfg.service_unit_name},
+                    values.SERVICE_START_COMMAND,
+                    {"service_unit_name": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -578,31 +573,31 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log("service started")
             if not _wait_active(
-                cfg.service_unit_name,
-                cfg.start_check_attempts,
-                cfg.start_check_retry_delay_seconds,
+                values.SERVICE_UNIT_NAME,
+                values.START_CHECK_ATTEMPTS,
+                values.START_CHECK_RETRY_DELAY_SECONDS,
                 timeout,
             ):
                 warnings.append(
-                    f"{cfg.service_unit_name} did not become active after "
-                    f"{cfg.start_check_attempts} checks"
+                    f"{values.SERVICE_UNIT_NAME} did not become active after "
+                    f"{values.START_CHECK_ATTEMPTS} checks"
                 )
             else:
                 _log("service active")
                 changed = True
                 if port_value is not None:
-                    verify = _verify_listening_port(cfg, port_value, timeout)
+                    verify = _verify_listening_port(port_value, timeout)
                     if verify is None:
                         _log(f"listener on port {port_value} verified")
                     else:
                         warnings.append(verify)
     elif force or socket_changed or port_changed:
-        _log(f"restarting service: systemctl restart {cfg.service_unit_name}")
+        _log(f"restarting service: systemctl restart {values.SERVICE_UNIT_NAME}")
         try:
             run_command(
                 substituted_command(
-                    cfg.service_restart_command,
-                    {"service_unit_name": cfg.service_unit_name},
+                    values.SERVICE_RESTART_COMMAND,
+                    {"service_unit_name": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -612,18 +607,18 @@ def task(ctx: Context) -> TaskResult:
             _log("service restarted")
             changed = True
             if port_value is not None:
-                verify = _verify_listening_port(cfg, port_value, timeout)
+                verify = _verify_listening_port(port_value, timeout)
                 if verify is None:
                     _log(f"listener on port {port_value} verified")
                 else:
                     warnings.append(verify)
     elif dropin_changed:
-        _log(f"reloading service: systemctl reload {cfg.service_unit_name}")
+        _log(f"reloading service: systemctl reload {values.SERVICE_UNIT_NAME}")
         try:
             run_command(
                 substituted_command(
-                    cfg.service_reload_command,
-                    {"service_unit_name": cfg.service_unit_name},
+                    values.SERVICE_RELOAD_COMMAND,
+                    {"service_unit_name": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -636,8 +631,8 @@ def task(ctx: Context) -> TaskResult:
     return _result(
         changed=changed,
         message=(
-            f"SSH server {cfg.package_name} configured, service "
-            f"{cfg.service_unit_name} active"
+            f"SSH server {values.PACKAGE_NAME} configured, service "
+            f"{values.SERVICE_UNIT_NAME} active"
         ),
         warnings=warnings,
     )

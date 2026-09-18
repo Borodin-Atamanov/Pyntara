@@ -30,7 +30,6 @@ from pathlib import Path
 
 from pyntara.config import (
     PUBLIC_ADDRESS_CONFIG_KEYS,
-    Config,
     absent_config_keys,
     load_config,
 )
@@ -44,7 +43,7 @@ NO_ANSWER_REASON = "no echo service reported an address of this family"
 
 
 def address_records(
-    cfg: Config, addresses: PublicAddresses, ssh_port: int
+    addresses: PublicAddresses, ssh_port: int
 ) -> list[dict[str, object]]:
     """One record per reported address, plus a reason per silent family.
 
@@ -105,7 +104,7 @@ def main(argv: list[str]) -> int:
         )
         return 1
     try:
-        ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+        ssh_port = ssh_port_from_directives()
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -122,7 +121,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         json.dumps(
-            address_records(cfg, addresses, ssh_port),
+            address_records(addresses, ssh_port),
             ensure_ascii=False,
             indent=engine_values.REPORT_JSON_INDENT,
         )

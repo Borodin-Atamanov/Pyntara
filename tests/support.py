@@ -21,7 +21,6 @@ from pyntara.config import (
     CollectorModuleConfig,
     Config,
     RustdeskOptionConfig,
-    SshDirective,
     load_config,
 )
 from pyntara.context import Context
@@ -332,29 +331,6 @@ def make_config(
     yggdrasil_config_document_keys: dict[str, str] | None = None,
     yggdrasil_admin_output_keys: dict[str, str] | None = None,
     yggdrasil_line_separator: str = "\n",
-    ssh_daemon_start_check_retry_delay_seconds: float = 0.0,
-    ssh_daemon_sshd_config_path: Path = Path("/etc/ssh/sshd_config"),
-    ssh_daemon_sshd_config_dropin_path: Path = Path(
-        "/etc/ssh/sshd_config.d/pyntara.conf"
-    ),
-    ssh_daemon_root_ssh_dir: Path = Path("/root/.ssh"),
-    ssh_daemon_users: tuple[str, ...] = ("i", "j", "k"),
-    ssh_daemon_directives: tuple[SshDirective, ...] = (
-        SshDirective(name="Port", value="30222"),
-        SshDirective(name="PubkeyAuthentication", value="yes"),
-    ),
-    ssh_client_ssh_config_path: Path = Path("/etc/ssh/ssh_config"),
-    ssh_client_ssh_config_dropin_path: Path = Path(
-        "/etc/ssh/ssh_config.d/pyntara.conf"
-    ),
-    ssh_client_effective_config_command: tuple[str, ...] = (
-        "ssh",
-        "-G",
-        "example.com",
-    ),
-    ssh_client_directives: tuple[SshDirective, ...] = (
-        SshDirective(name="AddressFamily", value="any"),
-    ),
     system_metrics_backoff_base_seconds: int = 2,
     system_metrics_backoff_multiplier: int = 2,
     system_metrics_backoff_max_seconds: int = 14400,
@@ -563,22 +539,6 @@ def make_config(
                 else yggdrasil_admin_output_keys
             ),
             line_separator=yggdrasil_line_separator,
-        ),
-        ssh_daemon_setup=replace(
-            base.ssh_daemon_setup,
-            start_check_retry_delay_seconds=ssh_daemon_start_check_retry_delay_seconds,
-            sshd_config_path=ssh_daemon_sshd_config_path,
-            sshd_config_dropin_path=ssh_daemon_sshd_config_dropin_path,
-            root_ssh_dir=ssh_daemon_root_ssh_dir,
-            users=ssh_daemon_users,
-            directives=ssh_daemon_directives,
-        ),
-        ssh_client_setup=replace(
-            base.ssh_client_setup,
-            ssh_config_path=ssh_client_ssh_config_path,
-            ssh_config_dropin_path=ssh_client_ssh_config_dropin_path,
-            effective_config_command=ssh_client_effective_config_command,
-            directives=ssh_client_directives,
         ),
         system_metrics_setup=replace(
             base.system_metrics_setup,

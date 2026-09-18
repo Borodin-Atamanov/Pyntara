@@ -82,7 +82,7 @@ def test_absent_section_keeps_its_object_with_absent_values(
     # attribute error; only the values are absent.
     config = load_config(_write(tmp_path, "[hostname]\nhostname_random_bytes = 4\n"))
     assert config.hostname.hostname_file is None
-    assert config.ssh_daemon_setup.directives == ()
+    assert config.yggdrasil_service_setup.static_peers == ()
 
 
 def test_value_of_an_unexpected_type_is_handed_over_as_it_is(

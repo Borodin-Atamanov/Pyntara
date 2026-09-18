@@ -1716,3 +1716,43 @@ machine in this turn, and the probe is named with the figure.
     one. A lesson for the next time: check `git status --short` and
     `git diff --stat` at the start of a turn, because the working tree can
     change between two turns without a git operation to explain it.
+
+154. The ssh_daemon_setup section migrated on 2026-09-18 (branch
+    ssh-daemon-setup-values), the fifth section of stage F and the one that
+    untied the others. Its 35 names live in
+    src/pyntara/values/ssh_daemon_setup.py, and the Port entry of DIRECTIVES is
+    now the single forward target of the machine: pyntara.ssh reads it through
+    the new ssh_port_from_directives(), which takes no argument, so seven
+    modules stopped receiving a config document for one number. The command
+    ipv4 and ipv6 lost the config path in
+    config/system_metrics_setup.toml, and network_addresses.py lost its
+    CONFIG_PATH argument entirely, like i2pd_address.py and tor_address.py
+    before it; public_address_report.py and yggdrasil_address.py keep the
+    config for their own sections only, and two of their helpers lost a
+    parameter that read nothing any more (address_records and the record
+    builder of the public report).
+    The client section was DEAD WEIGHT in the config layer: its task already
+    read src/pyntara/values/ssh_client_setup.py, and nothing but the loader and
+    the tests touched SshClientSetupConfig. Both sections are declared values
+    now and the whole config/ssh.py module went to the trash together with
+    config/ssh_daemon_setup.toml, config/ssh_client_setup.toml, the ~300-line
+    ssh block of tests/config_checks.py, the 52-line fragment of
+    tests/config_helpers.py, the ssh parameters and blocks of tests/support.py,
+    the 89 config cases and the two directive tests of tests/test_config_network.py,
+    the coverage entries, the two names of src/pyntara/config/__init__.py and
+    the two loader fields. SshDirective moved to the values module, because it
+    is the type of DIRECTIVES; the two tests that used an absent ssh section as
+    their example of an absent table now use yggdrasil_service_setup.
+    New guards in tests/test_values.py: DIRECTIVES carries PORT_DIRECTIVE once
+    with a numeric value, USERS is non-empty and unique, and the four file modes
+    take check_file_mode.
+    Documentation followed: docs/spec/ssh-daemon-setup.md and
+    docs/spec/ssh-client-setup.md (the Parameters sections name the values
+    modules and the names in upper case), docs/guides/project-structure.md (both
+    rows) and config/system_metrics_setup.toml (the comment about the argument).
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 2157 unit tests and the four bash suites. The live production run
+    waits for the end of stage F, on the user's decision 149. This turn was the
+    largest of the stage: about forty files, seven modules untied from the
+    config, and a scripted batch of exact replacements for the repetitive test
+    edits (the user allowed scripted edits on 2026-09-18).

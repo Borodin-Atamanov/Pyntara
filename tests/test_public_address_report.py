@@ -14,11 +14,12 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
-from support import make_config
 
 from pyntara import public_address_report
 from pyntara.public_address import PublicAddresses
 from pyntara.values import engine as engine_values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 
 def _config(tmp_path: Path) -> Path:
@@ -43,7 +44,6 @@ def _fake_detection(addresses: PublicAddresses):
 
 def test_records_list_every_address_with_its_command() -> None:
     records = public_address_report.address_records(
-        make_config(),
         PublicAddresses(ipv4=("190.55.165.52",), ipv6=("2a01:4f9:c012:8091::1",)),
         30222,
     )
@@ -64,8 +64,7 @@ def test_records_list_every_address_with_its_command() -> None:
 def test_a_silent_family_carries_its_reason() -> None:
     # A machine without a public IPv6 address is a normal machine, and
     # the report says which family did not answer instead of dropping it.
-    records = public_address_report.address_records(
-        make_config(), PublicAddresses(ipv4=("190.55.165.52",)), 30222
+    records = public_address_report.address_records( PublicAddresses(ipv4=("190.55.165.52",)), 30222
     )
     assert records[-1] == {
         "family": "ipv6",
@@ -116,6 +115,11 @@ def test_main_without_a_port_directive_fails_loudly(
     tmp_path: Path,
 ) -> None:
     config_path = write_config(tmp_path, base_config())
+    monkeypatch.setattr(
+        ssh_daemon_values,
+        "DIRECTIVES",
+        (SshDirective(name="PermitRootLogin", value="no"),),
+    )
     monkeypatch.setattr(
         public_address_report,
         "fetch_public_addresses",
@@ -173,7 +177,6 @@ def test_the_family_words_and_the_reason_field_come_from_the_values(
         {**engine_values.REPORT_RECORD_KEYS, "reason": "why"},
     )
     records = public_address_report.address_records(
-        make_config(),
         PublicAddresses(ipv4=("190.55.165.52",)),
         30222,
     )
@@ -188,8 +191,7 @@ def test_both_families_of_the_model_carry_a_word() -> None:
     # The declared words name every family of the model, so a report never
     # carries a family field nobody can read; the adapter turns the words
     # back into the grade names of the telemetry.
-    records = public_address_report.address_records(
-        make_config(), PublicAddresses(ipv4=(), ipv6=()), 30222
+    records = public_address_report.address_records( PublicAddresses(ipv4=(), ipv6=()), 30222
     )
     assert [record["family"] for record in records] == ["ipv4", "ipv6"]
     assert all(record["reason"] for record in records)

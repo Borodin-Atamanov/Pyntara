@@ -17,10 +17,11 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import tor_setup
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
 from pyntara.values import tor_setup as values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 # The onion address written into the hidden service hostname file by
 # the subprocess fake after the first service start.
@@ -79,6 +80,7 @@ def _ctx(
     directives = [SshDirective(name="PubkeyAuthentication", value="yes")]
     if ssh_port is not None:
         directives.insert(0, SshDirective(name="Port", value=ssh_port))
+    monkeypatch.setattr(ssh_daemon_values, "DIRECTIVES", tuple(directives))
     return make_context(
         task_name="tor_setup",
         install_mode="server",
@@ -89,7 +91,6 @@ def _ctx(
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
-            ssh_daemon_directives=tuple(directives),
         ),
     )
 
@@ -207,7 +208,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
     """Write the drop-in as rendered, the include line, the hostname and
     the saved address."""
 
-    ssh_port = tor_setup.ssh_port_from_directives(ctx.config.ssh_daemon_setup)
+    ssh_port = tor_setup.ssh_port_from_directives()
     _write_torrc(include=True)
     values.TORRC_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.TORRC_DROPIN_PATH.write_text(
@@ -508,7 +509,7 @@ def test_render_config_uses_ssh_port_and_virtual_port(
     # port read from the ssh_daemon_setup directives, and the per-service
     # options follow HiddenServiceDir.
     ctx = _ctx(monkeypatch, tmp_path)
-    ssh_port = tor_setup.ssh_port_from_directives(ctx.config.ssh_daemon_setup)
+    ssh_port = tor_setup.ssh_port_from_directives()
     rendered = tor_setup._render_config(ssh_port, _template_path(ctx))
     assert f"SocksPort 127.0.0.1:{values.SOCKS_PORT}" in rendered
     assert f"HiddenServiceDir {values.HIDDEN_SERVICE_DIR}" in rendered

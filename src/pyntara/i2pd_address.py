@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
-from pyntara.config import Config, load_config
 from pyntara.i2pd import b32_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import socks_proxy_address, ssh_command
@@ -58,11 +56,11 @@ def resolve_address() -> tuple[str, str]:
     return "", ""
 
 
-def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
+def access_record() -> tuple[dict[str, object] | None, str]:
     """The report record of the I2P channel, or (None, reason).
 
-    The address, the proxy and the channel name are declared values, and
-    the sshd port is read from the config, so the record belongs to the
+    The address, the proxy, the channel name and the sshd port are declared
+    or read from the declared directives, so the record belongs to the
     machine the report describes and to the tunnel that is published.
     """
 
@@ -70,7 +68,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     if not address:
         return None, "I2P tunnel address is not available"
     try:
-        port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+        port = ssh_port_from_directives()
     except RuntimeError as exc:
         return None, str(exc)
     keys = engine_values.REPORT_RECORD_KEYS
@@ -90,11 +88,10 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
 def main(argv: list[str]) -> int:
     """Print the record; 0 when found, 2 on a usage error, 1 otherwise."""
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    record, error = access_record(cfg)
+    record, error = access_record()
     if record is None:
         print(error, file=sys.stderr)
         return 1

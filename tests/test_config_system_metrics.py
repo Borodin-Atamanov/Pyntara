@@ -559,9 +559,9 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
     # needs ports and paths from it, so its command carries the configured
     # system_config_path as an argument; a module that named another config
     # would break on a machine where the path differs. The family modules
-    # append their family flag after it, and the port_forwarding, upnp and
-    # tor modules are out of this rule because they read the declared values
-    # of their own sections instead of the config.
+    # append their family flag after it. The port_forwarding, upnp,
+    # tor_onion, ipv4 and ipv6 modules are out of this rule: they read the
+    # declared values of their own sections instead of the config.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     system_config_path = str(config.system_metrics_setup.system_config_path)
@@ -569,7 +569,7 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
         module
         for module in config.system_metrics_setup.collector.network_modules
         if any("pyntara." in part for part in module.command)
-        and module.name not in {"port_forwarding", "upnp", "tor_onion"}
+        and module.name not in {"port_forwarding", "upnp", "tor_onion", "ipv4", "ipv6"}
     ]
     assert command_modules
     for module in command_modules:

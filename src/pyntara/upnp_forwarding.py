@@ -130,7 +130,7 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
     if internal_address is None:
         _log("cannot read the address of this machine, the port is not forwarded")
         return None
-    internal_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+    internal_port = ssh_port_from_directives()
     description = upnp.mapping_description(values.UPNP_MAPPING_DESCRIPTION, hostname)
     listing = upnp.list_mappings(command, timeout)
     for port in candidate_ports(hostname):

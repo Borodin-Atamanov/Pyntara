@@ -33,7 +33,6 @@ from .playwright_setup import PlaywrightSetupConfig
 from .rustdesk_setup import RustdeskSetupConfig
 from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
-from .ssh import SshClientSetupConfig, SshDaemonSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import SystemMetricsSetupConfig
 from .telegram_setup import TelegramSetupConfig
@@ -69,8 +68,6 @@ class Config:
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     sotavpn_setup: SotavpnSetupConfig
-    ssh_daemon_setup: SshDaemonSetupConfig
-    ssh_client_setup: SshClientSetupConfig
     vocalinux_setup: VocalinuxSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     playwright_setup: PlaywrightSetupConfig

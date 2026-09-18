@@ -110,8 +110,8 @@ yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilService
 three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupConfig -> three_x_ui_xray_setup  
 sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
 tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
-ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup  
-ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  
+ssh_daemon_setup -> src/pyntara/values/ssh_daemon_setup.py -> READ_VALUE_NAMES -> the task and the shared SSH port reader
+ssh_client_setup -> src/pyntara/values/ssh_client_setup.py -> READ_VALUE_NAMES -> the task
 nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
 port_forwarding_setup -> src/pyntara/values/port_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
 upnp_forwarding_setup -> src/pyntara/values/upnp_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command

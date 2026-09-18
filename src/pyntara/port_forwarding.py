@@ -50,6 +50,7 @@ from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
 from pyntara.utils import backoff_delay, substituted_command
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
 
 # With -v the client prints a positive confirmation when the server
 # accepted the requested remote port, so a forward is confirmed by its own
@@ -632,10 +633,10 @@ def main() -> None:
             priority=values.ERROR_PRIORITY,
         )
         return
-    ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+    ssh_port = ssh_port_from_directives()
     key_path = (
-        cfg.ssh_daemon_setup.root_ssh_dir
-        / cfg.ssh_daemon_setup.port_forwarding_private_key_file_name
+        ssh_daemon_values.ROOT_SSH_DIR
+        / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
     )
     if not key_path.is_file():
         _log(

@@ -301,7 +301,7 @@ def task(ctx: Context) -> TaskResult:
 
     ssh_port: int | None = None
     try:
-        ssh_port = ssh_port_from_directives(ctx.config.ssh_daemon_setup)
+        ssh_port = ssh_port_from_directives()
     except RuntimeError as exc:
         # Without the port the drop-in cannot be rendered, so that step is
         # skipped alone while the include line, the service state and the

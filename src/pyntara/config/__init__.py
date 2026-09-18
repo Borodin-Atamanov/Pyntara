@@ -40,7 +40,6 @@ from .playwright_setup import PlaywrightSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
-from .ssh import SshClientSetupConfig, SshDaemonSetupConfig, SshDirective
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import (
     COLLECTOR_SECTION_KEYS,
@@ -106,9 +105,6 @@ __all__ = [
     "RustdeskSetupConfig",
     "ScrcpySetupConfig",
     "SotavpnSetupConfig",
-    "SshClientSetupConfig",
-    "SshDaemonSetupConfig",
-    "SshDirective",
     "SwapfileServiceInstallConfig",
     "SystemMetricsCollectorConfig",
     "SystemMetricsSetupConfig",

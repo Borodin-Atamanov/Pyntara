@@ -304,10 +304,12 @@ report_status_words = { ok = "ok", empty = "empty", error = "error" }
 # modules report the channels that reach this machine (I2P, the
 # yggdrasil overlay, the Tor onion service, the forwarded ports and the
 # public address), each as a record that carries the address, the port
-# and the ssh command. Every command that needs a port or a path reads
-# it from the single config named by its last argument, so no value is
-# duplicated into this file; the collector test guards that argument
-# against system_config_path. The nextdns module prints the applied
+# and the ssh command. A command still reading the config takes it as
+# its last argument, so no value is duplicated into this file; the
+# collector test guards that argument against system_config_path. A
+# command whose values are declared takes no such argument at all:
+# ipv4, ipv6, i2pd, tor_onion and upnp read the declared values package.
+# The nextdns module prints the applied
 # NextDNS profile ID from the file the nextdns_setup_system_wide task
 # writes after a successful verification. A module whose command prints
 # a JSON document contributes it as structured data, so the records and
@@ -321,11 +323,11 @@ report_status_words = { ok = "ok", empty = "empty", error = "error" }
 
 [[system_metrics_setup.collector.network_modules]]
 name = "ipv4"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "/etc/pyntara/config.toml", "4"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "4"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "ipv6"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "/etc/pyntara/config.toml", "6"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.network_addresses", "6"]
 
 # The public_address module asks the configured echo services for the
 # address the machine appears under from the internet and reports it

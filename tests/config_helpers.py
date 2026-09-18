@@ -408,58 +408,6 @@ def base_config() -> str:
         "subscription_fetch_wait_seconds = 90\n"
         "bridge_ready_wait_seconds = 60\n"
         "readiness_check_delay_seconds = 2\n"
-        "[ssh_daemon_setup]\n"
-        'package_name = "openssh-server"\n'
-        'augeas_tools_package_name = "augeas-tools"\n'
-        "package_status_timeout_seconds = 30\n"
-        "install_retries = 3\n"
-        'service_unit_name = "ssh.service"\n'
-        'socket_unit_name = "ssh.socket"\n'
-        "start_check_attempts = 5\n"
-        "start_check_retry_delay_seconds = 1\n"
-        'sshd_config_path = "/etc/ssh/sshd_config"\n'
-        'sshd_config_dropin_path = "/etc/ssh/sshd_config.d/pyntara.conf"\n'
-        'dropin_file_mode = "0644"\n'
-        'dropin_header = "Managed by the Pyntara ssh_daemon_setup task."\n'
-        'dropin_comment_sign = "#"\n'
-        'include_directive = "Include"\n'
-        'augeas_lens = "Sshd.lns"\n'
-        'port_directive = "Port"\n'
-        'private_key_file_name = "id_ed25519"\n'
-        'public_key_file_name = "id_ed25519.pub"\n'
-        'port_forwarding_private_key_file_name = "id_ed25519_pf"\n'
-        'port_forwarding_public_key_file_name = "id_ed25519_pf.pub"\n'
-        "port_forwarding_authorized_keys_options = 'restrict,port-forwarding,permitlisten=\"*\"'\n"
-        'private_key_file_mode = "0600"\n'
-        'public_key_file_mode = "0644"\n'
-        'authorized_keys_file_mode = "0600"\n'
-        'ssh_dir_mode = "0700"\n'
-        'root_ssh_dir = "/root/.ssh"\n'
-        'users = ["i", "j", "k"]\n'
-        'effective_config_command = ["sshd", "-T"]\n'
-        'listening_sockets_command = ["ss", "-tlnp"]\n'
-        'socket_disable_command = ["systemctl", "disable", "--now", "{socket_unit_name}"]\n'
-        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
-        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
-        'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
-        'service_reload_command = ["systemctl", "reload", "{service_unit_name}"]\n'
-        "[[ssh_daemon_setup.directives]]\n"
-        'name = "PubkeyAuthentication"\n'
-        'value = "yes"\n'
-        "[ssh_client_setup]\n"
-        'ssh_config_path = "/etc/ssh/ssh_config"\n'
-        'ssh_config_dropin_path = "/etc/ssh/ssh_config.d/pyntara.conf"\n'
-        'dropin_file_mode = "0644"\n'
-        'dropin_header = "Managed by the Pyntara ssh_client_setup task."\n'
-        'dropin_comment_sign = "#"\n'
-        'include_directive = "Include"\n'
-        'effective_config_command = ["ssh", "-G", "example.com"]\n'
-        'augeas_lens = "Ssh.lns"\n'
-        'augeas_container = "Host"\n'
-        'augeas_container_value = "*"\n'
-        'augeas_tools_package_name = "augeas-tools"\n'
-        "package_status_timeout_seconds = 30\n"
-        "install_retries = 3\n"
         "[nextdns_setup_system_wide]\n"
         'vault_group_title = "NextDNS"\n'
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'

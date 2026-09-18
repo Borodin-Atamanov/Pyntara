@@ -31,9 +31,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 
-from pyntara.config import Config, load_config
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.utils import run_command
@@ -120,7 +118,7 @@ def parse_interface_addresses(
 
 
 def address_records(
-    cfg: Config, document: object, family: str, ssh_port: int
+    document: object, family: str, ssh_port: int
 ) -> list[dict[str, object]]:
     """The report records of every address of one family.
 
@@ -147,19 +145,20 @@ def main(argv: list[str]) -> int:
 
     An unreadable address list is reported on stderr with exit code 1,
     so the collector shows the failure instead of an empty module. A
-    family without an address prints nothing and exits 0.
+    family without an address prints nothing and exits 0. The sshd port
+    comes from the declared ssh_daemon_setup directives, so the command
+    needs no argument beyond the family.
     """
 
-    if len(argv) != 3:
-        print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
+    if len(argv) != 2:
+        print(f"usage: {argv[0]} FAMILY", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    if argv[2] not in engine_values.ADDRESS_FAMILY_BY_FLAG:
-        print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
+    if argv[1] not in engine_values.ADDRESS_FAMILY_BY_FLAG:
+        print(f"usage: {argv[0]} FAMILY", file=sys.stderr)
         return 2
-    family = engine_values.ADDRESS_FAMILY_BY_FLAG[argv[2]]
+    family = engine_values.ADDRESS_FAMILY_BY_FLAG[argv[1]]
     try:
-        ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+        ssh_port = ssh_port_from_directives()
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -185,7 +184,7 @@ def main(argv: list[str]) -> int:
     except json.JSONDecodeError as exc:
         print(f"error: cannot read the ip JSON output: {exc}", file=sys.stderr)
         return 1
-    records = address_records(cfg, document, family, ssh_port)
+    records = address_records(document, family, ssh_port)
     if not records:
         return 0
     print(

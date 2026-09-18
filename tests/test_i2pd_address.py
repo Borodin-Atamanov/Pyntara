@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 
 import pytest
-from config_helpers import base_config, write_config
 from support import i2pd_keys_b32_address, i2pd_keys_file_bytes
 
 from pyntara import i2pd_address
@@ -24,19 +23,6 @@ from pyntara.values import i2pd_service_setup as values
 
 SSH_PORT = 30222
 SOCKS_PROXY = "127.0.0.1:4447"
-
-
-def _config(tmp_path: Path) -> Path:
-    """A config with a fixture sshd Port directive."""
-
-    content = base_config().replace(
-        "[ssh_client_setup]",
-        "[[ssh_daemon_setup.directives]]\n"
-        'name = "Port"\n'
-        f'value = "{SSH_PORT}"\n'
-        "[ssh_client_setup]",
-    )
-    return write_config(tmp_path, content)
 
 
 def _point_at_the_fixtures(
@@ -59,8 +45,7 @@ def test_record_from_keys(
     keys = tmp_path / "ssh.dat"
     keys.write_bytes(i2pd_keys_file_bytes())
     _point_at_the_fixtures(monkeypatch, keys, tmp_path / "saved")
-    config_path = _config(tmp_path)
-    assert i2pd_address.main(["i2pd_address", str(config_path)]) == 0
+    assert i2pd_address.main(["i2pd_address"]) == 0
     captured = capsys.readouterr()
     address = i2pd_keys_b32_address()
     assert json.loads(captured.out) == {
@@ -92,8 +77,7 @@ def test_record_follows_the_declared_report_vocabulary(
     record_keys["address"] = "target"
     monkeypatch.setattr(engine_values, "REPORT_RECORD_KEYS", record_keys)
     monkeypatch.setattr(values, "REPORT_CHANNEL_NAME", "anon")
-    config_path = _config(tmp_path)
-    assert i2pd_address.main(["i2pd_address", str(config_path)]) == 0
+    assert i2pd_address.main(["i2pd_address"]) == 0
     captured = capsys.readouterr()
     record = json.loads(captured.out)
     assert record["kind"] == "anon"
@@ -113,8 +97,7 @@ def test_record_falls_back_to_saved_file(
     saved = tmp_path / "saved"
     saved.write_text(f"{i2pd_keys_b32_address()}\n", encoding="utf-8")
     _point_at_the_fixtures(monkeypatch, tmp_path / "missing.dat", saved)
-    config_path = _config(tmp_path)
-    assert i2pd_address.main(["i2pd_address", str(config_path)]) == 0
+    assert i2pd_address.main(["i2pd_address"]) == 0
     record = json.loads(capsys.readouterr().out)
     assert record["address"] == i2pd_keys_b32_address()
     assert "saved file" in record["note"]
@@ -131,16 +114,16 @@ def test_address_unavailable(
     _point_at_the_fixtures(
         monkeypatch, tmp_path / "missing.dat", tmp_path / "missing-saved"
     )
-    config_path = _config(tmp_path)
-    assert i2pd_address.main(["i2pd_address", str(config_path)]) == 1
+    assert i2pd_address.main(["i2pd_address"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err != ""
 
 
-def test_usage_requires_the_config_path(
+def test_an_argument_is_a_usage_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A wrong argument count is a usage error with a nonzero exit.
-    assert i2pd_address.main(["i2pd_address"]) == 2
+    # The command reads the declared values and takes no argument, so a
+    # path on the command line is a usage error.
+    assert i2pd_address.main(["i2pd_address", "/etc/pyntara/config.toml"]) == 2
     assert "usage" in capsys.readouterr().err

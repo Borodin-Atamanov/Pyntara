@@ -44,40 +44,40 @@ The target state is reached when the package is installed, sshd_config pulls the
 
 ## Parameters
 
-All parameters live in the [ssh_daemon_setup] table of the config/ directory.
+All parameters live in src/pyntara/values/ssh_daemon_setup.py, and the system config holds no copy of them. The port of the daemon is the Port entry of DIRECTIVES, read through pyntara.ssh by every task and command that forwards to the daemon, so the forward target exists once.
 
-package_name - the package that provides the SSH server daemon
-augeas_tools_package_name - the package that provides augtool, installed by the task when missing
-package_status_timeout_seconds - seconds the dpkg status query may take
-install_retries - retry attempts after a failed package install
-service_unit_name - the systemd service unit of the daemon
-socket_unit_name - the systemd socket unit that owns the listen port and is disabled by the task
-start_check_attempts - attempts of the readiness loop after a start
-start_check_retry_delay_seconds - pause between two readiness checks
-sshd_config_path - the daemon configuration the task only checks for the Include directive
-sshd_config_dropin_path - the drop-in the task owns and writes
-dropin_file_mode - the file mode of the drop-in, as an octal string
-dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
-dropin_comment_sign - the sign a comment node carries in the augtool listing, by which the task reads the ownership comment of the drop-in and skips a commented line of the main configuration
-include_directive - the keyword of the main configuration that pulls the drop-in in, matched without case
-augeas_lens - the augeas lens of the sshd_config syntax
-port_directive - the directive whose change needs a restart instead of a reload
-effective_config_command - the daemon query that prints the effective configuration (sshd -T)
-listening_sockets_command - the listener query the task reads the port from (ss -tlnp)
-socket_disable_command - the disable and stop of the socket unit, with {socket_unit_name}
-service_enable_command - the enable of the service unit, with {service_unit_name}
-service_start_command - the start of the service unit, with {service_unit_name}
-service_restart_command - the restart of the service unit, with {service_unit_name}
-service_reload_command - the reload of the service unit, with {service_unit_name}
-private_key_file_name - the repository name of the server private key
-public_key_file_name - the repository name of the server public key
-private_key_file_mode - the file mode of the deployed private key, as an octal string
-public_key_file_mode - the file mode of the deployed public key, as an octal string
-authorized_keys_file_mode - the file mode of authorized_keys, as an octal string
-ssh_dir_mode - the mode of the deployed .ssh directories, as an octal string
-root_ssh_dir - the root account .ssh directory
-users - the accounts that receive the key pair
-directives - the sshd_config keywords the task guarantees, each with its value; the keepalive pair among them is the window described under Configuration ownership
-port_forwarding_private_key_file_name - the repository name of the port-forwarding private key
-port_forwarding_public_key_file_name - the repository name of the port-forwarding public key
-port_forwarding_authorized_keys_options - the restriction prefix of the port-forwarding key line in authorized_keys
+PACKAGE_NAME - the package that provides the SSH server daemon
+AUGEAS_TOOLS_PACKAGE_NAME - the package that provides augtool, installed by the task when missing
+PACKAGE_STATUS_TIMEOUT_SECONDS - seconds the dpkg status query may take
+INSTALL_RETRIES - retry attempts after a failed package install
+SERVICE_UNIT_NAME - the systemd service unit of the daemon
+SOCKET_UNIT_NAME - the systemd socket unit that owns the listen port and is disabled by the task
+START_CHECK_ATTEMPTS - attempts of the readiness loop after a start
+START_CHECK_RETRY_DELAY_SECONDS - pause between two readiness checks
+SSHD_CONFIG_PATH - the daemon configuration the task only checks for the Include directive
+SSHD_CONFIG_DROPIN_PATH - the drop-in the task owns and writes
+DROPIN_FILE_MODE - the file mode of the drop-in, as an octal string
+DROPIN_HEADER - the ownership comment written at the top of the drop-in, without the leading hash
+DROPIN_COMMENT_SIGN - the sign a comment node carries in the augtool listing, by which the task reads the ownership comment of the drop-in and skips a commented line of the main configuration
+INCLUDE_DIRECTIVE - the keyword of the main configuration that pulls the drop-in in, matched without case
+AUGEAS_LENS - the augeas lens of the sshd_config syntax
+PORT_DIRECTIVE - the directive whose change needs a restart instead of a reload
+EFFECTIVE_CONFIG_COMMAND - the daemon query that prints the effective configuration (sshd -T)
+LISTENING_SOCKETS_COMMAND - the listener query the task reads the port from (ss -tlnp)
+SOCKET_DISABLE_COMMAND - the disable and stop of the socket unit, with {socket_unit_name}
+SERVICE_ENABLE_COMMAND - the enable of the service unit, with {service_unit_name}
+SERVICE_START_COMMAND - the start of the service unit, with {service_unit_name}
+SERVICE_RESTART_COMMAND - the restart of the service unit, with {service_unit_name}
+SERVICE_RELOAD_COMMAND - the reload of the service unit, with {service_unit_name}
+PRIVATE_KEY_FILE_NAME - the repository name of the server private key
+PUBLIC_KEY_FILE_NAME - the repository name of the server public key
+PRIVATE_KEY_FILE_MODE - the file mode of the deployed private key, as an octal string
+PUBLIC_KEY_FILE_MODE - the file mode of the deployed public key, as an octal string
+AUTHORIZED_KEYS_FILE_MODE - the file mode of authorized_keys, as an octal string
+SSH_DIR_MODE - the mode of the deployed .ssh directories, as an octal string
+ROOT_SSH_DIR - the root account .ssh directory
+USERS - the accounts that receive the key pair
+DIRECTIVES - the sshd_config keywords the task guarantees, each with its value; the keepalive pair among them is the window described under Configuration ownership
+PORT_FORWARDING_PRIVATE_KEY_FILE_NAME - the repository name of the port-forwarding private key
+PORT_FORWARDING_PUBLIC_KEY_FILE_NAME - the repository name of the port-forwarding public key
+PORT_FORWARDING_AUTHORIZED_KEYS_OPTIONS - the restriction prefix of the port-forwarding key line in authorized_keys

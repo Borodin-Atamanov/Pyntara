@@ -23,18 +23,18 @@ The target state is reached when ssh_config pulls the drop-in directory in and t
 
 ## Parameters
 
-All parameters live in the [ssh_client_setup] table of the config/ directory.
+All parameters live in src/pyntara/values/ssh_client_setup.py, and the system config holds no copy of them.
 
-ssh_config_path - the client configuration the task only checks for the Include directive
-ssh_config_dropin_path - the drop-in the task owns and writes
-dropin_file_mode - the file mode of the drop-in, as an octal string
-dropin_header - the ownership comment written at the top of the drop-in, without the leading hash
-dropin_comment_sign - the sign a comment node carries in the augtool listing, by which the task reads the ownership comment of the drop-in and skips a commented line of the main configuration
-include_directive - the keyword of the main configuration that pulls the drop-in in, matched without case
-augeas_lens - the augeas lens of the ssh_config syntax
-augeas_container - the container node the directives are placed under
-augeas_container_value - the pattern that container node carries, so the directives apply to every connection
-augeas_tools_package_name - the package that provides augtool, installed by the task when missing
-package_status_timeout_seconds - seconds the dpkg status query may take
-install_retries - retry attempts after a failed package install
-directives - the ssh_config keywords the task guarantees, each with its value
+SSH_CONFIG_PATH - the client configuration the task only checks for the Include directive
+SSH_CONFIG_DROPIN_PATH - the drop-in the task owns and writes
+DROPIN_FILE_MODE - the file mode of the drop-in, as an octal string
+DROPIN_HEADER - the ownership comment written at the top of the drop-in, without the leading hash
+DROPIN_COMMENT_SIGN - the sign a comment node carries in the augtool listing, by which the task reads the ownership comment of the drop-in and skips a commented line of the main configuration
+INCLUDE_DIRECTIVE - the keyword of the main configuration that pulls the drop-in in, matched without case
+AUGEAS_LENS - the augeas lens of the ssh_config syntax
+AUGEAS_CONTAINER - the container node the directives are placed under
+AUGEAS_CONTAINER_VALUE - the pattern that container node carries, so the directives apply to every connection
+AUGEAS_TOOLS_PACKAGE_NAME - the package that provides augtool, installed by the task when missing
+PACKAGE_STATUS_TIMEOUT_SECONDS - seconds the dpkg status query may take
+INSTALL_RETRIES - retry attempts after a failed package install
+DIRECTIVES - the ssh_config keywords the task guarantees, each with its value

@@ -101,7 +101,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     if not address:
         return None, f"yggdrasil self address is not available: {reason}"
     try:
-        port = ssh_port_from_directives(cfg.ssh_daemon_setup)
+        port = ssh_port_from_directives()
     except RuntimeError as exc:
         return None, str(exc)
     keys = engine_values.REPORT_RECORD_KEYS

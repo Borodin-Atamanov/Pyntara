@@ -37,6 +37,7 @@ import pyntara
 from pyntara.values import engine as engine_values
 from pyntara.values import i2pd_service_setup as i2pd_values
 from pyntara.values import port_forwarding_setup as port_forwarding_values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
 from pyntara.values import tor_setup as tor_values
 from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 
@@ -62,6 +63,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "scrcpy_setup",
     "sotavpn_setup",
     "ssh_client_setup",
+    "ssh_daemon_setup",
     "upnp_forwarding_setup",
     "swapfile_service_install",
     "tasks",
@@ -108,6 +110,11 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ),
     ("sotavpn_setup", "KEY_ENTRY_TITLE", check_vault_entry_title),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
+    ("ssh_daemon_setup", "AUTHORIZED_KEYS_FILE_MODE", check_file_mode),
+    ("ssh_daemon_setup", "DROPIN_FILE_MODE", check_file_mode),
+    ("ssh_daemon_setup", "PRIVATE_KEY_FILE_MODE", check_file_mode),
+    ("ssh_daemon_setup", "PUBLIC_KEY_FILE_MODE", check_file_mode),
+    ("ssh_daemon_setup", "SSH_DIR_MODE", check_file_mode),
     ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
     ("tor_setup", "ADDRESS_FILE_MODE", check_file_mode),
@@ -495,3 +502,28 @@ def test_the_tor_drop_in_lives_beside_the_main_configuration() -> None:
     assert tor_values.TORRC_DROPIN_PATH.parent == tor_values.TORRC_PATH.parent
     include_line = f"{tor_values.INCLUDE_DIRECTIVE} {tor_values.TORRC_DROPIN_PATH}"
     assert str(tor_values.TORRC_DROPIN_PATH) in include_line
+
+
+def test_the_ssh_directives_carry_the_port_directive() -> None:
+    # The port of the daemon is what every forward of this machine targets,
+    # and the reader finds it by PORT_DIRECTIVE: a directive list without
+    # that keyword would make every tunnel of the machine fail loudly, and
+    # a non-numeric value would be forwarded as a port nothing listens on.
+    names = {directive.name.casefold() for directive in ssh_daemon_values.DIRECTIVES}
+    assert ssh_daemon_values.PORT_DIRECTIVE.casefold() in names
+    port_values = [
+        directive.value
+        for directive in ssh_daemon_values.DIRECTIVES
+        if directive.name.casefold() == ssh_daemon_values.PORT_DIRECTIVE.casefold()
+    ]
+    assert len(port_values) == 1
+    assert port_values[0].isdigit()
+
+
+def test_the_ssh_users_are_unique_and_never_empty() -> None:
+    # The task walks USERS to deploy the keys; a repeated name would write
+    # the same directory twice, and an empty name would make the run look
+    # for a home directory that no user owns.
+    assert ssh_daemon_values.USERS
+    assert len(set(ssh_daemon_values.USERS)) == len(ssh_daemon_values.USERS)
+    assert all(user.strip() for user in ssh_daemon_values.USERS)

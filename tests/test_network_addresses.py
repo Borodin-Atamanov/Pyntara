@@ -16,11 +16,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from config_helpers import base_config, write_config
-from support import FakeProc, make_config
+from support import FakeProc
 
 from pyntara import network_addresses
 from pyntara.values import engine as engine_values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 IP_DOCUMENT = [
     {
@@ -52,25 +53,10 @@ IP_DOCUMENT = [
 IP_JSON = json.dumps(IP_DOCUMENT)
 
 
-def _config(tmp_path: Path) -> Path:
-    """A config whose sshd Port directive exists, as the target has one."""
-
-    content = base_config().replace(
-        "[ssh_client_setup]",
-        "[[ssh_daemon_setup.directives]]\n"
-        'name = "Port"\n'
-        'value = "30222"\n'
-        "[ssh_client_setup]",
-    )
-    return write_config(tmp_path, content)
-
-
 def test_address_records_carry_the_ssh_command() -> None:
     # Every address of the family becomes a record with its interface,
     # its scope and the ssh command that connects to it.
-    assert network_addresses.address_records(
-        make_config(), IP_DOCUMENT, "ipv4", 30222
-    ) == [
+    assert network_addresses.address_records(IP_DOCUMENT, "ipv4", 30222) == [
         {
             "address": "127.0.0.1",
             "family": "ipv4",
@@ -91,9 +77,7 @@ def test_address_records_carry_the_ssh_command() -> None:
 def test_link_scope_address_carries_its_zone_in_the_command() -> None:
     # An IPv6 link scope address is ambiguous without its interface, so
     # the address field stays plain and the ssh target carries the zone.
-    records = network_addresses.address_records(
-        make_config(), IP_DOCUMENT, "ipv6", 30222
-    )
+    records = network_addresses.address_records(IP_DOCUMENT, "ipv6", 30222)
     assert [record["address"] for record in records] == [
         "::1",
         "fe80::b1e1:869:8e81:2526",
@@ -130,13 +114,12 @@ def test_unexpected_document_contributes_nothing() -> None:
 def test_main_prints_every_address_of_the_family(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    config_path = _config(tmp_path)
     monkeypatch.setattr(
         network_addresses,
         "run_command",
         lambda *args, **kwargs: FakeProc(0, IP_JSON),
     )
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
+    assert network_addresses.main(["network_addresses", "4"]) == 0
     records = json.loads(capsys.readouterr().out)
     assert [record["address"] for record in records] == ["127.0.0.1", "10.10.0.1"]
 
@@ -159,8 +142,7 @@ def test_main_stdout_is_a_clean_json_document(
     )
     fake_ip.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    config_path = _config(tmp_path)
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
+    assert network_addresses.main(["network_addresses", "4"]) == 0
     records = json.loads(capsys.readouterr().out)
     assert [record["address"] for record in records] == ["127.0.0.1", "10.10.0.1"]
 
@@ -170,13 +152,12 @@ def test_main_prints_nothing_for_an_absent_family(
 ) -> None:
     # A family the machine does not carry is not a failure: the module
     # reports empty, exactly like an ip command that prints nothing.
-    config_path = _config(tmp_path)
     monkeypatch.setattr(
         network_addresses,
         "run_command",
         lambda *args, **kwargs: FakeProc(0, json.dumps([])),
     )
-    assert network_addresses.main(["network_addresses", str(config_path), "6"]) == 0
+    assert network_addresses.main(["network_addresses", "6"]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
@@ -185,13 +166,12 @@ def test_main_prints_nothing_for_an_absent_family(
 def test_main_reports_a_failed_ip_command(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    config_path = _config(tmp_path)
     monkeypatch.setattr(
         network_addresses,
         "run_command",
         lambda *args, **kwargs: FakeProc(1, "", "ip: cannot find device"),
     )
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 1
+    assert network_addresses.main(["network_addresses", "4"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "cannot find device" in captured.err
@@ -200,13 +180,12 @@ def test_main_reports_a_failed_ip_command(
 def test_main_reports_a_timeout(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    config_path = _config(tmp_path)
 
     def raise_timeout(*args: object, **kwargs: object) -> FakeProc:
         raise subprocess.TimeoutExpired(cmd="ip", timeout=1)
 
     monkeypatch.setattr(network_addresses, "run_command", raise_timeout)
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 1
+    assert network_addresses.main(["network_addresses", "4"]) == 1
     assert "cannot read the interface addresses" in capsys.readouterr().err
 
 
@@ -215,26 +194,27 @@ def test_main_without_a_port_directive_fails_loudly(
 ) -> None:
     # Without the sshd port there is no command to build, and the reason
     # must be visible instead of an empty address list.
-    config_path = write_config(tmp_path, base_config())
+    monkeypatch.setattr(
+        ssh_daemon_values,
+        "DIRECTIVES",
+        (SshDirective(name="PermitRootLogin", value="no"),),
+    )
     monkeypatch.setattr(
         network_addresses,
         "run_command",
         lambda *args, **kwargs: FakeProc(0, IP_JSON),
     )
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 1
+    assert network_addresses.main(["network_addresses", "4"]) == 1
     assert "Port" in capsys.readouterr().err
 
 
 def test_usage_requires_a_known_family(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # A missing argument is a usage error before any config is read; an
-    # unknown family is judged against the configured flag mapping, so the
-    # run needs a real config to reach that branch.
-    config_path = _config(tmp_path)
+    # A missing or unknown family is a usage error before any address is
+    # read.
     assert network_addresses.main(["network_addresses"]) == 2
-    assert network_addresses.main(["network_addresses", str(config_path)]) == 2
-    assert network_addresses.main(["network_addresses", str(config_path), "8"]) == 2
+    assert network_addresses.main(["network_addresses", "8"]) == 2
     assert "usage" in capsys.readouterr().err
 
 
@@ -252,14 +232,6 @@ def test_the_address_vocabulary_comes_from_the_values(
         engine_values, "IPROUTE2_ADDRESS_FAMILY_NAMES", {"ipv6": "my-inet"}
     )
     monkeypatch.setattr(engine_values, "LINK_SCOPE_NAME", "my-link")
-    content = base_config().replace(
-        "[ssh_client_setup]",
-        "[[ssh_daemon_setup.directives]]\n"
-        'name = "Port"\n'
-        'value = "30222"\n'
-        "[ssh_client_setup]",
-    )
-    config_path = write_config(tmp_path, content)
     document = [
         {
             "ifname": "enp87s0",
@@ -286,7 +258,7 @@ def test_the_address_vocabulary_comes_from_the_values(
         return FakeProc(0, json.dumps(document))
 
     monkeypatch.setattr(network_addresses, "run_command", fake_run)
-    assert network_addresses.main(["network_addresses", str(config_path), "4"]) == 0
+    assert network_addresses.main(["network_addresses", "4"]) == 0
     records = json.loads(capsys.readouterr().out)
     assert calls == [["my-ip", "addr"]]
     assert [record["family"] for record in records] == ["ipv6", "ipv6"]

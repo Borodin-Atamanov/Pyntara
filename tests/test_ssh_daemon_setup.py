@@ -11,7 +11,6 @@ file, so the augeas interaction is covered end to end.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,10 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import augtool_fake_run, make_config, make_context
 
-from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.tasks import ssh_daemon_setup
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 PRIVATE_KEY_BYTES = (
     b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
@@ -79,7 +79,7 @@ def _expected_dropin_content(*, overrides: dict[str, str] | None = None) -> str:
     follows the config instead of repeating its value.
     """
 
-    lines = [f"# {make_config().ssh_daemon_setup.dropin_header}"]
+    lines = [f"# {ssh_daemon_values.DROPIN_HEADER}"]
     for directive in DEFAULT_DIRECTIVES:
         value = (overrides or {}).get(directive.name, directive.value)
         lines.append(f"{directive.name} {value}")
@@ -109,6 +109,7 @@ class _FakePwd:
 
 
 def _ctx(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
     force: bool = False,
@@ -116,8 +117,27 @@ def _ctx(
     users: tuple[str, ...] = ("i", "j", "k"),
     directives: tuple[SshDirective, ...] = DEFAULT_DIRECTIVES,
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context with a small safe config; the real file is never touched.
 
+    The paths, the user list and the directive list of the section are
+    declared values now, so the tests point them at the fixture tree
+    through monkeypatch.
+    """
+
+    monkeypatch.setattr(
+        ssh_daemon_values, "ROOT_SSH_DIR", tmp_path / "root" / ".ssh"
+    )
+    monkeypatch.setattr(
+        ssh_daemon_values, "SSHD_CONFIG_PATH", tmp_path / "etc" / "ssh" / "sshd_config"
+    )
+    monkeypatch.setattr(
+        ssh_daemon_values,
+        "SSHD_CONFIG_DROPIN_PATH",
+        tmp_path / "etc" / "ssh" / "sshd_config.d" / "pyntara.conf",
+    )
+    monkeypatch.setattr(ssh_daemon_values, "USERS", users)
+    monkeypatch.setattr(ssh_daemon_values, "DIRECTIVES", directives)
+    monkeypatch.setattr(ssh_daemon_values, "START_CHECK_RETRY_DELAY_SECONDS", 0.0)
     return make_context(
         task_name="ssh_daemon_setup",
         install_mode="server",
@@ -125,16 +145,7 @@ def _ctx(
         repo_root=tmp_path,
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
-        config=make_config(
-            ssh_daemon_root_ssh_dir=tmp_path / "root" / ".ssh",
-            ssh_daemon_sshd_config_path=tmp_path / "etc" / "ssh" / "sshd_config",
-            ssh_daemon_sshd_config_dropin_path=(
-                tmp_path / "etc" / "ssh" / "sshd_config.d" / "pyntara.conf"
-            ),
-            ssh_daemon_users=users,
-            ssh_daemon_directives=directives,
-            ssh_daemon_start_check_retry_delay_seconds=0.0,
-        ),
+        config=make_config(),
     )
 
 
@@ -146,15 +157,14 @@ def _install_fixtures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     the task reads from its config.
     """
 
-    cfg = make_config().ssh_daemon_setup
     data_dir = tmp_path / "task_data" / "ssh_daemon_setup"
     data_dir.mkdir(parents=True)
-    (data_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
-    (data_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
-    (data_dir / cfg.port_forwarding_private_key_file_name).write_bytes(
+    (data_dir / ssh_daemon_values.PRIVATE_KEY_FILE_NAME).write_bytes(PRIVATE_KEY_BYTES)
+    (data_dir / ssh_daemon_values.PUBLIC_KEY_FILE_NAME).write_text(PUBLIC_KEY_LINE + "\n")
+    (data_dir / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME).write_bytes(
         PF_PRIVATE_KEY_BYTES
     )
-    (data_dir / cfg.port_forwarding_public_key_file_name).write_text(
+    (data_dir / ssh_daemon_values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME).write_text(
         PF_PUBLIC_KEY_LINE + "\n"
     )
     return data_dir
@@ -163,22 +173,20 @@ def _install_fixtures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def _write_sshd_config(ctx: Context, *, include: bool = True) -> None:
     """Write the fixture sshd_config with an optional Include directive."""
 
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_path.parent.mkdir(parents=True, exist_ok=True)
+    ssh_daemon_values.SSHD_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     content = "Port 22\n"
     if include:
-        content += f"Include {cfg.sshd_config_dropin_path.parent}/*.conf\n"
-    cfg.sshd_config_path.write_text(content, encoding="utf-8")
+        content += f"Include {ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent}/*.conf\n"
+    ssh_daemon_values.SSHD_CONFIG_PATH.write_text(content, encoding="utf-8")
 
 
 def _write_dropin_as_desired(ctx: Context) -> None:
     """Write the drop-in exactly as the task would render it."""
 
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"# {cfg.dropin_header}"]
-    lines.extend(f"{directive.name} {directive.value}" for directive in cfg.directives)
-    cfg.sshd_config_dropin_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"# {ssh_daemon_values.DROPIN_HEADER}"]
+    lines.extend(f"{directive.name} {directive.value}" for directive in ssh_daemon_values.DIRECTIVES)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _install_fake(
@@ -287,17 +295,16 @@ def _install_users(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 def _deploy_keys_directories(ctx: Context, tmp_path: Path) -> list[Path]:
     """Pre-deploy the keys into root and every configured user .ssh dir."""
 
-    cfg = ctx.config.ssh_daemon_setup
-    directories = [cfg.root_ssh_dir]
+    directories = [ssh_daemon_values.ROOT_SSH_DIR]
     directories.extend(tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k"))
     for ssh_dir in directories:
         ssh_dir.mkdir(parents=True, exist_ok=True)
-        (ssh_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
-        (ssh_dir / cfg.public_key_file_name).write_text(PUBLIC_KEY_LINE + "\n")
-        (ssh_dir / cfg.port_forwarding_private_key_file_name).write_bytes(
+        (ssh_dir / ssh_daemon_values.PRIVATE_KEY_FILE_NAME).write_bytes(PRIVATE_KEY_BYTES)
+        (ssh_dir / ssh_daemon_values.PUBLIC_KEY_FILE_NAME).write_text(PUBLIC_KEY_LINE + "\n")
+        (ssh_dir / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME).write_bytes(
             PF_PRIVATE_KEY_BYTES
         )
-        (ssh_dir / cfg.port_forwarding_public_key_file_name).write_text(
+        (ssh_dir / ssh_daemon_values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME).write_text(
             PF_PUBLIC_KEY_LINE + "\n"
         )
         (ssh_dir / "authorized_keys").write_text(
@@ -316,7 +323,7 @@ def test_already_configured_skips(
     # runs only the status queries.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _write_dropin_as_desired(ctx)
     _deploy_keys_directories(ctx, tmp_path)
@@ -340,7 +347,7 @@ def test_installs_package_when_missing(
     # effective configuration and the listener.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False, enabled=False, active=False)
     result = ssh_daemon_setup.task(ctx)
@@ -351,8 +358,7 @@ def test_installs_package_when_missing(
     assert ["systemctl", "start", "ssh.service"] in calls
     assert ["sshd", "-T"] in calls
     assert ["ss", "-tlnp"] in calls
-    cfg = ctx.config.ssh_daemon_setup
-    assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
     assert "openssh-server" in (result.message or "")
@@ -365,7 +371,7 @@ def test_install_retries_after_failures(
     # configured retry count is exhausted, then succeeds.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False, fail_install=2)
     result = ssh_daemon_setup.task(ctx)
@@ -382,14 +388,14 @@ def test_install_fails_after_all_retries(
     # the directives are the part of the machine it owns.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False, fail_install=99)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("cannot install" in warning for warning in result.warnings)
     assert len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
-    assert ctx.config.ssh_daemon_setup.sshd_config_dropin_path.is_file()
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.is_file()
 
 
 def test_apt_update_runs_unless_skipped(
@@ -399,13 +405,13 @@ def test_apt_update_runs_unless_skipped(
     # install; with the flag the refresh is skipped.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, skip_apt_update=False)
+    ctx = _ctx(monkeypatch, tmp_path, skip_apt_update=False)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False)
     ssh_daemon_setup.task(ctx)
     assert ["apt-get", "update"] in calls
 
-    ctx_skipped = _ctx(tmp_path, skip_apt_update=True)
+    ctx_skipped = _ctx(monkeypatch, tmp_path, skip_apt_update=True)
     calls_skipped = _install_fake(monkeypatch, installed=False)
     ssh_daemon_setup.task(ctx_skipped)
     assert ["apt-get", "update"] not in calls_skipped
@@ -418,38 +424,36 @@ def test_writes_dropin_and_deploys_keys(
     # root and to every existing user with the configured modes.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    cfg = ctx.config.ssh_daemon_setup
-    assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
-    assert (cfg.sshd_config_dropin_path.stat().st_mode & 0o777) == 0o644
+    assert (ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.stat().st_mode & 0o777) == 0o644
     directories = _deploy_keys_directories(ctx, tmp_path)
-    cfg = ctx.config.ssh_daemon_setup
     for ssh_dir in directories:
-        assert (ssh_dir / cfg.private_key_file_name).read_bytes() == PRIVATE_KEY_BYTES
-        assert (ssh_dir / cfg.public_key_file_name).read_text(encoding="utf-8") == (
+        assert (ssh_dir / ssh_daemon_values.PRIVATE_KEY_FILE_NAME).read_bytes() == PRIVATE_KEY_BYTES
+        assert (ssh_dir / ssh_daemon_values.PUBLIC_KEY_FILE_NAME).read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n"
         )
-        assert (ssh_dir / cfg.port_forwarding_private_key_file_name).read_bytes() == (
+        assert (ssh_dir / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME).read_bytes() == (
             PF_PRIVATE_KEY_BYTES
         )
-        assert (ssh_dir / cfg.port_forwarding_public_key_file_name).read_text(
+        assert (ssh_dir / ssh_daemon_values.PORT_FORWARDING_PUBLIC_KEY_FILE_NAME).read_text(
             encoding="utf-8"
         ) == (PF_PUBLIC_KEY_LINE + "\n")
         assert (ssh_dir / "authorized_keys").read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n" + PF_AUTHORIZED_LINE + "\n"
         )
         assert (ssh_dir.stat().st_mode & 0o777) == 0o700
-        assert (ssh_dir / cfg.private_key_file_name).stat().st_mode & 0o777 == 0o600
-        assert (ssh_dir / cfg.public_key_file_name).stat().st_mode & 0o777 == 0o644
+        assert (ssh_dir / ssh_daemon_values.PRIVATE_KEY_FILE_NAME).stat().st_mode & 0o777 == 0o600
+        assert (ssh_dir / ssh_daemon_values.PUBLIC_KEY_FILE_NAME).stat().st_mode & 0o777 == 0o644
         assert (
-            ssh_dir / cfg.port_forwarding_private_key_file_name
+            ssh_dir / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
         ).stat().st_mode & 0o777 == 0o600
         assert (ssh_dir / "authorized_keys").stat().st_mode & 0o777 == 0o600
 
@@ -461,7 +465,7 @@ def test_authorized_keys_has_no_duplicates_on_rerun(
     # file keeps a single key line instead of accumulating duplicates.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     first = ssh_daemon_setup.task(ctx)
@@ -469,8 +473,7 @@ def test_authorized_keys_has_no_duplicates_on_rerun(
     second = ssh_daemon_setup.task(ctx)
     assert second.success is True
     assert second.changed is False
-    cfg = ctx.config.ssh_daemon_setup
-    directories = [cfg.root_ssh_dir]
+    directories = [ssh_daemon_values.ROOT_SSH_DIR]
     directories.extend(tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k"))
     for ssh_dir in directories:
         lines = (ssh_dir / "authorized_keys").read_text(encoding="utf-8").splitlines()
@@ -486,16 +489,15 @@ def test_missing_user_is_skipped(
     _install_fixtures(monkeypatch, tmp_path)
     records = {"i": _FakePwRecord("i", 1000, 1000, str(tmp_path / "home" / "i"))}
     monkeypatch.setattr(ssh_daemon_setup, "pwd", _FakePwd(records))
-    ctx = _ctx(tmp_path, users=("i", "ghost"))
+    ctx = _ctx(monkeypatch, tmp_path, users=("i", "ghost"))
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    cfg = ctx.config.ssh_daemon_setup
     assert (tmp_path / "home" / "i" / ".ssh" / "authorized_keys").is_file()
     assert not (tmp_path / "home" / "ghost" / ".ssh").exists()
-    assert (cfg.root_ssh_dir / "authorized_keys").is_file()
+    assert (ssh_daemon_values.ROOT_SSH_DIR / "authorized_keys").is_file()
 
 
 def test_missing_include_is_a_warning(
@@ -506,13 +508,13 @@ def test_missing_include_is_a_warning(
     # directives start to work the moment the directive appears.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx, include=False)
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("no Include directive" in warning for warning in result.warnings)
-    assert ctx.config.ssh_daemon_setup.sshd_config_dropin_path.is_file()
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.is_file()
 
 
 def test_missing_key_files_are_a_warning(
@@ -523,21 +525,20 @@ def test_missing_key_files_are_a_warning(
     # service state are still handled.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
-    cfg = ctx.config.ssh_daemon_setup
     (
         Path(ctx.repo_root)
         / "task_data"
         / "ssh_daemon_setup"
-        / cfg.public_key_file_name
+        / ssh_daemon_values.PUBLIC_KEY_FILE_NAME
     ).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("missing in" in warning for warning in result.warnings)
-    assert not cfg.root_ssh_dir.exists()
-    assert cfg.sshd_config_dropin_path.is_file()
+    assert not ssh_daemon_values.ROOT_SSH_DIR.exists()
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.is_file()
 
 
 def test_missing_port_forwarding_key_files_are_a_warning(
@@ -548,21 +549,20 @@ def test_missing_port_forwarding_key_files_are_a_warning(
     # mesh, while the rest of the task completes.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
-    cfg = ctx.config.ssh_daemon_setup
     (
         Path(ctx.repo_root)
         / "task_data"
         / "ssh_daemon_setup"
-        / cfg.port_forwarding_private_key_file_name
+        / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
     ).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("port-forwarding key files" in warning for warning in result.warnings)
-    assert not cfg.root_ssh_dir.exists()
-    assert cfg.sshd_config_dropin_path.is_file()
+    assert not ssh_daemon_values.ROOT_SSH_DIR.exists()
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.is_file()
 
 
 def test_dropin_header_comes_from_the_config(
@@ -573,24 +573,13 @@ def test_dropin_header_comes_from_the_config(
     # of the module.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(
-            config,
-            ssh_daemon_setup=replace(
-                config.ssh_daemon_setup, dropin_header="Owned by the test"
-            ),
-        ),
-    )
+    monkeypatch.setattr(ssh_daemon_values, "DROPIN_HEADER", "Owned by the test")
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
-    content = ctx.config.ssh_daemon_setup.sshd_config_dropin_path.read_text(
-        encoding="utf-8"
-    )
+    content = ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8")
     assert content.startswith("# Owned by the test\n")
 
 
@@ -601,16 +590,15 @@ def test_empty_directives_removes_dropin(
     # revoke its own settings.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, directives=())
+    ctx = _ctx(monkeypatch, tmp_path, directives=())
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text("Old setting yes\n", encoding="utf-8")
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text("Old setting yes\n", encoding="utf-8")
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert not cfg.sshd_config_dropin_path.exists()
+    assert not ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.exists()
 
 
 def test_enable_start_and_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -618,7 +606,7 @@ def test_enable_start_and_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     # and waits for it to become active.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, enabled=False, active=False)
     result = ssh_daemon_setup.task(ctx)
@@ -638,34 +626,33 @@ def test_commands_come_from_the_config(
     # exactly the argv the task runs.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    configured = replace(
-        ctx.config.ssh_daemon_setup,
-        effective_config_command=("sshd", "-T", "-C", "user=root"),
-        listening_sockets_command=("ss", "-tlnp", "-4"),
-        socket_disable_command=(
+    configured = {
+        "EFFECTIVE_CONFIG_COMMAND": ("sshd", "-T", "-C", "user=root"),
+        "LISTENING_SOCKETS_COMMAND": ("ss", "-tlnp", "-4"),
+        "SOCKET_DISABLE_COMMAND": (
             "systemctl",
             "disable",
             "--now",
             "{socket_unit_name}",
             "--quiet",
         ),
-        service_enable_command=(
+        "SERVICE_ENABLE_COMMAND": (
             "systemctl",
             "enable",
             "{service_unit_name}",
             "--quiet",
         ),
-        service_start_command=(
+        "SERVICE_START_COMMAND": (
             "systemctl",
             "start",
             "{service_unit_name}",
             "--no-block",
         ),
-    )
-    ctx = replace(ctx, config=replace(ctx.config, ssh_daemon_setup=configured))
-    cfg = ctx.config.ssh_daemon_setup
+    }
+    for name, command in configured.items():
+        monkeypatch.setattr(ssh_daemon_values, name, command)
     calls = _install_fake(monkeypatch, enabled=False, active=False, socket_enabled=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
@@ -675,19 +662,19 @@ def test_commands_come_from_the_config(
         "systemctl",
         "disable",
         "--now",
-        cfg.socket_unit_name,
+        ssh_daemon_values.SOCKET_UNIT_NAME,
         "--quiet",
     ] in calls
     assert [
         "systemctl",
         "enable",
-        cfg.service_unit_name,
+        ssh_daemon_values.SERVICE_UNIT_NAME,
         "--quiet",
     ] in calls
     assert [
         "systemctl",
         "start",
-        cfg.service_unit_name,
+        ssh_daemon_values.SERVICE_UNIT_NAME,
         "--no-block",
     ] in calls
 
@@ -709,27 +696,26 @@ def test_restart_and_reload_commands_come_from_the_config(
     # another command line in the section is the argv the task runs.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    configured = replace(
-        ctx.config.ssh_daemon_setup,
-        service_restart_command=(
+    configured = {
+        "SERVICE_RESTART_COMMAND": (
             "systemctl",
             "restart",
             "--no-block",
             "{service_unit_name}",
         ),
-        service_reload_command=(
+        "SERVICE_RELOAD_COMMAND": (
             "systemctl",
             "reload",
             "{service_unit_name}",
             "--quiet",
         ),
-    )
-    ctx = replace(ctx, config=replace(ctx.config, ssh_daemon_setup=configured))
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.sshd_config_dropin_path.write_text(
+    }
+    for name, command in configured.items():
+        monkeypatch.setattr(ssh_daemon_values, name, command)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(overrides=overrides),
         encoding="utf-8",
     )
@@ -741,12 +727,12 @@ def test_restart_and_reload_commands_come_from_the_config(
             "systemctl",
             "restart",
             "--no-block",
-            cfg.service_unit_name,
+            ssh_daemon_values.SERVICE_UNIT_NAME,
         ],
         "reload": [
             "systemctl",
             "reload",
-            cfg.service_unit_name,
+            ssh_daemon_values.SERVICE_UNIT_NAME,
             "--quiet",
         ],
     }[outcome]
@@ -760,11 +746,10 @@ def test_reload_when_active_and_non_port_changed(
     # task reloads the daemon, so existing connections survive.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(overrides={"PasswordAuthentication": "yes"}),
         encoding="utf-8",
     )
@@ -781,11 +766,10 @@ def test_port_change_restarts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     # is required, because reload does not rebind the listen socket.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(overrides={"Port": "22"}),
         encoding="utf-8",
     )
@@ -805,7 +789,7 @@ def test_socket_disabled_when_enabled(
     # afterwards, because it still holds the socket file descriptor.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _write_dropin_as_desired(ctx)
     _deploy_keys_directories(ctx, tmp_path)
@@ -826,7 +810,7 @@ def test_socket_untouched_when_disabled(
     # task skips without touching it.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _write_dropin_as_desired(ctx)
     _deploy_keys_directories(ctx, tmp_path)
@@ -846,7 +830,7 @@ def test_sshd_t_verification_failure_is_a_warning(
     # is reached.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, sshd_t_output="port 22\n")
     result = ssh_daemon_setup.task(ctx)
@@ -861,7 +845,7 @@ def test_listener_missing_is_a_warning(
     # reports the reason in the warnings.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, active=False, ss_port_ok=False)
     result = ssh_daemon_setup.task(ctx)
@@ -875,13 +859,12 @@ def test_reload_failure_is_a_warning(
     # A failed reload is reported as a warning of a completed task.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
     # Only a non-port directive differs, so the task takes the reload
     # path and the failed reload surfaces as a warning.
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content(overrides={"PasswordAuthentication": "yes"}),
         encoding="utf-8",
     )
@@ -897,7 +880,7 @@ def test_service_never_becomes_active_is_a_warning(
     # The readiness loop runs out: the task reports the reason.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     _install_fake(monkeypatch, active=False, active_becomes=False)
     result = ssh_daemon_setup.task(ctx)
@@ -913,7 +896,7 @@ def test_force_rewrites_dropin_and_restarts(
     # reinstalled.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, force=True)
+    ctx = _ctx(monkeypatch, tmp_path, force=True)
     _write_sshd_config(ctx)
     _write_dropin_as_desired(ctx)
     _deploy_keys_directories(ctx, tmp_path)
@@ -932,18 +915,17 @@ def test_augtool_removes_stale_directive(
     # drop-in by augeas; the remaining file keeps the desired state.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_dropin_path.parent.mkdir(parents=True)
-    cfg.sshd_config_dropin_path.write_text(
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.write_text(
         _expected_dropin_content() + "Banner /etc/issue.net\n",
         encoding="utf-8",
     )
     _install_fake(monkeypatch, active=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
-    content = cfg.sshd_config_dropin_path.read_text(encoding="utf-8")
+    content = ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8")
     assert "Banner" not in content
     assert content == _expected_dropin_content()
 
@@ -955,10 +937,9 @@ def test_include_matches_relative_pattern(
     # sshd_config and still covers the drop-in.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.ssh_daemon_setup
-    cfg.sshd_config_path.parent.mkdir(parents=True)
-    cfg.sshd_config_path.write_text("Include sshd_config.d/*.conf\n", encoding="utf-8")
+    ctx = _ctx(monkeypatch, tmp_path)
+    ssh_daemon_values.SSHD_CONFIG_PATH.parent.mkdir(parents=True)
+    ssh_daemon_values.SSHD_CONFIG_PATH.write_text("Include sshd_config.d/*.conf\n", encoding="utf-8")
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
@@ -972,18 +953,17 @@ def test_installs_augtool_when_missing(
     # key deployment instead of stopping with a warning.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, augeas_installed=False)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert ["apt-get", "install", "-y", AUGTOOL_PACKAGE] in calls
-    cfg = ctx.config.ssh_daemon_setup
-    assert cfg.sshd_config_dropin_path.read_text(encoding="utf-8") == (
+    assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
-    assert (cfg.root_ssh_dir / cfg.port_forwarding_private_key_file_name).is_file()
+    assert (ssh_daemon_values.ROOT_SSH_DIR / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME).is_file()
 
 
 def test_augtool_install_failure_is_a_warning(
@@ -994,17 +974,16 @@ def test_augtool_install_failure_is_a_warning(
     # deploys the keys.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_sshd_config(ctx)
-    cfg = ctx.config.ssh_daemon_setup
     calls = _install_fake(monkeypatch, augeas_installed=False, fail_install=99)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("cannot install" in warning for warning in result.warnings)
     assert any(AUGTOOL_PACKAGE in warning for warning in result.warnings)
     assert len([c for c in calls if c[:2] == ["apt-get", "install"]]) == 4
-    assert not cfg.sshd_config_dropin_path.exists()
-    assert (cfg.root_ssh_dir / cfg.port_forwarding_private_key_file_name).is_file()
+    assert not ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.exists()
+    assert (ssh_daemon_values.ROOT_SSH_DIR / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME).is_file()
 
 
 def test_augtool_install_respects_apt_update_flag(
@@ -1014,13 +993,13 @@ def test_augtool_install_respects_apt_update_flag(
     # apt index is refreshed without the flag and skipped with it.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, skip_apt_update=False)
+    ctx = _ctx(monkeypatch, tmp_path, skip_apt_update=False)
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, augeas_installed=False)
     ssh_daemon_setup.task(ctx)
     assert ["apt-get", "update"] in calls
 
-    ctx_skipped = _ctx(tmp_path, skip_apt_update=True)
+    ctx_skipped = _ctx(monkeypatch, tmp_path, skip_apt_update=True)
     calls_skipped = _install_fake(monkeypatch, augeas_installed=False)
     ssh_daemon_setup.task(ctx_skipped)
     assert ["apt-get", "update"] not in calls_skipped

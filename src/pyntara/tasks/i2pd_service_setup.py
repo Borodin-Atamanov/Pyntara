@@ -489,7 +489,7 @@ def task(ctx: Context) -> TaskResult:
     )
     ssh_port: int | None = None
     try:
-        ssh_port = _ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
+        ssh_port = _ssh_port_from_ssh_config()
     except RuntimeError as exc:
         warnings.append(str(exc))
     if ssh_port is not None:

@@ -22,13 +22,14 @@ from support import (
     make_context,
 )
 
-from pyntara.config import SshDirective
 from pyntara.context import Context
 from pyntara.i2pd import b32_address
 from pyntara.tasks import i2pd_service_setup
 from pyntara.utils import curl_flags
 from pyntara.values import engine as engine_values
 from pyntara.values import i2pd_service_setup as values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values.ssh_daemon_setup import SshDirective
 
 I2PD_TEMPLATE = """\
 loglevel = $log_level
@@ -93,6 +94,7 @@ def _release_json(
 
 
 def _ctx(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
     force: bool = False,
@@ -102,13 +104,15 @@ def _ctx(
     """Context with a small safe config; the real file is never touched.
 
     ssh_port is the sshd Port directive value; None omits the directive,
-    so the missing-port path can be exercised. The values of the i2pd
-    section are pointed at temporary paths by _install_fixtures.
+    so the missing-port path can be exercised. The declared directives of
+    ssh_daemon_setup and the values of the i2pd section are pointed at the
+    fixtures here.
     """
 
     directives = [SshDirective(name="PubkeyAuthentication", value="yes")]
     if ssh_port is not None:
         directives.insert(0, SshDirective(name="Port", value=ssh_port))
+    monkeypatch.setattr(ssh_daemon_values, "DIRECTIVES", tuple(directives))
     return make_context(
         task_name="i2pd_service_setup",
         install_mode="server",
@@ -120,7 +124,6 @@ def _ctx(
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
-            ssh_daemon_directives=tuple(directives),
         ),
     )
 
@@ -255,7 +258,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config()
     values.TUNNELS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.TUNNELS_CONFIG_PATH.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -280,7 +283,7 @@ def test_already_configured_skips(
     # service is enabled and active: the task skips and runs only the
     # status queries.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version=TAG, enabled=True, active=True)
     result = i2pd_service_setup.task(ctx)
@@ -350,7 +353,7 @@ def test_missing_binary_is_treated_as_not_installed(
     # task treats it as not installed and proceeds with the install
     # instead of crashing.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch,
         installed_version=None,
@@ -369,7 +372,7 @@ def test_installs_new_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     # downloads the codename-specific asset, installs it with apt, writes
     # the configuration, enables and starts the service.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch, installed_version=None, enabled=False, active=False
     )
@@ -401,7 +404,7 @@ def test_update_reinstalls_and_restarts(
     # An older release is installed: the task installs the newer one and
     # restarts the running service.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version="2.60.0", active=True)
     result = i2pd_service_setup.task(ctx)
@@ -418,7 +421,7 @@ def test_install_gives_up_after_retries(
     # configured retries, reports the failure as a warning and still
     # writes the configuration and starts the service.
     _install_fixtures(monkeypatch, tmp_path, retries=3)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None, fail_install=99)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -436,7 +439,7 @@ def test_install_retries_transient_failure(
 ) -> None:
     # The first apt attempt fails, the retry succeeds.
     _install_fixtures(monkeypatch, tmp_path, retries=3)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None, fail_install=1)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -452,7 +455,7 @@ def test_skip_apt_update_skips_index_refresh(
 ) -> None:
     # skip_apt_update is set: apt-get update never runs before the install.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, skip_apt_update=True)
+    ctx = _ctx(monkeypatch, tmp_path, skip_apt_update=True)
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -465,7 +468,7 @@ def test_config_rewritten_when_missing(
     # The version matches but the configuration file is absent: the task
     # writes it and restarts the running service.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -482,7 +485,7 @@ def test_force_rewrites_config_and_restarts(
     # configuration is rewritten and the service restarted, while the
     # matching version is not reinstalled.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, force=True)
+    ctx = _ctx(monkeypatch, tmp_path, force=True)
     _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
@@ -499,7 +502,7 @@ def test_service_never_active_reports_warning(
     # readiness loop runs out and the task completes with the reason in
     # the warnings.
     _install_fixtures(monkeypatch, tmp_path, check_attempts=3)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch, installed_version=None, active=False, active_becomes=False
     )
@@ -519,7 +522,7 @@ def test_non_debian_os_warns_and_skips_the_install(
     _install_fixtures(monkeypatch, tmp_path, codename="rolling")
     os_release = tmp_path / "os-release"
     os_release.write_text("ID=arch\nID_LIKE=archlinux\n", encoding="utf-8")
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -536,7 +539,7 @@ def test_no_matching_asset_warns_and_skips_the_install(
     # The release has no asset for this machine: the task reports the
     # missing asset, installs nothing and continues with the settings.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     release = _release_json(codename_asset=False, generic_asset=False)
     calls = _install_fake(monkeypatch, installed_version=None, release_json=release)
     result = i2pd_service_setup.task(ctx)
@@ -552,7 +555,7 @@ def test_generic_asset_fallback(
     # The release has only the generic asset: it is selected when the
     # codename-specific build is absent.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     release = _release_json(codename_asset=False)
     calls = _install_fake(
         monkeypatch,
@@ -575,7 +578,7 @@ def test_release_json_failure_reports_warning(
     # The releases API fails: the task reports the fetch error as a
     # warning and continues with the settings, the version stays unknown.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -648,7 +651,7 @@ def test_first_run_message_without_keys_file(
     # the tunnels file, starts the service and reports that the address
     # appears after the first start.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch, installed_version=None, enabled=False, active=False
     )
@@ -696,7 +699,7 @@ def test_missing_commands_are_reported(
     # missing command in the warnings, installs without a version
     # comparison and completes.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch)
     monkeypatch.setattr(values, "VERSION_COMMAND", ())
     result = i2pd_service_setup.task(ctx)
@@ -712,7 +715,7 @@ def test_missing_template_is_reported(
     # needs it is skipped alone and the settings of the other template
     # are still written.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     (ctx.repo_root / "task_data" / "i2pd_service_setup" / "tunnels.conf").unlink()
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
@@ -729,7 +732,7 @@ def test_address_reported_when_keys_exist(
     # With the keys file present, the task message carries the computed
     # .b32.i2p address of the tunnel.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, force=True)
+    ctx = _ctx(monkeypatch, tmp_path, force=True)
     _write_state_as_rendered(ctx)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
@@ -751,7 +754,7 @@ def test_stale_address_file_is_rewritten_without_restart(
     # and reports changed, without reinstalling and without restarting
     # the service.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.CONFIG_PATH.write_text(
         i2pd_service_setup._render_config(
@@ -759,7 +762,7 @@ def test_stale_address_file_is_rewritten_without_restart(
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config()
     values.TUNNELS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.TUNNELS_CONFIG_PATH.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -794,7 +797,7 @@ def test_missing_keys_file_restarts_even_when_configs_match(
     # regenerates the identity, and never reinstalls the matching
     # version.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.CONFIG_PATH.write_text(
         i2pd_service_setup._render_config(
@@ -802,7 +805,7 @@ def test_missing_keys_file_restarts_even_when_configs_match(
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config()
     values.TUNNELS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.TUNNELS_CONFIG_PATH.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -826,8 +829,8 @@ def test_ssh_port_change_rewrites_tunnels_and_restarts(
     # rendered with: the tunnels file is rewritten with the new port and
     # the service restarted, without a reinstall.
     _install_fixtures(monkeypatch, tmp_path)
-    _write_state_as_rendered(_ctx(tmp_path, ssh_port="30222"))
-    ctx = _ctx(tmp_path, ssh_port="30333")
+    _write_state_as_rendered(_ctx(monkeypatch, tmp_path, ssh_port="30222"))
+    ctx = _ctx(monkeypatch, tmp_path, ssh_port="30333")
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -845,7 +848,7 @@ def test_missing_ssh_port_warns_and_skips_the_tunnels(
     # cannot target a known port, so the task reports the reason, never
     # writes the tunnels file and still deploys the main configuration.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, ssh_port=None)
+    ctx = _ctx(monkeypatch, tmp_path, ssh_port=None)
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
@@ -862,7 +865,7 @@ def test_non_numeric_ssh_port_warns_and_skips_the_tunnels(
     # reason instead of rendering a broken tunnel and keeps the main
     # configuration.
     _install_fixtures(monkeypatch, tmp_path)
-    ctx = _ctx(tmp_path, ssh_port="abc")
+    ctx = _ctx(monkeypatch, tmp_path, ssh_port="abc")
     calls = _install_fake(monkeypatch, installed_version=TAG, active=True)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
