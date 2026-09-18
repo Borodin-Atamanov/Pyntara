@@ -108,7 +108,6 @@ testable in code:
 Spec — functional specification, what the system does and how. Design rationale, formulas,
 parameters. May reference contracts but never repeat them:
 
-[docs/spec/config-content.md](docs/spec/config-content.md) — what the config holds, type by type, the closed list of exceptions and the rule that everything else is a config value  
 [docs/spec/install-modes.md](docs/spec/install-modes.md) — minimal/server/desktop modes, auto-detection, task and force selection  
 [docs/spec/secrets-model.md](docs/spec/secrets-model.md) — KeePass vaults, passwords, PYNTARA_VAULT_PASSWORD, fallback  
 [docs/spec/system-metrics.md](docs/spec/system-metrics.md) — encrypted PDF System Metrics, queues, retries, Telegram and Google Drive  
@@ -133,6 +132,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/telegram-setup.md](docs/spec/telegram-setup.md) — Telegram Desktop install from the official redirect, launcher entry and the built-in auto-update
 [docs/spec/playwright-setup.md](docs/spec/playwright-setup.md) — playwright-cli browser control install for the desktop user, over the chrome_setup CDP listener
 [docs/spec/scrcpy-setup.md](docs/spec/scrcpy-setup.md) — scrcpy Android screen mirroring client from the GitHub release with the Ubuntu archive as the fallback, the version directory with the switched command link, the Android USB rules and the two menu entries  
+[docs/spec/chrome-setup.md](docs/spec/chrome-setup.md) — Google Chrome from the official apt repository, the settings repository applied to the live profile, the desktop entry with the local proxy and the CDP listener, and the boot unit that keeps the profile mirror mounted
 Guides — how to work with the project:
 
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  

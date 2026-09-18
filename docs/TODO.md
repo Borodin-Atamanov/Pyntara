@@ -1958,3 +1958,17 @@ machine in this turn, and the probe is named with the figure.
     the tests. secrets/regenerate_vault_by_config.py and
     secrets/read_google_script_credentials.py were already reading the values
     package; only their wording followed.
+    Documentation integrity checked on 2026-09-18 (branch fix-readme-link). A
+    probe over 87 relative links in README and docs found one broken: README
+    still listed docs/spec/config-content.md after that document went to the
+    trash. The line survived my earlier edit because the replacement text used
+    a plain hyphen while the file carries an em dash, and I had not verified
+    that the replacement applied; the lesson is written in the repository memory
+    and the line is gone. Two rules now guard the reading chain instead of a
+    one-off check: tests/test_documentation_links.py fails when a relative link
+    has no target and when a document under docs/contracts, docs/spec or
+    docs/guides is absent from the README index. The second rule found one more
+    real gap: docs/spec/chrome-setup.md was never listed in the index, so it is
+    named there now. Both rules were proved by a negative control (a missing
+    target and an unlisted document each fail while naming the file). Suite:
+    1599 tests.
