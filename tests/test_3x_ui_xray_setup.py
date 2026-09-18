@@ -1491,7 +1491,7 @@ class TestSslReachability:
         assert xray_certificate._is_private_ipv4("203.0.113.5", networks) is False
 
     def test_private_networks_come_from_the_config(self) -> None:
-        # The networks that count as private are a config value: a machine
+        # The networks that count as private are a declared value: a machine
         # behind carrier-grade NAT adds 100.64.0.0/10 and the same address
         # changes its verdict, without a line of code changing.
         carrier_grade = ("100.64.0.0/10",)

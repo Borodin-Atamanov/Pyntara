@@ -1759,7 +1759,7 @@ def test_kconfig_records_write_differing_values(
 def test_the_bool_type_word_comes_from_the_config_vocabulary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The word that marks a boolean record is the name the config layer
+    # The word that marks a boolean record is the name the values module
     # gives that type: with another name in the vocabulary the task still
     # follows it, so the task and the checks that validate a record
     # against KCONFIG_TYPES cannot drift apart.
@@ -1895,7 +1895,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The bus name, the object path and the interface of the KWin virtual
-    # desktop manager are config values of the section: another vocabulary
+    # desktop manager are declared values of the section: another vocabulary
     # is what the commands carry and what the desktop list client receives,
     # and the shipped names stop appearing.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),)

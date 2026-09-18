@@ -718,7 +718,7 @@ def ensure_port_free(
 def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> list[str]:
     """The configured command with its {placeholders} filled in.
 
-    A command whose arguments are ours to choose lives in the config with
+    A command whose arguments are ours to choose lives in the values module with
     placeholders such as {username} or {service_unit_name}; this helper is
     the one place that fills them, so every task renders its commands the
     same way.
@@ -764,7 +764,7 @@ def session_environment_command(
 ) -> list[str]:
     """The configured session environment command for one user.
 
-    The command form lives in the config with a {username} placeholder, the
+    The command form lives in the values module with a {username} placeholder, the
     same way the release query carries {repo}; the account name is the only
     part of the command the run decides.
     """

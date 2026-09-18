@@ -53,10 +53,10 @@ from pyntara import (
 
 logger.configure_journal(None)
 
-# The entry point of a deployed service configures the journal from the config
-# it loaded, and the shared test document names the real journal command, so a
-# test that calls such a main() would write its progress lines into the system
-# journal under a production identifier. He who configures the journal in a
+# The entry point of a deployed service configures the journal under the identifier
+# of its own values module, and that identifier is the real one, so a test that
+# calls such a main() would write its progress lines into the system journal
+# under a production identifier. He who configures the journal in a
 # test is a test that says so: the configuration call of every service module
 # is replaced with a no-op for the length of the test, and a test that
 # exercises the configuration itself patches the same module name with its own

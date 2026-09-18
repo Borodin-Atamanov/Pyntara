@@ -12,8 +12,8 @@ the hot_add attribute and returns the new device id; older kernels
 create one device per write. The task detects the interface at run time
 and renders the boot unit with the matching commands. The unit file is
 rendered from the template at task_data/zram_service/zram.service with
-the ExecStart block substituted (string.Template); the service never
-reads config.toml itself. The task is idempotent: it skips when every
+the ExecStart block substituted (string.Template); the service reads
+no configuration file itself. The task is idempotent: it skips when every
 device already exists at the computed size with zstd active, no extra
 devices are present and the service is enabled; force mode tears the
 devices down and configures them again.

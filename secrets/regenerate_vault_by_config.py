@@ -15,8 +15,8 @@ prompt (only when stdin is a terminal). The script never writes password
 files.
 
 Modes:
-- the vault file is absent or empty: create the vault from the config;
-- --overwrite is given: recreate the vault from the config;
+- the vault file is absent or empty: create the vault from the declared entries;
+- --overwrite is given: recreate the vault from the declared entries;
 - otherwise: open the vault with the password and add the entries that
   are missing from the root group, keeping every existing entry.
 
@@ -86,7 +86,7 @@ EXIT_ERROR = 1
 
 
 class ScriptError(RuntimeError):
-    """Fatal problem with the config, the password or the vault file."""
+    """Fatal problem with the values, the password or the vault file."""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -107,7 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="recreate the vault from the config even when it exists",
+        help="recreate the vault from the declared entries even when it exists",
     )
     return parser
 
@@ -398,7 +398,7 @@ def _recreate(
     groups: list[dict[str, str]],
     password: str,
 ) -> int:
-    """Create or recreate the vault from the config entries.
+    """Create or recreate the vault from the declared entries.
 
     The root entries come first, then the configured subgroups are created
     empty, because the accounts inside are data maintained directly in the
@@ -429,7 +429,7 @@ def _update(
 ) -> int:
     """Add the entries and groups missing; keep everything else.
 
-    Entries missing from the root group are added, the configured
+    Entries missing from the root group are added, the declared
     subgroups are created when absent. The entries inside an existing
     subgroup are never touched, so the accounts survive the update.
     """
@@ -439,12 +439,12 @@ def _update(
     except CredentialsError:
         raise ScriptError(
             f"cannot open vault {vault_path}: the password does not match "
-            "(use --overwrite to recreate the vault from the config)"
+            "(use --overwrite to recreate the vault from the values)"
         ) from None
     except Exception as exc:  # noqa: BLE001 - any open failure is fatal
         raise ScriptError(
             f"cannot open vault {vault_path}: {exc} (use --overwrite to "
-            "recreate the vault from the config)"
+            "recreate the vault from the values)"
         ) from exc
     missing: list[dict[str, str]] = []
     for fields in entries:
@@ -505,13 +505,13 @@ def main(argv: list[str] | None = None) -> int:
                 "password file and the prompt all failed"
             )
         if not vault_path.exists():
-            print("state: the vault file is absent, recreating from the config")
+            print("state: the vault file is absent, recreating from the declared entries")
             return _recreate(vault_path, entries, groups, password)
         if vault_path.stat().st_size == 0:
-            print("state: the vault file is empty, recreating from the config")
+            print("state: the vault file is empty, recreating from the declared entries")
             return _recreate(vault_path, entries, groups, password)
         if args.overwrite:
-            print("state: --overwrite given, recreating from the config")
+            print("state: --overwrite given, recreating from the declared entries")
             return _recreate(vault_path, entries, groups, password)
         print("state: the vault file exists, updating missing entries")
         return _update(vault_path, entries, groups, password)

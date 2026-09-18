@@ -40,8 +40,8 @@ WantedBy=multi-user.target
 
 # 16 GiB RAM * the shipped multiplier + the shipped extra mebibytes, capped by
 # a large disk: the target the task computes with the values of the section.
-# The engine byte factor comes from the test config, because the engine values
-# still live in the config document.
+# The engine byte factor comes from the engine values module, which the test
+# patches where it needs another one.
 RAM_KIB = 16 * 1024 * 1024
 FREE_BYTES = 100 * 1024**3
 TARGET_MB = (

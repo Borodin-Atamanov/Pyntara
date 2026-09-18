@@ -42,7 +42,7 @@ PF_OPTIONS = 'restrict,port-forwarding,permitlisten="*"'
 PF_AUTHORIZED_LINE = f"{PF_OPTIONS} {PF_PUBLIC_KEY_LINE}"
 
 
-# The augeas tool package name from the config defaults, used by the
+# The augeas tool package name from the declared values, used by the
 # subprocess fake to tell the main package from the augtool package.
 AUGTOOL_PACKAGE = "augeas-tools"
 
@@ -621,7 +621,7 @@ def test_commands_come_from_the_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The daemon query, the listener query and the three systemctl calls of
-    # a first run are config values: another command line in the section is
+    # a first run are declared values: another command line in the section is
     # exactly the argv the task runs.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)
@@ -691,7 +691,7 @@ def test_restart_and_reload_commands_come_from_the_config(
     overrides: dict[str, str],
     outcome: str,
 ) -> None:
-    # The restart and the reload of the service are config values too:
+    # The restart and the reload of the service are declared values too:
     # another command line in the section is the argv the task runs.
     _install_fixtures(monkeypatch, tmp_path)
     _install_users(monkeypatch, tmp_path)

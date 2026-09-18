@@ -10,7 +10,7 @@ ssh_daemon_setup Port directive, the single source of truth, so the tunnel and
 the daemon can never diverge.
 
 The deployed address command reads the values of this module directly, so the
-section has no copy in the config document and no config path travels in the
+section has no copy in a second place and no config path travels in the
 command line beyond the ssh_daemon_setup read it still needs. The section
 declares no boolean switch as a text: HTTP_ENABLED and SOCKS_PROXY_ENABLED are
 whole numbers, and CONFIG_TRUE_VALUE with CONFIG_FALSE_VALUE is the spelling

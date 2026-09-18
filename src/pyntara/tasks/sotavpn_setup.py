@@ -13,7 +13,7 @@ it. Every message that could carry it passes through _without_the_key.
 
 Order of the work:
 
-1. The access key is read from the source vault entry the config names. An
+1. The access key is read from the source vault entry the declared title names. An
    absent entry or an empty password means the pool is not configured for
    this machine: the task says so and changes nothing.
 2. The bridge program of the Sotavpn repository is installed for the

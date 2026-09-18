@@ -12,7 +12,7 @@ hostname by the same function the port_forwarding task uses, so one machine
 asks for one predictable number in both schemes. When another rule already
 holds that port, the next candidate hashes the hostname with the attempt
 number appended, because this router replaces a rule silently and a foreign
-rule is never touched; the number of attempts comes from the config.
+rule is never touched; the number of attempts is a declared value.
 
 The module changes the router only when it must: a rule that already
 delivers the port to this machine is left alone, and a rule of another

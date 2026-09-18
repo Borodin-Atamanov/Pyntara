@@ -136,5 +136,5 @@ def test_a_wrong_argument_count_is_a_usage_error(
     # The command takes no argument at all: the values it reads live in the
     # package, so a caller that still passes a config path is told the
     # usage instead of being ignored.
-    assert port_forwarding_state.main(["port_forwarding_state", "config.toml"]) == 2
+    assert port_forwarding_state.main(["port_forwarding_state", "extra"]) == 2
     assert capsys.readouterr().err != ""

@@ -235,7 +235,7 @@ def test_scrcpy_setup_is_in_desktop_default_set() -> None:
 
 def test_the_shipped_values_name_the_release_repository() -> None:
     # The shipped values are the ones a real run reads, so they are checked
-    # here without a config document.
+    # here without its own values module.
     assert values.GITHUB_REPO == "Genymobile/scrcpy"
     assert common_values.DESKTOP_USERNAME == "i"
     assert "{asset_arch}" in values.ARCHIVE_NAME_TEMPLATE

@@ -43,9 +43,8 @@ def _point_the_values_at_the_temporary_tree(
 
     The home is a shared value and the installation of the bridge lives under
     it, so the fixture points it at the temporary directory of the test: no test
-    touches the real home. The panel vocabulary of the three_x_ui_xray_setup
-    section stays in the config document until that section is migrated, so the
-    helper below still edits it there.
+    touches the real home. Every other value the task reads is declared in a
+    values module, which the helper below patches where a test needs another one.
     """
 
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))

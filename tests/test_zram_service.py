@@ -5,7 +5,7 @@ paths) are mocked via monkeypatch; the tests only touch temporary fixtures
 (docs/guides/developer-guide.md). The unit template is rendered from a
 fixture, so the tests never read the repository template. The values of the
 section come from the values module, and the engine values still come from the
-config document until the engine stage.
+declared module, and the task reads them through it.
 """
 
 from __future__ import annotations
@@ -64,11 +64,10 @@ def _ctx(
     *,
     force: bool = False,
 ) -> Context:
-    """Context with a small safe config; the real file is never touched.
+    """Context with the safe defaults the engine fills in a real run.
 
-    The engine values come from the config document until the engine stage; the
-    values of the section are read from the values module, which a test patches
-    where it needs another one. The systemd unit directory and the repository
+    Every value is read from a values module, which a test patches where it
+    needs another one. The systemd unit directory and the repository
     root are the temporary tree, because the task writes the unit there and reads
     the template from there.
     """

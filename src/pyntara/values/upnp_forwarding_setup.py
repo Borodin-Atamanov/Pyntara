@@ -10,8 +10,8 @@ schemes. A network without UPnP, a missing client and a router that refuses are
 normal situations: they are reported and never fail the run.
 
 The deployed service and the address command of the network report read the
-values of this module directly, so the section has no copy in the config
-document and no config path travels in the unit command line.
+values of this module directly, so the section has no copy in a second place
+and no config path travels in the unit command line.
 """
 
 from __future__ import annotations

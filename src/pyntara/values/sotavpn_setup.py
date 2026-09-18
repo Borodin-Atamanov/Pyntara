@@ -6,10 +6,9 @@ and serves the server list of the account on a subscription address, the panel
 subscribes to that address, and the nodes join the load balancer pool the
 three_x_ui_xray_setup section built (docs/spec/sotavpn-setup.md).
 
-The desktop user and his home come from the shared module. The panel vocabulary
-this task uses stays in the values module of the three_x_ui_xray_setup section,
-which is not migrated yet, so the task still receives that object from the config
-until that section's own turn.
+The desktop user and his home are declared in the shared module. The panel
+vocabulary this task uses is declared in the values module of the
+three_x_ui_xray_setup section, so both are imported and never copied.
 """
 
 from __future__ import annotations

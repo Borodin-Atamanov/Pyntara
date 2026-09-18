@@ -74,7 +74,7 @@ def test_the_comment_label_sign_comes_from_the_caller(
 
 def test_the_include_keyword_comes_from_the_config(tmp_path: Path) -> None:
     # The keyword that pulls the drop-in in belongs to the syntax of the
-    # edited file and is a config value: another keyword in the table finds
+    # edited file and is a declared value: another keyword in the table finds
     # another directive, while the shipped one finds nothing of it.
     config = tmp_path / "my_config"
     config.write_text(

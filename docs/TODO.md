@@ -1940,3 +1940,21 @@ machine in this turn, and the probe is named with the figure.
     and the eleven spec documents that named a config table.
     Every gate passes: ruff check, mypy strict over 115 source files, mypy over
     the tests, 1597 unit tests and the four bash suites.
+    Leftovers closed on 2026-09-18 on the same day (branch
+    close-config-leftovers). The probe found two real defects behind the
+    wording. First, tests/test_task_templates.py read config/*.toml, so after
+    the removal its three checks walked an absent directory and passed without
+    checking anything: the guard that a template name declared by a value
+    exists under task_data/<section>/ was silently lost. It now parses the
+    values modules with ast (26 template names, 2 script names and 1 task_data
+    path), and a negative control with a missing task_data directory fails it
+    while naming the values. Second, tests/test_metrics_collect, test_logger,
+    test_upnp_forwarding_state and test_port_forwarding_state still patched
+    sys.argv with a config path that no entry point reads any more, and the
+    docstring of the system_metrics_setup task still promised a config copy
+    that no longer happens. Everything else was wording: "config value" became
+    "declared value", "comes from the config" became "is a declared value", and
+    the phrases about sections that are not migrated yet left the modules and
+    the tests. secrets/regenerate_vault_by_config.py and
+    secrets/read_google_script_credentials.py were already reading the values
+    package; only their wording followed.

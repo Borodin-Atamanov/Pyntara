@@ -132,7 +132,7 @@ def _ssl_reachable(
 def _acme_path() -> Path:
     """The acme.sh binary under the current user's home directory.
 
-    The directory and the file name of the tool are config values, so a
+    The directory and the file name of the tool are declared values, so a
     release that installs itself elsewhere is a config change.
     """
 

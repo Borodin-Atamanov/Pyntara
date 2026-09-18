@@ -843,7 +843,7 @@ def test_service_never_active_warns(
 
 
 def test_select_asset_by_architecture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    # The asset name comes from the configured template with the bare
+    # The asset name is a declared valueured template with the bare
     # version and the dpkg architecture; the version is the tag without
     # the configured prefix, and an architecture without an asset of
     # that name has no candidate.
@@ -1031,7 +1031,7 @@ def test_journal_connected_addrs_parses_lines(
 def test_journal_query_follows_the_configured_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The journal query is a config value: its placeholders receive the
+    # The journal query is a declared value: its placeholders receive the
     # configured unit and the probe window in whole seconds.
     monkeypatch.setattr(
         values,

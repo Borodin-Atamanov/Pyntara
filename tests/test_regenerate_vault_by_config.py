@@ -3,9 +3,9 @@
 The script secrets/regenerate_vault_by_config.py is imported as a module
 through importlib.util (the secrets directory is not a package) and its
 functions are exercised against real KeePass databases in temporary
-directories. The config path, the environment, the terminal state and the
-interactive prompt are injected via monkeypatch, so the real config.toml,
-the real environment and the real stdin are never touched.
+directories. The environment, the terminal state and the interactive
+prompt are injected via monkeypatch, so the real vaults, the real
+environment and the real stdin are never touched.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def _opens_with(path: Path, password: str) -> bool:
 def test_creates_vault_when_file_absent(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A missing vault must be created from the config with every entry in
+    # A missing vault must be created from the declared entries with every entry in
     # the root group, and it must open with the provided password.
     _prepare(gen, tmp_path, monkeypatch)
     vault_path = tmp_path / "default.vault"
@@ -326,7 +326,7 @@ def test_generated_password_with_a_wrong_format_raises(
 def test_creates_vault_when_file_empty(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A zero-byte file is treated as absent and recreated from the config.
+    # A zero-byte file is treated as absent and recreated from the declared entries.
     _prepare(gen, tmp_path, monkeypatch)
     vault_path = tmp_path / "default.vault"
     vault_path.write_bytes(b"")
@@ -338,7 +338,7 @@ def test_overwrite_recreates_vault(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # --overwrite discards the old database and its password and rebuilds
-    # the vault from the config; entries outside the config are lost.
+    # the vault from the declared entries; entries outside them are lost.
     _prepare(gen, tmp_path, monkeypatch)
     vault_path = tmp_path / "vault.kdbx"
     create_database(str(vault_path), password="old-password")

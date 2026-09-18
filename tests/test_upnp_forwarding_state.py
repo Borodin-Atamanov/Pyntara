@@ -160,4 +160,4 @@ class TestMain:
     def test_a_wrong_argument_count_is_refused(self) -> None:
         # The command reads declared values now, so a caller that still
         # passes a config path is told the usage instead of being ignored.
-        assert upnp_forwarding_state.main(["upnp_forwarding_state", "config.toml"]) == 2
+        assert upnp_forwarding_state.main(["upnp_forwarding_state", "extra"]) == 2

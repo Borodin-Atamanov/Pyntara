@@ -89,9 +89,9 @@ class LocalProxyPolicy:
     panel_inbound_protocol, panel_blocked_rule_protocols and
     panel_private_block_category are the vocabulary of the panel itself,
     so which inbound it accepts and which of its shipped rules count as a
-    restriction are config values. field_keys are the names of the fields
+    restriction are declared values. field_keys are the names of the fields
     of the Xray document and values the protocol words written into it,
-    both from the config, so a core version that renames a field is
+    both declared, so a core version that renames a field is
     answered there and not here.
     """
 
@@ -169,7 +169,7 @@ def parse_vless_link(
     default_port is the configured port of a link that carries none,
     scheme the configured name of the scheme these links use and
     query_keys the configured names of their query parameters, so a panel
-    that renames one is answered in the config.
+    that renames one is answered in the values module.
     """
 
     candidate = link.strip()
@@ -318,7 +318,7 @@ def build_local_proxy_inbound(
     after a quota is worse than useless. Sniffing is what lets the rules
     decide by the requested name, so the protocols the panel can sniff are
     enabled, and how the panel treats the sniffed result is configured as
-    well. The field names come from the config, so a panel or core version
+    well. The field names are declared values, so a panel or core version
     that renames one is answered there.
     """
 

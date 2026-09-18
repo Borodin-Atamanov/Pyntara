@@ -43,7 +43,7 @@ def _panel_binary() -> Path:
     """The installed panel binary, from its configured file name.
 
     Every call the task makes to the panel binary is built from this one
-    path, so the file name of the binary is a single config value and a
+    path, so the file name of the binary is a single declared value and a
     future release that renames it needs no code change.
     """
 
@@ -57,7 +57,7 @@ def _panel_command(
 
     The path of the binary enters every call as {binary} and the values
     the call site knows travel as their own placeholders, so the verbs
-    and the flags of the tool live in the config table next to the binary
+    and the flags of the tool are declared next to the binary
     itself.
     """
 
@@ -122,7 +122,7 @@ def _credential_env() -> dict[str, str]:
 
     The panel port is fixed to panel_values.PANEL_PORT; the username, password
     and webBasePath are proquint encodings of fresh random bytes, whose
-    length comes from the config (docs/spec/3x-ui.md, Credentials
+    length is a declared value (docs/spec/3x-ui.md, Credentials
     boundary). The installer applies
     these values only when the panel is in the default state (first
     deployment); on an existing panel with custom credentials it
@@ -454,7 +454,7 @@ def _wait_panel_http(
     and TLS is not verified, mirroring the API client. An unreadable
     install-result.env leaves the web base path empty, which still
     detects the listener. The budget in seconds, the pause between two
-    checks and the probe timeout come from the config: a slow link must
+    checks and the probe timeout are declared values: a slow link must
     not be reported as an unreachable panel.
     """
 

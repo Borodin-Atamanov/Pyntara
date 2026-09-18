@@ -12,7 +12,7 @@ system_metrics_collector.service after boot and at the configured daily
 time; every parameter of the collector is a declared value of
 pyntara.values.system_metrics_setup, and the command line carries the
 path of the single system config for the sections that still live in the
-config document (the runtime vault and the telemetry PDF). The service
+declared values (the runtime vault and the telemetry PDF). The service
 does all waiting itself, so systemd never sleeps for it
 (docs/spec/system-metrics.md, section Report collector). The report is a
 JSON document: generated_at in the project datetime format,
@@ -91,8 +91,8 @@ def _run_module(
     empty, because it carries no information. A module that printed a
     JSON document contributes it as structured data, so the report keeps
     the records and their fields instead of a string. The field names of
-    the result and the words of its status are config values, so the
-    reader of the report finds the shape in the config.
+    the result and the words of its status are declared values, so the
+    reader of the report finds the shape in the declared values.
     """
 
     status_key = keys["status"]
@@ -144,7 +144,7 @@ def percent_ready(
     answered source, exactly like a module that reports one, so the
     readiness of a machine never depends on how many addresses it
     carries. The name of the status field and the word that counts as an
-    answer are config values.
+    answer are declared values.
     """
 
     if not entries:
@@ -161,7 +161,7 @@ def collect() -> dict[str, object]:
     affect the readiness. The full output of every module is kept as is;
     the report generation time carries the moment in the configured
     datetime format, and every name of the document and every word of a
-    status comes from the config.
+    status is a declared value.
     """
 
     collector = values.COLLECTOR
@@ -395,7 +395,7 @@ def trigger_collection() -> bool:
     skips a duplicate start while a collection is already running. A
     failed call is journaled and never raised, because the next scheduled
     collection still carries the current state. The command, the unit name
-    and the priority are config values of the collector table.
+    and the priority are declared values of the collector table.
     """
 
     collector = values.COLLECTOR

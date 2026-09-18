@@ -47,7 +47,7 @@ SERVICE_PROCESS_NAME: str = "x-ui"
 # Commands of the panel CLI. Every one carries the path of the binary as
 # {binary}; a value the call site knows (the port, the credentials, the
 # certificate paths) travels as its own placeholder, so the verbs and the
-# flags of the tool are config values like the binary itself.
+# flags of the tool are declared values like the binary itself.
 PANEL_VERSION_COMMAND: tuple[str, ...] = ("{binary}", "-v",)
 PANEL_SETTINGS_QUERY_COMMAND: tuple[str, ...] = ("{binary}", "setting", "-show", "true",)
 PANEL_CERT_QUERY_COMMAND: tuple[str, ...] = ("{binary}", "setting", "-getCert", "true",)

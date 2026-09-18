@@ -258,8 +258,7 @@ def log_task_start(name: str, *, priority: int | None = None) -> None:
     """Announce a task: empty line, colored banner, journal line.
 
     The console banner keeps its colors; the journal gets plain text at
-    the given syslog priority, the progress level of the config by
-    default.
+    the given syslog priority, the declared progress level by default.
     """
 
     print()

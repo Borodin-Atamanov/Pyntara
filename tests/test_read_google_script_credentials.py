@@ -4,9 +4,9 @@ The standalone script secrets/read_google_script_credentials.py is loaded
 as a module through importlib.util (the secrets directory is not a package)
 and its functions are exercised against real KeePass databases in temporary
 directories. REPO_ROOT is monkeypatched so the repository vaults and the
-repository config are never touched; a config/ directory with the entry
-title and the deployment URL pattern is written into the temporary root,
-and the environment is injected explicitly through the function arguments.
+repository vaults are never touched; the temporary root holds the
+vaults and the template the deploy step renders, and the environment is
+injected explicitly through the function arguments.
 
 Two rules carry most of the cases. The production vault alone supplies the
 script ID and the deployment ID, because its project owns the deployed URL.
@@ -52,7 +52,7 @@ DEFAULT_ENTRY = {
     "notes": "Default credentials.",
 }
 
-# The deployment URL pattern that mirrors the real config value.
+# The deployment URL pattern that mirrors the real declared value.
 DEPLOYMENT_PATTERN = r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
 
 TEMPLATE_TEXT = "const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;\n"
@@ -107,7 +107,7 @@ def _point_at(
     production_password_file: bool = True,
     default_password_file: bool = True,
 ) -> tuple[Path, Path]:
-    """Point the script at temp vaults and config; return (production, default).
+    """Point the script at temporary vaults; return (production, default).
 
     The .password files next to the vaults are the normal way a deploy opens
     both vaults without an environment value, so they exist unless a test

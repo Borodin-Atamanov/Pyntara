@@ -409,7 +409,7 @@ def _client_records_of_inbound(
     over as text, and its clients array is where the panel keeps the
     identity of every client it serves. Reading it lets the task reuse an
     identity that already exists instead of adding another client. The
-    name of the settings block comes from the config; the name of the
+    name of the settings block is a declared value; the name of the
     array is the word the shipped payload template writes.
     """
 
@@ -446,7 +446,7 @@ def _client_identity(
     client on an inbound the task keeps at one, which is the state two
     clients of the same inbound were found in on a live machine. A machine
     with neither generates a fresh identity, and the length of the random
-    part of each value comes from the config.
+    part of each value is a declared value.
     """
 
     if not stored.get("CLIENT_EMAIL") and served:

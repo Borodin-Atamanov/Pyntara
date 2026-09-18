@@ -154,7 +154,7 @@ def test_commits_vault_under_hostname_name(
 def test_commit_command_comes_from_the_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another hand-off command in the config is the argv the task runs, so
+    # Another declared hand-off command is the argv the task runs, so
     # the program and the argument shape are not values of the module, and
     # the collector service runs the same configured command.
     _use_temporary_paths(monkeypatch, tmp_path)

@@ -130,8 +130,8 @@ def discover_dns_servers(timeout: float) -> DiscoveredDnsServers:
 def _asset_for_architecture(payload: dict[str, object], arch: str) -> tuple[str, str]:
     """The (name, url) of the dnsproxy tarball for this architecture.
 
-    The asset name comes from the configured template; the architecture
-    spelling comes from the configured table, because dnsproxy names its
+    The asset name is a declared valueured template; the architecture
+    spelling is a declared valueured table, because dnsproxy names its
     architectures itself and prefixes them. An architecture the table does
     not name is an error, not a fallback to another architecture.
     """
@@ -573,10 +573,10 @@ def _global_block_lines(
 ) -> list[str]:
     """The lines of the Global block of resolvectl status output.
 
-    The block starts at the line the config names as the global marker and
+    The block starts at the line the declared global marker names and
     ends at the first empty line or per-link line, whichever comes first. A
     missing marker yields an empty list. Both names belong to the output of
-    the tool and are config values.
+    the tool and are declared values.
     """
 
     started = False
@@ -647,7 +647,7 @@ def _resolved_uses_dnsproxy(timeout: float) -> str | None:
 def _per_link_dns_addresses(output: str, link_prefix: str) -> set[str]:
     """Validated DNS addresses on the per-link scopes of resolvectl dns.
 
-    Only the lines the config marks as per-link carry servers; the Global
+    Only the lines the declared link prefix marks as per-link carry servers; the Global
     and empty scopes are skipped. Each token is validated as an IP address
     so a truncated token such as 810:100::15 can never match as a substring
     of a longer address such as 2800:810:100::15.

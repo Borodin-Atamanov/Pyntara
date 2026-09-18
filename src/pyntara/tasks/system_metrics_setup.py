@@ -32,7 +32,7 @@ directory with the configured mode. The task enables and starts the
 service and the path unit immediately, so a broken deployment fails the
 task and shows in the install log instead of surfacing at the first
 reboot. The task is idempotent: it skips when the venv imports pyntara,
-the config, the unit files and the command file match their sources, the
+the unit files and the command file match their sources, the
 service and the path unit are enabled and the spool directory is in
 place; force mode reinstalls the package and restarts the units.
 """
@@ -64,8 +64,8 @@ from pyntara.values import system_metrics_setup as values
 # against temporary fixtures instead of the real system (developer guide).
 # The unit, path and command templates of this task live under
 # task_data/system_metrics_setup in the clone and are read from the context;
-# the unit file names, the deployment paths of the venv and the system config
-# live in config.toml through Context.
+# the unit file names and the deployment paths of the venv are declared in
+# the values package.
 
 
 def _uv_path() -> str | None:
@@ -229,7 +229,7 @@ def _render_collector_timer_unit(
     """Render the timer unit that starts the collector after boot and daily.
 
     The collector does all waiting itself, so the timer only schedules
-    the start: OnBootSec comes from the config, and every configured time
+    the start: OnBootSec is a declared value, and every configured time
     of day becomes one OnCalendar line, because systemd reads one line
     per calendar event (docs/spec/system-values.MD, section Report
     collector). The version line is the mark of the deployment that wrote
@@ -371,11 +371,10 @@ def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
     The goal is reached when the venv runs the repository pyntara version,
-    the system config,
     the three unit files and the generated command file match their
     sources, the service and the path unit are enabled and the spool
     directory is in place; the task then returns changed=False. Otherwise
-    it creates the venv, installs the package, copies the config, writes
+    it creates the venv, installs the package into it, writes
     the units, reloads systemd, enables and starts the service and the
     path unit, generates the commit command and creates the spool
     directory, so a broken step is visible in the install log. The systemd

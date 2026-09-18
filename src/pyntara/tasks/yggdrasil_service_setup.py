@@ -14,9 +14,8 @@ The task owns the configuration and the node identity. The package
 postinst generates /etc/yggdrasil/yggdrasil.conf with a fresh key pair;
 the task extracts the key once into a separate PEM file referenced by the
 configured private key path field, so rewriting the configuration never
-changes the node identity. The configuration is rendered as JSON from
-config.toml, and every key name of the document comes from
-config_document_keys: the TUN interface name and MTU, the admin socket,
+changes the node identity. The configuration is rendered as JSON from the
+declared key names of CONFIG_DOCUMENT_KEYS: the TUN interface name and MTU, the admin socket,
 the inbound listeners (tcp, tls, quic and ws on all stacks with random
 ports) and the multicast discovery blocks.
 
@@ -115,7 +114,7 @@ def _select_asset(
 ) -> tuple[str, str] | None:
     """The (name, url) of the .deb asset for this machine, or None.
 
-    The asset name comes from the configured template; the architecture
+    The asset name is a declared valueured template; the architecture
     part matches the dpkg architecture, so no codename-specific fallback
     is needed.
     """
@@ -217,7 +216,7 @@ def _render_config(peers: list[str]) -> str:
 
     The key lives in the separate PEM file, so the rendered document
     carries the configured private key path instead of the key material.
-    The key names come from the config, so the schema of the document is
+    The key names are declared values, so the schema of the document is
     visible there; keys are emitted in a fixed order, so the rendered
     file, the idempotency comparison and the written configuration share
     one representation.

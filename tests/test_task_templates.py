@@ -1,110 +1,107 @@
-"""Every template the config names must exist in this clone.
+"""Every template the values name must exist in this clone.
 
 A task renders its templates from files under task_data/<section>/ of the
 clone the run started from (architecture contract, Configuration). The name
-of such a file is a config value, and a wrong name compiles, passes every
+of such a file is a declared value, and a wrong name compiles, passes every
 unit test that renders a fixture of its own, and fails on the target
 machine, where the shipped clone is the only clone. Two defects of that
-kind happened while the values moved into the config: a clone root one
+kind happened while the values moved into the package: a clone root one
 directory too deep, and template names written in the code. The rules here
-cover the other direction, the names written in the config:
+cover the other direction, the names declared in the values modules:
 
-The value of a key whose name ends in _template_file_name is the name of a
-file under task_data/<section>/ of the section that holds the key.
+The value of a name ending in _TEMPLATE_FILE_NAME is a file under
+task_data/<section>/ of the module that declares it.
 
-The value of a key whose name ends in _script_file_name is a client the task
-runs, a file under task_data/<section>/ of the same section just like a
-template, because a body longer than five lines belongs in a file and not in
-the code (config content spec, Exceptions).
+The value of a name ending in _SCRIPT_FILE_NAME is a client the task runs,
+a file under task_data/<section>/ of the same module, because a body longer
+than five lines belongs in a file and not in the code.
 
 A string value that starts with task_data/ is a path from the clone root,
-the shape a section uses when the template of a whole file tree is named
+the shape a module uses when the template of a whole file tree is named
 rather than a single file.
 
-Both rules read config/ as TOML, section by section, and never import a
-task module: a template nobody reads is out of scope here, while a template
-named and missing is a failure.
+The reader parses the values modules instead of importing them, so a module
+that cannot be imported still has its names checked; the import rules of a
+values module belong to tests/test_values.py.
 """
 
 from __future__ import annotations
 
-import tomllib
+import ast
 from pathlib import Path
 
 from pyntara.values import tasks as tasks_values
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_DIR = REPO_ROOT / "config"
+VALUES_DIR = REPO_ROOT / "src" / "pyntara" / "values"
 TASK_DATA_DIR = REPO_ROOT / "task_data"
 
 
-def _string_values(table: dict[str, object], prefix: str = ""):
-    """Yield the dotted key and the string of every string value."""
+def _declared_strings() -> list[tuple[str, str, str]]:
+    """The module, the value name and the string of every declared string."""
 
-    for key, value in table.items():
-        dotted = f"{prefix}{key}"
-        if isinstance(value, dict):
-            yield from _string_values(value, f"{dotted}.")
-        elif isinstance(value, str):
-            yield dotted, value
-
-
-def _sections() -> list[tuple[str, dict[str, object]]]:
-    """Every config section with its parsed table, by file name."""
-
-    sections: list[tuple[str, dict[str, object]]] = []
-    for path in sorted(CONFIG_DIR.glob("*.toml")):
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-        sections.append((path.stem, data))
-    return sections
-
-
-def test_every_named_template_exists_in_its_task_data_directory() -> None:
-    missing: list[str] = []
-    for section, data in _sections():
-        for key, value in _string_values(data):
-            if not key.endswith("_template_file_name"):
+    declared: list[tuple[str, str, str]] = []
+    for path in sorted(VALUES_DIR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            name = ""
+            value_node: ast.expr | None = None
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                name, value_node = node.target.id, node.value
+            elif (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+            ):
+                name, value_node = node.targets[0].id, node.value
+            if not name or not isinstance(value_node, ast.Constant):
                 continue
-            candidate = TASK_DATA_DIR / section / value
-            if not candidate.is_file():
-                missing.append(f"{key} = {value!r}")
+            if not isinstance(value_node.value, str):
+                continue
+            declared.append((path.stem, name, value_node.value))
+    return declared
+
+
+def test_every_declared_template_exists_in_its_task_data_directory() -> None:
+    missing: list[str] = []
+    for module, name, value in _declared_strings():
+        if not name.endswith("_TEMPLATE_FILE_NAME"):
+            continue
+        if not (TASK_DATA_DIR / module / value).is_file():
+            missing.append(f"{module}.{name} = {value!r}")
     assert not missing, (
-        "templates named by the config and missing under "
+        "templates declared by the values and missing under "
         f"task_data/<section>/: {missing}"
     )
 
 
-def test_every_named_script_exists_in_its_task_data_directory() -> None:
+def test_every_declared_script_exists_in_its_task_data_directory() -> None:
     missing: list[str] = []
-    for section, data in _sections():
-        for key, value in _string_values(data):
-            if not key.endswith("_script_file_name"):
-                continue
-            candidate = TASK_DATA_DIR / section / value
-            if not candidate.is_file():
-                missing.append(f"{key} = {value!r}")
+    for module, name, value in _declared_strings():
+        if not name.endswith("_SCRIPT_FILE_NAME"):
+            continue
+        if not (TASK_DATA_DIR / module / value).is_file():
+            missing.append(f"{module}.{name} = {value!r}")
     assert not missing, (
-        f"clients named by the config and missing under task_data/<section>/: {missing}"
+        "clients declared by the values and missing under "
+        f"task_data/<section>/: {missing}"
     )
 
 
-def test_every_task_data_path_exists_in_the_clone() -> None:
+def test_every_declared_task_data_path_exists_in_the_clone() -> None:
     missing: list[str] = []
-    for section, data in _sections():
-        for key, value in _string_values(data):
-            if not value.startswith("task_data/"):
-                continue
-            if not (REPO_ROOT / value).is_file():
-                missing.append(f"{key} = {value!r}")
-    assert not missing, f"paths named by the config and missing: {missing}"
+    for module, name, value in _declared_strings():
+        if not value.startswith("task_data/"):
+            continue
+        if not (REPO_ROOT / value).is_file():
+            missing.append(f"{module}.{name} = {value!r}")
+    assert not missing, f"paths declared by the values and missing: {missing}"
 
 
 def test_every_task_data_directory_belongs_to_a_task() -> None:
     # The directory of a task is named after its catalog entry, which is the
     # name of its module and of its values module (task-model contract), so a
-    # stray directory is either a renamed task or a leftover of one. The names
-    # come from the catalog and not from config/, because a section that moved
-    # to the values package keeps no TOML file.
+    # stray directory is either a renamed task or a leftover of one.
     names = {spec.name for spec in tasks_values.CATALOG}
     orphans = sorted(
         directory.name

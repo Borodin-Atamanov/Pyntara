@@ -9,7 +9,7 @@ the working ones go into the rendered configuration; STATIC_PEERS is the fallbac
 for a machine that cannot download the list.
 
 The deployed address command reads the values of this module directly, so the
-section has no copy in the config document. The schema of the yggdrasil
+section has no copy in a second place. The schema of the yggdrasil
 configuration and of the admin socket answer belongs to the program, and the key
 names are visible here instead of hidden in the task module.
 """

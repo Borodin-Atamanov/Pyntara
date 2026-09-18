@@ -5,10 +5,9 @@ The deploy script for the System Metrics Google Drive web app needs the
 script ID of the Apps Script project, the deployment ID whose URL stays
 stable across redeploys and the auth keys the web app accepts. The values
 live in the google_script_key entry of the vault databases, whose title and
-URL pattern come from system_metrics_setup.google_script_key_entry_title
-and system_metrics_setup.google_script_deployment_url_regex in the
-repository config.toml, the same single source of truth the deployed
-service uses: the username field holds the script ID, the url field holds
+URL pattern come from GOOGLE_SCRIPT_KEY_ENTRY_TITLE and
+GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX of the system_metrics_setup values
+module, the same single source of truth the deployed service uses: the username field holds the script ID, the url field holds
 the web app endpoint from which the deployment ID is extracted with the
 configured URL pattern, the password field holds the auth key of that
 vault.
@@ -216,7 +215,7 @@ def get_entry(
 def deployment_id_from_url(url: str) -> str:
     """The deployment ID embedded in a web app URL.
 
-    The URL must match the deployment URL pattern from the config, whose
+    The URL must match the declared deployment URL pattern, whose
     single capture group yields the ID; any other shape raises
     ScriptError, so a wrong url fails loudly instead of deploying to an
     unexpected place.
@@ -248,7 +247,7 @@ def read_deploy_credentials(environ: Mapping[str, str]) -> DeployCredentials:
     """The project identity and the auth key of every vault.
 
     The entry title and the deployment URL pattern come from the
-    system_metrics_setup table of the repository config.toml. The production
+    system_metrics_setup values module. The production
     vault supplies the script ID and the deployment ID, because its project
     owns the deployed URL; every vault supplies one auth key, so the deployed
     web app accepts the telemetry of the machines provisioned from either

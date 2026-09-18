@@ -414,7 +414,7 @@ def _deploy_fixture(
 def test_unit_template_name_comes_from_the_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The name of the template the task reads is a config value: another
+    # The name of the template the task reads is a declared value: another
     # name in the table is the file the task reads while the shipped name is
     # absent, so a name spelled in the code would fail here, and the target
     # machine would fail with it.
@@ -991,7 +991,7 @@ def test_systemctl_commands_come_from_the_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The reload of systemd and the enable, restart and start of a unit are
-    # config values: another command line in the section is exactly the argv
+    # declared values: another command line in the section is exactly the argv
     # the task runs.
     _fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
     monkeypatch.setattr(

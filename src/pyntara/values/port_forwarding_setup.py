@@ -10,8 +10,8 @@ in task_data/ssh_daemon_setup/ and is deployed by the ssh_daemon_setup task,
 which also guarantees the restricted public key line in authorized_keys.
 
 The deployed service and the address command of the network report read the
-values of this module directly, so the section has no copy in the config
-document and no config path travels in the unit command line. The port range is
+values of this module directly, so the section has no copy in a second place
+and no config path travels in the unit command line. The port range is
 read by pyntara.forwarding_ports as well, because the router port forwarding
 service of the upnp_forwarding_setup task derives the same number from the same
 range, so one machine asks for one predictable port in both schemes.

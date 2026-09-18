@@ -188,7 +188,7 @@ def test_package_is_installed_needs_the_installed_status(
 
 def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     # The install of one package, the index refresh and the noninteractive
-    # environment are config values: the helpers run exactly the configured
+    # environment are declared values: the helpers run exactly the configured
     # argv with the configured environment, so a derivative that installs
     # packages another way edits only the config.
     calls: list[list[str]] = []
@@ -594,7 +594,7 @@ def test_service_state_queries_come_from_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The two queries and the states that count as enabled or running are
-    # config values: another argv and another state word are honoured, so a
+    # declared values: another argv and another state word are honoured, so a
     # derivative that spells them differently edits only the config.
     monkeypatch.setattr(
         engine_values, "SYSTEMCTL_IS_ENABLED_COMMAND", ("myctl", "boot-state", "{unit}")
@@ -941,7 +941,7 @@ class TestPortFreeing:
 def test_port_and_main_pid_queries_come_from_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The listener query and the MainPID query are config values: another
+    # The listener query and the MainPID query are declared values: another
     # argv in the engine table is exactly what runs, the port and the unit
     # fill the placeholders, so a derivative that queries them differently
     # edits only the config.
@@ -974,7 +974,7 @@ def test_port_and_main_pid_queries_come_from_the_engine(
 def test_the_stop_call_comes_from_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The stop of the managed service is a config value as well: with the
+    # The stop of the managed service is a declared value as well: with the
     # shipped table the sequence is the ss query, the MainPID query, the
     # stop and the confirming query of the port.
     monkeypatch.setattr(
@@ -1163,7 +1163,7 @@ def test_the_architecture_query_comes_from_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Another architecture query in the [engine] table is exactly the argv
-    # the helper runs, so the tool and its flags live in the config.
+    # the helper runs, so the tool and its flags are declared values.
     monkeypatch.setattr(
         engine_values, "DPKG_ARCHITECTURE_COMMAND", ("my-dpkg", "--arch")
     )

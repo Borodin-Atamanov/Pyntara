@@ -103,7 +103,7 @@ def panel_scheme(timeout: float) -> str:
 
     The panel serves TLS only when a certificate path is set. Any
     failure to read the state is treated as the plain scheme, so the
-    client stays reachable over plain HTTP. Both names are config values,
+    client stays reachable over plain HTTP. Both names are declared values,
     because they are part of the vocabulary of the panel.
     """
 
@@ -141,9 +141,8 @@ def parse_install_result_env(
     The file is written by the 3x-ui panel on first start (mode 600,
     root). Each line is KEY=VALUE; blank lines and lines without an
     equals sign are ignored. required_keys are the names that must be
-    present, and they come from the panel environment keys of the config,
-    because the panel names them and a version that renames one is
-    answered there. Raises FileNotFoundError when the file is absent and
+    present, and they are declared values, because the panel names them
+    and a version that renames one is answered in the values module. Raises FileNotFoundError when the file is absent and
     RuntimeError when a required key is missing.
     """
 
@@ -552,7 +551,7 @@ def _message_result(
     unexpected response; otherwise the panel's own message field is
     reported and its success field decides the flag. Shared by every
     write helper, so the error wording stays identical across them. Both
-    field names come from the panel answer keys of the config.
+    field names are declared values.
     """
 
     if status == 0:
@@ -1033,7 +1032,7 @@ def list_balancer_status(
     whether the balancer is running. The caller can therefore prove that
     the pool has a live member. A list of entries is accepted as well,
     because a panel version may serve that shape; the query field name and
-    the entry field names come from the config. An unreachable panel and
+    the entry field names are declared values. An unreachable panel and
     an unexpected shape answer an empty list.
     """
 
@@ -1105,7 +1104,7 @@ def create_client(
 
     The credential lives in the client.id field (stored as the client
     uuid); email is only the human label and must be unique. Whether the
-    client is enabled is a config value, because a client created as a
+    client is enabled is a declared value, because a client created as a
     draft is a legitimate way to stage one. Returns (success, message)
     from the panel response.
     """

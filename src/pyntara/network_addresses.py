@@ -3,7 +3,7 @@
 The System Metrics collector runs this command as its ipv4 and ipv6
 network modules, so every address the machine carries reaches the
 network report and each address carries the ssh command that connects to
-it. The addresses come from the configured iproute2 query in JSON form,
+it. The addresses are declared valuesured iproute2 query in JSON form,
 which reports every address of every interface together with its
 family, scope and interface name: the loopback, link scope, global,
 bridge and overlay addresses are all present, so no address class is

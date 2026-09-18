@@ -74,7 +74,7 @@ def _select_asset(
 ) -> tuple[str, str] | None:
     """The (name, url) of the rustdesk deb for this machine, or None.
 
-    The asset name comes from the configured template; the architecture
+    The asset name is a declared valueured template; the architecture
     part uses the release asset spelling the declared mapping names for the
     dpkg architecture.
     """

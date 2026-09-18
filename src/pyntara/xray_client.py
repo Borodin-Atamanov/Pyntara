@@ -130,7 +130,7 @@ def build_local_proxy_policy(
     in_russia: bool,
     own_networks: tuple[str, ...],
 ) -> routing_policy.LocalProxyPolicy:
-    """The policy of the local proxy from the config and the run facts.
+    """The policy of the local proxy from the declared values and the run facts.
 
     lists are the checked category lists of checked_category_lists,
     in_russia is the country the services reported and own_networks are
@@ -484,7 +484,7 @@ def route_test_failures(
     seconds on an eight-core machine). A question that gets no decision
     therefore ends the round and starts it again after a pause, until the
     core answers or the budget runs out; the budget and the pause are
-    config values, because a slow machine needs a longer budget and not a
+    declared values, because a slow machine needs a longer budget and not a
     false warning. When the budget runs out, the warning carries the state
     the panel reports about its core and the last line the core printed,
     so an operator reads the reason instead of a number. Returns

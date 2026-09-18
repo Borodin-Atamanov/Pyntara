@@ -148,7 +148,7 @@ def test_deploys_unit_and_starts_service(
 def test_service_exec_line_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The line the deployed unit starts with is a config value: another
+    # The line the deployed unit starts with is a declared value: another
     # command in the values is exactly what the unit runs, with the venv
     # interpreter, the module and the config path in their placeholders.
     monkeypatch.setattr(

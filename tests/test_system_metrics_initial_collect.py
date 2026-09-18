@@ -91,7 +91,7 @@ def test_starts_collector_when_unit_deployed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The unit file exists: the task starts the collector non-blocking with
-    # the unit name from the config.
+    # the unit name from the declared values.
     _install_fixtures(monkeypatch, tmp_path, unit_deployed=True)
     calls = _install_fake(monkeypatch)
     result = system_metrics_initial_collect.task(_ctx(tmp_path))

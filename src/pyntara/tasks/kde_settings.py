@@ -61,11 +61,11 @@ from pyntara.values import missing_value_names
 # against temporary fixtures instead of the real system (developer guide).
 # The KWin scripts the task installs and enables live as directories under
 # task_data/kde_settings/kwin in the clone, one directory per script; their
-# names and the files each one carries come from the config, and the root
+# names and the files each one carries are declared values, and the root
 # comes from the context.
 # The client that prints the id of every virtual desktop, one per line, in
 # position order, ships under task_data/kde_settings/list_desktop_ids.py;
-# its name comes from the config. The desktop list is a DBus property of
+# its name is a declared value. The desktop list is a DBus property of
 # structs (position, id, name), qdbus6 cannot render that type, so the task
 # reads the ids through python3-dbus.
 
@@ -2068,7 +2068,7 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= virtual_keyboard_changed
     settings_changed |= step(
-        "apply the configured kconfig values",
+        "apply the configured kdeclared values",
         lambda: _apply_kconfig_records(
             timeout=timeout, force=force, env=apply_env, warnings=warnings
         ),

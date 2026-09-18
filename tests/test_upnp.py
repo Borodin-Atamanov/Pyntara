@@ -76,7 +76,7 @@ class TestParseExternalAddress:
         )
 
     def test_another_field_name_in_the_config_is_read(self) -> None:
-        # The field the address is printed under is a config value: another
+        # The field the address is printed under is a declared value: another
         # client version that names it differently is handled by the config.
         assert (
             parse_external_address("RouterAddress = 190.55.165.52\n", "RouterAddress")
@@ -151,7 +151,7 @@ class TestParsePortMappings:
         )
 
     def test_ignores_a_protocol_outside_the_configured_vocabulary(self) -> None:
-        # The protocol of a mapping line comes from the config, so a line
+        # The protocol of a mapping line is a declared value, so a line
         # of a protocol this client version names differently is skipped.
         assert parse_port_mappings(
             LIST_OUTPUT, ("tcp",), engine_values.UPNPC_MAPPING_ARROW

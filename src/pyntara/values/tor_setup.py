@@ -10,7 +10,7 @@ sshd listen port and the i2pd SSH tunnel, so the same number reaches SSH on
 every path.
 
 The deployed address command reads the values of this module directly, so the
-section has no copy in the config document and the command needs no argument at
+section has no copy in a second place and the command needs no argument at
 all. The include line of the main configuration is built from the drop-in path
 of this module, so no second value can point the directive at another file.
 """

@@ -157,7 +157,7 @@ def test_telegram_setup_is_in_desktop_default_set() -> None:
 
 def test_the_shipped_values_name_the_desktop_user_and_the_official_link() -> None:
     # The shipped values are the ones a real run reads, so they are checked
-    # here without a config document.
+    # here without its own values module.
     assert common_values.DESKTOP_USERNAME == "i"
     assert values.LATEST_URL == "https://telegram.org/dl/desktop/linux"
     assert values.ICON_URL.endswith("icon512.png")

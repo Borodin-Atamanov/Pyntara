@@ -277,7 +277,7 @@ def test_log_event_default_priority_comes_from_the_config(
 def test_another_progress_priority_changes_the_default_level(
     journal_available: bool,
 ) -> None:
-    # The proof of the value: another progress level in the config is the
+    # The proof of the value: another declared progress level is the
     # level of a message whose call names none.
     if not journal_available:
         pytest.skip("systemd journal is not available")
@@ -447,7 +447,6 @@ def test_a_service_entry_point_keeps_the_journal_off(
         "pyntara.metrics_send.send_google_queue",
         lambda single_random=False: (0, 0),
     )
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(tmp_path / "config.toml")])
     with pytest.raises(KeyboardInterrupt):
         metrics.main()
     assert logger._journal_identifier is None

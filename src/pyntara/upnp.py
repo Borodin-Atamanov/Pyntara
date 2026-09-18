@@ -41,7 +41,7 @@ def mapping_description(template: str, hostname: str) -> str:
 def parse_external_address(text: str, address_key: str) -> str | None:
     """The router internet address from the upnpc status output, or None.
 
-    The field the address is printed under is a config value, so another
+    The field the address is printed under is a declared value, so another
     client version that names it differently needs a config change. The
     value is accepted only when it is a valid IP address, so a line that
     reports something else (an error text) is not mistaken for an address,

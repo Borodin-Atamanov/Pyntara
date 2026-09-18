@@ -125,7 +125,7 @@ def test_dirs_and_entry_carry_configured_modes(monkeypatch: pytest.MonkeyPatch, 
 def test_suffix_alphabet_comes_from_the_declared_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The proof of the value: the random part of a queue name is drawn
     # from the alphabet of the table, so a queue whose names must avoid a
-    # character says so in the config.
+    # character is a declared value.
     _spool_config(
         monkeypatch,
         tmp_path,
@@ -174,7 +174,7 @@ def test_temp_name_length_comes_from_the_config(
 ) -> None:
     # The proof of the value: the temporary name the ingest gives a copy
     # carries the configured number of random bytes in hex, so a queue
-    # whose names must be shorter or longer says so in the config.
+    # whose names must be shorter or longer is a declared value.
     seen: list[str] = []
     real_copy = shutil.copy2
 

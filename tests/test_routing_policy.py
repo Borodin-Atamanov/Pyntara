@@ -951,7 +951,7 @@ def test_the_panel_vocabulary_comes_from_the_config() -> None:
 def test_the_xray_vocabulary_comes_from_the_config() -> None:
     # The proof of the value: other field names and other protocol words
     # of the table are the document the policy builds, so a core version
-    # that renames a field is answered in the config and not in the code.
+    # that renames a field is answered in the values module and not in the code.
     fields = {
         **_FIELDS,
         "tag": "myTag",

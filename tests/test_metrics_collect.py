@@ -397,7 +397,7 @@ def test_the_report_vocabulary_comes_from_the_declared_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The field names of the report and the word that counts as an answer
-    # are config values: another map and another word are the document the
+    # are declared values: another map and another word are the document the
     # collector writes and the module the readiness counts.
     keys = {
         "generated_at": "moment",
@@ -606,7 +606,7 @@ def test_main_reports_a_failed_run_in_one_line(
     _config(monkeypatch, tmp_path)
     monkeypatch.setattr("pyntara.metrics_collect.collect_until_ready", fail)
     monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+        "sys.argv", ["pyntara.metrics_collect"]
     )
     metrics_collect.main()
     captured = capsys.readouterr()
@@ -629,7 +629,7 @@ def test_main_journals_under_the_configured_collector_identifier(
     monkeypatch.setattr(metrics_collect, "collect_until_ready", dict)
     monkeypatch.setattr(metrics_collect, "_commit_report", lambda report: True)
     monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+        "sys.argv", ["pyntara.metrics_collect"]
     )
     metrics_collect.main()
     assert configured[-1] == values.COLLECTOR.journal_identifier
@@ -663,7 +663,7 @@ def test_main_collects_and_commits(
         network_modules=(IPV4,),
     )
     monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+        "sys.argv", ["pyntara.metrics_collect"]
     )
     metrics_collect.main()
     assert [commit_cmd, str(tmp_path / report_name)] in calls
@@ -696,7 +696,7 @@ def test_main_exits_when_lock_held(
             network_modules=(IPV4,),
         )
         monkeypatch.setattr(
-            "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+            "sys.argv", ["pyntara.metrics_collect"]
         )
         metrics_collect.main()
         assert calls == []
@@ -732,7 +732,7 @@ def test_main_commit_failure_exits_one(
         network_modules=(IPV4,),
     )
     monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
+        "sys.argv", ["pyntara.metrics_collect"]
     )
     with pytest.raises(SystemExit) as exc:
         metrics_collect.main()
