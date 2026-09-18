@@ -1184,6 +1184,29 @@ machine in this turn, and the probe is named with the figure.
     still pass the section config as their first argument. The idiom of every
     migrated section applies: a test moves a value with monkeypatch.setattr on
     the values module.
+132. Stage 3 of kde_settings, second half, in progress on 2026-09-17. Passing
+    tests in the section file: 44 of 77, up from 37 after the environment, file
+    mode, touchpad word, cursor theme, user dirs and Konsole profile groups and
+    from 30 before the KWin script, script hotkey record and SDDM call sites.
+    One regression of this round is fixed and recorded: a helper call removed as
+    unused context carried a side effect (it pointed the system theme directory
+    at the temporary tree), so the call stays and only its result is dropped.
+    The 33 tests that still fail, by group, as the map for the next stride:
+    the task level tests that still build the section through make_config
+    (first run, skip when configured, force, only theme or only colour scheme
+    differs, appearance tool failure, no desktop session, missing packages,
+    touchpad writes, one failing write, kconfig records skip);
+    the three make_config calls that carry automatic_look_and_feel;
+    the shortcuts group (the five live tests and the script hotkey pair test);
+    the desktop count group (three live tests and the dbus names test);
+    the Places group (the marker test, the idempotent test, the metadata owner,
+    the namespace address and the xbel hidden test);
+    and the command tests at the end of the file that rename a value through
+    dataclasses.replace(cfg, ...) (the user command prefix, the kconfig calls,
+    the file operations, the plasma apply calls and the recursive owner).
+    One test that passed before the last group now fails and is not yet
+    understood (test_apply_user_dirs_writes_configured_dirs); it is the first
+    thing to look at in the next stride.
 
 
 
