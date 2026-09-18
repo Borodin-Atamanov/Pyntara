@@ -32,6 +32,7 @@ from pyntara.utils import (
     package_is_installed,
     trim_whitespace,
 )
+from pyntara.values import yggdrasil_service_setup as yggdrasil_values
 
 
 @dataclass(frozen=True)
@@ -196,7 +197,7 @@ def _detect_server_ip(facts: _RunFacts) -> str | None:
     return None
 
 
-def _yggdrasil_address(full_config: Config) -> str | None:
+def _yggdrasil_address() -> str | None:
     """The yggdrasil node address saved by the yggdrasil task, or None.
 
     The address file is written by yggdrasil_service_setup after the node
@@ -205,9 +206,7 @@ def _yggdrasil_address(full_config: Config) -> str | None:
     """
 
     try:
-        text = full_config.yggdrasil_service_setup.address_file_path.read_text(
-            encoding="utf-8"
-        )
+        text = yggdrasil_values.ADDRESS_FILE_PATH.read_text(encoding="utf-8")
     except OSError:
         return None
     address = trim_whitespace(text)
@@ -281,7 +280,7 @@ def _server_share_address(
         return _canonical_share_address(own_address)
     if facts.client_address is not None:
         return _canonical_share_address(facts.client_address)
-    node_address = _yggdrasil_address(full_config)
+    node_address = _yggdrasil_address()
     if node_address is not None:
         _log(f"using the yggdrasil node address as the share host: {node_address}")
         return _canonical_share_address(node_address)

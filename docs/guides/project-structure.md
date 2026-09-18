@@ -78,7 +78,7 @@ src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ss
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
 src/pyntara/tor_address.py — Deployed address command: prints one JSON record with the Tor onion address and the ssh command that reaches the SSH daemon through the onion service, from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address`.  
 src/pyntara/yggdrasil.py — Shared Yggdrasil helpers: parse the node self address from yggdrasilctl JSON output. Imported by yggdrasil_service_setup and yggdrasil_address.  
-src/pyntara/yggdrasil_address.py — Deployed address command: prints one JSON record with the yggdrasil self address and the ssh command that reaches the SSH daemon over the overlay, from the admin socket or the saved fallback. Runs as `python -m pyntara.yggdrasil_address CONFIG_PATH`.  
+src/pyntara/yggdrasil_address.py — Deployed address command: prints one JSON record with the yggdrasil self address and the ssh command that reaches the SSH daemon over the overlay, from the admin socket or the saved fallback. Runs as `python -m pyntara.yggdrasil_address` and reads its values from the values package.  
 src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/system-metrics.md).  
 src/pyntara/metrics_ingest.py — Queue ingest: moves spool files into the main_outbox directory. Runs as `python -m pyntara.metrics_ingest`.  
 src/pyntara/metrics_collect.py — Report collector: runs console commands, waits for network modules, writes the report and commits it. Runs as `python -m pyntara.metrics_collect`.  
@@ -106,7 +106,7 @@ zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service
 zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service  
 dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup  
 i2pd_service_setup -> src/pyntara/values/i2pd_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
-yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup  
+yggdrasil_service_setup -> src/pyntara/values/yggdrasil_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
 three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupConfig -> three_x_ui_xray_setup  
 sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
 tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  

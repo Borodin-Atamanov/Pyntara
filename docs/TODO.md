@@ -1756,3 +1756,41 @@ machine in this turn, and the probe is named with the figure.
     largest of the stage: about forty files, seven modules untied from the
     config, and a scripted batch of exact replacements for the repetitive test
     edits (the user allowed scripted edits on 2026-09-18).
+
+155. The yggdrasil_service_setup section migrated on 2026-09-18 (branch
+    yggdrasil-service-values), the sixth section of stage F. Its 62 names live
+    in src/pyntara/values/yggdrasil_service_setup.py together with the
+    MulticastInterface record of MULTICAST_INTERFACES, CONFIG_DOCUMENT_KEYS and
+    ADMIN_OUTPUT_KEYS. The task lost its config argument: seventeen helpers
+    render, probe, install and clean up without one, and the deployed command
+    pyntara.yggdrasil_address lost its CONFIG_PATH argument like
+    network_addresses, i2pd_address and tor_address before it, because it reads
+    every value of its record from the values and the sshd port from the
+    declared ssh_daemon_setup directives. pyntara.xray_facts reads
+    ADDRESS_FILE_PATH from the values instead of a section.
+    The section left the config layer: config/yggdrasil_service_setup.toml and
+    src/pyntara/config/yggdrasil_service_setup.py went to the trash, together
+    with the 454-line block of tests/config_checks.py, the 63-line fragment of
+    tests/config_helpers.py, the yggdrasil parameters and blocks of
+    tests/support.py, the coverage entry and the component key list case, the
+    three names of src/pyntara/config/__init__.py, the loader field and the
+    whole tests/test_config_network.py, whose 36 cases were all yggdrasil ones.
+    A real defect of the i2pd section was found on the way and fixed in the same
+    branch: config/system_metrics_setup.toml still passed
+    /etc/pyntara/config.toml to pyntara.i2pd_address, which rejects an argument
+    with a usage error, so the i2pd record of the report would have failed on
+    the machine; the yggdrasil row had the same problem and lost the path too.
+    tests/test_config_system_metrics.py guards the new rule (no pyntara
+    collector command carries the config path) and names the modules that read
+    declared values.
+    New guards in tests/test_values.py: the four file modes take check_file_mode,
+    and two exemptions carry a reason (LINE_SEPARATOR is one newline,
+    STATIC_PEERS starts empty on purpose).
+    Documentation followed: docs/spec/yggdrasil-service.md (the Parameters
+    section names the values module and the names in upper case, and the
+    deployed command is described without an argument), docs/spec/i2pd-service.md
+    and docs/spec/system-metrics.md (which commands take a config path and which
+    read declared values) and docs/guides/project-structure.md (the section row).
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 2120 unit tests and the four bash suites. The live production run
+    waits for the end of stage F, on the user's decision 149.

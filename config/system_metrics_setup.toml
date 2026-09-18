@@ -344,11 +344,11 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.country_repo
 
 [[system_metrics_setup.collector.network_modules]]
 name = "i2pd"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.i2pd_address", "/etc/pyntara/config.toml"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.i2pd_address"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "yggdrasil"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_address", "/etc/pyntara/config.toml"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_address"]
 
 [[system_metrics_setup.collector.network_modules]]
 name = "tor_onion"

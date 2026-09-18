@@ -4,9 +4,9 @@ The command runs on the target system and prints one JSON record with the
 node self address and the ssh command that reaches the SSH daemon over
 the overlay: the live admin socket query is the primary source, the saved
 address file written by the yggdrasil_service_setup task is the fallback.
-The tests exercise the branches through the main function with a fake
-subprocess runner and temporary fixtures and capture stdout and stderr
-with capsys.
+The command reads the declared values of the yggdrasil section, so the
+tests point those values at temporary fixtures and capture stdout and
+stderr with capsys.
 """
 
 from __future__ import annotations
@@ -15,13 +15,14 @@ import json
 from pathlib import Path
 
 import pytest
-from config_helpers import base_config, write_config
 from support import FakeProc as _FakeProc
 
 from pyntara import yggdrasil_address
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values import yggdrasil_service_setup as values
 
 SELF_ADDRESS = "201:1234:5678:9abc:def0:1234:5678:9abc"
-SSH_PORT = 30222
+SSH_PORT = "30222"
 
 
 def _fake_run(returncode: int, stdout: str = "", stderr: str = "") -> object:
@@ -29,30 +30,28 @@ def _fake_run(returncode: int, stdout: str = "", stderr: str = "") -> object:
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
-        assert command == ["yggdrasilctl", "-json", "getSelf"]
+        assert command == list(values.SELF_ADDRESS_COMMAND)
         return _FakeProc(returncode, stdout, stderr)
 
     return fake_run
 
 
-def _config(tmp_path: Path, saved: Path) -> Path:
-    """A config with the fixture saved path and an sshd Port directive."""
+def _use_temporary_values(
+    monkeypatch: pytest.MonkeyPatch, saved: Path, ssh_port: str | None = SSH_PORT
+) -> None:
+    """Point the declared values at the fixture address file and the port.
 
-    content = (
-        base_config()
-        .replace(
-            'address_file_path = "/var/lib/pyntara/yggdrasil_self_address"',
-            f'address_file_path = "{saved}"',
-        )
-        .replace(
-            "[ssh_client_setup]",
-            "[[ssh_daemon_setup.directives]]\n"
-            'name = "Port"\n'
-            f'value = "{SSH_PORT}"\n'
-            "[ssh_client_setup]",
-        )
+    ssh_port is the sshd Port directive; None leaves the declared
+    directives empty, so the missing-port path is exercised.
+    """
+
+    monkeypatch.setattr(values, "ADDRESS_FILE_PATH", saved)
+    directives = (
+        ()
+        if ssh_port is None
+        else (ssh_daemon_values.SshDirective(name="Port", value=ssh_port),)
     )
-    return write_config(tmp_path, content)
+    monkeypatch.setattr(ssh_daemon_values, "DIRECTIVES", directives)
 
 
 def test_record_from_live_ctl(
@@ -66,13 +65,13 @@ def test_record_from_live_ctl(
         "run",
         _fake_run(0, json.dumps({"address": SELF_ADDRESS, "subnet": "201::/64"})),
     )
-    config_path = _config(tmp_path, tmp_path / "saved")
-    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 0
+    _use_temporary_values(monkeypatch, tmp_path / "saved")
+    assert yggdrasil_address.main(["yggdrasil_address"]) == 0
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {
-        "channel": "yggdrasil",
+        "channel": values.REPORT_CHANNEL_NAME,
         "address": SELF_ADDRESS,
-        "port": SSH_PORT,
+        "port": int(SSH_PORT),
         "ssh": f"ssh -v -p {SSH_PORT} {SELF_ADDRESS}",
     }
     assert captured.err == ""
@@ -87,8 +86,8 @@ def test_fallback_to_saved_file(
     monkeypatch.setattr(yggdrasil_address.subprocess, "run", _fake_run(1, "", "boom"))
     saved = tmp_path / "saved"
     saved.write_text(f"{SELF_ADDRESS}\n", encoding="utf-8")
-    config_path = _config(tmp_path, saved)
-    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 0
+    _use_temporary_values(monkeypatch, saved)
+    assert yggdrasil_address.main(["yggdrasil_address"]) == 0
     record = json.loads(capsys.readouterr().out)
     assert record["address"] == SELF_ADDRESS
     assert "saved file" in record["note"]
@@ -103,8 +102,8 @@ def test_unparsable_output_falls_back(
     monkeypatch.setattr(yggdrasil_address.subprocess, "run", _fake_run(0, "not json"))
     saved = tmp_path / "saved"
     saved.write_text(f"{SELF_ADDRESS}\n", encoding="utf-8")
-    config_path = _config(tmp_path, saved)
-    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 0
+    _use_temporary_values(monkeypatch, saved)
+    assert yggdrasil_address.main(["yggdrasil_address"]) == 0
     record = json.loads(capsys.readouterr().out)
     assert record["address"] == SELF_ADDRESS
     assert "parse" in record["note"]
@@ -119,36 +118,32 @@ def test_address_unavailable(
     monkeypatch.setattr(
         yggdrasil_address.subprocess, "run", _fake_run(22, "", "ctl failed")
     )
-    config_path = _config(tmp_path, tmp_path / "missing-saved")
-    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 1
+    _use_temporary_values(monkeypatch, tmp_path / "missing-saved")
+    assert yggdrasil_address.main(["yggdrasil_address"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ctl failed" in captured.err
 
 
-def test_a_missing_key_of_the_channel_is_named(
+def test_a_missing_ssh_port_is_reported(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # The live query answers, but the config has no report channel name:
-    # the record would carry an empty channel, so the command refuses the
-    # channel and names the key it cannot read.
+    # The address is known but no Port directive is declared, so no ssh
+    # command can be built and the reason names the missing port.
     monkeypatch.setattr(
         yggdrasil_address.subprocess,
         "run",
         _fake_run(0, json.dumps({"address": SELF_ADDRESS})),
     )
-    content = _config(tmp_path, tmp_path / "saved").read_text(encoding="utf-8")
-    quiet = content.replace('report_channel_name = "yggdrasil"', "", 1)
-    assert quiet != content, "the fixture no longer carries the key"
-    config_path = tmp_path / "without-channel.toml"
-    config_path.write_text(quiet, encoding="utf-8")
-    assert yggdrasil_address.main(["yggdrasil_address", str(config_path)]) == 1
+    _use_temporary_values(monkeypatch, tmp_path / "saved", ssh_port=None)
+    assert yggdrasil_address.main(["yggdrasil_address"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "has no report_channel_name" in captured.err
+    assert "Port" in captured.err
 
 
-def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:
-    # A wrong argument count is a usage error with a nonzero exit.
-    assert yggdrasil_address.main(["yggdrasil_address"]) == 2
+def test_usage_takes_no_argument(capsys: pytest.CaptureFixture[str]) -> None:
+    # The command reads declared values, so an extra argument is a usage
+    # error with a nonzero exit.
+    assert yggdrasil_address.main(["yggdrasil_address", "extra"]) == 2
     assert "usage" in capsys.readouterr().err

@@ -29,7 +29,6 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert isinstance(config.hostname.hostname_random_bytes, int)
     assert isinstance(config.cli_tools.packages, tuple)
     assert isinstance(config.hostname.set_hostname_command, tuple)
-    assert isinstance(config.yggdrasil_service_setup.static_peers, tuple)
     assert isinstance(config.vault_structure.entries, tuple)
     assert isinstance(config.vault_structure.entries[0].title, str)
     assert isinstance(config.system_metrics_setup.collector.network_modules, tuple)

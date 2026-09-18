@@ -23,23 +23,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
 
-from pyntara.config import (
-    YGGDRASIL_ADDRESS_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    load_config,
-)
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.values import engine as engine_values
+from pyntara.values import yggdrasil_service_setup as values
 from pyntara.yggdrasil import self_address_from_output
 
 
-def _live_self_address(
-    cfg: Config,
-) -> tuple[str | None, str]:
+def _live_self_address() -> tuple[str | None, str]:
     """The (self address, reason) from the configured admin socket call.
 
     The command and the address field come from the
@@ -49,10 +41,9 @@ def _live_self_address(
     with the raw utility output kept, so the caller can report it as is.
     """
 
-    setup = cfg.yggdrasil_service_setup
     try:
         result = subprocess.run(
-            list(setup.self_address_command),
+            list(values.SELF_ADDRESS_COMMAND),
             capture_output=True,
             text=True,
             check=False,
@@ -63,13 +54,13 @@ def _live_self_address(
     if result.returncode != 0:
         combined = f"{output}\n{result.stderr}".strip()
         return None, f"the self address query exited {result.returncode}: {combined}"
-    address = self_address_from_output(output, setup.admin_output_keys["address"])
+    address = self_address_from_output(output, values.ADMIN_OUTPUT_KEYS["address"])
     if address is None:
         return None, f"cannot parse the self address output: {output.strip()}"
     return address, ""
 
 
-def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
+def access_record() -> tuple[dict[str, object] | None, str]:
     """The report record of the yggdrasil channel, or (None, reason).
 
     The live admin socket query is the primary source; the saved address
@@ -81,18 +72,11 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     an empty value.
     """
 
-    setup = cfg.yggdrasil_service_setup
-    missing = absent_config_keys(setup, YGGDRASIL_ADDRESS_CONFIG_KEYS)
-    if missing:
-        return None, (
-            "the yggdrasil_service_setup section of the config has no "
-            + ", ".join(missing)
-        )
-    address, reason = _live_self_address(cfg)
+    address, reason = _live_self_address()
     note = ""
     if not address:
         try:
-            saved = setup.address_file_path.read_text(encoding="utf-8").strip()
+            saved = values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip()
         except OSError:
             saved = ""
         if saved:
@@ -106,7 +90,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
         return None, str(exc)
     keys = engine_values.REPORT_RECORD_KEYS
     record: dict[str, object] = {
-        keys["channel"]: setup.report_channel_name,
+        keys["channel"]: values.REPORT_CHANNEL_NAME,
         keys["address"]: address,
         keys["port"]: port,
         keys["ssh"]: ssh_command(address, port),
@@ -119,11 +103,10 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
 def main(argv: list[str]) -> int:
     """Print the record; 0 when found, 2 on a usage error, 1 otherwise."""
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    record, error = access_record(cfg)
+    record, error = access_record()
     if record is None:
         print(error, file=sys.stderr)
         return 1

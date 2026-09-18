@@ -408,11 +408,11 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "i2pd"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.i2pd_address", "/etc/pyntara/config.toml"]\n'
+        '"pyntara.i2pd_address"]\n'
         "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "yggdrasil"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.yggdrasil_address", "/etc/pyntara/config.toml"]\n'
+        '"pyntara.yggdrasil_address"]\n'
         "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "tor_onion"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
@@ -442,13 +442,11 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.i2pd_address",
-        "/etc/pyntara/config.toml",
     )
     assert by_name["yggdrasil"].command == (
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.yggdrasil_address",
-        "/etc/pyntara/config.toml",
     )
     assert by_name["tor_onion"].command == (
         "/usr/local/lib/pyntara/venv/bin/python",
@@ -569,7 +567,16 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
         module
         for module in config.system_metrics_setup.collector.network_modules
         if any("pyntara." in part for part in module.command)
-        and module.name not in {"port_forwarding", "upnp", "tor_onion", "ipv4", "ipv6"}
+        and module.name
+        not in {
+            "port_forwarding",
+            "upnp",
+            "tor_onion",
+            "i2pd",
+            "yggdrasil",
+            "ipv4",
+            "ipv6",
+        }
     ]
     assert command_modules
     for module in command_modules:

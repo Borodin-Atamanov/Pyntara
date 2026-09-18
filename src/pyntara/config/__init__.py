@@ -68,11 +68,6 @@ from .vault import (
     VaultStructureConfig,
 )
 from .vocalinux_setup import VocalinuxSetupConfig
-from .yggdrasil_service_setup import (
-    YGGDRASIL_ADDRESS_CONFIG_KEYS,
-    YggdrasilMulticastInterfaceConfig,
-    YggdrasilServiceSetupConfig,
-)
 from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
@@ -87,7 +82,6 @@ __all__ = [
     "SEND_ORDER_NEWEST_FIRST",
     "SEND_ORDER_OLDEST_FIRST",
     "SERVICE_CONFIG_KEYS",
-    "YGGDRASIL_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",
@@ -116,8 +110,6 @@ __all__ = [
     "VaultGroupSeed",
     "VaultStructureConfig",
     "VocalinuxSetupConfig",
-    "YggdrasilMulticastInterfaceConfig",
-    "YggdrasilServiceSetupConfig",
     "ZramServiceConfig",
     "ZswapServiceConfig",
     "absent_config_keys",

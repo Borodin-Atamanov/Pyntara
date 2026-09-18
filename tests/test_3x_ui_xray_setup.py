@@ -34,6 +34,7 @@ from pyntara.public_address import PublicAddresses
 from pyntara.upnp import ForwardedAddress
 from pyntara.utils import curl_flags
 from pyntara.values import engine as engine_values
+from pyntara.values import yggdrasil_service_setup as yggdrasil_values
 from pyntara.xray_facts import _RunFacts as RunFacts
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
@@ -2925,19 +2926,25 @@ class TestServerShareAddress:
     def _inbound(self, share_addr: str = "") -> dict[str, object]:
         return {"shareAddr": share_addr}
 
-    def _full_config(self, tmp_path: Path) -> Config:
-        """A config whose yggdrasil address file does not exist.
+    def _config_with_a_temporary_address_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> Config:
+        """A config whose mesh address file does not exist.
 
-        The file path points into the temporary directory, so the test
-        never reads the real node address of the machine it runs on.
+        The address file is a declared value now, so the test points the
+        value at a path inside the temporary directory and never reads the
+        real node address of the machine it runs on.
         """
 
-        return make_config(
-            yggdrasil_address_file_path=tmp_path / "yggdrasil_self_address"
+        monkeypatch.setattr(
+            yggdrasil_values,
+            "ADDRESS_FILE_PATH",
+            tmp_path / "yggdrasil_self_address",
         )
+        return make_config()
 
     def test_prefers_a_public_address_that_belongs_to_the_machine(
-        self, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # A white address really sits on an interface: nothing else is
         # consulted, because the machine is reachable directly.
@@ -2945,28 +2952,29 @@ class TestServerShareAddress:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), facts
+                cfg, self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
             )
             == "203.0.113.5"
         )
 
-    def test_uses_the_yggdrasil_address_for_a_foreign_public_address(
-        self, tmp_path: Path
+    def test_uses_the_mesh_address_for_a_foreign_public_address(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # The reported address belongs to the provider NAT, not to this
         # machine, so a mesh address beats a private one.
         facts = _facts(public=("190.55.165.52",), local=("192.168.1.5",))
         address_file = tmp_path / "yggdrasil_self_address"
         address_file.write_text("2001:db8::9\n", encoding="utf-8")
+        monkeypatch.setattr(yggdrasil_values, "ADDRESS_FILE_PATH", address_file)
         cfg = make_config().three_x_ui_xray_setup
-        full_config = make_config(yggdrasil_address_file_path=address_file)
+        full_config = make_config()
         assert (
             xray_facts._server_share_address(cfg, full_config, self._inbound(), facts)
             == "[2001:db8::9]"
         )
 
     def test_uses_the_client_address_when_upnp_forwards_the_port(
-        self, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # UPnP opened the port, so the address the forwarding returned is
         # the one a client can reach.
@@ -2979,13 +2987,13 @@ class TestServerShareAddress:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), facts
+                cfg, self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
             )
             == "190.55.165.52"
         )
 
     def test_ignores_a_client_address_that_is_not_forwarded(
-        self, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # The router answered but the mapping is not in place: the run
         # facts carry no client address, so the local address is used.
@@ -2993,13 +3001,13 @@ class TestServerShareAddress:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), facts
+                cfg, self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
             )
             == "192.168.1.5"
         )
 
     def test_uses_the_local_address_when_nothing_else_answers(
-        self, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # No white address, no UPnP, no yggdrasil: the server still works
         # for the local network instead of writing no address at all.
@@ -3007,28 +3015,28 @@ class TestServerShareAddress:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), facts
+                cfg, self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
             )
             == "192.168.1.5"
         )
 
-    def test_keeps_the_share_address_stored_in_the_panel(self, tmp_path: Path) -> None:
+    def test_keeps_the_share_address_stored_in_the_panel(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
                 cfg,
-                self._full_config(tmp_path),
+                self._config_with_a_temporary_address_file(monkeypatch, tmp_path),
                 self._inbound("198.51.100.9"),
                 _facts(),
             )
             == "198.51.100.9"
         )
 
-    def test_returns_none_without_any_source(self, tmp_path: Path) -> None:
+    def test_returns_none_without_any_source(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound(), _facts()
+                cfg, self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), _facts()
             )
             is None
         )

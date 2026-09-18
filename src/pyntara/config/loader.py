@@ -39,7 +39,6 @@ from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .vault import LocalVaultSetupConfig, VaultStructureConfig
 from .vocalinux_setup import VocalinuxSetupConfig
-from .yggdrasil_service_setup import YggdrasilServiceSetupConfig
 from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
@@ -65,7 +64,6 @@ class Config:
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
     telegram_setup: TelegramSetupConfig
-    yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     sotavpn_setup: SotavpnSetupConfig
     vocalinux_setup: VocalinuxSetupConfig

@@ -12,7 +12,6 @@ import shutil
 import socket
 import subprocess
 import tarfile
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,6 +22,7 @@ from pyntara.context import Context
 from pyntara.tasks import yggdrasil_service_setup
 from pyntara.utils import curl_flags
 from pyntara.values import engine as engine_values
+from pyntara.values import yggdrasil_service_setup as values
 
 # The newest release tag and the version without the leading v; the asset
 # and the version output use the bare version.
@@ -65,6 +65,7 @@ def _make_peers_tarball(tmp_path: Path, uris: list[str]) -> Path:
 
 
 def _ctx(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
     force: bool = False,
@@ -80,8 +81,62 @@ def _ctx(
     connection_wait_max_seconds: int = 1,
     asset_name_template: str = "yggdrasil-{version}-{arch}.deb",
 ) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+    """Context with the section values pointed at temporary fixtures.
 
+    Every path and bound the task uses is a declared value now, so the
+    tests point the values at temporary files and switch the pauses off;
+    the real filesystem is never touched.
+    """
+
+    monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "download")
+    monkeypatch.setattr(
+        values, "CONFIG_PATH", tmp_path / "etc" / "yggdrasil" / "yggdrasil.conf"
+    )
+    monkeypatch.setattr(
+        values,
+        "PRIVATE_KEY_PATH",
+        tmp_path / "etc" / "yggdrasil" / "private-key.pem",
+    )
+    monkeypatch.setattr(
+        values,
+        "PEERS_FULL_PATH",
+        tmp_path / "etc" / "yggdrasil" / "peers-full.txt",
+    )
+    monkeypatch.setattr(
+        values,
+        "ADDRESS_FILE_PATH",
+        tmp_path / "var" / "lib" / "pyntara" / "yggdrasil_self_address",
+    )
+    monkeypatch.setattr(
+        values,
+        "NM_UNMANAGED_CONF_PATH",
+        tmp_path / "etc" / "NetworkManager" / "conf.d" / "yggdrasil-unmanaged.conf",
+    )
+    monkeypatch.setattr(values, "NETPLAN_DIR_PATH", tmp_path / "etc" / "netplan")
+    monkeypatch.setattr(values, "INSTALL_RETRIES", retries)
+    monkeypatch.setattr(values, "PEER_BATCH_SIZE", batch_size)
+    monkeypatch.setattr(values, "PEER_TARGET_COUNT", target_count)
+    monkeypatch.setattr(values, "PEER_PROBE_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(values, "STATIC_PEERS", static_peers)
+    monkeypatch.setattr(
+        values, "ADDRESS_SAVE_RETRY_BASE_SECONDS", address_save_retry_base_seconds
+    )
+    monkeypatch.setattr(
+        values, "ADDRESS_SAVE_RETRY_MULTIPLIER", address_save_retry_multiplier
+    )
+    monkeypatch.setattr(
+        values, "ADDRESS_SAVE_RETRY_MAX_SECONDS", address_save_retry_max_seconds
+    )
+    monkeypatch.setattr(
+        values, "CONNECTION_WAIT_BASE_SECONDS", connection_wait_base_seconds
+    )
+    monkeypatch.setattr(
+        values, "CONNECTION_WAIT_MULTIPLIER", connection_wait_multiplier
+    )
+    monkeypatch.setattr(
+        values, "CONNECTION_WAIT_MAX_SECONDS", connection_wait_max_seconds
+    )
+    monkeypatch.setattr(values, "ASSET_NAME_TEMPLATE", asset_name_template)
     return make_context(
         task_name="yggdrasil_service_setup",
         install_mode="server",
@@ -91,36 +146,6 @@ def _ctx(
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
-            yggdrasil_download_dir=tmp_path / "download",
-            yggdrasil_config_path=tmp_path / "etc" / "yggdrasil" / "yggdrasil.conf",
-            yggdrasil_private_key_path=tmp_path
-            / "etc"
-            / "yggdrasil"
-            / "private-key.pem",
-            yggdrasil_peers_full_path=tmp_path / "etc" / "yggdrasil" / "peers-full.txt",
-            yggdrasil_install_retries=retries,
-            yggdrasil_peer_batch_size=batch_size,
-            yggdrasil_peer_target_count=target_count,
-            yggdrasil_peer_probe_timeout_seconds=0.0,
-            yggdrasil_static_peers=static_peers,
-            yggdrasil_address_file_path=tmp_path
-            / "var"
-            / "lib"
-            / "pyntara"
-            / "yggdrasil_self_address",
-            yggdrasil_address_save_retry_base_seconds=address_save_retry_base_seconds,
-            yggdrasil_address_save_retry_multiplier=address_save_retry_multiplier,
-            yggdrasil_address_save_retry_max_seconds=address_save_retry_max_seconds,
-            yggdrasil_connection_wait_base_seconds=connection_wait_base_seconds,
-            yggdrasil_connection_wait_multiplier=connection_wait_multiplier,
-            yggdrasil_connection_wait_max_seconds=connection_wait_max_seconds,
-            yggdrasil_asset_name_template=asset_name_template,
-            yggdrasil_nm_unmanaged_conf_path=tmp_path
-            / "etc"
-            / "NetworkManager"
-            / "conf.d"
-            / "yggdrasil-unmanaged.conf",
-            yggdrasil_netplan_dir_path=tmp_path / "etc" / "netplan",
         ),
     )
 
@@ -297,16 +322,14 @@ def _fake_time(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 def _write_ready_state(ctx: Context) -> None:
     """Write the config with peers, the key and the saved address file."""
-
-    cfg = ctx.config.yggdrasil_service_setup
-    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(
-        yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"]),
+    values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.CONFIG_PATH.write_text(
+        yggdrasil_service_setup._render_config(["tcp://1.2.3.4:1234"]),
         encoding="utf-8",
     )
-    cfg.private_key_path.write_text(KEY_PEM, encoding="utf-8")
-    cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.address_file_path.write_text("201:dead:beef::1\n", encoding="utf-8")
+    values.PRIVATE_KEY_PATH.write_text(KEY_PEM, encoding="utf-8")
+    values.ADDRESS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.ADDRESS_FILE_PATH.write_text("201:dead:beef::1\n", encoding="utf-8")
 
 
 SELF_ADDRESS = "201:1234:5678:9abc:def0:1234:5678:9abc"
@@ -318,7 +341,7 @@ def test_already_configured_skips(
     # The version matches, the config has peers, the key exists, the
     # service is enabled and active and the admin socket reports a live
     # connection: the task skips and runs only the status queries.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_ready_state(ctx)
     ctl = json.dumps(
         {"peers": [{"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}]}
@@ -363,7 +386,7 @@ def test_active_service_without_connections_warns(
     # The service is active and the config has peers, but the admin
     # socket reports no connections: the task does not re-select peers
     # and completes with a warning that a force rerun is needed.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_ready_state(ctx)
     calls = _install_fake(
         monkeypatch,
@@ -377,7 +400,7 @@ def test_active_service_without_connections_warns(
     assert any("no connections" in warning for warning in result.warnings)
     # No peer list download, no config rewrite.
     assert not any(call[0] == "curl" and "public-peers" in call[-1] for call in calls)
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     assert "1.2.3.4" in config_text
@@ -389,7 +412,7 @@ def test_inactive_service_with_ready_state_starts_without_peer_selection(
     # The service is inactive but the config already has peers: the task
     # starts the service with the existing config, waits for connections
     # and does not re-select peers or rewrite the config.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_ready_state(ctx)
     ctl_peers = json.dumps(
         {"peers": [{"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}]}
@@ -410,7 +433,7 @@ def test_inactive_service_with_ready_state_starts_without_peer_selection(
     assert ["systemctl", "start", "yggdrasil.service"] in calls
     # No peer list download, no config rewrite.
     assert not any(call[0] == "curl" and "public-peers" in call[-1] for call in calls)
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     assert "1.2.3.4" in config_text
@@ -423,7 +446,7 @@ def test_missing_binary_is_treated_as_not_installed(
     # the task treats it as not installed and proceeds with the install
     # instead of crashing. The peer download fails and static_peers is
     # used as the fallback.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -437,7 +460,7 @@ def test_missing_binary_is_treated_as_not_installed(
     assert result.changed is True
     assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
     assert "1.2.3.4" in (
-        ctx.config.yggdrasil_service_setup.config_path.read_text(encoding="utf-8")
+        values.CONFIG_PATH.read_text(encoding="utf-8")
     )
 
 
@@ -446,7 +469,7 @@ def test_installs_new_release_with_static_peers(
 ) -> None:
     # yggdrasil is not installed; the peer download fails, so the
     # configured static peers land in the configuration.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
     )
@@ -455,13 +478,13 @@ def test_installs_new_release_with_static_peers(
     assert result.changed is True
     assert ["systemctl", "enable", "yggdrasil.service"] in calls
     assert ["systemctl", "start", "yggdrasil.service"] in calls
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     assert "tls://1.2.3.4:1234" in config_text
-    assert ctx.config.yggdrasil_service_setup.private_key_path.is_file()
+    assert values.PRIVATE_KEY_PATH.is_file()
     assert not (
-        ctx.config.yggdrasil_service_setup.download_dir / "yggdrasil-0.5.14-amd64.deb"
+        values.DOWNLOAD_DIR / "yggdrasil-0.5.14-amd64.deb"
     ).exists()
 
 
@@ -471,7 +494,7 @@ def test_saves_self_address_after_provisioning(
     # After the final restart the task saves the node self address from
     # the admin socket into the configured file, the fallback of the
     # deployed address command.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -484,7 +507,7 @@ def test_saves_self_address_after_provisioning(
     assert result.success is True
     assert result.changed is True
     assert (
-        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+        values.ADDRESS_FILE_PATH.read_text(
             encoding="utf-8"
         ).strip()
         == SELF_ADDRESS
@@ -500,14 +523,14 @@ def test_self_address_save_failure_does_not_fail_task(
 ) -> None:
     # The admin socket query never parses: the task stays successful
     # and the address file is not written, so the save is best-effort.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
     _install_fake(
         monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert not ctx.config.yggdrasil_service_setup.address_file_path.exists()
+    assert not values.ADDRESS_FILE_PATH.exists()
 
 
 def test_self_address_save_retries_until_socket_ready(
@@ -519,6 +542,7 @@ def test_self_address_save_retries_until_socket_ready(
     # the save retries with the geometric backoff and writes the address
     # once the query succeeds.
     ctx = _ctx(
+        monkeypatch,
         tmp_path,
         static_peers=("tls://1.2.3.4:1234",),
         address_save_retry_max_seconds=67,
@@ -536,7 +560,7 @@ def test_self_address_save_retries_until_socket_ready(
     assert result.success is True
     assert result.changed is True
     assert (
-        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+        values.ADDRESS_FILE_PATH.read_text(
             encoding="utf-8"
         ).strip()
         == SELF_ADDRESS
@@ -555,14 +579,13 @@ def test_skip_requires_address_file(
 ) -> None:
     # Everything is ready except the saved address file: the task does
     # not skip, runs the provisioning and writes the address file.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
-    cfg = ctx.config.yggdrasil_service_setup
-    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(
-        yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"]),
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.CONFIG_PATH.write_text(
+        yggdrasil_service_setup._render_config(["tcp://1.2.3.4:1234"]),
         encoding="utf-8",
     )
-    cfg.private_key_path.write_text(KEY_PEM, encoding="utf-8")
+    values.PRIVATE_KEY_PATH.write_text(KEY_PEM, encoding="utf-8")
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -576,7 +599,7 @@ def test_skip_requires_address_file(
     assert result.changed is True
     assert result.message != "already configured"
     assert (
-        ctx.config.yggdrasil_service_setup.address_file_path.read_text(
+        values.ADDRESS_FILE_PATH.read_text(
             encoding="utf-8"
         ).strip()
         == SELF_ADDRESS
@@ -624,7 +647,7 @@ def test_installs_new_release_with_downloaded_peers(
             ]
         }
     )
-    ctx = _ctx(tmp_path, batch_size=3, target_count=2)
+    ctx = _ctx(monkeypatch, tmp_path, batch_size=3, target_count=2)
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -639,7 +662,7 @@ def test_installs_new_release_with_downloaded_peers(
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     # The lowest-latency working peers are kept.
@@ -647,7 +670,7 @@ def test_installs_new_release_with_downloaded_peers(
     assert "10.0.0.2:1002" in config_text
     assert "10.0.0.3:1003" not in config_text
     # The full list is saved next to the config.
-    full = ctx.config.yggdrasil_service_setup.peers_full_path.read_text(
+    full = values.PEERS_FULL_PATH.read_text(
         encoding="utf-8"
     )
     assert "10.0.0.1:1001" in full
@@ -663,7 +686,7 @@ def test_no_batch_reaches_target_keeps_last_batch(
     # the configuration and the task reports a warning.
     uris = ["tcp://10.0.0.1:1001", "tcp://10.0.0.2:1002"]
     tarball = _make_peers_tarball(tmp_path, uris)
-    ctx = _ctx(tmp_path, batch_size=1, target_count=6)
+    ctx = _ctx(monkeypatch, tmp_path, batch_size=1, target_count=6)
     monkeypatch.setattr(yggdrasil_service_setup.random, "shuffle", lambda x: None)
     _install_fake(
         monkeypatch,
@@ -677,7 +700,7 @@ def test_no_batch_reaches_target_keeps_last_batch(
     assert result.success is True
     assert result.changed is True
     assert "no batch reached" in (result.message or "")
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     assert "10.0.0.2:1002" in config_text
@@ -689,7 +712,7 @@ def test_download_fails_and_no_static_peers_warns(
     # The peer download fails and static_peers is empty: the task
     # completes with a warning, because a node without peers never joins
     # the network.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
     )
@@ -706,7 +729,7 @@ def test_install_gives_up_after_retries(
 ) -> None:
     # apt always fails: the task tries one initial attempt plus the
     # configured retries, then reports the failure.
-    ctx = _ctx(tmp_path, retries=3)
+    ctx = _ctx(monkeypatch, tmp_path, retries=3)
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, fail_install=99
     )
@@ -723,7 +746,7 @@ def test_install_retries_transient_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The first apt attempt fails, the retry succeeds.
-    ctx = _ctx(tmp_path, retries=3, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, retries=3, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(monkeypatch, tmp_path, installed_version=None, fail_install=1)
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
@@ -739,7 +762,7 @@ def test_no_matching_asset_warns(
 ) -> None:
     # The release has no asset for this architecture: the task completes
     # with a warning about the missing asset.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     release = json.dumps({"tag_name": TAG, "assets": []})
     calls = _install_fake(
         monkeypatch, tmp_path, installed_version=None, release_json=release
@@ -758,7 +781,7 @@ def test_release_json_failure_warns(
 ) -> None:
     # The releases API fails: the task completes with a warning about the
     # fetch error.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -785,7 +808,7 @@ def test_force_reruns_peer_selection(
         "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
         "source 192.168.85.146:54588\n"
     )
-    ctx = _ctx(tmp_path, force=True, batch_size=1, target_count=1)
+    ctx = _ctx(monkeypatch, tmp_path, force=True, batch_size=1, target_count=1)
     _write_ready_state(ctx)
     calls = _install_fake(
         monkeypatch,
@@ -809,7 +832,7 @@ def test_service_never_active_warns(
 ) -> None:
     # The service never becomes active after the final restart: the task
     # completes with a warning.
-    ctx = _ctx(tmp_path, static_peers=("tls://1.2.3.4:1234",))
+    ctx = _ctx(monkeypatch, tmp_path, static_peers=("tls://1.2.3.4:1234",))
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -824,46 +847,45 @@ def test_service_never_active_warns(
     assert any(call[0] == "systemctl" and call[1] == "start" for call in calls)
 
 
-def test_select_asset_by_architecture(tmp_path: Path) -> None:
+def test_select_asset_by_architecture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The asset name comes from the configured template with the bare
     # version and the dpkg architecture; the version is the tag without
     # the configured prefix, and an architecture without an asset of
     # that name has no candidate.
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     release = json.loads(_release_json())
-    assert TAG.removeprefix(cfg.release_tag_prefix) == VERSION
-    selected = yggdrasil_service_setup._select_asset(cfg, release, VERSION, "amd64")
+    assert TAG.removeprefix(values.RELEASE_TAG_PREFIX) == VERSION
+    selected = yggdrasil_service_setup._select_asset(release, VERSION, "amd64")
     assert selected == (
-        cfg.asset_name_template.format(version=VERSION, arch="amd64"),
+        values.ASSET_NAME_TEMPLATE.format(version=VERSION, arch="amd64"),
         (
             "https://github.com/yggdrasil-network/yggdrasil-go/releases/"
             f"download/{TAG}/yggdrasil-{VERSION}-amd64.deb"
         ),
     )
-    assert yggdrasil_service_setup._select_asset(cfg, release, VERSION, "s390x") is None
+    assert yggdrasil_service_setup._select_asset(release, VERSION, "s390x") is None
 
 
-def test_select_asset_follows_the_configured_name_template(
-    tmp_path: Path,
+def test_select_asset_follows_the_declared_name_template(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The asset name is a value of the config: a machine whose release
-    # names its package differently selects it without a code change.
-    ctx = _ctx(tmp_path, asset_name_template="yggdrasil-{version}-{arch}.pkg")
-    cfg = ctx.config.yggdrasil_service_setup
+    # The asset name is a declared value: a machine whose release names
+    # its package differently selects it without a code change.
+    _ctx(monkeypatch, tmp_path, asset_name_template="yggdrasil-{version}-{arch}.pkg")
     release = json.loads(_release_json())
-    assert yggdrasil_service_setup._select_asset(cfg, release, VERSION, "amd64") is None
+    assert yggdrasil_service_setup._select_asset(release, VERSION, "amd64") is None
 
 
-def test_render_config_fields() -> None:
+def test_render_config_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The rendered config carries the key path, the interface settings,
     # the listeners, the multicast blocks and the peers under the
-    # configured key names, and never the key material.
-    ctx = _ctx(Path("/tmp"))
-    cfg = ctx.config.yggdrasil_service_setup
-    keys = cfg.config_document_keys
-    rendered = yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"])
+    # declared key names, and never the key material.
+    _ctx(monkeypatch, tmp_path)
+    keys = values.CONFIG_DOCUMENT_KEYS
+    rendered = yggdrasil_service_setup._render_config(["tcp://1.2.3.4:1234"])
     data = json.loads(rendered)
-    assert data[keys["private_key_path"]] == str(cfg.private_key_path)
+    assert data[keys["private_key_path"]] == str(values.PRIVATE_KEY_PATH)
     assert data[keys["if_name"]] == "ygg"
     assert data[keys["if_mtu"]] == 65535
     assert "tls://[::]:0" in data[keys["listen"]]
@@ -871,14 +893,17 @@ def test_render_config_fields() -> None:
     assert data[keys["multicast_interfaces"]][0][keys["multicast_beacon"]] is True
     assert data[keys["peers"]] == ["tcp://1.2.3.4:1234"]
     assert "PrivateKey" not in data
-    assert rendered.endswith(cfg.line_separator)
+    assert rendered.endswith(values.LINE_SEPARATOR)
 
 
-def test_render_config_follows_the_configured_key_names(tmp_path: Path) -> None:
+def test_render_config_follows_the_configured_key_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The key names, the line separator and the indentation of the
-    # rendered document are config values, and the same names are the
+    # rendered document are declared values, and the same names are the
     # ones the task reads back: a machine whose yggdrasil carries a
     # different schema needs no code change.
+    _ctx(monkeypatch, tmp_path)
     keys = {
         "private_key_path": "key_path",
         "admin_listen": "admin",
@@ -891,17 +916,15 @@ def test_render_config_follows_the_configured_key_names(tmp_path: Path) -> None:
         "multicast_listen": "listen",
         "peers": "peers",
     }
-    cfg = make_config(
-        yggdrasil_config_path=tmp_path / "yggdrasil.conf",
-        yggdrasil_config_document_keys=keys,
-        yggdrasil_line_separator="\r\n",
-    ).yggdrasil_service_setup
-    rendered = yggdrasil_service_setup._render_config(cfg, ["tcp://1.2.3.4:1234"])
+    monkeypatch.setattr(values, "CONFIG_DOCUMENT_KEYS", keys)
+    monkeypatch.setattr(values, "LINE_SEPARATOR", "\r\n")
+    rendered = yggdrasil_service_setup._render_config(["tcp://1.2.3.4:1234"])
     assert '"key_path"' in rendered
     assert '"PrivateKeyPath"' not in rendered
     assert rendered.endswith("\r\n")
-    cfg.config_path.write_text(rendered, encoding="utf-8")
-    assert yggdrasil_service_setup._config_has_peers(cfg) is True
+    values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.CONFIG_PATH.write_text(rendered, encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers() is True
 
 
 def test_ensure_private_key_extracts_from_existing_config(
@@ -909,15 +932,17 @@ def test_ensure_private_key_extracts_from_existing_config(
 ) -> None:
     # The key file is missing but the config exists: the task extracts
     # the key with yggdrasil -useconffile -exportkey and writes the PEM.
-    ctx = _ctx(tmp_path)
-    ctx.config.yggdrasil_service_setup.config_path.parent.mkdir(parents=True)
-    ctx.config.yggdrasil_service_setup.config_path.write_text("{}", encoding="utf-8")
+    _ctx(monkeypatch, tmp_path)
+    values.CONFIG_PATH.parent.mkdir(parents=True)
+    values.CONFIG_PATH.write_text("{}", encoding="utf-8")
     calls = _install_fake(monkeypatch, tmp_path)
     yggdrasil_service_setup._ensure_private_key(
-        ctx.config.yggdrasil_service_setup, 10, 0, 0
+        10,
+        0,
+        0,
     )
     assert (
-        ctx.config.yggdrasil_service_setup.private_key_path.read_text(encoding="utf-8")
+        values.PRIVATE_KEY_PATH.read_text(encoding="utf-8")
         == KEY_PEM
     )
     assert any(call[0] == "yggdrasil" and call[1] == "-useconffile" for call in calls)
@@ -929,13 +954,15 @@ def test_ensure_private_key_generates_when_no_config(
 ) -> None:
     # Neither the key nor the config exists: the task generates a config
     # and exports the key from it.
-    ctx = _ctx(tmp_path)
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, tmp_path)
     yggdrasil_service_setup._ensure_private_key(
-        ctx.config.yggdrasil_service_setup, 10, 0, 0
+        10,
+        0,
+        0,
     )
     assert (
-        ctx.config.yggdrasil_service_setup.private_key_path.read_text(encoding="utf-8")
+        values.PRIVATE_KEY_PATH.read_text(encoding="utf-8")
         == KEY_PEM
     )
     assert any(call[0] == "yggdrasil" and call[1] == "-genconf" for call in calls)
@@ -999,8 +1026,7 @@ def test_journal_connected_addrs_parses_lines(
         "source [::]:36046\n"
     )
     calls = _install_fake(monkeypatch, tmp_path, journal_output=journal)
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
-    assert yggdrasil_service_setup._journal_connected_addrs(cfg, 30, 10) == {
+    assert yggdrasil_service_setup._journal_connected_addrs(30, 10) == {
         ("10.0.0.1", 1001),
         ("2001:db8::1", 1002),
     }
@@ -1012,9 +1038,10 @@ def test_journal_query_follows_the_configured_command(
 ) -> None:
     # The journal query is a config value: its placeholders receive the
     # configured unit and the probe window in whole seconds.
-    cfg = replace(
-        _ctx(tmp_path).config.yggdrasil_service_setup,
-        journal_connected_query_command=(
+    monkeypatch.setattr(
+        values,
+        "JOURNAL_CONNECTED_QUERY_COMMAND",
+        (
             "journal-reader",
             "--unit",
             "{service_unit_name}",
@@ -1023,7 +1050,7 @@ def test_journal_query_follows_the_configured_command(
         ),
     )
     calls = _install_fake(monkeypatch, tmp_path)
-    assert yggdrasil_service_setup._journal_connected_addrs(cfg, 30.4, 10) == set()
+    assert yggdrasil_service_setup._journal_connected_addrs(30.4, 10) == set()
     assert [
         "journal-reader",
         "--unit",
@@ -1045,8 +1072,7 @@ def test_latencies_from_ctl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
         _fake_getaddrinfo({"10.0.0.1": "10.0.0.1"}),
     )
     calls = _install_fake(monkeypatch, tmp_path, ctl_peers_json=ctl)
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
-    assert yggdrasil_service_setup._latencies_from_ctl(cfg, 10) == {
+    assert yggdrasil_service_setup._latencies_from_ctl(10) == {
         ("10.0.0.1", 1001): 5000000.0
     }
     assert any(call[0] == "yggdrasilctl" for call in calls)
@@ -1074,19 +1100,18 @@ def test_pick_best_peers_sorts_by_latency(
     assert picked == ["tcp://10.0.0.2:1002"]
 
 
-def test_config_has_peers(tmp_path: Path) -> None:
+def test_config_has_peers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A config with a non-empty Peers array is ready; a missing, broken
     # or empty-peer config is not.
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.yggdrasil_service_setup
-    assert yggdrasil_service_setup._config_has_peers(cfg) is False
-    cfg.config_path.parent.mkdir(parents=True)
-    cfg.config_path.write_text('{"Peers": []}', encoding="utf-8")
-    assert yggdrasil_service_setup._config_has_peers(cfg) is False
-    cfg.config_path.write_text('{"Peers": ["tcp://1.2.3.4:1000"]}', encoding="utf-8")
-    assert yggdrasil_service_setup._config_has_peers(cfg) is True
-    cfg.config_path.write_text("not json", encoding="utf-8")
-    assert yggdrasil_service_setup._config_has_peers(cfg) is False
+    _ctx(monkeypatch, tmp_path)
+    assert yggdrasil_service_setup._config_has_peers() is False
+    values.CONFIG_PATH.parent.mkdir(parents=True)
+    values.CONFIG_PATH.write_text('{"Peers": []}', encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers() is False
+    values.CONFIG_PATH.write_text('{"Peers": ["tcp://1.2.3.4:1000"]}', encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers() is True
+    values.CONFIG_PATH.write_text("not json", encoding="utf-8")
+    assert yggdrasil_service_setup._config_has_peers() is False
 
 
 def test_installed_version_parsing(
@@ -1098,16 +1123,15 @@ def test_installed_version_parsing(
         "pyntara.utils.subprocess.run",
         lambda *a, **k: _FakeProc(0, "Build version: 0.5.14\n"),
     )
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
-    assert yggdrasil_service_setup._installed_version(cfg, 10) == "0.5.14"
+    assert yggdrasil_service_setup._installed_version(10) == "0.5.14"
     monkeypatch.setattr(
         "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(1, "")
     )
-    assert yggdrasil_service_setup._installed_version(cfg, 10) is None
+    assert yggdrasil_service_setup._installed_version(10) is None
     monkeypatch.setattr(
         "pyntara.utils.subprocess.run", lambda *a, **k: _FakeProc(0, "unknown output")
     )
-    assert yggdrasil_service_setup._installed_version(cfg, 10) is None
+    assert yggdrasil_service_setup._installed_version(10) is None
 
 
 def test_cleanup_leftover_interface_deletes_profile_and_iface(
@@ -1116,7 +1140,7 @@ def test_cleanup_leftover_interface_deletes_profile_and_iface(
     # A stale interface with a saved NetworkManager profile and no running
     # service is removed: the profile first, then the interface, so the
     # next start does not panic on the already assigned address.
-    ctx = _ctx(tmp_path)
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -1124,9 +1148,7 @@ def test_cleanup_leftover_interface_deletes_profile_and_iface(
         interface_exists=True,
         nm_profile_exists=True,
     )
-    yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
-    )
+    yggdrasil_service_setup._cleanup_leftover_interface(10)
     assert ["nmcli", "connection", "delete", "ygg"] in calls
     assert ["ip", "link", "del", "ygg"] in calls
 
@@ -1135,7 +1157,7 @@ def test_cleanup_leftover_interface_keeps_running_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A live interface owned by a running service is never touched.
-    ctx = _ctx(tmp_path)
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch,
         tmp_path,
@@ -1143,9 +1165,7 @@ def test_cleanup_leftover_interface_keeps_running_service(
         interface_exists=True,
         nm_profile_exists=True,
     )
-    yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
-    )
+    yggdrasil_service_setup._cleanup_leftover_interface(10)
     assert not any(call[0] == "nmcli" for call in calls)
     assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
 
@@ -1154,16 +1174,14 @@ def test_cleanup_leftover_interface_skipped_without_iface(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Without an interface there is nothing to clean up.
-    ctx = _ctx(tmp_path)
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
         monkeypatch,
         tmp_path,
         active=False,
         interface_exists=False,
     )
-    yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
-    )
+    yggdrasil_service_setup._cleanup_leftover_interface(10)
     assert not any(call[0] == "nmcli" for call in calls)
     assert not any(call[0] == "ip" and call[2] == "del" for call in calls)
 
@@ -1174,7 +1192,7 @@ def test_cleanup_leftover_interface_without_nmcli(
     # A machine without NetworkManager has no nmcli binary: the profile
     # step is skipped and the interface is still deleted, because nothing
     # recreates it.
-    ctx = _ctx(tmp_path)
+    _ctx(monkeypatch, tmp_path)
     calls: list[list[str]] = []
 
     def fake_subprocess_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -1191,9 +1209,7 @@ def test_cleanup_leftover_interface_without_nmcli(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_subprocess_run)
-    yggdrasil_service_setup._cleanup_leftover_interface(
-        ctx.config.yggdrasil_service_setup, 10
-    )
+    yggdrasil_service_setup._cleanup_leftover_interface(10)
     assert ["ip", "link", "del", "ygg"] in calls
 
 
@@ -1202,14 +1218,14 @@ def test_ensure_interface_unmanaged_writes_dropin_and_reloads(
 ) -> None:
     # The first call writes the unmanaged rule and reloads NetworkManager;
     # a second call with matching content changes nothing.
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, tmp_path)
     body = "[keyfile]\nunmanaged-devices=interface-name:ygg\n"
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
-    assert cfg.nm_unmanaged_conf_path.read_text(encoding="utf-8") == body
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(10, 0, 0) is True
+    assert values.NM_UNMANAGED_CONF_PATH.read_text(encoding="utf-8") == body
     assert ["nmcli", "general", "reload"] in calls
     calls_before = len(calls)
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(10, 0, 0) is True
     assert len(calls) == calls_before
 
 
@@ -1218,14 +1234,14 @@ def test_ensure_interface_unmanaged_rewrites_changed_dropin(
 ) -> None:
     # A stale rule for another interface name is replaced by the current
     # one, because the machine must not keep an old unmanaged rule.
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
+    _ctx(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, tmp_path)
-    cfg.nm_unmanaged_conf_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.nm_unmanaged_conf_path.write_text(
+    values.NM_UNMANAGED_CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.NM_UNMANAGED_CONF_PATH.write_text(
         "[keyfile]\nunmanaged-devices=interface-name:old\n", encoding="utf-8"
     )
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is True
-    assert "interface-name:ygg" in cfg.nm_unmanaged_conf_path.read_text(
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(10, 0, 0) is True
+    assert "interface-name:ygg" in values.NM_UNMANAGED_CONF_PATH.read_text(
         encoding="utf-8"
     )
     assert ["nmcli", "general", "reload"] in calls
@@ -1236,15 +1252,15 @@ def test_ensure_interface_unmanaged_reports_unwritable_dropin(
 ) -> None:
     # A machine where the drop-in directory cannot be created reports
     # False, so the caller keeps a warning instead of silently skipping.
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     blocker = tmp_path / "blocker"
     blocker.write_text("file", encoding="utf-8")
-    cfg = replace(
-        cfg,
-        nm_unmanaged_conf_path=blocker / "conf.d" / "yggdrasil-unmanaged.conf",
+    monkeypatch.setattr(
+        values,
+        "NM_UNMANAGED_CONF_PATH",
+        blocker / "conf.d" / "yggdrasil-unmanaged.conf",
     )
     _install_fake(monkeypatch, tmp_path)
-    assert yggdrasil_service_setup._ensure_interface_unmanaged(cfg, 10, 0, 0) is False
+    assert yggdrasil_service_setup._ensure_interface_unmanaged(10, 0, 0) is False
 
 
 def test_cleanup_leftover_interface_moves_netplan_profile_aside(
@@ -1254,12 +1270,11 @@ def test_cleanup_leftover_interface_moves_netplan_profile_aside(
     # to a .bak, because netplan only reads *.yaml and would otherwise
     # regenerate the profile at the next boot. Unrelated netplan files
     # are left alone.
-    ctx = _ctx(tmp_path)
-    cfg = ctx.config.yggdrasil_service_setup
-    cfg.netplan_dir_path.mkdir(parents=True, exist_ok=True)
-    polluting = cfg.netplan_dir_path / "90-NM-ef0a5cc7-7b91-4724-8ef7-cdcdce2cb85a.yaml"
+    _ctx(monkeypatch, tmp_path)
+    values.NETPLAN_DIR_PATH.mkdir(parents=True, exist_ok=True)
+    polluting = values.NETPLAN_DIR_PATH / "90-NM-ef0a5cc7-7b91-4724-8ef7-cdcdce2cb85a.yaml"
     polluting.write_text('connection.interface-name: "ygg"\n', encoding="utf-8")
-    other = cfg.netplan_dir_path / "90-NM-other.yaml"
+    other = values.NETPLAN_DIR_PATH / "90-NM-other.yaml"
     other.write_text('connection.interface-name: "wlp0"\n', encoding="utf-8")
     calls = _install_fake(
         monkeypatch,
@@ -1268,9 +1283,9 @@ def test_cleanup_leftover_interface_moves_netplan_profile_aside(
         interface_exists=True,
         nm_profile_exists=True,
     )
-    yggdrasil_service_setup._cleanup_leftover_interface(cfg, 10)
+    yggdrasil_service_setup._cleanup_leftover_interface(10)
     assert not polluting.exists()
-    assert (cfg.netplan_dir_path / (polluting.name + ".bak")).exists()
+    assert (values.NETPLAN_DIR_PATH / (polluting.name + ".bak")).exists()
     assert other.exists()
     assert ["nmcli", "connection", "delete", "ygg"] in calls
     assert ["ip", "link", "del", "ygg"] in calls
@@ -1284,7 +1299,7 @@ def test_ready_state_with_leftover_interface_cleans_and_starts(
     # marks the interface unmanaged, cleans the leftover up, starts the
     # service and reports live connections from the existing
     # configuration.
-    ctx = _ctx(tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
     _write_ready_state(ctx)
     ctl_peers = json.dumps(
         {"peers": [{"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 5000000}]}
@@ -1304,8 +1319,7 @@ def test_ready_state_with_leftover_interface_cleans_and_starts(
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    cfg = ctx.config.yggdrasil_service_setup
-    assert "interface-name:ygg" in cfg.nm_unmanaged_conf_path.read_text(
+    assert "interface-name:ygg" in values.NM_UNMANAGED_CONF_PATH.read_text(
         encoding="utf-8"
     )
     assert ["nmcli", "connection", "delete", "ygg"] in calls
@@ -1317,12 +1331,11 @@ def test_wait_for_connections_returns_live_count(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
 ) -> None:
     # Live peers are reported immediately without a retry pause.
-    cfg = _ctx(tmp_path).config.yggdrasil_service_setup
     live = {("10.0.0.1", 1001): 1.0, ("10.0.0.2", 1002): 2.0}
     monkeypatch.setattr(
-        yggdrasil_service_setup, "_latencies_from_ctl", lambda cfg, timeout: live
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: live
     )
-    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 2
+    assert yggdrasil_service_setup._wait_for_connections(10) == 2
     assert _fake_time == []
 
 
@@ -1331,11 +1344,10 @@ def test_wait_for_connections_gives_up_without_peers(
 ) -> None:
     # No peer appears within the retry budget: the helper returns 0 and
     # records the backoff pauses, so the caller can warn the user.
-    cfg = _ctx(tmp_path, connection_wait_max_seconds=3).config.yggdrasil_service_setup
     monkeypatch.setattr(
-        yggdrasil_service_setup, "_latencies_from_ctl", lambda cfg, timeout: {}
+        yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: {}
     )
-    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 0
+    assert yggdrasil_service_setup._wait_for_connections(10) == 0
     # The helper retried within the budget and then gave up instead of
     # looping forever; the exact pause count depends on the fake clock
     # reads, so only the retry itself is asserted.
@@ -1347,18 +1359,17 @@ def test_wait_for_connections_retries_until_peers_appear(
 ) -> None:
     # The first query sees no peers; the retry sees one and returns the
     # count.
-    cfg = _ctx(tmp_path, connection_wait_max_seconds=3).config.yggdrasil_service_setup
     state = {"calls": 0}
 
-    def fake_latencies(cfg: object, timeout: float) -> dict[tuple[str, int], float]:
-        del cfg, timeout
+    def fake_latencies(timeout: float) -> dict[tuple[str, int], float]:
+        del timeout
         state["calls"] += 1
         if state["calls"] == 1:
             return {}
         return {("10.0.0.1", 1001): 1.0}
 
     monkeypatch.setattr(yggdrasil_service_setup, "_latencies_from_ctl", fake_latencies)
-    assert yggdrasil_service_setup._wait_for_connections(cfg, 10) == 1
+    assert yggdrasil_service_setup._wait_for_connections(10) == 1
     assert state["calls"] == 2
 
 
@@ -1378,7 +1389,7 @@ def test_final_config_without_live_connections_warns(
         "226:43e9:3739:64a4:db0c:4147:abfe:6ea7@10.0.0.2:1002, "
         "source 192.168.85.146:54589\n"
     )
-    ctx = _ctx(tmp_path, batch_size=3, target_count=2)
+    ctx = _ctx(monkeypatch, tmp_path, batch_size=3, target_count=2)
     _install_fake(
         monkeypatch,
         tmp_path,
@@ -1393,7 +1404,7 @@ def test_final_config_without_live_connections_warns(
     assert result.success is True
     assert result.changed is True
     assert any("has no live connections" in warning for warning in result.warnings)
-    config_text = ctx.config.yggdrasil_service_setup.config_path.read_text(
+    config_text = values.CONFIG_PATH.read_text(
         encoding="utf-8"
     )
     assert "10.0.0.1:1001" in config_text

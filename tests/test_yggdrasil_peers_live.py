@@ -13,40 +13,40 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support import make_config
 
 from pyntara.tasks import yggdrasil_service_setup
+from pyntara.values import yggdrasil_service_setup as values
 
 pytestmark = pytest.mark.live
 
 
-def _cfg(tmp_path: Path):
-    """Config with temporary storage for the live download."""
+def _use_temporary_peers_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point the downloaded peer list at temporary storage."""
 
-    return make_config(
-        yggdrasil_peers_full_path=tmp_path / "peers-full.txt",
-    )
+    monkeypatch.setattr(values, "PEERS_FULL_PATH", tmp_path / "peers-full.txt")
 
 
-def test_live_download_and_parse(tmp_path: Path) -> None:
+def test_live_download_and_parse(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The real tarball downloads, the markdown files parse into peer URIs
-    # and the full list lands next to the config.
-    config = _cfg(tmp_path)
-    cfg = config.yggdrasil_service_setup
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    # and the full list lands in the declared file.
+    _use_temporary_peers_file(monkeypatch, tmp_path)
+    peers = yggdrasil_service_setup._download_peers(120)
     assert len(peers) > 50, "the public peers list should be large"
-    assert cfg.peers_full_path.is_file()
-    saved = cfg.peers_full_path.read_text(encoding="utf-8").splitlines()
+    assert values.PEERS_FULL_PATH.is_file()
+    saved = values.PEERS_FULL_PATH.read_text(encoding="utf-8").splitlines()
     assert saved == peers
 
 
-def test_live_peer_uris_are_valid(tmp_path: Path) -> None:
+def test_live_peer_uris_are_valid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Every downloaded peer URI has one of the known schemes and a port,
     # and a meaningful share of them resolves: dead nodes in the list are
     # expected, but the list as a whole must be live.
-    config = _cfg(tmp_path)
-    cfg = config.yggdrasil_service_setup
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    _use_temporary_peers_file(monkeypatch, tmp_path)
+    peers = yggdrasil_service_setup._download_peers(120)
     schemes = {
         "tcp",
         "tls",
@@ -70,14 +70,17 @@ def test_live_peer_uris_are_valid(tmp_path: Path) -> None:
     assert resolvable > 10, f"only {resolvable} of {checked} peers resolve"
 
 
-def test_live_probe_pipeline(tmp_path: Path) -> None:
+def test_live_probe_pipeline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The full pipeline over real data: download, shuffle, batches and
     # best-pick selection complete without errors and produce peers.
-    config = _cfg(tmp_path)
-    cfg = config.yggdrasil_service_setup
-    peers = yggdrasil_service_setup._download_peers(cfg, 120)
+    _use_temporary_peers_file(monkeypatch, tmp_path)
+    peers = yggdrasil_service_setup._download_peers(120)
     yggdrasil_service_setup.random.shuffle(peers)
-    batch = peers[: cfg.peer_batch_size]
+    batch = peers[: values.PEER_BATCH_SIZE]
     assert len(batch) > 0
-    picked = yggdrasil_service_setup._pick_best_peers(batch, {}, cfg.peer_target_count)
-    assert len(picked) == cfg.peer_target_count
+    picked = yggdrasil_service_setup._pick_best_peers(
+        batch, {}, values.PEER_TARGET_COUNT
+    )
+    assert len(picked) == values.PEER_TARGET_COUNT

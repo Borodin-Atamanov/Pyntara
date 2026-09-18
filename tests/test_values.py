@@ -71,6 +71,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "tor_setup",
     "vault_structure",
     "vocalinux_setup",
+    "yggdrasil_service_setup",
     "zram_service",
     "zswap_service",
 )
@@ -90,7 +91,8 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("common", "LAUNCHER_FILE_MODE", check_file_mode),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
-    ("i2pd_service_setup", "ADDRESS_FILE_MODE", check_file_mode),    ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
+    ("i2pd_service_setup", "ADDRESS_FILE_MODE", check_file_mode),
+    ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_DIR_MODE", check_file_mode),
     ("local_vault_setup", "PASS_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_FILE_WRITABLE_MODE", check_file_mode),
@@ -120,6 +122,14 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("tor_setup", "ADDRESS_FILE_MODE", check_file_mode),
     ("tor_setup", "DROPIN_FILE_MODE", check_file_mode),
     ("tor_setup", "HIDDEN_SERVICE_DIR_MODE", check_file_mode),
+    ("yggdrasil_service_setup", "ADDRESS_FILE_MODE", check_file_mode),
+    ("yggdrasil_service_setup", "CONFIG_FILE_MODE", check_file_mode),
+    (
+        "yggdrasil_service_setup",
+        "NM_UNMANAGED_CONF_FILE_MODE",
+        check_file_mode,
+    ),
+    ("yggdrasil_service_setup", "PRIVATE_KEY_FILE_MODE", check_file_mode),
     ("zram_service", "HOT_ADD_READABLE_MODE_BIT", check_file_mode),
 )
 
@@ -132,6 +142,14 @@ EXEMPT_VALUES: tuple[tuple[str, str], ...] = (
     # The separator between the proquint words of the RustDesk password is one
     # space, so the text carries no letter on purpose.
     ("rustdesk_setup", "PASSWORD_SEPARATOR"),
+    # The line separator of the rendered yggdrasil config is one newline: the
+    # value is the whole text, so stripping it leaves nothing while the
+    # declaration is exactly the character the renderer writes.
+    ("yggdrasil_service_setup", "LINE_SEPARATOR"),
+    # static_peers is empty on purpose: a node starts with no hardcoded peer
+    # and takes its peers from the downloaded public list, and the machine
+    # settings of a target system may fill the tuple in.
+    ("yggdrasil_service_setup", "STATIC_PEERS"),
 )
 
 
