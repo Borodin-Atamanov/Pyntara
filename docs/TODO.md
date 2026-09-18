@@ -1209,6 +1209,22 @@ machine in this turn, and the probe is named with the figure.
     assertion failures above, and five are the command tests at the end of the
     file that rename a value through dataclasses.replace(cfg, ...) and must move
     to writing the values module.
+133. Stage 3 of kde_settings, third stride, on 2026-09-17: passing tests went from
+    52 of 77 to 68 of 77. Converted in this stride: the Places namespaces, the
+    metadata owner, the xbel hidden tests and the notify flag test now write the
+    value they mean on the values module instead of renaming a copy of the
+    section config; the five command tests at the end of the file write the
+    values before calling the helper, so each binds to the value it changes and
+    not to a copy of it; the helper _preconfigure_user_files lost its config
+    argument and reads the values module; the script hotkey pair test and the
+    shortcut record test read the values; and the four live desktop count calls
+    lost their first argument.
+    The nine tests that still fail are exactly: the missing package test and the
+    touchpad click method test, whose expectations still carry the test document
+    spelling of a shipped value, the five live shortcut tests whose calls still
+    pass the section config first, the kconfig record skip test whose fake state
+    still asks for the granted script hotkeys with the config, and the dbus
+    names test that still renames the section config.
 
 
 

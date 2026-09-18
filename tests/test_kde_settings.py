@@ -390,11 +390,11 @@ def test_skip_when_already_configured(
         "window-grow-shrinkEnabled": "true",
         "window-restore-trackerEnabled": "true",
     }
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _preconfigure_user_files(tmp_path)
     themes, schemes, order, _, writes, reloads, _ = _install_fakes(
         monkeypatch,
         currents=currents,
-        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
+        assign_state=_granted_script_hotkeys(),
     )
     result = task_module.task(ctx)
     assert result.success is True
@@ -781,7 +781,7 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
         "window-grow-shrinkEnabled": "true",
         "window-restore-trackerEnabled": "true",
     }
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _preconfigure_user_files(tmp_path)
     _, _, _, _, writes, reloads, _ = _install_fakes(monkeypatch, currents=currents)
     task_module.task(ctx)
     assert not [command for command in writes if "InputMethod" in command]
@@ -1229,14 +1229,13 @@ def test_kwin_scripts_installed_and_the_records_written_without_a_session(
     assert len(cleared) == 2
 
 
-def test_script_hotkey_pairs_read_the_configured_actions_and_hotkeys(
+def test_script_hotkey_pairs_read_the_value_actions_and_hotkeys(
     tmp_path: Path,
 ) -> None:
-    # The two lists of the config describe one hotkey per position, and the
+    # The two lists of the section describe one hotkey per position, and the
     # shared client turns a combination into the combined key code the
     # daemon takes, so the task holds no table of hand written codes.
-    cfg = make_config().kde_settings
-    assert task_module._script_hotkey_pairs(cfg) == (
+    assert task_module._script_hotkey_pairs() == (
         ("Grow Window by 5px", "Meta+Ctrl+Up"),
         ("Shrink Window by 5px", "Meta+Ctrl+Down"),
     )
@@ -1251,8 +1250,8 @@ def test_shortcut_record_changes_read_only_the_first_field(
     # the action must not own. The absent word and an empty field mean no
     # combination, and a record of another file stays with the plain
     # KConfig values.
-    cfg = make_config(kde_settings_kconfig=_SHORTCUT_RECORDS).kde_settings
-    assert task_module._shortcut_record_changes(cfg) == (
+    values.KCONFIG_RECORDS = _SHORTCUT_RECORDS
+    assert task_module._shortcut_record_changes() == (
         ("kwin", "kwin", "Walk Through Windows", ("Alt+Tab",)),
         ("kwin", "kwin", "MinimizeAll", ("Meta+D",)),
         ("plasmashell", "plasmashell", "manage activities", ()),
@@ -1535,45 +1534,35 @@ XBEL = """\
 """
 
 
-def test_notify_flag_follows_the_configured_file_names() -> None:
-    # Only the files the config names carry a live watcher, so a renamed
-    # file in the config is the file the flag is added for.
-    cfg = make_config().kde_settings
+def test_notify_flag_follows_the_value_file_names() -> None:
+    # Only the files the values name carry a live watcher, so a renamed file
+    # in the values is the file the flag is added for.
     env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    assert task_module._notify_flag(cfg, cfg.kwinrc_file_name, env) == ["--notify"]
-    renamed = replace(cfg, kwinrc_file_name="kwinrc-custom")
-    assert task_module._notify_flag(renamed, "kwinrc", env) == []
-    assert task_module._notify_flag(renamed, "kwinrc-custom", env) == ["--notify"]
+    assert task_module._notify_flag(values.KWINRC_FILE_NAME, env) == ["--notify"]
+    values.KWINRC_FILE_NAME = "kwinrc-custom"
+    assert task_module._notify_flag("kwinrc", env) == []
+    assert task_module._notify_flag("kwinrc-custom", env) == ["--notify"]
 
 
-def _places_cfg():
-    """Config of the task with the Places namespaces of the shared document."""
-
-    return make_config().kde_settings
-
-
-def test_places_namespace_address_comes_from_the_config() -> None:
-    # Another address in the config is the address the task declares, so
-    # the namespace of the file is a value and not a literal in the code.
-    cfg = replace(
-        _places_cfg(),
-        places_namespaces={"bookmark": "http://example.invalid/bookmarks"},
-    )
-    declared = task_module._declare_missing_prefixes(cfg, "<xbel>")
+def test_places_namespace_address_comes_from_the_values() -> None:
+    # Another address in the values is the address the task declares, so the
+    # namespace of the file is a value and not a literal in the code.
+    values.PLACES_NAMESPACES = {"bookmark": "http://example.invalid/bookmarks"}
+    declared = task_module._declare_missing_prefixes("<xbel>")
     assert 'xmlns:bookmark="http://example.invalid/bookmarks"' in declared
 
 
-def test_places_metadata_owner_comes_from_the_config() -> None:
+def test_places_metadata_owner_comes_from_the_values() -> None:
     # Only a metadata block with the configured owner may be hidden: with
-    # another owner in the config the same file is left unchanged.
-    cfg = replace(_places_cfg(), places_metadata_owner="http://example.invalid/owner")
-    assert task_module._places_xbel_hidden(cfg, XBEL, {"Home"}) is None
+    # another owner in the values the same file is left unchanged.
+    values.PLACES_METADATA_OWNER = "http://example.invalid/owner"
+    assert task_module._places_xbel_hidden(XBEL, {"Home"}) is None
 
 
 def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
     # Home is matched by its title and hidden, Downloads stays visible,
     # and the machine-specific device separator survives untouched.
-    out = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home
@@ -1584,10 +1573,9 @@ def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
 
 def test_places_xbel_hidden_idempotent() -> None:
     # A second pass over an already hidden file changes nothing.
-    cfg = _places_cfg()
-    out = task_module._places_xbel_hidden(cfg, XBEL, {"Home"})
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert out is not None
-    assert task_module._places_xbel_hidden(cfg, out, {"Home"}) is None
+    assert task_module._places_xbel_hidden(out, {"Home"}) is None
 
 
 def test_apply_places_hidden_writes_when_changed(
@@ -1728,24 +1716,24 @@ def _kconfig_ctx(
     )
 
 
-def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
+def _preconfigure_user_files(tmp_path: Path) -> None:
     """Write the user-dirs.dirs and the Konsole profile the task expects,
     so an idempotent run sees them as already configured."""
 
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "user-dirs.dirs").write_text(
-        task_module._user_dirs_merged("", cfg.user_dirs), encoding="utf-8"
+        task_module._user_dirs_merged("", values.USER_DIRS), encoding="utf-8"
     )
     profile = (_REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile").read_text(
         encoding="utf-8"
     )
-    profile = profile.replace("{home_dir}", cfg.home_dir)
+    profile = profile.replace("{home_dir}", common_values.DESKTOP_HOME_DIR)
     profile_dir = tmp_path / ".local/share/konsole"
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
-    for script in cfg.kwin_scripts:
-        for rel_file in cfg.kwin_script_files:
+    for script in values.KWIN_SCRIPTS:
+        for rel_file in values.KWIN_SCRIPT_FILES:
             template = (
                 _REPO_ROOT / "task_data" / "kde_settings" / "kwin" / script / rel_file
             )
@@ -1922,7 +1910,6 @@ def test_desktop_count_live_removes_extra_desktops(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
@@ -2032,7 +2019,6 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
@@ -2073,7 +2059,6 @@ def test_desktop_count_live_reports_a_missing_client(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=missing_client,
         timeout=30.0,
         env=env,
@@ -2136,17 +2121,14 @@ def test_sddm_one_key_failure_keeps_other_keys(
     assert not any("CursorSize" in command for command in writes)
 
 
-def test_user_command_prefix_comes_from_the_config() -> None:
-    # The wrapper that runs a command as the desktop user is a config value:
-    # another wrapper in the section is the argv the task builds.
-    cfg = replace(
-        make_config().kde_settings,
-        runuser_command=("sudo", "-u", "{username}", "--"),
-    )
-    assert task_module._as_user_command(cfg, ["kwriteconfig6", "--file", "kwinrc"]) == [
+def test_user_command_prefix_comes_from_the_values() -> None:
+    # The wrapper that runs a command as the desktop user is a value:
+    # another wrapper in the values is the argv the task builds.
+    values.RUNUSER_COMMAND = ("sudo", "-u", "{username}", "--")
+    assert task_module._as_user_command(["kwriteconfig6", "--file", "kwinrc"]) == [
         "sudo",
         "-u",
-        cfg.username,
+        common_values.DESKTOP_USERNAME,
         "--",
         "kwriteconfig6",
         "--file",
@@ -2154,37 +2136,39 @@ def test_user_command_prefix_comes_from_the_config() -> None:
     ]
 
 
-def test_plasma_apply_calls_come_from_the_config() -> None:
-    # The three appearance tools and their flags are config values: another
-    # call in the section is the argv the task runs, with the value it
-    # applies substituted.
-    cfg = make_config().kde_settings
-    assert task_module._appearance_command(
-        replace(cfg, apply_look_and_feel_command=("my-theme", "-a", "{look_and_feel}")),
-        "look_and_feel",
-    ) == ["my-theme", "-a", cfg.look_and_feel]
-    assert task_module._appearance_command(
-        replace(
-            cfg,
-            apply_color_scheme_command=("my-scheme", "--set", "{color_scheme}"),
-        ),
-        "color_scheme",
-    ) == ["my-scheme", "--set", cfg.color_scheme]
-    assert task_module._appearance_command(cfg, "cursor_theme") == [
+def test_plasma_apply_calls_come_from_the_values() -> None:
+    # The three appearance tools and their flags are values: another call in
+    # the values is the argv the task runs, with the value it applies
+    # substituted.
+    values.APPLY_LOOK_AND_FEEL_COMMAND = ("my-theme", "-a", "{look_and_feel}")
+    assert task_module._appearance_command("look_and_feel") == [
+        "my-theme",
+        "-a",
+        values.LOOK_AND_FEEL,
+    ]
+    values.APPLY_COLOR_SCHEME_COMMAND = (
+        "my-scheme",
+        "--set",
+        "{color_scheme}",
+    )
+    assert task_module._appearance_command("color_scheme") == [
+        "my-scheme",
+        "--set",
+        values.COLOR_SCHEME,
+    ]
+    assert task_module._appearance_command("cursor_theme") == [
         "plasma-apply-cursortheme",
-        cfg.cursor_theme,
+        values.CURSOR_THEME,
     ]
 
 
-def test_kconfig_calls_come_from_the_config() -> None:
-    # access are config values: another set of commands and selectors is
-    # what the task builds, for the user session and for the system files.
-    cfg = replace(
-        make_config().kde_settings,
-        kreadconfig_command=("my-reader", "--config", "{file_name}"),
-        config_group_flag=("--section", "{group}"),
-        config_key_flag=("--entry", "{key}"),
-    )
+def test_kconfig_calls_come_from_the_values() -> None:
+    # The two base calls and the three selectors are values: another set of
+    # them is what the task builds, for the user session and for the system
+    # files.
+    values.KREADCONFIG_COMMAND = ("my-reader", "--config", "{file_name}")
+    values.CONFIG_GROUP_FLAG = ("--section", "{group}")
+    values.CONFIG_KEY_FLAG = ("--entry", "{key}")
     expected = [
         "my-reader",
         "--config",
@@ -2198,31 +2182,33 @@ def test_kconfig_calls_come_from_the_config() -> None:
     ]
     assert (
         task_module._kconfig_command(
-            cfg, cfg.kreadconfig_command, "kwinrc", ("Group", "Sub"), "Key"
+            values.KREADCONFIG_COMMAND, "kwinrc", ("Group", "Sub"), "Key"
         )
         == expected
     )
-    written = replace(
-        cfg, kwriteconfig_command=("my-writer", "--config", "{file_name}")
-    )
+    values.KWRITECONFIG_COMMAND = ("my-writer", "--config", "{file_name}")
     assert task_module._kconfig_command(
-        written, written.kwriteconfig_command, "kdeglobals", ("Group",), "Key"
-    ) == ["my-writer", "--config", "kdeglobals", "--section", "Group", "--entry", "Key"]
+        values.KWRITECONFIG_COMMAND, "kdeglobals", ("Group",), "Key"
+    ) == [
+        "my-writer",
+        "--config",
+        "kdeglobals",
+        "--section",
+        "Group",
+        "--entry",
+        "Key",
+    ]
 
 
-def test_file_operations_come_from_the_config(
+def test_file_operations_come_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The maker of the parent directory, the owner writer and the mode
-    # writer are config values: another program in the section is the argv
-    # the task runs around a user config file.
-    cfg = replace(
-        make_config().kde_settings,
-        home_dir=str(tmp_path),
-        mkdir_command=("mymkdir", "--parents", "{path}"),
-        chown_command=("mychown", "--owner", "{owner}", "{path}"),
-        chmod_command=("mychmod", "--mode", "{file_mode}", "{path}"),
-    )
+    # writer are values: another program in the values is the argv the task
+    # runs around a user config file.
+    values.MKDIR_COMMAND = ("mymkdir", "--parents", "{path}")
+    values.CHOWN_COMMAND = ("mychown", "--owner", "{owner}", "{path}")
+    values.CHMOD_COMMAND = ("mychmod", "--mode", "{file_mode}", "{path}")
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -2231,7 +2217,6 @@ def test_file_operations_come_from_the_config(
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
     assert task_module._write_user_file(
-        cfg,
         ".config/kxkbrc",
         "body\n",
         mode=0o600,
@@ -2243,25 +2228,31 @@ def test_file_operations_come_from_the_config(
     assert seen[1] == [
         "mychown",
         "--owner",
-        f"{cfg.username}:{cfg.username}",
+        (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ]
     assert seen[2] == ["mychmod", "--mode", f"{0o600:04o}", str(target)]
 
 
-def test_recursive_owner_command_comes_from_the_config(
+def test_recursive_owner_command_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The owner writer of a copied theme tree is a config value: another
-    # program in the section is the argv the task runs on the copy.
-    cfg = replace(
-        make_config().kde_settings,
-        home_dir=str(tmp_path),
-        system_look_and_feel_dir=tmp_path / "system",
-        chown_recursive_command=("mychown", "--recursive", "{owner}", "{path}"),
+    # The owner writer of a copied theme tree is a value: another program in
+    # the values is the argv the task runs on the copy.
+    system = tmp_path / "system"
+    values.SYSTEM_LOOK_AND_FEEL_DIR = system
+    values.CHOWN_RECURSIVE_COMMAND = (
+        "mychown",
+        "--recursive",
+        "{owner}",
+        "{path}",
     )
-    (cfg.system_look_and_feel_dir / cfg.look_and_feel).mkdir(parents=True)
-    target = Path(cfg.home_dir) / cfg.user_look_and_feel_dir / cfg.look_and_feel
+    (system / values.LOOK_AND_FEEL).mkdir(parents=True)
+    target = (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_LOOK_AND_FEEL_DIR
+        / values.LOOK_AND_FEEL
+    )
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -2269,12 +2260,10 @@ def test_recursive_owner_command_comes_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    task_module._apply_theme_cursor_overrides(
-        cfg, timeout=30.0, force=True, warnings=[]
-    )
+    task_module._apply_theme_cursor_overrides(timeout=30.0, force=True, warnings=[])
     assert [
         "mychown",
         "--recursive",
-        f"{cfg.username}:{cfg.username}",
+        (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ] in seen
