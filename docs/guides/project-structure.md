@@ -73,7 +73,7 @@ src/pyntara/xray_inbound.py — Server half of the panel: the universal VLESS+RE
 src/pyntara/xray_local_proxy.py — Client half of the panel: the local proxy inbound of this machine, its routing policy, the pool of remote exits the remote classes leave through and the path checks that prove the exit, which are stages 6 and 7 (docs/spec/3x-ui.md). Imported by three_x_ui_xray_setup.
 src/pyntara/port_forwarding_state.py — Deployed command that prints one JSON record per server and forwarded local port from the state file, each with the ssh command that reaches this machine through it; the System Metrics collector runs it as the port_forwarding network module. Runs as `python -m pyntara.port_forwarding_state`.
 src/pyntara/upnp_forwarding.py — Deployed oneshot service that asks the home router through UPnP to publish the SSH port of this machine: it derives the external port from the hostname with the shared deterministic chain of pyntara.forwarding_ports, tries the next candidate when another rule holds the port, never touches a rule of another machine, and wakes the System Metrics collector when it changed the router. Runs as `python -m pyntara.upnp_forwarding CONFIG_PATH`.
-src/pyntara/upnp_forwarding_state.py — Deployed command that reads the rules of the home router live and prints one JSON record per rule of this machine with the router address, the published port, the scope of the address and the ssh command; the System Metrics collector runs it as the upnp network module. Runs as `python -m pyntara.upnp_forwarding_state CONFIG_PATH`.
+src/pyntara/upnp_forwarding_state.py — Deployed command that reads the rules of the home router live and prints one JSON record per rule of this machine with the router address, the published port, the scope of the address and the ssh command; the System Metrics collector runs it as the upnp network module. Runs as `python -m pyntara.upnp_forwarding_state`.
 src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
 src/pyntara/tor_address.py — Deployed address command: prints one JSON record with the Tor onion address and the ssh command that reaches the SSH daemon through the onion service, from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address CONFIG_PATH`.  
@@ -114,7 +114,7 @@ ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup
 ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  
 nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
 port_forwarding_setup -> src/pyntara/values/port_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
-upnp_forwarding_setup -> config/upnp_forwarding_setup.py -> UpnpForwardingSetupConfig -> upnp_forwarding_setup
+upnp_forwarding_setup -> src/pyntara/values/upnp_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
 playwright_setup -> config/playwright_setup.py -> PlaywrightSetupConfig -> playwright_setup
 system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
 vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  

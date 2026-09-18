@@ -501,12 +501,11 @@ def test_port_forwarding_module_command_carries_no_config_path() -> None:
     )
 
 
-def test_upnp_module_path_matches_upnp_forwarding_config() -> None:
-    # The upnp collector module reads the router rules through the UPnP
-    # client the forwarding service uses, so the argument of the module
-    # command must be the single system config the collector deploys and
-    # not a copy of anything: the command of the client and the protocol
-    # come from that config at collection time.
+def test_upnp_module_command_carries_no_config_path() -> None:
+    # The upnp collector module reads the declared values of the
+    # upnp_forwarding_setup section, so its command carries no config path:
+    # a path in the command would be dead weight and could drift away from
+    # the section that owns the values.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
@@ -515,7 +514,6 @@ def test_upnp_module_path_matches_upnp_forwarding_config() -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.upnp_forwarding_state",
-        str(config.system_metrics_setup.system_config_path),
     )
 
 
@@ -546,9 +544,9 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
     # needs ports and paths from it, so its command carries the configured
     # system_config_path as an argument; a module that named another config
     # would break on a machine where the path differs. The family modules
-    # append their family flag after it, and the port_forwarding module is
-    # out of this rule because it reads the declared values of its own
-    # section instead of the config.
+    # append their family flag after it, and the port_forwarding and upnp
+    # modules are out of this rule because they read the declared values of
+    # their own sections instead of the config.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     system_config_path = str(config.system_metrics_setup.system_config_path)
@@ -556,7 +554,7 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
         module
         for module in config.system_metrics_setup.collector.network_modules
         if any("pyntara." in part for part in module.command)
-        and module.name != "port_forwarding"
+        and module.name not in {"port_forwarding", "upnp"}
     ]
     assert command_modules
     for module in command_modules:

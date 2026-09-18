@@ -25,7 +25,6 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__, deployment
-from pyntara.config import UpnpForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -37,13 +36,13 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import upnp_forwarding_setup as values
 
 # Module-level paths and helpers are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 
 
 def _render_service_unit(
-    cfg: UpnpForwardingSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -61,10 +60,10 @@ def _render_service_unit(
 
     command = " ".join(
         substituted_command(
-            cfg.module_run_command,
+            values.MODULE_RUN_COMMAND,
             {
                 "python": str(venv_python),
-                "module": cfg.service_module_name,
+                "module": values.SERVICE_MODULE_NAME,
                 "config_path": str(system_config_path),
             },
         )
@@ -74,7 +73,7 @@ def _render_service_unit(
 
 
 def _render_timer_unit(
-    cfg: UpnpForwardingSetupConfig, template_path: Path, version: str
+    template_path: Path, version: str
 ) -> str:
     """Render the timer unit with its bounds and its unit substituted.
 
@@ -87,9 +86,9 @@ def _render_timer_unit(
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        boot_delay_seconds=cfg.timer_boot_delay_seconds,
-        interval_seconds=cfg.timer_interval_seconds,
-        service_unit_name=cfg.service_unit_name,
+        boot_delay_seconds=values.TIMER_BOOT_DELAY_SECONDS,
+        interval_seconds=values.TIMER_INTERVAL_SECONDS,
+        service_unit_name=values.SERVICE_UNIT_NAME,
         version=version,
     )
 
@@ -145,7 +144,6 @@ def task(ctx: Context) -> TaskResult:
 
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    cfg = ctx.config.upnp_forwarding_setup
     metrics = ctx.config.system_metrics_setup
     venv_python = metrics.venv_dir / metrics.venv_python_relative_path
     unit_dir = engine_values.SYSTEMD_UNIT_DIR
@@ -159,9 +157,8 @@ def task(ctx: Context) -> TaskResult:
 
     rendered: dict[str, str] = {}
     try:
-        rendered[cfg.service_unit_name] = _render_service_unit(
-            cfg,
-            data_dir / cfg.service_template_file_name,
+        rendered[values.SERVICE_UNIT_NAME] = _render_service_unit(
+            data_dir / values.SERVICE_TEMPLATE_FILE_NAME,
             venv_python,
             metrics.system_config_path,
             version,
@@ -169,8 +166,8 @@ def task(ctx: Context) -> TaskResult:
     except OSError as exc:
         warnings.append(f"cannot read the service template: {exc}")
     try:
-        rendered[cfg.timer_unit_name] = _render_timer_unit(
-            cfg, data_dir / cfg.timer_template_file_name, version
+        rendered[values.TIMER_UNIT_NAME] = _render_timer_unit(
+            data_dir / values.TIMER_TEMPLATE_FILE_NAME, version
         )
     except OSError as exc:
         warnings.append(f"cannot read the timer template: {exc}")
@@ -180,14 +177,14 @@ def task(ctx: Context) -> TaskResult:
         matches = _unit_matches(unit_dir, name, content)
         units_ok = units_ok and matches
         _log(f"checking unit {name}: {'ok' if matches else 'missing or stale'}")
-    timer_enabled = service_is_enabled(cfg.timer_unit_name, timeout)
-    timer_active = service_is_active(cfg.timer_unit_name, timeout)
+    timer_enabled = service_is_enabled(values.TIMER_UNIT_NAME, timeout)
+    timer_active = service_is_active(values.TIMER_UNIT_NAME, timeout)
     _log(
-        f"checking autorun {cfg.timer_unit_name}: "
+        f"checking autorun {values.TIMER_UNIT_NAME}: "
         f"{'enabled' if timer_enabled else 'disabled'}"
     )
     _log(
-        f"checking activity {cfg.timer_unit_name}: "
+        f"checking activity {values.TIMER_UNIT_NAME}: "
         f"{'active' if timer_active else 'inactive'}"
     )
 
@@ -196,7 +193,7 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             changed=False,
-            message=f"service {cfg.service_unit_name} configured",
+            message=f"service {values.SERVICE_UNIT_NAME} configured",
             warnings=tuple(warnings),
         )
 
@@ -217,7 +214,7 @@ def task(ctx: Context) -> TaskResult:
     if written:
         try:
             run_command(
-                substituted_command(cfg.systemctl_daemon_reload_command, {}),
+                substituted_command(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
                 timeout=timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:
@@ -227,58 +224,58 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(
                 substituted_command(
-                    cfg.systemctl_enable_command,
-                    {"unit_name": cfg.timer_unit_name},
+                    values.SYSTEMCTL_ENABLE_COMMAND,
+                    {"unit_name": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:
-            warnings.append(f"cannot enable {cfg.timer_unit_name}: {exc}")
+            warnings.append(f"cannot enable {values.TIMER_UNIT_NAME}: {exc}")
         else:
-            _log(f"timer {cfg.timer_unit_name} enabled")
+            _log(f"timer {values.TIMER_UNIT_NAME} enabled")
             changed = True
 
     if not timer_active or force:
         try:
             run_command(
                 substituted_command(
-                    cfg.systemctl_start_command,
-                    {"unit_name": cfg.timer_unit_name},
+                    values.SYSTEMCTL_START_COMMAND,
+                    {"unit_name": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:
-            warnings.append(f"cannot start {cfg.timer_unit_name}: {exc}")
+            warnings.append(f"cannot start {values.TIMER_UNIT_NAME}: {exc}")
         else:
-            _log(f"timer {cfg.timer_unit_name} started")
+            _log(f"timer {values.TIMER_UNIT_NAME} started")
             changed = True
 
     try:
         run_command(
             substituted_command(
-                cfg.systemctl_start_command,
-                {"unit_name": cfg.service_unit_name},
+                values.SYSTEMCTL_START_COMMAND,
+                {"unit_name": values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
     except (subprocess.SubprocessError, OSError) as exc:
-        warnings.append(f"cannot run {cfg.service_unit_name}: {exc}")
+        warnings.append(f"cannot run {values.SERVICE_UNIT_NAME}: {exc}")
     else:
-        _log(f"service {cfg.service_unit_name} started")
+        _log(f"service {values.SERVICE_UNIT_NAME} started")
         changed = True
         try:
             failed = _service_is_failed(
-                cfg.systemctl_is_failed_command, cfg.service_unit_name, timeout
+                values.SYSTEMCTL_IS_FAILED_COMMAND, values.SERVICE_UNIT_NAME, timeout
             )
         except (subprocess.SubprocessError, OSError) as exc:
-            warnings.append(f"cannot check {cfg.service_unit_name}: {exc}")
+            warnings.append(f"cannot check {values.SERVICE_UNIT_NAME}: {exc}")
         else:
             if failed:
                 warnings.append(
-                    f"service {cfg.service_unit_name} entered the failed state"
+                    f"service {values.SERVICE_UNIT_NAME} entered the failed state"
                 )
 
-    message = f"service {cfg.service_unit_name} deployed"
+    message = f"service {values.SERVICE_UNIT_NAME} deployed"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(

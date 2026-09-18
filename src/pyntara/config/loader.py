@@ -40,7 +40,6 @@ from .system_metrics_setup import SystemMetricsSetupConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
-from .upnp_forwarding_setup import UpnpForwardingSetupConfig
 from .vault import LocalVaultSetupConfig, VaultStructureConfig
 from .vocalinux_setup import VocalinuxSetupConfig
 from .yggdrasil_service_setup import YggdrasilServiceSetupConfig
@@ -79,7 +78,6 @@ class Config:
     vocalinux_setup: VocalinuxSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     playwright_setup: PlaywrightSetupConfig
-    upnp_forwarding_setup: UpnpForwardingSetupConfig
     rustdesk_setup: RustdeskSetupConfig
     scrcpy_setup: ScrcpySetupConfig
     system_metrics_setup: SystemMetricsSetupConfig

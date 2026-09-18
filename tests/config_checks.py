@@ -46,7 +46,6 @@ from pyntara.config import (
     TelemetryPdfConfig,
     ThreeXuiXraySetupConfig,
     TorSetupConfig,
-    UpnpForwardingSetupConfig,
     VaultEntry,
     VaultGroup,
     VaultGroupSeed,
@@ -1709,135 +1708,6 @@ def _port_field(raw: object, name: str) -> int:
     if not 1 <= value <= 65535:
         raise ConfigError(f"{name} must be a TCP port from 1 to 65535")
     return value
-
-
-# from upnp_forwarding_setup.py
-
-
-def _upnp_forwarding_setup_table(raw: object) -> UpnpForwardingSetupConfig:
-    """Validate the [upnp_forwarding_setup] table and build the config.
-
-    Every value is required and typed. The client calls carry the
-    placeholders their caller substitutes, so a mistyped one is refused
-    here instead of raising on the target machine; mapping_attempts and the
-    timer bounds are positive integers and error_priority is an integer
-    0-7. The two scope names must differ, because a report that named both
-    scopes the same would hide how far a forwarded address reaches.
-    """
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[upnp_forwarding_setup] section is missing or not a table")
-    section = "upnp_forwarding_setup."
-    upnp_package = _nonempty_string_field(
-        raw.get("upnp_package"), section + "upnp_package"
-    )
-    upnp_client_command = _nonempty_string_field(
-        raw.get("upnp_client_command"), section + "upnp_client_command"
-    )
-    upnp_protocol = _nonempty_string_field(
-        raw.get("upnp_protocol"), section + "upnp_protocol"
-    )
-    upnp_mapping_description = _placeholder_text_field(
-        raw.get("upnp_mapping_description"),
-        section + "upnp_mapping_description",
-        ("{hostname}",),
-    )
-    mapping_attempts = _positive_int_field(
-        raw.get("mapping_attempts"), section + "mapping_attempts"
-    )
-    service_unit_name = _nonempty_string_field(
-        raw.get("service_unit_name"), section + "service_unit_name"
-    )
-    timer_unit_name = _nonempty_string_field(
-        raw.get("timer_unit_name"), section + "timer_unit_name"
-    )
-    service_template_file_name = _nonempty_string_field(
-        raw.get("service_template_file_name"),
-        section + "service_template_file_name",
-    )
-    timer_template_file_name = _nonempty_string_field(
-        raw.get("timer_template_file_name"),
-        section + "timer_template_file_name",
-    )
-    service_module_name = _nonempty_string_field(
-        raw.get("service_module_name"), section + "service_module_name"
-    )
-    module_run_command = _placeholder_command_field(
-        raw.get("module_run_command"),
-        section + "module_run_command",
-        ("{python}", "{module}", "{config_path}"),
-    )
-    systemctl_daemon_reload_command = _string_list(
-        raw.get("systemctl_daemon_reload_command"),
-        section + "systemctl_daemon_reload_command",
-    )
-    systemctl_enable_command = _placeholder_command_field(
-        raw.get("systemctl_enable_command"),
-        section + "systemctl_enable_command",
-        ("{unit_name}",),
-    )
-    systemctl_start_command = _placeholder_command_field(
-        raw.get("systemctl_start_command"),
-        section + "systemctl_start_command",
-        ("{unit_name}",),
-    )
-    systemctl_is_failed_command = _placeholder_command_field(
-        raw.get("systemctl_is_failed_command"),
-        section + "systemctl_is_failed_command",
-        ("{unit_name}",),
-    )
-    timer_boot_delay_seconds = _positive_int_field(
-        raw.get("timer_boot_delay_seconds"),
-        section + "timer_boot_delay_seconds",
-    )
-    timer_interval_seconds = _positive_int_field(
-        raw.get("timer_interval_seconds"), section + "timer_interval_seconds"
-    )
-    journal_identifier = _nonempty_string_field(
-        raw.get("journal_identifier"), section + "journal_identifier"
-    )
-    error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
-    if not 0 <= error_priority <= 7:
-        raise ConfigError(
-            "upnp_forwarding_setup.error_priority must be between 0 and 7"
-        )
-    report_channel_name = _nonempty_string_field(
-        raw.get("report_channel_name"), section + "report_channel_name"
-    )
-    global_scope_name = _nonempty_string_field(
-        raw.get("global_scope_name"), section + "global_scope_name"
-    )
-    nat_scope_name = _nonempty_string_field(
-        raw.get("nat_scope_name"), section + "nat_scope_name"
-    )
-    if global_scope_name == nat_scope_name:
-        raise ConfigError(
-            "upnp_forwarding_setup.global_scope_name and nat_scope_name must differ"
-        )
-    return UpnpForwardingSetupConfig(
-        upnp_package=upnp_package,
-        upnp_client_command=upnp_client_command,
-        upnp_protocol=upnp_protocol,
-        upnp_mapping_description=upnp_mapping_description,
-        mapping_attempts=mapping_attempts,
-        service_unit_name=service_unit_name,
-        timer_unit_name=timer_unit_name,
-        service_template_file_name=service_template_file_name,
-        timer_template_file_name=timer_template_file_name,
-        service_module_name=service_module_name,
-        module_run_command=module_run_command,
-        systemctl_daemon_reload_command=systemctl_daemon_reload_command,
-        systemctl_enable_command=systemctl_enable_command,
-        systemctl_start_command=systemctl_start_command,
-        systemctl_is_failed_command=systemctl_is_failed_command,
-        timer_boot_delay_seconds=timer_boot_delay_seconds,
-        timer_interval_seconds=timer_interval_seconds,
-        journal_identifier=journal_identifier,
-        error_priority=error_priority,
-        report_channel_name=report_channel_name,
-        global_scope_name=global_scope_name,
-        nat_scope_name=nat_scope_name,
-    )
 
 
 # from rustdesk_setup.py
@@ -5670,9 +5540,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             "system_metrics_setup.google_script_key_entry_title must name an "
             "entry of the [vault_structure] table"
         )
-    upnp_forwarding_setup = _upnp_forwarding_setup_table(
-        document.get("upnp_forwarding_setup")
-    )
     three_x_ui = document.get("three_x_ui_xray_setup")
     if isinstance(three_x_ui, dict):
         vault_entry_title = three_x_ui.get("vault_entry_title")
@@ -5743,7 +5610,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             document.get("nextdns_setup_system_wide")
         ),
         playwright_setup=_playwright_setup_table(document.get("playwright_setup")),
-        upnp_forwarding_setup=upnp_forwarding_setup,
         rustdesk_setup=rustdesk_setup,
         scrcpy_setup=_scrcpy_setup_table(document.get("scrcpy_setup")),
         sotavpn_setup=sotavpn_setup,

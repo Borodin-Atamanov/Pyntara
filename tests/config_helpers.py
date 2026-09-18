@@ -528,29 +528,6 @@ def base_config() -> str:
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
         'profile_id_file_mode = "0644"\n'
         "error_priority = 3\n"
-        "[upnp_forwarding_setup]\n"
-        'upnp_package = "miniupnpc"\n'
-        'upnp_client_command = "upnpc"\n'
-        'upnp_protocol = "TCP"\n'
-        'upnp_mapping_description = "pyntara ssh {hostname}"\n'
-        "mapping_attempts = 11\n"
-        'service_unit_name = "upnp_forwarding.service"\n'
-        'timer_unit_name = "upnp_forwarding.timer"\n'
-        'service_template_file_name = "upnp_forwarding.service"\n'
-        'timer_template_file_name = "upnp_forwarding.timer"\n'
-        'service_module_name = "pyntara.upnp_forwarding"\n'
-        'module_run_command = ["{python}", "-m", "{module}", "{config_path}"]\n'
-        'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
-        'systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]\n'
-        'systemctl_start_command = ["systemctl", "start", "--no-block", "{unit_name}"]\n'
-        'systemctl_is_failed_command = ["systemctl", "is-failed", "{unit_name}"]\n'
-        "timer_boot_delay_seconds = 90\n"
-        "timer_interval_seconds = 900\n"
-        'journal_identifier = "upnp_forwarding"\n'
-        "error_priority = 3\n"
-        'report_channel_name = "upnp"\n'
-        'global_scope_name = "global"\n'
-        'nat_scope_name = "nat"\n'
         "[dnsproxy_setup]\n"
         'github_repo = "AdguardTeam/dnsproxy"\n'
         'asset_name_template = "dnsproxy-linux-{asset_arch}-{release_tag}.tar.gz"\n'

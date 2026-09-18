@@ -63,10 +63,6 @@ from .three_x_ui_xray_setup import (
     ThreeXuiXraySetupConfig,
 )
 from .tor_setup import TOR_ADDRESS_CONFIG_KEYS, TorSetupConfig
-from .upnp_forwarding_setup import (
-    UPNP_FORWARDING_CONFIG_KEYS,
-    UpnpForwardingSetupConfig,
-)
 from .vault import (
     LocalVaultSetupConfig,
     VaultEntry,
@@ -96,7 +92,6 @@ __all__ = [
     "SEND_ORDER_OLDEST_FIRST",
     "SERVICE_CONFIG_KEYS",
     "TOR_ADDRESS_CONFIG_KEYS",
-    "UPNP_FORWARDING_CONFIG_KEYS",
     "YGGDRASIL_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
@@ -126,7 +121,6 @@ __all__ = [
     "TelemetryPdfConfig",
     "ThreeXuiXraySetupConfig",
     "TorSetupConfig",
-    "UpnpForwardingSetupConfig",
     "VaultEntry",
     "VaultGroup",
     "VaultGroupSeed",

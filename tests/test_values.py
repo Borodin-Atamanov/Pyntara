@@ -36,6 +36,7 @@ from value_checks import (
 import pyntara
 from pyntara.values import engine as engine_values
 from pyntara.values import port_forwarding_setup as port_forwarding_values
+from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
@@ -58,6 +59,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "scrcpy_setup",
     "sotavpn_setup",
     "ssh_client_setup",
+    "upnp_forwarding_setup",
     "swapfile_service_install",
     "tasks",
     "telegram_setup",
@@ -92,6 +94,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("rustdesk_setup", "ID_FILE_MODE", check_file_mode),
     ("rustdesk_setup", "VAULT_ENTRY_TITLE", check_vault_entry_title),
     ("scrcpy_setup", "FALLBACK_PACKAGES", check_nonempty_text_tuple),
+    ("upnp_forwarding_setup", "MAPPING_ATTEMPTS", check_not_negative_int),
     ("port_forwarding_setup", "ASKPASS_HELPER_FILE_MODE", check_file_mode),
     ("port_forwarding_setup", "STATE_FILE_MODE", check_file_mode),
     (
@@ -417,6 +420,25 @@ def test_the_askpass_helper_prints_the_declared_passphrase_variable() -> None:
     name = port_forwarding_values.PASSPHRASE_ENV_KEY
     content = port_forwarding_values.ASKPASS_HELPER_CONTENT
     assert name in content
+
+
+def test_the_two_scope_names_of_the_router_report_differ() -> None:
+    # The report says how far a forwarded address reaches, and it does so
+    # by naming the scope: two scope values that read the same would hide
+    # the difference between a global address and one behind a provider
+    # NAT, which is the sentence a reader of the report acts on.
+    assert (
+        upnp_forwarding_values.GLOBAL_SCOPE_NAME
+        != upnp_forwarding_values.NAT_SCOPE_NAME
+    )
+
+
+def test_the_mapping_description_carries_the_hostname_placeholder() -> None:
+    # The mark of a rule names the machine that owns it, so the placeholder
+    # is what keeps two machines of one project on one router apart; a
+    # template without it would let one machine read the rule of the other
+    # as its own and never write its own rule.
+    assert "{hostname}" in upnp_forwarding_values.UPNP_MAPPING_DESCRIPTION
 
 
 def test_every_flag_family_has_a_report_word() -> None:

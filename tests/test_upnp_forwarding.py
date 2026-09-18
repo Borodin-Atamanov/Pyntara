@@ -18,6 +18,7 @@ from support import FakeProc, make_config
 import pyntara.upnp_forwarding as forwarding
 from pyntara.config import Config
 from pyntara.forwarding_ports import desired_port
+from pyntara.values import upnp_forwarding_setup as values
 
 CONFIG_PATH = "/etc/pyntara/config.toml"
 ROUTER_ADDRESS = "191.83.167.128"
@@ -123,22 +124,19 @@ class TestCandidatePorts:
         # One machine carries one predictable number: the router publishes
         # the same port the reverse tunnel asks a server for, so both
         # schemes name the machine with the same value.
-        config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         assert ports[0] == desired_port("testhost")
 
     def test_every_further_candidate_carries_the_attempt_number(self) -> None:
-        config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         assert ports[1] == desired_port("testhost2")
         assert ports[2] == desired_port("testhost3")
 
     def test_no_candidate_is_tried_twice(self) -> None:
-        # The number of candidates is a config value; a hash that repeats an
-        # earlier port is dropped instead of wasting an attempt on it.
-        config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
-        assert 0 < len(ports) <= config.upnp_forwarding_setup.mapping_attempts
+        # The number of candidates is a declared value; a hash that repeats
+        # an earlier port is dropped instead of wasting an attempt on it.
+        ports = forwarding.candidate_ports("testhost")
+        assert 0 < len(ports) <= values.MAPPING_ATTEMPTS
         assert len(set(ports)) == len(ports)
 
 
@@ -149,7 +147,7 @@ class TestMain:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         router = _FakeRouter()
         triggers: list[Config] = []
         _service(monkeypatch, router, config, triggers)
@@ -166,7 +164,7 @@ class TestMain:
         # alone and the next candidate is tried; the machine name in the
         # description is what tells the two apart.
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         foreign = (ports[0], "192.168.1.48", 443, NEIGHBOUR_DESCRIPTION)
         router = _FakeRouter(rules=(foreign,))
         triggers: list[Config] = []
@@ -188,7 +186,7 @@ class TestMain:
         # The network did not change, so the report carries the same facts
         # as the last one and there is nothing worth sending.
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         router = _FakeRouter(
             rules=((ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION),)
         )
@@ -205,7 +203,7 @@ class TestMain:
         # The machine took another address, so its own rule points at the
         # old one: the router takes the same rule again with the new target.
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         stale = (ports[0], "192.168.1.9", 30222, OUR_DESCRIPTION)
         router = _FakeRouter(rules=(stale,))
         triggers: list[Config] = []
@@ -222,7 +220,7 @@ class TestMain:
         # that delivers the port but carries an older mark is refreshed: the
         # rule then names this machine like every other rule of the run.
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         old_mark = (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
         router = _FakeRouter(rules=(old_mark,))
         triggers: list[Config] = []
@@ -250,7 +248,7 @@ class TestMain:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config = make_config()
-        ports = forwarding.candidate_ports(config, "testhost")
+        ports = forwarding.candidate_ports("testhost")
         rules = tuple((port, "192.168.1.48", 443, "pyntara xray") for port in ports)
         router = _FakeRouter(rules=rules)
         triggers: list[Config] = []
@@ -268,8 +266,10 @@ class TestMain:
     def test_the_config_path_is_the_only_argument(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # The deployed unit passes the single system config path, so the
-        # service reads the same document the task deployed.
+        # The deployed unit passes the single system config path, because
+        # the service still reads the sshd listen port and wakes the report
+        # collector through that section; the values of its own section are
+        # declared and need no document.
         seen: list[Path] = []
         config = make_config()
 

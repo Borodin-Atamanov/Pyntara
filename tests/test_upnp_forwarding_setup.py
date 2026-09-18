@@ -16,10 +16,10 @@ import pytest
 from support import FakeProc, make_config, make_context
 
 from pyntara import __version__
-from pyntara.config import UpnpForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import upnp_forwarding_setup
 from pyntara.values import engine as engine_values
+from pyntara.values import upnp_forwarding_setup as values
 
 SERVICE_TEMPLATE = """\
 [Unit]
@@ -122,24 +122,21 @@ def _install_fake(
 def _expected_service_unit(
     venv_python: Path,
     system_config: Path,
-    cfg: UpnpForwardingSetupConfig,
     version: str = __version__,
 ) -> str:
     command = " ".join(
-        [str(venv_python), "-m", cfg.service_module_name, str(system_config)]
+        [str(venv_python), "-m", values.SERVICE_MODULE_NAME, str(system_config)]
     )
     return Template(SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}", version=version
     )
 
 
-def _expected_timer_unit(
-    cfg: UpnpForwardingSetupConfig, version: str = __version__
-) -> str:
+def _expected_timer_unit(version: str = __version__) -> str:
     return Template(TIMER_TEMPLATE).substitute(
-        boot_delay_seconds=cfg.timer_boot_delay_seconds,
-        interval_seconds=cfg.timer_interval_seconds,
-        service_unit_name=cfg.service_unit_name,
+        boot_delay_seconds=values.TIMER_BOOT_DELAY_SECONDS,
+        interval_seconds=values.TIMER_INTERVAL_SECONDS,
+        service_unit_name=values.SERVICE_UNIT_NAME,
         version=version,
     )
 
@@ -147,19 +144,17 @@ def _expected_timer_unit(
 def _deploy_units(systemd_dir: Path, ctx: Context) -> None:
     """Write the units the task would write, as an earlier run did."""
 
-    cfg = ctx.config.upnp_forwarding_setup
+    metrics = ctx.config.system_metrics_setup
     systemd_dir.mkdir(parents=True, exist_ok=True)
-    (systemd_dir / cfg.service_unit_name).write_text(
+    (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
         _expected_service_unit(
-            ctx.config.system_metrics_setup.venv_dir
-            / ctx.config.system_metrics_setup.venv_python_relative_path,
-            ctx.config.system_metrics_setup.system_config_path,
-            cfg,
+            metrics.venv_dir / metrics.venv_python_relative_path,
+            metrics.system_config_path,
         ),
         encoding="utf-8",
     )
-    (systemd_dir / cfg.timer_unit_name).write_text(
-        _expected_timer_unit(cfg), encoding="utf-8"
+    (systemd_dir / values.TIMER_UNIT_NAME).write_text(
+        _expected_timer_unit(), encoding="utf-8"
     )
 
 
@@ -174,17 +169,16 @@ def test_deploys_both_units_and_runs_the_service(
     assert result.success
     assert result.changed
     assert not result.warnings
-    cfg = ctx.config.upnp_forwarding_setup
-    assert (systemd_dir / cfg.service_unit_name).read_text(
+    assert (systemd_dir / values.SERVICE_UNIT_NAME).read_text(
         encoding="utf-8"
-    ) == _expected_service_unit(venv_python, system_config, cfg)
-    assert (systemd_dir / cfg.timer_unit_name).read_text(
+    ) == _expected_service_unit(venv_python, system_config)
+    assert (systemd_dir / values.TIMER_UNIT_NAME).read_text(
         encoding="utf-8"
-    ) == _expected_timer_unit(cfg)
+    ) == _expected_timer_unit()
     assert ["systemctl", "daemon-reload"] in calls
-    assert ["systemctl", "enable", cfg.timer_unit_name] in calls
-    assert ["systemctl", "start", "--no-block", cfg.timer_unit_name] in calls
-    assert ["systemctl", "start", "--no-block", cfg.service_unit_name] in calls
+    assert ["systemctl", "enable", values.TIMER_UNIT_NAME] in calls
+    assert ["systemctl", "start", "--no-block", values.TIMER_UNIT_NAME] in calls
+    assert ["systemctl", "start", "--no-block", values.SERVICE_UNIT_NAME] in calls
 
 
 def test_skips_when_the_units_and_the_timer_are_in_place(
@@ -202,7 +196,7 @@ def test_skips_when_the_units_and_the_timer_are_in_place(
         "systemctl",
         "start",
         "--no-block",
-        ctx.config.upnp_forwarding_setup.service_unit_name,
+        values.SERVICE_UNIT_NAME,
     ] not in calls
 
 
@@ -217,9 +211,8 @@ def test_the_units_carry_the_version_of_the_deployed_code(
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
     assert not result.warnings
-    cfg = ctx.config.upnp_forwarding_setup
-    service = (systemd_dir / cfg.service_unit_name).read_text(encoding="utf-8")
-    timer = (systemd_dir / cfg.timer_unit_name).read_text(encoding="utf-8")
+    service = (systemd_dir / values.SERVICE_UNIT_NAME).read_text(encoding="utf-8")
+    timer = (systemd_dir / values.TIMER_UNIT_NAME).read_text(encoding="utf-8")
     assert "# Deployed by Pyntara 0.3.999" in service
     assert "# Deployed by Pyntara 0.3.999" in timer
 
@@ -233,22 +226,21 @@ def test_units_of_another_version_are_rewritten(
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    cfg = ctx.config.upnp_forwarding_setup
     systemd_dir.mkdir(parents=True)
-    (systemd_dir / cfg.service_unit_name).write_text(
-        _expected_service_unit(venv_python, system_config, cfg, version="0.0.1"),
+    (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
+        _expected_service_unit(venv_python, system_config, version="0.0.1"),
         encoding="utf-8",
     )
-    (systemd_dir / cfg.timer_unit_name).write_text(
-        _expected_timer_unit(cfg, version="0.0.1"), encoding="utf-8"
+    (systemd_dir / values.TIMER_UNIT_NAME).write_text(
+        _expected_timer_unit(version="0.0.1"), encoding="utf-8"
     )
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = upnp_forwarding_setup.task(ctx)
     assert result.changed
     assert ["systemctl", "daemon-reload"] in calls
-    assert (systemd_dir / cfg.service_unit_name).read_text(
+    assert (systemd_dir / values.SERVICE_UNIT_NAME).read_text(
         encoding="utf-8"
-    ) == _expected_service_unit(venv_python, system_config, cfg)
+    ) == _expected_service_unit(venv_python, system_config)
 
 
 def test_a_deployment_that_cannot_be_asked_is_a_warning(
@@ -261,8 +253,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
     _install_fake(monkeypatch, active=True, venv_version=None)
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
-    cfg = ctx.config.upnp_forwarding_setup
-    service = (systemd_dir / cfg.service_unit_name).read_text(encoding="utf-8")
+    service = (systemd_dir / values.SERVICE_UNIT_NAME).read_text(encoding="utf-8")
     assert f"# Deployed by Pyntara {__version__}" in service
     assert any("cannot read the version" in warning for warning in result.warnings)
 
@@ -286,7 +277,7 @@ def test_force_runs_the_service_again(
         "systemctl",
         "start",
         "--no-block",
-        ctx.config.upnp_forwarding_setup.service_unit_name,
+        values.SERVICE_UNIT_NAME,
     ] in calls
 
 
@@ -330,5 +321,5 @@ def test_a_missing_template_is_a_warning(
     assert [
         "systemctl",
         "enable",
-        ctx.config.upnp_forwarding_setup.timer_unit_name,
+        values.TIMER_UNIT_NAME,
     ] in calls

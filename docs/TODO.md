@@ -1573,3 +1573,51 @@ machine in this turn, and the probe is named with the figure.
     four bash suites) until then. The live run of the port_forwarding_setup
     section on 2026-09-18 stays as it is, being the one that proved the values
     package works on the machine.
+
+150. The upnp_forwarding_setup section migrated on 2026-09-18 (branch
+    upnp-forwarding-setup), the second section of stage F. Its values now live in
+    src/pyntara/values/upnp_forwarding_setup.py: 21 names instead of the 22 the
+    plan counted, because the generic guard "every declared value is read
+    somewhere" proved ERROR_PRIORITY dead. Neither the deployed service nor the
+    task ever needed a journal priority, so the value was declared, validated by
+    the config and never read; it went, and the journal identifier keeps a comment
+    that says why the section declares no priority. The config layer of the
+    section went with it: config/upnp_forwarding_setup.toml,
+    src/pyntara/config/upnp_forwarding_setup.py,
+    tests/test_config_upnp_forwarding_setup.py, the section validator of
+    tests/config_checks.py, the fragment of tests/config_helpers.py, the coverage
+    entry of tests/test_config_coverage.py, the two names in
+    src/pyntara/config/__init__.py and the loader field.
+    Two couplings stayed on purpose, exactly as in the port section. The service
+    upnp_forwarding.py keeps the config path in its unit command, because it still
+    reads the sshd listen port of the ssh_daemon_setup section and calls the
+    collector that belongs to system_metrics_setup; its command is
+    MODULE_RUN_COMMAND = ("{python}", "-m", "{module}", "{config_path}") with a
+    comment that names the two owners of the remaining read. Every other value of
+    the service comes from the package now, so candidate_ports and
+    ensure_client_package lost the config parameter they took for one value each
+    and keep the hostname alone.
+    The state command upnp_forwarding_state.py needed nothing from the config, so
+    it lost the path argument completely: main takes the program name only, a path
+    is answered with exit code 2, and the collector module command of
+    config/system_metrics_setup.toml lost the path. The task
+    upnp_forwarding_setup.py reads the values package, and the test of the system
+    metrics section changed with it: test_upnp_module_path_matches_upnp_forwarding_config
+    became test_upnp_module_command_carries_no_config_path, and the filter that
+    keeps modules reading the config now skips port_forwarding and upnp by name.
+    The relations that the config validator used to hold moved into
+    tests/test_values.py as two checks (the two scope names of a router report
+    differ, the mapping description carries the hostname placeholder), the module
+    is registered in VALUES_MODULE_NAMES, and MAPPING_ATTEMPTS carries the rule
+    check_not_negative_int.
+    Documentation followed: docs/spec/upnp-forwarding-setup.md (the parameters
+    paragraph points at the values module and names the absence of an error
+    priority, the telemetry paragraph and the update flow paragraph lost the
+    argument and the config read, the unit paragraph names the sshd port as the
+    one reason for the path), docs/guides/project-structure.md (the section row
+    names the values module, and the state command runs without CONFIG_PATH) and
+    docs/spec/system-metrics.md (upnp_forwarding_state is the one address command
+    without an argument).
+    Every gate passes: ruff, ruff format, mypy strict over 137 source files, mypy
+    over the tests, 2245 unit tests and the four bash suites. The live production
+    run waits for the end of stage F, on the user's decision 149.

@@ -382,7 +382,7 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forward
 # without a rule of its own reports an empty module instead of an error.
 [[system_metrics_setup.collector.network_modules]]
 name = "upnp"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.upnp_forwarding_state", "/etc/pyntara/config.toml"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.upnp_forwarding_state"]
 
 # The rustdesk module prints the machine RustDesk ID from the file the
 # rustdesk_setup task writes after a successful install, so the network

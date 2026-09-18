@@ -10,15 +10,13 @@ import json
 from typing import Any
 
 import pytest
-from support import FakeProc, make_config
+from support import FakeProc
 
 from pyntara import upnp_forwarding_state
-from pyntara.config import Config
 from pyntara.ssh_access import ssh_command
 from pyntara.values import engine as engine_values
 
 ROUTER_ADDRESS = "191.83.167.128"
-CONFIG_PATH = "/etc/pyntara/config.toml"
 THIS_MACHINE = "testhost"
 
 # The table of the router this machine shares with a neighbour of this
@@ -56,12 +54,6 @@ def _router(
     monkeypatch.setattr(upnp_forwarding_state.upnp, "run_command", fake_run)
 
 
-def _config(monkeypatch: pytest.MonkeyPatch) -> Config:
-    config = make_config()
-    monkeypatch.setattr(upnp_forwarding_state, "load_config", lambda _path: config)
-    return config
-
-
 class TestAddressScope:
     """Tests for the scope a router address carries."""
 
@@ -94,11 +86,8 @@ class TestMappingRecords:
     """Tests for the records one router table produces."""
 
     def test_reports_the_rule_of_this_project_with_its_command(self) -> None:
-        config = make_config()
         keys = engine_values.REPORT_RECORD_KEYS
-        assert upnp_forwarding_state.mapping_records(
-            config, ROUTER_ADDRESS, LISTING
-        ) == [
+        assert upnp_forwarding_state.mapping_records(ROUTER_ADDRESS, LISTING) == [
             {
                 keys["channel"]: "upnp",
                 keys["address"]: ROUTER_ADDRESS,
@@ -110,10 +99,8 @@ class TestMappingRecords:
         ]
 
     def test_a_rule_of_another_machine_stays_out_of_the_report(self) -> None:
-        config = make_config()
         assert (
             upnp_forwarding_state.mapping_records(
-                config,
                 ROUTER_ADDRESS,
                 " 1 TCP    443->192.168.1.48:443    'pyntara xray otherhost'  ''\n",
             )
@@ -124,10 +111,8 @@ class TestMappingRecords:
         # A rule written before the mark carried the machine name belongs to
         # no machine in particular: the report leaves it out, and the
         # forwarding service writes its own rule again under the new mark.
-        config = make_config()
         assert (
             upnp_forwarding_state.mapping_records(
-                config,
                 ROUTER_ADDRESS,
                 " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh'  ''\n",
             )
@@ -143,9 +128,8 @@ class TestMain:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _config(monkeypatch)
         _router(monkeypatch, LISTING)
-        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
+        assert upnp_forwarding_state.main(["upnp_forwarding_state"]) == 0
         keys = engine_values.REPORT_RECORD_KEYS
         printed = capsys.readouterr().out
         assert f'"{keys["port"]}": 39222' in printed
@@ -160,9 +144,8 @@ class TestMain:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _config(monkeypatch)
         _router(monkeypatch, LISTING, address=None)
-        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
+        assert upnp_forwarding_state.main(["upnp_forwarding_state"]) == 0
         assert capsys.readouterr().out == ""
 
     def test_prints_nothing_when_the_router_carries_no_rule_of_this_project(
@@ -170,10 +153,11 @@ class TestMain:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _config(monkeypatch)
         _router(monkeypatch, "")
-        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
+        assert upnp_forwarding_state.main(["upnp_forwarding_state"]) == 0
         assert capsys.readouterr().out == ""
 
     def test_a_wrong_argument_count_is_refused(self) -> None:
-        assert upnp_forwarding_state.main(["upnp_forwarding_state"]) == 2
+        # The command reads declared values now, so a caller that still
+        # passes a config path is told the usage instead of being ignored.
+        assert upnp_forwarding_state.main(["upnp_forwarding_state", "config.toml"]) == 2

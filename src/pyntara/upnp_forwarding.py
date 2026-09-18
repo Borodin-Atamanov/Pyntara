@@ -40,12 +40,7 @@ from itertools import islice
 from pathlib import Path
 
 from pyntara import forwarding_ports, upnp
-from pyntara.config import (
-    UPNP_FORWARDING_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    load_config,
-)
+from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_collect import trigger_collection
@@ -53,6 +48,7 @@ from pyntara.public_address import default_route_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.utils import install_package_once, package_is_installed
 from pyntara.values import engine as engine_values
+from pyntara.values import upnp_forwarding_setup as values
 
 
 @dataclass(frozen=True)
@@ -71,7 +67,7 @@ class Forwarding:
     changed: bool
 
 
-def candidate_ports(cfg: Config, hostname: str) -> tuple[int, ...]:
+def candidate_ports(hostname: str) -> tuple[int, ...]:
     """The external ports the router service tries, in the order they are tried.
 
     The list is the shared deterministic chain of the machine, bounded by
@@ -82,11 +78,11 @@ def candidate_ports(cfg: Config, hostname: str) -> tuple[int, ...]:
     the reverse tunnel of the port_forwarding task asks a server for.
     """
 
-    attempts = cfg.upnp_forwarding_setup.mapping_attempts
+    attempts = values.MAPPING_ATTEMPTS
     return tuple(islice(forwarding_ports.candidate_ports(hostname), attempts))
 
 
-def ensure_client_package(cfg: Config) -> bool:
+def ensure_client_package() -> bool:
     """True when the UPnP client program is present, installing it if needed.
 
     The client is the external upnpc tool, which the provisioning task
@@ -97,17 +93,16 @@ def ensure_client_package(cfg: Config) -> bool:
     progress line and never a warning.
     """
 
-    section = cfg.upnp_forwarding_setup
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    if package_is_installed(section.upnp_package, timeout):
+    if package_is_installed(values.UPNP_PACKAGE, timeout):
         return True
-    installed, error = install_package_once(section.upnp_package, timeout)
+    installed, error = install_package_once(values.UPNP_PACKAGE, timeout)
     if not installed:
         _log(
-            f"the UPnP client package {section.upnp_package} is not available: {error}"
+            f"the UPnP client package {values.UPNP_PACKAGE} is not available: {error}"
         )
         return False
-    _log(f"UPnP client package {section.upnp_package} installed")
+    _log(f"UPnP client package {values.UPNP_PACKAGE} installed")
     return True
 
 
@@ -125,9 +120,8 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
     itself.
     """
 
-    section = cfg.upnp_forwarding_setup
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    command = section.upnp_client_command
+    command = values.UPNP_CLIENT_COMMAND
     router_address = upnp.router_external_address(command, timeout)
     if router_address is None:
         _log("no UPnP router on this network, the port is not forwarded")
@@ -137,13 +131,13 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
         _log("cannot read the address of this machine, the port is not forwarded")
         return None
     internal_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
-    description = upnp.mapping_description(section.upnp_mapping_description, hostname)
+    description = upnp.mapping_description(values.UPNP_MAPPING_DESCRIPTION, hostname)
     listing = upnp.list_mappings(command, timeout)
-    for port in candidate_ports(cfg, hostname):
+    for port in candidate_ports(hostname):
         existing = upnp.mapping_for(
             listing,
             port,
-            section.upnp_protocol,
+            values.UPNP_PROTOCOL,
             engine_values.UPNPC_PROTOCOL_NAMES,
             engine_values.UPNPC_MAPPING_ARROW,
         )
@@ -176,7 +170,7 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
             description,
             internal_address,
             port,
-            section.upnp_protocol,
+            values.UPNP_PROTOCOL,
             timeout,
             internal_port,
         ):
@@ -205,17 +199,8 @@ def main(argv: list[str]) -> int:
         print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
         return 2
     cfg = load_config(Path(argv[1]))
-    section = cfg.upnp_forwarding_setup
-    configure_journal(section.journal_identifier)
-    missing = absent_config_keys(section, UPNP_FORWARDING_CONFIG_KEYS)
-    if missing:
-        print(
-            "error: the upnp_forwarding_setup section of the config has no "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return 1
-    if not ensure_client_package(cfg):
+    configure_journal(values.JOURNAL_IDENTIFIER)
+    if not ensure_client_package():
         return 0
     forwarding = ensure_forwarding(cfg, socket.gethostname())
     if forwarding is not None and forwarding.changed:

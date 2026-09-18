@@ -20,7 +20,7 @@ the report never mistakes a narrow address for a wide one.
 A machine without the client, without a router or without a rule of its own
 prints nothing and exits 0, so an empty module appears in the report
 instead of an error. Runs as
-`python -m pyntara.upnp_forwarding_state CONFIG_PATH`.
+`python -m pyntara.upnp_forwarding_state`.
 """
 
 from __future__ import annotations
@@ -29,17 +29,11 @@ import ipaddress
 import json
 import socket
 import sys
-from pathlib import Path
 
 from pyntara import upnp
-from pyntara.config import (
-    UPNP_FORWARDING_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    load_config,
-)
 from pyntara.ssh_access import host_from_address, ssh_command
 from pyntara.values import engine as engine_values
+from pyntara.values import upnp_forwarding_setup as values
 
 
 def address_scope(address: str, global_name: str, nat_name: str) -> str:
@@ -61,23 +55,22 @@ def address_scope(address: str, global_name: str, nat_name: str) -> str:
 
 
 def mapping_records(
-    cfg: Config, router_address: str, listing: str
+    router_address: str, listing: str
 ) -> list[dict[str, object]]:
     """One record per rule of this machine in the router mapping list.
 
     The field names come from the declared report vocabulary, the channel
-    name from the section that owns the channel, and the ssh command from
+    name from the declared values of the section, and the ssh command from
     the shared builder, so the record has the same shape as every other
     address the report carries.
     """
 
-    section = cfg.upnp_forwarding_setup
     keys = engine_values.REPORT_RECORD_KEYS
     scope = address_scope(
-        router_address, section.global_scope_name, section.nat_scope_name
+        router_address, values.GLOBAL_SCOPE_NAME, values.NAT_SCOPE_NAME
     )
     ours = upnp.mapping_description(
-        section.upnp_mapping_description, socket.gethostname()
+        values.UPNP_MAPPING_DESCRIPTION, socket.gethostname()
     )
     host = host_from_address(router_address)
     records: list[dict[str, object]] = []
@@ -90,7 +83,7 @@ def mapping_records(
             continue
         records.append(
             {
-                keys["channel"]: section.report_channel_name,
+                keys["channel"]: values.REPORT_CHANNEL_NAME,
                 keys["address"]: router_address,
                 keys["port"]: mapping.external_port,
                 keys["local_port"]: mapping.internal_port,
@@ -107,25 +100,15 @@ def main(argv: list[str]) -> int:
     Returns 0 in every case that means "this machine has no forwarded
     address to report": no client, no router and no rule of its own are
     normal states of a network, and an empty module carries that answer.
-    Returns 2 on a wrong argument count and 1 when the section of the
-    config lacks a value the command reads.
+    Returns 2 on a wrong argument count; the values it reads are declared,
+    so no argument and no document take part in the answer.
     """
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    section = cfg.upnp_forwarding_setup
-    missing = absent_config_keys(section, UPNP_FORWARDING_CONFIG_KEYS)
-    if missing:
-        print(
-            "error: the upnp_forwarding_setup section of the config has no "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return 1
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    command = section.upnp_client_command
+    command = values.UPNP_CLIENT_COMMAND
     # The document on stdout is what the collector keeps as records, so the
     # client runs without its command echo: a progress line would turn the
     # document into text and the report would lose the fields.
@@ -133,7 +116,6 @@ def main(argv: list[str]) -> int:
     if router_address is None:
         return 0
     records = mapping_records(
-        cfg,
         router_address,
         upnp.list_mappings(command, timeout, log_command=False),
     )
