@@ -30,6 +30,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("hostname", "hostname"),
     ("imagemagick_setup", "imagemagick_setup"),
     ("kde_keyboard_setup", "kde_keyboard_setup"),
+    ("kde_settings", "kde_settings"),
     ("local_vault_setup", "local_vault_setup"),
     ("nextdns_setup_system_wide", "nextdns_setup_system_wide"),
     ("playwright_setup", "playwright_setup"),
