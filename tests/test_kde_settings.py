@@ -562,7 +562,7 @@ def test_apply_env_carries_live_session_display(
             "DISPLAY": ":0",
         },
     )
-    env = task_module._apply_env(ctx.config.kde_settings, ctx.config.engine)
+    env = task_module._apply_env(ctx.config.engine)
     assert env is not None
     assert env["HOME"] == str(tmp_path)
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
@@ -579,15 +579,15 @@ def test_apply_env_without_session_has_no_bus(
     monkeypatch.setattr(
         task_module, "session_environment", lambda username, **kwargs: {}
     )
-    assert task_module._apply_env(ctx.config.kde_settings, ctx.config.engine) is None
+    assert task_module._apply_env(ctx.config.engine) is None
 
 
-def test_written_user_file_mode_comes_from_the_config(
+def test_written_user_file_mode_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The chmod of a written user file carries the mode the caller passes,
-    # which is the configured value at every call site, so a stricter or
-    # looser mode is answered in the config.
+    # which is the value of the section at every call site, so a stricter or
+    # looser mode is answered in the values.
     chmods: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -596,9 +596,8 @@ def test_written_user_file_mode_comes_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    cfg = replace(make_config().kde_settings, home_dir=str(tmp_path))
     written = task_module._write_user_file(
-        cfg, "notes.txt", "content", mode=0o640, timeout=5, force=True
+        "notes.txt", "content", mode=0o640, timeout=5, force=True
     )
     assert written is True
     assert chmods == [["chmod", "0640", str(tmp_path / "notes.txt")]]
@@ -668,23 +667,24 @@ cursorSize=72
 
 def test_touchpad_groups_finds_touchpad_sections() -> None:
     # Only the libinput groups whose device name ends with Touchpad match.
-    cfg = make_config().kde_settings
     assert task_module._touchpad_groups(
-        TOUCHPAD_RC, cfg.touchpad_group_root, cfg.touchpad_device_word
+        TOUCHPAD_RC,
+        values.TOUCHPAD_GROUP_ROOT,
+        values.TOUCHPAD_DEVICE_WORD,
     ) == [("Libinput", "2362", "597", "SYNA3602:00 093A:0255 Touchpad")]
     assert (
         task_module._touchpad_groups(
             "[Mouse]\ncursorSize=72\n",
-            cfg.touchpad_group_root,
-            cfg.touchpad_device_word,
+            values.TOUCHPAD_GROUP_ROOT,
+            values.TOUCHPAD_DEVICE_WORD,
         )
         == []
     )
 
 
-def test_the_touchpad_group_words_come_from_the_config() -> None:
-    # The root group and the word a device name ends with are config
-    # values: another pair of them is the group the task collects.
+def test_the_touchpad_group_words_come_from_the_values() -> None:
+    # The root group and the word a device name ends with are values of the
+    # section: another pair of them is the group the task collects.
     text = "[MyRoot][1][2][name MyPad]\nClickMethod=2\n"
     assert task_module._touchpad_groups(text, "MyRoot", "MyPad") == [
         ("MyRoot", "1", "2", "name MyPad")
@@ -986,11 +986,9 @@ def test_theme_cursor_overrides_copies_themes_with_cursors(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
+    _ctx(tmp_path, system_look_and_feel_dir=system)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is True
     user_dir = tmp_path / ".local/share/plasma/look-and-feel"
     dark_defaults = user_dir / "org.kubuntudark.desktop/contents/defaults"
@@ -1008,11 +1006,9 @@ def test_theme_cursor_overrides_skip_missing_system_themes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A missing system theme is not an error; the copy is skipped.
-    ctx = _ctx(tmp_path)
+    _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is False
 
 
@@ -1023,7 +1019,7 @@ def test_theme_cursor_overrides_idempotent(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
+    _ctx(tmp_path, system_look_and_feel_dir=system)
     values: dict[tuple[str, str], str] = {}
     writes: list[list[str]] = []
 
@@ -1045,14 +1041,10 @@ def test_theme_cursor_overrides_idempotent(
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is True
     assert writes
-    changed2 = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1091,18 +1083,13 @@ def test_apply_user_dirs_writes_configured_dirs(
         'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_MUSIC_DIR="$HOME/Music"\n',
         encoding="utf-8",
     )
-    ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_user_dirs(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed is True
     text = (config_dir / "user-dirs.dirs").read_text(encoding="utf-8")
     assert 'XDG_MUSIC_DIR="$HOME/Downloads"' in text
     assert 'XDG_DESKTOP_DIR="$HOME/Desktop"' in text
-    changed2 = task_module._apply_user_dirs(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1115,18 +1102,13 @@ def test_apply_konsole_profile_renders_template(
     asset.write_text(
         "Directory={home_dir}/Downloads/\nName=Pyntara\n", encoding="utf-8"
     )
-    ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, asset, timeout=5, force=False
-    )
+    changed = task_module._apply_konsole_profile(asset, timeout=5, force=False)
     assert changed is True
     target = tmp_path / ".local/share/konsole/Pyntara.profile"
     expected = f"Directory={tmp_path}/Downloads/\nName=Pyntara\n"
     assert target.read_text(encoding="utf-8") == expected
-    changed2 = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, asset, timeout=5, force=False
-    )
+    changed2 = task_module._apply_konsole_profile(asset, timeout=5, force=False)
     assert changed2 is False
 
 
