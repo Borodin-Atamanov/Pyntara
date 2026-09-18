@@ -10,10 +10,11 @@ the document keeps the error instead of losing it. When neither source
 yields an address, the command exits nonzero with an explanation on
 stderr.
 
-The sshd port and the SOCKS proxy port come from the single system config
-the command is given, which is the same source the tasks read, so the
-report can never name a port the machine does not listen on
-(docs/spec/system-metrics.md, section Report collector). Runs as
+The sshd port comes from the single system config the command is
+given, which is the same source the tasks read, so the report can never
+name a port the machine does not listen on (docs/spec/system-metrics.md,
+section Report collector). Every other value of the record comes from the
+values package, so the command needs no config copy of them. Runs as
 `python -m pyntara.i2pd_address CONFIG_PATH`.
 """
 
@@ -23,16 +24,12 @@ import json
 import sys
 from pathlib import Path
 
-from pyntara.config import (
-    I2PD_ADDRESS_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    load_config,
-)
+from pyntara.config import Config, load_config
 from pyntara.i2pd import b32_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import socks_proxy_address, ssh_command
 from pyntara.values import engine as engine_values
+from pyntara.values import i2pd_service_setup as values
 
 # The identity may have been recreated between two provisioning runs
 # without the task noticing, so the saved address file is the fallback of
@@ -40,22 +37,20 @@ from pyntara.values import engine as engine_values
 FALLBACK_NOTE = "address read from the saved file, the keys file is missing or broken"
 
 
-def resolve_address(
-    keys_path: Path, saved_path: Path, address_suffix: str
-) -> tuple[str, str]:
+def resolve_address() -> tuple[str, str]:
     """The (address, note) of the tunnel.
 
     The live keys file is the primary source; the saved address file is
     the fallback. An empty address means no source yielded one, and the
-    caller reports the failure. address_suffix is the domain the address
-    carries, a config value like every other part of the name.
+    caller reports the failure. The suffix of the address is a declared
+    value like every other part of the name.
     """
 
-    address = b32_address(keys_path, address_suffix)
+    address = b32_address(values.TUNNEL_KEYS_PATH, values.ADDRESS_SUFFIX)
     if address:
         return address, ""
     try:
-        saved = saved_path.read_text(encoding="utf-8").strip()
+        saved = values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         saved = ""
     if saved:
@@ -66,20 +61,12 @@ def resolve_address(
 def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     """The report record of the I2P channel, or (None, reason).
 
-    Every value of the record comes from the config, so the address, the
-    port and the proxy of the command belong to the machine the report
-    describes and to the tunnel that is actually published.
+    The address, the proxy and the channel name are declared values, and
+    the sshd port is read from the config, so the record belongs to the
+    machine the report describes and to the tunnel that is published.
     """
 
-    setup = cfg.i2pd_service_setup
-    missing = absent_config_keys(setup, I2PD_ADDRESS_CONFIG_KEYS)
-    if missing:
-        return None, (
-            "the i2pd_service_setup section of the config has no " + ", ".join(missing)
-        )
-    address, note = resolve_address(
-        setup.tunnel_keys_path, setup.address_file_path, setup.address_suffix
-    )
+    address, note = resolve_address()
     if not address:
         return None, "I2P tunnel address is not available"
     try:
@@ -87,9 +74,9 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     except RuntimeError as exc:
         return None, str(exc)
     keys = engine_values.REPORT_RECORD_KEYS
-    proxy = socks_proxy_address(setup.socks_proxy_port)
+    proxy = socks_proxy_address(values.SOCKS_PROXY_PORT)
     record: dict[str, object] = {
-        keys["channel"]: setup.report_channel_name,
+        keys["channel"]: values.REPORT_CHANNEL_NAME,
         keys["address"]: address,
         keys["port"]: port,
         keys["proxy"]: proxy,

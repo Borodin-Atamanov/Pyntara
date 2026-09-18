@@ -35,6 +35,7 @@ from value_checks import (
 
 import pyntara
 from pyntara.values import engine as engine_values
+from pyntara.values import i2pd_service_setup as i2pd_values
 from pyntara.values import port_forwarding_setup as port_forwarding_values
 from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 
@@ -48,6 +49,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "engine",
     "ffmpeg_setup",
     "hostname",
+    "i2pd_service_setup",
     "imagemagick_setup",
     "kde_keyboard_setup",
     "kde_settings",
@@ -84,6 +86,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("common", "LAUNCHER_FILE_MODE", check_file_mode),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
+    ("i2pd_service_setup", "ADDRESS_FILE_MODE", check_file_mode),
     ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_DIR_MODE", check_file_mode),
     ("local_vault_setup", "PASS_FILE_MODE", check_file_mode),
@@ -448,3 +451,24 @@ def test_every_flag_family_has_a_report_word() -> None:
     assert set(engine_values.REPORT_FAMILY_WORDS) >= set(
         engine_values.ADDRESS_FAMILY_BY_FLAG.values()
     )
+
+
+def test_the_i2pd_log_level_is_one_the_router_accepts() -> None:
+    # i2pd refuses to start on a level outside its own vocabulary, and the
+    # rendered configuration carries the value as it stands: a wrong spelling
+    # would leave the machine with a router that never comes up while the task
+    # reported a written configuration.
+    assert i2pd_values.LOG_LEVEL in ("debug", "info", "warn", "error", "none")
+
+
+def test_the_i2pd_asset_name_templates_carry_the_release_tag() -> None:
+    # The name of the downloaded package is built from the template, and a
+    # template without the release tag would ask the release API for the same
+    # file name on every release, so the task would install the package of
+    # another version or nothing at all.
+    for template in (
+        i2pd_values.CODENAME_ASSET_NAME_TEMPLATE,
+        i2pd_values.GENERIC_ASSET_NAME_TEMPLATE,
+    ):
+        assert "{release_tag}" in template
+        assert template.endswith(".deb")

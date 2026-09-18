@@ -150,41 +150,6 @@ def base_config() -> str:
         "unit_disksize_line = \"ExecStart=/bin/sh -c 'echo {size_bytes} > {disksize_attribute}'\"\n"
         'unit_format_line = "ExecStart=/sbin/mkswap {device_path}"\n'
         'unit_swap_on_line = "ExecStart=/sbin/swapon --priority {swap_priority} {device_path}"\n'
-        "[i2pd_service_setup]\n"
-        'github_repo = "PurpleI2P/i2pd"\n'
-        'download_dir = "/var/lib/pyntara/i2pd-download"\n'
-        'os_release_file_path = "/etc/os-release"\n'
-        'service_unit_name = "i2pd.service"\n'
-        'config_path = "/etc/i2pd/i2pd.conf"\n'
-        'log_level = "warn"\n'
-        "bandwidth = 12500\n"
-        "share = 1\n"
-        "http_enabled = false\n"
-        "socks_proxy_enabled = true\n"
-        "socks_proxy_port = 4447\n"
-        "install_retries = 3\n"
-        "start_check_attempts = 5\n"
-        "start_check_retry_delay_seconds = 1\n"
-        'tunnels_config_path = "/etc/i2pd/tunnels.conf"\n'
-        'tunnel_name = "ssh"\n'
-        'tunnel_host = "127.0.0.1"\n'
-        'tunnel_keys_path = "/var/lib/i2pd/ssh.dat"\n'
-        'address_file_path = "/var/lib/pyntara/i2pd_ssh_address"\n'
-        'address_file_mode = "0644"\n'
-        'codename_asset_name_template = "i2pd_{release_tag}-1{codename}1_{arch}.deb"\n'
-        'generic_asset_name_template = "i2pd_{release_tag}-1_{arch}.deb"\n'
-        'os_release_codename_key = "VERSION_CODENAME"\n'
-        'version_command = ["i2pd", "--version"]\n'
-        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
-        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
-        'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
-        'config_template_file_name = "i2pd.conf"\n'
-        'tunnels_template_file_name = "tunnels.conf"\n'
-        'config_true_value = "true"\n'
-        'config_false_value = "false"\n'
-        "address_check_attempts = 10\n"
-        "address_check_retry_delay_seconds = 2\n"
-        'report_channel_name = "i2p"\naddress_suffix = ".b32.i2p"\n'
         "[yggdrasil_service_setup]\n"
         'github_repo = "yggdrasil-network/yggdrasil-go"\n'
         'download_dir = "/var/lib/pyntara/yggdrasil-download"\n'

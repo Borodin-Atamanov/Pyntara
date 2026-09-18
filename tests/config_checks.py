@@ -26,7 +26,6 @@ from pyntara.config import (
     DnsproxySetupConfig,
     FfmpegSetupConfig,
     HostnameConfig,
-    I2pdServiceSetupConfig,
     ImagemagickSetupConfig,
     KdeKeyboardSetupConfig,
     LocalVaultSetupConfig,
@@ -69,8 +68,6 @@ from pyntara.config.vault import GENERATED_PASSWORD_RE
 class ConfigError(RuntimeError):
     """Raised by a check when a config value is missing or invalid."""
 
-
-I2PD_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "warn", "error", "none")
 
 TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
 
@@ -1168,220 +1165,6 @@ def _hostname_table(raw: object) -> HostnameConfig:
         hostname_file=hostname_file,
         hostname_random_bytes=hostname_random_bytes,
         set_hostname_command=tuple(part.strip() for part in command),
-    )
-
-
-# from i2pd_service_setup.py
-
-
-def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
-    """Validate the [i2pd_service_setup] table and build the config.
-
-    github_repo, download_dir, service_unit_name and config_path are
-    non-empty strings; log_level is one of the I2PD_LOG_LEVELS values;
-    bandwidth is a positive integer in kilobytes per second and share is
-    an integer percentage between 0 and 100; http_enabled and
-    socks_proxy_enabled are strict booleans; socks_proxy_port is a TCP
-    port, because the telemetry builds the ssh command over I2P through
-    it; install_retries and
-    start_check_attempts are positive integers;
-    start_check_retry_delay_seconds is positive, so the readiness loop
-    always waits between attempts. tunnels_config_path and
-    tunnel_keys_path are non-empty strings; tunnel_name and tunnel_host
-    are non-empty strings; address_file_path is a non-empty string and
-    address_file_mode is an octal mode string.
-    codename_asset_name_template and generic_asset_name_template are
-    non-empty strings, os_release_codename_key names the os-release field
-    the codename comes from, and config_true_value and
-    config_false_value are non-empty strings; version_command and the
-    three service commands are string lists, and
-    config_template_file_name and tunnels_template_file_name are
-    non-empty strings. address_check_attempts is a positive integer and
-    address_check_retry_delay_seconds is positive, so the identity wait
-    always pauses between two decodes.
-    """
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[i2pd_service_setup] section is missing or not a table")
-    github_repo = _nonempty_string_field(
-        raw.get("github_repo"), "i2pd_service_setup.github_repo"
-    )
-    download_dir = Path(
-        _nonempty_string_field(
-            raw.get("download_dir"), "i2pd_service_setup.download_dir"
-        )
-    )
-    service_unit_name = _nonempty_string_field(
-        raw.get("service_unit_name"), "i2pd_service_setup.service_unit_name"
-    )
-    config_path = Path(
-        _nonempty_string_field(raw.get("config_path"), "i2pd_service_setup.config_path")
-    )
-    log_level = raw.get("log_level")
-    if log_level not in I2PD_LOG_LEVELS:
-        raise ConfigError(
-            "i2pd_service_setup.log_level must be one of " + ", ".join(I2PD_LOG_LEVELS)
-        )
-    bandwidth = _int_field(raw.get("bandwidth"), "i2pd_service_setup.bandwidth")
-    if bandwidth < 1:
-        raise ConfigError("i2pd_service_setup.bandwidth must be positive")
-    share = _int_field(raw.get("share"), "i2pd_service_setup.share")
-    if share < 0 or share > 100:
-        raise ConfigError("i2pd_service_setup.share must be between 0 and 100")
-    http_enabled = raw.get("http_enabled")
-    if not isinstance(http_enabled, bool):
-        raise ConfigError("i2pd_service_setup.http_enabled must be a boolean")
-    socks_proxy_enabled = raw.get("socks_proxy_enabled")
-    if not isinstance(socks_proxy_enabled, bool):
-        raise ConfigError("i2pd_service_setup.socks_proxy_enabled must be a boolean")
-    socks_proxy_port = _int_field(
-        raw.get("socks_proxy_port"), "i2pd_service_setup.socks_proxy_port"
-    )
-    if not 1 <= socks_proxy_port <= 65535:
-        raise ConfigError("i2pd_service_setup.socks_proxy_port must be a TCP port")
-    install_retries = _int_field(
-        raw.get("install_retries"), "i2pd_service_setup.install_retries"
-    )
-    if install_retries < 1:
-        raise ConfigError("i2pd_service_setup.install_retries must be positive")
-    start_check_attempts = _int_field(
-        raw.get("start_check_attempts"), "i2pd_service_setup.start_check_attempts"
-    )
-    if start_check_attempts < 1:
-        raise ConfigError("i2pd_service_setup.start_check_attempts must be positive")
-    start_check_retry_delay_seconds = _float_field(
-        raw.get("start_check_retry_delay_seconds"),
-        "i2pd_service_setup.start_check_retry_delay_seconds",
-    )
-    if start_check_retry_delay_seconds <= 0:
-        raise ConfigError(
-            "i2pd_service_setup.start_check_retry_delay_seconds must be positive"
-        )
-    tunnels_config_path = Path(
-        _nonempty_string_field(
-            raw.get("tunnels_config_path"), "i2pd_service_setup.tunnels_config_path"
-        )
-    )
-    tunnel_name = _nonempty_string_field(
-        raw.get("tunnel_name"), "i2pd_service_setup.tunnel_name"
-    )
-    tunnel_host = _nonempty_string_field(
-        raw.get("tunnel_host"), "i2pd_service_setup.tunnel_host"
-    )
-    tunnel_keys_path = Path(
-        _nonempty_string_field(
-            raw.get("tunnel_keys_path"), "i2pd_service_setup.tunnel_keys_path"
-        )
-    )
-    address_file_path = Path(
-        _nonempty_string_field(
-            raw.get("address_file_path"), "i2pd_service_setup.address_file_path"
-        )
-    )
-    address_file_mode = _octal_mode_field(
-        raw.get("address_file_mode"), "i2pd_service_setup.address_file_mode"
-    )
-    os_release_file_path = Path(
-        _nonempty_string_field(
-            raw.get("os_release_file_path"),
-            "i2pd_service_setup.os_release_file_path",
-        )
-    )
-    codename_asset_name_template = _nonempty_string_field(
-        raw.get("codename_asset_name_template"),
-        "i2pd_service_setup.codename_asset_name_template",
-    )
-    generic_asset_name_template = _nonempty_string_field(
-        raw.get("generic_asset_name_template"),
-        "i2pd_service_setup.generic_asset_name_template",
-    )
-    os_release_codename_key = _nonempty_string_field(
-        raw.get("os_release_codename_key"),
-        "i2pd_service_setup.os_release_codename_key",
-    )
-    config_template_file_name = _nonempty_string_field(
-        raw.get("config_template_file_name"),
-        "i2pd_service_setup.config_template_file_name",
-    )
-    tunnels_template_file_name = _nonempty_string_field(
-        raw.get("tunnels_template_file_name"),
-        "i2pd_service_setup.tunnels_template_file_name",
-    )
-    config_true_value = _nonempty_string_field(
-        raw.get("config_true_value"),
-        "i2pd_service_setup.config_true_value",
-    )
-    config_false_value = _nonempty_string_field(
-        raw.get("config_false_value"),
-        "i2pd_service_setup.config_false_value",
-    )
-    address_check_attempts = _int_field(
-        raw.get("address_check_attempts"),
-        "i2pd_service_setup.address_check_attempts",
-    )
-    if address_check_attempts < 1:
-        raise ConfigError("i2pd_service_setup.address_check_attempts must be positive")
-    address_check_retry_delay_seconds = _float_field(
-        raw.get("address_check_retry_delay_seconds"),
-        "i2pd_service_setup.address_check_retry_delay_seconds",
-    )
-    if address_check_retry_delay_seconds <= 0:
-        raise ConfigError(
-            "i2pd_service_setup.address_check_retry_delay_seconds must be positive"
-        )
-    return I2pdServiceSetupConfig(
-        github_repo=github_repo,
-        download_dir=download_dir,
-        service_unit_name=service_unit_name,
-        os_release_file_path=os_release_file_path,
-        config_path=config_path,
-        log_level=log_level,
-        bandwidth=bandwidth,
-        share=share,
-        http_enabled=http_enabled,
-        socks_proxy_enabled=socks_proxy_enabled,
-        socks_proxy_port=socks_proxy_port,
-        install_retries=install_retries,
-        start_check_attempts=start_check_attempts,
-        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
-        tunnels_config_path=tunnels_config_path,
-        tunnel_name=tunnel_name,
-        tunnel_host=tunnel_host,
-        tunnel_keys_path=tunnel_keys_path,
-        address_file_path=address_file_path,
-        address_file_mode=address_file_mode,
-        codename_asset_name_template=codename_asset_name_template,
-        generic_asset_name_template=generic_asset_name_template,
-        os_release_codename_key=os_release_codename_key,
-        version_command=_string_list(
-            raw.get("version_command"), "i2pd_service_setup.version_command"
-        ),
-        service_enable_command=_string_list(
-            raw.get("service_enable_command"),
-            "i2pd_service_setup.service_enable_command",
-        ),
-        service_start_command=_string_list(
-            raw.get("service_start_command"),
-            "i2pd_service_setup.service_start_command",
-        ),
-        service_restart_command=_string_list(
-            raw.get("service_restart_command"),
-            "i2pd_service_setup.service_restart_command",
-        ),
-        config_template_file_name=config_template_file_name,
-        tunnels_template_file_name=tunnels_template_file_name,
-        config_true_value=config_true_value,
-        config_false_value=config_false_value,
-        address_check_attempts=address_check_attempts,
-        address_check_retry_delay_seconds=address_check_retry_delay_seconds,
-        report_channel_name=_nonempty_string_field(
-            raw.get("report_channel_name"),
-            "i2pd_service_setup.report_channel_name",
-        ),
-        address_suffix=_nonempty_string_field(
-            raw.get("address_suffix"),
-            "i2pd_service_setup.address_suffix",
-        ),
     )
 
 
@@ -5593,9 +5376,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
         zswap_service=_zswap_service_table(document.get("zswap_service")),
         zram_service=_zram_service_table(document.get("zram_service")),
         telegram_setup=_telegram_setup_table(document.get("telegram_setup")),
-        i2pd_service_setup=_i2pd_service_setup_table(
-            document.get("i2pd_service_setup")
-        ),
         yggdrasil_service_setup=_yggdrasil_service_setup_table(
             document.get("yggdrasil_service_setup")
         ),

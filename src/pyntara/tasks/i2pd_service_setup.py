@@ -1,6 +1,6 @@
 """Task i2pd_service_setup: install the newest i2pd release as a system service.
 
-The task installs i2pd from the GitHub releases of the configured
+The task installs i2pd from the GitHub releases of the declared
 repository, so the running version is always the newest release instead
 of the distribution package. The latest release tag comes from the GitHub
 releases API (https://api.github.com/repos/{repo}/releases/latest); the
@@ -10,12 +10,12 @@ the fallback, so a release without a build for this distribution still
 installs. The package is downloaded from the official GitHub release
 assets without a checksum verification: the source is trusted, and the
 extra check would add a failure point without protecting the install.
-The task owns the main configuration file at the configured config_path:
+The task owns the main configuration file at CONFIG_PATH:
 it renders the template at task_data/i2pd_service_setup/i2pd.conf and
 rewrites the file whenever the content differs, so manual edits are
-reverted on the next run. The config_path must match the --conf path of
+reverted on the next run. CONFIG_PATH must match the --conf path of
 the package unit, otherwise the rendered values are ignored. The task
-also owns the tunnels file at tunnels_config_path with the SSH server
+also owns the tunnels file at TUNNELS_CONFIG_PATH with the SSH server
 tunnel: the main configuration names that file through tunconf, so i2pd
 reads exactly it wherever it is placed. The tunnel forwards to the local
 SSH daemon on the port read from the ssh_daemon_setup Port directive,
@@ -24,21 +24,21 @@ never duplicated into the i2pd configuration.
 The tunnel identity lives in the keys file. i2pd resolves the keys path
 against its data directory (datadir), never as an absolute path, so the
 tunnels file carries only the file name and the task reads the full path
-in the configured data directory. The keys file is the binary PrivateKeys
+in the declared data directory. The keys file is the binary PrivateKeys
 record: the first 387 bytes are the IdentityEx (encryption key, signing
 key and certificate), and the I2P address is the lowercase unpadded
 base32 of the SHA-256 hash of that IdentityEx. The task parses the
 certificate to learn the identity length, computes the address and
 reports it. i2pd writes the identity only after the router is up, so
-after a start the task waits for the file with the configured address
-loop, saves the address into the configured address_file_path with the
-configured mode and reports it in the same run, so the deployed address
+after a start the task waits for the file with the declared address
+loop, saves the address into ADDRESS_FILE_PATH with the
+declared mode and reports it in the same run, so the deployed address
 command finds the saved value; a machine where the identity never
 appears ends the wait and says the address is not available yet.
 
 The service
 is enabled and started or restarted immediately, and the task waits with
-the configured readiness loop for it to become active, because the
+the declared readiness loop for it to become active, because the
 forking service may take a moment to fork. The task is idempotent: it
 skips when the installed version equals the newest release tag, the
 configuration matches the rendered template, the tunnels file matches
@@ -54,7 +54,6 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import I2pdServiceSetupConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.i2pd import b32_address
@@ -77,15 +76,15 @@ from pyntara.utils import (
     version_from_output,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import i2pd_service_setup as values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide);
-# the repository root comes from the context and the os-release path from
-# the config.
+# the repository root comes from the context.
 
 
-def _render_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> str:
-    """Render the configuration template with the configured values.
+def _render_config(template_path: Path) -> str:
+    """Render the configuration template with the declared values.
 
     Boolean options are rendered as the true/false spelling i2pd accepts,
     so the rendered file, the idempotency comparison and the written
@@ -96,45 +95,46 @@ def _render_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> str:
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        log_level=cfg.log_level,
-        bandwidth=str(cfg.bandwidth),
-        share=str(cfg.share),
-        tunnels_config_path=str(cfg.tunnels_config_path),
+        log_level=values.LOG_LEVEL,
+        bandwidth=str(values.BANDWIDTH),
+        share=str(values.SHARE),
+        tunnels_config_path=str(values.TUNNELS_CONFIG_PATH),
         http_enabled=(
-            cfg.config_true_value if cfg.http_enabled else cfg.config_false_value
+            values.CONFIG_TRUE_VALUE
+            if values.HTTP_ENABLED
+            else values.CONFIG_FALSE_VALUE
         ),
         socks_proxy_enabled=(
-            cfg.config_true_value if cfg.socks_proxy_enabled else cfg.config_false_value
+            values.CONFIG_TRUE_VALUE
+            if values.SOCKS_PROXY_ENABLED
+            else values.CONFIG_FALSE_VALUE
         ),
-        socks_proxy_port=str(cfg.socks_proxy_port),
+        socks_proxy_port=str(values.SOCKS_PROXY_PORT),
     )
 
 
-def _render_tunnels_config(
-    cfg: I2pdServiceSetupConfig, ssh_port: int, template_path: Path
-) -> str:
+def _render_tunnels_config(ssh_port: int, template_path: Path) -> str:
     """Render the tunnels template with the SSH server tunnel.
 
     The tunnel port is the sshd listen port read from the ssh_daemon_setup
     directives by the caller, so the tunnel always forwards to the daemon
     that actually runs and the two can never diverge. The keys value is
     the file name only: i2pd resolves every keys path against its data
-    directory, never as an absolute path, so the full configured path
+    directory, never as an absolute path, so the full declared path
     would point into a directory that does not exist.
     """
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        tunnel_name=cfg.tunnel_name,
-        tunnel_host=cfg.tunnel_host,
+        tunnel_name=values.TUNNEL_NAME,
+        tunnel_host=values.TUNNEL_HOST,
         tunnel_port=ssh_port,
-        tunnel_keys_path=Path(cfg.tunnel_keys_path).name,
+        tunnel_keys_path=Path(values.TUNNEL_KEYS_PATH).name,
     )
 
 
 # i2pd prints its version as a dotted triple in the --version output.
 def _select_asset(
-    cfg: I2pdServiceSetupConfig,
     release: dict[str, object],
     tag: str,
     codename: str | None,
@@ -142,7 +142,7 @@ def _select_asset(
 ) -> tuple[str, str] | None:
     """The (name, url) of the .deb asset for this machine, or None.
 
-    The candidate names come from the configured templates, formatted
+    The candidate names come from the declared templates, formatted
     with the release tag, the codename and the architecture: the
     codename-specific asset wins, because it is built against this
     distribution, and the generic asset is the fallback. A distribution
@@ -153,12 +153,12 @@ def _select_asset(
     candidates: list[str] = []
     if codename:
         candidates.append(
-            cfg.codename_asset_name_template.format(
+            values.CODENAME_ASSET_NAME_TEMPLATE.format(
                 release_tag=tag, codename=codename, arch=arch
             )
         )
     candidates.append(
-        cfg.generic_asset_name_template.format(release_tag=tag, arch=arch)
+        values.GENERIC_ASSET_NAME_TEMPLATE.format(release_tag=tag, arch=arch)
     )
     for candidate in candidates:
         if candidate in assets:
@@ -166,8 +166,8 @@ def _select_asset(
     return None
 
 
-def _installed_version(cfg: I2pdServiceSetupConfig, timeout: float) -> str | None:
-    """The installed i2pd version from the configured version command.
+def _installed_version(timeout: float) -> str | None:
+    """The installed i2pd version from the declared version command.
 
     A missing binary, a nonzero exit or a hang means i2pd is not
     installed: the task treats the version as absent and reinstalls it.
@@ -178,7 +178,7 @@ def _installed_version(cfg: I2pdServiceSetupConfig, timeout: float) -> str | Non
 
     try:
         result = run_command(
-            list(cfg.version_command),
+            list(values.VERSION_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -269,16 +269,15 @@ def _read_config(config_path: Path) -> str | None:
 
 
 def _write_config(
-    cfg: I2pdServiceSetupConfig,
     template_path: Path,
     owner_uid: int,
     owner_gid: int,
 ) -> None:
-    """Write the rendered configuration into the configured path."""
+    """Write the rendered configuration into the declared path."""
 
-    cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(_render_config(cfg, template_path), encoding="utf-8")
-    apply_owner(cfg.config_path, owner_uid, owner_gid)
+    values.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.CONFIG_PATH.write_text(_render_config(template_path), encoding="utf-8")
+    apply_owner(values.CONFIG_PATH, owner_uid, owner_gid)
 
 
 def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
@@ -291,19 +290,18 @@ def _read_tunnels_config(tunnels_config_path: Path) -> str | None:
 
 
 def _write_tunnels_config(
-    cfg: I2pdServiceSetupConfig,
     ssh_port: int,
     template_path: Path,
     owner_uid: int,
     owner_gid: int,
 ) -> None:
-    """Write the rendered tunnels configuration into the configured path."""
+    """Write the rendered tunnels configuration into the declared path."""
 
-    cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.tunnels_config_path.write_text(
-        _render_tunnels_config(cfg, ssh_port, template_path), encoding="utf-8"
+    values.TUNNELS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.TUNNELS_CONFIG_PATH.write_text(
+        _render_tunnels_config(ssh_port, template_path), encoding="utf-8"
     )
-    apply_owner(cfg.tunnels_config_path, owner_uid, owner_gid)
+    apply_owner(values.TUNNELS_CONFIG_PATH, owner_uid, owner_gid)
 
 
 def _wait_active(
@@ -325,22 +323,22 @@ def _wait_active(
     return False
 
 
-def _wait_tunnel_address(cfg: I2pdServiceSetupConfig) -> str | None:
+def _wait_tunnel_address() -> str | None:
     """The .b32.i2p address once i2pd wrote the tunnel identity file.
 
     The keys file appears only after the first start of the router, so
     the decode is repeated with a pause of
-    address_check_retry_delay_seconds between two attempts until
-    address_check_attempts run out; the last decode is the result either
+    ADDRESS_CHECK_RETRY_DELAY_SECONDS between two attempts until
+    ADDRESS_CHECK_ATTEMPTS run out; the last decode is the result either
     way, and None means the identity is still not there.
     """
 
-    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
-    for _ in range(cfg.address_check_attempts):
+    address = b32_address(values.TUNNEL_KEYS_PATH, values.ADDRESS_SUFFIX)
+    for _ in range(values.ADDRESS_CHECK_ATTEMPTS):
         if address:
             return address
-        time.sleep(cfg.address_check_retry_delay_seconds)
-        address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
+        time.sleep(values.ADDRESS_CHECK_RETRY_DELAY_SECONDS)
+        address = b32_address(values.TUNNEL_KEYS_PATH, values.ADDRESS_SUFFIX)
     return address
 
 
@@ -383,7 +381,7 @@ def task(ctx: Context) -> TaskResult:
     file, enables the service, starts or restarts it and waits for it to
     become active. The .b32.i2p address of the tunnel is read from the
     keys file and reported; i2pd writes the identity only after the
-    router is up, so a start is followed by the configured identity wait,
+    router is up, so a start is followed by the declared identity wait,
     and a machine where the file never appears reports that the address
     is not available yet instead of hanging.
     Every step is reported to stdout:
@@ -395,7 +393,6 @@ def task(ctx: Context) -> TaskResult:
     and never stops here.
     """
 
-    cfg = ctx.config.i2pd_service_setup
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     owner_uid = engine_values.ROOT_OWNER_UID
     owner_gid = engine_values.ROOT_OWNER_GID
@@ -403,10 +400,10 @@ def task(ctx: Context) -> TaskResult:
     missing_commands = [
         name
         for name, command in (
-            ("version_command", cfg.version_command),
-            ("service_enable_command", cfg.service_enable_command),
-            ("service_start_command", cfg.service_start_command),
-            ("service_restart_command", cfg.service_restart_command),
+            ("VERSION_COMMAND", values.VERSION_COMMAND),
+            ("SERVICE_ENABLE_COMMAND", values.SERVICE_ENABLE_COMMAND),
+            ("SERVICE_START_COMMAND", values.SERVICE_START_COMMAND),
+            ("SERVICE_RESTART_COMMAND", values.SERVICE_RESTART_COMMAND),
         )
         if not command
     ]
@@ -416,8 +413,8 @@ def task(ctx: Context) -> TaskResult:
             + ", ".join(missing_commands)
         )
     task_data_path = task_data_dir(ctx.repo_root, ctx.task_name)
-    config_template_path = task_data_path / cfg.config_template_file_name
-    tunnels_template_path = task_data_path / cfg.tunnels_template_file_name
+    config_template_path = task_data_path / values.CONFIG_TEMPLATE_FILE_NAME
+    tunnels_template_path = task_data_path / values.TUNNELS_TEMPLATE_FILE_NAME
     for missing_template in (config_template_path, tunnels_template_path):
         if not missing_template.is_file():
             warnings.append(f"missing task data template: {missing_template}")
@@ -425,9 +422,9 @@ def task(ctx: Context) -> TaskResult:
 
     os_release: dict[str, str] = {}
     try:
-        os_release = read_os_release(cfg.os_release_file_path)
+        os_release = read_os_release(values.OS_RELEASE_FILE_PATH)
     except OSError as exc:
-        warnings.append(f"cannot read {cfg.os_release_file_path}: {exc}")
+        warnings.append(f"cannot read {values.OS_RELEASE_FILE_PATH}: {exc}")
     debian_family = os_family_is_debian(os_release)
     if os_release and not debian_family:
         warnings.append(
@@ -438,9 +435,9 @@ def task(ctx: Context) -> TaskResult:
             )
         )
     _log(
-        f"reading {cfg.os_release_file_path}: ID={os_release.get('ID', '')}, "
-        f"{cfg.os_release_codename_key}="
-        f"{os_release.get(cfg.os_release_codename_key, '')}"
+        f"reading {values.OS_RELEASE_FILE_PATH}: ID={os_release.get('ID', '')}, "
+        f"{values.OS_RELEASE_CODENAME_KEY}="
+        f"{os_release.get(values.OS_RELEASE_CODENAME_KEY, '')}"
     )
     arch = ""
     try:
@@ -453,16 +450,16 @@ def task(ctx: Context) -> TaskResult:
     release: dict[str, object] = {}
     if debian_family and arch:
         try:
-            release = fetch_latest_release(cfg.github_repo)
+            release = fetch_latest_release(values.GITHUB_REPO)
             tag = release_tag(release)
         except RuntimeError as exc:
             warnings.append(str(exc))
     _log(f"checking latest release: {tag or 'unknown'}")
 
-    codename = os_release.get(cfg.os_release_codename_key)
+    codename = os_release.get(values.OS_RELEASE_CODENAME_KEY)
     selected = None
     if debian_family and arch and tag:
-        selected = _select_asset(cfg, release, tag, codename, arch)
+        selected = _select_asset(release, tag, codename, arch)
         if selected is None:
             warnings.append(
                 f"release {tag} has no .deb asset for arch {arch}, "
@@ -475,16 +472,16 @@ def task(ctx: Context) -> TaskResult:
         _log(f"selected asset: {asset_name}")
 
     installed_version = (
-        _installed_version(cfg, timeout) if cfg.version_command else None
+        _installed_version(timeout) if values.VERSION_COMMAND else None
     )
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
     target_config = (
-        _render_config(cfg, config_template_path)
+        _render_config(config_template_path)
         if config_template_path.is_file()
         else None
     )
-    current_config = _read_config(cfg.config_path)
+    current_config = _read_config(values.CONFIG_PATH)
     # An install rewrites the package conffile, so the configuration is
     # rewritten after an install even when it matched before.
     config_changed = target_config is not None and (
@@ -499,29 +496,29 @@ def task(ctx: Context) -> TaskResult:
         _log(f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}")
 
     target_tunnels = (
-        _render_tunnels_config(cfg, ssh_port, tunnels_template_path)
+        _render_tunnels_config(ssh_port, tunnels_template_path)
         if tunnels_template_path.is_file() and ssh_port is not None
         else None
     )
-    current_tunnels = _read_tunnels_config(cfg.tunnels_config_path)
+    current_tunnels = _read_tunnels_config(values.TUNNELS_CONFIG_PATH)
     tunnels_changed = target_tunnels is not None and (
         force or current_tunnels != target_tunnels
     )
-    keys_exist = cfg.tunnel_keys_path.is_file()
-    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
+    keys_exist = values.TUNNEL_KEYS_PATH.is_file()
+    address = b32_address(values.TUNNEL_KEYS_PATH, values.ADDRESS_SUFFIX)
     _log(
-        f"checking tunnel identity file {cfg.tunnel_keys_path}: "
+        f"checking tunnel identity file {values.TUNNEL_KEYS_PATH}: "
         f"{'present' if keys_exist else 'missing'}"
     )
     _log(
-        f"checking saved address file {cfg.address_file_path}: "
-        f"{'matches' if _saved_address_matches(cfg.address_file_path, address) else 'missing or stale'}"
+        f"checking saved address file {values.ADDRESS_FILE_PATH}: "
+        f"{'matches' if _saved_address_matches(values.ADDRESS_FILE_PATH, address) else 'missing or stale'}"
     )
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(values.SERVICE_UNIT_NAME, timeout)
+    active = service_is_active(values.SERVICE_UNIT_NAME, timeout)
     _log(
-        f"checking autorun service {cfg.service_unit_name}: "
+        f"checking autorun service {values.SERVICE_UNIT_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
@@ -535,18 +532,18 @@ def task(ctx: Context) -> TaskResult:
         and keys_exist
         and enabled
         and active
-        and _saved_address_matches(cfg.address_file_path, address)
+        and _saved_address_matches(values.ADDRESS_FILE_PATH, address)
     ):
         _log("target state already reached, skipping")
         return _result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     if needs_install:
-        _log(f"downloading {asset_name} into {cfg.download_dir}")
+        _log(f"downloading {asset_name} into {values.DOWNLOAD_DIR}")
         downloaded = True
         try:
             _download_asset(
-                cfg.download_dir,
+                values.DOWNLOAD_DIR,
                 asset_name,
                 asset_url,
                 timeout,
@@ -558,27 +555,27 @@ def task(ctx: Context) -> TaskResult:
             _log("package downloaded")
             _log(f"installing package: apt-get install -y {asset_name}")
             ok, error = _install_deb(
-                cfg.download_dir,
+                values.DOWNLOAD_DIR,
                 asset_name,
                 install_timeout=timeout,
                 update_timeout=timeout,
-                retries=cfg.install_retries,
+                retries=values.INSTALL_RETRIES,
                 skip_update=ctx.skip_apt_update,
             )
             if ok:
                 _log("package installed")
                 changed = True
                 try:
-                    _cleanup_downloads(cfg.download_dir, asset_name)
+                    _cleanup_downloads(values.DOWNLOAD_DIR, asset_name)
                 except OSError as exc:
                     warnings.append(f"cannot remove downloaded files: {exc}")
             else:
                 warnings.append(f"cannot install i2pd: {error}")
 
     if config_changed:
-        _log(f"writing configuration {cfg.config_path}")
+        _log(f"writing configuration {values.CONFIG_PATH}")
         try:
-            _write_config(cfg, config_template_path, owner_uid, owner_gid)
+            _write_config(config_template_path, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write configuration: {exc}")
         else:
@@ -586,10 +583,10 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if tunnels_changed and ssh_port is not None:
-        _log(f"writing tunnels configuration {cfg.tunnels_config_path}")
+        _log(f"writing tunnels configuration {values.TUNNELS_CONFIG_PATH}")
         try:
             _write_tunnels_config(
-                cfg, ssh_port, tunnels_template_path, owner_uid, owner_gid
+                ssh_port, tunnels_template_path, owner_uid, owner_gid
             )
         except OSError as exc:
             warnings.append(f"cannot write tunnels configuration: {exc}")
@@ -598,10 +595,10 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if not enabled:
-        if cfg.service_enable_command:
+        if values.SERVICE_ENABLE_COMMAND:
             enable_argv = substituted_command(
-                cfg.service_enable_command,
-                {"service_unit_name": cfg.service_unit_name},
+                values.SERVICE_ENABLE_COMMAND,
+                {"service_unit_name": values.SERVICE_UNIT_NAME},
             )
             _log(f"enabling service: {' '.join(enable_argv)}")
             try:
@@ -616,8 +613,8 @@ def task(ctx: Context) -> TaskResult:
                 changed = True
         else:
             warnings.append(
-                f"cannot enable {cfg.service_unit_name}: "
-                "service_enable_command is not configured"
+                f"cannot enable {values.SERVICE_UNIT_NAME}: "
+                "SERVICE_ENABLE_COMMAND is empty"
             )
 
     if (
@@ -630,11 +627,13 @@ def task(ctx: Context) -> TaskResult:
     ):
         action = "restart" if active else "start"
         service_command = (
-            cfg.service_restart_command if active else cfg.service_start_command
+            values.SERVICE_RESTART_COMMAND
+            if active
+            else values.SERVICE_START_COMMAND
         )
         if service_command:
             service_argv = substituted_command(
-                service_command, {"service_unit_name": cfg.service_unit_name}
+                service_command, {"service_unit_name": values.SERVICE_UNIT_NAME}
             )
             _log(f"{action}ing service: {' '.join(service_argv)}")
             started = True
@@ -650,58 +649,60 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"service {action}ed")
                 _log(
                     f"waiting for service to become active (up to "
-                    f"{cfg.start_check_attempts} checks)"
+                    f"{values.START_CHECK_ATTEMPTS} checks)"
                 )
                 if _wait_active(
-                    cfg.service_unit_name,
-                    cfg.start_check_attempts,
-                    cfg.start_check_retry_delay_seconds,
+                    values.SERVICE_UNIT_NAME,
+                    values.START_CHECK_ATTEMPTS,
+                    values.START_CHECK_RETRY_DELAY_SECONDS,
                     timeout,
                 ):
                     _log("service active")
                     changed = True
                 else:
                     warnings.append(
-                        f"{cfg.service_unit_name} did not become active after "
-                        f"{cfg.start_check_attempts} checks"
+                        f"{values.SERVICE_UNIT_NAME} did not become active after "
+                        f"{values.START_CHECK_ATTEMPTS} checks"
                     )
         else:
             warnings.append(
-                f"cannot {action} {cfg.service_unit_name}: "
-                f"service_{action}_command is not configured"
+                f"cannot {action} {values.SERVICE_UNIT_NAME}: "
+                f"SERVICE_{action.upper()}_COMMAND is empty"
             )
 
-    address = b32_address(cfg.tunnel_keys_path, cfg.address_suffix)
+    address = b32_address(values.TUNNEL_KEYS_PATH, values.ADDRESS_SUFFIX)
     if address is None:
         _log(
-            f"waiting for the tunnel identity file {cfg.tunnel_keys_path} "
-            f"(up to {cfg.address_check_attempts} checks)"
+            f"waiting for the tunnel identity file {values.TUNNEL_KEYS_PATH} "
+            f"(up to {values.ADDRESS_CHECK_ATTEMPTS} checks)"
         )
-        address = _wait_tunnel_address(cfg)
+        address = _wait_tunnel_address()
         _log(f"tunnel address: {address or 'not available yet'}")
-    if address and not _saved_address_matches(cfg.address_file_path, address):
+    if address and not _saved_address_matches(values.ADDRESS_FILE_PATH, address):
         try:
-            cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
-            cfg.address_file_path.write_text(f"{address}\n", encoding="utf-8")
-            cfg.address_file_path.chmod(cfg.address_file_mode)
-            apply_owner(cfg.address_file_path, owner_uid, owner_gid)
+            values.ADDRESS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            values.ADDRESS_FILE_PATH.write_text(f"{address}\n", encoding="utf-8")
+            values.ADDRESS_FILE_PATH.chmod(values.ADDRESS_FILE_MODE)
+            apply_owner(values.ADDRESS_FILE_PATH, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write tunnel address file: {exc}")
         else:
-            _log(f"writing tunnel address file {cfg.address_file_path}: {address}")
+            _log(
+                f"writing tunnel address file {values.ADDRESS_FILE_PATH}: {address}"
+            )
             changed = True
 
     if address:
         _log(f"SSH tunnel address: {address}")
         message = (
             f"i2pd {tag or 'unknown version'} installed, "
-            f"service {cfg.service_unit_name} active, "
+            f"service {values.SERVICE_UNIT_NAME} active, "
             f"SSH tunnel address {address}"
         )
     else:
         message = (
             f"i2pd {tag or 'unknown version'} installed, "
-            f"service {cfg.service_unit_name} active, "
+            f"service {values.SERVICE_UNIT_NAME} active, "
             "SSH tunnel address appears after the first start"
         )
 

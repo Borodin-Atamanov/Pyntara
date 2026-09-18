@@ -26,7 +26,6 @@ from support import make_config
 
 from pyntara.config import (
     Config,
-    I2pdServiceSetupConfig,
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
     ThreeXuiXraySetupConfig,
@@ -71,12 +70,6 @@ COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
         "pyntara.config.three_x_ui_xray_setup",
         "COUNTRY_REPORT_CONFIG_KEYS",
         ThreeXuiXraySetupConfig,
-    ),
-    (
-        "pyntara.i2pd_address",
-        "pyntara.config.i2pd_service_setup",
-        "I2PD_ADDRESS_CONFIG_KEYS",
-        I2pdServiceSetupConfig,
     ),
     (
         "pyntara.metrics_collect",

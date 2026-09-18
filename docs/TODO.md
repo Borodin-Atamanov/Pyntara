@@ -1618,6 +1618,50 @@ machine in this turn, and the probe is named with the figure.
     names the values module, and the state command runs without CONFIG_PATH) and
     docs/spec/system-metrics.md (upnp_forwarding_state is the one address command
     without an argument).
-    Every gate passes: ruff, ruff format, mypy strict over 137 source files, mypy
-    over the tests, 2245 unit tests and the four bash suites. The live production
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 2245 unit tests and the four bash suites. The live production
     run waits for the end of stage F, on the user's decision 149.
+
+151. The i2pd_service_setup section migrated on 2026-09-18 (branch
+    i2pd-service-setup-values), the third section of stage F. Its 35 values
+    now live in src/pyntara/values/i2pd_service_setup.py, registered in
+    VALUES_MODULE_NAMES, and the section has no config table any more:
+    config/i2pd_service_setup.toml, src/pyntara/config/i2pd_service_setup.py,
+    tests/test_config_i2pd.py, the ~215 line _i2pd_service_setup_table block of
+    tests/config_checks.py, the fragment of tests/config_helpers.py, the two
+    config keys of tests/config_coverage.py, the i2pd fragment of
+    tests/support.py make_config, the two names of src/pyntara/config/__init__.py
+    and the field of the loader went, the three files to the trash.
+    Two decisions shaped the module. The two switches became whole numbers:
+    HTTP_ENABLED = 0 and SOCKS_PROXY_ENABLED = 1, on the user's rule that a
+    switch answers 1 or 0 and never True or False, while CONFIG_TRUE_VALUE and
+    CONFIG_FALSE_VALUE stay the text spelling of the i2pd configuration file,
+    because that is a foreign format. The 16 i2pd cases of
+    tests/test_config_network.py went with the validator, and the log level list
+    became two plain guards in tests/test_values.py: the level is one the router
+    accepts, and both asset name templates carry the release tag and end in .deb.
+    ADDRESS_FILE_MODE takes check_file_mode in EXTRA_VALUE_RULES.
+    The couplings are the same shape as in the two sections before: the task and
+    the service i2pd_address.py still take the config path, because the sshd
+    Port directive of ssh_daemon_setup is what the tunnel forwards to, and the
+    service reads it through the config it is given; every other value of the
+    record is declared now, so the service lost the I2PD_ADDRESS_CONFIG_KEYS
+    list, the absent_config_keys branch and the three parameters of
+    resolve_address, which reads the declared paths itself.
+    The task lost the config object entirely: _render_config,
+    _render_tunnels_config, _select_asset, _installed_version, _write_config,
+    _write_tunnels_config and _wait_tunnel_address each lost a parameter, so the
+    migration pays off the same way it did for the port section. The test file
+    follows: _ctx no longer carries i2pd parameters, _install_fixtures points
+    the declared paths and the two readiness loops at the fixture tree, and the
+    assertions read values.NAME.
+    Documentation followed: docs/spec/i2pd-service.md (the two switches, the
+    path names, the tunnel port source, the record values and the whole
+    Parameters section), docs/guides/project-structure.md (the section row names
+    the values module) and docs/spec/system-metrics.md (the proxy port and the
+    channel name come from declared values, and i2pd_address takes the config for
+    the sshd port alone). tests/test_report_component_config_keys.py lost the
+    i2pd case with the list it guarded.
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 2219 unit tests and the four bash suites. The live production run
+    waits for the end of stage F, on the user's decision 149.

@@ -26,7 +26,6 @@ from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
 from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
-from .i2pd_service_setup import I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
@@ -68,7 +67,6 @@ class Config:
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
     telegram_setup: TelegramSetupConfig
-    i2pd_service_setup: I2pdServiceSetupConfig
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     sotavpn_setup: SotavpnSetupConfig

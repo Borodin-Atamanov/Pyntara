@@ -30,13 +30,11 @@ import pytest
 
 from pyntara import (
     country_report,
-    i2pd_address,
     public_address_report,
     tor_address,
     yggdrasil_address,
 )
 from pyntara.config import (
-    i2pd_service_setup,
     three_x_ui_xray_setup,
     tor_setup,
     yggdrasil_service_setup,
@@ -54,12 +52,6 @@ CASES: tuple[tuple[ModuleType, str, ModuleType, str], ...] = (
         "three_x_ui_xray_setup",
         three_x_ui_xray_setup,
         "PUBLIC_ADDRESS_CONFIG_KEYS",
-    ),
-    (
-        i2pd_address,
-        "i2pd_service_setup",
-        i2pd_service_setup,
-        "I2PD_ADDRESS_CONFIG_KEYS",
     ),
     (tor_address, "tor_setup", tor_setup, "TOR_ADDRESS_CONFIG_KEYS"),
     (

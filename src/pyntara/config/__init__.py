@@ -27,7 +27,6 @@ from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
 from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
-from .i2pd_service_setup import I2PD_ADDRESS_CONFIG_KEYS, I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .loader import (
@@ -83,7 +82,6 @@ __all__ = [
     "COLLECTOR_SECTION_KEYS",
     "COLLECTOR_TABLE_KEYS",
     "COUNTRY_REPORT_CONFIG_KEYS",
-    "I2PD_ADDRESS_CONFIG_KEYS",
     "INGEST_CONFIG_KEYS",
     "MODES",
     "PUBLIC_ADDRESS_CONFIG_KEYS",
@@ -101,7 +99,6 @@ __all__ = [
     "DnsproxySetupConfig",
     "FfmpegSetupConfig",
     "HostnameConfig",
-    "I2pdServiceSetupConfig",
     "ImagemagickSetupConfig",
     "KdeKeyboardSetupConfig",
     "LocalVaultSetupConfig",

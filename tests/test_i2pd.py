@@ -8,27 +8,27 @@ from support import (
     I2PD_KEYS_IDENTITY_SIZE,
     i2pd_keys_b32_address,
     i2pd_keys_file_bytes,
-    make_config,
 )
 
 from pyntara.i2pd import b32_address
+from pyntara.values import i2pd_service_setup as values
 
-SUFFIX = make_config().i2pd_service_setup.address_suffix
+SUFFIX = values.ADDRESS_SUFFIX
 
 
 def test_b32_address_from_keys(tmp_path: Path) -> None:
     # The .b32.i2p address is the unpadded lowercase base32 of the
     # SHA-256 hash of the IdentityEx record at the start of the keys
-    # file, followed by the configured domain.
+    # file, followed by the declared domain.
     keys = tmp_path / "ssh.dat"
     keys.write_bytes(i2pd_keys_file_bytes())
     assert b32_address(keys, SUFFIX) == i2pd_keys_b32_address()
 
 
-def test_the_address_suffix_comes_from_the_config(tmp_path: Path) -> None:
-    # The proof of the value: another domain in the config is the domain
+def test_the_address_suffix_is_the_one_the_caller_passes(tmp_path: Path) -> None:
+    # The proof of the value: the suffix the caller passes is the domain
     # the computed address carries, so a network with another name is a
-    # config change.
+    # change of the declared value.
     keys = tmp_path / "ssh.dat"
     keys.write_bytes(i2pd_keys_file_bytes())
     expected = i2pd_keys_b32_address()

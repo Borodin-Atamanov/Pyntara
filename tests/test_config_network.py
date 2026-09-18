@@ -1,5 +1,5 @@
-"""Config tests for [i2pd_service_setup], [yggdrasil_service_setup],
-[ssh_daemon_setup] and [ssh_client_setup]."""
+"""Config tests for [yggdrasil_service_setup], [ssh_daemon_setup]
+and [ssh_client_setup]."""
 
 from __future__ import annotations
 
@@ -17,54 +17,6 @@ from config_helpers import (
 @pytest.mark.parametrize(
     "content",
     [
-        # i2pd github_repo is a number, not a string
-        base_config().replace('github_repo = "PurpleI2P/i2pd"', "github_repo = 1"),
-        # i2pd github_repo is an empty string
-        base_config().replace('github_repo = "PurpleI2P/i2pd"', 'github_repo = ""'),
-        # i2pd download_dir is a number, not a string
-        base_config().replace(
-            'download_dir = "/var/lib/pyntara/i2pd-download"', "download_dir = 1"
-        ),
-        # i2pd download_dir is an empty string
-        base_config().replace(
-            'download_dir = "/var/lib/pyntara/i2pd-download"', 'download_dir = ""'
-        ),
-        # i2pd service_unit_name is a number, not a string
-        base_config().replace(
-            'service_unit_name = "i2pd.service"', "service_unit_name = 1"
-        ),
-        # i2pd config_path is an empty string
-        base_config().replace(
-            'config_path = "/etc/i2pd/i2pd.conf"', 'config_path = ""'
-        ),
-        # i2pd log_level is not a known level
-        base_config().replace('log_level = "warn"', 'log_level = "chatty"'),
-        # i2pd log_level is a number, not a string
-        base_config().replace('log_level = "warn"', "log_level = 1"),
-        # i2pd http_enabled is an integer, not a boolean
-        base_config().replace("http_enabled = false", "http_enabled = 0"),
-        # i2pd socks_proxy_enabled is a string, not a boolean
-        base_config().replace(
-            "socks_proxy_enabled = true", 'socks_proxy_enabled = "true"'
-        ),
-        # i2pd install_retries is a string, not an integer
-        base_config().replace("install_retries = 3", 'install_retries = "3"'),
-        # i2pd install_retries is zero
-        base_config().replace("install_retries = 3", "install_retries = 0"),
-        # i2pd start_check_attempts is a string, not an integer
-        base_config().replace("start_check_attempts = 5", 'start_check_attempts = "5"'),
-        # i2pd start_check_attempts is zero
-        base_config().replace("start_check_attempts = 5", "start_check_attempts = 0"),
-        # i2pd start_check_retry_delay_seconds is a string, not a number
-        base_config().replace(
-            "start_check_retry_delay_seconds = 1",
-            'start_check_retry_delay_seconds = "1"',
-        ),
-        # i2pd start_check_retry_delay_seconds is zero
-        base_config().replace(
-            "start_check_retry_delay_seconds = 1",
-            "start_check_retry_delay_seconds = 0",
-        ),
         # yggdrasil github_repo is a number, not a string
         base_config().replace(
             'github_repo = "yggdrasil-network/yggdrasil-go"', "github_repo = 1"
